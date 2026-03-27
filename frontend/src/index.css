@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --sidebar-width: 260px;
+    --header-height: 60px;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    @apply bg-surface-50 text-surface-900 antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  .dark body,
+  .dark {
+    @apply bg-surface-900 text-surface-50;
+  }
+  
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-200 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-surface-300; }
+  .dark ::-webkit-scrollbar-thumb { @apply bg-surface-700; }
+  .dark ::-webkit-scrollbar-thumb:hover { @apply bg-surface-600; }
+}
+
+@layer components {
+  .card { @apply bg-white rounded-2xl shadow-card border border-surface-100 p-5; }
+  .dark .card { @apply bg-surface-800 border-surface-700; }
+  
+  .btn { @apply inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-primary { @apply btn bg-primary-600 text-white hover:bg-primary-700 active:scale-95; }
+  .btn-secondary { @apply btn bg-surface-100 text-surface-800 hover:bg-surface-200 active:scale-95; }
+  .dark .btn-secondary { @apply bg-surface-700 text-surface-100 hover:bg-surface-600; }
+  .btn-danger { @apply btn bg-red-50 text-red-600 hover:bg-red-100 active:scale-95; }
+  .dark .btn-danger { @apply bg-red-900/20 text-red-400 hover:bg-red-900/30; }
+  .btn-ghost { @apply btn text-surface-600 hover:bg-surface-100 active:scale-95; }
+  .dark .btn-ghost { @apply text-surface-300 hover:bg-surface-700; }
+  
+  .input { @apply w-full px-3 py-2 bg-white border border-surface-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all; }
+  .dark .input { @apply bg-surface-800 border-surface-700 text-surface-100; }
+  
+  .label { @apply block text-sm font-medium text-surface-700 mb-1; }
+  .dark .label { @apply text-surface-300; }
+  
+  .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
+  
+  .sidebar-link { @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 text-surface-600 hover:bg-surface-100 hover:text-surface-900; }
+  .dark .sidebar-link { @apply text-surface-300 hover:bg-surface-700 hover:text-surface-100; }
+  .sidebar-link.active { @apply bg-primary-50 text-primary-700; }
+  .dark .sidebar-link.active { @apply bg-primary-900/30 text-primary-400; }
+  
+  .page-title { @apply text-2xl font-bold text-surface-900; }
+  .dark .page-title { @apply text-surface-50; }
+  
+  .section-title { @apply text-lg font-semibold text-surface-900; }
+  .dark .section-title { @apply text-surface-100; }
+  
+  .stat-card { @apply card flex flex-col gap-1; }
+
+  /* Dark mode for tables */
+  .dark table th { @apply text-surface-400; }
+  .dark table td { @apply text-surface-300; }
+  .dark table tr { @apply border-surface-700; }
+  .dark table tr:hover { @apply bg-surface-700/50; }
+
+  /* Dark mode for select inside table */
+  .dark select { @apply bg-surface-800 border-surface-600 text-surface-200; }
+}
+
+/* Animations */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.animate-fade-in { animation: fadeIn 0.2s ease-out; }
+.animate-slide-in { animation: slideIn 0.25s ease-out; }
+
+/* Status colors */
+.status-new { @apply bg-slate-100 text-slate-700; }
+.status-in_progress { @apply bg-blue-100 text-blue-700; }
+.status-review { @apply bg-amber-100 text-amber-700; }
+.status-done { @apply bg-green-100 text-green-700; }
+.status-cancelled { @apply bg-red-100 text-red-700; }
+.status-planning { @apply bg-purple-100 text-purple-700; }
+.status-completed { @apply bg-green-100 text-green-700; }
+.status-archived { @apply bg-gray-100 text-gray-600; }
+.status-on_hold { @apply bg-orange-100 text-orange-700; }
+
+/* Dark mode status colors */
+.dark .status-new { @apply bg-slate-800 text-slate-300; }
+.dark .status-in_progress { @apply bg-blue-900/30 text-blue-400; }
+.dark .status-review { @apply bg-amber-900/30 text-amber-400; }
+.dark .status-done { @apply bg-green-900/30 text-green-400; }
+.dark .status-cancelled { @apply bg-red-900/30 text-red-400; }
+.dark .status-planning { @apply bg-purple-900/30 text-purple-400; }
+.dark .status-completed { @apply bg-green-900/30 text-green-400; }
+.dark .status-archived { @apply bg-gray-800 text-gray-400; }
+.dark .status-on_hold { @apply bg-orange-900/30 text-orange-400; }
+
+/* Priority colors */
+.priority-low { @apply bg-slate-100 text-slate-600; }
+.priority-medium { @apply bg-blue-100 text-blue-600; }
+.priority-high { @apply bg-orange-100 text-orange-700; }
+.priority-critical { @apply bg-red-100 text-red-700; }
+
+/* Dark mode priority colors */
+.dark .priority-low { @apply bg-slate-800 text-slate-400; }
+.dark .priority-medium { @apply bg-blue-900/30 text-blue-400; }
+.dark .priority-high { @apply bg-orange-900/30 text-orange-400; }
+.dark .priority-critical { @apply bg-red-900/30 text-red-400; }
+
+/* Drag and drop */
+.drag-over { @apply bg-primary-50 border-primary-300 border-2 border-dashed; }
+.dark .drag-over { @apply bg-primary-900/20 border-primary-600; }
+.dragging { @apply opacity-50 scale-95; }

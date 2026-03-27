@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: erp_postgres
+    environment:
+      POSTGRES_DB: erp_db
+      POSTGRES_USER: erp_user
+      POSTGRES_PASSWORD: erp_password
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - erp_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: erp_redis
+    ports:
+      - '6379:6379'
+    networks:
+      - erp_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: erp_backend
+    environment:
+      DATABASE_URL: postgresql://erp_user:erp_password@postgres:5432/erp_db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      JWT_EXPIRES_IN: 7d
+      PORT: 3000
+      MAIL_HOST: smtp.gmail.com
+      MAIL_PORT: 587
+      MAIL_USER: your-email@gmail.com
+      MAIL_PASS: your-app-password
+    ports:
+      - '3000:3000'
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - erp_network
+    volumes:
+      - ./backend/uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: erp_frontend
+    environment:
+      VITE_API_URL: http://localhost:3000
+    ports:
+      - '5173:80'
+    depends_on:
+      - backend
+    networks:
+      - erp_network
+
+volumes:
+  postgres_data:
+
+networks:
+  erp_network:
+    driver: bridge

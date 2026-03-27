@@ -1,0 +1,139 @@
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { reportsApi, projectsApi, tasksApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
+import { useTranslation } from '@/i18n'
+import { PageLoader, EmptyState, Modal, Avatar } from '@/components/ui'
+import { Plus, FileText, Trash2 } from 'lucide-react'
+import { useForm } from 'react-hook-form'
+import { format } from 'date-fns'
+import toast from 'react-hot-toast'
+
+export default function ReportsPage() {
+  const user = useAuthStore(s => s.user)
+  const isManagerPlus = ['admin', 'manager'].includes(user?.role || '')
+  const [showCreate, setShowCreate] = useState(false)
+  const qc = useQueryClient()
+  const { t } = useTranslation()
+
+  const { data: reports, isLoading } = useQuery({
+    queryKey: ['reports'],
+    queryFn: isManagerPlus ? reportsApi.list : reportsApi.my,
+  })
+
+  const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
+  const { data: myTasks } = useQuery({ queryKey: ['my-tasks'], queryFn: tasksApi.my })
+
+  const createMut = useMutation({
+    mutationFn: reportsApi.create,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['reports'] }); setShowCreate(false); toast.success(t('reports.submitted')) },
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: reportsApi.remove,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['reports'] }); toast.success(t('reports.deleted')) },
+  })
+
+  if (isLoading) return <PageLoader />
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="page-title">{t('reports.title')}</h1>
+        <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} /> {t('reports.newReport')}</button>
+      </div>
+
+      {!reports?.length ? (
+        <EmptyState title={t('reports.noReports')} description={t('reports.noReportsDesc')} action={
+          <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
+        } />
+      ) : (
+        <div className="space-y-3">
+          {reports.map((r: any) => (
+            <div key={r.id} className="card flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
+                <FileText size={18} className="text-primary-600 dark:text-primary-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  {isManagerPlus && r.employee && <Avatar name={r.employee.name} size={22} />}
+                  {isManagerPlus && <span className="font-medium text-sm text-surface-900 dark:text-surface-100">{r.employee?.name}</span>}
+                  <span className="text-sm text-surface-500 dark:text-surface-400">{format(new Date(r.date), 'dd.MM.yyyy')}</span>
+                  {r.project && <span className="text-xs bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-2 py-0.5 rounded-full">{r.project.name}</span>}
+                </div>
+                <p className="text-sm text-surface-700 dark:text-surface-300">{r.description}</p>
+                <div className="flex items-center gap-3 mt-2 text-xs text-surface-400 dark:text-surface-500">
+                  {r.task && <span>{t('reports.taskLabel')}: {r.task.title}</span>}
+                  <span>{t('reports.timeSpent')}: <strong className="text-surface-600 dark:text-surface-300">{r.timeSpent}ч</strong></span>
+                </div>
+                {r.comments && <p className="text-xs text-surface-500 dark:text-surface-400 mt-1 italic">{r.comments}</p>}
+              </div>
+              {(user?.id === r.employeeId || user?.role === 'admin') && (
+                <button onClick={() => deleteMut.mutate(r.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400 shrink-0">
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title={t('reports.newReport')} size="lg">
+        <ReportForm
+          onSubmit={data => createMut.mutate(data)}
+          onClose={() => setShowCreate(false)}
+          projects={projects || []}
+          tasks={myTasks || []}
+          loading={createMut.isPending}
+          t={t}
+        />
+      </Modal>
+    </div>
+  )
+}
+
+function ReportForm({ onSubmit, onClose, projects, tasks, loading, t }: any) {
+  const { register, handleSubmit, reset } = useForm({ defaultValues: { date: new Date().toISOString().split('T')[0] } })
+  const submit = (data: any) => { onSubmit(data); reset() }
+
+  return (
+    <form onSubmit={handleSubmit(submit)} className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label">{t('reports.date')}</label>
+          <input type="date" {...register('date', { required: true })} className="input" />
+        </div>
+        <div>
+          <label className="label">{t('reports.timeSpent')} *</label>
+          <input type="number" step="0.25" {...register('timeSpent', { required: true })} className="input" />
+        </div>
+        <div>
+          <label className="label">{t('tasks.project')}</label>
+          <select {...register('projectId')} className="input">
+            <option value="">{t('common.selectOption')}</option>
+            {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">{t('reports.taskLabel')}</label>
+          <select {...register('taskId')} className="input">
+            <option value="">{t('common.selectOption')}</option>
+            {tasks.map((task: any) => <option key={task.id} value={task.id}>{task.title}</option>)}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label className="label">{t('reports.workDone')} *</label>
+        <textarea {...register('description', { required: true })} className="input resize-none" rows={4} />
+      </div>
+      <div>
+        <label className="label">{t('reports.comments')}</label>
+        <textarea {...register('comments')} className="input resize-none" rows={2} />
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button type="button" onClick={onClose} className="btn-secondary">{t('common.cancel')}</button>
+        <button type="submit" disabled={loading} className="btn-primary">{t('reports.submit')}</button>
+      </div>
+    </form>
+  )
+}
