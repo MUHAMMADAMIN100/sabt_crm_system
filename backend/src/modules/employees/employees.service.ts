@@ -2,12 +2,16 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, ILike } from 'typeorm';
 import { Employee, EmployeeStatus } from './employee.entity';
+import { User } from '../users/user.entity';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 
 @Injectable()
 export class EmployeesService {
-  constructor(@InjectRepository(Employee) private repo: Repository<Employee>) {}
+  constructor(
+    @InjectRepository(Employee) private repo: Repository<Employee>,
+    @InjectRepository(User) private userRepo: Repository<User>,
+  ) {}
 
   findAll(search?: string, department?: string, status?: EmployeeStatus) {
     const where: any = {};
@@ -35,7 +39,13 @@ export class EmployeesService {
 
   async remove(id: string) {
     const emp = await this.findOne(id);
+    const userId = emp.userId;
+    // Delete employee first (FK references User)
     await this.repo.remove(emp);
+    // Then delete the linked User so login becomes impossible
+    if (userId) {
+      await this.userRepo.delete(userId);
+    }
     return { message: 'Employee deleted' };
   }
 

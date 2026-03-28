@@ -59,14 +59,20 @@ export class ProjectsService {
           message: `Вас добавили в проект "${saved.name}"`,
           link: `/projects/${saved.id}`,
         });
-        // Send email notification
+        // Send email notification with project details
         const member = await this.userRepo.findOne({ where: { id: memberId } });
         if (member?.email) {
+          const manager = dto.managerId
+            ? await this.userRepo.findOne({ where: { id: dto.managerId || userId } })
+            : null;
           await this.mailService.sendProjectAssigned(
             member.email,
             member.name,
             saved.name,
             `/projects/${saved.id}`,
+            saved.description || undefined,
+            saved.endDate ? new Date(saved.endDate).toLocaleDateString('ru-RU') : undefined,
+            manager?.name || undefined,
           );
         }
       }
@@ -76,7 +82,7 @@ export class ProjectsService {
 
   async update(id: string, dto: UpdateProjectDto, user: any) {
     const project = await this.findOne(id);
-    if (user.role !== UserRole.ADMIN && project.managerId !== user.id) {
+    if (user.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Not allowed');
     }
 
@@ -111,8 +117,32 @@ export class ProjectsService {
   async updateProgress(id: string) {
     const project = await this.repo.findOne({ where: { id }, relations: ['tasks'] });
     if (!project || !project.tasks.length) return;
-    const done = project.tasks.filter(t => t.status === 'done').length;
-    project.progress = Math.round((done / project.tasks.length) * 100);
+
+    // Weight per status: new=0%, in_progress=30%, review=70%, done=100%, cancelled=excluded
+    const statusWeight: Record<string, number> = {
+      new: 0,
+      in_progress: 30,
+      review: 70,
+      done: 100,
+    };
+
+    const activeTasks = project.tasks.filter(t => t.status !== 'cancelled');
+    if (!activeTasks.length) {
+      project.progress = 0;
+      return this.repo.save(project);
+    }
+
+    const totalWeight = activeTasks.reduce((sum, t) => sum + (statusWeight[t.status] ?? 0), 0);
+    project.progress = Math.round(totalWeight / activeTasks.length);
+
+    // Auto-update project status based on task completion
+    const allDone = activeTasks.every(t => t.status === 'done');
+    if (allDone && project.status !== ProjectStatus.ARCHIVED) {
+      project.status = ProjectStatus.COMPLETED;
+    } else if (!allDone && project.status === ProjectStatus.COMPLETED) {
+      project.status = ProjectStatus.IN_PROGRESS;
+    }
+
     return this.repo.save(project);
   }
 

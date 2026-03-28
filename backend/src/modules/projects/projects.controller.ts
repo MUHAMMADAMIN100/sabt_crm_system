@@ -35,19 +35,19 @@ export class ProjectsController {
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.ADMIN)
   create(@Body() dto: CreateProjectDto, @Request() req) {
     return this.service.create(dto, req.user.id);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.ADMIN)
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto, @Request() req) {
     return this.service.update(id, dto, req.user);
   }
 
   @Patch(':id/archive')
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.ADMIN)
   archive(@Param('id') id: string) { return this.service.archive(id); }
 
   @Patch(':id/restore')

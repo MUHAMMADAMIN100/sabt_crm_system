@@ -27,7 +27,7 @@ export class EmployeesController {
   getDepartments() { return this.service.getDepartments(); }
 
   @Get('stats')
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.ADMIN)
   getStats() { return this.service.getStats(); }
 
   @Get(':id')

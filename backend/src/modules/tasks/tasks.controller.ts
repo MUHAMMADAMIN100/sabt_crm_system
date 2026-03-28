@@ -33,7 +33,7 @@ export class TasksController {
   }
 
   @Get('overdue')
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.ADMIN)
   getOverdue() { return this.service.getOverdueTasks(); }
 
   @Get('stats')

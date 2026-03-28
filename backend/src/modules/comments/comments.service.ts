@@ -2,14 +2,20 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Comment } from './comment.entity';
+import { Task } from '../tasks/task.entity';
+import { User } from '../users/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class CommentsService {
   constructor(
     @InjectRepository(Comment) private repo: Repository<Comment>,
+    @InjectRepository(Task) private taskRepo: Repository<Task>,
+    @InjectRepository(User) private userRepo: Repository<User>,
     private notificationsService: NotificationsService,
+    private mailService: MailService,
   ) {}
 
   findByTask(taskId: string) {
@@ -20,12 +26,18 @@ export class CommentsService {
     });
   }
 
-  async create(taskId: string, message: string, userId: string, task?: any) {
+  async create(taskId: string, message: string, userId: string) {
+    // Load task with assignee, project, and author info
+    const task = await this.taskRepo.findOne({
+      where: { id: taskId },
+      relations: ['assignee', 'project'],
+    });
+
     const comment = this.repo.create({ taskId, message, authorId: userId });
     const saved = await this.repo.save(comment);
 
-    // Notify task assignee if different
     if (task?.assigneeId && task.assigneeId !== userId) {
+      // In-app notification
       await this.notificationsService.create({
         userId: task.assigneeId,
         type: NotificationType.TASK_COMMENT,
@@ -33,6 +45,20 @@ export class CommentsService {
         message: `Новый комментарий к задаче "${task.title}"`,
         link: `/tasks/${taskId}`,
       });
+
+      // Email notification to task assignee
+      if (task.assignee?.email) {
+        const author = await this.userRepo.findOne({ where: { id: userId } });
+        await this.mailService.sendCommentNotification(
+          task.assignee.email,
+          task.assignee.name,
+          message,
+          task.title,
+          task.project?.name || '',
+          taskId,
+          author?.name || 'Сотрудник',
+        );
+      }
     }
 
     return this.repo.findOne({ where: { id: saved.id }, relations: ['author'] });

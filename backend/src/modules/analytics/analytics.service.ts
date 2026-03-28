@@ -7,6 +7,7 @@ import { User } from '../users/user.entity';
 import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
 import { Employee } from '../employees/employee.entity';
+import { WorkSession } from '../auth/work-session.entity';
 
 @Injectable()
 export class AnalyticsService {
@@ -17,6 +18,7 @@ export class AnalyticsService {
     @InjectRepository(TimeLog) private timeRepo: Repository<TimeLog>,
     @InjectRepository(DailyReport) private reportRepo: Repository<DailyReport>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
+    @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
   ) {}
 
   async getDashboardOverview() {
@@ -90,19 +92,20 @@ export class AnalyticsService {
   }
 
   async getEmployeeActivity(from?: string, to?: string) {
-    const qb = this.timeRepo
-      .createQueryBuilder('tl')
-      .leftJoin('tl.employee', 'emp')
-      .select('emp.name', 'name')
-      .addSelect('emp.id', 'id')
-      .addSelect('SUM(tl.timeSpent)', 'totalHours')
-      .addSelect('COUNT(DISTINCT tl.taskId)', 'taskCount')
-      .groupBy('emp.id, emp.name')
+    const qb = this.sessionRepo
+      .createQueryBuilder('ws')
+      .leftJoin('ws.user', 'u')
+      .leftJoin(Employee, 'emp', 'emp.userId = u.id')
+      .select('COALESCE(emp.fullName, u.name)', 'name')
+      .addSelect('u.id', 'id')
+      .addSelect('SUM(ws.durationHours)', 'totalHours')
+      .where('ws.logoutAt IS NOT NULL')
+      .groupBy('u.id, u.name, emp.fullName')
       .orderBy('"totalHours"', 'DESC')
       .limit(10);
 
-    if (from) qb.andWhere('tl.date >= :from', { from });
-    if (to) qb.andWhere('tl.date <= :to', { to });
+    if (from) qb.andWhere('ws.date >= :from', { from });
+    if (to) qb.andWhere('ws.date <= :to', { to });
 
     const data = await qb.getRawMany();
     return data.map(d => ({ ...d, totalHours: parseFloat(d.totalHours || '0') }));
@@ -113,7 +116,7 @@ export class AnalyticsService {
       .createQueryBuilder('tl')
       .select('tl.date::date', 'date')
       .addSelect('SUM(tl.timeSpent)', 'hours')
-      .where("tl.date >= NOW() - INTERVAL ':days days'", { days })
+      .where("tl.date >= NOW() - (:days || ' days')::interval", { days })
       .groupBy('tl.date::date')
       .orderBy('tl.date::date', 'ASC');
 
@@ -124,37 +127,51 @@ export class AnalyticsService {
   }
 
   async getProjectsPerformance() {
-    return this.projectRepo
-      .createQueryBuilder('p')
-      .leftJoin('p.tasks', 't')
-      .select('p.id', 'id')
-      .addSelect('p.name', 'name')
-      .addSelect('p.status', 'status')
-      .addSelect('p.progress', 'progress')
-      .addSelect('COUNT(t.id)', 'taskCount')
-      .addSelect("SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END)", 'doneTasks')
-      .where('p.isArchived = false')
-      .groupBy('p.id, p.name, p.status, p.progress')
-      .orderBy('p.createdAt', 'DESC')
-      .limit(10)
-      .getRawMany();
+    const projects = await this.projectRepo.find({
+      where: { isArchived: false },
+      relations: ['members', 'tasks'],
+      order: { createdAt: 'DESC' },
+      take: 10,
+    });
+
+    return projects.map(p => ({
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      progress: p.progress,
+      taskCount: p.tasks?.length || 0,
+      doneTasks: p.tasks?.filter(t => t.status === TaskStatus.DONE).length || 0,
+      members: p.members?.map(m => ({ id: m.id, name: m.name, avatar: m.avatar })) || [],
+    }));
   }
 
   async getEmployeeEfficiency() {
-    return this.userRepo
+    const data = await this.userRepo
       .createQueryBuilder('u')
+      .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
       .leftJoin('u.tasks', 't')
       .leftJoin('u.timeLogs', 'tl')
       .select('u.id', 'id')
       .addSelect('u.name', 'name')
+      .addSelect('e.fullName', 'fullName')
+      .addSelect('e.position', 'position')
       .addSelect('COUNT(DISTINCT t.id)', 'totalTasks')
       .addSelect("SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END)", 'doneTasks')
       .addSelect('SUM(tl.timeSpent)', 'totalHours')
       .where('u.isActive = true')
-      .groupBy('u.id, u.name')
+      .andWhere('u.role = :role', { role: 'employee' })
+      .groupBy('u.id, u.name, e.fullName, e.position')
       .orderBy('"doneTasks"', 'DESC')
-      .limit(10)
+      .limit(20)
       .getRawMany();
+
+    return data.map(d => ({
+      ...d,
+      name: d.fullName || d.name,
+      totalHours: parseFloat(d.totalHours || '0'),
+      doneTasks: parseInt(d.doneTasks || '0'),
+      totalTasks: parseInt(d.totalTasks || '0'),
+    }));
   }
 
   async getMonthlyReport(year: number, month: number) {

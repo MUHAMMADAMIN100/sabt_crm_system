@@ -6,6 +6,7 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { User, UserRole } from '../users/user.entity';
 import { Employee, EmployeeStatus } from '../employees/employee.entity';
+import { WorkSession } from './work-session.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -14,6 +15,7 @@ export class AuthService {
   constructor(
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
+    @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
     private jwtService: JwtService,
   ) {}
 
@@ -70,7 +72,27 @@ export class AuthService {
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: effectiveRole });
     const sanitized = this.sanitize(user);
+
+    // Start work session
+    const today = new Date().toISOString().split('T')[0];
+    const session = this.sessionRepo.create({ userId: user.id, loginAt: new Date(), date: today });
+    await this.sessionRepo.save(session);
+
     return { token, user: { ...sanitized, role: effectiveRole, isSubAdmin: employee?.isSubAdmin || false } };
+  }
+
+  async logout(userId: string) {
+    const session = await this.sessionRepo.findOne({
+      where: { userId, logoutAt: null as any },
+      order: { loginAt: 'DESC' },
+    });
+    if (session) {
+      session.logoutAt = new Date();
+      const ms = session.logoutAt.getTime() - new Date(session.loginAt).getTime();
+      session.durationHours = parseFloat((ms / 3600000).toFixed(2));
+      await this.sessionRepo.save(session);
+    }
+    return { message: 'Logged out' };
   }
 
   async validateUser(email: string, password: string): Promise<User | null> {
@@ -122,6 +144,18 @@ export class AuthService {
     user.resetPasswordExpires = null;
     await this.userRepo.save(user);
     return { message: 'Password updated' };
+  }
+
+  async getSessions(userId: string, days = 7) {
+    const from = new Date();
+    from.setDate(from.getDate() - days + 1);
+    from.setHours(0, 0, 0, 0);
+    const sessions = await this.sessionRepo.find({
+      where: { userId },
+      order: { loginAt: 'DESC' },
+      take: 30,
+    });
+    return sessions.filter(s => new Date(s.loginAt) >= from);
   }
 
   private sanitize(user: User) {

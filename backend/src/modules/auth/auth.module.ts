@@ -9,10 +9,11 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
+import { WorkSession } from './work-session.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Employee]),
+    TypeOrmModule.forFeature([User, Employee, WorkSession]),
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

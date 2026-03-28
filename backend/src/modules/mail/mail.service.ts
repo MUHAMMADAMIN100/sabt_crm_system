@@ -1,49 +1,224 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
+import * as https from 'https';
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private transporter: nodemailer.Transporter | null = null;
+  private readonly apiKey: string | null = null;
+  private readonly from: string;
+  private readonly appUrl: string;
 
   constructor() {
-    const user = process.env.MAIL_USER;
-    const pass = process.env.MAIL_PASS;
-    if (user && pass) {
-      this.transporter = nodemailer.createTransport({
-        host: process.env.MAIL_HOST || 'smtp.gmail.com',
-        port: Number(process.env.MAIL_PORT) || 587,
-        secure: false,
-        auth: { user, pass },
-      });
+    this.apiKey = process.env.BREVO_API_KEY || null;
+    this.from = process.env.MAIL_FROM || 'noreply@sabt-system.com';
+    this.appUrl = process.env.APP_URL || 'http://localhost:5173';
+
+    if (this.apiKey) {
+      this.logger.log(`Mail service ready (Brevo API). Sending from: ${this.from}`);
     } else {
-      this.logger.warn('Mail not configured (MAIL_USER/MAIL_PASS missing). Emails will be skipped.');
+      this.logger.warn('========================================');
+      this.logger.warn('MAIL NOT CONFIGURED! Set BREVO_API_KEY in .env');
+      this.logger.warn('========================================');
     }
   }
 
-  async sendProjectAssigned(to: string, recipientName: string, projectName: string, projectLink: string) {
-    if (!this.transporter) return;
-    try {
-      await this.transporter.sendMail({
-        from: process.env.MAIL_FROM || 'noreply@erp-system.com',
-        to,
-        subject: `Вы добавлены в проект: ${projectName}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #4f6ef7;">ERP System — Новый проект</h2>
-            <p>Здравствуйте, <strong>${recipientName}</strong>!</p>
-            <p>Вас добавили в проект <strong>"${projectName}"</strong>.</p>
-            <p>Для просмотра проекта перейдите по ссылке:</p>
-            <a href="http://localhost:5173${projectLink}"
-               style="display:inline-block;padding:10px 20px;background:#4f6ef7;color:#fff;border-radius:8px;text-decoration:none;">
-              Открыть проект
-            </a>
-            <p style="color:#999;font-size:12px;margin-top:20px;">ERP System — автоматическое уведомление</p>
-          </div>
-        `,
+  private async sendViaBrevo(to: string, toName: string, subject: string, html: string): Promise<void> {
+    if (!this.apiKey) return;
+
+    const payload = JSON.stringify({
+      sender: { name: 'Sabt System', email: this.from },
+      to: [{ email: to, name: toName }],
+      subject,
+      htmlContent: html,
+    });
+
+    return new Promise((resolve, reject) => {
+      const req = https.request(
+        {
+          hostname: 'api.brevo.com',
+          path: '/v3/smtp/email',
+          method: 'POST',
+          headers: {
+            'api-key': this.apiKey,
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload),
+          },
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (chunk) => (body += chunk));
+          res.on('end', () => {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              this.logger.log(`Email sent to ${to} [${res.statusCode}]`);
+              resolve();
+            } else {
+              this.logger.error(`Brevo API error ${res.statusCode}: ${body}`);
+              reject(new Error(`Brevo ${res.statusCode}: ${body}`));
+            }
+          });
+        },
+      );
+      req.on('error', (err) => {
+        this.logger.error(`Email request failed: ${err.message}`);
+        reject(err);
       });
+      req.write(payload);
+      req.end();
+    });
+  }
+
+  private header(title: string) {
+    return `
+      <div style="background:linear-gradient(135deg,#4f6ef7 0%,#7c3aed 100%);padding:32px 40px;text-align:center;">
+        <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;">
+          <span style="font-size:28px;">📋</span>
+        </div>
+        <h1 style="color:#fff;margin:0;font-size:22px;font-weight:700;">${title}</h1>
+        <p style="color:rgba(255,255,255,0.75);margin:6px 0 0;font-size:13px;">Sabt System — ERP уведомление</p>
+      </div>`;
+  }
+
+  private footer() {
+    return `
+      <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:20px 40px;text-align:center;">
+        <p style="color:#94a3b8;font-size:12px;margin:0;">
+          Это автоматическое уведомление от <strong>Sabt System</strong>. Не отвечайте на это письмо.
+        </p>
+      </div>`;
+  }
+
+  private row(label: string, value: string) {
+    return `
+      <tr>
+        <td style="padding:8px 0;color:#64748b;font-size:14px;width:140px;vertical-align:top;">${label}</td>
+        <td style="padding:8px 0;color:#1e293b;font-size:14px;font-weight:500;">${value}</td>
+      </tr>`;
+  }
+
+  async sendProjectAssigned(
+    to: string,
+    recipientName: string,
+    projectName: string,
+    projectLink: string,
+    description?: string,
+    deadline?: string,
+    managerName?: string,
+  ) {
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('Новый проект назначен')}
+        <div style="padding:32px 40px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 24px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Вас добавили в новый проект в системе Sabt System.
+          </p>
+          <div style="background:#f1f5f9;border-radius:10px;padding:20px 24px;margin-bottom:24px;">
+            <table style="width:100%;border-collapse:collapse;">
+              ${this.row('📌 Проект:', projectName)}
+              ${managerName ? this.row('👤 Менеджер:', managerName) : ''}
+              ${description ? this.row('📝 Описание:', description) : ''}
+              ${deadline ? this.row('📅 Дедлайн:', deadline) : ''}
+            </table>
+          </div>
+          <a href="${this.appUrl}${projectLink}"
+             style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
+            Открыть проект →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+
+    try {
+      await this.sendViaBrevo(to, recipientName, `📁 Вас добавили в проект: ${projectName}`, html);
     } catch (err) {
-      this.logger.error('Failed to send email:', err.message);
+      this.logger.error(`Failed to send project email to ${to}: ${err.message}`);
+    }
+  }
+
+  async sendTaskAssigned(
+    to: string,
+    recipientName: string,
+    taskTitle: string,
+    taskId: string,
+    projectName?: string,
+    deadline?: string,
+    priority?: string,
+    description?: string,
+  ) {
+    const priorityLabels: Record<string, string> = {
+      low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный',
+    };
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('Вам назначена задача')}
+        <div style="padding:32px 40px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 24px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Вам назначена новая задача в системе Sabt System.
+          </p>
+          <div style="background:#f1f5f9;border-radius:10px;padding:20px 24px;margin-bottom:24px;">
+            <table style="width:100%;border-collapse:collapse;">
+              ${this.row('✅ Задача:', taskTitle)}
+              ${projectName ? this.row('📁 Проект:', projectName) : ''}
+              ${priority ? this.row('🔥 Приоритет:', priorityLabels[priority] || priority) : ''}
+              ${deadline ? this.row('📅 Дедлайн:', deadline) : ''}
+              ${description ? this.row('📝 Описание:', description) : ''}
+            </table>
+          </div>
+          <a href="${this.appUrl}/tasks/${taskId}"
+             style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
+            Открыть задачу →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+
+    try {
+      await this.sendViaBrevo(to, recipientName, `✅ Новая задача: ${taskTitle}`, html);
+    } catch (err) {
+      this.logger.error(`Failed to send task email to ${to}: ${err.message}`);
+    }
+  }
+
+  async sendCommentNotification(
+    to: string,
+    recipientName: string,
+    commentText: string,
+    taskTitle: string,
+    projectName: string,
+    taskId: string,
+    authorName: string,
+  ) {
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('Новый комментарий к задаче')}
+        <div style="padding:32px 40px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 24px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            В вашей задаче появился новый комментарий.
+          </p>
+          <div style="background:#f1f5f9;border-radius:10px;padding:20px 24px;margin-bottom:20px;">
+            <table style="width:100%;border-collapse:collapse;">
+              ${this.row('📋 Задача:', taskTitle)}
+              ${projectName ? this.row('📁 Проект:', projectName) : ''}
+              ${this.row('👤 Автор:', authorName)}
+            </table>
+          </div>
+          <div style="border-left:3px solid #4f6ef7;padding:14px 18px;background:#eff6ff;border-radius:0 8px 8px 0;margin-bottom:24px;">
+            <p style="color:#1e40af;font-size:14px;margin:0;line-height:1.6;">${commentText}</p>
+          </div>
+          <a href="${this.appUrl}/tasks/${taskId}"
+             style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
+            Открыть задачу →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+
+    try {
+      await this.sendViaBrevo(to, recipientName, `💬 Новый комментарий: ${taskTitle}`, html);
+    } catch (err) {
+      this.logger.error(`Failed to send comment email to ${to}: ${err.message}`);
     }
   }
 }

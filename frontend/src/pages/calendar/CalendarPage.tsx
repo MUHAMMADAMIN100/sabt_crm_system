@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { calendarApi, projectsApi, tasksApi, employeesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Link } from 'react-router-dom'
 import { Modal } from '@/components/ui'
 import { useTranslation } from '@/i18n'
-import { useForm } from 'react-hook-form'
+import TaskForm from '@/components/tasks/TaskForm'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
@@ -13,7 +13,7 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
 const TYPE_COLORS: Record<string, string> = {
-  task: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  task: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400',
   project_start: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   project_end: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
@@ -109,80 +109,29 @@ export default function CalendarPage() {
       </div>
 
       <div className="flex gap-4">
-        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-blue-100 dark:bg-blue-900/30" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.task')}</span></div>
+        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-primary-100 dark:bg-primary-900/30" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.task')}</span></div>
         <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-green-100 dark:bg-green-900/30" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.projectStart')}</span></div>
         <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-red-100 dark:bg-red-900/30" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.projectEnd')}</span></div>
       </div>
 
-      {isManagerPlus && (
-        <CalendarTaskModal open={showTaskForm} onClose={() => setShowTaskForm(false)}
-          onSubmit={data => createTask.mutate(data)} projects={projects || []} employees={employees || []}
-          loading={createTask.isPending} selectedDate={selectedDay} t={t} />
+      {isManagerPlus && showTaskForm && (
+        <Modal
+          open={showTaskForm}
+          onClose={() => setShowTaskForm(false)}
+          title={`${t('calendar.addTask')}${selectedDay ? ' — ' + format(selectedDay, 'dd.MM.yyyy') : ''}`}
+          size="lg"
+        >
+          <TaskForm
+            onSubmit={data => createTask.mutate(data)}
+            onClose={() => setShowTaskForm(false)}
+            projects={projects || []} employees={employees || []}
+            loading={createTask.isPending}
+            initialDeadline={selectedDay ? format(selectedDay, 'yyyy-MM-dd') : undefined}
+            isAdmin={true}
+          />
+        </Modal>
       )}
     </div>
   )
 }
 
-function CalendarTaskModal({ open, onClose, onSubmit, projects, employees, loading, selectedDate, t }: any) {
-  const { register, handleSubmit, reset, formState: { errors } } = useForm()
-
-  useEffect(() => {
-    if (open && selectedDate) {
-      reset({ title: '', description: '', projectId: '', assigneeId: '', priority: 'medium', deadline: format(selectedDate, 'yyyy-MM-dd') })
-    }
-  }, [open, selectedDate, reset])
-
-  const submit = (data: any) => {
-    onSubmit({ title: data.title, description: data.description, projectId: data.projectId, assigneeId: data.assigneeId, priority: data.priority, deadline: data.deadline })
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title={`${t('calendar.addTask')}${selectedDate ? ' — ' + format(selectedDate, 'dd.MM.yyyy') : ''}`} size="lg">
-      <form onSubmit={handleSubmit(submit)} className="space-y-4">
-        <div>
-          <label className="label">{t('tasks.name')} *</label>
-          <input {...register('title', { required: true })} className="input" />
-          {errors.title && <p className="text-xs text-red-500 mt-1">{t('tasks.name')} обязательно</p>}
-        </div>
-        <div>
-          <label className="label">{t('tasks.description')} *</label>
-          <textarea {...register('description', { required: true })} className="input resize-none" rows={2} />
-          {errors.description && <p className="text-xs text-red-500 mt-1">{t('tasks.description')} обязательно</p>}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">{t('tasks.project')} *</label>
-            <select {...register('projectId', { required: true })} className="input">
-              <option value="">{t('common.selectOption')}</option>
-              {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            {errors.projectId && <p className="text-xs text-red-500 mt-1">{t('tasks.project')} обязательно</p>}
-          </div>
-          <div>
-            <label className="label">{t('tasks.assignee')} *</label>
-            <select {...register('assigneeId', { required: true })} className="input">
-              <option value="">{t('common.selectOption')}</option>
-              {employees.map((e: any) => <option key={e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>)}
-            </select>
-            {errors.assigneeId && <p className="text-xs text-red-500 mt-1">{t('tasks.assignee')} обязательно</p>}
-          </div>
-          <div>
-            <label className="label">{t('common.priority')} *</label>
-            <select {...register('priority', { required: true })} className="input">
-              {['low','medium','high','critical'].map(p => <option key={p} value={p}>{t(`priorities.${p}`)}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">{t('tasks.deadline')} *</label>
-            <input type="date" {...register('deadline', { required: true })} className="input" />
-            {errors.deadline && <p className="text-xs text-red-500 mt-1">{t('tasks.deadline')} обязательно</p>}
-          </div>
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button type="button" onClick={onClose} className="btn-secondary">{t('common.cancel')}</button>
-          <button type="submit" disabled={loading} className="btn-primary">{t('common.create')}</button>
-        </div>
-      </form>
-    </Modal>
-  )
-}

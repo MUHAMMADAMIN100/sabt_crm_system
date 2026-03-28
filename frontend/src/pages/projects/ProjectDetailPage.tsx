@@ -1,17 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, tasksApi, filesApi, employeesApi } from '@/services/api.service'
+import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, PriorityBadge, ProgressBar, Modal, Avatar, EmptyState, ConfirmDialog } from '@/components/ui'
 import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase } from 'lucide-react'
 import { format } from 'date-fns'
-import { useForm } from 'react-hook-form'
 import { useTranslation } from '@/i18n'
+import TaskForm from '@/components/tasks/TaskForm'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-const TASK_STATUSES = ['new', 'in_progress', 'review', 'done']
+const TASK_STATUSES = ['new', 'in_progress', 'review', 'done', 'cancelled']
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -23,7 +24,7 @@ export default function ProjectDetailPage() {
   const qc = useQueryClient()
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'manager'].includes(user?.role || '')
+  const isManagerPlus = user?.role === 'admin'
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
@@ -41,8 +42,7 @@ export default function ProjectDetailPage() {
   const createTask = useMutation({
     mutationFn: tasksApi.create,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['project', id] })
-      qc.invalidateQueries({ queryKey: ['tasks'] })
+      invalidateAfterTaskChange(qc, id)
       setShowTaskForm(false)
       setEditingTask(null)
       toast.success(t('tasks.created'))
@@ -52,8 +52,7 @@ export default function ProjectDetailPage() {
   const updateTask = useMutation({
     mutationFn: ({ taskId, data }: any) => tasksApi.update(taskId, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['project', id] })
-      qc.invalidateQueries({ queryKey: ['tasks'] })
+      invalidateAfterTaskChange(qc, id)
       setShowTaskForm(false)
       setEditingTask(null)
       toast.success(t('tasks.updated'))
@@ -63,8 +62,7 @@ export default function ProjectDetailPage() {
   const deleteTask = useMutation({
     mutationFn: tasksApi.remove,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['project', id] })
-      qc.invalidateQueries({ queryKey: ['tasks'] })
+      invalidateAfterTaskChange(qc, id)
       setDeleteTaskId(null)
       toast.success(t('tasks.deleted'))
     },
@@ -82,6 +80,9 @@ export default function ProjectDetailPage() {
 
   if (isLoading) return <PageLoader />
   if (!project) return <div className="text-surface-600 dark:text-surface-400">{t('projects.notFound')}</div>
+
+  const isMember = project.members?.some((m: any) => m.id === user?.id) ?? false
+  const canCreateTask = isManagerPlus || isMember
 
   const tasksByStatus = TASK_STATUSES.reduce((acc: any, s) => {
     acc[s] = project.tasks?.filter((t: any) => t.status === s) || []
@@ -141,9 +142,11 @@ export default function ProjectDetailPage() {
           </div>
           {project.description && <p className="text-surface-500 dark:text-surface-400 text-sm mt-1">{project.description}</p>}
         </div>
-        <button onClick={() => { setEditingTask(null); setShowTaskForm(true) }} className="btn-primary">
-          <Plus size={16} /> {t('tasks.task')}
-        </button>
+        {canCreateTask && (
+          <button onClick={() => { setEditingTask(null); setShowTaskForm(true) }} className="btn-primary">
+            <Plus size={16} /> {t('tasks.task')}
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -219,13 +222,6 @@ export default function ProjectDetailPage() {
                           </div>
                         )}
                       </div>
-                      {/* Employee: change own task status via select */}
-                      {!isManagerPlus && isOwnTask && (
-                        <select value={task.status} onChange={e => handleEmployeeStatusChange(task.id, task.assigneeId, e.target.value)}
-                          className="mt-2 text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-white dark:bg-surface-800 dark:text-surface-200 w-full">
-                          {TASK_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-                        </select>
-                      )}
                       {task.deadline && (
                         <p className={`text-xs mt-1 ${new Date(task.deadline) < new Date() ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>{format(new Date(task.deadline), 'dd.MM')}</p>
                       )}
@@ -311,7 +307,7 @@ export default function ProjectDetailPage() {
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <CheckSquare size={16} className="text-blue-500 mt-0.5 shrink-0" />
+                <CheckSquare size={16} className="text-primary-500 mt-0.5 shrink-0" />
                 <div>
                   <p className="text-xs text-surface-500 dark:text-surface-400">Статус</p>
                   <StatusBadge status={project.status} />
@@ -392,7 +388,7 @@ export default function ProjectDetailPage() {
                 )}
                 {project.clientInfo.email && (
                   <div className="flex items-center gap-3">
-                    <Mail size={16} className="text-blue-500 shrink-0" />
+                    <Mail size={16} className="text-primary-500 shrink-0" />
                     <div>
                       <p className="text-xs text-surface-500 dark:text-surface-400">Email</p>
                       <a href={`mailto:${project.clientInfo.email}`} className="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline">{project.clientInfo.email}</a>
@@ -438,20 +434,22 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* Task create/edit modal - FIX: separate open state from editing */}
       {showTaskForm && (
-        <TaskFormModal
-          open={showTaskForm}
-          onClose={() => { setShowTaskForm(false); setEditingTask(null) }}
-          onSubmit={data => {
-            if (editingTask) updateTask.mutate({ taskId: editingTask.id, data })
-            else createTask.mutate({ ...data, projectId: id })
-          }}
-          employees={employees || []}
-          loading={createTask.isPending || updateTask.isPending}
-          initial={editingTask}
-          t={t}
-        />
+        <Modal open={showTaskForm} onClose={() => { setShowTaskForm(false); setEditingTask(null) }} title={editingTask ? t('tasks.editTask') : t('tasks.newTask')}>
+          <TaskForm
+            onSubmit={data => {
+              if (editingTask) updateTask.mutate({ taskId: editingTask.id, data })
+              else createTask.mutate({ ...data, projectId: id })
+            }}
+            onClose={() => { setShowTaskForm(false); setEditingTask(null) }}
+            employees={employees || []}
+            loading={createTask.isPending || updateTask.isPending}
+            initial={editingTask}
+            fixedProjectId={id}
+            isAdmin={isManagerPlus}
+            currentUserId={user?.id}
+          />
+        </Modal>
       )}
 
       <ConfirmDialog open={!!deleteTaskId} onClose={() => setDeleteTaskId(null)}
@@ -460,72 +458,3 @@ export default function ProjectDetailPage() {
   )
 }
 
-function TaskFormModal({ open, onClose, onSubmit, employees, loading, initial, t }: any) {
-  const { register, handleSubmit, reset, formState: { errors } } = useForm()
-
-  useEffect(() => {
-    if (initial) {
-      reset({
-        title: initial.title || '',
-        description: initial.description || '',
-        assigneeId: initial.assigneeId || '',
-        priority: initial.priority || 'medium',
-        deadline: initial.deadline ? new Date(initial.deadline).toISOString().split('T')[0] : '',
-      })
-    } else {
-      reset({ title: '', description: '', assigneeId: '', priority: 'medium', deadline: '' })
-    }
-  }, [initial, reset])
-
-  const submit = (data: any) => {
-    onSubmit({
-      title: data.title,
-      description: data.description || undefined,
-      assigneeId: data.assigneeId,
-      priority: data.priority,
-      deadline: data.deadline,
-    })
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title={initial ? t('tasks.editTask') : t('tasks.newTask')}>
-      <form onSubmit={handleSubmit(submit)} className="space-y-4">
-        <div>
-          <label className="label">{t('tasks.name')} *</label>
-          <input {...register('title', { required: true })} className="input" />
-          {errors.title && <p className="text-xs text-red-500 mt-1">{t('tasks.name')} обязательно</p>}
-        </div>
-        <div>
-          <label className="label">{t('tasks.description')} *</label>
-          <textarea {...register('description', { required: true })} className="input resize-none" rows={3} />
-          {errors.description && <p className="text-xs text-red-500 mt-1">{t('tasks.description')} обязательно</p>}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">{t('tasks.assignee')} *</label>
-            <select {...register('assigneeId', { required: true })} className="input">
-              <option value="">{t('common.selectOption')}</option>
-              {employees?.map((e: any) => <option key={e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>)}
-            </select>
-            {errors.assigneeId && <p className="text-xs text-red-500 mt-1">{t('tasks.assignee')} обязательно</p>}
-          </div>
-          <div>
-            <label className="label">{t('common.priority')} *</label>
-            <select {...register('priority', { required: true })} className="input">
-              {['low','medium','high','critical'].map(p => <option key={p} value={p}>{t(`priorities.${p}`)}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">{t('tasks.deadline')} *</label>
-            <input type="date" {...register('deadline', { required: true })} className="input" />
-            {errors.deadline && <p className="text-xs text-red-500 mt-1">{t('tasks.deadline')} обязательно</p>}
-          </div>
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button type="button" onClick={onClose} className="btn-secondary">{t('common.cancel')}</button>
-          <button type="submit" disabled={loading} className="btn-primary">{initial ? t('common.save') : t('common.create')}</button>
-        </div>
-      </form>
-    </Modal>
-  )
-}

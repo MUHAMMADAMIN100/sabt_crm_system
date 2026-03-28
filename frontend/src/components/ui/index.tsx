@@ -1,5 +1,6 @@
-import { useEffect, ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { useEffect, useState, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
 
 // ── Modal ──────────────────────────────────────────────────────────
@@ -12,36 +13,82 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
+  const [mounted, setMounted] = useState(false)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true)
+      // double rAF: first frame renders the initial state (opacity-0/scale-95),
+      // second frame triggers the transition to visible state
+      const r1 = requestAnimationFrame(() => {
+        const r2 = requestAnimationFrame(() => setVisible(true))
+        return () => cancelAnimationFrame(r2)
+      })
+      return () => cancelAnimationFrame(r1)
+    } else {
+      setVisible(false)
+      const t = setTimeout(() => setMounted(false), 250)
+      return () => clearTimeout(t)
+    }
+  }, [open])
+
   useEffect(() => {
     if (open) document.body.style.overflow = 'hidden'
     else document.body.style.overflow = ''
     return () => { document.body.style.overflow = '' }
   }, [open])
 
-  if (!open) return null
+  if (!mounted) return null
 
   const sizes = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-4xl' }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className={clsx('relative bg-white dark:bg-surface-800 rounded-2xl shadow-modal w-full animate-fade-in', sizes[size])}>
+      {/* Backdrop */}
+      <div
+        className={clsx(
+          'absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-200',
+          visible ? 'opacity-100' : 'opacity-0',
+        )}
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div
+        className={clsx(
+          'relative bg-white dark:bg-surface-800 rounded-2xl shadow-modal w-full',
+          'transition-all duration-300 ease-out',
+          sizes[size],
+          visible
+            ? 'opacity-100 scale-100 translate-y-0'
+            : 'opacity-0 scale-95 translate-y-5',
+        )}
+        style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
+      >
         {title && (
           <div className="flex items-center justify-between p-5 border-b border-surface-100 dark:border-surface-700">
             <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">{title}</h2>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400">
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 transition-all duration-150 hover:rotate-90"
+            >
               <X size={18} />
             </button>
           </div>
         )}
         {!title && (
-          <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 z-10">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 z-10 transition-all duration-150 hover:rotate-90"
+
+          >
             <X size={18} />
           </button>
         )}
         <div className="p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -77,22 +124,90 @@ export function PriorityBadge({ priority }: { priority: string }) {
 
 // ── Spinner ─────────────────────────────────────────────────────────
 export function Spinner({ size = 20, className }: { size?: number; className?: string }) {
+  const r = (size / 2) - 3
+  const circ = 2 * Math.PI * r
   return (
     <svg
-      className={clsx('animate-spin text-primary-600', className)}
+      className={clsx('text-primary-600', className)}
       style={{ width: size, height: size }}
-      fill="none" viewBox="0 0 24 24"
+      viewBox={`0 0 ${size} ${size}`}
+      fill="none"
     >
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+      {/* Track */}
+      <circle
+        cx={size / 2} cy={size / 2} r={r}
+        stroke="currentColor" strokeWidth="3"
+        className="opacity-15"
+      />
+      {/* Arc */}
+      <circle
+        cx={size / 2} cy={size / 2} r={r}
+        stroke="currentColor" strokeWidth="3"
+        strokeLinecap="round"
+        strokeDasharray={circ}
+        strokeDashoffset={circ * 0.7}
+        className="animate-spin origin-center"
+        style={{ transformOrigin: `${size / 2}px ${size / 2}px` }}
+      />
     </svg>
   )
 }
 
+// ── PageLoader ───────────────────────────────────────────────────────
 export function PageLoader() {
   return (
-    <div className="flex items-center justify-center h-64">
-      <Spinner size={32} />
+    <div className="flex flex-col items-center justify-center h-64 gap-5">
+      {/* Branded icon */}
+      <div className="relative">
+        <div className="w-14 h-14 rounded-2xl bg-primary-600 flex items-center justify-center shadow-lg animate-pulse-soft">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" className="text-white">
+            <rect x="3" y="3" width="8" height="8" rx="2" fill="currentColor" opacity="0.9" />
+            <rect x="13" y="3" width="8" height="8" rx="2" fill="currentColor" opacity="0.6" />
+            <rect x="3" y="13" width="8" height="8" rx="2" fill="currentColor" opacity="0.6" />
+            <rect x="13" y="13" width="8" height="8" rx="2" fill="currentColor" opacity="0.3" />
+          </svg>
+        </div>
+        {/* Spinning ring */}
+        <svg className="absolute inset-0 w-14 h-14 animate-spin-slow" viewBox="0 0 56 56" fill="none">
+          <circle cx="28" cy="28" r="25" stroke="rgb(79,110,247)" strokeWidth="2.5"
+            strokeLinecap="round" strokeDasharray="30 130" className="opacity-40" />
+        </svg>
+      </div>
+      {/* Bouncing dots */}
+      <div className="flex gap-1.5 items-center">
+        {[0, 1, 2].map(i => (
+          <span
+            key={i}
+            className="w-2 h-2 rounded-full bg-primary-500 animate-bounce-dot"
+            style={{ animationDelay: `${i * 0.18}s` }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Skeleton ──────────────────────────────────────────────────────────
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={clsx('skeleton', className)} />
+}
+
+export function SkeletonCard() {
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-center gap-3">
+        <Skeleton className="w-10 h-10 rounded-xl" />
+        <div className="flex-1 space-y-2">
+          <Skeleton className="h-3.5 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
+        </div>
+      </div>
+      <Skeleton className="h-3 w-full" />
+      <Skeleton className="h-3 w-5/6" />
+      <div className="flex gap-2 pt-1">
+        <Skeleton className="h-6 w-16 rounded-full" />
+        <Skeleton className="h-6 w-20 rounded-full" />
+      </div>
     </div>
   )
 }
@@ -102,13 +217,13 @@ export function EmptyState({ title, description, action }: {
   title: string; description?: string; action?: ReactNode
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-surface-100 dark:bg-surface-700 flex items-center justify-center mb-4">
+    <div className="flex flex-col items-center justify-center py-16 text-center animate-fade-up">
+      <div className="w-16 h-16 rounded-2xl bg-surface-100 dark:bg-surface-700 flex items-center justify-center mb-4 animate-bounce-soft">
         <span className="text-2xl">📭</span>
       </div>
       <h3 className="font-semibold text-surface-900 dark:text-surface-100 mb-1">{title}</h3>
       {description && <p className="text-sm text-surface-500 dark:text-surface-400 mb-4 max-w-xs">{description}</p>}
-      {action}
+      {action && <div className="animate-fade-up delay-150">{action}</div>}
     </div>
   )
 }
@@ -146,7 +261,7 @@ export function FormField({ label, error, children, required }: {
         </label>
       )}
       {children}
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-red-500 animate-fade-in">{error}</p>}
     </div>
   )
 }
@@ -158,8 +273,9 @@ export function Avatar({ name, src, size = 32 }: { name?: string; src?: string; 
       <img
         src={src.startsWith('http') ? src : `/uploads/avatars/${src}`}
         alt={name}
+        title={name}
         style={{ width: size, height: size }}
-        className="rounded-full object-cover"
+        className="rounded-full object-cover cursor-default"
       />
     )
   }
@@ -168,8 +284,9 @@ export function Avatar({ name, src, size = 32 }: { name?: string; src?: string; 
     : '?'
   return (
     <div
+      title={name}
       style={{ width: size, height: size, fontSize: size * 0.38 }}
-      className="rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 flex items-center justify-center font-semibold shrink-0 select-none"
+      className="rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 flex items-center justify-center font-semibold shrink-0 select-none cursor-default"
     >
       {initials}
     </div>
@@ -194,31 +311,58 @@ export function Select({ value, onChange, options, placeholder, className }: {
   )
 }
 
-// ── Stat card ─────────────────────────────────────────────────────────
+// ── StatCard ─────────────────────────────────────────────────────────
 export function StatCard({ title, value, icon: Icon, color, sub }: {
   title: string; value: string | number; icon: any; color: string; sub?: string
 }) {
   return (
-    <div className="card flex items-center gap-4">
-      <div className={clsx('w-12 h-12 rounded-2xl flex items-center justify-center shrink-0', color)}>
+    <div className="card flex items-center gap-4 hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200">
+      <div className={clsx(
+        'w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-110',
+        color,
+      )}>
         <Icon size={22} className="text-white" />
       </div>
-      <div>
+      <div className="animate-count-up">
         <p className="text-sm text-surface-500 dark:text-surface-400">{title}</p>
-        <p className="text-2xl font-bold text-surface-900 dark:text-surface-100">{value}</p>
+        <p className="text-2xl font-bold text-surface-900 dark:text-surface-100 tabular-nums">{value}</p>
         {sub && <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5">{sub}</p>}
       </div>
     </div>
   )
 }
 
+// ── Pagination ────────────────────────────────────────────────────────
+export function Pagination({ page, total, pageSize, onChange }: {
+  page: number; total: number; pageSize: number; onChange: (p: number) => void
+}) {
+  const totalPages = Math.ceil(total / pageSize)
+  if (totalPages <= 1) return null
+  return (
+    <div className="flex items-center justify-center gap-2 pt-2">
+      <button
+        onClick={() => onChange(page - 1)} disabled={page <= 1}
+        className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      ><ChevronLeft size={16} /></button>
+      <span className="text-sm text-surface-600 dark:text-surface-300">
+        {page} / {totalPages}
+      </span>
+      <button
+        onClick={() => onChange(page + 1)} disabled={page >= totalPages}
+        className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      ><ChevronRight size={16} /></button>
+    </div>
+  )
+}
+
 // ── Progress bar ──────────────────────────────────────────────────────
 export function ProgressBar({ value, className }: { value: number; className?: string }) {
+  const clamped = Math.min(100, Math.max(0, value))
   return (
-    <div className={clsx('w-full bg-surface-100 dark:bg-surface-700 rounded-full h-2', className)}>
+    <div className={clsx('w-full bg-surface-100 dark:bg-surface-700 rounded-full h-2 overflow-hidden', className)}>
       <div
-        className="bg-primary-600 h-2 rounded-full transition-all duration-500"
-        style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
+        className="bg-primary-600 h-2 rounded-full transition-all duration-700 ease-out"
+        style={{ width: `${clamped}%` }}
       />
     </div>
   )

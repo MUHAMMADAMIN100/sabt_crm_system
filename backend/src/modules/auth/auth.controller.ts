@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Request, Patch } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Request, Patch, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -44,5 +44,19 @@ export class AuthController {
   @ApiBearerAuth()
   changePassword(@Request() req, @Body() body: { oldPassword: string; newPassword: string }) {
     return this.authService.changePassword(req.user.id, body.oldPassword, body.newPassword);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  logout(@Request() req) {
+    return this.authService.logout(req.user.id);
+  }
+
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  getSessions(@Request() req, @Query('days') days?: string) {
+    return this.authService.getSessions(req.user.id, days ? parseInt(days) : 7);
   }
 }

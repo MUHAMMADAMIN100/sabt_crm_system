@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Notification, NotificationType } from './notification.entity';
+import { AppGateway } from '../gateway/app.gateway';
 
 interface CreateNotificationDto {
   userId: string;
@@ -14,11 +15,17 @@ interface CreateNotificationDto {
 
 @Injectable()
 export class NotificationsService {
-  constructor(@InjectRepository(Notification) private repo: Repository<Notification>) {}
+  constructor(
+    @InjectRepository(Notification) private repo: Repository<Notification>,
+    private gateway: AppGateway,
+  ) {}
 
   async create(dto: CreateNotificationDto) {
     const notif = this.repo.create(dto);
-    return this.repo.save(notif);
+    const saved = await this.repo.save(notif);
+    // Push real-time notification to connected client
+    this.gateway.notifyUser(dto.userId, 'notification', saved);
+    return saved;
   }
 
   findByUser(userId: string, unreadOnly = false) {

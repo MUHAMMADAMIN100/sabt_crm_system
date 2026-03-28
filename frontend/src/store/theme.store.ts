@@ -15,7 +15,12 @@ export const useThemeStore = create<ThemeStore>()(
       theme: 'light',
       setTheme: (theme) => {
         set({ theme })
+        // Add transition class before switching, remove after
+        document.documentElement.classList.add('theme-switching')
         document.documentElement.classList.toggle('dark', theme === 'dark')
+        setTimeout(() => {
+          document.documentElement.classList.remove('theme-switching')
+        }, 350)
       },
       toggleTheme: () => {
         const newTheme = get().theme === 'light' ? 'dark' : 'light'

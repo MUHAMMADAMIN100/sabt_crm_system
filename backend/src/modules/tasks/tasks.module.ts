@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Task } from './task.entity';
+import { User } from '../users/user.entity';
 import { TasksService } from './tasks.service';
 import { TasksController } from './tasks.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -8,7 +9,7 @@ import { ProjectsModule } from '../projects/projects.module';
 import { DeadlineScheduler } from './deadline.scheduler';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Task]), NotificationsModule, ProjectsModule],
+  imports: [TypeOrmModule.forFeature([Task, User]), NotificationsModule, ProjectsModule],
   controllers: [TasksController],
   providers: [TasksService, DeadlineScheduler],
   exports: [TasksService],

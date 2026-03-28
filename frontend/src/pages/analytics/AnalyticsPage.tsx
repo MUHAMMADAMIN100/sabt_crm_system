@@ -1,29 +1,34 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { analyticsApi, tasksApi } from '@/services/api.service'
+import { analyticsApi, tasksApi, employeesApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatCard, ProgressBar, Avatar, StatusBadge, PriorityBadge } from '@/components/ui'
 import { FolderKanban, CheckSquare, Clock, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react'
+import StoryCalendar from '@/components/stories/StoryCalendar'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area, Legend,
 } from 'recharts'
 
-const COLORS = ['#4f6ef7', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4']
+const COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4']
 
 export default function AnalyticsPage() {
   const { t } = useTranslation()
   const [expandedEmp, setExpandedEmp] = useState<string | null>(null)
-  const { data: overview, isLoading } = useQuery({ queryKey: ['overview'], queryFn: analyticsApi.overview })
-  const { data: projByStatus } = useQuery({ queryKey: ['proj-status'], queryFn: analyticsApi.projectsByStatus })
-  const { data: taskByStatus } = useQuery({ queryKey: ['task-status'], queryFn: analyticsApi.tasksByStatus })
-  const { data: taskByPriority } = useQuery({ queryKey: ['task-priority'], queryFn: analyticsApi.tasksByPriority })
-  const { data: empActivity } = useQuery({ queryKey: ['emp-activity'], queryFn: () => analyticsApi.employeeActivity() })
-  const { data: hoursData } = useQuery({ queryKey: ['hours-30'], queryFn: () => analyticsApi.hoursPerDay({ days: 30 }) })
-  const { data: projPerf } = useQuery({ queryKey: ['proj-perf'], queryFn: analyticsApi.projectsPerformance })
-  const { data: empEff } = useQuery({ queryKey: ['emp-eff'], queryFn: analyticsApi.employeeEfficiency })
+
+  // Single combined request instead of 9 separate ones
+  const { data: dash, isLoading } = useQuery({ queryKey: ['analytics-dashboard'], queryFn: analyticsApi.dashboard })
   const { data: allTasks } = useQuery({ queryKey: ['tasks'], queryFn: () => tasksApi.list() })
-  const { data: employeesList } = useQuery({ queryKey: ['employees'], queryFn: () => import('@/services/api.service').then(m => m.employeesApi.list()) })
+  const { data: employeesList } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
+
+  const overview = dash?.overview
+  const projByStatus = dash?.projByStatus
+  const taskByStatus = dash?.taskByStatus
+  const taskByPriority = dash?.taskByPriority
+  const empActivity = dash?.empActivity
+  const hoursData = dash?.hoursPerDay
+  const projPerf = dash?.projPerf
+  const empEff = dash?.empEff
 
   if (isLoading) return <PageLoader />
 
@@ -99,15 +104,15 @@ export default function AnalyticsPage() {
               <AreaChart data={hoursData}>
                 <defs>
                   <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#4f6ef7" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#4f6ef7" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#6B4FCF" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#6B4FCF" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
                 <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d?.slice(5)} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v: any) => [`${Number(v).toFixed(1)}${t('dashboard.hours')}`]} />
-                <Area type="monotone" dataKey="hours" stroke="#4f6ef7" fill="url(#grad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="hours" stroke="#6B4FCF" fill="url(#grad)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -122,7 +127,7 @@ export default function AnalyticsPage() {
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v: any) => [`${Number(v).toFixed(1)}ч`, t('dashboard.hours')]} />
-                <Bar dataKey="totalHours" fill="#4f6ef7" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="totalHours" fill="#6B4FCF" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -161,7 +166,25 @@ export default function AnalyticsPage() {
               <tbody>
                 {projPerf.map((p: any) => (
                   <tr key={p.id} className="border-b border-surface-50 dark:border-surface-700">
-                    <td className="py-2 px-3 font-medium text-surface-900 dark:text-surface-100">{p.name}</td>
+                    <td className="py-2 px-3">
+                      <div className="flex items-center gap-2">
+                        {p.members?.length > 0 && (
+                          <div className="flex -space-x-1.5 shrink-0">
+                            {p.members.slice(0, 4).map((m: any) => (
+                              <div key={m.id} title={m.name} className="shrink-0">
+                                <Avatar name={m.name} src={m.avatar} size={24} />
+                              </div>
+                            ))}
+                            {p.members.length > 4 && (
+                              <div className="w-6 h-6 rounded-full bg-surface-200 dark:bg-surface-600 flex items-center justify-center text-[10px] font-semibold text-surface-600 dark:text-surface-300 border border-white dark:border-surface-800 shrink-0">
+                                +{p.members.length - 4}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <span className="font-medium text-surface-900 dark:text-surface-100">{p.name}</span>
+                      </div>
+                    </td>
                     <td className="py-2 px-3"><span className={`badge status-${p.status}`}>{getLabel(p.status)}</span></td>
                     <td className="py-2 px-3 text-right text-surface-700 dark:text-surface-300">{p.taskCount}</td>
                     <td className="py-2 px-3 text-right text-green-600 dark:text-green-400">{p.doneTasks}</td>
@@ -173,6 +196,11 @@ export default function AnalyticsPage() {
           </div>
         </div>
       )}
+
+      <div className="card">
+        <h3 className="section-title mb-4">📸 Истории по проектам</h3>
+        <StoryCalendar adminAll />
+      </div>
 
       {empEff?.length > 0 && (
         <div className="card">

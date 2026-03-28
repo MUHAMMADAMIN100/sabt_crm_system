@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usersApi } from '@/services/api.service'
 import { PageLoader, EmptyState, Avatar, ConfirmDialog } from '@/components/ui'
-import { Trash2, ToggleLeft, ToggleRight, Search } from 'lucide-react'
+import { Trash2, ToggleLeft, ToggleRight, Search, ShieldOff } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -11,16 +11,27 @@ export default function UsersPage() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [showCleanupConfirm, setShowCleanupConfirm] = useState(false)
 
   const { data: users, isLoading } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.list() })
 
   const toggleMut = useMutation({
     mutationFn: usersApi.toggleActive,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('Обновлено') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['employees'] }); toast.success('Обновлено') },
   })
   const deleteMut = useMutation({
     mutationFn: usersApi.remove,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('Удалён') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['employees'] }); toast.success('Удалён') },
+  })
+  const cleanupMut = useMutation({
+    mutationFn: usersApi.cleanupOrphans,
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ['users'] })
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['emp-eff'] })
+      setShowCleanupConfirm(false)
+      toast.success(res.count > 0 ? `Удалено призраков: ${res.count}` : 'Призраков не найдено')
+    },
   })
 
   if (isLoading) return <PageLoader />
@@ -29,11 +40,20 @@ export default function UsersPage() {
     !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
   ) || []
 
-  const ROLE_LABELS: Record<string, string> = { admin: 'Администратор', manager: 'Менеджер', employee: 'Сотрудник', client: 'Клиент' }
+  const ROLE_LABELS: Record<string, string> = { admin: 'Администратор', employee: 'Сотрудник' }
 
   return (
     <div className="space-y-5">
-      <h1 className="page-title">Пользователи</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="page-title">Пользователи</h1>
+        <button
+          onClick={() => setShowCleanupConfirm(true)}
+          className="btn-secondary text-xs flex items-center gap-1.5 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+          title="Удалить пользователей без профиля сотрудника"
+        >
+          <ShieldOff size={14} /> Очистить призраков
+        </button>
+      </div>
       <div className="relative max-w-sm">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск..." className="input pl-9" />
@@ -89,6 +109,14 @@ export default function UsersPage() {
       </div>
       <ConfirmDialog open={!!deleteId} onClose={() => setDeleteId(null)}
         onConfirm={() => deleteMut.mutate(deleteId!)} title="Удалить пользователя?" message="Это действие нельзя отменить." danger
+      />
+      <ConfirmDialog
+        open={showCleanupConfirm}
+        onClose={() => setShowCleanupConfirm(false)}
+        onConfirm={() => cleanupMut.mutate()}
+        title="Очистить призраков?"
+        message="Будут удалены все пользователи-сотрудники без профиля сотрудника. Это устранит фантомные записи в аналитике."
+        danger
       />
     </div>
   )

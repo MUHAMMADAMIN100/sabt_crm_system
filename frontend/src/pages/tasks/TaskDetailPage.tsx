@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tasksApi, commentsApi, timeTrackerApi, filesApi } from '@/services/api.service'
+import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, Avatar } from '@/components/ui'
@@ -48,12 +49,16 @@ export default function TaskDetailPage() {
 
   const updateTask = useMutation({
     mutationFn: (data: any) => tasksApi.update(id!, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['task', id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task', id] })
+      invalidateAfterTaskChange(qc)
+    },
   })
 
   const addComment = useMutation({
     mutationFn: () => commentsApi.create(id!, comment),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['task', id] }); setComment('') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось добавить комментарий'),
   })
 
   const deleteComment = useMutation({

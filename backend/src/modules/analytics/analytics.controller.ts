@@ -8,10 +8,25 @@ import { UserRole } from '../users/user.entity';
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN, UserRole.MANAGER)
+@Roles(UserRole.ADMIN)
 @Controller('analytics')
 export class AnalyticsController {
   constructor(private service: AnalyticsService) {}
+
+  @Get('dashboard')
+  async getDashboard() {
+    const [overview, projByStatus, taskByStatus, taskByPriority, empActivity, hoursPerDay, projPerf, empEff] = await Promise.all([
+      this.service.getDashboardOverview(),
+      this.service.getProjectsByStatus(),
+      this.service.getTasksByStatus(),
+      this.service.getTasksByPriority(),
+      this.service.getEmployeeActivity(),
+      this.service.getHoursPerDay(undefined, 30),
+      this.service.getProjectsPerformance(),
+      this.service.getEmployeeEfficiency(),
+    ]);
+    return { overview, projByStatus, taskByStatus, taskByPriority, empActivity, hoursPerDay, projPerf, empEff };
+  }
 
   @Get('overview')
   getOverview() { return this.service.getDashboardOverview(); }

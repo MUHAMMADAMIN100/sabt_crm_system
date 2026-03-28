@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { projectsApi, employeesApi, filesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar } from '@/components/ui'
-import { Plus, Search, FolderKanban, Archive, Trash2, Edit, Users } from 'lucide-react'
+import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar, Pagination } from '@/components/ui'
+import { Plus, Search, FolderKanban, Archive, Trash2, Edit, Users, ChevronDown, X, Check } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
@@ -38,11 +38,13 @@ const SMM_QUESTIONS = [
 export default function ProjectsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 12
   const [showCreate, setShowCreate] = useState(false)
   const [editProject, setEditProject] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'manager'].includes(user?.role || '')
+  const isManagerPlus = user?.role === 'admin'
   const qc = useQueryClient()
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -62,6 +64,8 @@ export default function ProjectsPage() {
     return matchesSearch && matchesStatus
   }) || []
 
+  const pagedProjects = projects.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
   const STATUSES = [
     { value: '', label: t('statuses.all') },
     { value: 'planning', label: t('statuses.planning') },
@@ -77,7 +81,7 @@ export default function ProjectsPage() {
         const content = `SMM-АНКЕТА\nПроект: ${project.name}\nДата: ${new Date().toLocaleDateString('ru-RU')}\n${'─'.repeat(40)}\n\n${lines}`
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
         const file = new File([blob], `SMM_Анкета_${project.name}.txt`, { type: 'text/plain' })
-        await filesApi.upload(file, project.id).catch(() => {})
+        await filesApi.upload(file, project.id).catch(() => toast.error('Не удалось сохранить SMM-анкету как файл'))
       }
       return project
     },
@@ -144,7 +148,7 @@ export default function ProjectsPage() {
         } />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {projects.map((p: any) => (
+          {pagedProjects.map((p: any) => (
             <div
               key={p.id}
               onClick={() => navigate(`/projects/${p.id}`)}
@@ -153,14 +157,14 @@ export default function ProjectsPage() {
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: p.color || '#eff2ff' }}>
-                    <FolderKanban size={18} style={{ color: p.color ? '#fff' : '#4f6ef7' }} />
+                    <FolderKanban size={18} style={{ color: p.color ? '#fff' : '#6B4FCF' }} />
                   </div>
                   <div>
                     <span className="font-semibold text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{p.name}</span>
                     <div className="flex items-center gap-1 mt-0.5">
                       <StatusBadge status={p.status} />
                       {p.projectType && (
-                        <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded-full">{p.projectType}</span>
+                        <span className="text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-1.5 py-0.5 rounded-full">{p.projectType}</span>
                       )}
                     </div>
                   </div>
@@ -213,6 +217,8 @@ export default function ProjectsPage() {
         </div>
       )}
 
+      <Pagination page={page} total={projects.length} pageSize={PAGE_SIZE} onChange={setPage} />
+
       {/* Create/Edit Modal */}
       <ProjectForm
         open={showCreate || !!editProject}
@@ -243,7 +249,27 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: a
   const { t } = useTranslation()
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([])
+  const [memberDropOpen, setMemberDropOpen] = useState(false)
+  const [memberSearch, setMemberSearch] = useState('')
+  const dropRef = useRef<HTMLDivElement>(null)
   const projectType = watch('projectType')
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropRef.current && !dropRef.current.contains(e.target as Node)) {
+        setMemberDropOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const toggleMember = (userId: string) => {
+    setSelectedMembers(prev =>
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    )
+  }
 
   useEffect(() => {
     if (open) {
@@ -254,20 +280,23 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: a
           startDate: initial.startDate ? new Date(initial.startDate).toISOString().split('T')[0] : '',
           endDate: initial.endDate ? new Date(initial.endDate).toISOString().split('T')[0] : '',
           status: initial.status || 'planning',
-          managerId: initial.managerId || '',
-          color: initial.color || '#4f6ef7',
+          color: initial.color || '#6B4FCF',
           budget: initial.budget || '',
           projectType: initial.projectType || '',
         })
         if (initial.smmData) setSmmAnswers(initial.smmData)
+        setSelectedMembers(initial.members?.map((m: any) => m.id) || [])
       } else {
         reset({
           name: '', description: '', startDate: '', endDate: '',
-          status: 'planning', managerId: '', color: '#4f6ef7', budget: '', projectType: '',
+          status: 'planning', color: '#6B4FCF', budget: '', projectType: '',
         })
         setSmmAnswers({})
         setShowSmmForm(false)
+        setSelectedMembers([])
       }
+      setMemberDropOpen(false)
+      setMemberSearch('')
     }
   }, [open, initial, reset])
 
@@ -277,16 +306,24 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: a
   }, [projectType])
 
   const submit = (data: any) => {
+    if (data.startDate && data.endDate && data.endDate <= data.startDate) {
+      toast.error('Дата окончания должна быть позже даты начала')
+      return
+    }
+    if (data.budget !== '' && data.budget !== undefined && Number(data.budget) < 0) {
+      toast.error('Бюджет не может быть отрицательным')
+      return
+    }
     const formattedData: any = {
       name: data.name,
       description: data.description || undefined,
       startDate: data.startDate || undefined,
       endDate: data.endDate || undefined,
       status: data.status,
-      managerId: data.managerId || undefined,
       color: data.color,
       budget: data.budget ? Number(data.budget) : undefined,
       projectType: data.projectType || undefined,
+      memberIds: selectedMembers,
     }
     if (data.projectType === 'SMM' && Object.keys(smmAnswers).length > 0) {
       formattedData.smmData = smmAnswers
@@ -342,13 +379,110 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: a
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{t(`statuses.${s}`)}</option>)}
             </select>
           </div>
-          <div>
-            <label className="label">{t('projects.manager')} *</label>
-            <select {...register('managerId', { required: true })} className="input">
-              <option value="">{t('common.selectOption')}</option>
-              {employees.map((e: any) => <option key={e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>)}
-            </select>
-            {errors.managerId && <p className="text-xs text-red-500 mt-1">Выберите менеджера</p>}
+
+          {/* Участники проекта */}
+          <div className="col-span-2" ref={dropRef}>
+            <label className="label">Участники проекта</label>
+
+            {/* Trigger */}
+            <div
+              onClick={() => setMemberDropOpen(v => !v)}
+              className="input flex items-center justify-between cursor-pointer select-none min-h-[42px] flex-wrap gap-1.5"
+            >
+              {selectedMembers.length === 0 ? (
+                <span className="text-surface-400 text-sm">Выбрать участников...</span>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 flex-1">
+                  {selectedMembers.map(uid => {
+                    const emp = employees.find((e: any) => (e.userId || e.id) === uid)
+                    if (!emp) return null
+                    return (
+                      <span
+                        key={uid}
+                        className="flex items-center gap-1 bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs px-2 py-0.5 rounded-full"
+                      >
+                        {emp.fullName || emp.name}
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); toggleMember(uid) }}
+                          className="hover:text-primary-900 dark:hover:text-primary-100"
+                        >
+                          <X size={10} />
+                        </button>
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+              <ChevronDown size={15} className={clsx('text-surface-400 shrink-0 transition-transform', memberDropOpen && 'rotate-180')} />
+            </div>
+
+            {/* Dropdown */}
+            {memberDropOpen && (
+              <div className="relative z-50">
+                <div className="absolute top-1 left-0 right-0 bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-600 rounded-xl shadow-lg overflow-hidden">
+                  <div className="p-2 border-b border-surface-100 dark:border-surface-700">
+                    <div className="relative">
+                      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-surface-400" />
+                      <input
+                        autoFocus
+                        value={memberSearch}
+                        onChange={e => setMemberSearch(e.target.value)}
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Поиск..."
+                        className="input py-1.5 pl-8 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-44 overflow-y-auto">
+                    {employees
+                      .filter((e: any) => {
+                        const name = (e.fullName || e.name || '').toLowerCase()
+                        return !memberSearch || name.includes(memberSearch.toLowerCase())
+                      })
+                      .map((e: any) => {
+                        const uid = e.userId || e.id
+                        const selected = selectedMembers.includes(uid)
+                        return (
+                          <div
+                            key={e.id}
+                            onClick={() => toggleMember(uid)}
+                            className={clsx(
+                              'flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors',
+                              selected
+                                ? 'bg-primary-50 dark:bg-primary-900/20'
+                                : 'hover:bg-surface-50 dark:hover:bg-surface-700'
+                            )}
+                          >
+                            <div className={clsx(
+                              'w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
+                              selected
+                                ? 'bg-primary-600 border-primary-600'
+                                : 'border-surface-300 dark:border-surface-500'
+                            )}>
+                              {selected && <Check size={10} className="text-white" strokeWidth={3} />}
+                            </div>
+                            <Avatar name={e.fullName || e.name} src={e.avatar} size={28} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-surface-800 dark:text-surface-200 truncate">{e.fullName || e.name}</p>
+                              {e.position && <p className="text-xs text-surface-400 truncate">{e.position}</p>}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    {employees.length === 0 && (
+                      <p className="text-xs text-surface-400 text-center py-4">Нет сотрудников</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {selectedMembers.length > 0 && (
+              <p className="text-xs text-primary-600 dark:text-primary-400 mt-1.5">
+                Выбрано: {selectedMembers.length} — им придёт email уведомление
+              </p>
+            )}
           </div>
           <div>
             <label className="label">{t('projects.color')} *</label>
@@ -356,17 +490,17 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: a
           </div>
           <div>
             <label className="label">{t('projects.budget')}</label>
-            <input type="number" {...register('budget')} className="input" placeholder="0" />
+            <input type="number" {...register('budget', { min: 0 })} className="input" placeholder="0" min={0} />
           </div>
         </div>
 
         {/* SMM Questionnaire */}
         {showSmmForm && (
-          <div className="border border-blue-200 dark:border-blue-800 rounded-xl p-4 bg-blue-50 dark:bg-blue-900/10 space-y-4">
+          <div className="border border-primary-300 dark:border-primary-700 rounded-xl p-4 bg-primary-50 dark:bg-primary-900/10 space-y-4">
             <div className="flex items-center gap-2">
               <span className="text-lg">📋</span>
-              <h3 className="font-semibold text-blue-800 dark:text-blue-300 text-sm">Анкета SMM-проекта</h3>
-              <span className="text-xs text-blue-600 dark:text-blue-400">Заполните для лучшего понимания проекта</span>
+              <h3 className="font-semibold text-primary-700 dark:text-primary-300 text-sm">Анкета SMM-проекта</h3>
+              <span className="text-xs text-primary-600 dark:text-primary-400">Заполните для лучшего понимания проекта</span>
             </div>
             <div className="space-y-3">
               {SMM_QUESTIONS.map(q => (

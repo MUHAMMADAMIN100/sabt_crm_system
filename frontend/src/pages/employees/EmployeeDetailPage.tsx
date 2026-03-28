@@ -43,10 +43,10 @@ export default function EmployeeDetailPage() {
             {emp.phone && <InfoRow icon={<Phone size={14} />} label={t('employees.phone')} value={emp.phone} />}
             {emp.telegram && (
               <div className="flex items-center gap-3 p-2.5 bg-surface-50 dark:bg-surface-700/50 rounded-xl">
-                <Send size={14} className="text-blue-500 shrink-0" />
+                <Send size={14} className="text-primary-500 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-surface-400 dark:text-surface-500">Telegram</p>
-                  <a href={`https://t.me/${emp.telegram.replace('@','')}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline">{emp.telegram}</a>
+                  <a href={`https://t.me/${emp.telegram.replace('@','')}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline">{emp.telegram}</a>
                 </div>
               </div>
             )}

@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Delete, Param, Body, Query, UseGuards, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
@@ -17,7 +17,7 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.ADMIN)
   findAll(@Query('role') role?: UserRole) {
     return this.usersService.findAll(role);
   }
@@ -43,6 +43,12 @@ export class UsersController {
   @Roles(UserRole.ADMIN)
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);
+  }
+
+  @Post('cleanup-orphans')
+  @Roles(UserRole.ADMIN)
+  cleanupOrphanedUsers() {
+    return this.usersService.cleanupOrphanedUsers();
   }
 
   @Patch('me/avatar')

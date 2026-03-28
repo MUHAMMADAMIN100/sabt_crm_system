@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { storiesApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import { Avatar } from '@/components/ui'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
@@ -10,17 +11,19 @@ import clsx from 'clsx'
 interface StoryCalendarProps {
   employeeId?: string
   compact?: boolean
+  adminAll?: boolean
 }
 
 const MAX_STORIES = 3
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-export default function StoryCalendar({ employeeId, compact }: StoryCalendarProps) {
+export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCalendarProps) {
   const [current, setCurrent] = useState(new Date())
   const [selectedProject, setSelectedProject] = useState<any>(null)
+  const [animMap, setAnimMap] = useState<Record<string, 'pop' | 'unpop'>>({})
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
-  const isReadonly = !!employeeId
+  const isReadonly = !!employeeId || !!adminAll
 
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')
@@ -28,7 +31,7 @@ export default function StoryCalendar({ employeeId, compact }: StoryCalendarProp
 
   const { data: stories } = useQuery({
     queryKey: ['stories', userId, from, to],
-    queryFn: () => isReadonly ? storiesApi.all(from, to) : storiesApi.my(from, to),
+    queryFn: () => (isReadonly || adminAll) ? storiesApi.all(from, to) : storiesApi.my(from, to),
   })
 
   const { data: projects } = useQuery({
@@ -41,17 +44,22 @@ export default function StoryCalendar({ employeeId, compact }: StoryCalendarProp
     onSuccess: () => qc.invalidateQueries({ queryKey: ['stories'] }),
   })
 
-  const activeProjects = useMemo(
-    () => projects?.filter((p: any) => !p.isArchived && p.status !== 'completed') || [],
-    [projects]
-  )
+  const activeProjects = useMemo(() => {
+    const base = projects?.filter((p: any) => !p.isArchived && p.status !== 'completed') || []
+    // Admin all view or readonly (employee detail) sees all projects
+    if (adminAll || isReadonly) return base
+    if (user?.role === 'admin') return base
+    return base.filter((p: any) => p.members?.some((m: any) => m.id === user?.id))
+  }, [projects, user, isReadonly, adminAll])
 
   // Build story map: projectId -> dateKey -> count
   const storyMap = useMemo(() => {
     const map: Record<string, Record<string, number>> = {}
-    const src = isReadonly
-      ? stories?.filter((s: any) => s.employeeId === employeeId || s.userId === employeeId) || []
-      : stories || []
+    const src = (adminAll)
+      ? stories || []
+      : isReadonly
+        ? stories?.filter((s: any) => s.employeeId === employeeId || s.userId === employeeId) || []
+        : stories || []
     src.forEach((s: any) => {
       const dateKey = typeof s.date === 'string' ? s.date.split('T')[0] : format(new Date(s.date), 'yyyy-MM-dd')
       if (!map[s.projectId]) map[s.projectId] = {}
@@ -83,10 +91,28 @@ export default function StoryCalendar({ employeeId, compact }: StoryCalendarProp
     return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
   }
 
+  const triggerAnim = useCallback((key: string, type: 'pop' | 'unpop') => {
+    setAnimMap(prev => ({ ...prev, [key]: type }))
+    setTimeout(() => setAnimMap(prev => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    }), 400)
+  }, [])
+
   const handleCheck = (projectId: string, dateStr: string, checkboxIndex: number, currentCount: number) => {
     if (isReadonly) return
-    // clicking checkbox i: if i > currentCount → set to i, if i <= currentCount → set to i-1
     const newCount = checkboxIndex > currentCount ? checkboxIndex : checkboxIndex - 1
+    const isActivating = newCount >= checkboxIndex
+    // animate all affected checkboxes
+    for (let i = 1; i <= 3; i++) {
+      const key = `${dateStr}-${i}`
+      const wasActive = i <= currentCount
+      const willBeActive = i <= Math.max(0, newCount)
+      if (wasActive !== willBeActive) {
+        triggerAnim(key, willBeActive ? 'pop' : 'unpop')
+      }
+    }
     upsertStory.mutate({ projectId, date: dateStr, storiesCount: Math.max(0, newCount) })
   }
 
@@ -132,7 +158,23 @@ export default function StoryCalendar({ employeeId, compact }: StoryCalendarProp
                   onClick={() => setSelectedProject(project)}
                   className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors text-left"
                 >
-                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: project.color || '#4f6ef7' }} />
+                  {/* Member avatars */}
+                  {project.members?.length > 0 ? (
+                    <div className="flex -space-x-2 shrink-0">
+                      {project.members.slice(0, 3).map((m: any) => (
+                        <div key={m.id} title={m.name} className="ring-2 ring-white dark:ring-surface-800 rounded-full shrink-0 cursor-default">
+                          <Avatar name={m.name} src={m.avatar} size={24} />
+                        </div>
+                      ))}
+                      {project.members.length > 3 && (
+                        <div className="w-6 h-6 rounded-full bg-surface-200 dark:bg-surface-600 ring-2 ring-white dark:ring-surface-800 flex items-center justify-center text-[9px] font-semibold text-surface-600 dark:text-surface-300 shrink-0">
+                          +{project.members.length - 3}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: project.color || '#6B4FCF' }} />
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{project.name}</p>
                     <p className="text-xs text-surface-400 dark:text-surface-500">{daysWithStories} дней • {total} историй</p>
@@ -169,7 +211,7 @@ export default function StoryCalendar({ employeeId, compact }: StoryCalendarProp
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: selectedProject.color || '#4f6ef7' }} />
+            <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: selectedProject.color || '#6B4FCF' }} />
             <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate">{selectedProject.name}</h3>
           </div>
         </div>
@@ -216,19 +258,26 @@ export default function StoryCalendar({ employeeId, compact }: StoryCalendarProp
                 {format(day, 'd')}
               </span>
               <div className="flex gap-0.5">
-                {[1, 2, 3].map(i => (
-                  <button
-                    key={i}
-                    disabled={isReadonly || future}
-                    onClick={() => !future && handleCheck(selectedProject.id, dateKey, i, count)}
-                    className={clsx(
-                      'w-3 h-3 rounded-sm transition-all',
-                      i <= count ? getCheckboxColor(i, count) : 'bg-surface-200 dark:bg-surface-600',
-                      !isReadonly && !future && 'hover:scale-110 cursor-pointer',
-                      (isReadonly || future) && 'cursor-default',
-                    )}
-                  />
-                ))}
+                {[1, 2, 3].map(i => {
+                  const animKey = `${dateKey}-${i}`
+                  const animType = animMap[animKey]
+                  return (
+                    <button
+                      key={i}
+                      disabled={isReadonly || future}
+                      onClick={() => !future && handleCheck(selectedProject.id, dateKey, i, count)}
+                      className={clsx(
+                        'w-3 h-3 rounded-sm transition-colors duration-200',
+                        i <= count ? getCheckboxColor(i, count) : 'bg-surface-200 dark:bg-surface-600',
+                        i <= count && 'shadow-sm',
+                        !isReadonly && !future && 'hover:scale-125 cursor-pointer',
+                        (isReadonly || future) && 'cursor-default',
+                        animType === 'pop'   && 'story-checkbox-pop',
+                        animType === 'unpop' && 'story-checkbox-unpop',
+                      )}
+                    />
+                  )
+                })}
               </div>
             </div>
           )

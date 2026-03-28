@@ -18,7 +18,7 @@ export class DailyReport {
   @Column()
   employeeId: string;
 
-  @ManyToOne(() => Project, { nullable: true, eager: true })
+  @ManyToOne(() => Project, { nullable: true, eager: true, onDelete: 'SET NULL' })
   @JoinColumn()
   project: Project;
 

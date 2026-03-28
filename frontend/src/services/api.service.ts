@@ -4,6 +4,7 @@ import api from '@/lib/api'
 export const authApi = {
   me: () => api.get('/auth/me').then(r => r.data),
   changePassword: (data: any) => api.patch('/auth/change-password', data).then(r => r.data),
+  sessions: (days = 7) => api.get('/auth/sessions', { params: { days } }).then(r => r.data),
 }
 
 // ─── Users ───────────────────────────────────────────────
@@ -13,6 +14,7 @@ export const usersApi = {
   update: (id: string, data: any) => api.patch(`/users/${id}`, data).then(r => r.data),
   toggleActive: (id: string) => api.patch(`/users/${id}/toggle-active`).then(r => r.data),
   remove: (id: string) => api.delete(`/users/${id}`).then(r => r.data),
+  cleanupOrphans: () => api.post('/users/cleanup-orphans').then(r => r.data),
 }
 
 // ─── Employees ───────────────────────────────────────────
@@ -93,6 +95,7 @@ export const reportsApi = {
 
 // ─── Analytics ───────────────────────────────────────────
 export const analyticsApi = {
+  dashboard: () => api.get('/analytics/dashboard').then(r => r.data),
   overview: () => api.get('/analytics/overview').then(r => r.data),
   projectsByStatus: () => api.get('/analytics/projects-by-status').then(r => r.data),
   tasksByStatus: () => api.get('/analytics/tasks-by-status').then(r => r.data),

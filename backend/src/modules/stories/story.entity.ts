@@ -23,7 +23,7 @@ export class StoryLog {
   @JoinColumn({ name: 'employeeId' })
   employee: User;
 
-  @ManyToOne(() => Project, { eager: true })
+  @ManyToOne(() => Project, { eager: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'projectId' })
   project: Project;
 

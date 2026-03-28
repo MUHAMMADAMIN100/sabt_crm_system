@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { employeesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog } from '@/components/ui'
+import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
 import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
@@ -13,9 +13,10 @@ import clsx from 'clsx'
 
 export default function EmployeesPage() {
   const [search, setSearch] = useState('')
-  const [department, setDepartment] = useState('')
   const [position, setPosition] = useState('')
   const [view, setView] = useState<'cards' | 'table'>('cards')
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 12
   const [showCreate, setShowCreate] = useState(false)
   const [editEmp, setEditEmp] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -26,16 +27,15 @@ export default function EmployeesPage() {
   const navigate = useNavigate()
 
   const { data: allEmployees, isLoading } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
-  const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: employeesApi.departments })
-
   const allPositions = [...new Set(allEmployees?.map((e: any) => e.position).filter(Boolean) || [])] as string[]
 
   const employees = allEmployees?.filter((emp: any) => {
     const matchesSearch = !search || emp.fullName?.toLowerCase().includes(search.toLowerCase()) || emp.email?.toLowerCase().includes(search.toLowerCase()) || emp.position?.toLowerCase().includes(search.toLowerCase())
-    const matchesDepartment = !department || emp.department === department
     const matchesPosition = !position || emp.position === position
-    return matchesSearch && matchesDepartment && matchesPosition
+    return matchesSearch && matchesPosition
   }) || []
+
+  const pagedEmployees = employees.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const getTelegramUrl = (tg: string) => {
     const clean = tg.replace(/https?:\/\/(www\.)?t\.me\//g, '').replace(/^@/, '')
@@ -69,10 +69,6 @@ export default function EmployeesPage() {
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('employees.searchPlaceholder')} className="input pl-9" />
         </div>
-        <select value={department} onChange={e => setDepartment(e.target.value)} className="input w-44">
-          <option value="">{t('employees.allDepartments')}</option>
-          {departments?.map((d: any) => <option key={d.department} value={d.department}>{d.department}</option>)}
-        </select>
         <select value={position} onChange={e => setPosition(e.target.value)} className="input w-44">
           <option value="">Все должности</option>
           {allPositions.map(p => <option key={p} value={p}>{p}</option>)}
@@ -81,7 +77,7 @@ export default function EmployeesPage() {
 
       {!employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'cards' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {employees.map((emp: any) => (
+          {pagedEmployees.map((emp: any) => (
             <div key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className="card group cursor-pointer hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
@@ -109,7 +105,7 @@ export default function EmployeesPage() {
                 <div className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400"><Mail size={11} /><span>{emp.email}</span></div>
                 {emp.phone && <div className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400"><Phone size={11} /><span>{emp.phone}</span></div>}
                 {emp.telegram && (
-                  <a href={getTelegramUrl(emp.telegram)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-blue-500 hover:underline"><Send size={11} /><span>{emp.telegram}</span></a>
+                  <a href={getTelegramUrl(emp.telegram)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-primary-500 hover:underline"><Send size={11} /><span>{emp.telegram}</span></a>
                 )}
                 {emp.instagram && (
                   <a href={`https://instagram.com/${emp.instagram.replace('@','')}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-pink-500 hover:underline"><AtSignIcon /><span>{emp.instagram}</span></a>
@@ -136,7 +132,7 @@ export default function EmployeesPage() {
               </tr>
             </thead>
             <tbody>
-              {employees.map((emp: any) => (
+              {pagedEmployees.map((emp: any) => (
                 <tr key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className="border-b border-surface-50 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/50 cursor-pointer">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -150,7 +146,7 @@ export default function EmployeesPage() {
                   <td className="px-4 py-3 hidden md:table-cell text-sm text-surface-600 dark:text-surface-300">{emp.position}</td>
                   <td className="px-4 py-3 hidden lg:table-cell text-sm text-surface-500 dark:text-surface-400">{emp.department}</td>
                   <td className="px-4 py-3 hidden lg:table-cell">
-                    {emp.telegram && <a href={getTelegramUrl(emp.telegram)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="text-xs text-blue-500 hover:underline">{emp.telegram}</a>}
+                    {emp.telegram && <a href={getTelegramUrl(emp.telegram)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="text-xs text-primary-500 hover:underline">{emp.telegram}</a>}
                   </td>
                   <td className="px-4 py-3"><span className={clsx('badge', emp.status==='active' ? 'status-done' : 'status-cancelled')}>{emp.status==='active' ? t('common.active') : t('common.inactive')}</span></td>
                   {isAdmin && (
@@ -170,6 +166,8 @@ export default function EmployeesPage() {
           </table>
         </div>
       )}
+
+      <Pagination page={page} total={employees.length} pageSize={PAGE_SIZE} onChange={setPage} />
 
       <EmployeeForm open={showCreate || !!editEmp} initial={editEmp}
         onClose={() => { setShowCreate(false); setEditEmp(null) }}

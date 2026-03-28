@@ -13,7 +13,7 @@ export class ReportsController {
   constructor(private service: ReportsService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.ADMIN)
   findAll(
     @Query('employeeId') employeeId?: string,
     @Query('projectId') projectId?: string,

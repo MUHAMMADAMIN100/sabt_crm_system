@@ -7,14 +7,17 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { ProjectsService } from '../projects/projects.service';
-import { UserRole } from '../users/user.entity';
+import { UserRole, User } from '../users/user.entity';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class TasksService {
   constructor(
     @InjectRepository(Task) private repo: Repository<Task>,
+    @InjectRepository(User) private userRepo: Repository<User>,
     private notificationsService: NotificationsService,
     private projectsService: ProjectsService,
+    private mailService: MailService,
   ) {}
 
   findAll(filters: {
@@ -61,6 +64,22 @@ export class TasksService {
         message: `Вам назначена задача: "${saved.title}"`,
         link: `/tasks/${saved.id}`,
       });
+
+      // Email notification
+      const assignee = await this.userRepo.findOne({ where: { id: dto.assigneeId } });
+      if (assignee?.email) {
+        const full = await this.findOne(saved.id);
+        await this.mailService.sendTaskAssigned(
+          assignee.email,
+          assignee.name,
+          saved.title,
+          saved.id,
+          full.project?.name,
+          saved.deadline ? new Date(saved.deadline).toLocaleDateString('ru-RU') : undefined,
+          saved.priority,
+          saved.description || undefined,
+        );
+      }
     }
 
     await this.projectsService.updateProgress(dto.projectId);
@@ -100,6 +119,22 @@ export class TasksService {
         message: `Задача "${task.title}" теперь назначена вам`,
         link: `/tasks/${id}`,
       });
+
+      // Email notification
+      const assignee = await this.userRepo.findOne({ where: { id: dto.assigneeId } });
+      if (assignee?.email) {
+        const full = await this.findOne(id);
+        await this.mailService.sendTaskAssigned(
+          assignee.email,
+          assignee.name,
+          task.title,
+          id,
+          full.project?.name,
+          task.deadline ? new Date(task.deadline).toLocaleDateString('ru-RU') : undefined,
+          dto.priority || task.priority,
+          task.description || undefined,
+        );
+      }
     }
 
     await this.projectsService.updateProgress(task.projectId);
