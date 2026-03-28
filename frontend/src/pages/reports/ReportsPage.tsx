@@ -40,12 +40,14 @@ export default function ReportsPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="page-title">{t('reports.title')}</h1>
-        <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} /> {t('reports.newReport')}</button>
+        {!isManagerPlus && (
+          <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} /> {t('reports.newReport')}</button>
+        )}
       </div>
 
       {!reports?.length ? (
         <EmptyState title={t('reports.noReports')} description={t('reports.noReportsDesc')} action={
-          <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
+          !isManagerPlus && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
         } />
       ) : (
         <div className="space-y-3">
@@ -55,12 +57,22 @@ export default function ReportsPage() {
                 <FileText size={18} className="text-primary-600 dark:text-primary-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  {isManagerPlus && r.employee && <Avatar name={r.employee.name} size={22} />}
-                  {isManagerPlus && <span className="font-medium text-sm text-surface-900 dark:text-surface-100">{r.employee?.name}</span>}
-                  <span className="text-sm text-surface-500 dark:text-surface-400">{format(new Date(r.date), 'dd.MM.yyyy')}</span>
-                  {r.project && <span className="text-xs bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-2 py-0.5 rounded-full">{r.project.name}</span>}
-                </div>
+                {isManagerPlus && r.employee && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <Avatar name={r.employee.name} size={28} />
+                    <div>
+                      <p className="font-semibold text-sm text-surface-900 dark:text-surface-100">{r.employee.name}</p>
+                      {r.project && <p className="text-xs font-medium text-primary-600 dark:text-primary-400">{r.project.name}</p>}
+                    </div>
+                    <span className="ml-auto text-xs text-surface-400 dark:text-surface-500 shrink-0">{format(new Date(r.date), 'dd.MM.yyyy')}</span>
+                  </div>
+                )}
+                {!isManagerPlus && (
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm text-surface-500 dark:text-surface-400">{format(new Date(r.date), 'dd.MM.yyyy')}</span>
+                    {r.project && <span className="text-xs bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-2 py-0.5 rounded-full">{r.project.name}</span>}
+                  </div>
+                )}
                 <p className="text-sm text-surface-700 dark:text-surface-300">{r.description}</p>
                 <div className="flex items-center gap-3 mt-2 text-xs text-surface-400 dark:text-surface-500">
                   {r.task && <span>{t('reports.taskLabel')}: {r.task.title}</span>}
@@ -68,7 +80,7 @@ export default function ReportsPage() {
                 </div>
                 {r.comments && <p className="text-xs text-surface-500 dark:text-surface-400 mt-1 italic">{r.comments}</p>}
               </div>
-              {(user?.id === r.employeeId || user?.role === 'admin') && (
+              {user?.role === 'admin' && (
                 <button onClick={() => deleteMut.mutate(r.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400 shrink-0">
                   <Trash2 size={14} />
                 </button>

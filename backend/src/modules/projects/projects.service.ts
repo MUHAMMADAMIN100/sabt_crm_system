@@ -4,15 +4,18 @@ import { Repository, ILike } from 'typeorm';
 import { Project, ProjectStatus } from './project.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
-import { UserRole } from '../users/user.entity';
+import { UserRole, User } from '../users/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class ProjectsService {
   constructor(
     @InjectRepository(Project) private repo: Repository<Project>,
+    @InjectRepository(User) private userRepo: Repository<User>,
     private notificationsService: NotificationsService,
+    private mailService: MailService,
   ) {}
 
   findAll(search?: string, status?: ProjectStatus, managerId?: string, archived = false) {
@@ -46,7 +49,7 @@ export class ProjectsService {
     });
     const saved = await this.repo.save(project);
 
-    // Notify members
+    // Notify members (in-app + email)
     if (dto.memberIds?.length) {
       for (const memberId of dto.memberIds) {
         await this.notificationsService.create({
@@ -56,6 +59,16 @@ export class ProjectsService {
           message: `Вас добавили в проект "${saved.name}"`,
           link: `/projects/${saved.id}`,
         });
+        // Send email notification
+        const member = await this.userRepo.findOne({ where: { id: memberId } });
+        if (member?.email) {
+          await this.mailService.sendProjectAssigned(
+            member.email,
+            member.name,
+            saved.name,
+            `/projects/${saved.id}`,
+          );
+        }
       }
     }
     return saved;

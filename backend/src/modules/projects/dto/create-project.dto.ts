@@ -13,6 +13,9 @@ export class CreateProjectDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() color?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() budget?: number;
   @ApiProperty({ required: false, type: [String] }) @IsOptional() @IsArray() memberIds?: string[];
+  @ApiProperty({ required: false }) @IsOptional() @IsString() projectType?: string;
+  @ApiProperty({ required: false }) @IsOptional() smmData?: Record<string, any>;
+  @ApiProperty({ required: false }) @IsOptional() clientInfo?: Record<string, any>;
 }
 
 export class UpdateProjectDto extends PartialType(CreateProjectDto) {}

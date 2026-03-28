@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { projectsApi, employeesApi } from '@/services/api.service'
+import { projectsApi, employeesApi, filesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar } from '@/components/ui'
@@ -10,6 +10,30 @@ import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+
+const SMM_QUESTIONS = [
+  { key: 'companyName', label: 'Название компании', type: 'text' },
+  { key: 'contactPerson', label: 'Контактное лицо', type: 'text' },
+  { key: 'contactPhone', label: 'Телефон', type: 'text' },
+  { key: 'services', label: 'Какие услуги вы предоставляете?', type: 'textarea' },
+  { key: 'uniqueness', label: 'Чем вы отличаетесь от других конкурентов?', type: 'textarea' },
+  { key: 'philosophy', label: 'Опишите ваш стиль работы/философию', type: 'textarea' },
+  { key: 'socialProjects', label: 'Какие проекты вы хотите показывать в соцсетях?', type: 'textarea' },
+  { key: 'smmGoals', label: 'Какие цели вы хотите достичь с помощью SMM?', type: 'textarea' },
+  { key: 'socialNetworks', label: 'Какие соцсети нужно вести?', type: 'text' },
+  { key: 'contentType', label: 'Какой тип контента вам нужен?', type: 'text' },
+  { key: 'visualStyle', label: 'Какой стиль визуала вам нравится?', type: 'text' },
+  { key: 'accountExamples', label: 'Примеры аккаунтов, которые вам нравятся', type: 'text' },
+  { key: 'targetAudience', label: 'Кто ваша целевая аудитория?', type: 'textarea' },
+  { key: 'competitors', label: 'Кто ваши конкуренты?', type: 'text' },
+  { key: 'materialsFrequency', label: 'Как часто вы готовы предоставлять материалы?', type: 'text' },
+  { key: 'forbiddenTopics', label: 'Какие темы точно НЕЛЬЗЯ публиковать?', type: 'textarea' },
+  { key: 'priorityServices', label: 'Какие услуги вы хотите продвигать в первую очередь?', type: 'textarea' },
+  { key: 'geography', label: 'География продвижения', type: 'text' },
+  { key: 'promotionBudget', label: 'Бюджет на продвижение', type: 'text' },
+  { key: 'hasMediaContent', label: 'Есть ли у вас фото/видео ваших проектов?', type: 'radio', options: ['Да', 'Нет', 'Другое'] },
+  { key: 'wantsAds', label: 'Хотите запускать рекламу?', type: 'radio', options: ['Да', 'Нет', 'Другое'] },
+]
 
 export default function ProjectsPage() {
   const [search, setSearch] = useState('')
@@ -31,7 +55,7 @@ export default function ProjectsPage() {
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
 
   const projects = allProjects?.filter((p: any) => {
-    const matchesSearch = !search || 
+    const matchesSearch = !search ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.description?.toLowerCase().includes(search.toLowerCase())
     const matchesStatus = !status || p.status === status
@@ -46,8 +70,22 @@ export default function ProjectsPage() {
   ]
 
   const createMut = useMutation({
-    mutationFn: projectsApi.create,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); setShowCreate(false); toast.success(t('projects.created')) },
+    mutationFn: async (data: any) => {
+      const project = await projectsApi.create(data)
+      if (data.projectType === 'SMM' && data.smmData && Object.keys(data.smmData).length > 0) {
+        const lines = SMM_QUESTIONS.map(q => `${q.label}:\n${data.smmData[q.key] || '—'}`).join('\n\n')
+        const content = `SMM-АНКЕТА\nПроект: ${project.name}\nДата: ${new Date().toLocaleDateString('ru-RU')}\n${'─'.repeat(40)}\n\n${lines}`
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+        const file = new File([blob], `SMM_Анкета_${project.name}.txt`, { type: 'text/plain' })
+        await filesApi.upload(file, project.id).catch(() => {})
+      }
+      return project
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      setShowCreate(false)
+      toast.success(t('projects.created'))
+    },
     onError: () => toast.error(t('common.error')),
   })
 
@@ -99,7 +137,7 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      {/* Projects grid - fully clickable cards */}
+      {/* Projects grid */}
       {!projects?.length ? (
         <EmptyState title={t('projects.noProjects')} description={t('projects.createFirst')} action={
           isManagerPlus && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
@@ -119,7 +157,12 @@ export default function ProjectsPage() {
                   </div>
                   <div>
                     <span className="font-semibold text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{p.name}</span>
-                    <div className="mt-0.5"><StatusBadge status={p.status} /></div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <StatusBadge status={p.status} />
+                      {p.projectType && (
+                        <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded-full">{p.projectType}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {isManagerPlus && (
@@ -196,30 +239,45 @@ export default function ProjectsPage() {
 }
 
 function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: any) {
-  const { register, handleSubmit, reset, formState: { errors } } = useForm({
-    defaultValues: initial || {},
-  })
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm()
   const { t } = useTranslation()
+  const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
+  const [showSmmForm, setShowSmmForm] = useState(false)
+  const projectType = watch('projectType')
 
   useEffect(() => {
-    if (initial) {
-      reset({
-        ...initial,
-        startDate: initial.startDate ? new Date(initial.startDate).toISOString().split('T')[0] : '',
-        endDate: initial.endDate ? new Date(initial.endDate).toISOString().split('T')[0] : '',
-        managerId: initial.managerId || '',
-        budget: initial.budget || '',
-      })
-    } else {
-      reset({
-        name: '', description: '', startDate: '', endDate: '',
-        status: 'planning', managerId: '', color: '#4f6ef7', budget: '',
-      })
+    if (open) {
+      if (initial) {
+        reset({
+          name: initial.name || '',
+          description: initial.description || '',
+          startDate: initial.startDate ? new Date(initial.startDate).toISOString().split('T')[0] : '',
+          endDate: initial.endDate ? new Date(initial.endDate).toISOString().split('T')[0] : '',
+          status: initial.status || 'planning',
+          managerId: initial.managerId || '',
+          color: initial.color || '#4f6ef7',
+          budget: initial.budget || '',
+          projectType: initial.projectType || '',
+        })
+        if (initial.smmData) setSmmAnswers(initial.smmData)
+      } else {
+        reset({
+          name: '', description: '', startDate: '', endDate: '',
+          status: 'planning', managerId: '', color: '#4f6ef7', budget: '', projectType: '',
+        })
+        setSmmAnswers({})
+        setShowSmmForm(false)
+      }
     }
-  }, [initial, reset])
+  }, [open, initial, reset])
+
+  useEffect(() => {
+    if (projectType === 'SMM') setShowSmmForm(true)
+    else setShowSmmForm(false)
+  }, [projectType])
 
   const submit = (data: any) => {
-    const formattedData = {
+    const formattedData: any = {
       name: data.name,
       description: data.description || undefined,
       startDate: data.startDate || undefined,
@@ -228,35 +286,55 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: a
       managerId: data.managerId || undefined,
       color: data.color,
       budget: data.budget ? Number(data.budget) : undefined,
+      projectType: data.projectType || undefined,
+    }
+    if (data.projectType === 'SMM' && Object.keys(smmAnswers).length > 0) {
+      formattedData.smmData = smmAnswers
+      // Client info from SMM answers
+      formattedData.clientInfo = {
+        name: smmAnswers.companyName || '',
+        contactPerson: smmAnswers.contactPerson || '',
+        phone: smmAnswers.contactPhone || '',
+      }
     }
     onSubmit(formattedData)
   }
 
   const STATUS_OPTIONS = ['planning', 'in_progress', 'completed', 'on_hold']
+  const PROJECT_TYPES = ['Web сайт', 'Дизайн', 'SMM']
 
   return (
-    <Modal open={open} onClose={onClose} title={initial ? t('common.edit') + ' ' + t('projects.title').toLowerCase() : t('projects.newProject')} size="lg">
-      <form onSubmit={handleSubmit(submit)} className="space-y-4">
+    <Modal open={open} onClose={onClose} title={initial ? t('common.edit') + ' ' + t('projects.title').toLowerCase() : t('projects.newProject')} size="xl">
+      <form onSubmit={handleSubmit(submit)} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
         <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2">
             <label className="label">{t('projects.name')} *</label>
             <input {...register('name', { required: true })} className="input" placeholder={t('projects.name')} />
-            {errors.name && <p className="text-xs text-red-500 mt-1">{t('projects.name')} обязательно</p>}
+            {errors.name && <p className="text-xs text-red-500 mt-1">Обязательное поле</p>}
           </div>
           <div className="col-span-2">
             <label className="label">{t('projects.description')} *</label>
-            <textarea {...register('description', { required: true })} className="input resize-none" rows={3} placeholder={t('projects.description') + '...'} />
-            {errors.description && <p className="text-xs text-red-500 mt-1">{t('projects.description')} обязательно</p>}
+            <textarea {...register('description', { required: true })} className="input resize-none" rows={3} />
+            {errors.description && <p className="text-xs text-red-500 mt-1">Обязательное поле</p>}
           </div>
+
+          {/* Project type */}
+          <div className="col-span-2">
+            <label className="label">Тип проекта *</label>
+            <select {...register('projectType', { required: true })} className="input">
+              <option value="">— Выбрать тип —</option>
+              {PROJECT_TYPES.map(pt => <option key={pt} value={pt}>{pt}</option>)}
+            </select>
+            {errors.projectType && <p className="text-xs text-red-500 mt-1">Выберите тип проекта</p>}
+          </div>
+
           <div>
             <label className="label">{t('projects.startDate')} *</label>
             <input type="date" {...register('startDate', { required: true })} className="input" />
-            {errors.startDate && <p className="text-xs text-red-500 mt-1">{t('projects.startDate')} обязательно</p>}
           </div>
           <div>
             <label className="label">{t('projects.endDate')} *</label>
             <input type="date" {...register('endDate', { required: true })} className="input" />
-            {errors.endDate && <p className="text-xs text-red-500 mt-1">{t('projects.endDate')} обязательно</p>}
           </div>
           <div>
             <label className="label">{t('common.status')} *</label>
@@ -270,18 +348,69 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: a
               <option value="">{t('common.selectOption')}</option>
               {employees.map((e: any) => <option key={e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>)}
             </select>
-            {errors.managerId && <p className="text-xs text-red-500 mt-1">{t('projects.manager')} обязательно</p>}
+            {errors.managerId && <p className="text-xs text-red-500 mt-1">Выберите менеджера</p>}
           </div>
           <div>
             <label className="label">{t('projects.color')} *</label>
-            <input type="color" {...register('color', { required: true })} className="input h-10 p-1 cursor-pointer" />
+            <input type="color" {...register('color')} className="input h-10 p-1 cursor-pointer" />
           </div>
           <div>
-            <label className="label">{t('projects.budget')} *</label>
-            <input type="number" {...register('budget', { required: true })} className="input" placeholder="0" />
-            {errors.budget && <p className="text-xs text-red-500 mt-1">{t('projects.budget')} обязательно</p>}
+            <label className="label">{t('projects.budget')}</label>
+            <input type="number" {...register('budget')} className="input" placeholder="0" />
           </div>
         </div>
+
+        {/* SMM Questionnaire */}
+        {showSmmForm && (
+          <div className="border border-blue-200 dark:border-blue-800 rounded-xl p-4 bg-blue-50 dark:bg-blue-900/10 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📋</span>
+              <h3 className="font-semibold text-blue-800 dark:text-blue-300 text-sm">Анкета SMM-проекта</h3>
+              <span className="text-xs text-blue-600 dark:text-blue-400">Заполните для лучшего понимания проекта</span>
+            </div>
+            <div className="space-y-3">
+              {SMM_QUESTIONS.map(q => (
+                <div key={q.key}>
+                  <label className="text-xs font-medium text-surface-700 dark:text-surface-300 block mb-1">{q.label}</label>
+                  {q.type === 'textarea' ? (
+                    <textarea
+                      value={smmAnswers[q.key] || ''}
+                      onChange={e => setSmmAnswers(prev => ({ ...prev, [q.key]: e.target.value }))}
+                      className="input resize-none text-sm"
+                      rows={2}
+                      placeholder="Введите ответ..."
+                    />
+                  ) : q.type === 'radio' ? (
+                    <div className="flex gap-4">
+                      {q.options?.map(opt => (
+                        <label key={opt} className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={q.key}
+                            value={opt}
+                            checked={smmAnswers[q.key] === opt}
+                            onChange={() => setSmmAnswers(prev => ({ ...prev, [q.key]: opt }))}
+                            className="w-3.5 h-3.5 text-primary-600"
+                          />
+                          <span className="text-xs text-surface-700 dark:text-surface-300">{opt}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={smmAnswers[q.key] || ''}
+                      onChange={e => setSmmAnswers(prev => ({ ...prev, [q.key]: e.target.value }))}
+                      className="input text-sm"
+                      placeholder="Введите ответ..."
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-2 justify-end pt-2">
           <button type="button" onClick={onClose} className="btn-secondary">{t('common.cancel')}</button>
           <button type="submit" disabled={loading} className="btn-primary">

@@ -163,12 +163,15 @@ export function Avatar({ name, src, size = 32 }: { name?: string; src?: string; 
       />
     )
   }
+  const initials = name
+    ? name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('')
+    : '?'
   return (
     <div
-      style={{ width: size, height: size, fontSize: size * 0.4 }}
-      className="rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 flex items-center justify-center font-semibold shrink-0"
+      style={{ width: size, height: size, fontSize: size * 0.38 }}
+      className="rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 flex items-center justify-center font-semibold shrink-0 select-none"
     >
-      {name?.[0]?.toUpperCase() || '?'}
+      {initials}
     </div>
   )
 }

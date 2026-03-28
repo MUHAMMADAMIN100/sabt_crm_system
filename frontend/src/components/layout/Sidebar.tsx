@@ -21,7 +21,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/calendar', icon: Calendar, label: t('nav.calendar') },
     { to: '/reports', icon: FileText, label: t('nav.reports') },
     { to: '/analytics', icon: BarChart3, label: t('nav.analytics'), roles: ['admin', 'manager'] },
-    { to: '/files', icon: HardDrive, label: t('nav.files') },
+    { to: '/files', icon: HardDrive, label: t('nav.files'), roles: ['employee', 'manager', 'client'] },
     { to: '/archive', icon: Archive, label: t('nav.archive') },
     { to: '/notifications', icon: Bell, label: t('nav.notifications') },
     { to: '/employees', icon: Users, label: t('nav.employees'), roles: ['admin', 'manager'] },

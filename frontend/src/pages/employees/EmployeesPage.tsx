@@ -14,6 +14,7 @@ import clsx from 'clsx'
 export default function EmployeesPage() {
   const [search, setSearch] = useState('')
   const [department, setDepartment] = useState('')
+  const [position, setPosition] = useState('')
   const [view, setView] = useState<'cards' | 'table'>('cards')
   const [showCreate, setShowCreate] = useState(false)
   const [editEmp, setEditEmp] = useState<any>(null)
@@ -27,11 +28,19 @@ export default function EmployeesPage() {
   const { data: allEmployees, isLoading } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
   const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: employeesApi.departments })
 
+  const allPositions = [...new Set(allEmployees?.map((e: any) => e.position).filter(Boolean) || [])] as string[]
+
   const employees = allEmployees?.filter((emp: any) => {
     const matchesSearch = !search || emp.fullName?.toLowerCase().includes(search.toLowerCase()) || emp.email?.toLowerCase().includes(search.toLowerCase()) || emp.position?.toLowerCase().includes(search.toLowerCase())
     const matchesDepartment = !department || emp.department === department
-    return matchesSearch && matchesDepartment
+    const matchesPosition = !position || emp.position === position
+    return matchesSearch && matchesDepartment && matchesPosition
   }) || []
+
+  const getTelegramUrl = (tg: string) => {
+    const clean = tg.replace(/https?:\/\/(www\.)?t\.me\//g, '').replace(/^@/, '')
+    return `https://t.me/${clean}`
+  }
 
   const createMut = useMutation({ mutationFn: employeesApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setShowCreate(false); toast.success(t('employees.added')) } })
   const updateMut = useMutation({ mutationFn: ({ id, data }: any) => employeesApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setEditEmp(null); toast.success(t('employees.saved')) } })
@@ -60,9 +69,13 @@ export default function EmployeesPage() {
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('employees.searchPlaceholder')} className="input pl-9" />
         </div>
-        <select value={department} onChange={e => setDepartment(e.target.value)} className="input w-48">
+        <select value={department} onChange={e => setDepartment(e.target.value)} className="input w-44">
           <option value="">{t('employees.allDepartments')}</option>
           {departments?.map((d: any) => <option key={d.department} value={d.department}>{d.department}</option>)}
+        </select>
+        <select value={position} onChange={e => setPosition(e.target.value)} className="input w-44">
+          <option value="">Все должности</option>
+          {allPositions.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
       </div>
 
@@ -96,7 +109,7 @@ export default function EmployeesPage() {
                 <div className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400"><Mail size={11} /><span>{emp.email}</span></div>
                 {emp.phone && <div className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400"><Phone size={11} /><span>{emp.phone}</span></div>}
                 {emp.telegram && (
-                  <a href={`https://t.me/${emp.telegram.replace('@','')}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-blue-500 hover:underline"><Send size={11} /><span>{emp.telegram}</span></a>
+                  <a href={getTelegramUrl(emp.telegram)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-blue-500 hover:underline"><Send size={11} /><span>{emp.telegram}</span></a>
                 )}
                 {emp.instagram && (
                   <a href={`https://instagram.com/${emp.instagram.replace('@','')}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-pink-500 hover:underline"><AtSignIcon /><span>{emp.instagram}</span></a>
@@ -137,7 +150,7 @@ export default function EmployeesPage() {
                   <td className="px-4 py-3 hidden md:table-cell text-sm text-surface-600 dark:text-surface-300">{emp.position}</td>
                   <td className="px-4 py-3 hidden lg:table-cell text-sm text-surface-500 dark:text-surface-400">{emp.department}</td>
                   <td className="px-4 py-3 hidden lg:table-cell">
-                    {emp.telegram && <a href={`https://t.me/${emp.telegram.replace('@','')}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="text-xs text-blue-500 hover:underline">{emp.telegram}</a>}
+                    {emp.telegram && <a href={getTelegramUrl(emp.telegram)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="text-xs text-blue-500 hover:underline">{emp.telegram}</a>}
                   </td>
                   <td className="px-4 py-3"><span className={clsx('badge', emp.status==='active' ? 'status-done' : 'status-cancelled')}>{emp.status==='active' ? t('common.active') : t('common.inactive')}</span></td>
                   {isAdmin && (

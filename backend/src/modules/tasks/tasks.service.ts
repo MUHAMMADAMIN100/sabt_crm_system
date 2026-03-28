@@ -114,6 +114,17 @@ export class TasksService {
     return { message: 'Task deleted' };
   }
 
+  async removeWithAuth(id: string, user: any) {
+    const task = await this.findOne(id);
+    if (user.role === UserRole.EMPLOYEE && task.assigneeId !== user.id && task.createdById !== user.id) {
+      throw new ForbiddenException('Not allowed');
+    }
+    const projectId = task.projectId;
+    await this.repo.remove(task);
+    await this.projectsService.updateProgress(projectId);
+    return { message: 'Task deleted' };
+  }
+
   getMyTasks(userId: string) {
     return this.repo.find({
       where: { assigneeId: userId },

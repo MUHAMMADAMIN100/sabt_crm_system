@@ -225,6 +225,8 @@
   "tabs": {
     "tasks": "Tasks",
     "files": "Files",
+    "about": "About Project",
+    "client": "About Client",
     "members": "Members"
   },
   "noMembers": "No members"

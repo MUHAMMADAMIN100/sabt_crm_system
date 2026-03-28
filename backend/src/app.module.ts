@@ -19,6 +19,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
 import { GatewayModule } from './modules/gateway/gateway.module';
 import { StoriesModule } from './modules/stories/stories.module';
+import { MailModule } from './modules/mail/mail.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { StoriesModule } from './modules/stories/stories.module';
     CalendarModule,
     GatewayModule,
     StoriesModule,
+    MailModule,
   ],
 })
 export class AppModule {}

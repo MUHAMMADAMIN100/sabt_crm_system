@@ -19,6 +19,7 @@ export default function TaskDetailPage() {
   const [editingComment, setEditingComment] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
   const [activeTab, setActiveTab] = useState<'comments' | 'time' | 'files'>('comments')
+  const isAdminOrClient = ['admin', 'client'].includes(user?.role || '')
   const [logHours, setLogHours] = useState('')
   const [logDesc, setLogDesc] = useState('')
 
@@ -131,7 +132,7 @@ export default function TaskDetailPage() {
 
           {/* Tabs */}
           <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700">
-            {(['comments','time','files'] as const).map(tab => (
+            {(['comments', ...(!isAdminOrClient ? ['time'] : []), 'files'] as const).map((tab: any) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}

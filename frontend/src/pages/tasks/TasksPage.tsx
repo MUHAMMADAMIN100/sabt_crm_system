@@ -79,11 +79,9 @@ export default function TasksPage() {
             <button onClick={() => setView('list')} className={clsx('p-1.5 rounded-lg', view === 'list' ? 'bg-white dark:bg-surface-600 shadow-sm' : 'text-surface-500 dark:text-surface-400')}><List size={16} /></button>
             <button onClick={() => setView('grid')} className={clsx('p-1.5 rounded-lg', view === 'grid' ? 'bg-white dark:bg-surface-600 shadow-sm' : 'text-surface-500 dark:text-surface-400')}><LayoutGrid size={16} /></button>
           </div>
-          {isManagerPlus && (
-            <button onClick={() => { setEditingTask(null); setShowCreate(true) }} className="btn-primary">
-              <Plus size={16} /> {t('tasks.task')}
-            </button>
-          )}
+          <button onClick={() => { setEditingTask(null); setShowCreate(true) }} className="btn-primary">
+            <Plus size={16} /> {t('tasks.task')}
+          </button>
         </div>
       </div>
 
@@ -118,7 +116,7 @@ export default function TasksPage() {
 
       {!tasks?.length ? (
         <EmptyState title={t('tasks.noTasks')} description={t('tasks.createFirst')} action={
-          isManagerPlus && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
+          <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
         } />
       ) : view === 'list' ? (
         <div className="card p-0 overflow-hidden">
@@ -131,7 +129,7 @@ export default function TasksPage() {
                 <th className="text-left text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3 hidden lg:table-cell">{t('common.priority')}</th>
                 <th className="text-left text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3 hidden lg:table-cell">{t('tasks.assignee')}</th>
                 <th className="text-left text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3 hidden xl:table-cell">{t('tasks.deadline')}</th>
-                {isManagerPlus && <th className="text-right text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3">{t('common.actions')}</th>}
+                <th className="text-right text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -169,7 +167,7 @@ export default function TasksPage() {
                         <span className={`text-sm ${new Date(task.deadline) < new Date() ? 'text-red-500 font-medium' : 'text-surface-500 dark:text-surface-400'}`}>{format(new Date(task.deadline), 'dd.MM.yyyy')}</span>
                       ) : <span className="text-surface-400 dark:text-surface-500 text-sm">—</span>}
                     </td>
-                    {isManagerPlus && (
+                    {(isManagerPlus || isOwnTask) && (
                       <td className="px-4 py-3">
                         <div className="flex gap-1 justify-end">
                           <button onClick={() => { setEditingTask(task); setShowCreate(true) }} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400"><Edit size={14} /></button>
@@ -190,7 +188,7 @@ export default function TasksPage() {
               <div className="flex items-start justify-between mb-2">
                 <Link to={`/tasks/${task.id}`} className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm flex-1 pr-2">{task.title}</Link>
                 <div className="flex gap-0.5 shrink-0">
-                  {isManagerPlus && (
+                  {(isManagerPlus || task.assigneeId === user?.id) && (
                     <>
                       <button onClick={() => { setEditingTask(task); setShowCreate(true) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400"><Edit size={13} /></button>
                       <button onClick={() => setDeleteTaskId(task.id)} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400"><Trash2 size={13} /></button>

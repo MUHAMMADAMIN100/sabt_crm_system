@@ -3,9 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { analyticsApi, tasksApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatCard, ProgressBar, Avatar, StatusBadge, PriorityBadge } from '@/components/ui'
-import StoryCalendar from '@/components/stories/StoryCalendar'
-import { FolderKanban, CheckSquare, Users, Clock, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { FolderKanban, CheckSquare, Clock, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area, Legend,
@@ -208,14 +206,21 @@ export default function AnalyticsPage() {
                   {isExpanded && empTasks.length > 0 && (
                     <div className="border-t border-surface-100 dark:border-surface-700 bg-surface-50/50 dark:bg-surface-900/30 p-2 space-y-1">
                       {empTasks.map((task: any) => (
-                        <Link key={task.id} to={`/tasks/${task.id}`} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-surface-700 transition-colors">
+                        <div key={task.id} className="flex items-center gap-2 p-2 rounded-lg">
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
-                            <p className="text-xs text-surface-400 dark:text-surface-500">{task.project?.name || ''}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs text-surface-400 dark:text-surface-500">{task.project?.name || ''}</p>
+                              {task.assignee && (
+                                <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-1 py-0.5 rounded">
+                                  {task.assignee.name?.trim().split(/\s+/).slice(0,2).map((w:string) => w[0]?.toUpperCase()).join('')}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <PriorityBadge priority={task.priority} />
                           <StatusBadge status={task.status} />
-                        </Link>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -226,12 +231,6 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      {/* SMM Stories Tracking for Admin */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
-          <StoryCalendar isAdmin />
-        </div>
-      </div>
     </div>
   )
 }

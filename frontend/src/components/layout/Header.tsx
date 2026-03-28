@@ -152,8 +152,18 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
       <div className="flex-1 md:hidden" />
 
-      {/* Right corner — compact button group */}
+      {/* Right corner — user menu with integrated controls */}
       <div className="flex items-center gap-1">
+        {/* Notifications */}
+        <button onClick={() => navigate('/notifications')} className="relative p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
+          <Bell size={18} />
+          {unreadData?.count > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium">
+              {unreadData.count > 99 ? '99+' : unreadData.count}
+            </span>
+          )}
+        </button>
+
         {/* Theme toggle */}
         <button onClick={toggleTheme} className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300"
           title={theme === 'dark' ? t('settings.light') : t('settings.dark')}>
@@ -177,16 +187,6 @@ export default function Header({ onMenuClick }: HeaderProps) {
             </div>
           )}
         </div>
-
-        {/* Notifications */}
-        <button onClick={() => navigate('/notifications')} className="relative p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
-          <Bell size={18} />
-          {unreadData?.count > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium">
-              {unreadData.count > 99 ? '99+' : unreadData.count}
-            </span>
-          )}
-        </button>
       </div>
 
       {/* User menu */}
@@ -197,7 +197,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           </div>
           <div className="hidden md:block text-left">
             <p className="text-sm font-medium text-surface-900 dark:text-surface-100 leading-tight">{user?.name}</p>
-            <p className="text-xs text-surface-500 dark:text-surface-400 capitalize">{user?.role}</p>
+            <p className="text-xs text-surface-500 dark:text-surface-400 capitalize">{user?.role === 'admin' ? 'Админ' : user?.role === 'manager' ? 'Менеджер' : user?.role === 'employee' ? 'Сотрудник' : 'Клиент'}</p>
           </div>
           <ChevronDown size={14} className="text-surface-400 hidden md:block" />
         </button>

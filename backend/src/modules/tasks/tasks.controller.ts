@@ -45,7 +45,6 @@ export class TasksController {
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   create(@Body() dto: CreateTaskDto, @Request() req) {
     return this.service.create(dto, req.user.id);
   }
@@ -56,6 +55,7 @@ export class TasksController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
-  remove(@Param('id') id: string) { return this.service.remove(id); }
+  remove(@Param('id') id: string, @Request() req) {
+    return this.service.removeWithAuth(id, req.user);
+  }
 }

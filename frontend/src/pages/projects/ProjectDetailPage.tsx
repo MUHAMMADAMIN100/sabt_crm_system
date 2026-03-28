@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, tasksApi, filesApi, employeesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, PriorityBadge, ProgressBar, Modal, Avatar, EmptyState, ConfirmDialog } from '@/components/ui'
-import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2 } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase } from 'lucide-react'
 import { format } from 'date-fns'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from '@/i18n'
@@ -15,7 +15,7 @@ const TASK_STATUSES = ['new', 'in_progress', 'review', 'done']
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [activeTab, setActiveTab] = useState<'tasks' | 'files' | 'members'>('tasks')
+  const [activeTab, setActiveTab] = useState<'tasks' | 'files' | 'about' | 'client' | 'members'>('tasks')
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
@@ -94,9 +94,10 @@ export default function ProjectDetailPage() {
   })
   const participantCount = uniqueAssignees.size
 
-  // Drag and drop - only for admins/managers
+  // Drag and drop - for admins/managers and employees own tasks
+  const canDrag = (task: any) => isManagerPlus || task.assigneeId === user?.id
   const handleDragStart = (e: React.DragEvent, task: any) => {
-    if (!isManagerPlus) return
+    if (!canDrag(task)) return
     setDraggedTask(task)
     e.dataTransfer.effectAllowed = 'move'
     ;(e.currentTarget as HTMLElement).classList.add('dragging')
@@ -140,11 +141,9 @@ export default function ProjectDetailPage() {
           </div>
           {project.description && <p className="text-surface-500 dark:text-surface-400 text-sm mt-1">{project.description}</p>}
         </div>
-        {isManagerPlus && (
-          <button onClick={() => { setEditingTask(null); setShowTaskForm(true) }} className="btn-primary">
-            <Plus size={16} /> {t('tasks.task')}
-          </button>
-        )}
+        <button onClick={() => { setEditingTask(null); setShowTaskForm(true) }} className="btn-primary">
+          <Plus size={16} /> {t('tasks.task')}
+        </button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -172,10 +171,10 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700">
-        {(['tasks', 'files', 'members'] as const).map(tab => (
+      <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto">
+        {(['tasks', 'files', 'about', 'client', 'members'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
-            className={clsx('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
+            className={clsx('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
               activeTab === tab ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400' : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300')}>
             {t(`tabs.${tab}`)}
           </button>
@@ -186,9 +185,9 @@ export default function ProjectDetailPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {TASK_STATUSES.map(status => (
             <div key={status} className="space-y-2"
-              onDragOver={isManagerPlus ? handleDragOver : undefined}
-              onDragLeave={isManagerPlus ? handleDragLeave : undefined}
-              onDrop={isManagerPlus ? (e) => handleDrop(e, status) : undefined}>
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, status)}>
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-surface-700 dark:text-surface-300">{STATUS_LABELS[status]}</h3>
                 <span className="text-xs bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400 px-2 py-0.5 rounded-full">{tasksByStatus[status].length}</span>
@@ -198,13 +197,13 @@ export default function ProjectDetailPage() {
                   const isOwnTask = task.assigneeId === user?.id
                   return (
                     <div key={task.id}
-                      draggable={isManagerPlus}
-                      onDragStart={isManagerPlus ? (e) => handleDragStart(e, task) : undefined}
-                      onDragEnd={isManagerPlus ? handleDragEnd : undefined}
-                      className={clsx('card p-3 hover:shadow-md transition-all', isManagerPlus && 'cursor-grab active:cursor-grabbing')}>
+                      draggable={canDrag(task)}
+                      onDragStart={canDrag(task) ? (e) => handleDragStart(e, task) : undefined}
+                      onDragEnd={canDrag(task) ? handleDragEnd : undefined}
+                      className={clsx('card p-3 hover:shadow-md transition-all', canDrag(task) && 'cursor-grab active:cursor-grabbing')}>
                       <div className="flex items-start justify-between mb-2">
                         <Link to={`/tasks/${task.id}`} className="text-sm font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 flex-1">{task.title}</Link>
-                        {isManagerPlus && (
+                        {(isManagerPlus || isOwnTask) && (
                           <div className="flex gap-0.5 ml-1 shrink-0">
                             <button onClick={(e) => { e.stopPropagation(); setEditingTask(task); setShowTaskForm(true) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400"><Edit size={12} /></button>
                             <button onClick={(e) => { e.stopPropagation(); setDeleteTaskId(task.id) }} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400"><Trash2 size={12} /></button>
@@ -261,6 +260,169 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
+      {activeTab === 'about' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="card space-y-4">
+            <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base border-b border-surface-100 dark:border-surface-700 pb-3">Информация о проекте</h3>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <Briefcase size={16} className="text-primary-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-surface-500 dark:text-surface-400">Название</p>
+                  <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.name}</p>
+                </div>
+              </div>
+              {project.projectType && (
+                <div className="flex items-start gap-3">
+                  <Building2 size={16} className="text-purple-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs text-surface-500 dark:text-surface-400">Тип проекта</p>
+                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.projectType}</p>
+                  </div>
+                </div>
+              )}
+              {project.description && (
+                <div className="flex items-start gap-3">
+                  <div className="w-4 h-4 mt-0.5 shrink-0 text-surface-400">—</div>
+                  <div>
+                    <p className="text-xs text-surface-500 dark:text-surface-400">Описание</p>
+                    <p className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-line">{project.description}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="card space-y-4">
+            <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base border-b border-surface-100 dark:border-surface-700 pb-3">Сроки и статус</h3>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <Calendar size={16} className="text-green-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-surface-500 dark:text-surface-400">Дата начала</p>
+                  <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.startDate ? format(new Date(project.startDate), 'dd.MM.yyyy') : '—'}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Calendar size={16} className="text-red-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-surface-500 dark:text-surface-400">Дата завершения</p>
+                  <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.endDate ? format(new Date(project.endDate), 'dd.MM.yyyy') : '—'}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <CheckSquare size={16} className="text-blue-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-surface-500 dark:text-surface-400">Статус</p>
+                  <StatusBadge status={project.status} />
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="w-4 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-xs text-surface-500 dark:text-surface-400 mb-1">Прогресс</p>
+                  <div className="flex items-center gap-2">
+                    <ProgressBar value={project.progress} className="flex-1" />
+                    <span className="text-sm font-semibold text-surface-900 dark:text-surface-100">{project.progress}%</span>
+                  </div>
+                </div>
+              </div>
+              {project.budget != null && (
+                <div className="flex items-start gap-3">
+                  <div className="w-4 h-4 mt-0.5 shrink-0 text-amber-500 font-bold text-xs flex items-center">₸</div>
+                  <div>
+                    <p className="text-xs text-surface-500 dark:text-surface-400">Бюджет</p>
+                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{Number(project.budget).toLocaleString()} сом</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {project.smmData && Object.keys(project.smmData).length > 0 && (
+            <div className="card md:col-span-2 space-y-3">
+              <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base border-b border-surface-100 dark:border-surface-700 pb-3">SMM-анкета</h3>
+              <div className="space-y-2">
+                {Object.entries(project.smmData).map(([key, value]) => (
+                  <div key={key} className="grid grid-cols-1 md:grid-cols-2 gap-1 py-2 border-b border-surface-50 dark:border-surface-700 last:border-0">
+                    <p className="text-xs text-surface-500 dark:text-surface-400">{key}</p>
+                    <p className="text-sm text-surface-800 dark:text-surface-200">{String(value) || '—'}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'client' && (
+        <div className="max-w-lg">
+          <div className="card space-y-4">
+            <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base border-b border-surface-100 dark:border-surface-700 pb-3">Данные клиента</h3>
+            {!project.clientInfo || Object.keys(project.clientInfo).length === 0 ? (
+              <p className="text-sm text-surface-400 dark:text-surface-500 py-4 text-center">Данные клиента не указаны</p>
+            ) : (
+              <div className="space-y-3">
+                {project.clientInfo.companyName && (
+                  <div className="flex items-center gap-3">
+                    <Building2 size={16} className="text-primary-600 shrink-0" />
+                    <div>
+                      <p className="text-xs text-surface-500 dark:text-surface-400">Компания / Бренд</p>
+                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.clientInfo.companyName}</p>
+                    </div>
+                  </div>
+                )}
+                {project.clientInfo.contactPerson && (
+                  <div className="flex items-center gap-3">
+                    <User size={16} className="text-purple-500 shrink-0" />
+                    <div>
+                      <p className="text-xs text-surface-500 dark:text-surface-400">Контактное лицо</p>
+                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.clientInfo.contactPerson}</p>
+                    </div>
+                  </div>
+                )}
+                {project.clientInfo.phone && (
+                  <div className="flex items-center gap-3">
+                    <Phone size={16} className="text-green-500 shrink-0" />
+                    <div>
+                      <p className="text-xs text-surface-500 dark:text-surface-400">Телефон</p>
+                      <a href={`tel:${project.clientInfo.phone}`} className="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline">{project.clientInfo.phone}</a>
+                    </div>
+                  </div>
+                )}
+                {project.clientInfo.email && (
+                  <div className="flex items-center gap-3">
+                    <Mail size={16} className="text-blue-500 shrink-0" />
+                    <div>
+                      <p className="text-xs text-surface-500 dark:text-surface-400">Email</p>
+                      <a href={`mailto:${project.clientInfo.email}`} className="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline">{project.clientInfo.email}</a>
+                    </div>
+                  </div>
+                )}
+                {project.clientInfo.whatsapp && (
+                  <div className="flex items-center gap-3">
+                    <MessageCircle size={16} className="text-green-600 shrink-0" />
+                    <div>
+                      <p className="text-xs text-surface-500 dark:text-surface-400">WhatsApp</p>
+                      <a href={`https://wa.me/${project.clientInfo.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline">{project.clientInfo.whatsapp}</a>
+                    </div>
+                  </div>
+                )}
+                {project.clientInfo.instagram && (
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 shrink-0 text-pink-500 font-bold text-xs flex items-center justify-center">IG</div>
+                    <div>
+                      <p className="text-xs text-surface-500 dark:text-surface-400">Instagram</p>
+                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.clientInfo.instagram}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {activeTab === 'members' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {Array.from(uniqueAssignees.values()).map((m: any) => (
@@ -309,10 +471,9 @@ function TaskFormModal({ open, onClose, onSubmit, employees, loading, initial, t
         assigneeId: initial.assigneeId || '',
         priority: initial.priority || 'medium',
         deadline: initial.deadline ? new Date(initial.deadline).toISOString().split('T')[0] : '',
-        estimatedHours: initial.estimatedHours || '',
       })
     } else {
-      reset({ title: '', description: '', assigneeId: '', priority: 'medium', deadline: '', estimatedHours: '' })
+      reset({ title: '', description: '', assigneeId: '', priority: 'medium', deadline: '' })
     }
   }, [initial, reset])
 
@@ -323,7 +484,6 @@ function TaskFormModal({ open, onClose, onSubmit, employees, loading, initial, t
       assigneeId: data.assigneeId,
       priority: data.priority,
       deadline: data.deadline,
-      estimatedHours: data.estimatedHours ? Number(data.estimatedHours) : undefined,
     })
   }
 
@@ -359,10 +519,6 @@ function TaskFormModal({ open, onClose, onSubmit, employees, loading, initial, t
             <label className="label">{t('tasks.deadline')} *</label>
             <input type="date" {...register('deadline', { required: true })} className="input" />
             {errors.deadline && <p className="text-xs text-red-500 mt-1">{t('tasks.deadline')} обязательно</p>}
-          </div>
-          <div>
-            <label className="label">{t('tasks.estimatedHours')}</label>
-            <input type="number" {...register('estimatedHours')} className="input" />
           </div>
         </div>
         <div className="flex gap-2 justify-end">

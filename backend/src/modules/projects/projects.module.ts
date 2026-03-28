@@ -4,9 +4,10 @@ import { Project } from './project.entity';
 import { ProjectsService } from './projects.service';
 import { ProjectsController } from './projects.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { User } from '../users/user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Project]), NotificationsModule],
+  imports: [TypeOrmModule.forFeature([Project, User]), NotificationsModule],
   controllers: [ProjectsController],
   providers: [ProjectsService],
   exports: [ProjectsService],

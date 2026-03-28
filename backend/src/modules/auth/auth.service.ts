@@ -63,8 +63,14 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
     if (!user.isActive) throw new UnauthorizedException('Account is deactivated');
-    const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role });
-    return { token, user: this.sanitize(user) };
+
+    // Check if employee is sub-admin — grant admin access
+    const employee = await this.employeeRepo.findOne({ where: { userId: user.id } });
+    const effectiveRole = employee?.isSubAdmin ? UserRole.ADMIN : user.role;
+
+    const token = this.jwtService.sign({ sub: user.id, email: user.email, role: effectiveRole });
+    const sanitized = this.sanitize(user);
+    return { token, user: { ...sanitized, role: effectiveRole, isSubAdmin: employee?.isSubAdmin || false } };
   }
 
   async validateUser(email: string, password: string): Promise<User | null> {
@@ -76,7 +82,10 @@ export class AuthService {
   async getMe(userId: string) {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
-    return this.sanitize(user);
+    const employee = await this.employeeRepo.findOne({ where: { userId } });
+    const effectiveRole = employee?.isSubAdmin ? UserRole.ADMIN : user.role;
+    const sanitized = this.sanitize(user);
+    return { ...sanitized, role: effectiveRole, isSubAdmin: employee?.isSubAdmin || false };
   }
 
   async changePassword(userId: string, oldPassword: string, newPassword: string) {

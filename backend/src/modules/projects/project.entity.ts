@@ -60,6 +60,15 @@ export class Project {
   @OneToMany(() => FileAttachment, file => file.project)
   files: FileAttachment[];
 
+  @Column({ nullable: true })
+  projectType: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  smmData: Record<string, any>;
+
+  @Column({ type: 'jsonb', nullable: true })
+  clientInfo: Record<string, any>;
+
   @Column({ default: false })
   isArchived: boolean;
 
