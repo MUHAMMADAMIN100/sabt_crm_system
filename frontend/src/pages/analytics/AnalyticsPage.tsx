@@ -97,26 +97,6 @@ export default function AnalyticsPage() {
           </div>
         )}
 
-        {hoursData?.length > 0 && (
-          <div className="card lg:col-span-2">
-            <h3 className="section-title mb-4">{t('analytics.hoursPerDay')}</h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={hoursData}>
-                <defs>
-                  <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6B4FCF" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#6B4FCF" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d?.slice(5)} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: any) => [`${Number(v).toFixed(1)}${t('dashboard.hours')}`]} />
-                <Area type="monotone" dataKey="hours" stroke="#6B4FCF" fill="url(#grad)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        )}
 
         {empActivity?.length > 0 && (
           <div className="card">

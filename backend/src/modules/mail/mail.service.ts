@@ -22,7 +22,7 @@ export class MailService {
     }
   }
 
-  private async sendViaBrevo(to: string, toName: string, subject: string, html: string): Promise<void> {
+  private async sendViaBrevo(to: string, toName: string, subject: string, html: string, attempt = 1): Promise<void> {
     if (!this.apiKey) return;
 
     const payload = JSON.stringify({
@@ -32,39 +32,48 @@ export class MailService {
       htmlContent: html,
     });
 
-    return new Promise((resolve, reject) => {
-      const req = https.request(
-        {
-          hostname: 'api.brevo.com',
-          path: '/v3/smtp/email',
-          method: 'POST',
-          headers: {
-            'api-key': this.apiKey,
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(payload),
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const req = https.request(
+          {
+            hostname: 'api.brevo.com',
+            path: '/v3/smtp/email',
+            method: 'POST',
+            timeout: 10000,
+            headers: {
+              'api-key': this.apiKey,
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(payload),
+            },
           },
-        },
-        (res) => {
-          let body = '';
-          res.on('data', (chunk) => (body += chunk));
-          res.on('end', () => {
-            if (res.statusCode >= 200 && res.statusCode < 300) {
-              this.logger.log(`Email sent to ${to} [${res.statusCode}]`);
-              resolve();
-            } else {
-              this.logger.error(`Brevo API error ${res.statusCode}: ${body}`);
-              reject(new Error(`Brevo ${res.statusCode}: ${body}`));
-            }
-          });
-        },
-      );
-      req.on('error', (err) => {
-        this.logger.error(`Email request failed: ${err.message}`);
-        reject(err);
+          (res) => {
+            let body = '';
+            res.on('data', (chunk) => (body += chunk));
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                this.logger.log(`Email sent to ${to} [${res.statusCode}]`);
+                resolve();
+              } else {
+                reject(new Error(`Brevo ${res.statusCode}: ${body}`));
+              }
+            });
+          },
+        );
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
+        req.write(payload);
+        req.end();
       });
-      req.write(payload);
-      req.end();
-    });
+    } catch (err) {
+      if (attempt < 3) {
+        const delay = attempt * 2000; // 2s, 4s
+        this.logger.warn(`Email to ${to} failed (attempt ${attempt}/3), retrying in ${delay}ms: ${err.message}`);
+        await new Promise(r => setTimeout(r, delay));
+        return this.sendViaBrevo(to, toName, subject, html, attempt + 1);
+      }
+      this.logger.error(`Email request failed after 3 attempts: ${err.message}`);
+      throw err;
+    }
   }
 
   private header(title: string) {

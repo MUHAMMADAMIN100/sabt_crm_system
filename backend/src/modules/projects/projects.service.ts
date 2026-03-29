@@ -8,6 +8,9 @@ import { UserRole, User } from '../users/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { MailService } from '../mail/mail.service';
+import { ActivityLogService } from '../activity-log/activity-log.service';
+import { ActivityAction } from '../activity-log/activity-log.entity';
+import { TelegramService } from '../telegram/telegram.service';
 
 @Injectable()
 export class ProjectsService {
@@ -16,6 +19,8 @@ export class ProjectsService {
     @InjectRepository(User) private userRepo: Repository<User>,
     private notificationsService: NotificationsService,
     private mailService: MailService,
+    private activityLog: ActivityLogService,
+    private telegramService: TelegramService,
   ) {}
 
   findAll(search?: string, status?: ProjectStatus, managerId?: string, archived = false) {
@@ -49,6 +54,8 @@ export class ProjectsService {
     });
     const saved = await this.repo.save(project);
 
+    const creator = await this.userRepo.findOne({ where: { id: userId } });
+
     // Notify members (in-app + email)
     if (dto.memberIds?.length) {
       for (const memberId of dto.memberIds) {
@@ -65,18 +72,38 @@ export class ProjectsService {
           const manager = dto.managerId
             ? await this.userRepo.findOne({ where: { id: dto.managerId || userId } })
             : null;
+          const deadline = saved.endDate ? new Date(saved.endDate).toLocaleDateString('ru-RU') : undefined;
           await this.mailService.sendProjectAssigned(
             member.email,
             member.name,
             saved.name,
             `/projects/${saved.id}`,
             saved.description || undefined,
-            saved.endDate ? new Date(saved.endDate).toLocaleDateString('ru-RU') : undefined,
+            deadline,
             manager?.name || undefined,
+          );
+          await this.telegramService.sendToUser(
+            memberId,
+            `📁 <b>Вас добавили в проект</b>\n\n` +
+            `📌 ${saved.name}` +
+            (manager?.name ? `\n👤 Менеджер: ${manager.name}` : '') +
+            (deadline ? `\n📅 Дедлайн: ${deadline}` : '') +
+            `\n\n👉 ${this.telegramService.appUrl}/projects/${saved.id}`,
           );
         }
       }
     }
+
+    await this.activityLog.log({
+      userId,
+      userName: creator?.name,
+      action: ActivityAction.PROJECT_CREATE,
+      entity: 'project',
+      entityId: saved.id,
+      entityName: saved.name,
+      details: { memberIds: dto.memberIds, status: saved.status },
+    });
+
     return saved;
   }
 
@@ -85,6 +112,8 @@ export class ProjectsService {
     if (user.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Not allowed');
     }
+
+    const oldMemberIds = project.members?.map(m => m.id) || [];
 
     if (dto.memberIds !== undefined) {
       project.members = dto.memberIds.map(id => ({ id })) as any;
@@ -95,21 +124,81 @@ export class ProjectsService {
       members: project.members,
     });
 
-    return this.repo.save(project);
+    const saved = await this.repo.save(project);
+
+    await this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.PROJECT_UPDATE,
+      entity: 'project',
+      entityId: id,
+      entityName: project.name,
+      details: dto,
+    });
+
+    // Log member additions
+    if (dto.memberIds !== undefined) {
+      const newMemberIds = dto.memberIds.filter(mid => !oldMemberIds.includes(mid));
+      for (const memberId of newMemberIds) {
+        await this.activityLog.log({
+          userId: user.id,
+          userName: user.name,
+          action: ActivityAction.MEMBER_ADD,
+          entity: 'project',
+          entityId: id,
+          entityName: project.name,
+          details: { memberId },
+        });
+      }
+      const removedMemberIds = oldMemberIds.filter(mid => !dto.memberIds.includes(mid));
+      for (const memberId of removedMemberIds) {
+        await this.activityLog.log({
+          userId: user.id,
+          userName: user.name,
+          action: ActivityAction.MEMBER_REMOVE,
+          entity: 'project',
+          entityId: id,
+          entityName: project.name,
+          details: { memberId },
+        });
+      }
+    }
+
+    return saved;
   }
 
   async archive(id: string) {
+    const project = await this.findOne(id);
     await this.repo.update(id, { isArchived: true, status: ProjectStatus.ARCHIVED });
+    await this.activityLog.log({
+      action: ActivityAction.PROJECT_ARCHIVE,
+      entity: 'project',
+      entityId: id,
+      entityName: project.name,
+    });
     return this.findOne(id);
   }
 
   async restore(id: string) {
+    const project = await this.findOne(id);
     await this.repo.update(id, { isArchived: false, status: ProjectStatus.COMPLETED });
+    await this.activityLog.log({
+      action: ActivityAction.PROJECT_RESTORE,
+      entity: 'project',
+      entityId: id,
+      entityName: project.name,
+    });
     return this.findOne(id);
   }
 
   async remove(id: string) {
     const p = await this.findOne(id);
+    await this.activityLog.log({
+      action: ActivityAction.PROJECT_DELETE,
+      entity: 'project',
+      entityId: id,
+      entityName: p.name,
+    });
     await this.repo.remove(p);
     return { message: 'Project deleted' };
   }

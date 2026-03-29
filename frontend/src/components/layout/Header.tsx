@@ -153,7 +153,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
       <div className="flex-1 md:hidden" />
 
       {/* Right corner — user menu with integrated controls */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 ml-auto">
         {/* Notifications */}
         <button onClick={() => navigate('/notifications')} className="relative p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
           <Bell size={18} />

@@ -2,10 +2,15 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TimeLog } from './time-log.entity';
+import { ActivityLogService } from '../activity-log/activity-log.service';
+import { ActivityAction } from '../activity-log/activity-log.entity';
 
 @Injectable()
 export class TimeTrackerService {
-  constructor(@InjectRepository(TimeLog) private repo: Repository<TimeLog>) {}
+  constructor(
+    @InjectRepository(TimeLog) private repo: Repository<TimeLog>,
+    private activityLog: ActivityLogService,
+  ) {}
 
   findByTask(taskId: string) {
     return this.repo.find({
@@ -40,7 +45,17 @@ export class TimeTrackerService {
       isRunning: true,
       timerStartedAt: new Date(),
     });
-    return this.repo.save(log);
+    const saved = await this.repo.save(log);
+
+    await this.activityLog.log({
+      userId: employeeId,
+      action: ActivityAction.TIMER_START,
+      entity: 'task',
+      entityId: taskId,
+      details: { timeLogId: saved.id },
+    });
+
+    return saved;
   }
 
   async stopTimer(employeeId: string) {
@@ -50,7 +65,17 @@ export class TimeTrackerService {
     const elapsed = (Date.now() - new Date(running.timerStartedAt).getTime()) / 3600000;
     running.timeSpent = Math.round(elapsed * 100) / 100;
     running.isRunning = false;
-    return this.repo.save(running);
+    const saved = await this.repo.save(running);
+
+    await this.activityLog.log({
+      userId: employeeId,
+      action: ActivityAction.TIMER_STOP,
+      entity: 'task',
+      entityId: running.taskId,
+      details: { timeSpent: saved.timeSpent },
+    });
+
+    return saved;
   }
 
   getRunningTimer(employeeId: string) {
@@ -63,10 +88,28 @@ export class TimeTrackerService {
   async logTime(taskId: string, employeeId: string, timeSpent: number, date: string, description?: string) {
     if (timeSpent <= 0) throw new BadRequestException('Time must be positive');
     const log = this.repo.create({ taskId, employeeId, timeSpent, date: new Date(date), description });
-    return this.repo.save(log);
+    const saved = await this.repo.save(log);
+
+    await this.activityLog.log({
+      userId: employeeId,
+      action: ActivityAction.TIME_LOG,
+      entity: 'task',
+      entityId: taskId,
+      details: { timeSpent, date, description },
+    });
+
+    return saved;
   }
 
   async remove(id: string) {
+    const log = await this.repo.findOne({ where: { id } });
+    await this.activityLog.log({
+      userId: log?.employeeId,
+      action: ActivityAction.TIME_DELETE,
+      entity: 'task',
+      entityId: log?.taskId,
+      details: { timeLogId: id, timeSpent: log?.timeSpent },
+    });
     await this.repo.delete(id);
     return { message: 'Time log deleted' };
   }

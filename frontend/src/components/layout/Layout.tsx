@@ -4,6 +4,7 @@ import Sidebar from './Sidebar'
 import Header from './Header'
 import { useAuthStore } from '@/store/auth.store'
 import { useSocket } from '@/hooks/useSocket'
+import clsx from 'clsx'
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -26,7 +27,13 @@ export default function Layout() {
 
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div
+        className={clsx(
+          'flex flex-col min-w-0 overflow-hidden flex-1',
+          '[transition:margin-left_0.4s_cubic-bezier(0.4,0,0.2,1)]',
+          sidebarOpen ? 'ml-[260px]' : 'ml-0 lg:ml-[72px]',
+        )}
+      >
         <Header onMenuClick={() => setSidebarOpen(o => !o)} />
         <main className="flex-1 overflow-y-auto p-6">
           {/* key on pathname so each navigation re-triggers the animation */}

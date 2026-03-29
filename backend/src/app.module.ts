@@ -20,6 +20,8 @@ import { CalendarModule } from './modules/calendar/calendar.module';
 import { GatewayModule } from './modules/gateway/gateway.module';
 import { StoriesModule } from './modules/stories/stories.module';
 import { MailModule } from './modules/mail/mail.module';
+import { ActivityLogModule } from './modules/activity-log/activity-log.module';
+import { TelegramModule } from './modules/telegram/telegram.module';
 
 @Module({
   imports: [
@@ -52,6 +54,8 @@ import { MailModule } from './modules/mail/mail.module';
     GatewayModule,
     StoriesModule,
     MailModule,
+    ActivityLogModule,
+    TelegramModule,
   ],
 })
 export class AppModule {}

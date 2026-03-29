@@ -105,9 +105,19 @@ export default function TaskForm({
         </div>
       </div>
       <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onClose} className="btn-secondary">{t('common.cancel')}</button>
-        <button type="submit" disabled={loading} className="btn-primary">
-          {initial ? t('common.save') : t('common.create')}
+        <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">{t('common.cancel')}</button>
+        <button type="submit" disabled={loading} className="btn-primary min-w-[110px] justify-center">
+          {loading ? (
+            <>
+              <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="32" strokeDashoffset="12" opacity="0.3"/>
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="10" strokeDashoffset="0"/>
+              </svg>
+              {initial ? 'Сохранение...' : 'Создание...'}
+            </>
+          ) : (
+            initial ? t('common.save') : t('common.create')
+          )}
         </button>
       </div>
     </form>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tasksApi, commentsApi, timeTrackerApi, filesApi } from '@/services/api.service'
 import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
@@ -13,6 +13,7 @@ import clsx from 'clsx'
 
 export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
   const { t } = useTranslation()
@@ -103,7 +104,7 @@ export default function TaskDetailPage() {
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Link to="/tasks" className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400"><ArrowLeft size={18} /></Link>
+        <button onClick={() => navigate(-1)} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400"><ArrowLeft size={18} /></button>
         <div className="flex-1">
           <h1 className="page-title">{task.title}</h1>
           <div className="flex items-center gap-2 mt-1">

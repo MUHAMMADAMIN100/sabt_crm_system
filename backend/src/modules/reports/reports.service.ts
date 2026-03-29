@@ -4,12 +4,15 @@ import { Repository } from 'typeorm';
 import { DailyReport } from './daily-report.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
+import { ActivityLogService } from '../activity-log/activity-log.service';
+import { ActivityAction } from '../activity-log/activity-log.entity';
 
 @Injectable()
 export class ReportsService {
   constructor(
     @InjectRepository(DailyReport) private repo: Repository<DailyReport>,
     private notificationsService: NotificationsService,
+    private activityLog: ActivityLogService,
   ) {}
 
   findAll(filters: { employeeId?: string; projectId?: string; from?: string; to?: string }) {
@@ -38,7 +41,7 @@ export class ReportsService {
   async create(dto: any, userId: string) {
     const report = this.repo.create({ ...dto, employeeId: userId });
     const savedReport = await this.repo.save(report);
-    
+
     // TypeORM save может вернуть массив или объект, обрабатываем оба случая
     const result = Array.isArray(savedReport) ? savedReport[0] : savedReport;
 
@@ -51,6 +54,14 @@ export class ReportsService {
       link: `/reports/${result.id}`,
     });
 
+    await this.activityLog.log({
+      userId,
+      action: ActivityAction.REPORT_CREATE,
+      entity: 'report',
+      entityId: result.id,
+      details: { date: dto.date, projectId: dto.projectId, taskId: dto.taskId },
+    });
+
     return this.findOne(result.id);
   }
 
@@ -58,10 +69,24 @@ export class ReportsService {
     const report = await this.findOne(id);
     if (report.employeeId !== userId) throw new NotFoundException('Not your report');
     await this.repo.update(id, dto);
+
+    await this.activityLog.log({
+      userId,
+      action: ActivityAction.REPORT_UPDATE,
+      entity: 'report',
+      entityId: id,
+      details: dto,
+    });
+
     return this.findOne(id);
   }
 
   async remove(id: string) {
+    await this.activityLog.log({
+      action: ActivityAction.REPORT_DELETE,
+      entity: 'report',
+      entityId: id,
+    });
     await this.repo.delete(id);
     return { message: 'Report deleted' };
   }

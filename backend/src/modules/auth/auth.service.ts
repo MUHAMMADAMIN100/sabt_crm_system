@@ -9,6 +9,8 @@ import { Employee, EmployeeStatus } from '../employees/employee.entity';
 import { WorkSession } from './work-session.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ActivityLogService } from '../activity-log/activity-log.service';
+import { ActivityAction } from '../activity-log/activity-log.entity';
 
 @Injectable()
 export class AuthService {
@@ -17,6 +19,7 @@ export class AuthService {
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
     private jwtService: JwtService,
+    private activityLog: ActivityLogService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -55,6 +58,16 @@ export class AuthService {
       await this.employeeRepo.save(existingEmployee);
     }
 
+    await this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.REGISTER,
+      entity: 'user',
+      entityId: user.id,
+      entityName: user.name,
+      details: { email: user.email, role: user.role },
+    });
+
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role });
     return { token, user: this.sanitize(user) };
   }
@@ -78,6 +91,16 @@ export class AuthService {
     const session = this.sessionRepo.create({ userId: user.id, loginAt: new Date(), date: today });
     await this.sessionRepo.save(session);
 
+    await this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.LOGIN,
+      entity: 'user',
+      entityId: user.id,
+      entityName: user.name,
+      details: { role: effectiveRole },
+    });
+
     return { token, user: { ...sanitized, role: effectiveRole, isSubAdmin: employee?.isSubAdmin || false } };
   }
 
@@ -92,6 +115,16 @@ export class AuthService {
       session.durationHours = parseFloat((ms / 3600000).toFixed(2));
       await this.sessionRepo.save(session);
     }
+
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    await this.activityLog.log({
+      userId,
+      userName: user?.name,
+      action: ActivityAction.LOGOUT,
+      entity: 'user',
+      entityId: userId,
+    });
+
     return { message: 'Logged out' };
   }
 
@@ -117,6 +150,15 @@ export class AuthService {
     }
     user.password = newPassword;
     await this.userRepo.save(user);
+
+    await this.activityLog.log({
+      userId,
+      userName: user.name,
+      action: ActivityAction.PASSWORD_CHANGE,
+      entity: 'user',
+      entityId: userId,
+    });
+
     return { message: 'Password changed' };
   }
 
@@ -143,6 +185,15 @@ export class AuthService {
     user.resetPasswordToken = null;
     user.resetPasswordExpires = null;
     await this.userRepo.save(user);
+
+    await this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.PASSWORD_RESET,
+      entity: 'user',
+      entityId: user.id,
+    });
+
     return { message: 'Password updated' };
   }
 

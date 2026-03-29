@@ -33,6 +33,9 @@ export class Employee {
   telegram: string;
 
   @Column({ nullable: true })
+  telegramChatId: string;
+
+  @Column({ nullable: true })
   instagram: string;
 
   @Column({ type: 'date', default: () => 'CURRENT_DATE' })

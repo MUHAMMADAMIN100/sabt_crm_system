@@ -33,51 +33,42 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   return (
     <aside
       className={clsx(
-        'fixed lg:relative z-30 flex flex-col h-full bg-white dark:bg-surface-800',
-        'border-r border-surface-100 dark:border-surface-700 transition-all duration-300',
-        open ? 'w-[260px]' : 'w-0 lg:w-[72px] overflow-hidden',
+        'fixed left-0 top-0 z-30 flex flex-col h-full',
+        'bg-white dark:bg-surface-800',
+        'border-r border-surface-100 dark:border-surface-700',
+        'overflow-hidden',
+        open ? 'w-[260px]' : 'w-0 lg:w-[72px]',
       )}
     >
       {/* Logo */}
-      <div className="flex items-center justify-between h-[60px] px-3 border-b border-surface-100 dark:border-surface-700 shrink-0">
-        <div className={clsx('flex items-center overflow-hidden min-w-0', open ? 'w-full justify-start pl-3' : 'lg:w-full justify-center')}>
-          {/* Collapsed: S icon only */}
-          {!open && (
+      <div className="flex items-center justify-between h-[60px] px-3 border-b border-surface-100 dark:border-surface-700 shrink-0 overflow-hidden">
+        <div className="flex items-center min-w-0 flex-1 relative h-full">
+
+          {/* Collapsed: S icon — fades out when open */}
+          <div className={clsx(
+            'absolute left-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+            open ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100 lg:left-1/2 lg:-translate-x-1/2',
+          )}>
             <div className="relative flex items-center justify-center w-9 h-9 shrink-0">
-              <span
-                className="font-black leading-none select-none"
-                style={{ fontSize: 32, color: '#6B4FCF', fontFamily: "'Arial Black', Arial, sans-serif", lineHeight: 1 }}
-              >
-                S
-              </span>
+              <span className="font-black leading-none select-none" style={{ fontSize: 32, color: '#6B4FCF', fontFamily: "'Arial Black', Arial, sans-serif", lineHeight: 1 }}>S</span>
               <div className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-red-500" />
             </div>
-          )}
+          </div>
 
-          {/* Expanded: sabt wordmark only */}
-          {open && (
-            <div className="flex items-baseline gap-0 animate-fade-in leading-none select-none">
-              <span
-                className="font-black tracking-tight"
-                style={{ fontSize: 22, color: '#6B4FCF', fontFamily: "'Arial Black', Arial, sans-serif" }}
-              >
-                sabt
-              </span>
-              <svg width="12" height="14" viewBox="0 0 12 14" fill="none" className="ml-0.5 mb-0.5">
-                <path
-                  d="M1 1L1 11L3.8 8.2L5.6 12.5L7 11.9L5.2 7.6L9 7.6L1 1Z"
-                  fill="#6B4FCF" stroke="#6B4FCF" strokeWidth="0.5" strokeLinejoin="round"
-                />
-              </svg>
-              <div className="w-2 h-2 rounded-full bg-red-500 mb-3 ml-0.5 shrink-0" />
-            </div>
-          )}
+          {/* Expanded: sabt wordmark — fades in when open */}
+          <div className={clsx(
+            'absolute left-3 flex items-baseline gap-0 leading-none select-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+            open ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 pointer-events-none',
+          )}>
+            <span className="font-black tracking-tight" style={{ fontSize: 22, color: '#6B4FCF', fontFamily: "'Arial Black', Arial, sans-serif" }}>sabt</span>
+            <svg width="12" height="14" viewBox="0 0 12 14" fill="none" className="ml-0.5 mb-0.5">
+              <path d="M1 1L1 11L3.8 8.2L5.6 12.5L7 11.9L5.2 7.6L9 7.6L1 1Z" fill="#6B4FCF" stroke="#6B4FCF" strokeWidth="0.5" strokeLinejoin="round" />
+            </svg>
+            <div className="w-2 h-2 rounded-full bg-red-500 mb-3 ml-0.5 shrink-0" />
+          </div>
         </div>
 
-        <button
-          onClick={onClose}
-          className="lg:hidden p-1 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors shrink-0"
-        >
+        <button onClick={onClose} className="lg:hidden p-1 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors shrink-0">
           <X size={18} className="text-surface-600 dark:text-surface-300" />
         </button>
       </div>
@@ -108,10 +99,17 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                         isActive ? 'text-primary-600 dark:text-primary-400' : 'group-hover:scale-110',
                       )}
                     />
-                    {open && <span className="truncate">{item.label}</span>}
-                    {/* Active indicator dot */}
+                    <span className={clsx(
+                      'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
+                      open ? 'max-w-[200px] opacity-100 ml-0' : 'max-w-0 opacity-0 ml-0',
+                    )}>
+                      {item.label}
+                    </span>
                     {isActive && (
-                      <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-500 shrink-0 animate-bounce-soft" />
+                      <span className={clsx(
+                        'w-1.5 h-1.5 rounded-full bg-primary-500 shrink-0 animate-bounce-soft transition-all duration-300',
+                        open ? 'ml-auto opacity-100' : 'ml-0 opacity-0 w-0',
+                      )} />
                     )}
                   </>
                 )}
@@ -131,7 +129,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             to="/profile"
             className={({ isActive }) =>
               clsx(
-                'flex items-center gap-3 p-2 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700 transition-all duration-150 group',
+                'flex items-center gap-3 p-2 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700 transition-all duration-150 group overflow-hidden',
                 isActive && 'bg-primary-50 dark:bg-primary-900/30',
                 !open && 'lg:justify-center',
               )
@@ -143,13 +141,17 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 : user.name[0].toUpperCase()
               }
             </div>
-            {open && (
-              <div className="flex-1 min-w-0 animate-fade-in">
-                <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{user.name}</p>
-                <p className="text-xs text-surface-500 dark:text-surface-400 truncate capitalize">{user.role}</p>
-              </div>
-            )}
-            {open && <ChevronRight size={14} className="text-surface-400 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5" />}
+            <div className={clsx(
+              'flex-1 min-w-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden',
+              open ? 'max-w-[160px] opacity-100' : 'max-w-0 opacity-0',
+            )}>
+              <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{user.name}</p>
+              <p className="text-xs text-surface-500 dark:text-surface-400 truncate capitalize">{user.role}</p>
+            </div>
+            <ChevronRight size={14} className={clsx(
+              'text-surface-400 shrink-0 transition-all duration-300 group-hover:translate-x-0.5',
+              open ? 'opacity-100 w-3.5' : 'opacity-0 w-0',
+            )} />
           </NavLink>
         </div>
       )}

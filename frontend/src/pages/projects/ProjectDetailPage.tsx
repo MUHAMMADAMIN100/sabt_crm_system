@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, tasksApi, filesApi, employeesApi } from '@/services/api.service'
 import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
@@ -16,6 +16,7 @@ const TASK_STATUSES = ['new', 'in_progress', 'review', 'done', 'cancelled']
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'tasks' | 'files' | 'about' | 'client' | 'members'>('tasks')
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
@@ -132,9 +133,9 @@ export default function ProjectDetailPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <Link to="/projects" className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400">
+        <button onClick={() => navigate(-1)} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400">
           <ArrowLeft size={18} />
-        </Link>
+        </button>
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="page-title">{project.name}</h1>

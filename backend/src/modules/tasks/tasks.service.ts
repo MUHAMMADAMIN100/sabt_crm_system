@@ -9,6 +9,9 @@ import { NotificationType } from '../notifications/notification.entity';
 import { ProjectsService } from '../projects/projects.service';
 import { UserRole, User } from '../users/user.entity';
 import { MailService } from '../mail/mail.service';
+import { ActivityLogService } from '../activity-log/activity-log.service';
+import { ActivityAction } from '../activity-log/activity-log.entity';
+import { TelegramService } from '../telegram/telegram.service';
 
 @Injectable()
 export class TasksService {
@@ -18,6 +21,8 @@ export class TasksService {
     private notificationsService: NotificationsService,
     private projectsService: ProjectsService,
     private mailService: MailService,
+    private activityLog: ActivityLogService,
+    private telegramService: TelegramService,
   ) {}
 
   findAll(filters: {
@@ -56,6 +61,8 @@ export class TasksService {
     const task = this.repo.create({ ...dto, createdById: userId });
     const saved = await this.repo.save(task);
 
+    const creator = await this.userRepo.findOne({ where: { id: userId } });
+
     if (dto.assigneeId && dto.assigneeId !== userId) {
       await this.notificationsService.create({
         userId: dto.assigneeId,
@@ -65,22 +72,43 @@ export class TasksService {
         link: `/tasks/${saved.id}`,
       });
 
-      // Email notification
+      // Email + Telegram notification
       const assignee = await this.userRepo.findOne({ where: { id: dto.assigneeId } });
       if (assignee?.email) {
         const full = await this.findOne(saved.id);
+        const deadline = saved.deadline ? new Date(saved.deadline).toLocaleDateString('ru-RU') : undefined;
         await this.mailService.sendTaskAssigned(
           assignee.email,
           assignee.name,
           saved.title,
           saved.id,
           full.project?.name,
-          saved.deadline ? new Date(saved.deadline).toLocaleDateString('ru-RU') : undefined,
+          deadline,
           saved.priority,
           saved.description || undefined,
         );
+        const priorityLabels: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный', critical: 'Критический' };
+        await this.telegramService.sendToUser(
+          dto.assigneeId,
+          `✅ <b>Вам назначена задача</b>\n\n` +
+          `📋 ${saved.title}` +
+          (full.project?.name ? `\n📁 ${full.project.name}` : '') +
+          (saved.priority ? `\n🔥 Приоритет: ${priorityLabels[saved.priority] || saved.priority}` : '') +
+          (deadline ? `\n📅 Дедлайн: ${deadline}` : '') +
+          `\n\n👉 ${this.telegramService.appUrl}/tasks/${saved.id}`,
+        );
       }
     }
+
+    await this.activityLog.log({
+      userId,
+      userName: creator?.name,
+      action: ActivityAction.TASK_CREATE,
+      entity: 'task',
+      entityId: saved.id,
+      entityName: saved.title,
+      details: { projectId: dto.projectId, priority: dto.priority, assigneeId: dto.assigneeId },
+    });
 
     await this.projectsService.updateProgress(dto.projectId);
     return this.findOne(saved.id);
@@ -94,6 +122,7 @@ export class TasksService {
     }
 
     const oldStatus = task.status;
+    const oldAssigneeId = task.assigneeId;
     await this.repo.update(id, dto as any);
 
     // Notify on status change
@@ -108,10 +137,19 @@ export class TasksService {
           link: `/tasks/${id}`,
         });
       }
+      await this.activityLog.log({
+        userId: user.id,
+        userName: user.name,
+        action: ActivityAction.TASK_STATUS,
+        entity: 'task',
+        entityId: id,
+        entityName: task.title,
+        details: { from: oldStatus, to: dto.status },
+      });
     }
 
     // Notify on new assignee
-    if (dto.assigneeId && dto.assigneeId !== task.assigneeId) {
+    if (dto.assigneeId && dto.assigneeId !== oldAssigneeId) {
       await this.notificationsService.create({
         userId: dto.assigneeId,
         type: NotificationType.NEW_TASK,
@@ -120,21 +158,55 @@ export class TasksService {
         link: `/tasks/${id}`,
       });
 
-      // Email notification
+      // Email + Telegram notification
       const assignee = await this.userRepo.findOne({ where: { id: dto.assigneeId } });
       if (assignee?.email) {
         const full = await this.findOne(id);
+        const deadline = task.deadline ? new Date(task.deadline).toLocaleDateString('ru-RU') : undefined;
+        const priority = dto.priority || task.priority;
         await this.mailService.sendTaskAssigned(
           assignee.email,
           assignee.name,
           task.title,
           id,
           full.project?.name,
-          task.deadline ? new Date(task.deadline).toLocaleDateString('ru-RU') : undefined,
-          dto.priority || task.priority,
+          deadline,
+          priority,
           task.description || undefined,
         );
+        const priorityLabels: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный', critical: 'Критический' };
+        await this.telegramService.sendToUser(
+          dto.assigneeId,
+          `✅ <b>Вам назначена задача</b>\n\n` +
+          `📋 ${task.title}` +
+          (full.project?.name ? `\n📁 ${full.project.name}` : '') +
+          (priority ? `\n🔥 Приоритет: ${priorityLabels[priority] || priority}` : '') +
+          (deadline ? `\n📅 Дедлайн: ${deadline}` : '') +
+          `\n\n👉 ${this.telegramService.appUrl}/tasks/${id}`,
+        );
       }
+      await this.activityLog.log({
+        userId: user.id,
+        userName: user.name,
+        action: ActivityAction.TASK_ASSIGN,
+        entity: 'task',
+        entityId: id,
+        entityName: task.title,
+        details: { assigneeId: dto.assigneeId },
+      });
+    }
+
+    // Log generic update if neither status nor assignee changed
+    if (!dto.status && !dto.assigneeId) {
+      await this.activityLog.log({
+        userId: user.id,
+        userName: user.name,
+        action: ActivityAction.TASK_UPDATE,
+        entity: 'task',
+        entityId: id,
+        entityName: task.title,
+        details: dto,
+      });
     }
 
     await this.projectsService.updateProgress(task.projectId);
@@ -144,6 +216,12 @@ export class TasksService {
   async remove(id: string) {
     const task = await this.findOne(id);
     const projectId = task.projectId;
+    await this.activityLog.log({
+      action: ActivityAction.TASK_DELETE,
+      entity: 'task',
+      entityId: id,
+      entityName: task.title,
+    });
     await this.repo.remove(task);
     await this.projectsService.updateProgress(projectId);
     return { message: 'Task deleted' };
@@ -155,6 +233,14 @@ export class TasksService {
       throw new ForbiddenException('Not allowed');
     }
     const projectId = task.projectId;
+    await this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.TASK_DELETE,
+      entity: 'task',
+      entityId: id,
+      entityName: task.title,
+    });
     await this.repo.remove(task);
     await this.projectsService.updateProgress(projectId);
     return { message: 'Task deleted' };

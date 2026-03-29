@@ -15,8 +15,8 @@ import clsx from 'clsx'
 
 export default function TasksPage() {
   const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('')
-  const [priority, setPriority] = useState('')
+  const [statuses, setStatuses] = useState<string[]>([])
+  const [priorities, setPriorities] = useState<string[]>([])
   const [projectId, setProjectId] = useState('')
   const [view, setView] = useState<'list' | 'grid'>('list')
   const [showCreate, setShowCreate] = useState(false)
@@ -24,14 +24,14 @@ export default function TasksPage() {
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [page, setPage] = useState(1)
-  const PAGE_SIZE = 20
+  const PAGE_SIZE = 9
   const user = useAuthStore(s => s.user)
   const isManagerPlus = user?.role === 'admin'
   const qc = useQueryClient()
   const { t } = useTranslation()
 
-  const STATUSES = ['', 'new', 'in_progress', 'review', 'done']
-  const PRIORITIES = ['', 'low', 'medium', 'high', 'critical']
+  const STATUSES = ['new', 'in_progress', 'review', 'done']
+  const PRIORITIES = ['low', 'medium', 'high', 'critical']
 
   const { data: allTasks, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => isManagerPlus ? tasksApi.list() : tasksApi.my() })
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
@@ -46,8 +46,8 @@ export default function TasksPage() {
 
   const tasks = allTasks?.filter((t: any) => {
     const matchesSearch = !search || t.title?.toLowerCase().includes(search.toLowerCase()) || t.description?.toLowerCase().includes(search.toLowerCase())
-    const matchesStatus = !status || t.status === status
-    const matchesPriority = !priority || t.priority === priority
+    const matchesStatus = statuses.length === 0 || statuses.includes(t.status)
+    const matchesPriority = priorities.length === 0 || priorities.includes(t.priority)
     const matchesProject = !projectId || t.projectId === projectId
     // Employee sees only own tasks
     const matchesEmployee = isManagerPlus || t.assigneeId === user?.id
@@ -107,13 +107,31 @@ export default function TasksPage() {
           <div className="flex flex-col gap-1">
             <span className="text-xs font-medium text-surface-500 dark:text-surface-400">{t('common.status')}</span>
             <div className="flex flex-wrap gap-1">
-              {STATUSES.map(s => (<button key={s} onClick={() => setStatus(s)} className={clsx('btn text-xs py-1', status === s ? 'btn-primary' : 'btn-secondary')}>{s ? t(`statuses.${s}`) : t('statuses.all')}</button>))}
+              <button onClick={() => setStatuses([])} className={clsx('btn text-xs py-1', statuses.length === 0 ? 'btn-primary' : 'btn-secondary')}>{t('statuses.all')}</button>
+              {STATUSES.map(s => {
+                const active = statuses.includes(s)
+                return (
+                  <button key={s} onClick={() => setStatuses(prev => active ? prev.filter(x => x !== s) : [...prev, s])}
+                    className={clsx('btn text-xs py-1', active ? 'btn-primary' : 'btn-secondary')}>
+                    {t(`statuses.${s}`)}
+                  </button>
+                )
+              })}
             </div>
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-xs font-medium text-surface-500 dark:text-surface-400">{t('common.priority')}</span>
             <div className="flex flex-wrap gap-1">
-              {PRIORITIES.map(p => (<button key={p} onClick={() => setPriority(p)} className={clsx('btn text-xs py-1', priority === p ? 'btn-primary' : 'btn-secondary')}>{p ? t(`priorities.${p}`) : t('priorities.all')}</button>))}
+              <button onClick={() => setPriorities([])} className={clsx('btn text-xs py-1', priorities.length === 0 ? 'btn-primary' : 'btn-secondary')}>{t('priorities.all')}</button>
+              {PRIORITIES.map(p => {
+                const active = priorities.includes(p)
+                return (
+                  <button key={p} onClick={() => setPriorities(prev => active ? prev.filter(x => x !== p) : [...prev, p])}
+                    className={clsx('btn text-xs py-1', active ? 'btn-primary' : 'btn-secondary')}>
+                    {t(`priorities.${p}`)}
+                  </button>
+                )
+              })}
             </div>
           </div>
           <div className="flex flex-col gap-1">
@@ -136,7 +154,7 @@ export default function TasksPage() {
           <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
         } />
       ) : view === 'list' ? (
-        <div className="card p-0 overflow-hidden">
+        <div key={page} className="animate-fade-in card p-0 overflow-hidden">
           <table className="w-full">
             <thead>
               <tr className="border-b border-surface-100 dark:border-surface-700">
@@ -174,7 +192,11 @@ export default function TasksPage() {
                       {task.assignee ? (
                         <div className="flex items-center gap-2">
                           <Avatar name={empNameMap[task.assigneeId] || task.assignee.name} size={22} />
-                          <span className="text-sm text-surface-600 dark:text-surface-300">{empNameMap[task.assigneeId] || task.assignee.name}</span>
+                          {!isManagerPlus ? (
+                            <span className="text-sm font-medium text-primary-600 dark:text-primary-400">Вы</span>
+                          ) : (
+                            <span className="text-sm text-surface-600 dark:text-surface-300">{empNameMap[task.assigneeId] || task.assignee.name}</span>
+                          )}
                         </div>
                       ) : <span className="text-surface-400 dark:text-surface-500 text-sm">—</span>}
                     </td>
@@ -184,12 +206,12 @@ export default function TasksPage() {
                       ) : <span className="text-surface-400 dark:text-surface-500 text-sm">—</span>}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {(isManagerPlus || isOwnTask) && (
-                        <div className="flex gap-1 justify-end">
-                          <button onClick={() => { setEditingTask(task); setShowCreate(true) }} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400"><Edit size={14} /></button>
-                          <button onClick={() => setDeleteTaskId(task.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400"><Trash2 size={14} /></button>
-                        </div>
-                      )}
+                      <div className="flex gap-1 justify-end">
+                        <button onClick={() => { setEditingTask(task); setShowCreate(true) }} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500 dark:text-surface-300"><Edit size={14} /></button>
+                        {isManagerPlus && (
+                          <button onClick={() => setDeleteTaskId(task.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500 dark:text-red-400"><Trash2 size={14} /></button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -198,7 +220,7 @@ export default function TasksPage() {
           </table>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div key={page} className="animate-fade-in grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {pagedTasks.map((task: any) => (
             <div key={task.id} className="card hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-2">

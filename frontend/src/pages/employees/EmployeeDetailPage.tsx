@@ -1,4 +1,4 @@
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { employeesApi, tasksApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
@@ -8,6 +8,7 @@ import { format } from 'date-fns'
 
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { t } = useTranslation()
 
   const { data: emp, isLoading } = useQuery({ queryKey: ['employee', id], queryFn: () => employeesApi.get(id!) })
@@ -23,7 +24,7 @@ export default function EmployeeDetailPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <Link to="/employees" className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400"><ArrowLeft size={18} /></Link>
+        <button onClick={() => navigate(-1)} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400"><ArrowLeft size={18} /></button>
         <h1 className="page-title">{t('employees.title')}</h1>
       </div>
 

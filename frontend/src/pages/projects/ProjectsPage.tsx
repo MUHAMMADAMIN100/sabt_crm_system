@@ -39,7 +39,7 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
-  const PAGE_SIZE = 12
+  const PAGE_SIZE = 9
   const [showCreate, setShowCreate] = useState(false)
   const [editProject, setEditProject] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -147,7 +147,7 @@ export default function ProjectsPage() {
           isManagerPlus && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
         } />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div key={page} className="animate-fade-in grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {pagedProjects.map((p: any) => (
             <div
               key={p.id}
@@ -546,9 +546,19 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: a
         )}
 
         <div className="flex gap-2 justify-end pt-2">
-          <button type="button" onClick={onClose} className="btn-secondary">{t('common.cancel')}</button>
-          <button type="submit" disabled={loading} className="btn-primary">
-            {initial ? t('common.save') : t('common.create')}
+          <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">{t('common.cancel')}</button>
+          <button type="submit" disabled={loading} className="btn-primary min-w-[120px] justify-center">
+            {loading ? (
+              <>
+                <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="32" strokeDashoffset="12" opacity="0.3"/>
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="10" strokeDashoffset="0"/>
+                </svg>
+                {initial ? 'Сохранение...' : 'Создание...'}
+              </>
+            ) : (
+              initial ? t('common.save') : t('common.create')
+            )}
           </button>
         </div>
       </form>

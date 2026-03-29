@@ -3,12 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from './user.entity';
 import { Employee, EmployeeStatus } from '../employees/employee.entity';
+import { ActivityLogService } from '../activity-log/activity-log.service';
+import { ActivityAction } from '../activity-log/activity-log.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User) private repo: Repository<User>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
+    private activityLog: ActivityLogService,
   ) {}
 
   findAll(role?: UserRole) {
@@ -23,7 +26,19 @@ export class UsersService {
   }
 
   async update(id: string, dto: Partial<User>) {
+    const user = await this.findOne(id);
     await this.repo.update(id, dto);
+
+    await this.activityLog.log({
+      userId: id,
+      userName: user.name,
+      action: ActivityAction.PROFILE_UPDATE,
+      entity: 'user',
+      entityId: id,
+      entityName: user.name,
+      details: { fields: Object.keys(dto) },
+    });
+
     return this.findOne(id);
   }
 
@@ -40,6 +55,14 @@ export class UsersService {
     const user = await this.findOne(id);
     user.isActive = !user.isActive;
     await this.repo.save(user);
+
+    await this.activityLog.log({
+      action: user.isActive ? ActivityAction.USER_ACTIVATE : ActivityAction.USER_DEACTIVATE,
+      entity: 'user',
+      entityId: id,
+      entityName: user.name,
+    });
+
     // Sync employee status
     const employee = await this.employeeRepo.findOne({ where: { userId: id } });
     if (employee) {
@@ -50,7 +73,18 @@ export class UsersService {
   }
 
   async updateAvatar(id: string, avatar: string) {
+    const user = await this.findOne(id);
     await this.repo.update(id, { avatar });
+
+    await this.activityLog.log({
+      userId: id,
+      userName: user.name,
+      action: ActivityAction.AVATAR_UPDATE,
+      entity: 'user',
+      entityId: id,
+      entityName: user.name,
+    });
+
     return this.findOne(id);
   }
 

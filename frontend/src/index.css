@@ -123,7 +123,7 @@ body,
 .btn-ghost,
 .btn-danger,
 .sidebar-link,
-nav, aside, header, main,
+nav, header, main,
 [class*="bg-white"],
 [class*="bg-surface"],
 [class*="dark:bg-surface"],
@@ -131,6 +131,17 @@ nav, aside, header, main,
   transition-property: background-color, border-color, color, box-shadow;
   transition-duration: 0.25s;
   transition-timing-function: ease;
+}
+
+/* Sidebar gets its own transition — includes width for smooth collapse/expand */
+aside {
+  transition:
+    width 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    color 0.25s ease,
+    box-shadow 0.25s ease;
+  will-change: width;
 }
 
 /* ====================== STAGGER LIST UTILITY ====================== */

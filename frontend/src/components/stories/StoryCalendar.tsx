@@ -152,6 +152,9 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
               const total = projectTotals[project.id] || 0
               const pm = storyMap[project.id] || {}
               const daysWithStories = Object.values(pm).filter((c: any) => c > 0).length
+              const todayKey = format(new Date(), 'yyyy-MM-dd')
+              const todayCount = pm[todayKey] || 0
+              const todayDone = todayCount >= MAX_STORIES
               return (
                 <button
                   key={project.id}
@@ -180,9 +183,20 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
                     <p className="text-xs text-surface-400 dark:text-surface-500">{daysWithStories} дней • {total} историй</p>
                   </div>
                   <div className="flex gap-1 shrink-0">
-                    {[1, 2, 3].map(i => (
-                      <div key={i} className={clsx('w-2 h-2 rounded-full', total >= i ? getCheckboxColor(i, Math.min(total > 0 ? 3 : 0, 3)) : 'bg-surface-200 dark:bg-surface-600')} />
-                    ))}
+                    {[1, 2, 3].map(i => {
+                      let dotColor: string
+                      if (todayCount === 0) {
+                        dotColor = 'bg-red-500'
+                      } else if (i <= todayCount) {
+                        dotColor =
+                          todayCount === 1 ? 'bg-pink-400' :
+                          todayCount === 2 ? 'bg-yellow-400' :
+                          'bg-green-500'
+                      } else {
+                        dotColor = 'bg-surface-300 dark:bg-surface-600'
+                      }
+                      return <div key={i} className={clsx('w-2 h-2 rounded-full transition-colors duration-300', dotColor)} />
+                    })}
                   </div>
                 </button>
               )
