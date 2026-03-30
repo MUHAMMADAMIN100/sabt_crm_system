@@ -22,44 +22,35 @@ export class AnalyticsService {
   ) {}
 
   async getDashboardOverview() {
-    const [
-      totalProjects,
-      activeProjects,
-      totalTasks,
-      doneTasks,
-      totalEmployees,
-      totalUsers,
-    ] = await Promise.all([
-      this.projectRepo.count({ where: { isArchived: false } }),
-      this.projectRepo.count({ where: { status: ProjectStatus.IN_PROGRESS, isArchived: false } }),
-      this.taskRepo.count(),
-      this.taskRepo.count({ where: { status: TaskStatus.DONE } }),
-      this.employeeRepo.count(),
-      this.userRepo.count({ where: { isActive: true } }),
+    const [counts, hoursRow] = await Promise.all([
+      this.taskRepo.manager.query(`
+        SELECT
+          (SELECT COUNT(*)::int FROM projects WHERE is_archived = false)                                        AS "totalProjects",
+          (SELECT COUNT(*)::int FROM projects WHERE status = 'in_progress' AND is_archived = false)            AS "activeProjects",
+          (SELECT COUNT(*)::int FROM tasks)                                                                     AS "totalTasks",
+          (SELECT COUNT(*)::int FROM tasks WHERE status = 'done')                                              AS "doneTasks",
+          (SELECT COUNT(*)::int FROM employees)                                                                 AS "totalEmployees",
+          (SELECT COUNT(*)::int FROM users WHERE is_active = true)                                             AS "totalUsers",
+          (SELECT COUNT(*)::int FROM tasks WHERE deadline < NOW() AND status NOT IN ('done','cancelled'))      AS "overdueTasks"
+      `),
+      this.timeRepo
+        .createQueryBuilder('tl')
+        .select('SUM(tl.timeSpent)', 'total')
+        .where("DATE_TRUNC('month', tl.date) = DATE_TRUNC('month', NOW())")
+        .getRawOne(),
     ]);
 
-    const overdueTasks = await this.taskRepo
-      .createQueryBuilder('t')
-      .where('t.deadline < NOW()')
-      .andWhere('t.status NOT IN (:...statuses)', { statuses: [TaskStatus.DONE, TaskStatus.CANCELLED] })
-      .getCount();
-
-    const hoursThisMonth = await this.timeRepo
-      .createQueryBuilder('tl')
-      .select('SUM(tl.timeSpent)', 'total')
-      .where("DATE_TRUNC('month', tl.date) = DATE_TRUNC('month', NOW())")
-      .getRawOne();
-
+    const c = counts[0];
     return {
-      totalProjects,
-      activeProjects,
-      totalTasks,
-      doneTasks,
-      completionRate: totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0,
-      totalEmployees,
-      totalUsers,
-      overdueTasks,
-      hoursThisMonth: parseFloat(hoursThisMonth?.total || '0'),
+      totalProjects: c.totalProjects,
+      activeProjects: c.activeProjects,
+      totalTasks: c.totalTasks,
+      doneTasks: c.doneTasks,
+      completionRate: c.totalTasks ? Math.round((c.doneTasks / c.totalTasks) * 100) : 0,
+      totalEmployees: c.totalEmployees,
+      totalUsers: c.totalUsers,
+      overdueTasks: c.overdueTasks,
+      hoursThisMonth: parseFloat(hoursRow?.total || '0'),
     };
   }
 
@@ -126,15 +117,16 @@ export class AnalyticsService {
     return data.map(d => ({ ...d, hours: parseFloat(d.hours || '0') }));
   }
 
-  async getProjectsPerformance() {
-    const projects = await this.projectRepo.find({
+  async getProjectsPerformance(page = 1, limit = 9) {
+    const [projects, total] = await this.projectRepo.findAndCount({
       where: { isArchived: false },
       relations: ['members', 'tasks'],
       order: { createdAt: 'DESC' },
-      take: 10,
+      take: limit,
+      skip: (page - 1) * limit,
     });
 
-    return projects.map(p => ({
+    const data = projects.map(p => ({
       id: p.id,
       name: p.name,
       status: p.status,
@@ -143,9 +135,12 @@ export class AnalyticsService {
       doneTasks: p.tasks?.filter(t => t.status === TaskStatus.DONE).length || 0,
       members: p.members?.map(m => ({ id: m.id, name: m.name, avatar: m.avatar })) || [],
     }));
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async getEmployeeEfficiency() {
+  async getEmployeeEfficiency(page = 1, limit = 9) {
+    const offset = (page - 1) * limit;
     const data = await this.userRepo
       .createQueryBuilder('u')
       .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
@@ -162,15 +157,57 @@ export class AnalyticsService {
       .andWhere('u.role = :role', { role: 'employee' })
       .groupBy('u.id, u.name, e.fullName, e.position')
       .orderBy('"doneTasks"', 'DESC')
-      .limit(20)
+      .limit(limit)
+      .offset(offset)
       .getRawMany();
 
-    return data.map(d => ({
+    const totalCount = await this.userRepo
+      .createQueryBuilder('u')
+      .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
+      .where('u.isActive = true')
+      .andWhere('u.role = :role', { role: 'employee' })
+      .getCount();
+
+    const mapped = data.map(d => ({
       ...d,
       name: d.fullName || d.name,
       totalHours: parseFloat(d.totalHours || '0'),
       doneTasks: parseInt(d.doneTasks || '0'),
       totalTasks: parseInt(d.totalTasks || '0'),
+    }));
+
+    return { data: mapped, total: totalCount, page, limit, totalPages: Math.ceil(totalCount / limit) };
+  }
+
+  async getEmployeeWorkload() {
+    const data = await this.userRepo
+      .createQueryBuilder('u')
+      .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
+      .leftJoin('u.tasks', 't', "t.status NOT IN ('done','cancelled')")
+      .select('u.id', 'id')
+      .addSelect('u.name', 'name')
+      .addSelect('e.fullName', 'fullName')
+      .addSelect('e.position', 'position')
+      .addSelect('e.department', 'department')
+      .addSelect('u.avatar', 'avatar')
+      .addSelect('COUNT(DISTINCT t.id)', 'activeTasks')
+      .addSelect("SUM(CASE WHEN t.priority = 'critical' THEN 1 ELSE 0 END)", 'criticalTasks')
+      .addSelect("SUM(CASE WHEN t.deadline < NOW() AND t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END)", 'overdueTasks')
+      .where('u.isActive = true')
+      .andWhere('u.role = :role', { role: 'employee' })
+      .groupBy('u.id, u.name, e.fullName, e.position, e.department, u.avatar')
+      .orderBy('"activeTasks"', 'DESC')
+      .getRawMany();
+
+    return data.map(d => ({
+      id: d.id,
+      name: d.fullName || d.name,
+      position: d.position,
+      department: d.department,
+      avatar: d.avatar,
+      activeTasks: parseInt(d.activeTasks || '0'),
+      criticalTasks: parseInt(d.criticalTasks || '0'),
+      overdueTasks: parseInt(d.overdueTasks || '0'),
     }));
   }
 

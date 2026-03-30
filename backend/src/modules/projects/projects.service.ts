@@ -23,11 +23,14 @@ export class ProjectsService {
     private telegramService: TelegramService,
   ) {}
 
-  findAll(search?: string, status?: ProjectStatus, managerId?: string, archived = false) {
+  async findAll(search?: string, status?: ProjectStatus, managerId?: string, archived = false) {
     const qb = this.repo.createQueryBuilder('p')
       .leftJoinAndSelect('p.manager', 'manager')
       .leftJoinAndSelect('p.members', 'members')
-      .leftJoinAndSelect('p.tasks', 'tasks')
+      .loadRelationCountAndMap('p.taskCount', 'p.tasks')
+      .loadRelationCountAndMap('p.doneTaskCount', 'p.tasks', 'doneTask', qb =>
+        qb.where('doneTask.status = :s', { s: 'done' }),
+      )
       .where('p.isArchived = :archived', { archived });
 
     if (status) qb.andWhere('p.status = :status', { status });
@@ -50,7 +53,7 @@ export class ProjectsService {
     const project = this.repo.create({
       ...dto,
       managerId: dto.managerId || userId,
-      members: dto.memberIds?.map(id => ({ id })) as any,
+      members: dto.memberIds?.map(id => ({ id })) as unknown as User[],
     });
     const saved = await this.repo.save(project);
 
@@ -107,7 +110,7 @@ export class ProjectsService {
     return saved;
   }
 
-  async update(id: string, dto: UpdateProjectDto, user: any) {
+  async update(id: string, dto: UpdateProjectDto, user: { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
     if (user.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Not allowed');
@@ -116,7 +119,7 @@ export class ProjectsService {
     const oldMemberIds = project.members?.map(m => m.id) || [];
 
     if (dto.memberIds !== undefined) {
-      project.members = dto.memberIds.map(id => ({ id })) as any;
+      project.members = dto.memberIds.map(id => ({ id })) as unknown as User[];
     }
 
     Object.assign(project, {

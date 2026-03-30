@@ -8,7 +8,12 @@ import './index.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: 1, staleTime: 10000 },
+    queries: {
+      retry: 1,
+      staleTime: 5 * 60 * 1000,   // 5 min — don't refetch unless data is stale
+      gcTime: 10 * 60 * 1000,      // 10 min — keep in memory after unmount
+      refetchOnWindowFocus: false,  // don't spam API on tab switch
+    },
   },
 })
 

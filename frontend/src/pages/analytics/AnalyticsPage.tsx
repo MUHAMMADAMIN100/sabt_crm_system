@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { analyticsApi, tasksApi, employeesApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatCard, ProgressBar, Avatar, StatusBadge, PriorityBadge } from '@/components/ui'
-import { FolderKanban, CheckSquare, Clock, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react'
+import { FolderKanban, CheckSquare, Clock, TrendingUp, ChevronDown, ChevronRight, AlertTriangle, Zap } from 'lucide-react'
 import StoryCalendar from '@/components/stories/StoryCalendar'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -20,6 +20,7 @@ export default function AnalyticsPage() {
   const { data: dash, isLoading } = useQuery({ queryKey: ['analytics-dashboard'], queryFn: analyticsApi.dashboard })
   const { data: allTasks } = useQuery({ queryKey: ['tasks'], queryFn: () => tasksApi.list() })
   const { data: employeesList } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
+  const { data: workload } = useQuery({ queryKey: ['analytics-workload'], queryFn: analyticsApi.employeeWorkload })
 
   const overview = dash?.overview
   const projByStatus = dash?.projByStatus
@@ -171,6 +172,70 @@ export default function AnalyticsPage() {
                     <td className="py-2 px-3 text-right font-semibold text-surface-900 dark:text-surface-100">{p.progress}%</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {workload && workload.length > 0 && (
+        <div className="card">
+          <h3 className="section-title mb-4">Загруженность сотрудников</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-surface-100 dark:border-surface-700">
+                  <th className="text-left py-2 px-3 text-xs text-surface-500 dark:text-surface-400 font-semibold">Сотрудник</th>
+                  <th className="text-left py-2 px-3 text-xs text-surface-500 dark:text-surface-400 font-semibold hidden md:table-cell">Отдел</th>
+                  <th className="text-center py-2 px-3 text-xs text-surface-500 dark:text-surface-400 font-semibold">Активных задач</th>
+                  <th className="text-center py-2 px-3 text-xs text-surface-500 dark:text-surface-400 font-semibold">
+                    <span className="flex items-center justify-center gap-1"><Zap size={11} className="text-amber-500" /> Критичных</span>
+                  </th>
+                  <th className="text-center py-2 px-3 text-xs text-surface-500 dark:text-surface-400 font-semibold">
+                    <span className="flex items-center justify-center gap-1"><AlertTriangle size={11} className="text-red-500" /> Просрочено</span>
+                  </th>
+                  <th className="text-left py-2 px-3 text-xs text-surface-500 dark:text-surface-400 font-semibold hidden lg:table-cell">Нагрузка</th>
+                </tr>
+              </thead>
+              <tbody>
+                {workload.map((e: any) => {
+                  const maxTasks = Math.max(...workload.map((w: any) => w.activeTasks), 1)
+                  const pct = Math.round((e.activeTasks / maxTasks) * 100)
+                  const loadColor = e.activeTasks >= 10 ? 'bg-red-500' : e.activeTasks >= 5 ? 'bg-amber-500' : 'bg-emerald-500'
+                  return (
+                    <tr key={e.id} className="border-b border-surface-50 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center gap-2">
+                          <Avatar name={e.name} src={e.avatar} size={28} />
+                          <div>
+                            <p className="font-medium text-surface-900 dark:text-surface-100 text-xs">{e.name}</p>
+                            {e.position && <p className="text-[10px] text-surface-400 dark:text-surface-500">{e.position}</p>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 hidden md:table-cell text-xs text-surface-500 dark:text-surface-400">{e.department || '—'}</td>
+                      <td className="py-2.5 px-3 text-center">
+                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-white text-xs font-bold ${e.activeTasks >= 10 ? 'bg-red-500' : e.activeTasks >= 5 ? 'bg-amber-500' : 'bg-primary-600'}`}>
+                          {e.activeTasks}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-xs font-semibold text-amber-600 dark:text-amber-400">
+                        {e.criticalTasks > 0 ? e.criticalTasks : <span className="text-surface-300 dark:text-surface-600">—</span>}
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-xs font-semibold text-red-600 dark:text-red-400">
+                        {e.overdueTasks > 0 ? e.overdueTasks : <span className="text-surface-300 dark:text-surface-600">—</span>}
+                      </td>
+                      <td className="py-2.5 px-3 hidden lg:table-cell">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-surface-100 dark:bg-surface-700 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${loadColor} transition-all`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="text-[10px] text-surface-400 dark:text-surface-500 w-7 text-right">{pct}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

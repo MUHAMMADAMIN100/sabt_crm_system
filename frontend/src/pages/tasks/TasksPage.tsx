@@ -7,7 +7,8 @@ import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, LayoutGrid, List, Filter, Edit, Trash2 } from 'lucide-react'
+import { Plus, Search, LayoutGrid, List, Filter, Edit, Trash2, Download } from 'lucide-react'
+import api from '@/lib/api'
 import { format } from 'date-fns'
 import TaskForm from '@/components/tasks/TaskForm'
 import toast from 'react-hot-toast'
@@ -77,22 +78,37 @@ export default function TasksPage() {
     onSuccess: () => { invalidateAfterTaskChange(qc); setDeleteTaskId(null); toast.success(t('tasks.deleted')) },
   })
 
+  const exportCsv = async () => {
+    const params: any = {}
+    if (statuses.length === 1) params.status = statuses[0]
+    if (projectId) params.projectId = projectId
+    const res = await api.get('/tasks/export/csv', { params, responseType: 'blob' })
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a'); a.href = url; a.download = 'tasks.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (isLoading) return <PageLoader />
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="page-title">{t('tasks.title')}</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {isManagerPlus && (
+            <button onClick={exportCsv} className="btn-secondary" title="Экспорт CSV">
+              <Download size={15} /> <span className="hidden sm:inline">CSV</span>
+            </button>
+          )}
           <button onClick={() => setShowFilters(f => !f)} className={clsx('btn-secondary', showFilters && 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400')}>
-            <Filter size={15} /> {t('common.filters')}
+            <Filter size={15} /> <span className="hidden sm:inline">{t('common.filters')}</span>
           </button>
           <div className="flex gap-1 bg-surface-100 dark:bg-surface-700 p-1 rounded-xl">
             <button onClick={() => setView('list')} className={clsx('p-1.5 rounded-lg', view === 'list' ? 'bg-white dark:bg-surface-600 shadow-sm' : 'text-surface-500 dark:text-surface-400')}><List size={16} /></button>
             <button onClick={() => setView('grid')} className={clsx('p-1.5 rounded-lg', view === 'grid' ? 'bg-white dark:bg-surface-600 shadow-sm' : 'text-surface-500 dark:text-surface-400')}><LayoutGrid size={16} /></button>
           </div>
           <button onClick={() => { setEditingTask(null); setShowCreate(true) }} className="btn-primary">
-            <Plus size={16} /> {t('tasks.task')}
+            <Plus size={16} /> <span className="hidden sm:inline">{t('tasks.task')}</span>
           </button>
         </div>
       </div>

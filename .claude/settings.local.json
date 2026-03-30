@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find '/c/Users/EXPERTCOMPUTER/Desktop/CRM SMM' -type f -name vite.config.* -o -name package.json -o -name docker-compose.yml)",
+      "Bash(find '/c/Users/EXPERTCOMPUTER/Desktop/CRM SMM/frontend/src' -type f \\\\\\(-name api.ts -o -name api.service.ts -o -name *query* \\\\\\))",
+      "Bash(grep -r \"QueryClient\\\\|useQuery\\\\|useMutation\" '/c/Users/EXPERTCOMPUTER/Desktop/CRM SMM/frontend/src' --include=*.tsx --include=*.ts)",
+      "Bash(find '/c/Users/EXPERTCOMPUTER/Desktop/CRM SMM' -type f -name tailwind.config.* -o -name nginx* -o -type d -name nginx)",
+      "Bash(grep -r \"redis\\\\|Redis\\\\|cache\\\\|Cache\" '/c/Users/EXPERTCOMPUTER/Desktop/CRM SMM/backend/src' --include=*.ts)",
+      "Bash(grep -r \"compression\\\\|gzip\" '/c/Users/EXPERTCOMPUTER/Desktop/CRM SMM/backend/src' --include=*.ts)",
+      "Bash(npm run:*)",
+      "Bash(npm install:*)"
+    ]
+  }
+}

@@ -4,15 +4,60 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { ThrottlerExceptionFilter } from './throttler-exception.filter';
+import { WinstonModule } from 'nest-winston';
+import * as winston from 'winston';
+import 'winston-daily-rotate-file';
+import * as compression from 'compression';
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+const bootstrapLogger = WinstonModule.createLogger({
+  level: isProduction ? 'warn' : 'debug',
+  format: isProduction
+    ? winston.format.combine(winston.format.timestamp(), winston.format.errors({ stack: true }), winston.format.json())
+    : winston.format.combine(
+        winston.format.colorize(),
+        winston.format.timestamp({ format: 'HH:mm:ss' }),
+        winston.format.errors({ stack: true }),
+        winston.format.printf(({ level, message, timestamp, stack }) =>
+          `${timestamp} [${level}] ${stack || message}`,
+        ),
+      ),
+  transports: [
+    new winston.transports.Console(),
+    ...(isProduction
+      ? [
+          new (winston.transports as any).DailyRotateFile({
+            filename: 'logs/error-%DATE%.log',
+            datePattern: 'YYYY-MM-DD',
+            level: 'error',
+            maxFiles: '30d',
+            zippedArchive: true,
+          }),
+          new (winston.transports as any).DailyRotateFile({
+            filename: 'logs/combined-%DATE%.log',
+            datePattern: 'YYYY-MM-DD',
+            maxFiles: '14d',
+            zippedArchive: true,
+          }),
+        ]
+      : []),
+  ],
+});
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
-
-  app.enableCors({
-    origin: ['http://localhost:5173', 'http://localhost:3001', 'http://localhost:5174'],
-    credentials: true,
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: bootstrapLogger,
   });
 
+  app.use(compression({ level: 6, threshold: 1024 }));
+
+  const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:3001')
+    .split(',').map(o => o.trim());
+  app.enableCors({ origin: allowedOrigins, credentials: true });
+
+  app.useGlobalFilters(new ThrottlerExceptionFilter());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -38,8 +83,8 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`\n🚀 Backend running on http://localhost:${port}`);
-  console.log(`📚 Swagger docs: http://localhost:${port}/api/docs\n`);
+  bootstrapLogger.log(`Backend running on http://localhost:${port}`, 'Bootstrap');
+  bootstrapLogger.log(`Swagger docs: http://localhost:${port}/api/docs`, 'Bootstrap');
 }
 
 bootstrap();

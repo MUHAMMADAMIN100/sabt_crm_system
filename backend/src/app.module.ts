@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
+import { HealthController } from './health.controller';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { CacheModule } from '@nestjs/cache-manager';
 import { join } from 'path';
+import { LoggerModule } from './logger/logger.module';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -24,21 +28,28 @@ import { ActivityLogModule } from './modules/activity-log/activity-log.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
 
 @Module({
+  controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    LoggerModule,
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.get('DATABASE_URL'),
         entities: [join(__dirname, '**', '*.entity.{ts,js}')],
-        synchronize: true,
+        migrations: [join(__dirname, 'database/migrations/*.{ts,js}')],
+        synchronize: process.env.NODE_ENV !== 'production',
+        migrationsRun: process.env.NODE_ENV === 'production',
         logging: false,
+        ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
       }),
       inject: [ConfigService],
     }),
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
+    CacheModule.register({ isGlobal: true, ttl: 300000 }),
     AuthModule,
     UsersModule,
     EmployeesModule,

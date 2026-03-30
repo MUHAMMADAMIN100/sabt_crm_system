@@ -227,7 +227,8 @@
     "files": "Files",
     "about": "About Project",
     "client": "About Client",
-    "members": "Members"
+    "members": "Members",
+    "gantt": "Gantt Chart"
   },
   "noMembers": "No members"
 }

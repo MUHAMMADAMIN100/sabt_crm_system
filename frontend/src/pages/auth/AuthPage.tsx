@@ -238,11 +238,11 @@ export default function AuthPage() {
                   })}
                   type="email"
                   placeholder="you@gmail.com"
-                  className={`input pl-9 ${errors.email && errors.email.message?.trim() ? 'border-red-400 focus:ring-red-400' : ''}`}
+                  className={`input pl-9 ${errors.email && String(errors.email.message ?? '').trim() ? 'border-red-400 focus:ring-red-400' : ''}`}
                   onBlur={handleEmailBlur}
                 />
               </div>
-              {errors.email && errors.email.message?.trim() && (
+              {errors.email && String(errors.email.message ?? '').trim() && (
                 <p className="auth-error">{String(errors.email.message)}</p>
               )}
             </div>

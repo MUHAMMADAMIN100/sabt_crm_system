@@ -29,7 +29,7 @@ export class UsersController {
 
   @Patch(':id')
   @Roles(UserRole.ADMIN)
-  update(@Param('id') id: string, @Body() dto: any) {
+  update(@Param('id') id: string, @Body() dto: Partial<{ name: string; email: string; role: UserRole; isActive: boolean }>) {
     return this.usersService.update(id, dto);
   }
 

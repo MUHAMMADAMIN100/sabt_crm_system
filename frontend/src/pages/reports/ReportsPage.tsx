@@ -4,7 +4,8 @@ import { reportsApi, projectsApi, tasksApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar } from '@/components/ui'
-import { Plus, FileText, Trash2 } from 'lucide-react'
+import { Plus, FileText, Trash2, Download } from 'lucide-react'
+import api from '@/lib/api'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
@@ -34,20 +35,34 @@ export default function ReportsPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['reports'] }); toast.success(t('reports.deleted')) },
   })
 
+  const exportCsv = async () => {
+    const res = await api.get('/reports/export/csv', { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a'); a.href = url; a.download = 'reports.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (isLoading) return <PageLoader />
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="page-title">{t('reports.title')}</h1>
-        {!isManagerPlus && (
-          <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} /> {t('reports.newReport')}</button>
-        )}
+        <div className="flex gap-2">
+          {isManagerPlus && (
+            <button onClick={exportCsv} className="btn-secondary" title="Экспорт CSV">
+              <Download size={15} /> CSV
+            </button>
+          )}
+          {!isManagerPlus && (
+            <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} /> {t('reports.newReport')}</button>
+          )}
+        </div>
       </div>
 
       {!reports?.length ? (
         <EmptyState title={t('reports.noReports')} description={t('reports.noReportsDesc')} action={
-          !isManagerPlus && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
+          !isManagerPlus ? <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button> : undefined
         } />
       ) : (
         <div className="space-y-3">
@@ -104,9 +119,18 @@ export default function ReportsPage() {
   )
 }
 
-function ReportForm({ onSubmit, onClose, projects, tasks, loading, t }: any) {
-  const { register, handleSubmit, reset } = useForm({ defaultValues: { date: new Date().toISOString().split('T')[0] } })
-  const submit = (data: any) => { onSubmit(data); reset() }
+interface ReportFormProps {
+  onSubmit: (data: Record<string, unknown>) => void
+  onClose: () => void
+  projects: import('@/types/entities').Project[]
+  tasks: import('@/types/entities').Task[]
+  loading: boolean
+  t: (key: string) => string
+}
+
+function ReportForm({ onSubmit, onClose, projects, tasks, loading, t }: ReportFormProps) {
+  const { register, handleSubmit, reset } = useForm<Record<string, unknown>>({ defaultValues: { date: new Date().toISOString().split('T')[0] } })
+  const submit = (data: Record<string, unknown>) => { onSubmit(data); reset() }
 
   return (
     <form onSubmit={handleSubmit(submit)} className="space-y-4">

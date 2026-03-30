@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { tasksApi, commentsApi, timeTrackerApi, filesApi } from '@/services/api.service'
+import { tasksApi, commentsApi, filesApi } from '@/services/api.service'
 import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, Avatar } from '@/components/ui'
-import { ArrowLeft, Clock, Send, Edit2, Trash2, Play, Square, Plus, Paperclip, Upload } from 'lucide-react'
+import { ArrowLeft, Send, Edit2, Trash2, Paperclip, Upload } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -20,32 +20,17 @@ export default function TaskDetailPage() {
   const [comment, setComment] = useState('')
   const [editingComment, setEditingComment] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
-  const [activeTab, setActiveTab] = useState<'comments' | 'time' | 'files'>('comments')
-  const isAdminOrClient = ['admin', 'client'].includes(user?.role || '')
-  const [logHours, setLogHours] = useState('')
-  const [logDesc, setLogDesc] = useState('')
+  const [activeTab, setActiveTab] = useState<'comments' | 'files'>('comments')
 
   const { data: task, isLoading } = useQuery({
     queryKey: ['task', id],
     queryFn: () => tasksApi.get(id!),
   })
 
-  const { data: timeLogs } = useQuery({
-    queryKey: ['time-logs', id],
-    queryFn: () => timeTrackerApi.byTask(id!),
-    enabled: activeTab === 'time',
-  })
-
   const { data: files } = useQuery({
     queryKey: ['task-files', id],
     queryFn: () => filesApi.byTask(id!),
     enabled: activeTab === 'files',
-  })
-
-  const { data: runningTimer } = useQuery({
-    queryKey: ['running-timer'],
-    queryFn: timeTrackerApi.running,
-    refetchInterval: 5000,
   })
 
   const updateTask = useMutation({
@@ -72,21 +57,6 @@ export default function TaskDetailPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['task', id] }); setEditingComment(null) },
   })
 
-  const startTimer = useMutation({
-    mutationFn: () => timeTrackerApi.start(id!),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['running-timer'] }); toast.success(t('common.updated')) },
-  })
-
-  const stopTimer = useMutation({
-    mutationFn: timeTrackerApi.stop,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['running-timer'] }); qc.invalidateQueries({ queryKey: ['time-logs', id] }); toast.success(t('common.updated')) },
-  })
-
-  const logTime = useMutation({
-    mutationFn: () => timeTrackerApi.log({ taskId: id, timeSpent: parseFloat(logHours), date: new Date().toISOString().split('T')[0], description: logDesc }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['time-logs', id] }); setLogHours(''); setLogDesc(''); toast.success(t('common.updated')) },
-  })
-
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -97,8 +67,6 @@ export default function TaskDetailPage() {
 
   if (isLoading) return <PageLoader />
   if (!task) return <div className="text-surface-600 dark:text-surface-400">{t('common.noData')}</div>
-
-  const isRunningThisTask = runningTimer?.taskId === id
 
   return (
     <div className="space-y-5">
@@ -138,7 +106,7 @@ export default function TaskDetailPage() {
 
           {/* Tabs */}
           <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700">
-            {(['comments', ...(!isAdminOrClient ? ['time'] : []), 'files'] as const).map((tab: any) => (
+            {(['comments', 'files'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -147,7 +115,7 @@ export default function TaskDetailPage() {
                   activeTab === tab ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400' : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300'
                 )}
               >
-                {tab === 'comments' ? `${t('reports.comments')} (${task.comments?.length || 0})` : tab === 'time' ? t('dashboard.hours') : t('files.title')}
+                {tab === 'comments' ? `${t('reports.comments')} (${task.comments?.length || 0})` : t('files.title')}
               </button>
             ))}
           </div>
@@ -201,37 +169,6 @@ export default function TaskDetailPage() {
                     <Send size={15} />
                   </button>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Time logs */}
-          {activeTab === 'time' && (
-            <div className="space-y-4">
-              <div className="flex gap-3">
-                <button
-                  onClick={() => isRunningThisTask ? stopTimer.mutate() : startTimer.mutate()}
-                  className={clsx('btn', isRunningThisTask ? 'btn-danger' : 'btn-primary')}
-                >
-                  {isRunningThisTask ? <><Square size={15} /> {t('common.cancel')}</> : <><Play size={15} /> {t('common.create')}</>}
-                </button>
-                <div className="flex gap-2 flex-1">
-                  <input value={logHours} onChange={e => setLogHours(e.target.value)} type="number" step="0.25" placeholder={t('dashboard.hours')} className="input w-24" />
-                  <input value={logDesc} onChange={e => setLogDesc(e.target.value)} placeholder={t('tasks.description')} className="input flex-1" />
-                  <button onClick={() => logHours && logTime.mutate()} className="btn-secondary"><Plus size={15} /></button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {timeLogs?.map((log: any) => (
-                  <div key={log.id} className="flex items-center gap-3 p-3 bg-surface-50 dark:bg-surface-700/50 rounded-xl">
-                    <Clock size={15} className="text-primary-600 dark:text-primary-400 shrink-0" />
-                    <Avatar name={log.employee?.name} size={24} />
-                    <span className="text-sm text-surface-700 dark:text-surface-300 flex-1">{log.description || log.employee?.name}</span>
-                    <span className="font-semibold text-sm text-primary-700 dark:text-primary-400">{log.timeSpent}ч</span>
-                    <span className="text-xs text-surface-400 dark:text-surface-500">{format(new Date(log.date), 'dd.MM.yyyy')}</span>
-                  </div>
-                ))}
-                {!timeLogs?.length && <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-4">{t('common.noData')}</p>}
               </div>
             </div>
           )}

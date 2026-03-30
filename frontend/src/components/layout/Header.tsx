@@ -197,7 +197,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           </div>
           <div className="hidden md:block text-left">
             <p className="text-sm font-medium text-surface-900 dark:text-surface-100 leading-tight">{user?.name}</p>
-            <p className="text-xs text-surface-500 dark:text-surface-400 capitalize">{user?.role === 'admin' ? 'Админ' : user?.role === 'manager' ? 'Менеджер' : user?.role === 'employee' ? 'Сотрудник' : 'Клиент'}</p>
+            <p className="text-xs text-surface-500 dark:text-surface-400 capitalize">{user?.role === 'admin' ? 'Администратор' : 'Сотрудник'}</p>
           </div>
           <ChevronDown size={14} className="text-surface-400 hidden md:block" />
         </button>

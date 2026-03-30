@@ -85,7 +85,7 @@ export default function EmployeesPage() {
                   <div>
                     <div className="flex items-center gap-1">
                       <span className="font-semibold text-surface-900 dark:text-surface-100">{emp.fullName}</span>
-                      {emp.isSubAdmin && <ShieldCheck size={14} className="text-primary-500" title="Помощник администратора" />}
+                      {emp.isSubAdmin && <ShieldCheck size={14} className="text-primary-500" aria-label="Помощник администратора" />}
                     </div>
                     <p className="text-sm text-surface-500 dark:text-surface-400">{emp.position}</p>
                     <span className="text-xs bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-2 py-0.5 rounded-full">{emp.department}</span>
@@ -181,7 +181,15 @@ export default function EmployeesPage() {
 
 function AtSignIcon() { return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg> }
 
-function EmployeeForm({ open, onClose, onSubmit, initial, loading }: any) {
+interface EmployeeFormProps {
+  open: boolean
+  onClose: () => void
+  onSubmit: (data: Record<string, unknown>) => void
+  initial: import('@/types/entities').Employee | null
+  loading: boolean
+}
+
+function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFormProps) {
   const { register, handleSubmit, reset, formState: { errors } } = useForm()
   const { t } = useTranslation()
 

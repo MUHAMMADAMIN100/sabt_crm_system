@@ -9,6 +9,7 @@ import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit,
 import { format } from 'date-fns'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
+import GanttChart from '@/components/projects/GanttChart'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -17,7 +18,7 @@ const TASK_STATUSES = ['new', 'in_progress', 'review', 'done', 'cancelled']
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'tasks' | 'files' | 'about' | 'client' | 'members'>('tasks')
+  const [activeTab, setActiveTab] = useState<'tasks' | 'files' | 'about' | 'client' | 'members' | 'gantt'>('tasks')
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
@@ -144,8 +145,8 @@ export default function ProjectDetailPage() {
           {project.description && <p className="text-surface-500 dark:text-surface-400 text-sm mt-1">{project.description}</p>}
         </div>
         {canCreateTask && (
-          <button onClick={() => { setEditingTask(null); setShowTaskForm(true) }} className="btn-primary">
-            <Plus size={16} /> {t('tasks.task')}
+          <button onClick={() => { setEditingTask(null); setShowTaskForm(true) }} className="btn-primary shrink-0">
+            <Plus size={16} /> <span className="hidden sm:inline">{t('tasks.task')}</span>
           </button>
         )}
       </div>
@@ -176,7 +177,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto">
-        {(['tasks', 'files', 'about', 'client', 'members'] as const).map(tab => (
+        {(['tasks', 'gantt', 'files', 'about', 'client', 'members'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={clsx('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
               activeTab === tab ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400' : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300')}>
@@ -186,9 +187,9 @@ export default function ProjectDetailPage() {
       </div>
 
       {activeTab === 'tasks' && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="flex gap-4 overflow-x-auto pb-3 lg:grid lg:grid-cols-4 lg:overflow-x-visible">
           {TASK_STATUSES.map(status => (
-            <div key={status} className="space-y-2"
+            <div key={status} className="space-y-2 min-w-[260px] w-[260px] shrink-0 lg:min-w-0 lg:w-auto lg:shrink"
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, status)}>
@@ -206,7 +207,7 @@ export default function ProjectDetailPage() {
                       onDragEnd={canDrag(task) ? handleDragEnd : undefined}
                       className={clsx('card p-3 hover:shadow-md transition-all', canDrag(task) && 'cursor-grab active:cursor-grabbing')}>
                       <div className="flex items-start justify-between mb-2">
-                        <Link to={`/tasks/${task.id}`} className="text-sm font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 flex-1">{task.title}</Link>
+                        <Link to={`/tasks/${task.id}`} className="text-sm font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 flex-1 leading-snug">{task.title}</Link>
                         {(isManagerPlus || isOwnTask) && (
                           <div className="flex gap-0.5 ml-1 shrink-0">
                             <button onClick={(e) => { e.stopPropagation(); setEditingTask(task); setShowTaskForm(true) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400"><Edit size={12} /></button>
@@ -217,10 +218,7 @@ export default function ProjectDetailPage() {
                       <div className="flex items-center justify-between">
                         <PriorityBadge priority={task.priority} />
                         {task.assignee && (
-                          <div className="flex items-center gap-1">
-                            <Avatar name={task.assignee.name} size={20} />
-                            <span className="text-xs text-surface-500 dark:text-surface-400 font-medium">{task.assignee.name?.split(' ').map((w:string)=>w[0]).join('').slice(0,2).toUpperCase()}</span>
-                          </div>
+                          <Avatar name={task.assignee.name} size={22} />
                         )}
                       </div>
                       {task.deadline && (
@@ -233,6 +231,14 @@ export default function ProjectDetailPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {activeTab === 'gantt' && (
+        <GanttChart
+          tasks={project.tasks || []}
+          projectStart={project.startDate}
+          projectEnd={project.endDate}
+        />
       )}
 
       {activeTab === 'files' && (

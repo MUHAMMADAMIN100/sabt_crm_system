@@ -114,7 +114,7 @@ export class TasksService {
     return this.findOne(saved.id);
   }
 
-  async update(id: string, dto: UpdateTaskDto, user: any) {
+  async update(id: string, dto: UpdateTaskDto, user: { id: string; role: string; name?: string }) {
     const task = await this.findOne(id);
 
     if (user.role === UserRole.EMPLOYEE && task.assigneeId !== user.id) {
@@ -123,7 +123,7 @@ export class TasksService {
 
     const oldStatus = task.status;
     const oldAssigneeId = task.assigneeId;
-    await this.repo.update(id, dto as any);
+    await this.repo.update(id, dto);
 
     // Notify on status change
     if (dto.status && dto.status !== oldStatus) {
@@ -227,7 +227,7 @@ export class TasksService {
     return { message: 'Task deleted' };
   }
 
-  async removeWithAuth(id: string, user: any) {
+  async removeWithAuth(id: string, user: { id: string; role: string; name?: string }) {
     const task = await this.findOne(id);
     if (user.role === UserRole.EMPLOYEE && task.assigneeId !== user.id && task.createdById !== user.id) {
       throw new ForbiddenException('Not allowed');

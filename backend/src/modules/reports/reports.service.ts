@@ -38,7 +38,7 @@ export class ReportsService {
     return report;
   }
 
-  async create(dto: any, userId: string) {
+  async create(dto: { date: string; projectId?: string; taskId?: string; description: string; timeSpent: number; comments?: string; files?: string[] }, userId: string) {
     const report = this.repo.create({ ...dto, employeeId: userId });
     const savedReport = await this.repo.save(report);
 
@@ -65,7 +65,7 @@ export class ReportsService {
     return this.findOne(result.id);
   }
 
-  async update(id: string, dto: any, userId: string) {
+  async update(id: string, dto: { date?: string; projectId?: string; taskId?: string; description?: string; timeSpent?: number; comments?: string; files?: string[] }, userId: string) {
     const report = await this.findOne(id);
     if (report.employeeId !== userId) throw new NotFoundException('Not your report');
     await this.repo.update(id, dto);

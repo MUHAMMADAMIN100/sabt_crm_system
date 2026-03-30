@@ -66,7 +66,7 @@ export class CalendarService {
       }));
 
     return [...taskEvents, ...projectStartEvents, ...projectEndEvents].sort(
-      (a, b) => new Date(a.date as any).getTime() - new Date(b.date as any).getTime(),
+      (a, b) => new Date(a.date as unknown as string).getTime() - new Date(b.date as unknown as string).getTime(),
     );
   }
 }

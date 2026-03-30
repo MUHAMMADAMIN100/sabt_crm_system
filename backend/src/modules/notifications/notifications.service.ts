@@ -29,7 +29,7 @@ export class NotificationsService {
   }
 
   findByUser(userId: string, unreadOnly = false) {
-    const where: any = { userId };
+    const where: { userId: string; isRead?: boolean } = { userId };
     if (unreadOnly) where.isRead = false;
     return this.repo.find({ where, order: { createdAt: 'DESC' }, take: 50 });
   }

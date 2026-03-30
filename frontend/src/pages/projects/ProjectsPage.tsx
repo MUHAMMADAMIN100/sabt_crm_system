@@ -10,30 +10,17 @@ import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import SMM_QUESTIONS from '@/config/smm-questions'
+import type { Project, Employee } from '@/types/entities'
 
-const SMM_QUESTIONS = [
-  { key: 'companyName', label: 'Название компании', type: 'text' },
-  { key: 'contactPerson', label: 'Контактное лицо', type: 'text' },
-  { key: 'contactPhone', label: 'Телефон', type: 'text' },
-  { key: 'services', label: 'Какие услуги вы предоставляете?', type: 'textarea' },
-  { key: 'uniqueness', label: 'Чем вы отличаетесь от других конкурентов?', type: 'textarea' },
-  { key: 'philosophy', label: 'Опишите ваш стиль работы/философию', type: 'textarea' },
-  { key: 'socialProjects', label: 'Какие проекты вы хотите показывать в соцсетях?', type: 'textarea' },
-  { key: 'smmGoals', label: 'Какие цели вы хотите достичь с помощью SMM?', type: 'textarea' },
-  { key: 'socialNetworks', label: 'Какие соцсети нужно вести?', type: 'text' },
-  { key: 'contentType', label: 'Какой тип контента вам нужен?', type: 'text' },
-  { key: 'visualStyle', label: 'Какой стиль визуала вам нравится?', type: 'text' },
-  { key: 'accountExamples', label: 'Примеры аккаунтов, которые вам нравятся', type: 'text' },
-  { key: 'targetAudience', label: 'Кто ваша целевая аудитория?', type: 'textarea' },
-  { key: 'competitors', label: 'Кто ваши конкуренты?', type: 'text' },
-  { key: 'materialsFrequency', label: 'Как часто вы готовы предоставлять материалы?', type: 'text' },
-  { key: 'forbiddenTopics', label: 'Какие темы точно НЕЛЬЗЯ публиковать?', type: 'textarea' },
-  { key: 'priorityServices', label: 'Какие услуги вы хотите продвигать в первую очередь?', type: 'textarea' },
-  { key: 'geography', label: 'География продвижения', type: 'text' },
-  { key: 'promotionBudget', label: 'Бюджет на продвижение', type: 'text' },
-  { key: 'hasMediaContent', label: 'Есть ли у вас фото/видео ваших проектов?', type: 'radio', options: ['Да', 'Нет', 'Другое'] },
-  { key: 'wantsAds', label: 'Хотите запускать рекламу?', type: 'radio', options: ['Да', 'Нет', 'Другое'] },
-]
+interface ProjectFormProps {
+  open: boolean
+  onClose: () => void
+  onSubmit: (data: Record<string, unknown>) => void
+  initial: Project | null
+  employees: Employee[]
+  loading: boolean
+}
 
 export default function ProjectsPage() {
   const [search, setSearch] = useState('')
@@ -112,25 +99,25 @@ export default function ProjectsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="page-title">{t('projects.title')}</h1>
         {isManagerPlus && (
           <button onClick={() => setShowCreate(true)} className="btn-primary">
-            <Plus size={16} /> {t('projects.newProject')}
+            <Plus size={16} /> <span className="hidden sm:inline">{t('projects.newProject')}</span>
           </button>
         )}
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-[200px]">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+        <div className="relative flex-1 min-w-0">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder={t('projects.searchPlaceholder')} className="input pl-9"
           />
         </div>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           {STATUSES.map(s => (
             <button
               key={s.value}
@@ -244,7 +231,7 @@ export default function ProjectsPage() {
   )
 }
 
-function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: any) {
+function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: ProjectFormProps) {
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm()
   const { t } = useTranslation()
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})

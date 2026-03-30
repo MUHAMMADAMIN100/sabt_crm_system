@@ -11,8 +11,11 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { Logger } from '@nestjs/common';
 
+const ALLOWED_WS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:3001')
+  .split(',').map(o => o.trim());
+
 @WebSocketGateway({
-  cors: { origin: '*', credentials: true },
+  cors: { origin: ALLOWED_WS_ORIGINS, credentials: true },
   namespace: '/ws',
 })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {

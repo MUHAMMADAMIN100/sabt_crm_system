@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException, ConflictException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { User, UserRole } from '../users/user.entity';
@@ -11,6 +11,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class AuthService {
@@ -20,6 +21,7 @@ export class AuthService {
     @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
     private jwtService: JwtService,
     private activityLog: ActivityLogService,
+    private mailService: MailService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -106,7 +108,7 @@ export class AuthService {
 
   async logout(userId: string) {
     const session = await this.sessionRepo.findOne({
-      where: { userId, logoutAt: null as any },
+      where: { userId, logoutAt: IsNull() },
       order: { loginAt: 'DESC' },
     });
     if (session) {
@@ -163,6 +165,7 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
+    // Always return the same message to prevent user enumeration
     const user = await this.userRepo.findOne({ where: { email } });
     if (!user) return { message: 'If email exists, reset link was sent' };
 
@@ -171,7 +174,10 @@ export class AuthService {
     user.resetPasswordExpires = new Date(Date.now() + 3600000);
     await this.userRepo.save(user);
 
-    return { message: 'Reset link sent', token };
+    // Send token only via email — never return it in the response
+    await this.mailService.sendPasswordReset(user.email, user.name, token);
+
+    return { message: 'If email exists, reset link was sent' };
   }
 
   async resetPassword(token: string, newPassword: string) {
@@ -210,7 +216,7 @@ export class AuthService {
   }
 
   private sanitize(user: User) {
-    const { password, resetPasswordToken, resetPasswordExpires, ...rest } = user as any;
+    const { password, resetPasswordToken, resetPasswordExpires, ...rest } = user as User;
     return rest;
   }
 }

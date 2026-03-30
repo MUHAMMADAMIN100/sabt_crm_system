@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, ILike } from 'typeorm';
+import { Repository, ILike, DataSource, FindOptionsWhere } from 'typeorm';
 import { Employee, EmployeeStatus } from './employee.entity';
 import { User } from '../users/user.entity';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
@@ -14,10 +14,11 @@ export class EmployeesService {
     @InjectRepository(Employee) private repo: Repository<Employee>,
     @InjectRepository(User) private userRepo: Repository<User>,
     private activityLog: ActivityLogService,
+    private dataSource: DataSource,
   ) {}
 
   findAll(search?: string, department?: string, status?: EmployeeStatus) {
-    const where: any = {};
+    const where: FindOptionsWhere<Employee> = {};
     if (department) where.department = department;
     if (status) where.status = status;
     if (search) where.fullName = ILike(`%${search}%`);
@@ -47,7 +48,7 @@ export class EmployeesService {
 
   async update(id: string, dto: UpdateEmployeeDto) {
     const emp = await this.findOne(id);
-    await this.repo.update(id, dto as any);
+    await this.repo.update(id, dto);
 
     await this.activityLog.log({
       action: ActivityAction.EMPLOYEE_UPDATE,
@@ -72,12 +73,22 @@ export class EmployeesService {
       details: { email: emp.email },
     });
 
-    // Delete employee first (FK references User)
-    await this.repo.remove(emp);
-    // Then delete the linked User so login becomes impossible
-    if (userId) {
-      await this.userRepo.delete(userId);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      await queryRunner.manager.remove(Employee, emp);
+      if (userId) {
+        await queryRunner.manager.delete(User, userId);
+      }
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
     }
+
     return { message: 'Employee deleted' };
   }
 

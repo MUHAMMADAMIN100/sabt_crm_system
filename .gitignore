@@ -1,7 +1,18 @@
 node_modules/
 dist/
+
+# Environment — never commit real secrets
 .env
-.env
+.env.local
+.env.production
+.env.*.local
+backend/.env
+frontend/.env
+# Keep .env.example (template without secrets)
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
 *.log
 uploads/
 .DS_Store

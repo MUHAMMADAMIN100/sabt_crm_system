@@ -104,6 +104,7 @@ export const analyticsApi = {
   hoursPerDay: (params?: any) => api.get('/analytics/hours-per-day', { params }).then(r => r.data),
   projectsPerformance: () => api.get('/analytics/projects-performance').then(r => r.data),
   employeeEfficiency: () => api.get('/analytics/employee-efficiency').then(r => r.data),
+  employeeWorkload: () => api.get('/analytics/employee-workload').then(r => r.data),
   monthlyReport: (year: number, month: number) => api.get('/analytics/monthly-report', { params: { year, month } }).then(r => r.data),
   departmentStats: () => api.get('/analytics/department-stats').then(r => r.data),
 }

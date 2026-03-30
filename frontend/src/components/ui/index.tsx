@@ -274,6 +274,8 @@ export function Avatar({ name, src, size = 32 }: { name?: string; src?: string; 
         src={src.startsWith('http') ? src : `/uploads/avatars/${src}`}
         alt={name}
         title={name}
+        loading="lazy"
+        decoding="async"
         style={{ width: size, height: size }}
         className="rounded-full object-cover cursor-default"
       />

@@ -230,4 +230,68 @@ export class MailService {
       this.logger.error(`Failed to send comment email to ${to}: ${err.message}`);
     }
   }
+
+  async sendPasswordReset(to: string, recipientName: string, resetToken: string) {
+    const resetUrl = `${this.appUrl}/auth?resetToken=${resetToken}`;
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('🔐 Сброс пароля')}
+        <div style="padding:32px 40px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 24px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Мы получили запрос на сброс пароля от вашей учётной записи.
+          </p>
+          <p style="color:#64748b;font-size:14px;margin:0 0 24px;">Ссылка действительна 1 час. Если вы не запрашивали сброс — проигнорируйте это письмо.</p>
+          <a href="${resetUrl}"
+             style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
+            Сбросить пароль →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+    try {
+      await this.sendViaBrevo(to, recipientName, '🔐 Сброс пароля — Sabt System', html);
+    } catch (err) {
+      this.logger.error(`Failed to send password reset email to ${to}: ${err.message}`);
+    }
+  }
+
+  async sendDeadlineReminder(
+    to: string,
+    recipientName: string,
+    taskTitle: string,
+    taskId: string,
+    projectName: string,
+    deadline: string,
+    daysLeft: number,
+  ) {
+    const urgencyColor = daysLeft === 1 ? '#ef4444' : daysLeft === 2 ? '#f97316' : '#eab308';
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('⏰ Напоминание о дедлайне')}
+        <div style="padding:32px 40px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 24px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Напоминаем: до дедлайна задачи осталось <strong style="color:${urgencyColor};">${daysLeft} ${daysLeft === 1 ? 'день' : 'дня'}</strong>.
+          </p>
+          <div style="background:#f1f5f9;border-radius:10px;padding:20px 24px;margin-bottom:24px;">
+            <table style="width:100%;border-collapse:collapse;">
+              ${this.row('✅ Задача:', taskTitle)}
+              ${this.row('📁 Проект:', projectName)}
+              ${this.row('📅 Дедлайн:', deadline)}
+            </table>
+          </div>
+          <a href="${this.appUrl}/tasks/${taskId}"
+             style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
+            Открыть задачу →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+    try {
+      await this.sendViaBrevo(to, recipientName, `⏰ Дедлайн через ${daysLeft} ${daysLeft === 1 ? 'день' : 'дня'}: ${taskTitle}`, html);
+    } catch (err) {
+      this.logger.error(`Failed to send deadline reminder to ${to}: ${err.message}`);
+    }
+  }
 }

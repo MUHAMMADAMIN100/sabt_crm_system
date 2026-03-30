@@ -10,7 +10,7 @@ export function useSocket(token: string | null) {
   useEffect(() => {
     if (!token) return
 
-    const wsUrl = import.meta.env.VITE_API_URL || ''
+    const wsUrl = import.meta.env.VITE_API_URL || window.location.origin
     const socket = io(`${wsUrl}/ws`, {
       auth: { token },
       transports: ['websocket'],

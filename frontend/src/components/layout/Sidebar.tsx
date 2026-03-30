@@ -14,6 +14,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const user = useAuthStore(s => s.user)
   const { t } = useTranslation()
 
+  const handleNavClick = () => {
+    if (window.innerWidth < 1024) onClose()
+  }
+
   const navItems = [
     { to: '/', icon: LayoutDashboard, label: t('nav.dashboard'), exact: true },
     { to: '/projects', icon: FolderKanban, label: t('nav.projects') },
@@ -81,6 +85,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               <NavLink
                 to={item.to}
                 end={item.exact}
+                onClick={handleNavClick}
                 className={({ isActive }) =>
                   clsx(
                     'sidebar-link group relative',
@@ -127,6 +132,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         )}>
           <NavLink
             to="/profile"
+            onClick={handleNavClick}
             className={({ isActive }) =>
               clsx(
                 'flex items-center gap-3 p-2 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700 transition-all duration-150 group overflow-hidden',

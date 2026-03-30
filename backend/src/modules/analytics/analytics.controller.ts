@@ -1,5 +1,6 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { AnalyticsService } from './analytics.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
@@ -10,34 +11,50 @@ import { UserRole } from '../users/user.entity';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 @Controller('analytics')
+@UseInterceptors(CacheInterceptor)
 export class AnalyticsController {
   constructor(private service: AnalyticsService) {}
 
   @Get('dashboard')
+  @CacheKey('analytics:dashboard')
+  @CacheTTL(120000)
   async getDashboard() {
-    const [overview, projByStatus, taskByStatus, taskByPriority, empActivity, hoursPerDay, projPerf, empEff] = await Promise.all([
+    const [overview, projByStatus, taskByStatus, taskByPriority, empActivity, hoursPerDay, projPerfPaged, empEffPaged] = await Promise.all([
       this.service.getDashboardOverview(),
       this.service.getProjectsByStatus(),
       this.service.getTasksByStatus(),
       this.service.getTasksByPriority(),
       this.service.getEmployeeActivity(),
       this.service.getHoursPerDay(undefined, 30),
-      this.service.getProjectsPerformance(),
-      this.service.getEmployeeEfficiency(),
+      this.service.getProjectsPerformance(1, 9),
+      this.service.getEmployeeEfficiency(1, 9),
     ]);
-    return { overview, projByStatus, taskByStatus, taskByPriority, empActivity, hoursPerDay, projPerf, empEff };
+    // Dashboard uses flat arrays; paginated endpoints return {data,...}
+    return {
+      overview, projByStatus, taskByStatus, taskByPriority, empActivity, hoursPerDay,
+      projPerf: projPerfPaged.data,
+      empEff: empEffPaged.data,
+    };
   }
 
   @Get('overview')
+  @CacheKey('analytics:overview')
+  @CacheTTL(120000)
   getOverview() { return this.service.getDashboardOverview(); }
 
   @Get('projects-by-status')
+  @CacheKey('analytics:projects-by-status')
+  @CacheTTL(120000)
   getProjectsByStatus() { return this.service.getProjectsByStatus(); }
 
   @Get('tasks-by-status')
+  @CacheKey('analytics:tasks-by-status')
+  @CacheTTL(60000)
   getTasksByStatus() { return this.service.getTasksByStatus(); }
 
   @Get('tasks-by-priority')
+  @CacheKey('analytics:tasks-by-priority')
+  @CacheTTL(120000)
   getTasksByPriority() { return this.service.getTasksByPriority(); }
 
   @Get('employee-activity')
@@ -51,10 +68,23 @@ export class AnalyticsController {
   }
 
   @Get('projects-performance')
-  getProjectsPerformance() { return this.service.getProjectsPerformance(); }
+  @CacheKey('analytics:projects-performance')
+  @CacheTTL(120000)
+  getProjectsPerformance(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.service.getProjectsPerformance(parseInt(page || '1'), parseInt(limit || '9'));
+  }
 
   @Get('employee-efficiency')
-  getEmployeeEfficiency() { return this.service.getEmployeeEfficiency(); }
+  @CacheKey('analytics:employee-efficiency')
+  @CacheTTL(120000)
+  getEmployeeEfficiency(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.service.getEmployeeEfficiency(parseInt(page || '1'), parseInt(limit || '9'));
+  }
+
+  @Get('employee-workload')
+  @CacheKey('analytics:employee-workload')
+  @CacheTTL(60000)
+  getEmployeeWorkload() { return this.service.getEmployeeWorkload(); }
 
   @Get('monthly-report')
   getMonthlyReport(@Query('year') year: string, @Query('month') month: string) {
@@ -66,5 +96,7 @@ export class AnalyticsController {
   }
 
   @Get('department-stats')
+  @CacheKey('analytics:department-stats')
+  @CacheTTL(300000)
   getDepartmentStats() { return this.service.getDepartmentStats(); }
 }

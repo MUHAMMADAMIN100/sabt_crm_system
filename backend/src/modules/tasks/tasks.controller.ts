@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Request, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -25,6 +26,32 @@ export class TasksController {
     @Query('deadlineBefore') deadlineBefore?: string,
   ) {
     return this.service.findAll({ projectId, assigneeId, status, priority, search, deadlineBefore });
+  }
+
+  @Get('export/csv')
+  async exportCsv(
+    @Query('projectId') projectId: string,
+    @Query('assigneeId') assigneeId: string,
+    @Query('status') status: TaskStatus,
+    @Res() res: Response,
+  ) {
+    const tasks = await this.service.findAll({ projectId, assigneeId, status });
+    const header = 'ID,Title,Status,Priority,Project,Assignee,Deadline,LoggedHours\n';
+    const rows = tasks.map(t =>
+      [
+        t.id,
+        `"${(t.title || '').replace(/"/g, '""')}"`,
+        t.status,
+        t.priority,
+        `"${(t.project?.name || '').replace(/"/g, '""')}"`,
+        `"${(t.assignee?.name || '').replace(/"/g, '""')}"`,
+        t.deadline ? new Date(t.deadline).toISOString().split('T')[0] : '',
+        t.loggedHours ?? 0,
+      ].join(',')
+    ).join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="tasks.csv"');
+    res.send('\uFEFF' + header + rows);
   }
 
   @Get('my')

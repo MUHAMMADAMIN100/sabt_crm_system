@@ -7,7 +7,7 @@ import { useSocket } from '@/hooks/useSocket'
 import clsx from 'clsx'
 
 export default function Layout() {
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1024)
   const fetchMe = useAuthStore(s => s.fetchMe)
   const token = useAuthStore(s => s.token)
   const location = useLocation()
@@ -31,11 +31,11 @@ export default function Layout() {
         className={clsx(
           'flex flex-col min-w-0 overflow-hidden flex-1',
           '[transition:margin-left_0.4s_cubic-bezier(0.4,0,0.2,1)]',
-          sidebarOpen ? 'ml-[260px]' : 'ml-0 lg:ml-[72px]',
+          sidebarOpen ? 'ml-0 lg:ml-[260px]' : 'ml-0 lg:ml-[72px]',
         )}
       >
         <Header onMenuClick={() => setSidebarOpen(o => !o)} />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           {/* key on pathname so each navigation re-triggers the animation */}
           <div key={location.pathname} className="max-w-screen-2xl mx-auto animate-page-in">
             <Outlet />

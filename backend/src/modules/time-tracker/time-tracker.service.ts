@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TimeLog } from './time-log.entity';
+import { Task } from '../tasks/task.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 
@@ -9,8 +10,19 @@ import { ActivityAction } from '../activity-log/activity-log.entity';
 export class TimeTrackerService {
   constructor(
     @InjectRepository(TimeLog) private repo: Repository<TimeLog>,
+    @InjectRepository(Task) private taskRepo: Repository<Task>,
     private activityLog: ActivityLogService,
   ) {}
+
+  private async syncLoggedHours(taskId: string) {
+    const result = await this.repo
+      .createQueryBuilder('tl')
+      .select('COALESCE(SUM(tl.timeSpent), 0)', 'total')
+      .where('tl.taskId = :taskId AND tl.isRunning = false', { taskId })
+      .getRawOne();
+    const total = parseFloat(result?.total || '0');
+    await this.taskRepo.update(taskId, { loggedHours: Math.round(total * 100) / 100 });
+  }
 
   findByTask(taskId: string) {
     return this.repo.find({
@@ -66,6 +78,7 @@ export class TimeTrackerService {
     running.timeSpent = Math.round(elapsed * 100) / 100;
     running.isRunning = false;
     const saved = await this.repo.save(running);
+    await this.syncLoggedHours(running.taskId);
 
     await this.activityLog.log({
       userId: employeeId,
@@ -89,6 +102,7 @@ export class TimeTrackerService {
     if (timeSpent <= 0) throw new BadRequestException('Time must be positive');
     const log = this.repo.create({ taskId, employeeId, timeSpent, date: new Date(date), description });
     const saved = await this.repo.save(log);
+    await this.syncLoggedHours(taskId);
 
     await this.activityLog.log({
       userId: employeeId,
@@ -110,7 +124,9 @@ export class TimeTrackerService {
       entityId: log?.taskId,
       details: { timeLogId: id, timeSpent: log?.timeSpent },
     });
+    const taskId = log?.taskId;
     await this.repo.delete(id);
+    if (taskId) await this.syncLoggedHours(taskId);
     return { message: 'Time log deleted' };
   }
 

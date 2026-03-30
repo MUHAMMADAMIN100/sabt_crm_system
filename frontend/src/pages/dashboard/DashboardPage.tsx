@@ -316,24 +316,26 @@ export default function DashboardPage() {
             {!myTasks?.length ? (
               <p className="text-surface-500 dark:text-surface-400 text-sm py-8 text-center">{t('dashboard.noTasks')}</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {myTasks.slice(0, 6).map((task: any) => (
                   <Link
                     key={task.id}
                     to={`/tasks/${task.id}`}
-                    className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors group"
+                    className="block p-3 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors group"
                   >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate group-hover:text-primary-600 dark:group-hover:text-primary-400">{task.title}</p>
-                      <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5">{task.project?.name}</p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <PriorityBadge priority={task.priority} />
-                      <StatusBadge status={task.status} />
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 min-w-0 flex-1 leading-snug">{task.title}</p>
                       {task.deadline && (
-                        <span className={`text-xs ${new Date(task.deadline) < new Date() ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>
+                        <span className={`text-xs shrink-0 ${new Date(task.deadline) < new Date() ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>
                           {format(new Date(task.deadline), 'dd.MM')}
                         </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <PriorityBadge priority={task.priority} />
+                      <StatusBadge status={task.status} />
+                      {task.project?.name && (
+                        <span className="text-xs text-surface-400 dark:text-surface-500 truncate">{task.project.name}</span>
                       )}
                     </div>
                   </Link>
