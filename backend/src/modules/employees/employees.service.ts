@@ -77,6 +77,19 @@ export class EmployeesService {
     await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
+      if (userId) {
+        // Снимаем назначение задач с этого пользователя
+        await queryRunner.manager.query(
+          `UPDATE tasks SET "assigneeId" = NULL WHERE "assigneeId" = $1`, [userId]
+        );
+        // Удаляем связанные записи
+        await queryRunner.manager.query(`DELETE FROM comments WHERE "authorId" = $1`, [userId]);
+        await queryRunner.manager.query(`DELETE FROM time_logs WHERE "employeeId" = $1`, [userId]);
+        await queryRunner.manager.query(`DELETE FROM daily_reports WHERE "employeeId" = $1`, [userId]);
+        await queryRunner.manager.query(`DELETE FROM notifications WHERE "userId" = $1`, [userId]);
+        await queryRunner.manager.query(`DELETE FROM work_sessions WHERE "userId" = $1`, [userId]);
+        await queryRunner.manager.query(`DELETE FROM activity_logs WHERE "userId" = $1`, [userId]);
+      }
       await queryRunner.manager.remove(Employee, emp);
       if (userId) {
         await queryRunner.manager.delete(User, userId);
