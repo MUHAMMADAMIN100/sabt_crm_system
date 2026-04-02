@@ -66,6 +66,16 @@ export class EmployeesService {
     const emp = await this.findOne(id);
     await this.repo.update(id, dto);
 
+    // Синхронизируем User: обновляем name и email если изменились
+    if (emp.userId) {
+      const userUpdate: Partial<User> = {};
+      if (dto.fullName) userUpdate.name = dto.fullName;
+      if (dto.email) userUpdate.email = dto.email;
+      if (Object.keys(userUpdate).length > 0) {
+        await this.userRepo.update(emp.userId, userUpdate);
+      }
+    }
+
     await this.activityLog.log({
       action: ActivityAction.EMPLOYEE_UPDATE,
       entity: 'employee',
