@@ -156,32 +156,9 @@ export function Spinner({ size = 20, className }: { size?: number; className?: s
 // ── PageLoader ───────────────────────────────────────────────────────
 export function PageLoader() {
   return (
-    <div className="flex flex-col items-center justify-center h-64 gap-5">
-      {/* Branded icon */}
-      <div className="relative">
-        <div className="w-14 h-14 rounded-2xl bg-primary-600 flex items-center justify-center shadow-lg animate-pulse-soft">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" className="text-white">
-            <rect x="3" y="3" width="8" height="8" rx="2" fill="currentColor" opacity="0.9" />
-            <rect x="13" y="3" width="8" height="8" rx="2" fill="currentColor" opacity="0.6" />
-            <rect x="3" y="13" width="8" height="8" rx="2" fill="currentColor" opacity="0.6" />
-            <rect x="13" y="13" width="8" height="8" rx="2" fill="currentColor" opacity="0.3" />
-          </svg>
-        </div>
-        {/* Spinning ring */}
-        <svg className="absolute inset-0 w-14 h-14 animate-spin-slow" viewBox="0 0 56 56" fill="none">
-          <circle cx="28" cy="28" r="25" stroke="rgb(79,110,247)" strokeWidth="2.5"
-            strokeLinecap="round" strokeDasharray="30 130" className="opacity-40" />
-        </svg>
-      </div>
-      {/* Bouncing dots */}
-      <div className="flex gap-1.5 items-center">
-        {[0, 1, 2].map(i => (
-          <span
-            key={i}
-            className="w-2 h-2 rounded-full bg-primary-500 animate-bounce-dot"
-            style={{ animationDelay: `${i * 0.18}s` }}
-          />
-        ))}
+    <div className="flex flex-col items-center justify-center h-64 gap-4">
+      <div className="w-16 h-16 rounded-2xl bg-primary-600 flex items-center justify-center shadow-xl animate-pulse">
+        <span className="text-white font-bold text-3xl select-none">S</span>
       </div>
     </div>
   )
