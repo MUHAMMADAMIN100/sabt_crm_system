@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource, FindOptionsWhere } from 'typeorm';
 import { Employee, EmployeeStatus } from './employee.entity';
@@ -32,6 +32,10 @@ export class EmployeesService {
   }
 
   async create(dto: CreateEmployeeDto) {
+    // Проверяем дубликат email в employees
+    const existing = await this.repo.findOne({ where: { email: dto.email } });
+    if (existing) throw new ConflictException('Сотрудник с таким email уже существует');
+
     // Ищем существующего User по email, если нет — создаём
     let savedUser = await this.userRepo.findOne({ where: { email: dto.email } });
     if (!savedUser) {

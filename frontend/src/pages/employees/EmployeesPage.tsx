@@ -42,8 +42,8 @@ export default function EmployeesPage() {
     return `https://t.me/${clean}`
   }
 
-  const createMut = useMutation({ mutationFn: employeesApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setShowCreate(false); toast.success(t('employees.added')) } })
-  const updateMut = useMutation({ mutationFn: ({ id, data }: any) => employeesApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setEditEmp(null); toast.success(t('employees.saved')) } })
+  const createMut = useMutation({ mutationFn: employeesApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setShowCreate(false); toast.success(t('employees.added')) }, onError: () => {} })
+  const updateMut = useMutation({ mutationFn: ({ id, data }: any) => employeesApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setEditEmp(null); toast.success(t('employees.saved')) }, onError: () => {} })
   const deleteMut = useMutation({ mutationFn: employeesApi.remove, onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('employees.deleted')) } })
   const toggleSubAdmin = useMutation({ mutationFn: employeesApi.toggleSubAdmin, onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('common.updated')) } })
 
@@ -171,7 +171,7 @@ export default function EmployeesPage() {
 
       <EmployeeForm open={showCreate || !!editEmp} initial={editEmp}
         onClose={() => { setShowCreate(false); setEditEmp(null) }}
-        onSubmit={data => editEmp ? updateMut.mutate({ id: editEmp.id, data }) : createMut.mutate(data)}
+        onSubmit={data => editEmp ? updateMut.mutateAsync({ id: editEmp.id, data }) : createMut.mutateAsync(data as any)}
         loading={createMut.isPending || updateMut.isPending} />
       <ConfirmDialog open={!!deleteId} onClose={() => setDeleteId(null)}
         onConfirm={() => deleteMut.mutate(deleteId!)} title={t('common.delete') + '?'} danger />
@@ -190,7 +190,7 @@ interface EmployeeFormProps {
 }
 
 function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFormProps) {
-  const { register, handleSubmit, reset, formState: { errors } } = useForm()
+  const { register, handleSubmit, reset, setValue, setError, formState: { errors } } = useForm()
   const { t } = useTranslation()
 
   useEffect(() => {
@@ -199,14 +199,31 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
         email: initial.email||'', phone: initial.phone||'', telegram: initial.telegram||'', instagram: initial.instagram||'',
         hireDate: initial.hireDate ? new Date(initial.hireDate).toISOString().split('T')[0] : '', status: initial.status||'active', bio: initial.bio||'' })
     } else {
-      reset({ fullName:'', position:'', email:'', phone:'', telegram:'', instagram:'', hireDate:'', status:'active', bio:'' })
+      reset({ fullName:'', position:'', email:'', phone:'', telegram:'@', instagram:'', hireDate:'', status:'active', bio:'' })
     }
-  }, [initial, reset])
+  }, [initial, open, reset])
 
-  const submit = (data: any) => {
-    onSubmit({ fullName: data.fullName, position: data.position, department: 'Общий',
-      email: data.email, phone: data.phone||undefined, telegram: data.telegram||undefined,
-      instagram: data.instagram||undefined, hireDate: data.hireDate||undefined, status: data.status, bio: data.bio||undefined })
+  const handleTelegramChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value
+    if (!val.startsWith('@')) val = '@' + val.replace(/@/g, '')
+    setValue('telegram', val, { shouldValidate: true })
+  }
+
+  const submit = async (data: any) => {
+    try {
+      await onSubmit({ fullName: data.fullName, position: data.position, department: 'Общий',
+        email: data.email, phone: data.phone, telegram: data.telegram !== '@' ? data.telegram : undefined,
+        instagram: data.instagram||undefined, hireDate: data.hireDate, status: data.status, bio: data.bio||undefined })
+    } catch (e: any) {
+      const msg: string = e?.response?.data?.message || ''
+      if (msg.toLowerCase().includes('email')) {
+        setError('email', { message: 'Этот email уже используется' })
+      } else if (msg.toLowerCase().includes('телефон') || msg.toLowerCase().includes('phone')) {
+        setError('phone', { message: 'Этот номер уже используется' })
+      } else if (msg) {
+        toast.error(msg)
+      }
+    }
   }
 
   return (
@@ -215,36 +232,43 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className="label">{t('employees.fullName')} *</label>
-            <input {...register('fullName', { required: true })} className="input" />
+            <input {...register('fullName', { required: 'Обязательное поле' })} className={`input ${errors.fullName ? 'border-red-400' : ''}`} />
+            {errors.fullName && <p className="text-xs text-red-400 mt-1">{String(errors.fullName.message)}</p>}
           </div>
           <div className="col-span-2">
             <label className="label">{t('employees.position')} *</label>
-            <select {...register('position', { required: true })} className="input">
+            <select {...register('position', { required: 'Выберите должность' })} className={`input ${errors.position ? 'border-red-400' : ''}`}>
               <option value="">Выберите должность</option>
               {['SMM специалист', 'Разработчик', 'Дизайнер', 'Менеджер по продажам'].map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>
+            {errors.position && <p className="text-xs text-red-400 mt-1">{String(errors.position.message)}</p>}
           </div>
           <div>
             <label className="label">{t('employees.email')} *</label>
-            <input type="email" {...register('email', { required: true })} className="input" />
+            <input type="email" {...register('email', { required: 'Обязательное поле' })} className={`input ${errors.email ? 'border-red-400' : ''}`} />
+            {errors.email && <p className="text-xs text-red-400 mt-1">{String(errors.email.message)}</p>}
           </div>
           <div>
-            <label className="label">{t('employees.phone')}</label>
-            <input {...register('phone')} className="input" placeholder="+992..." />
+            <label className="label">{t('employees.phone')} *</label>
+            <input {...register('phone', { required: 'Обязательное поле' })} className={`input ${errors.phone ? 'border-red-400' : ''}`} placeholder="+992..." />
+            {errors.phone && <p className="text-xs text-red-400 mt-1">{String(errors.phone.message)}</p>}
           </div>
           <div>
-            <label className="label">Telegram</label>
-            <input {...register('telegram')} className="input" placeholder="@username" />
+            <label className="label">Telegram *</label>
+            <input {...register('telegram', { required: 'Обязательное поле', validate: v => v !== '@' || 'Введите username' })}
+              onChange={handleTelegramChange} className={`input ${errors.telegram ? 'border-red-400' : ''}`} placeholder="@username" />
+            {errors.telegram && <p className="text-xs text-red-400 mt-1">{String(errors.telegram.message)}</p>}
           </div>
           <div>
             <label className="label">Instagram</label>
             <input {...register('instagram')} className="input" placeholder="@username" />
           </div>
           <div>
-            <label className="label">{t('employees.hireDate')}</label>
-            <input type="date" {...register('hireDate')} className="input" />
+            <label className="label">{t('employees.hireDate')} *</label>
+            <input type="date" {...register('hireDate', { required: 'Обязательное поле' })} className={`input ${errors.hireDate ? 'border-red-400' : ''}`} />
+            {errors.hireDate && <p className="text-xs text-red-400 mt-1">{String(errors.hireDate.message)}</p>}
           </div>
           <div>
             <label className="label">{t('common.status')}</label>
