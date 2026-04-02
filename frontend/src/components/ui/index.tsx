@@ -157,7 +157,12 @@ export function Spinner({ size = 20, className }: { size?: number; className?: s
 export function PageLoader() {
   return (
     <div className="flex flex-col items-center justify-center h-64 gap-4">
-      <img src="/sabtLogoooO.png" alt="Sabt" className="w-20 h-20 rounded-2xl animate-pulse" />
+      <div className="w-20 h-20 rounded-2xl animate-pulse flex items-center justify-center relative shadow-lg
+                      bg-white dark:bg-primary-600">
+        <span className="text-[52px] font-black leading-none select-none text-primary-600 dark:text-white"
+              style={{ fontFamily: 'Arial Black, sans-serif' }}>S</span>
+        <div className="absolute top-2 right-3 w-4 h-4 rounded-full bg-red-500" />
+      </div>
     </div>
   )
 }
