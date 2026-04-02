@@ -157,9 +157,7 @@ export function Spinner({ size = 20, className }: { size?: number; className?: s
 export function PageLoader() {
   return (
     <div className="flex flex-col items-center justify-center h-64 gap-4">
-      <div className="w-16 h-16 rounded-2xl bg-primary-600 flex items-center justify-center shadow-xl animate-pulse">
-        <span className="text-white font-bold text-3xl select-none">S</span>
-      </div>
+      <img src="/sabtLogoooO.png" alt="Sabt" className="w-20 h-20 animate-pulse" />
     </div>
   )
 }
