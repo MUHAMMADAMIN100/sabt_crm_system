@@ -82,6 +82,9 @@ export class EmployeesService {
         await queryRunner.manager.query(
           `UPDATE tasks SET "assigneeId" = NULL WHERE "assigneeId" = $1`, [userId]
         );
+        await queryRunner.manager.query(
+          `UPDATE tasks SET "createdById" = NULL WHERE "createdById" = $1`, [userId]
+        );
         // Удаляем связанные записи
         await queryRunner.manager.query(`DELETE FROM comments WHERE "authorId" = $1`, [userId]);
         await queryRunner.manager.query(`DELETE FROM time_logs WHERE "employeeId" = $1`, [userId]);
