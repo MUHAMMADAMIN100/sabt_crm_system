@@ -25,8 +25,8 @@ export class AnalyticsService {
     const [counts, hoursRow] = await Promise.all([
       this.taskRepo.manager.query(`
         SELECT
-          (SELECT COUNT(*)::int FROM projects WHERE is_archived = false)                                        AS "totalProjects",
-          (SELECT COUNT(*)::int FROM projects WHERE status = 'in_progress' AND is_archived = false)            AS "activeProjects",
+          (SELECT COUNT(*)::int FROM projects WHERE "isArchived" = false)                                        AS "totalProjects",
+          (SELECT COUNT(*)::int FROM projects WHERE status = 'in_progress' AND "isArchived" = false)            AS "activeProjects",
           (SELECT COUNT(*)::int FROM tasks)                                                                     AS "totalTasks",
           (SELECT COUNT(*)::int FROM tasks WHERE status = 'done')                                              AS "doneTasks",
           (SELECT COUNT(*)::int FROM employees)                                                                 AS "totalEmployees",
