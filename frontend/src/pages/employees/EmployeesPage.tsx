@@ -195,16 +195,16 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
 
   useEffect(() => {
     if (initial) {
-      reset({ fullName: initial.fullName||'', position: initial.position||'', department: initial.department||'',
+      reset({ fullName: initial.fullName||'', position: initial.position||'',
         email: initial.email||'', phone: initial.phone||'', telegram: initial.telegram||'', instagram: initial.instagram||'',
         hireDate: initial.hireDate ? new Date(initial.hireDate).toISOString().split('T')[0] : '', status: initial.status||'active', bio: initial.bio||'' })
     } else {
-      reset({ fullName:'', position:'', department:'', email:'', phone:'', telegram:'', instagram:'', hireDate:'', status:'active', bio:'' })
+      reset({ fullName:'', position:'', email:'', phone:'', telegram:'', instagram:'', hireDate:'', status:'active', bio:'' })
     }
   }, [initial, reset])
 
   const submit = (data: any) => {
-    onSubmit({ fullName: data.fullName, position: data.position, department: data.department,
+    onSubmit({ fullName: data.fullName, position: data.position, department: 'Общий',
       email: data.email, phone: data.phone||undefined, telegram: data.telegram||undefined,
       instagram: data.instagram||undefined, hireDate: data.hireDate||undefined, status: data.status, bio: data.bio||undefined })
   }
@@ -217,13 +217,14 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
             <label className="label">{t('employees.fullName')} *</label>
             <input {...register('fullName', { required: true })} className="input" />
           </div>
-          <div>
+          <div className="col-span-2">
             <label className="label">{t('employees.position')} *</label>
-            <input {...register('position', { required: true })} className="input" />
-          </div>
-          <div>
-            <label className="label">{t('employees.department')} *</label>
-            <input {...register('department', { required: true })} className="input" />
+            <select {...register('position', { required: true })} className="input">
+              <option value="">Выберите должность</option>
+              {['SMM специалист', 'Разработчик', 'Дизайнер', 'Менеджер по продажам'].map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="label">{t('employees.email')} *</label>
