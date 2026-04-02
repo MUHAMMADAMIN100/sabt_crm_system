@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource, FindOptionsWhere } from 'typeorm';
 import { Employee, EmployeeStatus } from './employee.entity';
-import { User } from '../users/user.entity';
+import { User, UserRole } from '../users/user.entity';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { ActivityLogService } from '../activity-log/activity-log.service';
@@ -32,7 +32,16 @@ export class EmployeesService {
   }
 
   async create(dto: CreateEmployeeDto) {
-    const emp = this.repo.create(dto);
+    // Создаём User аккаунт для сотрудника
+    const user = this.userRepo.create({
+      name: dto.fullName,
+      email: dto.email,
+      password: 'Sabt@2024',
+      role: UserRole.EMPLOYEE,
+    });
+    const savedUser = await this.userRepo.save(user);
+
+    const emp = this.repo.create({ ...dto, userId: savedUser.id });
     const saved = await this.repo.save(emp);
 
     await this.activityLog.log({
