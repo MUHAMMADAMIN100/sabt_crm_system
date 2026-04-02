@@ -32,14 +32,17 @@ export class EmployeesService {
   }
 
   async create(dto: CreateEmployeeDto) {
-    // Создаём User аккаунт для сотрудника
-    const user = this.userRepo.create({
-      name: dto.fullName,
-      email: dto.email,
-      password: 'Sabt@2024',
-      role: UserRole.EMPLOYEE,
-    });
-    const savedUser = await this.userRepo.save(user);
+    // Ищем существующего User по email, если нет — создаём
+    let savedUser = await this.userRepo.findOne({ where: { email: dto.email } });
+    if (!savedUser) {
+      const user = this.userRepo.create({
+        name: dto.fullName,
+        email: dto.email,
+        password: 'Sabt@2024',
+        role: UserRole.EMPLOYEE,
+      });
+      savedUser = await this.userRepo.save(user);
+    }
 
     const emp = this.repo.create({ ...dto, userId: savedUser.id });
     const saved = await this.repo.save(emp);
