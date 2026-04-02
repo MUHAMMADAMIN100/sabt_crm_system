@@ -17,31 +17,31 @@ const bootstrapLogger = WinstonModule.createLogger({
   format: isProduction
     ? winston.format.combine(winston.format.timestamp(), winston.format.errors({ stack: true }), winston.format.json())
     : winston.format.combine(
-        winston.format.colorize(),
-        winston.format.timestamp({ format: 'HH:mm:ss' }),
-        winston.format.errors({ stack: true }),
-        winston.format.printf(({ level, message, timestamp, stack }) =>
-          `${timestamp} [${level}] ${stack || message}`,
-        ),
+      winston.format.colorize(),
+      winston.format.timestamp({ format: 'HH:mm:ss' }),
+      winston.format.errors({ stack: true }),
+      winston.format.printf(({ level, message, timestamp, stack }) =>
+        `${timestamp} [${level}] ${stack || message}`,
       ),
+    ),
   transports: [
     new winston.transports.Console(),
     ...(isProduction
       ? [
-          new (winston.transports as any).DailyRotateFile({
-            filename: 'logs/error-%DATE%.log',
-            datePattern: 'YYYY-MM-DD',
-            level: 'error',
-            maxFiles: '30d',
-            zippedArchive: true,
-          }),
-          new (winston.transports as any).DailyRotateFile({
-            filename: 'logs/combined-%DATE%.log',
-            datePattern: 'YYYY-MM-DD',
-            maxFiles: '14d',
-            zippedArchive: true,
-          }),
-        ]
+        new (winston.transports as any).DailyRotateFile({
+          filename: 'logs/error-%DATE%.log',
+          datePattern: 'YYYY-MM-DD',
+          level: 'error',
+          maxFiles: '30d',
+          zippedArchive: true,
+        }),
+        new (winston.transports as any).DailyRotateFile({
+          filename: 'logs/combined-%DATE%.log',
+          datePattern: 'YYYY-MM-DD',
+          maxFiles: '14d',
+          zippedArchive: true,
+        }),
+      ]
       : []),
   ],
 });
@@ -53,9 +53,22 @@ async function bootstrap() {
 
   app.use(compression({ level: 6, threshold: 1024 }));
 
-  const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:3001')
-    .split(',').map(o => o.trim());
-  app.enableCors({ origin: allowedOrigins, credentials: true });
+  // Разбираем CORS_ORIGINS из ENV
+  const allowedOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+    : [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://sabt-crm-system-frontend.vercel.app', // фронтенд продакшн
+    ];
+
+  // Настройка CORS, безопасная и без ошибок preflight
+  app.enableCors({
+    origin: allowedOrigins, // массив разрешённых доменов
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true, // если используешь JWT в куки
+  });
 
   app.useGlobalFilters(new ThrottlerExceptionFilter());
   app.useGlobalPipes(
