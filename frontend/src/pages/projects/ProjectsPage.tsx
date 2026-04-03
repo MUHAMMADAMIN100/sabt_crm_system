@@ -106,7 +106,18 @@ export default function ProjectsPage() {
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: any) => projectsApi.update(id, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); setEditProject(null); toast.success(t('projects.updated')) },
+    onMutate: async ({ id: projId, data }: any) => {
+      setEditProject(null)
+      await qc.cancelQueries({ queryKey: ['projects'] })
+      const previous = qc.getQueryData(['projects'])
+      qc.setQueryData(['projects'], (old: any[]) => old?.map((p: any) => p.id === projId ? { ...p, ...data } : p) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['projects'], context?.previous)
+      toast.error(t('common.error'))
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); toast.success(t('projects.updated')) },
   })
 
   const archiveMut = useMutation({

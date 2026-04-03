@@ -67,10 +67,23 @@ export default function ProjectDetailPage() {
 
   const updateTask = useMutation({
     mutationFn: ({ taskId, data }: any) => tasksApi.update(taskId, data),
-    onSuccess: () => {
-      invalidateAfterTaskChange(qc, id)
+    onMutate: async ({ taskId, data }: any) => {
       setShowTaskForm(false)
       setEditingTask(null)
+      await qc.cancelQueries({ queryKey: ['project', id] })
+      const previous = qc.getQueryData(['project', id])
+      qc.setQueryData(['project', id], (old: any) => ({
+        ...old,
+        tasks: old?.tasks?.map((t: any) => t.id === taskId ? { ...t, ...data } : t) ?? [],
+      }))
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['project', id], context?.previous)
+      toast.error(t('common.error'))
+    },
+    onSuccess: () => {
+      invalidateAfterTaskChange(qc, id)
       toast.success(t('tasks.updated'))
     },
   })

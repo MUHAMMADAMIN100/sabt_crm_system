@@ -87,7 +87,19 @@ export default function TasksPage() {
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: any) => tasksApi.update(id, data),
-    onSuccess: () => { invalidateAfterTaskChange(qc); setEditingTask(null); setShowCreate(false); toast.success(t('tasks.updated')) },
+    onMutate: async ({ id: taskId, data }: any) => {
+      setEditingTask(null)
+      setShowCreate(false)
+      await qc.cancelQueries({ queryKey: ['tasks'] })
+      const previous = qc.getQueryData(['tasks'])
+      qc.setQueryData(['tasks'], (old: any[]) => old?.map((t: any) => t.id === taskId ? { ...t, ...data } : t) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['tasks'], context?.previous)
+      toast.error(t('common.error'))
+    },
+    onSuccess: () => { invalidateAfterTaskChange(qc); toast.success(t('tasks.updated')) },
   })
 
   const updateStatusMut = useMutation({
