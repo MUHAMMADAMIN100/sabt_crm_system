@@ -44,11 +44,11 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
     onMutate: async ({ projectId, date, storiesCount }: any) => {
       await qc.cancelQueries({ queryKey: ['stories', userId, from, to] })
       const previous = qc.getQueryData(['stories', userId, from, to])
+      const dateKey = typeof date === 'string' ? date.split('T')[0] : date
       qc.setQueryData(['stories', userId, from, to], (old: any[]) => {
         if (!old) return old
-        const dateKey = typeof date === 'string' ? date.split('T')[0] : date
-        const existing = old.find((s: any) => s.projectId === projectId && s.date?.split('T')[0] === dateKey)
-        if (existing) {
+        const exists = old.some((s: any) => s.projectId === projectId && s.date?.split('T')[0] === dateKey)
+        if (exists) {
           return old.map((s: any) =>
             s.projectId === projectId && s.date?.split('T')[0] === dateKey
               ? { ...s, storiesCount }
@@ -62,7 +62,22 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
     onError: (_err: any, _vars: any, context: any) => {
       qc.setQueryData(['stories', userId, from, to], context?.previous)
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['stories'], refetchType: 'none' }),
+    onSuccess: (serverData: any) => {
+      // Replace temp/optimistic entry with confirmed server data — no refetch triggered
+      qc.setQueryData(['stories', userId, from, to], (old: any[]) => {
+        if (!old || !serverData) return old
+        const dateKey = serverData.date?.split('T')[0]
+        const exists = old.some((s: any) => s.projectId === serverData.projectId && s.date?.split('T')[0] === dateKey && !s.id?.startsWith('temp-'))
+        if (exists) {
+          return old.map((s: any) =>
+            s.projectId === serverData.projectId && s.date?.split('T')[0] === dateKey
+              ? { ...s, ...serverData }
+              : s
+          )
+        }
+        return old.map((s: any) => s.id?.startsWith('temp-') ? { ...s, ...serverData } : s)
+      })
+    },
   })
 
   const activeProjects = useMemo(() => {
