@@ -79,20 +79,13 @@ export default function AuthPage() {
 
   const handleEmailBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     const val = e.target.value.trim()
-    if (val && !val.includes('@')) {
-      setValue('email', val + '@gmail.com', { shouldValidate: false })
-    }
+    if (val && !val.includes('@')) setValue('email', val + '@gmail.com', { shouldValidate: true })
   }
 
   const handleTelegramChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value
     if (!val.startsWith('@')) val = '@' + val.replace(/@/g, '')
     setValue('telegram', val, { shouldValidate: true })
-  }
-
-  const handleEmailBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    const val = e.target.value.trim()
-    if (val && !val.includes('@')) setValue('email', val + '@gmail.com', { shouldValidate: true })
   }
 
   const handlePhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -243,7 +236,6 @@ export default function AuthPage() {
                   placeholder="username"
                   onBlur={handleEmailBlur}
                   className={`input pl-9 ${errors.email && String(errors.email.message ?? '').trim() ? 'border-red-400 focus:ring-red-400' : ''}`}
-                  onBlur={handleEmailBlur}
                 />
               </div>
               {errors.email && String(errors.email.message ?? '').trim() && (
