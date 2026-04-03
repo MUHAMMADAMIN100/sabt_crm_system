@@ -32,7 +32,7 @@ export default function TaskForm({
         projectId: initial.projectId || fixedProjectId || '',
         assigneeId: initial.assigneeId || '',
         priority: initial.priority || 'medium',
-        deadline: initial.deadline ? new Date(initial.deadline).toISOString().split('T')[0] : (initialDeadline || ''),
+        deadline: initial.deadline ? new Date(initial.deadline).toISOString().slice(0, 16) : (initialDeadline || ''),
       })
     } else {
       reset({
@@ -100,7 +100,7 @@ export default function TaskForm({
         </div>
         <div>
           <label className="label">{t('tasks.deadline')} *</label>
-          <input type="date" {...register('deadline', { required: true })} className="input" />
+          <input type="datetime-local" {...register('deadline', { required: true })} className="input" />
           {errors.deadline && <p className="text-xs text-red-500 mt-1">{t('tasks.deadline')} обязательно</p>}
         </div>
       </div>
