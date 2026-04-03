@@ -39,6 +39,14 @@ export default function TasksPage() {
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
 
+  // Employees only see their own projects in the task form
+  const availableProjects = useMemo(() =>
+    isManagerPlus
+      ? (projects || [])
+      : (projects || []).filter((p: any) => p.members?.some((m: any) => m.id === user?.id)),
+    [projects, isManagerPlus, user?.id]
+  )
+
   // Map userId -> fullName for displaying correct full names on tasks
   const empNameMap = useMemo(() => {
     const map: Record<string, string> = {}
@@ -296,7 +304,7 @@ export default function TasksPage() {
           <TaskForm
             onSubmit={data => { if (editingTask) updateMut.mutate({ id: editingTask.id, data }); else createMut.mutate(data) }}
             onClose={() => { setShowCreate(false); setEditingTask(null) }}
-            projects={projects || []} employees={employees || []}
+            projects={availableProjects} employees={employees || []}
             loading={createMut.isPending || updateMut.isPending}
             initial={editingTask}
             isAdmin={isManagerPlus} currentUserId={user?.id}
