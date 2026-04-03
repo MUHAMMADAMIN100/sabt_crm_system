@@ -82,7 +82,10 @@ export default function ProjectDetailPage() {
       toast.error(t('common.error'))
     },
     onSuccess: () => {
-      invalidateAfterTaskChange(qc, id)
+      // Don't invalidate project — optimistic update is already correct, socket will sync later
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
+      qc.invalidateQueries({ queryKey: ['analytics-workload'] })
     },
   })
 
