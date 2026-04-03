@@ -70,9 +70,10 @@ export default function ProjectDetailPage() {
       qc.setQueryData(['project', id], (old: any) => {
         if (!old) return old
         const updatedTasks = old.tasks?.map((t: any) => t.id === taskId ? { ...t, ...data } : t) || []
-        const total = updatedTasks.filter((t: any) => t.status !== 'cancelled').length
-        const done = updatedTasks.filter((t: any) => t.status === 'done').length
-        const progress = total > 0 ? Math.round((done / total) * 100) : 0
+        const statusWeight: Record<string, number> = { new: 0, in_progress: 30, review: 70, done: 100 }
+        const activeTasks = updatedTasks.filter((t: any) => t.status !== 'cancelled')
+        const totalWeight = activeTasks.reduce((sum: number, t: any) => sum + (statusWeight[t.status] ?? 0), 0)
+        const progress = activeTasks.length > 0 ? Math.round(totalWeight / activeTasks.length) : 0
         return { ...old, tasks: updatedTasks, progress }
       })
       return { previous }
