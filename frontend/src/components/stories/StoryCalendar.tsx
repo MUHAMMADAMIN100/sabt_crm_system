@@ -62,7 +62,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
     onError: (_err: any, _vars: any, context: any) => {
       qc.setQueryData(['stories', userId, from, to], context?.previous)
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['stories'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['stories'], refetchType: 'none' }),
   })
 
   const activeProjects = useMemo(() => {
