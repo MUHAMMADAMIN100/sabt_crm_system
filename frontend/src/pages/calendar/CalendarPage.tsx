@@ -134,6 +134,11 @@ export default function CalendarPage() {
                     const roundL = isStart || isStartOfWeek
                     const roundR = isEnd || isEndOfWeek
                     const initials = e.assigneeName ? e.assigneeName.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase() : ''
+                    const bgColor = isStart || isStartOfWeek
+                      ? 'bg-emerald-500 dark:bg-emerald-600'
+                      : isEnd || isEndOfWeek
+                        ? 'bg-red-400 dark:bg-red-500'
+                        : 'bg-blue-400 dark:bg-blue-500'
                     return (
                       <Link
                         key={e.id}
@@ -141,8 +146,8 @@ export default function CalendarPage() {
                         onClick={ev => ev.stopPropagation()}
                         title={e.title}
                         className={clsx(
-                          'flex items-center h-5 text-xs overflow-hidden',
-                          'bg-primary-500 text-white dark:bg-primary-600',
+                          'flex items-center h-5 text-xs text-white overflow-hidden',
+                          bgColor,
                           roundL ? 'rounded-l pl-1.5' : '-ml-1.5 pl-0',
                           roundR ? 'rounded-r pr-1' : '-mr-1.5 pr-0',
                           !roundL && !roundR && 'px-0',
@@ -181,8 +186,10 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      <div className="flex gap-4">
-        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-primary-100 dark:bg-primary-900/30" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.task')}</span></div>
+      <div className="flex flex-wrap gap-4">
+        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-emerald-500" /><span className="text-xs text-surface-500 dark:text-surface-400">Начало задачи</span></div>
+        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-blue-400" /><span className="text-xs text-surface-500 dark:text-surface-400">Выполняется</span></div>
+        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-red-400" /><span className="text-xs text-surface-500 dark:text-surface-400">Дедлайн</span></div>
         <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-green-100 dark:bg-green-900/30" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.projectStart')}</span></div>
         <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-red-100 dark:bg-red-900/30" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.projectEnd')}</span></div>
       </div>
