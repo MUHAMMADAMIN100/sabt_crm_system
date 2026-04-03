@@ -342,9 +342,8 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             {errors.name && <p className="text-xs text-red-500 mt-1">Обязательное поле</p>}
           </div>
           <div className="col-span-2">
-            <label className="label">{t('projects.description')} *</label>
-            <textarea {...register('description', { required: true })} className="input resize-none" rows={3} />
-            {errors.description && <p className="text-xs text-red-500 mt-1">Обязательное поле</p>}
+            <label className="label">{t('projects.description')}</label>
+            <textarea {...register('description')} className="input resize-none" rows={3} />
           </div>
 
           {/* Project type */}

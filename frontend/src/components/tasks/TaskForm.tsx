@@ -65,9 +65,8 @@ export default function TaskForm({
         {errors.title && <p className="text-xs text-red-500 mt-1">{t('tasks.name')} обязательно</p>}
       </div>
       <div>
-        <label className="label">{t('tasks.description')} *</label>
-        <textarea {...register('description', { required: true })} className="input resize-none" rows={3} />
-        {errors.description && <p className="text-xs text-red-500 mt-1">{t('tasks.description')} обязательно</p>}
+        <label className="label">{t('tasks.description')}</label>
+        <textarea {...register('description')} className="input resize-none" rows={3} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         {!fixedProjectId && projects && (
