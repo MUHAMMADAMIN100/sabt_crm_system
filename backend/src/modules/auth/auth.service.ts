@@ -12,6 +12,7 @@ import { LoginDto } from './dto/login.dto';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { MailService } from '../mail/mail.service';
+import { AppGateway } from '../gateway/app.gateway';
 
 @Injectable()
 export class AuthService {
@@ -22,6 +23,7 @@ export class AuthService {
     private jwtService: JwtService,
     private activityLog: ActivityLogService,
     private mailService: MailService,
+    private gateway: AppGateway,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -59,6 +61,8 @@ export class AuthService {
       if (dto.phone) existingEmployee.phone = dto.phone;
       await this.employeeRepo.save(existingEmployee);
     }
+
+    this.gateway.broadcast('employees:changed', {});
 
     await this.activityLog.log({
       userId: user.id,

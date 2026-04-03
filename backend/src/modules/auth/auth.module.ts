@@ -10,10 +10,12 @@ import { LocalStrategy } from './strategies/local.strategy';
 import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { WorkSession } from './work-session.entity';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, Employee, WorkSession]),
+    GatewayModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
