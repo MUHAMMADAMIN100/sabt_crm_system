@@ -72,14 +72,33 @@ export default function ProjectsPage() {
       }
       return project
     },
-    onMutate: async () => {
+    onMutate: async (data: any) => {
       setShowCreate(false)
+      await qc.cancelQueries({ queryKey: ['projects'] })
+      const previous = qc.getQueryData(['projects'])
+      const tempProject = {
+        id: `temp-${Date.now()}`,
+        name: data.name,
+        description: data.description,
+        status: data.status || 'planning',
+        color: data.color || '#6B4FCF',
+        projectType: data.projectType,
+        progress: 0,
+        members: [],
+        startDate: data.startDate,
+        endDate: data.endDate,
+        budget: data.budget,
+        createdAt: new Date().toISOString(),
+      }
+      qc.setQueryData(['projects'], (old: any[]) => old ? [tempProject, ...old] : [tempProject])
+      return { previous }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['projects'] })
       toast.success(t('projects.created'))
     },
-    onError: () => {
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['projects'], context?.previous)
       setShowCreate(true)
       toast.error(t('common.error'))
     },
