@@ -21,6 +21,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: { sub: string; email: string; role: string }) {
     const user = await this.userRepo.findOne({ where: { id: payload.sub } });
     if (!user || !user.isActive) throw new UnauthorizedException();
-    return user;
+    // Use the effective role from the JWT (sub-admin gets 'admin' role at login time)
+    return { ...user, role: payload.role };
   }
 }
