@@ -61,6 +61,27 @@ export default function ProjectDetailPage() {
     },
   })
 
+  // Optimistic drag-drop status update (no toast, instant UI)
+  const dragStatusUpdate = useMutation({
+    mutationFn: ({ taskId, data }: any) => tasksApi.update(taskId, data),
+    onMutate: async ({ taskId, data }: any) => {
+      await qc.cancelQueries({ queryKey: ['project', id] })
+      const previous = qc.getQueryData(['project', id])
+      qc.setQueryData(['project', id], (old: any) => {
+        if (!old) return old
+        return { ...old, tasks: old.tasks?.map((t: any) => t.id === taskId ? { ...t, ...data } : t) || [] }
+      })
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['project', id], context?.previous)
+      toast.error(t('common.error'))
+    },
+    onSuccess: () => {
+      invalidateAfterTaskChange(qc, id)
+    },
+  })
+
   const deleteTask = useMutation({
     mutationFn: tasksApi.remove,
     onSuccess: () => {
@@ -115,7 +136,7 @@ export default function ProjectDetailPage() {
     e.preventDefault()
     ;(e.currentTarget as HTMLElement).classList.remove('drag-over')
     if (draggedTask && draggedTask.status !== newStatus) {
-      updateTask.mutate({ taskId: draggedTask.id, data: { status: newStatus } })
+      dragStatusUpdate.mutate({ taskId: draggedTask.id, data: { status: newStatus } })
     }
     setDraggedTask(null)
   }
