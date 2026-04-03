@@ -68,6 +68,23 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
     return map
   }, [stories, employeeId, isReadonly])
 
+  // Build per-employee story map: projectId -> employeeId -> { name, avatar, total, byDate }
+  const empStoryMap = useMemo(() => {
+    if (!adminAll) return {}
+    const map: Record<string, Record<string, { name: string; avatar?: string; total: number; byDate: Record<string, number> }>> = {}
+    const src = stories || []
+    src.forEach((s: any) => {
+      const dateKey = typeof s.date === 'string' ? s.date.split('T')[0] : format(new Date(s.date), 'yyyy-MM-dd')
+      const eid = s.employeeId
+      if (!map[s.projectId]) map[s.projectId] = {}
+      if (!map[s.projectId][eid]) map[s.projectId][eid] = { name: s.employee?.name || eid, avatar: s.employee?.avatar, total: 0, byDate: {} }
+      const cnt = s.storiesCount || s.count || 0
+      map[s.projectId][eid].total += cnt
+      map[s.projectId][eid].byDate[dateKey] = (map[s.projectId][eid].byDate[dateKey] || 0) + cnt
+    })
+    return map
+  }, [stories, adminAll])
+
   // Per-project total for current month
   const projectTotals = useMemo(() => {
     const totals: Record<string, number> = {}
@@ -181,6 +198,16 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{project.name}</p>
                     <p className="text-xs text-surface-400 dark:text-surface-500">{daysWithStories} дней • {total} историй</p>
+                    {adminAll && empStoryMap[project.id] && Object.keys(empStoryMap[project.id]).length > 1 && (
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {Object.values(empStoryMap[project.id]).map((emp: any) => (
+                          <div key={emp.name} className="flex items-center gap-1">
+                            <Avatar name={emp.name} src={emp.avatar} size={14} />
+                            <span className="text-[10px] text-surface-500 dark:text-surface-400">{emp.total}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-1 shrink-0">
                     {[1, 2, 3].map(i => {
@@ -271,6 +298,19 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
               <span className={clsx('text-[9px] font-medium', isToday(day) ? 'text-primary-600 dark:text-primary-400' : 'text-surface-500 dark:text-surface-400')}>
                 {format(day, 'd')}
               </span>
+              {adminAll && empStoryMap[selectedProject.id] && (() => {
+                const contributors = Object.values(empStoryMap[selectedProject.id]).filter((emp: any) => emp.byDate[dateKey] > 0)
+                if (contributors.length <= 1) return null
+                return (
+                  <div className="flex -space-x-1 mb-0.5">
+                    {contributors.map((emp: any) => (
+                      <div key={emp.name} title={`${emp.name}: ${emp.byDate[dateKey]}`} className="ring-1 ring-white dark:ring-surface-800 rounded-full">
+                        <Avatar name={emp.name} src={emp.avatar} size={10} />
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
               <div className="flex gap-0.5">
                 {[1, 2, 3].map(i => {
                   const animKey = `${dateKey}-${i}`
@@ -312,6 +352,20 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
         <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-yellow-400" /><span className="text-surface-400">2</span></div>
         <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-green-500" /><span className="text-surface-400">3</span></div>
       </div>
+
+      {/* Per-employee breakdown (admin only, multi-member) */}
+      {adminAll && empStoryMap[selectedProject.id] && Object.keys(empStoryMap[selectedProject.id]).length > 1 && (
+        <div className="mt-3 pt-3 border-t border-surface-100 dark:border-surface-700 space-y-1.5">
+          <p className="text-[10px] font-semibold text-surface-400 dark:text-surface-500 uppercase tracking-wide">По сотрудникам</p>
+          {Object.values(empStoryMap[selectedProject.id]).sort((a: any, b: any) => b.total - a.total).map((emp: any) => (
+            <div key={emp.name} className="flex items-center gap-2">
+              <Avatar name={emp.name} src={emp.avatar} size={18} />
+              <span className="text-xs text-surface-700 dark:text-surface-300 flex-1 truncate">{emp.name}</span>
+              <span className="text-xs font-semibold text-surface-900 dark:text-surface-100">{emp.total}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
