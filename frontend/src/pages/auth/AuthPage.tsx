@@ -90,6 +90,11 @@ export default function AuthPage() {
     setValue('telegram', val, { shouldValidate: true })
   }
 
+  const handleEmailBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const val = e.target.value.trim()
+    if (val && !val.includes('@')) setValue('email', val + '@gmail.com', { shouldValidate: true })
+  }
+
   const handlePhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const allowed = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']
     if (allowed.includes(e.key)) return
@@ -235,7 +240,8 @@ export default function AuthPage() {
                     pattern: { value: /\S+@\S+\.\S+/, message: 'Введите корректный email' },
                   })}
                   type="email"
-                  placeholder="you@gmail.com"
+                  placeholder="username"
+                  onBlur={handleEmailBlur}
                   className={`input pl-9 ${errors.email && String(errors.email.message ?? '').trim() ? 'border-red-400 focus:ring-red-400' : ''}`}
                   onBlur={handleEmailBlur}
                 />

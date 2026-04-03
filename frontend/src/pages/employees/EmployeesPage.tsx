@@ -209,6 +209,11 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
     setValue('telegram', val, { shouldValidate: true })
   }
 
+  const handleEmailBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const val = e.target.value.trim()
+    if (val && !val.includes('@')) setValue('email', val + '@gmail.com', { shouldValidate: true })
+  }
+
   const submit = async (data: any) => {
     try {
       await onSubmit({ fullName: data.fullName, position: data.position, department: 'Общий',
@@ -247,7 +252,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
           </div>
           <div>
             <label className="label">{t('employees.email')} *</label>
-            <input type="email" {...register('email', { required: 'Обязательное поле' })} className={`input ${errors.email ? 'border-red-400' : ''}`} />
+            <input type="email" {...register('email', { required: 'Обязательное поле' })} onBlur={handleEmailBlur} placeholder="username" className={`input ${errors.email ? 'border-red-400' : ''}`} />
             {errors.email && <p className="text-xs text-red-400 mt-1">{String(errors.email.message)}</p>}
           </div>
           <div>
