@@ -103,12 +103,12 @@ export default function AnalyticsPage() {
           <div className="card">
             <h3 className="section-title mb-4">{t('analytics.employeeActivity')}</h3>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={empActivity.slice(0, 8)}>
+              <BarChart data={empActivity.slice(0, 8).map((e: any) => ({ ...e, totalMinutes: Math.round((e.totalHours || 0) * 60) }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: any) => [`${Number(v).toFixed(1)}ч`, t('dashboard.hours')]} />
-                <Bar dataKey="totalHours" fill="#6B4FCF" radius={[6, 6, 0, 0]} />
+                <YAxis tick={{ fontSize: 11 }} unit="м" />
+                <Tooltip formatter={(v: any) => [`${v} мин`, 'Минуты']} />
+                <Bar dataKey="totalMinutes" fill="#6B4FCF" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
