@@ -41,6 +41,27 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
 
   const upsertStory = useMutation({
     mutationFn: storiesApi.upsert,
+    onMutate: async ({ projectId, date, storiesCount }: any) => {
+      await qc.cancelQueries({ queryKey: ['stories', userId, from, to] })
+      const previous = qc.getQueryData(['stories', userId, from, to])
+      qc.setQueryData(['stories', userId, from, to], (old: any[]) => {
+        if (!old) return old
+        const dateKey = typeof date === 'string' ? date.split('T')[0] : date
+        const existing = old.find((s: any) => s.projectId === projectId && s.date?.split('T')[0] === dateKey)
+        if (existing) {
+          return old.map((s: any) =>
+            s.projectId === projectId && s.date?.split('T')[0] === dateKey
+              ? { ...s, storiesCount }
+              : s
+          )
+        }
+        return [...old, { projectId, date: dateKey, storiesCount, employeeId: userId, id: `temp-${Date.now()}` }]
+      })
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['stories', userId, from, to], context?.previous)
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['stories'] }),
   })
 
