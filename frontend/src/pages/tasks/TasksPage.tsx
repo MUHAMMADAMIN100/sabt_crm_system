@@ -19,6 +19,7 @@ export default function TasksPage() {
   const [statuses, setStatuses] = useState<string[]>([])
   const [priorities, setPriorities] = useState<string[]>([])
   const [projectId, setProjectId] = useState('')
+  const [assigneeUserId, setAssigneeUserId] = useState('')
   const [view, setView] = useState<'list' | 'grid'>('list')
   const [showCreate, setShowCreate] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
@@ -50,9 +51,10 @@ export default function TasksPage() {
     const matchesStatus = statuses.length === 0 || statuses.includes(t.status)
     const matchesPriority = priorities.length === 0 || priorities.includes(t.priority)
     const matchesProject = !projectId || t.projectId === projectId
+    const matchesAssignee = !assigneeUserId || t.assigneeId === assigneeUserId
     // Employee sees only own tasks
     const matchesEmployee = isManagerPlus || t.assigneeId === user?.id
-    return matchesSearch && matchesStatus && matchesPriority && matchesProject && matchesEmployee
+    return matchesSearch && matchesStatus && matchesPriority && matchesProject && matchesAssignee && matchesEmployee
   }) || []
 
   const pagedTasks = tasks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -160,6 +162,17 @@ export default function TasksPage() {
               )?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
+          {isManagerPlus && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-surface-500 dark:text-surface-400">{t('tasks.assignee')}</span>
+              <select value={assigneeUserId} onChange={e => setAssigneeUserId(e.target.value)} className="input w-48">
+                <option value="">Все исполнители</option>
+                {employees?.map((e: any) => (
+                  <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       )}
 

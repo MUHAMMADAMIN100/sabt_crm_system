@@ -22,6 +22,7 @@ export default function CalendarPage() {
   const [current, setCurrent] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   const [showTaskForm, setShowTaskForm] = useState(false)
+  const [assigneeUserId, setAssigneeUserId] = useState('')
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -30,7 +31,7 @@ export default function CalendarPage() {
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')
 
-  const { data: events } = useQuery({ queryKey: ['calendar', from, to], queryFn: () => calendarApi.events({ from, to }) })
+  const { data: events } = useQuery({ queryKey: ['calendar', from, to, assigneeUserId], queryFn: () => calendarApi.events({ from, to, ...(assigneeUserId && { employeeId: assigneeUserId }) }) })
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list(), enabled: isManagerPlus })
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list(), enabled: isManagerPlus })
 
@@ -62,6 +63,18 @@ export default function CalendarPage() {
           <button onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() + 1))} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400"><ChevronRight size={18} /></button>
         </div>
       </div>
+
+      {isManagerPlus && (
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-medium text-surface-500 dark:text-surface-400">Исполнитель:</span>
+          <select value={assigneeUserId} onChange={e => setAssigneeUserId(e.target.value)} className="input w-52 text-sm">
+            <option value="">Все сотрудники</option>
+            {employees?.map((e: any) => (
+              <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="card p-0 overflow-hidden">
         <div className="grid grid-cols-7 border-b border-surface-100 dark:border-surface-700">
