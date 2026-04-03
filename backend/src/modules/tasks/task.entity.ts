@@ -61,6 +61,9 @@ export class Task {
   @Column({ type: 'enum', enum: TaskStatus, default: TaskStatus.NEW })
   status: TaskStatus;
 
+  @Column({ type: 'date', nullable: true })
+  startDate: string;
+
   @Column({ type: 'timestamp', nullable: true })
   deadline: Date;
 

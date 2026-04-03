@@ -16,8 +16,11 @@ export class CalendarService {
       .createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
       .leftJoinAndSelect('t.project', 'project')
-      .where('t.deadline BETWEEN :from AND :to', { from, to })
-      .andWhere('t.deadline IS NOT NULL');
+      .where('t.deadline IS NOT NULL')
+      .andWhere(
+        `(t.deadline >= :from AND COALESCE(t."startDate"::date, DATE(t."createdAt")) <= :to)`,
+        { from, to },
+      );
 
     if (employeeId) taskQb.andWhere('t.assigneeId = :employeeId', { employeeId });
     if (projectId) taskQb.andWhere('t.projectId = :projectId', { projectId });
@@ -35,6 +38,7 @@ export class CalendarService {
       id: `task-${t.id}`,
       title: t.title,
       date: t.deadline,
+      startDate: t.startDate || new Date(t.createdAt).toISOString().split('T')[0],
       type: 'task',
       status: t.status,
       priority: t.priority,

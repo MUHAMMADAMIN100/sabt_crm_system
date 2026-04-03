@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom'
 import { Modal } from '@/components/ui'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday } from 'date-fns'
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday, parseISO, isBefore, isAfter } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -44,7 +44,30 @@ export default function CalendarPage() {
 
   const days = eachDayOfInterval({ start: startOfMonth(current), end: endOfMonth(current) })
   const startPad = (getDay(startOfMonth(current)) + 6) % 7
-  const getEventsForDay = (day: Date) => events?.filter((e: any) => isSameDay(new Date(e.date), day)) || []
+
+  // Spanning task bars: task spans from startDate to deadline
+  const spanMap: Record<string, Array<{ event: any; isStart: boolean; isEnd: boolean; isStartOfWeek: boolean; isEndOfWeek: boolean }>> = {}
+  events?.filter((e: any) => e.type === 'task' && e.startDate).forEach((e: any) => {
+    const start = parseISO(e.startDate)
+    const end = parseISO(format(new Date(e.date), 'yyyy-MM-dd'))
+    days.forEach(day => {
+      if (!isBefore(day, start) && !isAfter(day, end)) {
+        const key = format(day, 'yyyy-MM-dd')
+        if (!spanMap[key]) spanMap[key] = []
+        const dow = (getDay(day) + 6) % 7 // Mon=0, Sun=6
+        spanMap[key].push({
+          event: e,
+          isStart: isSameDay(day, start),
+          isEnd: isSameDay(day, end),
+          isStartOfWeek: dow === 0,
+          isEndOfWeek: dow === 6,
+        })
+      }
+    })
+  })
+
+  const getNonSpanEvents = (day: Date) =>
+    events?.filter((e: any) => e.type !== 'task' && isSameDay(new Date(e.date), day)) || []
   const weekDaysArr = t('calendar.weekDays')
   const weekDays = Array.isArray(weekDaysArr) ? weekDaysArr : ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
 
@@ -91,11 +114,13 @@ export default function CalendarPage() {
         <div className="grid grid-cols-7">
           {Array.from({ length: startPad }).map((_, i) => (<div key={`pad-${i}`} className="min-h-[90px] border-r border-b border-surface-50 dark:border-surface-700" />))}
           {days.map(day => {
-            const dayEvents = getEventsForDay(day)
+            const dateKey = format(day, 'yyyy-MM-dd')
             const today = isToday(day)
+            const spans = spanMap[dateKey] || []
+            const nonSpanEvents = getNonSpanEvents(day)
             return (
               <div key={day.toISOString()} onClick={() => handleDayClick(day)}
-                className={clsx('min-h-[90px] border-r border-b border-surface-50 dark:border-surface-700 p-1.5 transition-colors group',
+                className={clsx('min-h-[90px] border-r border-b border-surface-50 dark:border-surface-700 p-1.5 transition-colors group overflow-hidden',
                   isManagerPlus && 'cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700/30',
                   today && 'bg-primary-50/30 dark:bg-primary-900/10')}>
                 <div className="flex items-center justify-between mb-1">
@@ -103,25 +128,52 @@ export default function CalendarPage() {
                   {isManagerPlus && <Plus size={14} className="text-surface-300 dark:text-surface-600 opacity-0 group-hover:opacity-100 transition-opacity" />}
                 </div>
                 <div className="space-y-0.5">
-                  {dayEvents.slice(0, 3).map((e: any) => {
+                  {/* Spanning task bars */}
+                  {spans.slice(0, 3).map(({ event: e, isStart, isEnd, isStartOfWeek, isEndOfWeek }) => {
+                    const showLabel = isStart || isStartOfWeek
+                    const roundL = isStart || isStartOfWeek
+                    const roundR = isEnd || isEndOfWeek
                     const initials = e.assigneeName ? e.assigneeName.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase() : ''
                     return (
+                      <Link
+                        key={e.id}
+                        to={e.link}
+                        onClick={ev => ev.stopPropagation()}
+                        title={e.title}
+                        className={clsx(
+                          'flex items-center h-5 text-xs overflow-hidden',
+                          'bg-primary-500 text-white dark:bg-primary-600',
+                          roundL ? 'rounded-l pl-1.5' : '-ml-1.5 pl-0',
+                          roundR ? 'rounded-r pr-1' : '-mr-1.5 pr-0',
+                          !roundL && !roundR && 'px-0',
+                        )}
+                      >
+                        {showLabel && (
+                          <>
+                            {initials && <span className="w-3.5 h-3.5 rounded-full bg-white/30 flex items-center justify-center text-[7px] font-bold shrink-0 mr-0.5">{initials}</span>}
+                            <span className="truncate text-[10px] font-medium">{e.title}</span>
+                          </>
+                        )}
+                      </Link>
+                    )
+                  })}
+                  {/* Single-day events (project start/end) */}
+                  {nonSpanEvents.slice(0, 2).map((e: any) => (
                     <div key={e.id} className="flex items-center gap-0.5">
                       {e.link ? (
-                        <Link to={e.link} onClick={(ev) => ev.stopPropagation()} className={clsx('flex-1 text-xs px-1.5 py-0.5 rounded truncate flex items-center gap-1', TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300')}>
-                          {initials && <span className="w-4 h-4 rounded-full bg-white/50 dark:bg-black/20 flex items-center justify-center text-[8px] font-bold shrink-0">{initials}</span>}
-                          <span className="truncate">{e.title}</span>
+                        <Link to={e.link} onClick={(ev) => ev.stopPropagation()} className={clsx('flex-1 text-xs px-1.5 py-0.5 rounded truncate', TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')}>
+                          {e.title}
                         </Link>
                       ) : (
-                        <div className={clsx('flex-1 text-xs px-1.5 py-0.5 rounded truncate flex items-center gap-1', TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300')}>
-                          {initials && <span className="w-4 h-4 rounded-full bg-white/50 dark:bg-black/20 flex items-center justify-center text-[8px] font-bold shrink-0">{initials}</span>}
-                          <span className="truncate">{e.title}</span>
+                        <div className={clsx('flex-1 text-xs px-1.5 py-0.5 rounded truncate', TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')}>
+                          {e.title}
                         </div>
                       )}
                     </div>
-                    )
-                  })}
-                  {dayEvents.length > 3 && <div className="text-xs text-surface-400 dark:text-surface-500 px-1.5">+{dayEvents.length - 3}</div>}
+                  ))}
+                  {(spans.length + nonSpanEvents.length) > 3 && (
+                    <div className="text-xs text-surface-400 dark:text-surface-500 px-1.5">+{spans.length + nonSpanEvents.length - 3}</div>
+                  )}
                 </div>
               </div>
             )
@@ -143,7 +195,7 @@ export default function CalendarPage() {
           size="lg"
         >
           <TaskForm
-            onSubmit={data => createTask.mutate(data)}
+            onSubmit={data => createTask.mutate({ ...data, startDate: selectedDay ? format(selectedDay, 'yyyy-MM-dd') : undefined })}
             onClose={() => setShowTaskForm(false)}
             projects={projects || []} employees={employees || []}
             loading={createTask.isPending}

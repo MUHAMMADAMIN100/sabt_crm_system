@@ -10,6 +10,7 @@ export class CreateTaskDto {
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() assigneeId?: string;
   @ApiProperty({ enum: TaskPriority, required: false }) @IsOptional() @IsEnum(TaskPriority) priority?: TaskPriority;
   @ApiProperty({ enum: TaskStatus, required: false }) @IsOptional() @IsEnum(TaskStatus) status?: TaskStatus;
+  @ApiProperty({ required: false }) @IsOptional() @IsDateString() startDate?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() deadline?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() estimatedHours?: number;
 }
