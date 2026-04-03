@@ -28,7 +28,7 @@ export default function AuthPage() {
   const switchMode = (m: 'login' | 'register') => {
     if (m === mode) return
     setMode(m)
-    reset()
+    reset(m === 'register' ? { telegram: '@' } : {})
     clearErrors()
     setAnimKey(k => k + 1)
   }
@@ -86,9 +86,7 @@ export default function AuthPage() {
 
   const handleTelegramChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value
-    if (val && !val.startsWith('@')) {
-      val = '@' + val.replace(/@/g, '')
-    }
+    if (!val.startsWith('@')) val = '@' + val.replace(/@/g, '')
     setValue('telegram', val, { shouldValidate: true })
   }
 

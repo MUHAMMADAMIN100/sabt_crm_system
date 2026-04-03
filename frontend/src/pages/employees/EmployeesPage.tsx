@@ -196,7 +196,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
   useEffect(() => {
     if (initial) {
       reset({ fullName: initial.fullName||'', position: initial.position||'',
-        email: initial.email||'', phone: initial.phone||'', telegram: initial.telegram||'', instagram: initial.instagram||'',
+        email: initial.email||'', phone: initial.phone||'', telegram: initial.telegram ? (initial.telegram.startsWith('@') ? initial.telegram : '@' + initial.telegram) : '@', instagram: initial.instagram||'',
         hireDate: initial.hireDate ? new Date(initial.hireDate).toISOString().split('T')[0] : '', status: initial.status||'active', bio: initial.bio||'' })
     } else {
       reset({ fullName:'', position:'', email:'', phone:'', telegram:'@', instagram:'', hireDate:'', status:'active', bio:'' })
