@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { analyticsApi, tasksApi, employeesApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
@@ -15,6 +15,7 @@ const COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4'
 export default function AnalyticsPage() {
   const { t } = useTranslation()
   const [expandedEmp, setExpandedEmp] = useState<string | null>(null)
+  const [expandedWorkload, setExpandedWorkload] = useState<string | null>(null)
 
   // Single combined request instead of 9 separate ones
   const { data: dash, isLoading } = useQuery({ queryKey: ['analytics-dashboard'], queryFn: analyticsApi.dashboard })
@@ -202,38 +203,71 @@ export default function AnalyticsPage() {
                   const maxTasks = Math.max(...workload.map((w: any) => w.activeTasks), 1)
                   const pct = Math.round((e.activeTasks / maxTasks) * 100)
                   const loadColor = e.activeTasks >= 10 ? 'bg-red-500' : e.activeTasks >= 5 ? 'bg-amber-500' : 'bg-emerald-500'
+                  const isExpanded = expandedWorkload === e.id
+                  const empTasks = tasksByEmployee[e.userId] || tasksByEmployee[e.id] || []
                   return (
-                    <tr key={e.id} className="border-b border-surface-50 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors">
-                      <td className="py-2.5 px-3">
-                        <div className="flex items-center gap-2">
-                          <Avatar name={e.name} src={e.avatar} size={28} />
-                          <div>
-                            <p className="font-medium text-surface-900 dark:text-surface-100 text-xs">{e.name}</p>
-                            {e.position && <p className="text-[10px] text-surface-400 dark:text-surface-500">{e.position}</p>}
+                    <React.Fragment key={e.id}>
+                      <tr onClick={() => setExpandedWorkload(isExpanded ? null : e.id)}
+                        className="border-b border-surface-50 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors cursor-pointer">
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-2">
+                            {isExpanded ? <ChevronDown size={13} className="text-surface-400 shrink-0" /> : <ChevronRight size={13} className="text-surface-400 shrink-0" />}
+                            <Avatar name={e.name} src={e.avatar} size={28} />
+                            <div>
+                              <p className="font-medium text-surface-900 dark:text-surface-100 text-xs">{e.name}</p>
+                              {e.position && <p className="text-[10px] text-surface-400 dark:text-surface-500">{e.position}</p>}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3 hidden md:table-cell text-xs text-surface-500 dark:text-surface-400">{e.department || '—'}</td>
-                      <td className="py-2.5 px-3 text-center">
-                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-white text-xs font-bold ${e.activeTasks >= 10 ? 'bg-red-500' : e.activeTasks >= 5 ? 'bg-amber-500' : 'bg-primary-600'}`}>
-                          {e.activeTasks}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-center text-xs font-semibold text-amber-600 dark:text-amber-400">
-                        {e.criticalTasks > 0 ? e.criticalTasks : <span className="text-surface-300 dark:text-surface-600">—</span>}
-                      </td>
-                      <td className="py-2.5 px-3 text-center text-xs font-semibold text-red-600 dark:text-red-400">
-                        {e.overdueTasks > 0 ? e.overdueTasks : <span className="text-surface-300 dark:text-surface-600">—</span>}
-                      </td>
-                      <td className="py-2.5 px-3 hidden lg:table-cell">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 bg-surface-100 dark:bg-surface-700 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${loadColor} transition-all`} style={{ width: `${pct}%` }} />
+                        </td>
+                        <td className="py-2.5 px-3 hidden md:table-cell text-xs text-surface-500 dark:text-surface-400">{e.department || '—'}</td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-white text-xs font-bold ${e.activeTasks >= 10 ? 'bg-red-500' : e.activeTasks >= 5 ? 'bg-amber-500' : 'bg-primary-600'}`}>
+                            {e.activeTasks}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-xs font-semibold text-amber-600 dark:text-amber-400">
+                          {e.criticalTasks > 0 ? e.criticalTasks : <span className="text-surface-300 dark:text-surface-600">—</span>}
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-xs font-semibold text-red-600 dark:text-red-400">
+                          {e.overdueTasks > 0 ? e.overdueTasks : <span className="text-surface-300 dark:text-surface-600">—</span>}
+                        </td>
+                        <td className="py-2.5 px-3 hidden lg:table-cell">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 bg-surface-100 dark:bg-surface-700 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${loadColor} transition-all`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-[10px] text-surface-400 dark:text-surface-500 w-7 text-right">{pct}%</span>
                           </div>
-                          <span className="text-[10px] text-surface-400 dark:text-surface-500 w-7 text-right">{pct}%</span>
-                        </div>
-                      </td>
-                    </tr>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="border-b border-surface-100 dark:border-surface-700">
+                          <td colSpan={6} className="px-3 py-2 bg-surface-50/60 dark:bg-surface-800/40">
+                            {empTasks.length === 0 ? (
+                              <p className="text-xs text-surface-400 dark:text-surface-500 py-1 pl-10">Нет активных задач</p>
+                            ) : (
+                              <div className="space-y-1 pl-10">
+                                {empTasks.map((task: any) => (
+                                  <div key={task.id} className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700/40">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
+                                      {task.project?.name && <p className="text-[10px] text-surface-400 dark:text-surface-500 truncate">{task.project.name}</p>}
+                                    </div>
+                                    {task.deadline && (
+                                      <span className="text-[10px] text-surface-400 dark:text-surface-500 shrink-0">
+                                        {new Date(task.deadline).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
+                                      </span>
+                                    )}
+                                    <PriorityBadge priority={task.priority} />
+                                    <StatusBadge status={task.status} />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   )
                 })}
               </tbody>
