@@ -23,6 +23,7 @@ export default function CalendarPage() {
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [assigneeUserId, setAssigneeUserId] = useState('')
+  const [filterProjectId, setFilterProjectId] = useState('')
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -31,7 +32,7 @@ export default function CalendarPage() {
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')
 
-  const { data: events } = useQuery({ queryKey: ['calendar', from, to, assigneeUserId], queryFn: () => calendarApi.events({ from, to, ...(assigneeUserId && { employeeId: assigneeUserId }) }) })
+  const { data: events } = useQuery({ queryKey: ['calendar', from, to, assigneeUserId, filterProjectId], queryFn: () => calendarApi.events({ from, to, ...(assigneeUserId && { employeeId: assigneeUserId }), ...(filterProjectId && { projectId: filterProjectId }) }) })
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list(), enabled: isManagerPlus })
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list(), enabled: isManagerPlus })
 
@@ -65,12 +66,19 @@ export default function CalendarPage() {
       </div>
 
       {isManagerPlus && (
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-xs font-medium text-surface-500 dark:text-surface-400">Исполнитель:</span>
-          <select value={assigneeUserId} onChange={e => setAssigneeUserId(e.target.value)} className="input w-52 text-sm">
+          <select value={assigneeUserId} onChange={e => setAssigneeUserId(e.target.value)} className="input w-48 text-sm">
             <option value="">Все сотрудники</option>
             {employees?.map((e: any) => (
               <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>
+            ))}
+          </select>
+          <span className="text-xs font-medium text-surface-500 dark:text-surface-400">Проект:</span>
+          <select value={filterProjectId} onChange={e => setFilterProjectId(e.target.value)} className="input w-48 text-sm">
+            <option value="">Все проекты</option>
+            {projects?.map((p: any) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
         </div>
