@@ -72,12 +72,17 @@ export default function ProjectsPage() {
       }
       return project
     },
+    onMutate: async () => {
+      setShowCreate(false)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['projects'] })
-      setShowCreate(false)
       toast.success(t('projects.created'))
     },
-    onError: () => toast.error(t('common.error')),
+    onError: () => {
+      setShowCreate(true)
+      toast.error(t('common.error'))
+    },
   })
 
   const updateMut = useMutation({

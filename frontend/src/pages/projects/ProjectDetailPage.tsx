@@ -43,11 +43,25 @@ export default function ProjectDetailPage() {
 
   const createTask = useMutation({
     mutationFn: tasksApi.create,
-    onSuccess: () => {
-      invalidateAfterTaskChange(qc, id)
+    onMutate: async (dto: any) => {
       setShowTaskForm(false)
       setEditingTask(null)
+      await qc.cancelQueries({ queryKey: ['project', id] })
+      const previous = qc.getQueryData(['project', id])
+      qc.setQueryData(['project', id], (old: any) => {
+        if (!old) return old
+        const tempTask = { id: `temp-${Date.now()}`, ...dto, status: dto.status || 'new', createdAt: new Date().toISOString() }
+        return { ...old, tasks: [...(old.tasks || []), tempTask] }
+      })
+      return { previous }
+    },
+    onSuccess: () => {
+      invalidateAfterTaskChange(qc, id)
       toast.success(t('tasks.created'))
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['project', id], context?.previous)
+      toast.error(t('common.error'))
     },
   })
 
