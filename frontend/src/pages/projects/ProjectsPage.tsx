@@ -352,34 +352,6 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             {errors.projectType && <p className="text-xs text-red-500 mt-1">Выберите тип проекта</p>}
           </div>
 
-          {/* Stories & Publications per day — shown when SMM is selected */}
-          {showSmmForm && (
-            <>
-              <div>
-                <label className="label">Количество историй в день</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={smmAnswers.storiesPerDay || ''}
-                  onChange={e => setSmmAnswers(prev => ({ ...prev, storiesPerDay: e.target.value }))}
-                  className="input"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="label">Количество публикаций в день</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={smmAnswers.publicationsPerDay || ''}
-                  onChange={e => setSmmAnswers(prev => ({ ...prev, publicationsPerDay: e.target.value }))}
-                  className="input"
-                  placeholder="0"
-                />
-              </div>
-            </>
-          )}
-
           {/* SMM Questionnaire — appears right after type select */}
           {showSmmForm && (
             <div className="col-span-2 border border-primary-300 dark:border-primary-700 rounded-xl p-4 bg-primary-50 dark:bg-primary-900/10 space-y-4">
@@ -445,6 +417,29 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{t(`statuses.${s}`)}</option>)}
             </select>
           </div>
+
+          {showSmmForm && (
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="label">Историй в день</label>
+                <input
+                  type="number" min={0}
+                  value={smmAnswers.storiesPerDay || ''}
+                  onChange={e => setSmmAnswers(prev => ({ ...prev, storiesPerDay: e.target.value }))}
+                  className="input" placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="label">Публикаций в день</label>
+                <input
+                  type="number" min={0}
+                  value={smmAnswers.publicationsPerDay || ''}
+                  onChange={e => setSmmAnswers(prev => ({ ...prev, publicationsPerDay: e.target.value }))}
+                  className="input" placeholder="0"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Участники проекта */}
           <div className="col-span-2" ref={dropRef}>
