@@ -69,7 +69,11 @@ export default function ProjectDetailPage() {
       const previous = qc.getQueryData(['project', id])
       qc.setQueryData(['project', id], (old: any) => {
         if (!old) return old
-        return { ...old, tasks: old.tasks?.map((t: any) => t.id === taskId ? { ...t, ...data } : t) || [] }
+        const updatedTasks = old.tasks?.map((t: any) => t.id === taskId ? { ...t, ...data } : t) || []
+        const total = updatedTasks.filter((t: any) => t.status !== 'cancelled').length
+        const done = updatedTasks.filter((t: any) => t.status === 'done').length
+        const progress = total > 0 ? Math.round((done / total) * 100) : 0
+        return { ...old, tasks: updatedTasks, progress }
       })
       return { previous }
     },
