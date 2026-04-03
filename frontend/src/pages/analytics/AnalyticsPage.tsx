@@ -247,21 +247,36 @@ export default function AnalyticsPage() {
                               <p className="text-xs text-surface-400 dark:text-surface-500 py-1 pl-10">Нет активных задач</p>
                             ) : (
                               <div className="space-y-1 pl-10">
-                                {empTasks.map((task: any) => (
-                                  <div key={task.id} className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700/40">
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-xs font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
-                                      {task.project?.name && <p className="text-[10px] text-surface-400 dark:text-surface-500 truncate">{task.project.name}</p>}
+                                {empTasks.map((task: any) => {
+                                  const statusPct: Record<string, number> = { new: 0, in_progress: 50, review: 80, done: 100, cancelled: 0 }
+                                  const taskPct = task.estimatedHours > 0
+                                    ? Math.min(100, Math.round((task.loggedHours / task.estimatedHours) * 100))
+                                    : (statusPct[task.status] ?? 0)
+                                  const barColor = taskPct >= 100 ? 'bg-green-500' : taskPct >= 50 ? 'bg-primary-500' : 'bg-amber-400'
+                                  return (
+                                    <div key={task.id} className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700/40">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between gap-2 mb-0.5">
+                                          <p className="text-xs font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
+                                          <span className="text-[10px] text-surface-400 dark:text-surface-500 shrink-0">{taskPct}%</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex-1 h-1 bg-surface-200 dark:bg-surface-700 rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full ${barColor}`} style={{ width: `${taskPct}%` }} />
+                                          </div>
+                                          {task.project?.name && <p className="text-[10px] text-surface-400 dark:text-surface-500 truncate max-w-[120px]">{task.project.name}</p>}
+                                        </div>
+                                      </div>
+                                      {task.deadline && (
+                                        <span className="text-[10px] text-surface-400 dark:text-surface-500 shrink-0">
+                                          {new Date(task.deadline).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
+                                        </span>
+                                      )}
+                                      <PriorityBadge priority={task.priority} />
+                                      <StatusBadge status={task.status} />
                                     </div>
-                                    {task.deadline && (
-                                      <span className="text-[10px] text-surface-400 dark:text-surface-500 shrink-0">
-                                        {new Date(task.deadline).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
-                                      </span>
-                                    )}
-                                    <PriorityBadge priority={task.priority} />
-                                    <StatusBadge status={task.status} />
-                                  </div>
-                                ))}
+                                  )
+                                })}
                               </div>
                             )}
                           </td>
