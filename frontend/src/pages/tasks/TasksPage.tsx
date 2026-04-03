@@ -97,7 +97,18 @@ export default function TasksPage() {
 
   const deleteMut = useMutation({
     mutationFn: tasksApi.remove,
-    onSuccess: () => { invalidateAfterTaskChange(qc); setDeleteTaskId(null); toast.success(t('tasks.deleted')) },
+    onMutate: async (id: string) => {
+      setDeleteTaskId(null)
+      await qc.cancelQueries({ queryKey: ['tasks'] })
+      const previous = qc.getQueryData(['tasks'])
+      qc.setQueryData(['tasks'], (old: any[]) => old?.filter((t: any) => t.id !== id) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['tasks'], context?.previous)
+      toast.error(t('common.error'))
+    },
+    onSuccess: () => { invalidateAfterTaskChange(qc); toast.success(t('tasks.deleted')) },
   })
 
   const exportCsv = async () => {

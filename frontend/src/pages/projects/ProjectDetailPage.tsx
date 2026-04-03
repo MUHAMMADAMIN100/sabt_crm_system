@@ -106,9 +106,22 @@ export default function ProjectDetailPage() {
 
   const deleteTask = useMutation({
     mutationFn: tasksApi.remove,
+    onMutate: async (taskId: string) => {
+      setDeleteTaskId(null)
+      await qc.cancelQueries({ queryKey: ['project', id] })
+      const previous = qc.getQueryData(['project', id])
+      qc.setQueryData(['project', id], (old: any) => ({
+        ...old,
+        tasks: old?.tasks?.filter((t: any) => t.id !== taskId) ?? [],
+      }))
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['project', id], context?.previous)
+      toast.error(t('common.error'))
+    },
     onSuccess: () => {
       invalidateAfterTaskChange(qc, id)
-      setDeleteTaskId(null)
       toast.success(t('tasks.deleted'))
     },
   })

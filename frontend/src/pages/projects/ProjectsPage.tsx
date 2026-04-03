@@ -97,6 +97,17 @@ export default function ProjectsPage() {
 
   const deleteMut = useMutation({
     mutationFn: projectsApi.remove,
+    onMutate: async (id: string) => {
+      setDeleteId(null)
+      await qc.cancelQueries({ queryKey: ['projects'] })
+      const previous = qc.getQueryData(['projects'])
+      qc.setQueryData(['projects'], (old: any[]) => old?.filter((p: any) => p.id !== id) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['projects'], context?.previous)
+      toast.error(t('common.error'))
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); toast.success(t('projects.deleted')) },
   })
 
