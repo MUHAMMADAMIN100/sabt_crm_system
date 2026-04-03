@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { storiesApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
@@ -23,6 +23,8 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
   const [animMap, setAnimMap] = useState<Record<string, 'pop' | 'unpop'>>({})
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
+  // Track latest storiesCount per project+date to ignore stale mutation responses
+  const latestCount = useRef<Record<string, number>>({})
   const isReadonly = !!employeeId || !!adminAll
 
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
@@ -42,9 +44,14 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
   const upsertStory = useMutation({
     mutationFn: storiesApi.upsert,
     onMutate: async ({ projectId, date, storiesCount }: any) => {
+      const dateKey = typeof date === 'string' ? date.split('T')[0] : date
+      const trackKey = `${projectId}-${dateKey}`
+      // Record latest intended count — used to discard stale responses
+      latestCount.current[trackKey] = storiesCount
+
       await qc.cancelQueries({ queryKey: ['stories', userId, from, to] })
       const previous = qc.getQueryData(['stories', userId, from, to])
-      const dateKey = typeof date === 'string' ? date.split('T')[0] : date
+
       qc.setQueryData(['stories', userId, from, to], (old: any[]) => {
         if (!old) return old
         const exists = old.some((s: any) => s.projectId === projectId && s.date?.split('T')[0] === dateKey)
@@ -57,25 +64,25 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
         }
         return [...old, { projectId, date: dateKey, storiesCount, employeeId: userId, id: `temp-${Date.now()}` }]
       })
-      return { previous }
+      return { previous, trackKey, storiesCount }
     },
     onError: (_err: any, _vars: any, context: any) => {
       qc.setQueryData(['stories', userId, from, to], context?.previous)
     },
-    onSuccess: (serverData: any) => {
-      // Replace temp/optimistic entry with confirmed server data — no refetch triggered
+    onSuccess: (serverData: any, _vars: any, context: any) => {
+      const { trackKey, storiesCount } = context || {}
+      // If a newer mutation already fired for this cell, ignore this stale response
+      if (trackKey && latestCount.current[trackKey] !== storiesCount) return
+      if (trackKey) delete latestCount.current[trackKey]
+
       qc.setQueryData(['stories', userId, from, to], (old: any[]) => {
         if (!old || !serverData) return old
         const dateKey = serverData.date?.split('T')[0]
-        const exists = old.some((s: any) => s.projectId === serverData.projectId && s.date?.split('T')[0] === dateKey && !s.id?.startsWith('temp-'))
-        if (exists) {
-          return old.map((s: any) =>
-            s.projectId === serverData.projectId && s.date?.split('T')[0] === dateKey
-              ? { ...s, ...serverData }
-              : s
-          )
-        }
-        return old.map((s: any) => s.id?.startsWith('temp-') ? { ...s, ...serverData } : s)
+        return old.map((s: any) =>
+          s.projectId === serverData.projectId && s.date?.split('T')[0] === dateKey
+            ? { ...s, ...serverData }
+            : s
+        )
       })
     },
   })
