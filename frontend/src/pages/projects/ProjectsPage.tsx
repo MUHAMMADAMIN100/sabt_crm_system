@@ -352,6 +352,34 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             {errors.projectType && <p className="text-xs text-red-500 mt-1">Выберите тип проекта</p>}
           </div>
 
+          {/* Stories & Publications per day — shown when SMM is selected */}
+          {showSmmForm && (
+            <>
+              <div>
+                <label className="label">Количество историй в день</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={smmAnswers.storiesPerDay || ''}
+                  onChange={e => setSmmAnswers(prev => ({ ...prev, storiesPerDay: e.target.value }))}
+                  className="input"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="label">Количество публикаций в день</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={smmAnswers.publicationsPerDay || ''}
+                  onChange={e => setSmmAnswers(prev => ({ ...prev, publicationsPerDay: e.target.value }))}
+                  className="input"
+                  placeholder="0"
+                />
+              </div>
+            </>
+          )}
+
           {/* SMM Questionnaire — appears right after type select */}
           {showSmmForm && (
             <div className="col-span-2 border border-primary-300 dark:border-primary-700 rounded-xl p-4 bg-primary-50 dark:bg-primary-900/10 space-y-4">
@@ -359,31 +387,6 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 <span className="text-lg">📋</span>
                 <h3 className="font-semibold text-primary-700 dark:text-primary-300 text-sm">Анкета SMM-проекта</h3>
                 <span className="text-xs text-primary-600 dark:text-primary-400">Заполните для лучшего понимания проекта</span>
-              </div>
-              {/* Stories & Publications per day */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-surface-700 dark:text-surface-300 block mb-1">Количество историй в день</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={smmAnswers.storiesPerDay || ''}
-                    onChange={e => setSmmAnswers(prev => ({ ...prev, storiesPerDay: e.target.value }))}
-                    className="input text-sm"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-surface-700 dark:text-surface-300 block mb-1">Количество публикаций в день</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={smmAnswers.publicationsPerDay || ''}
-                    onChange={e => setSmmAnswers(prev => ({ ...prev, publicationsPerDay: e.target.value }))}
-                    className="input text-sm"
-                    placeholder="0"
-                  />
-                </div>
               </div>
               <div className="space-y-3">
                 {SMM_QUESTIONS.map(q => (
