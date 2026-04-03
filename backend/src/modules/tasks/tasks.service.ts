@@ -12,6 +12,7 @@ import { MailService } from '../mail/mail.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
+import { AppGateway } from '../gateway/app.gateway';
 
 @Injectable()
 export class TasksService {
@@ -23,6 +24,7 @@ export class TasksService {
     private mailService: MailService,
     private activityLog: ActivityLogService,
     private telegramService: TelegramService,
+    private gateway: AppGateway,
   ) {}
 
   findAll(filters: {
@@ -111,6 +113,7 @@ export class TasksService {
     });
 
     await this.projectsService.updateProgress(dto.projectId);
+    this.gateway.broadcast('tasks:changed', { projectId: dto.projectId });
     return this.findOne(saved.id);
   }
 
@@ -210,6 +213,7 @@ export class TasksService {
     }
 
     await this.projectsService.updateProgress(task.projectId);
+    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
     return this.findOne(id);
   }
 
@@ -224,6 +228,7 @@ export class TasksService {
     });
     await this.repo.remove(task);
     await this.projectsService.updateProgress(projectId);
+    this.gateway.broadcast('tasks:changed', { projectId });
     return { message: 'Task deleted' };
   }
 
@@ -243,6 +248,7 @@ export class TasksService {
     });
     await this.repo.remove(task);
     await this.projectsService.updateProgress(projectId);
+    this.gateway.broadcast('tasks:changed', { projectId });
     return { message: 'Task deleted' };
   }
 

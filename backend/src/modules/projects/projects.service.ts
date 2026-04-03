@@ -11,6 +11,7 @@ import { MailService } from '../mail/mail.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
+import { AppGateway } from '../gateway/app.gateway';
 
 @Injectable()
 export class ProjectsService {
@@ -21,6 +22,7 @@ export class ProjectsService {
     private mailService: MailService,
     private activityLog: ActivityLogService,
     private telegramService: TelegramService,
+    private gateway: AppGateway,
   ) {}
 
   async findAll(search?: string, status?: ProjectStatus, managerId?: string, archived = false) {
@@ -107,6 +109,7 @@ export class ProjectsService {
       details: { memberIds: dto.memberIds, status: saved.status },
     });
 
+    this.gateway.broadcast('projects:changed', {});
     return saved;
   }
 
@@ -167,6 +170,7 @@ export class ProjectsService {
       }
     }
 
+    this.gateway.broadcast('projects:changed', {});
     return saved;
   }
 
@@ -179,6 +183,7 @@ export class ProjectsService {
       entityId: id,
       entityName: project.name,
     });
+    this.gateway.broadcast('projects:changed', {});
     return this.findOne(id);
   }
 
@@ -191,6 +196,7 @@ export class ProjectsService {
       entityId: id,
       entityName: project.name,
     });
+    this.gateway.broadcast('projects:changed', {});
     return this.findOne(id);
   }
 
@@ -203,6 +209,7 @@ export class ProjectsService {
       entityName: p.name,
     });
     await this.repo.remove(p);
+    this.gateway.broadcast('projects:changed', {});
     return { message: 'Project deleted' };
   }
 

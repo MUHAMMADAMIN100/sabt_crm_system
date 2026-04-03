@@ -22,11 +22,27 @@ export function useSocket(token: string | null) {
     })
 
     socket.on('notification', (notif: any) => {
-      // Refresh the notifications count/list
       qc.invalidateQueries({ queryKey: ['notifications'] })
       qc.invalidateQueries({ queryKey: ['notifications-count'] })
-      // Show a toast for the new notification
       toast(notif.title || 'Новое уведомление', { icon: '🔔' })
+    })
+
+    socket.on('employees:changed', () => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+    })
+
+    socket.on('projects:changed', () => {
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['project'] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+    })
+
+    socket.on('tasks:changed', () => {
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['project'] })
+      qc.invalidateQueries({ queryKey: ['my-tasks'] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+      qc.invalidateQueries({ queryKey: ['task-status'] })
     })
 
     socket.on('disconnect', () => {

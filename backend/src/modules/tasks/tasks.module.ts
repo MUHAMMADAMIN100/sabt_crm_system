@@ -7,9 +7,10 @@ import { TasksController } from './tasks.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { DeadlineScheduler } from './deadline.scheduler';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Task, User]), NotificationsModule, ProjectsModule],
+  imports: [TypeOrmModule.forFeature([Task, User]), NotificationsModule, ProjectsModule, GatewayModule],
   controllers: [TasksController],
   providers: [TasksService, DeadlineScheduler],
   exports: [TasksService],

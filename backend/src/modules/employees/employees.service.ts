@@ -7,6 +7,7 @@ import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
+import { AppGateway } from '../gateway/app.gateway';
 
 @Injectable()
 export class EmployeesService {
@@ -15,6 +16,7 @@ export class EmployeesService {
     @InjectRepository(User) private userRepo: Repository<User>,
     private activityLog: ActivityLogService,
     private dataSource: DataSource,
+    private gateway: AppGateway,
   ) {}
 
   findAll(search?: string, department?: string, status?: EmployeeStatus) {
@@ -59,6 +61,7 @@ export class EmployeesService {
       details: { email: saved.email, position: saved.position, department: saved.department },
     });
 
+    this.gateway.broadcast('employees:changed', {});
     return saved;
   }
 
@@ -86,6 +89,7 @@ export class EmployeesService {
       details: dto,
     });
 
+    this.gateway.broadcast('employees:changed', {});
     return this.findOne(id);
   }
 
@@ -133,6 +137,7 @@ export class EmployeesService {
       await queryRunner.release();
     }
 
+    this.gateway.broadcast('employees:changed', {});
     return { message: 'Employee deleted' };
   }
 
