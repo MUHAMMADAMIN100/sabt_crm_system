@@ -235,7 +235,6 @@ export default function DashboardPage() {
           <StatCard title={t('dashboard.activeProjectsCount')} value={overview.activeProjects} icon={FolderKanban} color="bg-primary-600" sub={`${t('common.from')} ${overview.totalProjects} ${t('common.total')}`} />
           <StatCard title={t('dashboard.totalTasks')} value={overview.totalTasks} icon={CheckSquare} color="bg-green-500" sub={`${overview.completionRate}% ${t('common.completed')}`} />
           <StatCard title={t('dashboard.employeesCount')} value={overview.totalEmployees} icon={Users} color="bg-amber-500" />
-          <StatCard title={t('dashboard.hoursThisMonth')} value={overview.hoursThisMonth?.toFixed(1)} icon={Clock} color="bg-purple-500" />
         </div>
       )}
 
