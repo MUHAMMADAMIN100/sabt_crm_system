@@ -352,6 +352,82 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             {errors.projectType && <p className="text-xs text-red-500 mt-1">Выберите тип проекта</p>}
           </div>
 
+          {/* SMM Questionnaire — appears right after type select */}
+          {showSmmForm && (
+            <div className="col-span-2 border border-primary-300 dark:border-primary-700 rounded-xl p-4 bg-primary-50 dark:bg-primary-900/10 space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">📋</span>
+                <h3 className="font-semibold text-primary-700 dark:text-primary-300 text-sm">Анкета SMM-проекта</h3>
+                <span className="text-xs text-primary-600 dark:text-primary-400">Заполните для лучшего понимания проекта</span>
+              </div>
+              {/* Stories & Publications per day */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-surface-700 dark:text-surface-300 block mb-1">Количество историй в день</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={smmAnswers.storiesPerDay || ''}
+                    onChange={e => setSmmAnswers(prev => ({ ...prev, storiesPerDay: e.target.value }))}
+                    className="input text-sm"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-surface-700 dark:text-surface-300 block mb-1">Количество публикаций в день</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={smmAnswers.publicationsPerDay || ''}
+                    onChange={e => setSmmAnswers(prev => ({ ...prev, publicationsPerDay: e.target.value }))}
+                    className="input text-sm"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              <div className="space-y-3">
+                {SMM_QUESTIONS.map(q => (
+                  <div key={q.key}>
+                    <label className="text-xs font-medium text-surface-700 dark:text-surface-300 block mb-1">{q.label}</label>
+                    {q.type === 'textarea' ? (
+                      <textarea
+                        value={smmAnswers[q.key] || ''}
+                        onChange={e => setSmmAnswers(prev => ({ ...prev, [q.key]: e.target.value }))}
+                        className="input resize-none text-sm"
+                        rows={2}
+                        placeholder="Введите ответ..."
+                      />
+                    ) : q.type === 'radio' ? (
+                      <div className="flex gap-4">
+                        {q.options?.map(opt => (
+                          <label key={opt} className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={q.key}
+                              value={opt}
+                              checked={smmAnswers[q.key] === opt}
+                              onChange={() => setSmmAnswers(prev => ({ ...prev, [q.key]: opt }))}
+                              className="w-3.5 h-3.5 text-primary-600"
+                            />
+                            <span className="text-xs text-surface-700 dark:text-surface-300">{opt}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        value={smmAnswers[q.key] || ''}
+                        onChange={e => setSmmAnswers(prev => ({ ...prev, [q.key]: e.target.value }))}
+                        className="input text-sm"
+                        placeholder="Введите ответ..."
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="label">{t('projects.startDate')} *</label>
             <input type="date" {...register('startDate', { required: true })} className="input" />
@@ -480,57 +556,6 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             <input type="number" {...register('budget', { min: 0 })} className="input" placeholder="0" min={0} />
           </div>
         </div>
-
-        {/* SMM Questionnaire */}
-        {showSmmForm && (
-          <div className="border border-primary-300 dark:border-primary-700 rounded-xl p-4 bg-primary-50 dark:bg-primary-900/10 space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">📋</span>
-              <h3 className="font-semibold text-primary-700 dark:text-primary-300 text-sm">Анкета SMM-проекта</h3>
-              <span className="text-xs text-primary-600 dark:text-primary-400">Заполните для лучшего понимания проекта</span>
-            </div>
-            <div className="space-y-3">
-              {SMM_QUESTIONS.map(q => (
-                <div key={q.key}>
-                  <label className="text-xs font-medium text-surface-700 dark:text-surface-300 block mb-1">{q.label}</label>
-                  {q.type === 'textarea' ? (
-                    <textarea
-                      value={smmAnswers[q.key] || ''}
-                      onChange={e => setSmmAnswers(prev => ({ ...prev, [q.key]: e.target.value }))}
-                      className="input resize-none text-sm"
-                      rows={2}
-                      placeholder="Введите ответ..."
-                    />
-                  ) : q.type === 'radio' ? (
-                    <div className="flex gap-4">
-                      {q.options?.map(opt => (
-                        <label key={opt} className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="radio"
-                            name={q.key}
-                            value={opt}
-                            checked={smmAnswers[q.key] === opt}
-                            onChange={() => setSmmAnswers(prev => ({ ...prev, [q.key]: opt }))}
-                            className="w-3.5 h-3.5 text-primary-600"
-                          />
-                          <span className="text-xs text-surface-700 dark:text-surface-300">{opt}</span>
-                        </label>
-                      ))}
-                    </div>
-                  ) : (
-                    <input
-                      type="text"
-                      value={smmAnswers[q.key] || ''}
-                      onChange={e => setSmmAnswers(prev => ({ ...prev, [q.key]: e.target.value }))}
-                      className="input text-sm"
-                      placeholder="Введите ответ..."
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className="flex gap-2 justify-end pt-2">
           <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">{t('common.cancel')}</button>
