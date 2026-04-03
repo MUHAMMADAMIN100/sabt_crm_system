@@ -30,7 +30,7 @@ export class AnalyticsService {
           (SELECT COUNT(*)::int FROM tasks)                                                                     AS "totalTasks",
           (SELECT COUNT(*)::int FROM tasks WHERE status = 'done')                                              AS "doneTasks",
           (SELECT COUNT(*)::int FROM employees)                                                                 AS "totalEmployees",
-          (SELECT COUNT(*)::int FROM users WHERE is_active = true)                                             AS "totalUsers",
+          (SELECT COUNT(*)::int FROM users WHERE "isActive" = true)                                            AS "totalUsers",
           (SELECT COUNT(*)::int FROM tasks WHERE deadline < NOW() AND status NOT IN ('done','cancelled'))      AS "overdueTasks"
       `),
       this.timeRepo
