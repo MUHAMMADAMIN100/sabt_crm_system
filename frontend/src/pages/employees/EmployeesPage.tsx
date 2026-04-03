@@ -44,7 +44,24 @@ export default function EmployeesPage() {
 
   const createMut = useMutation({ mutationFn: employeesApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setShowCreate(false); toast.success(t('employees.added')) }, onError: () => {} })
   const updateMut = useMutation({ mutationFn: ({ id, data }: any) => employeesApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setEditEmp(null); toast.success(t('employees.saved')) }, onError: () => {} })
-  const deleteMut = useMutation({ mutationFn: employeesApi.remove, onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('employees.deleted')) } })
+  const deleteMut = useMutation({
+    mutationFn: employeesApi.remove,
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['employees'] })
+      const previous = qc.getQueryData(['employees'])
+      qc.setQueryData(['employees'], (old: any[]) => old?.filter((e: any) => e.id !== id) ?? [])
+      setDeleteId(null)
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['employees'], context?.previous)
+      toast.error(t('common.error'))
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      toast.success(t('employees.deleted'))
+    },
+  })
   const toggleSubAdmin = useMutation({ mutationFn: employeesApi.toggleSubAdmin, onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('common.updated')) } })
 
   if (isLoading) return <PageLoader />

@@ -28,7 +28,7 @@ export function useSocket(token: string | null) {
     })
 
     socket.on('employees:changed', () => {
-      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.refetchQueries({ queryKey: ['employees'] })
     })
 
     socket.on('projects:changed', () => {
