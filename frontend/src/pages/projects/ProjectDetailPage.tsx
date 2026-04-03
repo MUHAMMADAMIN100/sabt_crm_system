@@ -359,7 +359,7 @@ export default function ProjectDetailPage() {
                   </div>
                 </div>
               </div>
-              {project.budget != null && (
+              {isManagerPlus && project.budget != null && (
                 <div className="flex items-start gap-3">
                   <div className="w-4 h-4 mt-0.5 shrink-0 text-amber-500 font-bold text-xs flex items-center">₸</div>
                   <div>
