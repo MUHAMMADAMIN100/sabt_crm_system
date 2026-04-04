@@ -4,7 +4,7 @@ import { analyticsApi, tasksApi } from '@/services/api.service'
 import { StatCard, PageLoader, StatusBadge, Avatar } from '@/components/ui'
 import {
   FolderKanban, CheckSquare, Users, AlertTriangle,
-  TrendingDown, UserX, Activity, Timer,
+  TrendingDown, UserX, Activity, Clock,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -76,7 +76,7 @@ export default function FounderDashboard() {
         <StatCard
           title="Среднее время закрытия"
           value={avgCompletion ? `${avgCompletion.avgDays}д` : '—'}
-          icon={Timer}
+          icon={Clock}
           color="bg-violet-500"
           sub={avgCompletion ? `${avgCompletion.totalDone} задач закрыто` : 'нет данных'}
         />

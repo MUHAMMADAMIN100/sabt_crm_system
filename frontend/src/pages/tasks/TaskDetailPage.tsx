@@ -9,7 +9,7 @@ import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar, Modal, Con
 import {
   ArrowLeft, Send, Edit2, Trash2, Paperclip, Upload,
   CheckCircle, RotateCcw, LinkIcon, MessageSquare, AlertTriangle,
-  Plus, Square, CheckSquare2,
+  Plus, Square, CheckSquare,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -409,7 +409,7 @@ export default function TaskDetailPage() {
                     onClick={() => toggleCheckItem.mutate(item.id)}
                     className={clsx('shrink-0 transition-colors', item.isDone ? 'text-green-500' : 'text-surface-300 dark:text-surface-600 hover:text-primary-500')}
                   >
-                    {item.isDone ? <CheckSquare2 size={18} /> : <Square size={18} />}
+                    {item.isDone ? <CheckSquare size={18} /> : <Square size={18} />}
                   </button>
                   <span className={clsx('flex-1 text-sm', item.isDone ? 'line-through text-surface-400 dark:text-surface-500' : 'text-surface-800 dark:text-surface-200')}>
                     {item.text}
