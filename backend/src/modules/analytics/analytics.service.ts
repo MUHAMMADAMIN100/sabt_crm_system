@@ -252,4 +252,25 @@ export class AnalyticsService {
       .orderBy('count', 'DESC')
       .getRawMany();
   }
+
+  async getAvgCompletionTime(): Promise<{ avgHours: number; avgDays: number; totalDone: number }> {
+    const row = await this.taskRepo.manager.query(`
+      SELECT
+        COUNT(*)::int AS "totalDone",
+        COALESCE(
+          AVG(EXTRACT(EPOCH FROM ("reviewedAt" - "createdAt")) / 3600),
+          0
+        ) AS "avgHours"
+      FROM tasks
+      WHERE status = 'done'
+        AND "reviewedAt" IS NOT NULL
+        AND "createdAt" IS NOT NULL
+    `);
+    const avgHours = parseFloat(row[0]?.avgHours || '0');
+    return {
+      avgHours: Math.round(avgHours),
+      avgDays: Math.round(avgHours / 24 * 10) / 10,
+      totalDone: row[0]?.totalDone ?? 0,
+    };
+  }
 }

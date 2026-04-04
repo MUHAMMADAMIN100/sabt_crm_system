@@ -4,7 +4,7 @@ import { analyticsApi, tasksApi } from '@/services/api.service'
 import { StatCard, PageLoader, StatusBadge, Avatar } from '@/components/ui'
 import {
   FolderKanban, CheckSquare, Users, AlertTriangle,
-  TrendingDown, UserX, Activity,
+  TrendingDown, UserX, Activity, Timer,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -30,6 +30,11 @@ export default function FounderDashboard() {
     queryFn: analyticsApi.employeeEfficiency,
   })
 
+  const { data: avgCompletion } = useQuery({
+    queryKey: ['avg-completion'],
+    queryFn: analyticsApi.avgCompletion,
+  })
+
   if (isLoading) return <PageLoader />
 
   const atRiskProjects = overview?.overdueTasks > 0 ? Math.ceil(overview.overdueTasks / 3) : 0
@@ -39,7 +44,7 @@ export default function FounderDashboard() {
   return (
     <div className="space-y-6">
       {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           title="Активных проектов"
           value={overview?.activeProjects ?? 0}
@@ -67,6 +72,13 @@ export default function FounderDashboard() {
           icon={AlertTriangle}
           color="bg-orange-500"
           sub="по просрочкам"
+        />
+        <StatCard
+          title="Среднее время закрытия"
+          value={avgCompletion ? `${avgCompletion.avgDays}д` : '—'}
+          icon={Timer}
+          color="bg-violet-500"
+          sub={avgCompletion ? `${avgCompletion.totalDone} задач закрыто` : 'нет данных'}
         />
       </div>
 

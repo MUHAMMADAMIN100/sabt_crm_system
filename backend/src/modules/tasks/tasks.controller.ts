@@ -95,6 +95,17 @@ export class TasksController {
     return this.service.returnTask(id, req.user, reason || 'Требует доработки');
   }
 
+  @Post('bulk')
+  @Roles(ADMIN, FOUNDER, PROJECT_MANAGER)
+  bulk(
+    @Body('ids') ids: string[],
+    @Body('action') action: 'status' | 'delete' | 'assign',
+    @Body('value') value: string,
+    @Request() req,
+  ) {
+    return this.service.bulkAction(ids, action, value, req.user);
+  }
+
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req) {
     return this.service.removeWithAuth(id, req.user);

@@ -7,7 +7,7 @@ import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, LayoutGrid, List, Filter, Edit, Trash2, Download } from 'lucide-react'
+import { Plus, Search, LayoutGrid, List, Filter, Edit, Trash2, Download, CheckSquare, X } from 'lucide-react'
 import api from '@/lib/api'
 import { format } from 'date-fns'
 import TaskForm from '@/components/tasks/TaskForm'
@@ -26,6 +26,7 @@ export default function TasksPage() {
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [page, setPage] = useState(1)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const PAGE_SIZE = 9
   const user = useAuthStore(s => s.user)
   const isManagerPlus = user?.role === 'admin'
@@ -123,6 +124,31 @@ export default function TasksPage() {
     onSuccess: () => { invalidateAfterTaskChange(qc); toast.success(t('tasks.deleted')) },
   })
 
+  const bulkMut = useMutation({
+    mutationFn: ({ action, value }: { action: 'status' | 'delete' | 'assign'; value?: string }) =>
+      tasksApi.bulk([...selectedIds], action, value),
+    onSuccess: () => {
+      invalidateAfterTaskChange(qc)
+      setSelectedIds(new Set())
+      toast.success('Выполнено')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
+  })
+
+  const toggleSelect = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === pagedTasks.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(pagedTasks.map((t: any) => t.id)))
+    }
+  }
+
   const exportCsv = async () => {
     const params: any = {}
     if (statuses.length === 1) params.status = statuses[0]
@@ -219,6 +245,36 @@ export default function TasksPage() {
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {isManagerPlus && selectedIds.size > 0 && (
+        <div className="card bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-semibold text-primary-700 dark:text-primary-400">
+            <CheckSquare size={15} className="inline mr-1" /> Выбрано: {selectedIds.size}
+          </span>
+          <div className="flex flex-wrap gap-2 flex-1">
+            <select
+              defaultValue=""
+              onChange={e => e.target.value && bulkMut.mutate({ action: 'status', value: e.target.value })}
+              className="text-xs input py-1 w-auto"
+            >
+              <option value="">Изменить статус...</option>
+              {['new','in_progress','review','returned','done','cancelled'].map(s => (
+                <option key={s} value={s}>{{ new: 'Новая', in_progress: 'В работе', review: 'На проверке', returned: 'Возвращено', done: 'Готово', cancelled: 'Отменена' }[s]}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => bulkMut.mutate({ action: 'delete' })}
+              className="flex items-center gap-1 px-3 py-1 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              <Trash2 size={12} /> Удалить
+            </button>
+          </div>
+          <button onClick={() => setSelectedIds(new Set())} className="text-surface-400 hover:text-surface-600">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       <div className={clsx(!isManagerPlus && 'grid grid-cols-1 lg:grid-cols-3 gap-4')}>
       <div className={clsx(!isManagerPlus && 'lg:col-span-2')}>
       {!tasks?.length ? (
@@ -230,6 +286,16 @@ export default function TasksPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-surface-100 dark:border-surface-700">
+                {isManagerPlus && (
+                  <th className="px-3 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === pagedTasks.length && pagedTasks.length > 0}
+                      onChange={toggleSelectAll}
+                      className="rounded"
+                    />
+                  </th>
+                )}
                 <th className="text-left text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3">{t('tasks.task')}</th>
                 <th className="text-left text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3 hidden md:table-cell">{t('tasks.project')}</th>
                 <th className="text-left text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3">{t('common.status')}</th>
@@ -243,8 +309,14 @@ export default function TasksPage() {
               {pagedTasks.map((task: any) => {
                 const isOwnTask = task.assigneeId === user?.id
                 const canChangeStatus = isManagerPlus || isOwnTask
+                const isSelected = selectedIds.has(task.id)
                 return (
-                  <tr key={task.id} className="border-b border-surface-50 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors">
+                  <tr key={task.id} className={clsx('border-b border-surface-50 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors', isSelected && 'bg-primary-50/50 dark:bg-primary-900/10')}>
+                    {isManagerPlus && (
+                      <td className="px-3 py-3">
+                        <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(task.id)} className="rounded" />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <Link to={`/tasks/${task.id}`} className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{task.title}</Link>
                     </td>

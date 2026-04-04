@@ -53,6 +53,17 @@ export const tasksApi = {
   stats: (projectId?: string) => api.get('/tasks/stats', { params: { projectId } }).then(r => r.data),
   approve: (id: string) => api.post(`/tasks/${id}/approve`).then(r => r.data),
   returnTask: (id: string, reason: string) => api.post(`/tasks/${id}/return`, { reason }).then(r => r.data),
+  bulk: (ids: string[], action: 'status' | 'delete' | 'assign', value?: string) =>
+    api.post('/tasks/bulk', { ids, action, value }).then(r => r.data),
+}
+
+// ─── Task Checklists ──────────────────────────────────────
+export const taskChecklistApi = {
+  list: (taskId: string) => api.get(`/tasks/${taskId}/checklist`).then(r => r.data),
+  create: (taskId: string, text: string) => api.post(`/tasks/${taskId}/checklist`, { text }).then(r => r.data),
+  toggle: (taskId: string, id: string) => api.patch(`/tasks/${taskId}/checklist/${id}/toggle`).then(r => r.data),
+  update: (taskId: string, id: string, text: string) => api.patch(`/tasks/${taskId}/checklist/${id}`, { text }).then(r => r.data),
+  remove: (taskId: string, id: string) => api.delete(`/tasks/${taskId}/checklist/${id}`).then(r => r.data),
 }
 
 // ─── Task Results ─────────────────────────────────────────
@@ -117,6 +128,7 @@ export const analyticsApi = {
   employeeWorkload: () => api.get('/analytics/employee-workload').then(r => r.data),
   monthlyReport: (year: number, month: number) => api.get('/analytics/monthly-report', { params: { year, month } }).then(r => r.data),
   departmentStats: () => api.get('/analytics/department-stats').then(r => r.data),
+  avgCompletion: () => api.get('/analytics/avg-completion').then(r => r.data),
 }
 
 // ─── Calendar ────────────────────────────────────────────

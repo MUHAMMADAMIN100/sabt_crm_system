@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { tasksApi, commentsApi, filesApi, taskResultsApi } from '@/services/api.service'
+import { tasksApi, commentsApi, filesApi, taskResultsApi, taskChecklistApi } from '@/services/api.service'
 import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
@@ -9,6 +9,7 @@ import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar, Modal, Con
 import {
   ArrowLeft, Send, Edit2, Trash2, Paperclip, Upload,
   CheckCircle, RotateCcw, LinkIcon, MessageSquare, AlertTriangle,
+  Plus, Square, CheckSquare2,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -37,12 +38,13 @@ export default function TaskDetailPage() {
   const [comment, setComment] = useState('')
   const [editingComment, setEditingComment] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
-  const [activeTab, setActiveTab] = useState<'comments' | 'files' | 'results'>('results')
+  const [activeTab, setActiveTab] = useState<'comments' | 'files' | 'results' | 'checklist'>('results')
   const [returnReason, setReturnReason] = useState('')
   const [showReturnModal, setShowReturnModal] = useState(false)
   const [showResultModal, setShowResultModal] = useState(false)
   const [resultType, setResultType] = useState<'link' | 'comment' | 'media'>('comment')
   const [resultContent, setResultContent] = useState('')
+  const [newCheckItem, setNewCheckItem] = useState('')
 
   const role = user?.role || 'employee'
   const isPM = PM_ROLES.includes(role)
@@ -62,6 +64,27 @@ export default function TaskDetailPage() {
   const { data: results } = useQuery({
     queryKey: ['task-results', id],
     queryFn: () => taskResultsApi.list(id!),
+  })
+
+  const { data: checklist } = useQuery({
+    queryKey: ['task-checklist', id],
+    queryFn: () => taskChecklistApi.list(id!),
+  })
+
+  const addCheckItem = useMutation({
+    mutationFn: () => taskChecklistApi.create(id!, newCheckItem),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['task-checklist', id] }); setNewCheckItem('') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
+  })
+
+  const toggleCheckItem = useMutation({
+    mutationFn: (itemId: string) => taskChecklistApi.toggle(id!, itemId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['task-checklist', id] }),
+  })
+
+  const removeCheckItem = useMutation({
+    mutationFn: (itemId: string) => taskChecklistApi.remove(id!, itemId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['task-checklist', id] }),
   })
 
   const updateTask = useMutation({
@@ -313,8 +336,8 @@ export default function TaskDetailPage() {
           )}
 
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700">
-            {(['results', 'comments', 'files'] as const).map((tab) => (
+          <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 flex-wrap">
+            {(['results', 'checklist', 'comments', 'files'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -326,6 +349,7 @@ export default function TaskDetailPage() {
                 )}
               >
                 {tab === 'results' && `Результаты (${results?.length || 0})`}
+                {tab === 'checklist' && `Чек-лист (${checklist?.filter((i: any) => i.isDone).length || 0}/${checklist?.length || 0})`}
                 {tab === 'comments' && `Комментарии (${task.comments?.length || 0})`}
                 {tab === 'files' && t('files.title')}
               </button>
@@ -372,6 +396,54 @@ export default function TaskDetailPage() {
                     </div>
                   </div>
                 ))
+              )}
+            </div>
+          )}
+
+          {/* Checklist tab */}
+          {activeTab === 'checklist' && (
+            <div className="space-y-2">
+              {checklist?.map((item: any) => (
+                <div key={item.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-700/30 group">
+                  <button
+                    onClick={() => toggleCheckItem.mutate(item.id)}
+                    className={clsx('shrink-0 transition-colors', item.isDone ? 'text-green-500' : 'text-surface-300 dark:text-surface-600 hover:text-primary-500')}
+                  >
+                    {item.isDone ? <CheckSquare2 size={18} /> : <Square size={18} />}
+                  </button>
+                  <span className={clsx('flex-1 text-sm', item.isDone ? 'line-through text-surface-400 dark:text-surface-500' : 'text-surface-800 dark:text-surface-200')}>
+                    {item.text}
+                  </span>
+                  {isPM && (
+                    <button
+                      onClick={() => removeCheckItem.mutate(item.id)}
+                      className="hidden group-hover:block text-surface-400 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {!checklist?.length && (
+                <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-4">Чек-лист пуст</p>
+              )}
+              {isPM && !isDone && (
+                <div className="flex gap-2 pt-2">
+                  <input
+                    value={newCheckItem}
+                    onChange={e => setNewCheckItem(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && newCheckItem.trim() && addCheckItem.mutate()}
+                    placeholder="Добавить пункт..."
+                    className="input flex-1 text-sm"
+                  />
+                  <button
+                    onClick={() => newCheckItem.trim() && addCheckItem.mutate()}
+                    disabled={!newCheckItem.trim() || addCheckItem.isPending}
+                    className="btn-primary flex items-center gap-1"
+                  >
+                    <Plus size={15} />
+                  </button>
+                </div>
               )}
             </div>
           )}

@@ -380,4 +380,42 @@ export class TasksService {
     if (projectId) qb.where('t.projectId = :projectId', { projectId });
     return qb.getRawMany();
   }
+
+  async bulkAction(
+    ids: string[],
+    action: 'status' | 'delete' | 'assign',
+    value: string | undefined,
+    user: { id: string; role: string; name?: string },
+  ): Promise<{ affected: number }> {
+    if (!ids?.length) return { affected: 0 };
+    if (!PM_ROLES.includes(user.role as UserRole)) {
+      throw new ForbiddenException('Массовые действия доступны только менеджерам');
+    }
+
+    if (action === 'delete') {
+      const tasks = await this.repo.findByIds(ids);
+      await this.repo.remove(tasks);
+      return { affected: tasks.length };
+    }
+
+    if (action === 'status' && value) {
+      await this.repo.createQueryBuilder()
+        .update(Task)
+        .set({ status: value as TaskStatus })
+        .whereInIds(ids)
+        .execute();
+      return { affected: ids.length };
+    }
+
+    if (action === 'assign' && value) {
+      await this.repo.createQueryBuilder()
+        .update(Task)
+        .set({ assigneeId: value })
+        .whereInIds(ids)
+        .execute();
+      return { affected: ids.length };
+    }
+
+    return { affected: 0 };
+  }
 }

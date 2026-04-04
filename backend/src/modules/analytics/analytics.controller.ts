@@ -99,4 +99,9 @@ export class AnalyticsController {
   @CacheKey('analytics:department-stats')
   @CacheTTL(300000)
   getDepartmentStats() { return this.service.getDepartmentStats(); }
+
+  @Get('avg-completion')
+  @CacheKey('analytics:avg-completion')
+  @CacheTTL(300000)
+  getAvgCompletionTime() { return this.service.getAvgCompletionTime(); }
 }
