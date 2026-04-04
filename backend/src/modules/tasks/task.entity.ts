@@ -16,11 +16,12 @@ export enum TaskPriority {
 }
 
 export enum TaskStatus {
-  NEW = 'new',
+  NEW        = 'new',
   IN_PROGRESS = 'in_progress',
-  REVIEW = 'review',
-  DONE = 'done',
-  CANCELLED = 'cancelled',
+  REVIEW     = 'review',
+  RETURNED   = 'returned',
+  DONE       = 'done',
+  CANCELLED  = 'cancelled',
 }
 
 @Entity('tasks')
@@ -72,6 +73,21 @@ export class Task {
 
   @Column({ default: 0 })
   loggedHours: number;
+
+  @Column({ default: 0 })
+  totalCount: number;
+
+  @Column({ default: 0 })
+  doneCount: number;
+
+  @Column({ nullable: true })
+  returnReason: string;
+
+  @Column({ nullable: true })
+  reviewedById: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  reviewedAt: Date;
 
   @OneToMany(() => Comment, comment => comment.task)
   comments: Comment[];

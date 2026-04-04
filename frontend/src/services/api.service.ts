@@ -51,6 +51,16 @@ export const tasksApi = {
   my: () => api.get('/tasks/my').then(r => r.data),
   overdue: () => api.get('/tasks/overdue').then(r => r.data),
   stats: (projectId?: string) => api.get('/tasks/stats', { params: { projectId } }).then(r => r.data),
+  approve: (id: string) => api.post(`/tasks/${id}/approve`).then(r => r.data),
+  returnTask: (id: string, reason: string) => api.post(`/tasks/${id}/return`, { reason }).then(r => r.data),
+}
+
+// ─── Task Results ─────────────────────────────────────────
+export const taskResultsApi = {
+  list: (taskId: string) => api.get(`/tasks/${taskId}/results`).then(r => r.data),
+  create: (taskId: string, data: { type: string; content: string; fileName?: string; filePath?: string }) =>
+    api.post(`/tasks/${taskId}/results`, data).then(r => r.data),
+  remove: (taskId: string, id: string) => api.delete(`/tasks/${taskId}/results/${id}`).then(r => r.data),
 }
 
 // ─── Comments ────────────────────────────────────────────

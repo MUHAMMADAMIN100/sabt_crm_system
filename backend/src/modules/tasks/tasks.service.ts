@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task, TaskStatus, TaskPriority } from './task.entity';
@@ -13,6 +13,10 @@ import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
+import { TaskResultsService } from '../task-results/task-results.service';
+
+const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER];
+const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.MARKETER, UserRole.TARGETOLOGIST, UserRole.SALES_MANAGER, UserRole.EMPLOYEE];
 
 @Injectable()
 export class TasksService {
@@ -25,6 +29,7 @@ export class TasksService {
     private activityLog: ActivityLogService,
     private telegramService: TelegramService,
     private gateway: AppGateway,
+    private taskResultsService: TaskResultsService,
   ) {}
 
   findAll(filters: {
@@ -120,8 +125,22 @@ export class TasksService {
   async update(id: string, dto: UpdateTaskDto, user: { id: string; role: string; name?: string }) {
     const task = await this.findOne(id);
 
-    if (user.role === UserRole.EMPLOYEE && task.assigneeId !== user.id) {
+    // Workers can only update their own tasks
+    if (WORKER_ROLES.includes(user.role as UserRole) && task.assigneeId !== user.id) {
       throw new ForbiddenException('Not allowed');
+    }
+
+    // Workers cannot directly set status to DONE — must go through review
+    if (WORKER_ROLES.includes(user.role as UserRole) && dto.status === TaskStatus.DONE) {
+      throw new ForbiddenException('Only a project manager can confirm task completion');
+    }
+
+    // Require at least one result before sending to review
+    if (dto.status === TaskStatus.REVIEW) {
+      const resultCount = await this.taskResultsService.countByTask(id);
+      if (resultCount === 0) {
+        throw new BadRequestException('Загрузите результат работы перед отправкой на проверку');
+      }
     }
 
     const oldStatus = task.status;
@@ -267,6 +286,90 @@ export class TasksService {
       .where('t.deadline < NOW()')
       .andWhere('t.status NOT IN (:...statuses)', { statuses: [TaskStatus.DONE, TaskStatus.CANCELLED] })
       .getMany();
+  }
+
+  async approveTask(id: string, user: { id: string; role: string; name?: string }) {
+    if (!PM_ROLES.includes(user.role as UserRole)) {
+      throw new ForbiddenException('Only project managers can approve tasks');
+    }
+    const task = await this.findOne(id);
+    if (task.status !== TaskStatus.REVIEW) {
+      throw new BadRequestException('Задача должна быть на проверке');
+    }
+
+    await this.repo.update(id, {
+      status: TaskStatus.DONE,
+      reviewedById: user.id,
+      reviewedAt: new Date(),
+    });
+
+    if (task.assigneeId) {
+      await this.notificationsService.create({
+        userId: task.assigneeId,
+        type: NotificationType.TASK_COMPLETED,
+        title: 'Задача подтверждена',
+        message: `Задача "${task.title}" принята и закрыта`,
+        link: `/tasks/${id}`,
+      });
+    }
+
+    await this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.TASK_REVIEW_APPROVE,
+      entity: 'task',
+      entityId: id,
+      entityName: task.title,
+    });
+
+    await this.projectsService.updateProgress(task.projectId);
+    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    return this.findOne(id);
+  }
+
+  async returnTask(id: string, user: { id: string; role: string; name?: string }, reason: string) {
+    if (!PM_ROLES.includes(user.role as UserRole)) {
+      throw new ForbiddenException('Only project managers can return tasks');
+    }
+    const task = await this.findOne(id);
+    if (task.status !== TaskStatus.REVIEW) {
+      throw new BadRequestException('Задача должна быть на проверке');
+    }
+
+    await this.repo.update(id, {
+      status: TaskStatus.RETURNED,
+      returnReason: reason,
+    });
+
+    if (task.assigneeId) {
+      await this.notificationsService.create({
+        userId: task.assigneeId,
+        type: NotificationType.TASK_RETURNED,
+        title: 'Задача возвращена в работу',
+        message: `"${task.title}": ${reason}`,
+        link: `/tasks/${id}`,
+        data: { reason },
+      });
+
+      await this.telegramService.sendToUser(
+        task.assigneeId,
+        `🔁 <b>Задача возвращена в работу</b>\n\n📋 ${task.title}\n💬 ${reason}\n\n👉 ${this.telegramService.appUrl}/tasks/${id}`,
+      );
+    }
+
+    await this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.TASK_REVIEW_RETURN,
+      entity: 'task',
+      entityId: id,
+      entityName: task.title,
+      details: { reason },
+    });
+
+    await this.projectsService.updateProgress(task.projectId);
+    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    return this.findOne(id);
   }
 
   getStats(projectId?: string) {

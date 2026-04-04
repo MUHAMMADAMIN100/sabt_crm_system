@@ -7,6 +7,8 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
+// PM_ROLES convenience list for decorator
+const { ADMIN, FOUNDER, PROJECT_MANAGER } = UserRole;
 import { TaskStatus, TaskPriority } from './task.entity';
 
 @ApiTags('Tasks')
@@ -60,7 +62,7 @@ export class TasksController {
   }
 
   @Get('overdue')
-  @Roles(UserRole.ADMIN)
+  @Roles(ADMIN, FOUNDER, PROJECT_MANAGER)
   getOverdue() { return this.service.getOverdueTasks(); }
 
   @Get('stats')
@@ -79,6 +81,18 @@ export class TasksController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateTaskDto, @Request() req) {
     return this.service.update(id, dto, req.user);
+  }
+
+  @Post(':id/approve')
+  @Roles(ADMIN, FOUNDER, PROJECT_MANAGER)
+  approve(@Param('id') id: string, @Request() req) {
+    return this.service.approveTask(id, req.user);
+  }
+
+  @Post(':id/return')
+  @Roles(ADMIN, FOUNDER, PROJECT_MANAGER)
+  return(@Param('id') id: string, @Body('reason') reason: string, @Request() req) {
+    return this.service.returnTask(id, req.user, reason || 'Требует доработки');
   }
 
   @Delete(':id')

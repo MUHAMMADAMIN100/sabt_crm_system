@@ -25,7 +25,13 @@ export class ProjectsService {
     private gateway: AppGateway,
   ) {}
 
-  async findAll(search?: string, status?: ProjectStatus, managerId?: string, archived = false) {
+  async findAll(
+    search?: string,
+    status?: ProjectStatus,
+    managerId?: string,
+    archived = false,
+    requestUser?: { id: string; role: string },
+  ) {
     const qb = this.repo.createQueryBuilder('p')
       .leftJoinAndSelect('p.manager', 'manager')
       .leftJoinAndSelect('p.members', 'members')
@@ -34,6 +40,19 @@ export class ProjectsService {
         qb.where('doneTask.status = :s', { s: 'done' }),
       )
       .where('p.isArchived = :archived', { archived });
+
+    // RBAC: filter by role
+    if (requestUser) {
+      const { id: userId, role } = requestUser;
+      if (role === 'project_manager') {
+        // PM sees only projects they manage or are members of
+        qb.andWhere('(p.managerId = :userId OR members.id = :userId)', { userId });
+      } else if (!['admin', 'founder'].includes(role)) {
+        // All other roles (SMM, designer, etc.) see only projects they are members of
+        qb.andWhere('members.id = :userId', { userId });
+      }
+      // admin & founder see all — no extra filter
+    }
 
     if (status) qb.andWhere('p.status = :status', { status });
     if (managerId) qb.andWhere('p.managerId = :managerId', { managerId });
@@ -115,7 +134,9 @@ export class ProjectsService {
 
   async update(id: string, dto: UpdateProjectDto, user: { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
-    if (user.role !== UserRole.ADMIN) {
+    const canEdit = ['admin', 'founder'].includes(user.role) ||
+      (user.role === 'project_manager' && project.managerId === user.id);
+    if (!canEdit) {
       throw new ForbiddenException('Not allowed');
     }
 
@@ -217,10 +238,11 @@ export class ProjectsService {
     const project = await this.repo.findOne({ where: { id }, relations: ['tasks'] });
     if (!project || !project.tasks.length) return;
 
-    // Weight per status: new=0%, in_progress=30%, review=70%, done=100%, cancelled=excluded
+    // Weight per status: new=0%, in_progress=30%, returned=25%, review=70%, done=100%, cancelled=excluded
     const statusWeight: Record<string, number> = {
       new: 0,
       in_progress: 30,
+      returned: 25,
       review: 70,
       done: 100,
     };

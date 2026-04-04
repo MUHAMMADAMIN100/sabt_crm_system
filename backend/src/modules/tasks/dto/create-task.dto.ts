@@ -13,6 +13,9 @@ export class CreateTaskDto {
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() startDate?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() deadline?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() estimatedHours?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() totalCount?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() doneCount?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() returnReason?: string;
 }
 
 export class UpdateTaskDto extends PartialType(CreateTaskDto) {}

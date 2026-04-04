@@ -24,8 +24,9 @@ export class ProjectsController {
     @Query('status') status?: ProjectStatus,
     @Query('managerId') managerId?: string,
     @Query('archived') archived?: string,
+    @Request() req?,
   ) {
-    return this.service.findAll(search, status, managerId, archived === 'true');
+    return this.service.findAll(search, status, managerId, archived === 'true', req?.user);
   }
 
   @Get('stats')
@@ -35,26 +36,26 @@ export class ProjectsController {
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 
   @Post()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
   create(@Body() dto: CreateProjectDto, @Request() req) {
     return this.service.create(dto, req.user.id);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto, @Request() req) {
     return this.service.update(id, dto, req.user);
   }
 
   @Patch(':id/archive')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
   archive(@Param('id') id: string) { return this.service.archive(id); }
 
   @Patch(':id/restore')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
   restore(@Param('id') id: string) { return this.service.restore(id); }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   remove(@Param('id') id: string) { return this.service.remove(id); }
 }

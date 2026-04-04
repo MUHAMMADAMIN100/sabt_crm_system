@@ -105,7 +105,7 @@ export function Badge({ children, variant = '', className }: BadgeProps) {
 
 const STATUS_LABELS: Record<string, string> = {
   new: 'Новая', in_progress: 'В работе', review: 'На проверке',
-  done: 'Готово', cancelled: 'Отменена',
+  returned: 'Возвращено', done: 'Готово', cancelled: 'Отменена',
   planning: 'Планируется', completed: 'Завершён', archived: 'Архив', on_hold: 'Пауза',
   active: 'Активный', inactive: 'Неактивный',
 }

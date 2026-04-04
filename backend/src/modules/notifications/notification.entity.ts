@@ -5,13 +5,18 @@ import {
 import { User } from '../users/user.entity';
 
 export enum NotificationType {
-  NEW_TASK = 'new_task',
-  TASK_COMMENT = 'task_comment',
-  STATUS_CHANGE = 'status_change',
+  NEW_TASK             = 'new_task',
+  TASK_COMMENT         = 'task_comment',
+  STATUS_CHANGE        = 'status_change',
   DEADLINE_APPROACHING = 'deadline_approaching',
-  NEW_REPORT = 'new_report',
-  PROJECT_ASSIGNED = 'project_assigned',
-  TASK_COMPLETED = 'task_completed',
+  DEADLINE_TOMORROW    = 'deadline_tomorrow',
+  NEW_REPORT           = 'new_report',
+  PROJECT_ASSIGNED     = 'project_assigned',
+  TASK_COMPLETED       = 'task_completed',
+  TASK_RETURNED        = 'task_returned',
+  TASK_OVERDUE         = 'task_overdue',
+  REVIEW_NEEDED        = 'review_needed',
+  INACTIVITY_24H       = 'inactivity_24h',
 }
 
 @Entity('notifications')

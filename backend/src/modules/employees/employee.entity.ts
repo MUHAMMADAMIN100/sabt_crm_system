@@ -56,6 +56,24 @@ export class Employee {
   @Column({ default: false })
   isSubAdmin: boolean;
 
+  @Column({ nullable: true })
+  managerId: string;
+
+  @Column({ default: 0 })
+  tasksCompleted: number;
+
+  @Column({ default: 0 })
+  tasksOverdue: number;
+
+  @Column({ default: 0 })
+  tasksReturned: number;
+
+  @Column({ type: 'decimal', precision: 5, scale: 2, default: 0 })
+  activityScore: number;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastActiveAt: Date;
+
   @OneToOne(() => User, { nullable: true, eager: false })
   @JoinColumn()
   user: User;

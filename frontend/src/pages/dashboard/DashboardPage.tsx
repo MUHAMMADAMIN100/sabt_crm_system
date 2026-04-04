@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { useMemo, lazy, Suspense } from 'react'
 import { analyticsApi, tasksApi, projectsApi, storiesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
@@ -9,6 +9,10 @@ import { Link } from 'react-router-dom'
 import { format, startOfMonth } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+
+const FounderDashboard = lazy(() => import('./components/FounderDashboard'))
+const PMDashboard = lazy(() => import('./components/PMDashboard'))
+const SMMDashboard = lazy(() => import('./components/SMMDashboard'))
 
 const PIE_COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7']
 
@@ -120,9 +124,62 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
 
 export default function DashboardPage() {
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'manager'].includes(user?.role || '')
-  const isAdmin = user?.role === 'admin'
+  const role = user?.role || 'employee'
+  const isFounderView = ['admin', 'founder'].includes(role)
+  const isPMView = role === 'project_manager'
+  const isWorkerView = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager'].includes(role)
+  const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(role)
+  const isAdmin = role === 'admin'
   const { t } = useTranslation()
+
+  // Role-specific dashboards
+  if (isFounderView) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="page-title">Привет, {user?.name?.split(' ')[0]} 👋</h1>
+          <p className="text-surface-500 dark:text-surface-400 mt-0.5">
+            {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
+          </p>
+        </div>
+        <Suspense fallback={<PageLoader />}>
+          <FounderDashboard />
+        </Suspense>
+      </div>
+    )
+  }
+
+  if (isPMView) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="page-title">Привет, {user?.name?.split(' ')[0]} 👋</h1>
+          <p className="text-surface-500 dark:text-surface-400 mt-0.5">
+            {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
+          </p>
+        </div>
+        <Suspense fallback={<PageLoader />}>
+          <PMDashboard />
+        </Suspense>
+      </div>
+    )
+  }
+
+  if (isWorkerView) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="page-title">Привет, {user?.name?.split(' ')[0]} 👋</h1>
+          <p className="text-surface-500 dark:text-surface-400 mt-0.5">
+            {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
+          </p>
+        </div>
+        <Suspense fallback={<PageLoader />}>
+          <SMMDashboard />
+        </Suspense>
+      </div>
+    )
+  }
 
   const { data: overview, isLoading } = useQuery({
     queryKey: ['analytics-overview'],

@@ -18,21 +18,27 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     if (window.innerWidth < 1024) onClose()
   }
 
+  const role = user?.role || 'employee'
+  const isFounderView = ['admin', 'founder'].includes(role)
+  const isPMView = ['admin', 'founder', 'project_manager'].includes(role)
+
   const navItems = [
     { to: '/', icon: LayoutDashboard, label: t('nav.dashboard'), exact: true },
     { to: '/projects', icon: FolderKanban, label: t('nav.projects') },
     { to: '/tasks', icon: CheckSquare, label: t('nav.tasks') },
     { to: '/calendar', icon: Calendar, label: t('nav.calendar') },
     { to: '/reports', icon: FileText, label: t('nav.reports') },
-    { to: '/analytics', icon: BarChart3, label: t('nav.analytics'), roles: ['admin'] },
-    { to: '/archive', icon: Archive, label: t('nav.archive') },
+    { to: '/analytics', icon: BarChart3, label: t('nav.analytics'), pmOnly: true },
+    { to: '/archive', icon: Archive, label: t('nav.archive'), pmOnly: true },
     { to: '/notifications', icon: Bell, label: t('nav.notifications') },
-    { to: '/employees', icon: Users, label: t('nav.employees'), roles: ['admin'] },
+    { to: '/employees', icon: Users, label: t('nav.employees'), founderOnly: true },
   ]
 
-  const filtered = navItems.filter(item =>
-    !item.roles || item.roles.includes(user?.role || '')
-  )
+  const filtered = navItems.filter(item => {
+    if ((item as any).founderOnly && !isFounderView) return false
+    if ((item as any).pmOnly && !isPMView) return false
+    return true
+  })
 
   return (
     <aside
@@ -152,7 +158,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               open ? 'max-w-[160px] opacity-100' : 'max-w-0 opacity-0',
             )}>
               <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{user.name}</p>
-              <p className="text-xs text-surface-500 dark:text-surface-400 truncate capitalize">{user.role}</p>
+              <p className="text-xs text-surface-500 dark:text-surface-400 truncate">
+                {({
+                  admin: 'Администратор', founder: 'Основатель',
+                  project_manager: 'Project Manager', smm_specialist: 'SMM-специалист',
+                  designer: 'Дизайнер', sales_manager: 'Sales', marketer: 'Маркетолог',
+                  targetologist: 'Таргетолог', employee: 'Сотрудник',
+                } as Record<string, string>)[user.role] || user.role}
+              </p>
             </div>
             <ChevronRight size={14} className={clsx(
               'text-surface-400 shrink-0 transition-all duration-300 group-hover:translate-x-0.5',

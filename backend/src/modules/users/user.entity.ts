@@ -11,8 +11,15 @@ import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
 
 export enum UserRole {
-  ADMIN = 'admin',
-  EMPLOYEE = 'employee',
+  ADMIN           = 'admin',
+  FOUNDER         = 'founder',
+  PROJECT_MANAGER = 'project_manager',
+  SMM_SPECIALIST  = 'smm_specialist',
+  DESIGNER        = 'designer',
+  SALES_MANAGER   = 'sales_manager',
+  MARKETER        = 'marketer',
+  TARGETOLOGIST   = 'targetologist',
+  EMPLOYEE        = 'employee',
 }
 
 @Entity('users')

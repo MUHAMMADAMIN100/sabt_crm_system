@@ -295,6 +295,7 @@ aside {
 .status-new        { @apply bg-slate-100 text-slate-700; }
 .status-in_progress { @apply bg-blue-100 text-blue-700; }
 .status-review     { @apply bg-amber-100 text-amber-700; }
+.status-returned   { @apply bg-orange-100 text-orange-700; }
 .status-done       { @apply bg-green-100 text-green-700; }
 .status-cancelled  { @apply bg-red-100 text-red-700; }
 .status-planning   { @apply bg-purple-100 text-purple-700; }
@@ -305,6 +306,7 @@ aside {
 .dark .status-new        { @apply bg-slate-800 text-slate-300; }
 .dark .status-in_progress { @apply bg-blue-900/30 text-blue-400; }
 .dark .status-review     { @apply bg-amber-900/30 text-amber-400; }
+.dark .status-returned   { @apply bg-orange-900/30 text-orange-400; }
 .dark .status-done       { @apply bg-green-900/30 text-green-400; }
 .dark .status-cancelled  { @apply bg-red-900/30 text-red-400; }
 .dark .status-planning   { @apply bg-purple-900/30 text-purple-400; }

@@ -26,6 +26,7 @@ import { StoriesModule } from './modules/stories/stories.module';
 import { MailModule } from './modules/mail/mail.module';
 import { ActivityLogModule } from './modules/activity-log/activity-log.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
+import { TaskResultsModule } from './modules/task-results/task-results.module';
 
 @Module({
   controllers: [HealthController],
@@ -75,6 +76,7 @@ import { TelegramModule } from './modules/telegram/telegram.module';
     MailModule,
     ActivityLogModule,
     TelegramModule,
+    TaskResultsModule,
   ],
 })
 export class AppModule {}
