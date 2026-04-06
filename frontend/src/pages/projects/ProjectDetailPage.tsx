@@ -5,7 +5,7 @@ import { projectsApi, tasksApi, filesApi, employeesApi } from '@/services/api.se
 import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, PriorityBadge, ProgressBar, Modal, Avatar, EmptyState, ConfirmDialog } from '@/components/ui'
-import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase, Save, X, UserPlus } from 'lucide-react'
 import { format } from 'date-fns'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
@@ -23,10 +23,16 @@ export default function ProjectDetailPage() {
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
   const [draggedTask, setDraggedTask] = useState<any>(null)
+  const [showEditProject, setShowEditProject] = useState(false)
+  const [showEditClient, setShowEditClient] = useState(false)
+  const [showAddMember, setShowAddMember] = useState(false)
+  const [projectForm, setProjectForm] = useState<any>({})
+  const [clientForm, setClientForm] = useState<any>({})
+  const [addMemberId, setAddMemberId] = useState('')
   const qc = useQueryClient()
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = user?.role === 'admin'
+  const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
@@ -138,6 +144,47 @@ export default function ProjectDetailPage() {
       toast.success(t('tasks.deleted'))
     },
   })
+
+  const updateProject = useMutation({
+    mutationFn: (data: any) => projectsApi.update(id!, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project', id] })
+      setShowEditProject(false)
+      setShowEditClient(false)
+      setShowAddMember(false)
+      toast.success('Проект обновлён')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
+  })
+
+  const handleSaveProject = () => {
+    updateProject.mutate({
+      name: projectForm.name,
+      projectType: projectForm.projectType,
+      description: projectForm.description,
+      status: projectForm.status,
+      startDate: projectForm.startDate || undefined,
+      endDate: projectForm.endDate || undefined,
+      budget: projectForm.budget ? Number(projectForm.budget) : undefined,
+    })
+  }
+
+  const handleSaveClient = () => {
+    updateProject.mutate({ clientInfo: clientForm })
+  }
+
+  const handleAddMember = () => {
+    if (!addMemberId) return
+    const currentIds = (project?.members || []).map((m: any) => m.id)
+    if (currentIds.includes(addMemberId)) return
+    updateProject.mutate({ memberIds: [...currentIds, addMemberId] })
+    setAddMemberId('')
+  }
+
+  const handleRemoveMember = (memberId: string) => {
+    const currentIds = (project?.members || []).map((m: any) => m.id).filter((mid: string) => mid !== memberId)
+    updateProject.mutate({ memberIds: currentIds })
+  }
 
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -335,7 +382,15 @@ export default function ProjectDetailPage() {
       {activeTab === 'about' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="card space-y-4">
-            <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base border-b border-surface-100 dark:border-surface-700 pb-3">Информация о проекте</h3>
+            <div className="flex items-center justify-between border-b border-surface-100 dark:border-surface-700 pb-3">
+              <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base">Информация о проекте</h3>
+              {isManagerPlus && (
+                <button onClick={() => { setProjectForm({ name: project.name, projectType: project.projectType || '', description: project.description || '', status: project.status, startDate: project.startDate ? String(project.startDate).slice(0,10) : '', endDate: project.endDate ? String(project.endDate).slice(0,10) : '', budget: project.budget || '' }); setShowEditProject(true) }}
+                  className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline">
+                  <Edit size={13} /> Редактировать
+                </button>
+              )}
+            </div>
             <div className="space-y-3">
               <div className="flex items-start gap-3">
                 <Briefcase size={16} className="text-primary-600 mt-0.5 shrink-0" />
@@ -430,7 +485,15 @@ export default function ProjectDetailPage() {
       {activeTab === 'client' && (
         <div className="max-w-lg">
           <div className="card space-y-4">
-            <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base border-b border-surface-100 dark:border-surface-700 pb-3">Данные клиента</h3>
+            <div className="flex items-center justify-between border-b border-surface-100 dark:border-surface-700 pb-3">
+              <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base">Данные клиента</h3>
+              {isManagerPlus && (
+                <button onClick={() => { setClientForm({ companyName: project.clientInfo?.companyName || '', contactPerson: project.clientInfo?.contactPerson || '', phone: project.clientInfo?.phone || '', email: project.clientInfo?.email || '', whatsapp: project.clientInfo?.whatsapp || '', instagram: project.clientInfo?.instagram || '' }); setShowEditClient(true) }}
+                  className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline">
+                  <Edit size={13} /> {project.clientInfo && Object.keys(project.clientInfo).length > 0 ? 'Редактировать' : 'Добавить'}
+                </button>
+              )}
+            </div>
             {!project.clientInfo || Object.keys(project.clientInfo).length === 0 ? (
               <p className="text-sm text-surface-400 dark:text-surface-500 py-4 text-center">Данные клиента не указаны</p>
             ) : (
@@ -496,19 +559,151 @@ export default function ProjectDetailPage() {
       )}
 
       {activeTab === 'members' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {Array.from(uniqueAssignees.values()).map((m: any) => (
-            <div key={m.id} className="card flex items-center gap-3">
-              <Avatar name={m.name} src={m.avatar} size={40} />
-              <div>
-                <p className="font-medium text-surface-900 dark:text-surface-100">{m.name}</p>
-                <p className="text-xs text-surface-500 dark:text-surface-400 capitalize">{m.role || ''}</p>
-              </div>
+        <div className="space-y-4">
+          {isManagerPlus && (
+            <div className="flex justify-end">
+              <button onClick={() => { setAddMemberId(''); setShowAddMember(true) }}
+                className="btn-primary flex items-center gap-2">
+                <UserPlus size={15} /> Добавить участника
+              </button>
             </div>
-          ))}
-          {uniqueAssignees.size === 0 && <EmptyState title={t('noMembers')} />}
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {(project.members || []).map((m: any) => (
+              <div key={m.id} className="card flex items-center gap-3 group">
+                <Avatar name={m.name} src={m.avatar} size={40} />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-surface-900 dark:text-surface-100">{m.name}</p>
+                  <p className="text-xs text-surface-500 dark:text-surface-400 capitalize">{m.role || ''}</p>
+                </div>
+                {isManagerPlus && (
+                  <button onClick={() => handleRemoveMember(m.id)}
+                    className="hidden group-hover:flex items-center p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400 transition-colors">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+            {(!project.members || project.members.length === 0) && (
+              <div className="col-span-3">
+                <EmptyState title={t('noMembers')} />
+              </div>
+            )}
+          </div>
         </div>
       )}
+
+      {/* Modal: Edit Project */}
+      <Modal open={showEditProject} onClose={() => setShowEditProject(false)} title="Редактировать проект">
+        <div className="space-y-4">
+          <div>
+            <label className="label mb-1">Название *</label>
+            <input value={projectForm.name || ''} onChange={e => setProjectForm((f: any) => ({ ...f, name: e.target.value }))} className="input w-full" />
+          </div>
+          <div>
+            <label className="label mb-1">Тип проекта</label>
+            <input value={projectForm.projectType || ''} onChange={e => setProjectForm((f: any) => ({ ...f, projectType: e.target.value }))} className="input w-full" placeholder="SMM, Web сайт, Дизайн..." />
+          </div>
+          <div>
+            <label className="label mb-1">Описание</label>
+            <textarea value={projectForm.description || ''} onChange={e => setProjectForm((f: any) => ({ ...f, description: e.target.value }))} rows={3} className="input w-full resize-none" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label mb-1">Дата начала</label>
+              <input type="date" value={projectForm.startDate || ''} onChange={e => setProjectForm((f: any) => ({ ...f, startDate: e.target.value }))} className="input w-full" />
+            </div>
+            <div>
+              <label className="label mb-1">Дата завершения</label>
+              <input type="date" value={projectForm.endDate || ''} onChange={e => setProjectForm((f: any) => ({ ...f, endDate: e.target.value }))} className="input w-full" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label mb-1">Статус</label>
+              <select value={projectForm.status || ''} onChange={e => setProjectForm((f: any) => ({ ...f, status: e.target.value }))} className="input w-full">
+                <option value="planning">Планирование</option>
+                <option value="in_progress">В работе</option>
+                <option value="completed">Завершён</option>
+                <option value="on_hold">На паузе</option>
+              </select>
+            </div>
+            <div>
+              <label className="label mb-1">Бюджет (сом)</label>
+              <input type="number" value={projectForm.budget || ''} onChange={e => setProjectForm((f: any) => ({ ...f, budget: e.target.value }))} className="input w-full" placeholder="0" />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end pt-2">
+            <button onClick={() => setShowEditProject(false)} className="btn-secondary">Отмена</button>
+            <button onClick={handleSaveProject} disabled={!projectForm.name || updateProject.isPending} className="btn-primary flex items-center gap-2">
+              <Save size={15} /> Сохранить
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Edit Client */}
+      <Modal open={showEditClient} onClose={() => setShowEditClient(false)} title="Данные клиента">
+        <div className="space-y-4">
+          <div>
+            <label className="label mb-1">Компания / Бренд</label>
+            <input value={clientForm.companyName || ''} onChange={e => setClientForm((f: any) => ({ ...f, companyName: e.target.value }))} className="input w-full" placeholder="ООО Компания" />
+          </div>
+          <div>
+            <label className="label mb-1">Контактное лицо</label>
+            <input value={clientForm.contactPerson || ''} onChange={e => setClientForm((f: any) => ({ ...f, contactPerson: e.target.value }))} className="input w-full" placeholder="Иван Иванов" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label mb-1">Телефон</label>
+              <input value={clientForm.phone || ''} onChange={e => setClientForm((f: any) => ({ ...f, phone: e.target.value }))} className="input w-full" placeholder="+7..." />
+            </div>
+            <div>
+              <label className="label mb-1">Email</label>
+              <input type="email" value={clientForm.email || ''} onChange={e => setClientForm((f: any) => ({ ...f, email: e.target.value }))} className="input w-full" placeholder="email@..." />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label mb-1">WhatsApp</label>
+              <input value={clientForm.whatsapp || ''} onChange={e => setClientForm((f: any) => ({ ...f, whatsapp: e.target.value }))} className="input w-full" placeholder="+7..." />
+            </div>
+            <div>
+              <label className="label mb-1">Instagram</label>
+              <input value={clientForm.instagram || ''} onChange={e => setClientForm((f: any) => ({ ...f, instagram: e.target.value }))} className="input w-full" placeholder="@username" />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end pt-2">
+            <button onClick={() => setShowEditClient(false)} className="btn-secondary">Отмена</button>
+            <button onClick={handleSaveClient} disabled={updateProject.isPending} className="btn-primary flex items-center gap-2">
+              <Save size={15} /> Сохранить
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Add Member */}
+      <Modal open={showAddMember} onClose={() => setShowAddMember(false)} title="Добавить участника" size="sm">
+        <div className="space-y-4">
+          <div>
+            <label className="label mb-1">Выбрать сотрудника</label>
+            <select value={addMemberId} onChange={e => setAddMemberId(e.target.value)} className="input w-full">
+              <option value="">— выберите —</option>
+              {(employees || [])
+                .filter((e: any) => !(project?.members || []).some((m: any) => m.id === (e.userId || e.id)))
+                .map((e: any) => (
+                  <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>
+                ))}
+            </select>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setShowAddMember(false)} className="btn-secondary">Отмена</button>
+            <button onClick={handleAddMember} disabled={!addMemberId || updateProject.isPending} className="btn-primary flex items-center gap-2">
+              <UserPlus size={15} /> Добавить
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {showTaskForm && (
         <Modal open={showTaskForm} onClose={() => { setShowTaskForm(false); setEditingTask(null) }} title={editingTask ? t('tasks.editTask') : t('tasks.newTask')}>
