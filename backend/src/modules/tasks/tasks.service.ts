@@ -135,8 +135,8 @@ export class TasksService {
       throw new ForbiddenException('Only a project manager can confirm task completion');
     }
 
-    // Require at least one result before sending to review
-    if (dto.status === TaskStatus.REVIEW) {
+    // Require at least one result before sending to review (workers only — PM/admin can drag freely)
+    if (dto.status === TaskStatus.REVIEW && WORKER_ROLES.includes(user.role as UserRole)) {
       const resultCount = await this.taskResultsService.countByTask(id);
       if (resultCount === 0) {
         throw new BadRequestException('Загрузите результат работы перед отправкой на проверку');
