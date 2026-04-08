@@ -5,12 +5,17 @@ import { tasksApi, commentsApi, filesApi, taskResultsApi, taskChecklistApi } fro
 import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
+<<<<<<< HEAD
 import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar, Modal, ConfirmDialog } from '@/components/ui'
 import {
   ArrowLeft, Send, Edit2, Trash2, Paperclip, Upload,
   CheckCircle, RotateCcw, LinkIcon, MessageSquare, AlertTriangle,
   Plus, Square, CheckSquare,
 } from 'lucide-react'
+=======
+import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar } from '@/components/ui'
+import { ArrowLeft, Send, Edit2, Trash2, Paperclip, Upload, CheckCircle, RotateCcw, ExternalLink } from 'lucide-react'
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -38,6 +43,7 @@ export default function TaskDetailPage() {
   const [comment, setComment] = useState('')
   const [editingComment, setEditingComment] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
+<<<<<<< HEAD
   const [activeTab, setActiveTab] = useState<'comments' | 'files' | 'results' | 'checklist'>('results')
   const [returnReason, setReturnReason] = useState('')
   const [showReturnModal, setShowReturnModal] = useState(false)
@@ -49,6 +55,17 @@ export default function TaskDetailPage() {
   const role = user?.role || 'employee'
   const isPM = PM_ROLES.includes(role)
   const isWorker = WORKER_ROLES.includes(role)
+=======
+  const [activeTab, setActiveTab] = useState<'comments' | 'files'>('comments')
+  const [showSubmitForm, setShowSubmitForm] = useState(false)
+  const [submitUrl, setSubmitUrl] = useState('')
+  const [submitComment, setSubmitComment] = useState('')
+  const [showReturnForm, setShowReturnForm] = useState(false)
+  const [returnComment, setReturnComment] = useState('')
+
+  const isProductionWorker = ['smm_specialist', 'designer', 'targetologist', 'employee'].includes(user?.role || '')
+  const canReview = ['admin', 'project_manager'].includes(user?.role || '')
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
 
   const { data: task, isLoading } = useQuery({
     queryKey: ['task', id],
@@ -156,6 +173,48 @@ export default function TaskDetailPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['task', id] }); setEditingComment(null) },
   })
 
+  const isAssignee = task?.assigneeId === user?.id
+
+  const submitReviewMut = useMutation({
+    mutationFn: (data: { resultUrl?: string; comment?: string }) => tasksApi.submitReview(id!, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task', id] })
+      invalidateAfterTaskChange(qc)
+      setShowSubmitForm(false)
+      setSubmitUrl('')
+      setSubmitComment('')
+      toast.success('Задача отправлена на проверку')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
+  })
+
+  const approveMut = useMutation({
+    mutationFn: () => tasksApi.approve(id!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task', id] })
+      invalidateAfterTaskChange(qc)
+      toast.success('Задача принята ✓')
+    },
+    onError: () => toast.error('Ошибка'),
+  })
+
+  const returnMut = useMutation({
+    mutationFn: (comment: string) => tasksApi.returnTask(id!, comment),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task', id] })
+      invalidateAfterTaskChange(qc)
+      setShowReturnForm(false)
+      setReturnComment('')
+      toast.success('Задача возвращена в работу')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
+  })
+
+  const progressMut = useMutation({
+    mutationFn: (completedCount: number) => tasksApi.updateProgress(id!, completedCount),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['task', id] }),
+  })
+
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -204,6 +263,21 @@ export default function TaskDetailPage() {
             )}
           </div>
         </div>
+<<<<<<< HEAD
+=======
+        {(canReview || (isProductionWorker && isAssignee)) && (
+          <select
+            value={task.status}
+            onChange={e => updateTask.mutate({ status: e.target.value })}
+            className="input w-44"
+            disabled={isProductionWorker && task.status === 'review'}
+          >
+            {['new','in_progress','review','returned','done','cancelled'].map(s => (
+              <option key={s} value={s}>{t(`statuses.${s}`)}</option>
+            ))}
+          </select>
+        )}
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
       </div>
 
       {/* Alerts */}
@@ -526,6 +600,7 @@ export default function TaskDetailPage() {
 
         {/* Sidebar info */}
         <div className="space-y-4">
+<<<<<<< HEAD
           {/* Status control (PM only when not in done/cancelled) */}
           {isPM && !['done', 'cancelled'].includes(task.status) && (
             <div className="card">
@@ -544,6 +619,148 @@ export default function TaskDetailPage() {
             </div>
           )}
 
+=======
+
+          {/* ── ВОЗВРАЩЕНО: причина возврата ── */}
+          {task.status === 'returned' && task.returnComment && (
+            <div className="card border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/10 space-y-1">
+              <div className="flex items-center gap-2">
+                <RotateCcw size={14} className="text-orange-500 shrink-0" />
+                <p className="text-xs font-semibold text-orange-700 dark:text-orange-300">Возвращено на доработку</p>
+              </div>
+              <p className="text-xs text-orange-600 dark:text-orange-400 leading-relaxed">{task.returnComment}</p>
+              {task.returnCount > 1 && (
+                <p className="text-[10px] text-orange-400 dark:text-orange-500">Возвращено {task.returnCount} раз</p>
+              )}
+            </div>
+          )}
+
+          {/* ── ПРОГРЕСС X/Y ── */}
+          {task.targetCount > 0 && (
+            <div className="card space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300">Прогресс</h3>
+                <span className="text-sm font-bold text-primary-600 dark:text-primary-400">
+                  {task.completedCount}/{task.targetCount}
+                </span>
+              </div>
+              <ProgressBar value={Math.min(100, Math.round(((task.completedCount || 0) / task.targetCount) * 100))} />
+              {isAssignee && ['in_progress', 'returned'].includes(task.status) && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => progressMut.mutate(Math.max(0, (task.completedCount || 0) - 1))}
+                    disabled={(task.completedCount || 0) <= 0 || progressMut.isPending}
+                    className="btn-secondary px-3 py-1 text-sm font-bold"
+                  >−</button>
+                  <span className="text-sm font-semibold flex-1 text-center text-surface-800 dark:text-surface-200">
+                    {task.completedCount || 0}
+                  </span>
+                  <button
+                    onClick={() => progressMut.mutate(Math.min(task.targetCount, (task.completedCount || 0) + 1))}
+                    disabled={(task.completedCount || 0) >= task.targetCount || progressMut.isPending}
+                    className="btn-primary px-3 py-1 text-sm font-bold"
+                  >+</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── ОТПРАВИТЬ НА ПРОВЕРКУ (исполнитель) ── */}
+          {isProductionWorker && isAssignee && ['in_progress', 'returned'].includes(task.status) && (
+            <div className="card space-y-2">
+              <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300">Отправить на проверку</h3>
+              {!showSubmitForm ? (
+                <button
+                  onClick={() => setShowSubmitForm(true)}
+                  className="btn-primary w-full justify-center"
+                >
+                  📤 Отправить на проверку
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    value={submitUrl}
+                    onChange={e => setSubmitUrl(e.target.value)}
+                    placeholder="Ссылка на результат (URL)"
+                    className="input text-sm"
+                  />
+                  <textarea
+                    value={submitComment}
+                    onChange={e => setSubmitComment(e.target.value)}
+                    placeholder="Или опишите что сделано..."
+                    className="input text-sm resize-none"
+                    rows={2}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => submitReviewMut.mutate({ resultUrl: submitUrl || undefined, comment: submitComment || undefined })}
+                      disabled={(!submitUrl.trim() && !submitComment.trim()) || submitReviewMut.isPending}
+                      className="btn-primary flex-1 justify-center text-sm"
+                    >
+                      {submitReviewMut.isPending ? 'Отправка...' : 'Отправить'}
+                    </button>
+                    <button onClick={() => { setShowSubmitForm(false); setSubmitUrl(''); setSubmitComment('') }} className="btn-secondary text-sm">
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── ПРИНЯТЬ / ВЕРНУТЬ (PM и admin) ── */}
+          {canReview && task.status === 'review' && (
+            <div className="card space-y-3">
+              <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300">Проверка результата</h3>
+              {task.resultUrl && (
+                <a
+                  href={task.resultUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline truncate"
+                >
+                  <ExternalLink size={13} />
+                  Открыть результат
+                </a>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => approveMut.mutate()}
+                  disabled={approveMut.isPending}
+                  className="flex-1 btn justify-center bg-green-600 hover:bg-green-700 text-white text-sm"
+                >
+                  <CheckCircle size={14} /> Принять
+                </button>
+                <button
+                  onClick={() => setShowReturnForm(v => !v)}
+                  className="flex-1 btn justify-center bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 text-sm"
+                >
+                  <RotateCcw size={14} /> Вернуть
+                </button>
+              </div>
+              {showReturnForm && (
+                <div className="space-y-2">
+                  <textarea
+                    value={returnComment}
+                    onChange={e => setReturnComment(e.target.value)}
+                    placeholder="Причина возврата (обязательно)..."
+                    className="input text-sm resize-none"
+                    rows={2}
+                  />
+                  <button
+                    onClick={() => returnMut.mutate(returnComment)}
+                    disabled={!returnComment.trim() || returnMut.isPending}
+                    className="btn w-full justify-center bg-red-600 hover:bg-red-700 text-white text-sm"
+                  >
+                    {returnMut.isPending ? 'Возврат...' : 'Подтвердить возврат'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── ДЕТАЛИ ── */}
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
           <div className="card space-y-3">
             <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300">Детали</h3>
             <div className="space-y-2 text-sm">
@@ -562,6 +779,12 @@ export default function TaskDetailPage() {
                   {task.deadline ? format(new Date(task.deadline), 'dd.MM.yyyy') : '—'}
                 </span>
               </div>
+              {task.returnCount > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-surface-500 dark:text-surface-400">Возвратов</span>
+                  <span className="font-medium text-orange-500">{task.returnCount}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-surface-500 dark:text-surface-400">{t('tasks.estimatedHours')}</span>
                 <span className="font-medium text-surface-900 dark:text-surface-100">{task.estimatedHours || 0}ч</span>

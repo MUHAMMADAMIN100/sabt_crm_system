@@ -154,7 +154,11 @@ export class AnalyticsService {
       .addSelect("SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END)", 'doneTasks')
       .addSelect('SUM(tl.timeSpent)', 'totalHours')
       .where('u.isActive = true')
+<<<<<<< HEAD
       .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] })
+=======
+      .andWhere('u.role IN (:...roles)', { roles: ['employee', 'smm_specialist', 'designer', 'targetologist'] })
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
       .groupBy('u.id, u.name, e.fullName, e.position')
       .orderBy('"doneTasks"', 'DESC')
       .limit(limit)
@@ -165,7 +169,11 @@ export class AnalyticsService {
       .createQueryBuilder('u')
       .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
       .where('u.isActive = true')
+<<<<<<< HEAD
       .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] })
+=======
+      .andWhere('u.role IN (:...roles)', { roles: ['employee', 'smm_specialist', 'designer', 'targetologist'] })
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
       .getCount();
 
     const mapped = data.map(d => ({
@@ -194,7 +202,11 @@ export class AnalyticsService {
       .addSelect("SUM(CASE WHEN t.priority = 'critical' THEN 1 ELSE 0 END)", 'criticalTasks')
       .addSelect("SUM(CASE WHEN t.deadline < NOW() AND t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END)", 'overdueTasks')
       .where('u.isActive = true')
+<<<<<<< HEAD
       .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] })
+=======
+      .andWhere('u.role IN (:...roles)', { roles: ['employee', 'smm_specialist', 'designer', 'targetologist'] })
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
       .groupBy('u.id, u.name, e.fullName, e.position, e.department, u.avatar')
       .orderBy('"activeTasks"', 'DESC')
       .getRawMany();

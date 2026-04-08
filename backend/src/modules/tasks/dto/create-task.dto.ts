@@ -13,9 +13,16 @@ export class CreateTaskDto {
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() startDate?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() deadline?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() estimatedHours?: number;
+<<<<<<< HEAD
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() totalCount?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() doneCount?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() returnReason?: string;
+=======
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() targetCount?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() completedCount?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() returnComment?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() resultUrl?: string;
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
 }
 
 export class UpdateTaskDto extends PartialType(CreateTaskDto) {}

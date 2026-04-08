@@ -302,6 +302,7 @@ aside {
 .status-completed  { @apply bg-green-100 text-green-700; }
 .status-archived   { @apply bg-gray-100 text-gray-600; }
 .status-on_hold    { @apply bg-orange-100 text-orange-700; }
+.status-returned   { @apply bg-orange-100 text-orange-800; }
 
 .dark .status-new        { @apply bg-slate-800 text-slate-300; }
 .dark .status-in_progress { @apply bg-blue-900/30 text-blue-400; }
@@ -313,6 +314,7 @@ aside {
 .dark .status-completed  { @apply bg-green-900/30 text-green-400; }
 .dark .status-archived   { @apply bg-gray-800 text-gray-400; }
 .dark .status-on_hold    { @apply bg-orange-900/30 text-orange-400; }
+.dark .status-returned   { @apply bg-orange-900/40 text-orange-300; }
 
 .priority-low      { @apply bg-slate-100 text-slate-600; }
 .priority-medium   { @apply bg-blue-100 text-blue-600; }

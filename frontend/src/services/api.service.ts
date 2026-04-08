@@ -51,6 +51,7 @@ export const tasksApi = {
   my: () => api.get('/tasks/my').then(r => r.data),
   overdue: () => api.get('/tasks/overdue').then(r => r.data),
   stats: (projectId?: string) => api.get('/tasks/stats', { params: { projectId } }).then(r => r.data),
+<<<<<<< HEAD
   approve: (id: string) => api.post(`/tasks/${id}/approve`).then(r => r.data),
   returnTask: (id: string, reason: string) => api.post(`/tasks/${id}/return`, { reason }).then(r => r.data),
   bulk: (ids: string[], action: 'status' | 'delete' | 'assign', value?: string) =>
@@ -72,6 +73,12 @@ export const taskResultsApi = {
   create: (taskId: string, data: { type: string; content: string; fileName?: string; filePath?: string }) =>
     api.post(`/tasks/${taskId}/results`, data).then(r => r.data),
   remove: (taskId: string, id: string) => api.delete(`/tasks/${taskId}/results/${id}`).then(r => r.data),
+=======
+  submitReview: (id: string, data: { resultUrl?: string; comment?: string }) => api.post(`/tasks/${id}/submit-review`, data).then(r => r.data),
+  approve: (id: string) => api.post(`/tasks/${id}/approve`).then(r => r.data),
+  returnTask: (id: string, comment: string) => api.post(`/tasks/${id}/return`, { comment }).then(r => r.data),
+  updateProgress: (id: string, completedCount: number) => api.patch(`/tasks/${id}/progress`, { completedCount }).then(r => r.data),
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
 }
 
 // ─── Comments ────────────────────────────────────────────
@@ -128,7 +135,12 @@ export const analyticsApi = {
   employeeWorkload: () => api.get('/analytics/employee-workload').then(r => r.data),
   monthlyReport: (year: number, month: number) => api.get('/analytics/monthly-report', { params: { year, month } }).then(r => r.data),
   departmentStats: () => api.get('/analytics/department-stats').then(r => r.data),
+<<<<<<< HEAD
   avgCompletion: () => api.get('/analytics/avg-completion').then(r => r.data),
+=======
+  founderDashboard: () => api.get('/analytics/founder-dashboard').then(r => r.data),
+  pmDashboard: () => api.get('/analytics/pm-dashboard').then(r => r.data),
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
 }
 
 // ─── Calendar ────────────────────────────────────────────

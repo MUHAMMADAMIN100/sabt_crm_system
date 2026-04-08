@@ -316,13 +316,14 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           color: initial.color || '#6B4FCF',
           budget: initial.budget || '',
           projectType: initial.projectType || '',
+          managerId: initial.managerId || '',
         })
         if (initial.smmData) setSmmAnswers(initial.smmData)
         setSelectedMembers(initial.members?.map((m: any) => m.id) || [])
       } else {
         reset({
           name: '', description: '', startDate: '', endDate: '',
-          status: 'planning', color: '#6B4FCF', budget: '', projectType: '',
+          status: 'planning', color: '#6B4FCF', budget: '', projectType: '', managerId: '',
         })
         setSmmAnswers({})
         setShowSmmForm(false)
@@ -356,6 +357,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
       color: data.color,
       budget: data.budget ? Number(data.budget) : undefined,
       projectType: data.projectType || undefined,
+      managerId: data.managerId || undefined,
       memberIds: selectedMembers,
     }
     if (data.projectType === 'SMM' && Object.keys(smmAnswers).length > 0) {
@@ -395,6 +397,17 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
               {PROJECT_TYPES.map(pt => <option key={pt} value={pt}>{pt}</option>)}
             </select>
             {errors.projectType && <p className="text-xs text-red-500 mt-1">Выберите тип проекта</p>}
+          </div>
+
+          {/* Менеджер проекта */}
+          <div className="col-span-2">
+            <label className="label">Менеджер проекта</label>
+            <select {...register('managerId')} className="input">
+              <option value="">— Не назначен —</option>
+              {employees.map((e: any) => (
+                <option key={e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>
+              ))}
+            </select>
           </div>
 
           {/* SMM Questionnaire — appears right after type select */}

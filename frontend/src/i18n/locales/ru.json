@@ -207,7 +207,8 @@
     "new": "Новые",
     "review": "На проверке",
     "done": "Готово",
-    "cancelled": "Отменён"
+    "cancelled": "Отменён",
+    "returned": "Возвращено"
   },
   "priorities": {
     "all": "Все",
@@ -230,5 +231,15 @@
     "members": "Участники",
     "gantt": "Диаграмма Ганта"
   },
-  "noMembers": "Участников нет"
+  "noMembers": "Участников нет",
+  "roles": {
+    "admin": "Администратор",
+    "founder": "Основатель",
+    "project_manager": "Проект-менеджер",
+    "smm_specialist": "SMM-специалист",
+    "designer": "Дизайнер",
+    "targetologist": "Таргетолог",
+    "sales_manager": "Менеджер по продажам",
+    "employee": "Сотрудник"
+  }
 }

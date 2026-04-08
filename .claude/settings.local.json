@@ -8,7 +8,9 @@
       "Bash(grep -r \"redis\\\\|Redis\\\\|cache\\\\|Cache\" '/c/Users/EXPERTCOMPUTER/Desktop/CRM SMM/backend/src' --include=*.ts)",
       "Bash(grep -r \"compression\\\\|gzip\" '/c/Users/EXPERTCOMPUTER/Desktop/CRM SMM/backend/src' --include=*.ts)",
       "Bash(npm run:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(xargs grep:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

@@ -33,6 +33,7 @@ export default function TaskForm({
         assigneeId: initial.assigneeId || '',
         priority: initial.priority || 'medium',
         deadline: initial.deadline ? new Date(initial.deadline).toISOString().slice(0, 16) : (initialDeadline || ''),
+        targetCount: initial.targetCount || '',
       })
     } else {
       reset({
@@ -51,9 +52,10 @@ export default function TaskForm({
       title: data.title,
       description: data.description || undefined,
       projectId: fixedProjectId || data.projectId,
-      assigneeId: isAdmin ? data.assigneeId : currentUserId,
+      assigneeId: data.assigneeId || currentUserId,
       priority: data.priority,
       deadline: data.deadline,
+      targetCount: data.targetCount ? Number(data.targetCount) : undefined,
     })
   }
 
@@ -79,7 +81,7 @@ export default function TaskForm({
             {errors.projectId && <p className="text-xs text-red-500 mt-1">{t('tasks.project')} обязательно</p>}
           </div>
         )}
-        {isAdmin && employees && (
+        {employees && (
           <div>
             <label className="label">{t('tasks.assignee')} *</label>
             <select {...register('assigneeId', { required: true })} className="input">
@@ -102,6 +104,17 @@ export default function TaskForm({
           <input type="datetime-local" {...register('deadline', { required: true })} className="input" />
           {errors.deadline && <p className="text-xs text-red-500 mt-1">{t('tasks.deadline')} обязательно</p>}
         </div>
+      </div>
+      <div>
+        <label className="label">Цель (количество)</label>
+        <input
+          type="number"
+          {...register('targetCount', { min: 0 })}
+          placeholder="Например: 3 сторис, 5 постов"
+          className="input"
+          min={0}
+        />
+        <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">Необязательно — для задач с количественным результатом</p>
       </div>
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">{t('common.cancel')}</button>

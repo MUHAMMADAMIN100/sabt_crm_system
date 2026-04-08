@@ -124,12 +124,22 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
 
 export default function DashboardPage() {
   const user = useAuthStore(s => s.user)
+<<<<<<< HEAD
   const role = user?.role || 'employee'
   const isFounderView = ['admin', 'founder'].includes(role)
   const isPMView = role === 'project_manager'
   const isWorkerView = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager'].includes(role)
   const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(role)
   const isAdmin = role === 'admin'
+=======
+  const isAdmin = user?.role === 'admin'
+  const isFounder = user?.role === 'founder'
+  const isPM = user?.role === 'project_manager'
+  const isAdminOrFounder = isAdmin || isFounder
+  const isProductionWorker = ['smm_specialist', 'designer', 'targetologist', 'employee'].includes(user?.role || '')
+  const isManagerLevel = isAdmin || isFounder || isPM
+  const isManagerPlus = isManagerLevel
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
   const { t } = useTranslation()
 
   // Role-specific dashboards
@@ -184,13 +194,31 @@ export default function DashboardPage() {
   const { data: overview, isLoading } = useQuery({
     queryKey: ['analytics-overview'],
     queryFn: analyticsApi.overview,
-    enabled: isManagerPlus,
+    enabled: isManagerLevel,
   })
 
   const { data: myTasks } = useQuery({
     queryKey: ['my-tasks'],
     queryFn: tasksApi.my,
     enabled: !isAdmin,
+  })
+
+  const { data: reviewTasks } = useQuery({
+    queryKey: ['tasks', { status: 'review' }],
+    queryFn: () => tasksApi.list({ status: 'review' }),
+    enabled: isManagerLevel,
+  })
+
+  const { data: returnedTasks } = useQuery({
+    queryKey: ['tasks', { status: 'returned', assigneeId: user?.id }],
+    queryFn: () => tasksApi.list({ status: 'returned', assigneeId: user?.id }),
+    enabled: isProductionWorker,
+  })
+
+  const { data: overdueTasks2 } = useQuery({
+    queryKey: ['tasks', { overdue: true }],
+    queryFn: () => tasksApi.list(),
+    enabled: isManagerLevel,
   })
 
   const { data: projects } = useQuery({
@@ -208,7 +236,7 @@ export default function DashboardPage() {
   const { data: allProjects } = useQuery({
     queryKey: ['projects-all'],
     queryFn: () => projectsApi.list(),
-    enabled: isAdmin,
+    enabled: isAdminOrFounder,
   })
 
   // ── Employee stories queries ──────────────────────────────────────
@@ -218,19 +246,19 @@ export default function DashboardPage() {
   const { data: todayStories } = useQuery({
     queryKey: ['stories-today', today],
     queryFn: () => storiesApi.my(today, today),
-    enabled: !isAdmin,
+    enabled: isProductionWorker,
   })
 
   const { data: monthStories } = useQuery({
     queryKey: ['stories-month', monthStart, today],
     queryFn: () => storiesApi.my(monthStart, today),
-    enabled: !isAdmin,
+    enabled: isProductionWorker,
   })
 
   const { data: allProjectsList } = useQuery({
     queryKey: ['projects'],
     queryFn: () => projectsApi.list(),
-    enabled: !isAdmin,
+    enabled: isProductionWorker,
   })
 
   // ── Employee story analytics (hooks must be before any early return) ──
@@ -254,7 +282,7 @@ export default function DashboardPage() {
     [monthStories])
 
   // ── Early return after all hooks ──────────────────────────────────
-  if (isLoading && isManagerPlus) return <PageLoader />
+  if (isLoading && isManagerLevel) return <PageLoader />
 
   const urgentTasks = myTasks?.filter((t: any) =>
     t.deadline && new Date(t.deadline) < new Date(Date.now() + 86400000 * 2) && t.status !== 'done'
@@ -287,16 +315,27 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {isManagerPlus && overview && (
+      {isManagerLevel && overview && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title={t('dashboard.activeProjectsCount')} value={overview.activeProjects} icon={FolderKanban} color="bg-primary-600" sub={`${t('common.from')} ${overview.totalProjects} ${t('common.total')}`} />
           <StatCard title={t('dashboard.totalTasks')} value={overview.totalTasks} icon={CheckSquare} color="bg-green-500" sub={`${overview.completionRate}% ${t('common.completed')}`} />
           <StatCard title={t('dashboard.employeesCount')} value={overview.totalEmployees} icon={Users} color="bg-amber-500" />
+          {isManagerLevel && reviewTasks?.length > 0 && (
+            <div className="card flex items-center gap-3 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-amber-500">
+                <CheckSquare size={22} className="text-white" />
+              </div>
+              <div>
+                <p className="text-sm text-amber-700 dark:text-amber-400">На проверке</p>
+                <p className="text-2xl font-bold text-amber-800 dark:text-amber-300 tabular-nums">{reviewTasks.length}</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Admin: project status breakdown */}
-      {isAdmin && projectsByStatus && allProjects && (
+      {/* Admin/Founder: project status breakdown */}
+      {isAdminOrFounder && projectsByStatus && allProjects && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="card text-center cursor-pointer hover:shadow-md transition-shadow">
             <p className="text-3xl font-bold text-primary-600 dark:text-primary-400">{projectsByStatus.planning}</p>
@@ -362,8 +401,84 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Employee: My tasks */}
-        {!isAdmin && (
+        {/* PM: Review queue + managed projects */}
+        {isPM && (
+          <div className="lg:col-span-2 space-y-4">
+            {/* Tasks pending review */}
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="section-title">На проверке</h2>
+                  {reviewTasks?.length > 0 && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                      {reviewTasks.length}
+                    </span>
+                  )}
+                </div>
+                <Link to="/tasks?status=review" className="text-sm text-primary-600 dark:text-primary-400 hover:underline">{t('common.viewAll')}</Link>
+              </div>
+              {!reviewTasks?.length ? (
+                <p className="text-surface-500 dark:text-surface-400 text-sm py-6 text-center">Нет задач на проверке</p>
+              ) : (
+                <div className="space-y-1">
+                  {reviewTasks.slice(0, 5).map((task: any) => (
+                    <Link
+                      key={task.id}
+                      to={`/tasks/${task.id}`}
+                      className="flex items-center gap-3 p-3 rounded-xl hover:bg-amber-50 dark:hover:bg-amber-900/10 transition-colors group border border-transparent hover:border-amber-200 dark:hover:border-amber-800"
+                    >
+                      <div className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate group-hover:text-amber-700 dark:group-hover:text-amber-400">{task.title}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {task.assignee?.name && (
+                            <span className="text-xs text-surface-400 dark:text-surface-500">{task.assignee.name}</span>
+                          )}
+                          {task.project?.name && (
+                            <span className="text-xs text-surface-300 dark:text-surface-600">· {task.project.name}</span>
+                          )}
+                        </div>
+                      </div>
+                      {task.deadline && (
+                        <span className={`text-xs shrink-0 ${new Date(task.deadline) < new Date() ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>
+                          {format(new Date(task.deadline), 'dd.MM')}
+                        </span>
+                      )}
+                      <PriorityBadge priority={task.priority} />
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* PM managed projects */}
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="section-title">Мои проекты</h2>
+                <Link to="/projects" className="text-sm text-primary-600 dark:text-primary-400 hover:underline">{t('common.viewAll')}</Link>
+              </div>
+              {!projects?.length ? (
+                <p className="text-surface-500 dark:text-surface-400 text-sm py-4 text-center">Нет активных проектов</p>
+              ) : (
+                <div className="space-y-3">
+                  {projects.slice(0, 4).map((p: any) => (
+                    <Link key={p.id} to={`/projects/${p.id}`} className="flex items-center gap-3 p-2 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors group">
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: p.color || '#6B4FCF' }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate group-hover:text-primary-600 dark:group-hover:text-primary-400">{p.name}</p>
+                        <ProgressBar value={p.progress} className="mt-1" />
+                      </div>
+                      <span className="text-xs font-semibold text-surface-600 dark:text-surface-300 shrink-0">{p.progress}%</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Production workers: My tasks */}
+        {isProductionWorker && (
           <div className="lg:col-span-2 card">
             <div className="flex items-center justify-between mb-4">
               <h2 className="section-title">{t('dashboard.myTasks')}</h2>
@@ -401,8 +516,44 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Founder: My tasks fallback (non-admin, non-PM, non-production) */}
+        {isFounder && (
+          <div className="lg:col-span-2 card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="section-title">{t('dashboard.myTasks')}</h2>
+              <Link to="/tasks?mine=true" className="text-sm text-primary-600 dark:text-primary-400 hover:underline">{t('common.viewAll')}</Link>
+            </div>
+            {!myTasks?.length ? (
+              <p className="text-surface-500 dark:text-surface-400 text-sm py-8 text-center">{t('dashboard.noTasks')}</p>
+            ) : (
+              <div className="space-y-1">
+                {myTasks.slice(0, 6).map((task: any) => (
+                  <Link
+                    key={task.id}
+                    to={`/tasks/${task.id}`}
+                    className="block p-3 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors group"
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 min-w-0 flex-1 leading-snug">{task.title}</p>
+                      {task.deadline && (
+                        <span className={`text-xs shrink-0 ${new Date(task.deadline) < new Date() ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>
+                          {format(new Date(task.deadline), 'dd.MM')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <PriorityBadge priority={task.priority} />
+                      <StatusBadge status={task.status} />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="space-y-4">
-          {/* Employee: Overdue tasks warning */}
+          {/* Employee/PM: Overdue tasks warning */}
           {!isAdmin && overdueTasks.length > 0 && (
             <div className="card border-red-100 dark:border-red-900/30 bg-red-50 dark:bg-red-900/10">
               <div className="flex items-center gap-2 mb-3">
@@ -438,8 +589,40 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ── Stories analytics ── */}
-          {!isAdmin && (
+          {/* Production workers: Returned tasks block */}
+          {isProductionWorker && returnedTasks && returnedTasks.length > 0 && (
+            <div className="card border-orange-200 dark:border-orange-800/40 bg-orange-50 dark:bg-orange-900/10">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-base">↩️</span>
+                <h3 className="font-semibold text-orange-800 dark:text-orange-300 text-sm">Возвращено на доработку</h3>
+                <span className="ml-auto text-xs font-semibold px-1.5 py-0.5 rounded-full bg-orange-200 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300">
+                  {returnedTasks.length}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {returnedTasks.slice(0, 4).map((ta: any) => (
+                  <Link
+                    key={ta.id}
+                    to={`/tasks/${ta.id}`}
+                    className="block p-2 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors"
+                  >
+                    <p className="text-xs font-semibold text-orange-800 dark:text-orange-300 truncate">{ta.title}</p>
+                    {ta.returnComment && (
+                      <p className="text-[10px] text-orange-600 dark:text-orange-400 mt-0.5 line-clamp-2">
+                        Комментарий: {ta.returnComment}
+                      </p>
+                    )}
+                    {ta.project?.name && (
+                      <p className="text-[10px] text-orange-500 dark:text-orange-500 mt-0.5">{ta.project.name}</p>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Stories analytics (only for production workers) ── */}
+          {isProductionWorker && (
             <StoriesWidget
               myProjects={myProjects}
               todayStoryMap={todayStoryMap}

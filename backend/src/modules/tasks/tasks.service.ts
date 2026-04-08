@@ -13,10 +13,14 @@ import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
+<<<<<<< HEAD
 import { TaskResultsService } from '../task-results/task-results.service';
 
 const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER];
 const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.MARKETER, UserRole.TARGETOLOGIST, UserRole.SALES_MANAGER, UserRole.EMPLOYEE];
+=======
+import { canReviewTasks, isProductionRole } from '../auth/roles.helper';
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
 
 @Injectable()
 export class TasksService {
@@ -32,18 +36,29 @@ export class TasksService {
     private taskResultsService: TaskResultsService,
   ) {}
 
-  findAll(filters: {
-    projectId?: string;
-    assigneeId?: string;
-    status?: TaskStatus;
-    priority?: TaskPriority;
-    search?: string;
-    deadlineBefore?: string;
-  }) {
+  findAll(
+    filters: {
+      projectId?: string;
+      assigneeId?: string;
+      status?: TaskStatus;
+      priority?: TaskPriority;
+      search?: string;
+      deadlineBefore?: string;
+    },
+    caller?: { id: string; role: string },
+  ) {
     const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
       .leftJoinAndSelect('t.createdBy', 'createdBy')
       .leftJoinAndSelect('t.project', 'project');
+
+    // Role-based filtering: production workers only see their own tasks
+    if (caller && isProductionRole(caller.role as UserRole)) {
+      qb.andWhere('t.assigneeId = :callerId', { callerId: caller.id });
+    } else if (caller && caller.role === UserRole.PROJECT_MANAGER) {
+      // PM sees tasks in projects they manage
+      qb.innerJoin('t.project', 'pm_proj', 'pm_proj.managerId = :callerId', { callerId: caller.id });
+    }
 
     if (filters.projectId) qb.andWhere('t.projectId = :projectId', { projectId: filters.projectId });
     if (filters.assigneeId) qb.andWhere('t.assigneeId = :assigneeId', { assigneeId: filters.assigneeId });
@@ -125,8 +140,12 @@ export class TasksService {
   async update(id: string, dto: UpdateTaskDto, user: { id: string; role: string; name?: string }) {
     const task = await this.findOne(id);
 
+<<<<<<< HEAD
     // Workers can only update their own tasks
     if (WORKER_ROLES.includes(user.role as UserRole) && task.assigneeId !== user.id) {
+=======
+    if (isProductionRole(user.role as UserRole) && task.assigneeId !== user.id) {
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
       throw new ForbiddenException('Not allowed');
     }
 
@@ -253,7 +272,7 @@ export class TasksService {
 
   async removeWithAuth(id: string, user: { id: string; role: string; name?: string }) {
     const task = await this.findOne(id);
-    if (user.role === UserRole.EMPLOYEE && task.assigneeId !== user.id && task.createdById !== user.id) {
+    if (isProductionRole(user.role as UserRole) && task.assigneeId !== user.id && task.createdById !== user.id) {
       throw new ForbiddenException('Not allowed');
     }
     const projectId = task.projectId;
@@ -269,6 +288,108 @@ export class TasksService {
     await this.projectsService.updateProgress(projectId);
     this.gateway.broadcast('tasks:changed', { projectId });
     return { message: 'Task deleted' };
+  }
+
+  async submitForReview(taskId: string, user: { id: string; role: string }, dto: { resultUrl?: string; comment?: string }) {
+    const task = await this.findOne(taskId);
+    if (task.assigneeId !== user.id && !canReviewTasks(user.role as UserRole)) {
+      throw new ForbiddenException('Not allowed');
+    }
+    if (!dto.resultUrl && !dto.comment) {
+      throw new BadRequestException('Необходимо прикрепить результат или оставить комментарий');
+    }
+    await this.repo.update(taskId, {
+      status: TaskStatus.REVIEW,
+      resultUrl: dto.resultUrl || task.resultUrl,
+    });
+    // notify PM/creator
+    const notifyId = task.createdById !== user.id ? task.createdById : null;
+    if (notifyId) {
+      await this.notificationsService.create({
+        userId: notifyId,
+        type: NotificationType.REVIEW_NEEDED,
+        title: 'Задача на проверке',
+        message: `"${task.title}" ожидает проверки`,
+        link: `/tasks/${taskId}`,
+      });
+    }
+    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    return this.findOne(taskId);
+  }
+
+  async approveTask(taskId: string, user: { id: string; role: string; name?: string }) {
+    if (!canReviewTasks(user.role as UserRole)) throw new ForbiddenException('Not allowed');
+    const task = await this.findOne(taskId);
+    if (task.status !== TaskStatus.REVIEW) throw new BadRequestException('Задача не на проверке');
+    await this.repo.update(taskId, {
+      status: TaskStatus.DONE,
+      reviewedById: user.id,
+      reviewedAt: new Date(),
+    });
+    if (task.assigneeId) {
+      await this.notificationsService.create({
+        userId: task.assigneeId,
+        type: NotificationType.TASK_COMPLETED,
+        title: 'Задача принята',
+        message: `"${task.title}" проверена и принята`,
+        link: `/tasks/${taskId}`,
+      });
+    }
+    await this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.TASK_STATUS,
+      entity: 'task',
+      entityId: taskId,
+      entityName: task.title,
+      details: { from: TaskStatus.REVIEW, to: TaskStatus.DONE },
+    });
+    await this.projectsService.updateProgress(task.projectId);
+    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    return this.findOne(taskId);
+  }
+
+  async returnTask(taskId: string, user: { id: string; role: string; name?: string }, comment: string) {
+    if (!canReviewTasks(user.role as UserRole)) throw new ForbiddenException('Not allowed');
+    if (!comment?.trim()) throw new BadRequestException('Укажите причину возврата');
+    const task = await this.findOne(taskId);
+    if (task.status !== TaskStatus.REVIEW) throw new BadRequestException('Задача не на проверке');
+    await this.repo.update(taskId, {
+      status: TaskStatus.RETURNED,
+      returnComment: comment,
+      returnCount: (task.returnCount || 0) + 1,
+      resultUrl: null,
+    });
+    if (task.assigneeId) {
+      await this.notificationsService.create({
+        userId: task.assigneeId,
+        type: NotificationType.TASK_RETURNED,
+        title: 'Задача возвращена в работу',
+        message: `"${task.title}": ${comment}`,
+        link: `/tasks/${taskId}`,
+      });
+    }
+    await this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.TASK_STATUS,
+      entity: 'task',
+      entityId: taskId,
+      entityName: task.title,
+      details: { from: TaskStatus.REVIEW, to: TaskStatus.RETURNED, comment },
+    });
+    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    return this.findOne(taskId);
+  }
+
+  async updateProgress(taskId: string, user: { id: string; role: string }, completedCount: number) {
+    const task = await this.findOne(taskId);
+    if (task.assigneeId !== user.id && !canReviewTasks(user.role as UserRole)) {
+      throw new ForbiddenException('Not allowed');
+    }
+    await this.repo.update(taskId, { completedCount });
+    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    return this.findOne(taskId);
   }
 
   getMyTasks(userId: string) {

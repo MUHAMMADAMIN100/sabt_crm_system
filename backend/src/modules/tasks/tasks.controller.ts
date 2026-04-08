@@ -26,8 +26,9 @@ export class TasksController {
     @Query('priority') priority?: TaskPriority,
     @Query('search') search?: string,
     @Query('deadlineBefore') deadlineBefore?: string,
+    @Request() req?: any,
   ) {
-    return this.service.findAll({ projectId, assigneeId, status, priority, search, deadlineBefore });
+    return this.service.findAll({ projectId, assigneeId, status, priority, search, deadlineBefore }, req?.user);
   }
 
   @Get('export/csv')
@@ -83,13 +84,28 @@ export class TasksController {
     return this.service.update(id, dto, req.user);
   }
 
+<<<<<<< HEAD
   @Post(':id/approve')
   @Roles(ADMIN, FOUNDER, PROJECT_MANAGER)
   approve(@Param('id') id: string, @Request() req) {
+=======
+  @Post(':id/submit-review')
+  submitReview(
+    @Param('id') id: string,
+    @Body() dto: { resultUrl?: string; comment?: string },
+    @Request() req,
+  ) {
+    return this.service.submitForReview(id, req.user, dto);
+  }
+
+  @Post(':id/approve')
+  approveTask(@Param('id') id: string, @Request() req) {
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
     return this.service.approveTask(id, req.user);
   }
 
   @Post(':id/return')
+<<<<<<< HEAD
   @Roles(ADMIN, FOUNDER, PROJECT_MANAGER)
   return(@Param('id') id: string, @Body('reason') reason: string, @Request() req) {
     return this.service.returnTask(id, req.user, reason || 'Требует доработки');
@@ -104,6 +120,23 @@ export class TasksController {
     @Request() req,
   ) {
     return this.service.bulkAction(ids, action, value, req.user);
+=======
+  returnTask(
+    @Param('id') id: string,
+    @Body() body: { comment: string },
+    @Request() req,
+  ) {
+    return this.service.returnTask(id, req.user, body.comment);
+  }
+
+  @Patch(':id/progress')
+  updateProgress(
+    @Param('id') id: string,
+    @Body() body: { completedCount: number },
+    @Request() req,
+  ) {
+    return this.service.updateProgress(id, req.user, body.completedCount);
+>>>>>>> b37de1a (add manager field + fix task assignee logic)
   }
 
   @Delete(':id')

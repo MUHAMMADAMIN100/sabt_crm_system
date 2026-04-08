@@ -9,7 +9,7 @@ import { UserRole } from '../users/user.entity';
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.ADMIN, UserRole.FOUNDER)
 @Controller('analytics')
 @UseInterceptors(CacheInterceptor)
 export class AnalyticsController {
