@@ -11,7 +11,6 @@ import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
 
 export enum UserRole {
-<<<<<<< HEAD
   ADMIN           = 'admin',
   FOUNDER         = 'founder',
   PROJECT_MANAGER = 'project_manager',
@@ -21,16 +20,6 @@ export enum UserRole {
   MARKETER        = 'marketer',
   TARGETOLOGIST   = 'targetologist',
   EMPLOYEE        = 'employee',
-=======
-  ADMIN = 'admin',
-  EMPLOYEE = 'employee',
-  FOUNDER = 'founder',
-  PROJECT_MANAGER = 'project_manager',
-  SMM_SPECIALIST = 'smm_specialist',
-  DESIGNER = 'designer',
-  TARGETOLOGIST = 'targetologist',
-  SALES_MANAGER = 'sales_manager',
->>>>>>> b37de1a (add manager field + fix task assignee logic)
 }
 
 @Entity('users')
@@ -62,9 +51,6 @@ export class User {
 
   @Column({ nullable: true })
   resetPasswordExpires: Date;
-
-  @Column({ nullable: true })
-  managerId: string; // ID of their Project Manager (for SMM specialists)
 
   @CreateDateColumn()
   createdAt: Date;

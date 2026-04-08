@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import api from '@/lib/api'
 
-<<<<<<< HEAD
 export type UserRole =
   | 'admin'
   | 'founder'
@@ -22,12 +21,6 @@ export interface User {
   avatar?: string
   isActive: boolean
   isSubAdmin?: boolean
-=======
-interface User {
-  id: string; name: string; email: string;
-  role: 'admin' | 'founder' | 'project_manager' | 'smm_specialist' | 'designer' | 'targetologist' | 'sales_manager' | 'employee';
-  avatar?: string; isActive: boolean;
->>>>>>> b37de1a (add manager field + fix task assignee logic)
 }
 
 interface AuthState {

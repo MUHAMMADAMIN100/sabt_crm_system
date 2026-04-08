@@ -24,11 +24,7 @@ export class ProjectsController {
     @Query('status') status?: ProjectStatus,
     @Query('managerId') managerId?: string,
     @Query('archived') archived?: string,
-<<<<<<< HEAD
     @Request() req?,
-=======
-    @Request() req?: any,
->>>>>>> b37de1a (add manager field + fix task assignee logic)
   ) {
     return this.service.findAll(search, status, managerId, archived === 'true', req?.user);
   }

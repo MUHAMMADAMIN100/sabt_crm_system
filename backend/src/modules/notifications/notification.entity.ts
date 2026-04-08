@@ -9,7 +9,6 @@ export enum NotificationType {
   TASK_COMMENT         = 'task_comment',
   STATUS_CHANGE        = 'status_change',
   DEADLINE_APPROACHING = 'deadline_approaching',
-<<<<<<< HEAD
   DEADLINE_TOMORROW    = 'deadline_tomorrow',
   NEW_REPORT           = 'new_report',
   PROJECT_ASSIGNED     = 'project_assigned',
@@ -18,14 +17,6 @@ export enum NotificationType {
   TASK_OVERDUE         = 'task_overdue',
   REVIEW_NEEDED        = 'review_needed',
   INACTIVITY_24H       = 'inactivity_24h',
-=======
-  NEW_REPORT = 'new_report',
-  PROJECT_ASSIGNED = 'project_assigned',
-  TASK_COMPLETED = 'task_completed',
-  TASK_RETURNED = 'task_returned',
-  TASK_OVERDUE = 'task_overdue',
-  REVIEW_NEEDED = 'review_needed',
->>>>>>> b37de1a (add manager field + fix task assignee logic)
 }
 
 @Entity('notifications')

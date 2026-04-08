@@ -18,17 +18,10 @@ export enum TaskPriority {
 export enum TaskStatus {
   NEW        = 'new',
   IN_PROGRESS = 'in_progress',
-<<<<<<< HEAD
   REVIEW     = 'review',
   RETURNED   = 'returned',
   DONE       = 'done',
   CANCELLED  = 'cancelled',
-=======
-  REVIEW = 'review',
-  RETURNED = 'returned',
-  DONE = 'done',
-  CANCELLED = 'cancelled',
->>>>>>> b37de1a (add manager field + fix task assignee logic)
 }
 
 @Entity('tasks')
@@ -81,7 +74,6 @@ export class Task {
   @Column({ default: 0 })
   loggedHours: number;
 
-<<<<<<< HEAD
   @Column({ default: 0 })
   totalCount: number;
 
@@ -96,28 +88,6 @@ export class Task {
 
   @Column({ type: 'timestamp', nullable: true })
   reviewedAt: Date;
-=======
-  @Column({ nullable: true })
-  targetCount: number; // target quantity (e.g. 3 stories, 5 posts)
-
-  @Column({ default: 0 })
-  completedCount: number; // how many done
-
-  @Column({ default: 0 })
-  returnCount: number; // how many times returned
-
-  @Column({ type: 'text', nullable: true })
-  returnComment: string; // last return reason
-
-  @Column({ nullable: true })
-  resultUrl: string; // result link
-
-  @Column({ nullable: true })
-  reviewedById: string; // who approved
-
-  @Column({ nullable: true })
-  reviewedAt: Date; // when approved
->>>>>>> b37de1a (add manager field + fix task assignee logic)
 
   @OneToMany(() => Comment, comment => comment.task)
   comments: Comment[];

@@ -12,7 +12,6 @@ import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
-import { isProductionRole } from '../auth/roles.helper';
 
 @Injectable()
 export class ProjectsService {
@@ -31,11 +30,7 @@ export class ProjectsService {
     status?: ProjectStatus,
     managerId?: string,
     archived = false,
-<<<<<<< HEAD
     requestUser?: { id: string; role: string },
-=======
-    caller?: { id: string; role: string },
->>>>>>> b37de1a (add manager field + fix task assignee logic)
   ) {
     const qb = this.repo.createQueryBuilder('p')
       .leftJoinAndSelect('p.manager', 'manager')
@@ -46,7 +41,6 @@ export class ProjectsService {
       )
       .where('p.isArchived = :archived', { archived });
 
-<<<<<<< HEAD
     // RBAC: filter by role
     if (requestUser) {
       const { id: userId, role } = requestUser;
@@ -58,17 +52,6 @@ export class ProjectsService {
         qb.andWhere('members.id = :userId', { userId });
       }
       // admin & founder see all — no extra filter
-=======
-    // Role-based filtering
-    if (caller) {
-      const { id, role } = caller;
-      if (isProductionRole(role as UserRole)) {
-        // Production workers only see projects they are members of
-        qb.innerJoin('p.members', 'member_filter', 'member_filter.id = :callerId', { callerId: id });
-      } else if (role === UserRole.PROJECT_MANAGER) {
-        qb.andWhere('p.managerId = :callerId', { callerId: id });
-      }
->>>>>>> b37de1a (add manager field + fix task assignee logic)
     }
 
     if (status) qb.andWhere('p.status = :status', { status });

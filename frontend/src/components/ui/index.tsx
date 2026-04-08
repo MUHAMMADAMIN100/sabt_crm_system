@@ -105,11 +105,7 @@ export function Badge({ children, variant = '', className }: BadgeProps) {
 
 const STATUS_LABELS: Record<string, string> = {
   new: 'Новая', in_progress: 'В работе', review: 'На проверке',
-<<<<<<< HEAD
   returned: 'Возвращено', done: 'Готово', cancelled: 'Отменена',
-=======
-  done: 'Готово', cancelled: 'Отменена', returned: 'Возвращено',
->>>>>>> b37de1a (add manager field + fix task assignee logic)
   planning: 'Планируется', completed: 'Завершён', archived: 'Архив', on_hold: 'Пауза',
   active: 'Активный', inactive: 'Неактивный',
 }
