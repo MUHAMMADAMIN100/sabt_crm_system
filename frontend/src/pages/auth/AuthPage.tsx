@@ -1,20 +1,38 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { Mail, Lock, User, Eye, EyeOff, Briefcase, Send, AtSign } from 'lucide-react'
 import { Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
+import api from '@/lib/api'
 
-const POSITIONS = ['SMM специалист', 'Разработчик', 'Дизайнер', 'Менеджер по продажам']
+const ROLES: { value: string; label: string; position: string }[] = [
+  { value: 'smm_specialist',   label: 'SMM специалист',       position: 'SMM специалист' },
+  { value: 'designer',         label: 'Дизайнер',             position: 'Дизайнер' },
+  { value: 'targetologist',    label: 'Таргетолог',           position: 'Таргетолог' },
+  { value: 'sales_manager',    label: 'Менеджер по продажам', position: 'Менеджер по продажам' },
+  { value: 'project_manager',  label: 'Проект-менеджер',      position: 'Проект-менеджер' },
+  { value: 'employee',         label: 'Сотрудник',            position: 'Сотрудник' },
+  { value: 'founder',          label: 'Основатель',           position: 'Основатель' },
+]
 
 export default function AuthPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [animKey, setAnimKey] = useState(0)
+  const [founderExists, setFounderExists] = useState(false)
   const { login, register: doRegister } = useAuthStore()
   const { t } = useTranslation()
+
+  useEffect(() => {
+    if (mode === 'register') {
+      api.get('/users', { params: { role: 'founder' } })
+        .then(r => setFounderExists((r.data?.length ?? 0) > 0))
+        .catch(() => {})
+    }
+  }, [mode])
   const {
     register: reg,
     handleSubmit,
@@ -39,11 +57,13 @@ export default function AuthPage() {
       if (mode === 'login') {
         await login(data.email, data.password)
       } else {
+        const selectedRole = ROLES.find(r => r.value === data.role)
         await doRegister({
           name: data.name,
           email: data.email,
           password: data.password,
-          position: data.position,
+          role: data.role,
+          position: selectedRole?.position || data.role || 'Сотрудник',
           phone: data.phone ? '+992' + data.phone.replace(/\D/g, '') : undefined,
           telegram: data.telegram,
           instagram: data.instagram || undefined,
@@ -156,20 +176,23 @@ export default function AuthPage() {
                   {errors.name && <p className="auth-error">{String(errors.name.message)}</p>}
                 </div>
 
-                {/* Должность */}
+                {/* Роль */}
                 <div className="auth-field" style={{ animationDelay: '50ms' }}>
-                  <label className="label">{t('employees.position')} *</label>
+                  <label className="label">Роль *</label>
                   <div className="relative">
                     <Briefcase size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
                     <select
-                      {...reg('position', { required: 'Должность обязательна' })}
-                      className={`input pl-9 ${errors.position ? 'border-red-400 focus:ring-red-400' : ''}`}
+                      {...reg('role', { required: 'Роль обязательна' })}
+                      className={`input pl-9 ${errors.role ? 'border-red-400 focus:ring-red-400' : ''}`}
                     >
                       <option value="">{t('common.selectOption')}</option>
-                      {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                      {ROLES
+                        .filter(r => !(r.value === 'founder' && founderExists))
+                        .map(r => <option key={r.value} value={r.value}>{r.label}</option>)
+                      }
                     </select>
                   </div>
-                  {errors.position && <p className="auth-error">{String(errors.position.message)}</p>}
+                  {errors.role && <p className="auth-error">{String(errors.role.message)}</p>}
                 </div>
 
                 {/* Телефон */}

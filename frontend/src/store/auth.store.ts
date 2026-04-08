@@ -31,6 +31,7 @@ interface AuthState {
     name: string
     email: string
     password: string
+    role?: string
     position?: string
     phone?: string
     telegram?: string

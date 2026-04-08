@@ -3,9 +3,19 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { StoryLog } from './story.entity';
 import { StoriesService } from './stories.service';
 import { StoriesController } from './stories.controller';
+import { Project } from '../projects/project.entity';
+import { User } from '../users/user.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { TelegramModule } from '../telegram/telegram.module';
+import { ActivityLogModule } from '../activity-log/activity-log.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([StoryLog])],
+  imports: [
+    TypeOrmModule.forFeature([StoryLog, Project, User]),
+    NotificationsModule,
+    TelegramModule,
+    ActivityLogModule,
+  ],
   controllers: [StoriesController],
   providers: [StoriesService],
   exports: [StoriesService],

@@ -5,11 +5,12 @@ import { projectsApi, tasksApi, filesApi, employeesApi } from '@/services/api.se
 import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, PriorityBadge, ProgressBar, Modal, Avatar, EmptyState, ConfirmDialog } from '@/components/ui'
-import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase, Save, X, UserPlus } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase, Save, X, UserPlus, Download } from 'lucide-react'
 import { format } from 'date-fns'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import GanttChart from '@/components/projects/GanttChart'
+import SMM_QUESTIONS from '@/config/smm-questions'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -468,14 +469,34 @@ export default function ProjectDetailPage() {
 
           {project.smmData && Object.keys(project.smmData).length > 0 && (
             <div className="card md:col-span-2 space-y-3">
-              <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base border-b border-surface-100 dark:border-surface-700 pb-3">SMM-анкета</h3>
+              <div className="flex items-center justify-between border-b border-surface-100 dark:border-surface-700 pb-3">
+                <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base">SMM-анкета</h3>
+                <button
+                  onClick={() => {
+                    const lines = SMM_QUESTIONS.map(q => `${q.label}:\n${(project.smmData as any)[q.key] || '—'}`).join('\n\n')
+                    const content = `SMM-АНКЕТА\nПроект: ${project.name}\nДата: ${new Date().toLocaleDateString('ru-RU')}\n${'─'.repeat(40)}\n\n${lines}`
+                    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `SMM_Анкета_${project.name}.txt`
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  }}
+                  className="flex items-center gap-1.5 text-xs text-primary-600 dark:text-primary-400 hover:underline"
+                >
+                  <Download size={13} /> Скачать .txt
+                </button>
+              </div>
               <div className="space-y-2">
-                {Object.entries(project.smmData).map(([key, value]) => (
-                  <div key={key} className="grid grid-cols-1 md:grid-cols-2 gap-1 py-2 border-b border-surface-50 dark:border-surface-700 last:border-0">
-                    <p className="text-xs text-surface-500 dark:text-surface-400">{key}</p>
-                    <p className="text-sm text-surface-800 dark:text-surface-200">{String(value) || '—'}</p>
-                  </div>
-                ))}
+                {SMM_QUESTIONS
+                  .filter(q => (project.smmData as any)[q.key])
+                  .map(q => (
+                    <div key={q.key} className="grid grid-cols-1 md:grid-cols-2 gap-1 py-2 border-b border-surface-50 dark:border-surface-700 last:border-0">
+                      <p className="text-xs text-surface-500 dark:text-surface-400">{q.label}</p>
+                      <p className="text-sm text-surface-800 dark:text-surface-200">{String((project.smmData as any)[q.key]) || '—'}</p>
+                    </div>
+                  ))}
               </div>
             </div>
           )}
@@ -568,27 +589,52 @@ export default function ProjectDetailPage() {
               </button>
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {(project.members || []).map((m: any) => (
-              <div key={m.id} className="card flex items-center gap-3 group">
-                <Avatar name={m.name} src={m.avatar} size={40} />
+
+          {/* Менеджер проекта */}
+          {project.manager && (
+            <div>
+              <h3 className="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wider mb-2">Менеджер проекта</h3>
+              <div className="card flex items-center gap-3 max-w-xs border-primary-200 dark:border-primary-800 bg-primary-50/50 dark:bg-primary-900/10">
+                <Avatar name={project.manager.name} src={project.manager.avatar} size={40} />
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-surface-900 dark:text-surface-100">{m.name}</p>
-                  <p className="text-xs text-surface-500 dark:text-surface-400 capitalize">{m.role || ''}</p>
+                  <p className="font-medium text-surface-900 dark:text-surface-100">{project.manager.name}</p>
+                  <span className="inline-block mt-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">
+                    Менеджер
+                  </span>
                 </div>
-                {isManagerPlus && (
-                  <button onClick={() => handleRemoveMember(m.id)}
-                    className="hidden group-hover:flex items-center p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400 transition-colors">
-                    <X size={14} />
-                  </button>
-                )}
               </div>
-            ))}
-            {(!project.members || project.members.length === 0) && (
-              <div className="col-span-3">
-                <EmptyState title={t('noMembers')} />
-              </div>
+            </div>
+          )}
+
+          {/* Участники */}
+          <div>
+            {project.manager && (
+              <h3 className="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wider mb-2">Участники</h3>
             )}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(project.members || [])
+                .filter((m: any) => m.id !== project.manager?.id)
+                .map((m: any) => (
+                  <div key={m.id} className="card flex items-center gap-3 group">
+                    <Avatar name={m.name} src={m.avatar} size={40} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-surface-900 dark:text-surface-100">{m.name}</p>
+                      <p className="text-xs text-surface-500 dark:text-surface-400 capitalize">{m.role || ''}</p>
+                    </div>
+                    {isManagerPlus && (
+                      <button onClick={() => handleRemoveMember(m.id)}
+                        className="hidden group-hover:flex items-center p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400 transition-colors">
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              {(!project.members || project.members.filter((m: any) => m.id !== project.manager?.id).length === 0) && !project.manager && (
+                <div className="col-span-3">
+                  <EmptyState title={t('noMembers')} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
