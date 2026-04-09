@@ -340,9 +340,10 @@ export class TasksService {
       throw new BadRequestException('Задача должна быть на проверке');
     }
 
-    task.status = TaskStatus.RETURNED;
-    task.returnReason = reason;
-    await this.repo.save(task);
+    await this.repo.update(id, {
+      status: TaskStatus.RETURNED,
+      returnReason: reason,
+    });
 
     try {
       if (task.assigneeId) {
