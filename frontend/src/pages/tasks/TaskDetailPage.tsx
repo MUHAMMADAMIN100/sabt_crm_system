@@ -170,7 +170,7 @@ export default function TaskDetailPage() {
     },
   })
 
-  const addResult = useMutation({
+  const addResult = useMutation<any, any, void>({
     mutationFn: () => taskResultsApi.create(id!, { type: resultType, content: resultContent }),
     onMutate: async () => {
       const content = resultContent
@@ -193,7 +193,7 @@ export default function TaskDetailPage() {
     },
   })
 
-  const submitForReview = useMutation({
+  const submitForReview = useMutation<any, any, void>({
     mutationFn: () => tasksApi.update(id!, { status: 'review' }),
     onMutate: async () => {
       await qc.cancelQueries({ queryKey: ['task', id] })
@@ -212,7 +212,7 @@ export default function TaskDetailPage() {
     },
   })
 
-  const approveTask = useMutation({
+  const approveTask = useMutation<any, any, void>({
     mutationFn: () => tasksApi.approve(id!),
     onMutate: async () => {
       await qc.cancelQueries({ queryKey: ['task', id] })
@@ -231,7 +231,7 @@ export default function TaskDetailPage() {
     },
   })
 
-  const returnTask = useMutation({
+  const returnTask = useMutation<any, any, void>({
     mutationFn: () => tasksApi.returnTask(id!, returnReason || 'Требует доработки'),
     onMutate: async () => {
       const reason = returnReason || 'Требует доработки'
@@ -253,7 +253,7 @@ export default function TaskDetailPage() {
     },
   })
 
-  const addComment = useMutation({
+  const addComment = useMutation<any, any, void>({
     mutationFn: () => commentsApi.create(id!, comment),
     onMutate: async () => {
       const msg = comment
