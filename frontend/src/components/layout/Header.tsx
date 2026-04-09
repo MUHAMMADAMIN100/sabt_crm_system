@@ -125,7 +125,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   )
 
   return (
-    <header className="h-[60px] bg-white dark:bg-surface-800 border-b border-surface-100 dark:border-surface-700 flex items-center px-3 sm:px-4 gap-2 sm:gap-3 shrink-0 sticky-top backdrop-blur-safari">
+    <header className="h-[60px] bg-white dark:bg-surface-800 border-b border-surface-100 dark:border-surface-700 flex items-center px-3 sm:px-4 gap-2 sm:gap-3 shrink-0 sticky-top backdrop-blur-safari relative z-40">
       <button onClick={onMenuClick} className="p-2 rounded-xl hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
         <Menu size={20} />
       </button>
