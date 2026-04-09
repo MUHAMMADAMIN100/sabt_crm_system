@@ -331,10 +331,13 @@ export class TasksService {
     if (!PM_ROLES.includes(user.role as UserRole)) {
       throw new ForbiddenException('Only project managers can return tasks');
     }
-    const task = await this.repo.findOne({
-      where: { id },
-      relations: ['assignee', 'project'],
-    });
+
+    // Use query builder to avoid eager loading issues
+    const task = await this.repo
+      .createQueryBuilder('t')
+      .leftJoinAndSelect('t.project', 'project')
+      .where('t.id = :id', { id })
+      .getOne();
     if (!task) throw new NotFoundException('Task not found');
     if (task.status !== TaskStatus.REVIEW) {
       throw new BadRequestException('Задача должна быть на проверке');
@@ -375,10 +378,14 @@ export class TasksService {
       // Don't fail the return if notifications crash
     }
 
-    await this.projectsService.updateProgress(task.projectId);
+    try {
+      await this.projectsService.updateProgress(task.projectId);
+    } catch (e) {
+      // Don't crash if progress update fails
+    }
     this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
 
-    return { id: task.id, status: task.status, returnReason: task.returnReason, title: task.title };
+    return { id, status: TaskStatus.RETURNED, returnReason: reason, title: task.title };
   }
 
   getStats(projectId?: string) {
