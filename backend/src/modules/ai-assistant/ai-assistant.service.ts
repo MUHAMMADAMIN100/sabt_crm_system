@@ -7,12 +7,12 @@ import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
-import Anthropic from '@anthropic-ai/sdk';
+import Groq from 'groq-sdk';
 
 @Injectable()
 export class AiAssistantService {
   private readonly logger = new Logger(AiAssistantService.name);
-  private client: Anthropic | null = null;
+  private client: Groq | null = null;
 
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
@@ -22,38 +22,43 @@ export class AiAssistantService {
     @InjectRepository(TimeLog) private timeRepo: Repository<TimeLog>,
     @InjectRepository(DailyReport) private reportRepo: Repository<DailyReport>,
   ) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY;
     if (apiKey) {
-      this.client = new Anthropic({ apiKey });
-      this.logger.log('AI Assistant ready (Claude API connected)');
+      this.client = new Groq({ apiKey });
+      this.logger.log('AI Assistant ready (Groq API connected)');
     } else {
-      this.logger.warn('ANTHROPIC_API_KEY not set — AI Assistant disabled');
+      this.logger.warn('GROQ_API_KEY not set — AI Assistant disabled');
     }
   }
 
   async chat(question: string): Promise<string> {
     if (!this.client) {
-      return 'ИИ-помощник не настроен. Добавьте ANTHROPIC_API_KEY в переменные окружения.';
+      return 'ИИ-помощник не настроен. Добавьте GROQ_API_KEY в переменные окружения.';
     }
 
     try {
       const context = await this.gatherContext(question);
 
-      const message = await this.client.messages.create({
-        model: 'claude-sonnet-4-20250514',
+      const completion = await this.client.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
         max_tokens: 2048,
-        system: `Ты — ИИ-помощник CRM-системы "Sabt" для SMM-агентства. Отвечай на русском языке.
+        temperature: 0.3,
+        messages: [
+          {
+            role: 'system',
+            content: `Ты — ИИ-помощник CRM-системы "Sabt" для SMM-агентства. Отвечай на русском языке.
 Ты анализируешь данные из базы данных проекта и отвечаешь на вопросы администратора.
 Будь точен, конкретен, давай цифры и факты. Форматируй ответ красиво с помощью markdown.
 Если данных нет — так и скажи, не придумывай.
 
 Вот актуальные данные из базы:
 ${context}`,
-        messages: [{ role: 'user', content: question }],
+          },
+          { role: 'user', content: question },
+        ],
       });
 
-      const textBlock = message.content.find((b) => b.type === 'text');
-      return textBlock?.text || 'Не удалось получить ответ.';
+      return completion.choices?.[0]?.message?.content || 'Не удалось получить ответ.';
     } catch (error) {
       this.logger.error(`AI chat error: ${error?.message || error}`);
       return `Ошибка ИИ: ${error?.message || 'Неизвестная ошибка'}`;
@@ -155,7 +160,6 @@ ${context}`,
   }
 
   private hasPersonName(q: string): boolean {
-    // Check if question contains Cyrillic words that look like names (capitalized)
     const words = q.split(/\s+/);
     return words.some(w => /^[А-ЯЁ][а-яё]{2,}$/.test(w));
   }
