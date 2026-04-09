@@ -105,6 +105,16 @@ export default function TasksPage() {
 
   const updateStatusMut = useMutation({
     mutationFn: ({ id, status }: any) => tasksApi.update(id, { status }),
+    onMutate: async ({ id: taskId, status }: any) => {
+      await qc.cancelQueries({ queryKey: ['tasks'] })
+      const previous = qc.getQueryData(['tasks'])
+      qc.setQueryData(['tasks'], (old: any[]) => old?.map((t: any) => t.id === taskId ? { ...t, status } : t) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['tasks'], context?.previous)
+      toast.error(t('common.error'))
+    },
     onSuccess: () => invalidateAfterTaskChange(qc),
   })
 
@@ -127,12 +137,25 @@ export default function TasksPage() {
   const bulkMut = useMutation({
     mutationFn: ({ action, value }: { action: 'status' | 'delete' | 'assign'; value?: string }) =>
       tasksApi.bulk([...selectedIds], action, value),
+    onMutate: async ({ action, value }: any) => {
+      await qc.cancelQueries({ queryKey: ['tasks'] })
+      const previous = qc.getQueryData(['tasks'])
+      if (action === 'delete') {
+        qc.setQueryData(['tasks'], (old: any[]) => old?.filter((t: any) => !selectedIds.has(t.id)) ?? [])
+      } else if (action === 'status' && value) {
+        qc.setQueryData(['tasks'], (old: any[]) => old?.map((t: any) => selectedIds.has(t.id) ? { ...t, status: value } : t) ?? [])
+      }
+      return { previous }
+    },
+    onError: (e: any, _vars: any, context: any) => {
+      qc.setQueryData(['tasks'], context?.previous)
+      toast.error(e?.response?.data?.message || 'Ошибка')
+    },
     onSuccess: () => {
       invalidateAfterTaskChange(qc)
       setSelectedIds(new Set())
       toast.success('Выполнено')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
   })
 
   const toggleSelect = (id: string) => setSelectedIds(prev => {

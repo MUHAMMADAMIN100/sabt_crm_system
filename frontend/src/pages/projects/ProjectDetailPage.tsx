@@ -148,14 +148,24 @@ export default function ProjectDetailPage() {
 
   const updateProject = useMutation({
     mutationFn: (data: any) => projectsApi.update(id!, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['project', id] })
+    onMutate: async (data: any) => {
       setShowEditProject(false)
       setShowEditClient(false)
       setShowAddMember(false)
+      await qc.cancelQueries({ queryKey: ['project', id] })
+      const previous = qc.getQueryData(['project', id])
+      qc.setQueryData(['project', id], (old: any) => old ? { ...old, ...data } : old)
+      return { previous }
+    },
+    onError: (e: any, _vars: any, context: any) => {
+      qc.setQueryData(['project', id], context?.previous)
+      toast.error(e?.response?.data?.message || 'Ошибка')
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project', id] })
+      qc.invalidateQueries({ queryKey: ['projects'] })
       toast.success('Проект обновлён')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
   })
 
   const handleSaveProject = () => {

@@ -17,10 +17,31 @@ export default function UsersPage() {
 
   const toggleMut = useMutation({
     mutationFn: usersApi.toggleActive,
+    onMutate: async (userId: string) => {
+      await qc.cancelQueries({ queryKey: ['users'] })
+      const previous = qc.getQueryData(['users'])
+      qc.setQueryData(['users'], (old: any[]) => old?.map((u: any) => u.id === userId ? { ...u, isActive: !u.isActive } : u) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['users'], context?.previous)
+      toast.error('Ошибка')
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['employees'] }); toast.success('Обновлено') },
   })
   const deleteMut = useMutation({
     mutationFn: usersApi.remove,
+    onMutate: async (userId: string) => {
+      setDeleteId(null)
+      await qc.cancelQueries({ queryKey: ['users'] })
+      const previous = qc.getQueryData(['users'])
+      qc.setQueryData(['users'], (old: any[]) => old?.filter((u: any) => u.id !== userId) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['users'], context?.previous)
+      toast.error('Ошибка')
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['employees'] }); toast.success('Удалён') },
   })
   const cleanupMut = useMutation({

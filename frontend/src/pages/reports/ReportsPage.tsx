@@ -27,11 +27,34 @@ export default function ReportsPage() {
 
   const createMut = useMutation({
     mutationFn: reportsApi.create,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['reports'] }); setShowCreate(false); toast.success(t('reports.submitted')) },
+    onMutate: async (data: any) => {
+      setShowCreate(false)
+      await qc.cancelQueries({ queryKey: ['reports'] })
+      const previous = qc.getQueryData(['reports'])
+      const tempReport = { id: `temp-${Date.now()}`, ...data, date: data.date || new Date().toISOString().split('T')[0], createdAt: new Date().toISOString() }
+      qc.setQueryData(['reports'], (old: any[]) => old ? [tempReport, ...old] : [tempReport])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['reports'], context?.previous)
+      setShowCreate(true)
+      toast.error('Ошибка')
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['reports'] }); toast.success(t('reports.submitted')) },
   })
 
   const deleteMut = useMutation({
     mutationFn: reportsApi.remove,
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['reports'] })
+      const previous = qc.getQueryData(['reports'])
+      qc.setQueryData(['reports'], (old: any[]) => old?.filter((r: any) => r.id !== id) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['reports'], context?.previous)
+      toast.error('Ошибка')
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['reports'] }); toast.success(t('reports.deleted')) },
   })
 

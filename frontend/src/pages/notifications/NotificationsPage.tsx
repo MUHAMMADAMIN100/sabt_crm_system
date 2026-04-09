@@ -11,26 +11,59 @@ export default function NotificationsPage() {
   const { t } = useTranslation()
   const { data: notifications, isLoading } = useQuery({ queryKey: ['notifications'], queryFn: () => notificationsApi.list() })
 
-  const markRead = useMutation({ 
-    mutationFn: notificationsApi.markRead, 
+  const markRead = useMutation({
+    mutationFn: notificationsApi.markRead,
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['notifications'] })
+      const previous = qc.getQueryData(['notifications'])
+      qc.setQueryData(['notifications'], (old: any[]) => old?.map((n: any) => n.id === id ? { ...n, isRead: true } : n) ?? [])
+      qc.setQueryData(['unread-count'], (old: number) => Math.max(0, (old || 0) - 1))
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['notifications'], context?.previous)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notifications'] })
       qc.invalidateQueries({ queryKey: ['unread-count'] })
-    }
+    },
   })
-  const markAll = useMutation({ 
-    mutationFn: notificationsApi.markAllRead, 
+  const markAll = useMutation({
+    mutationFn: () => notificationsApi.markAllRead(),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ['notifications'] })
+      const previous = qc.getQueryData(['notifications'])
+      qc.setQueryData(['notifications'], (old: any[]) => old?.map((n: any) => ({ ...n, isRead: true })) ?? [])
+      qc.setQueryData(['unread-count'], 0)
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['notifications'], context?.previous)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notifications'] })
       qc.invalidateQueries({ queryKey: ['unread-count'] })
-    }
+    },
   })
-  const remove = useMutation({ 
-    mutationFn: notificationsApi.remove, 
+  const remove = useMutation({
+    mutationFn: notificationsApi.remove,
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['notifications'] })
+      const previous = qc.getQueryData(['notifications'])
+      const notif = (previous as any[])?.find((n: any) => n.id === id)
+      qc.setQueryData(['notifications'], (old: any[]) => old?.filter((n: any) => n.id !== id) ?? [])
+      if (notif && !notif.isRead) {
+        qc.setQueryData(['unread-count'], (old: number) => Math.max(0, (old || 0) - 1))
+      }
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['notifications'], context?.previous)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notifications'] })
       qc.invalidateQueries({ queryKey: ['unread-count'] })
-    }
+    },
   })
 
   if (isLoading) return <PageLoader />
@@ -40,7 +73,7 @@ export default function NotificationsPage() {
       <div className="flex items-center justify-between">
         <h1 className="page-title">{t('notifications.title')}</h1>
         {notifications?.some((n: any) => !n.isRead) && (
-          <button onClick={() => markAll.mutate()} className="btn-secondary text-xs">
+          <button onClick={() => markAll.mutate(undefined)} className="btn-secondary text-xs">
             <CheckCheck size={14} /> {t('notifications.markAllRead')}
           </button>
         )}

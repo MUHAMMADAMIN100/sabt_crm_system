@@ -42,7 +42,22 @@ export default function EmployeesPage() {
     return `https://t.me/${clean}`
   }
 
-  const createMut = useMutation({ mutationFn: employeesApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); setShowCreate(false); toast.success(t('employees.added')) }, onError: () => {} })
+  const createMut = useMutation({
+    mutationFn: employeesApi.create,
+    onMutate: async (data: any) => {
+      setShowCreate(false)
+      await qc.cancelQueries({ queryKey: ['employees'] })
+      const previous = qc.getQueryData(['employees'])
+      const tempEmp = { id: `temp-${Date.now()}`, ...data, status: 'active', isSubAdmin: false }
+      qc.setQueryData(['employees'], (old: any[]) => old ? [...old, tempEmp] : [tempEmp])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['employees'], context?.previous)
+      setShowCreate(true)
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('employees.added')) },
+  })
   const updateMut = useMutation({
     mutationFn: ({ id, data }: any) => employeesApi.update(id, data),
     onMutate: async ({ id: empId, data }: any) => {
@@ -76,7 +91,20 @@ export default function EmployeesPage() {
       toast.success(t('employees.deleted'))
     },
   })
-  const toggleSubAdmin = useMutation({ mutationFn: employeesApi.toggleSubAdmin, onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('common.updated')) } })
+  const toggleSubAdmin = useMutation({
+    mutationFn: employeesApi.toggleSubAdmin,
+    onMutate: async (empId: string) => {
+      await qc.cancelQueries({ queryKey: ['employees'] })
+      const previous = qc.getQueryData(['employees'])
+      qc.setQueryData(['employees'], (old: any[]) => old?.map((e: any) => e.id === empId ? { ...e, isSubAdmin: !e.isSubAdmin } : e) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['employees'], context?.previous)
+      toast.error(t('common.error'))
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('common.updated')) },
+  })
 
   if (isLoading) return <PageLoader />
 

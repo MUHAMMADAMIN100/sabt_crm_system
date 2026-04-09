@@ -122,6 +122,16 @@ export default function ProjectsPage() {
 
   const archiveMut = useMutation({
     mutationFn: projectsApi.archive,
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['projects'] })
+      const previous = qc.getQueryData(['projects'])
+      qc.setQueryData(['projects'], (old: any[]) => old?.map((p: any) => p.id === id ? { ...p, isArchived: true } : p) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _id: any, context: any) => {
+      qc.setQueryData(['projects'], context?.previous)
+      toast.error(t('common.error'))
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); toast.success(t('projects.archived')) },
   })
 

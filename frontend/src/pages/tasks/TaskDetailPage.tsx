@@ -72,18 +72,47 @@ export default function TaskDetailPage() {
   })
 
   const addCheckItem = useMutation({
-    mutationFn: () => taskChecklistApi.create(id!, newCheckItem),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['task-checklist', id] }); setNewCheckItem('') },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
+    mutationFn: (text: string) => taskChecklistApi.create(id!, text),
+    onMutate: async (text: string) => {
+      setNewCheckItem('')
+      await qc.cancelQueries({ queryKey: ['task-checklist', id] })
+      const previous = qc.getQueryData(['task-checklist', id])
+      const tempItem = { id: `temp-${Date.now()}`, text, isDone: false }
+      qc.setQueryData(['task-checklist', id], (old: any[]) => old ? [...old, tempItem] : [tempItem])
+      return { previous }
+    },
+    onError: (e: any, _vars: any, context: any) => {
+      qc.setQueryData(['task-checklist', id], context?.previous)
+      toast.error(e?.response?.data?.message || 'Ошибка')
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['task-checklist', id] }),
   })
 
   const toggleCheckItem = useMutation({
     mutationFn: (itemId: string) => taskChecklistApi.toggle(id!, itemId),
+    onMutate: async (itemId: string) => {
+      await qc.cancelQueries({ queryKey: ['task-checklist', id] })
+      const previous = qc.getQueryData(['task-checklist', id])
+      qc.setQueryData(['task-checklist', id], (old: any[]) => old?.map((item: any) => item.id === itemId ? { ...item, isDone: !item.isDone } : item) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['task-checklist', id], context?.previous)
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['task-checklist', id] }),
   })
 
   const removeCheckItem = useMutation({
     mutationFn: (itemId: string) => taskChecklistApi.remove(id!, itemId),
+    onMutate: async (itemId: string) => {
+      await qc.cancelQueries({ queryKey: ['task-checklist', id] })
+      const previous = qc.getQueryData(['task-checklist', id])
+      qc.setQueryData(['task-checklist', id], (old: any[]) => old?.filter((item: any) => item.id !== itemId) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['task-checklist', id], context?.previous)
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['task-checklist', id] }),
   })
 
@@ -432,12 +461,12 @@ export default function TaskDetailPage() {
                   <input
                     value={newCheckItem}
                     onChange={e => setNewCheckItem(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && newCheckItem.trim() && addCheckItem.mutate()}
+                    onKeyDown={e => e.key === 'Enter' && newCheckItem.trim() && addCheckItem.mutate(newCheckItem)}
                     placeholder="Добавить пункт..."
                     className="input flex-1 text-sm"
                   />
                   <button
-                    onClick={() => newCheckItem.trim() && addCheckItem.mutate()}
+                    onClick={() => newCheckItem.trim() && addCheckItem.mutate(newCheckItem)}
                     disabled={!newCheckItem.trim() || addCheckItem.isPending}
                     className="btn-primary flex items-center gap-1"
                   >
