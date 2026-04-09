@@ -59,7 +59,7 @@ export default function EmployeesPage() {
       qc.setQueryData(['employees'], context?.previous)
       setShowCreate(true)
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('employees.added')) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['analytics-dashboard'] }); toast.success(t('employees.added')) },
   })
   const updateMut = useMutation({
     mutationFn: ({ id, data }: any) => employeesApi.update(id, data),
@@ -74,7 +74,7 @@ export default function EmployeesPage() {
       qc.setQueryData(['employees'], context?.previous)
       toast.error(t('common.error'))
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('employees.saved')) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); qc.invalidateQueries({ queryKey: ['users'] }); toast.success(t('employees.saved')) },
   })
   const deleteMut = useMutation({
     mutationFn: employeesApi.remove,
@@ -91,6 +91,8 @@ export default function EmployeesPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['users'] })
+      qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
       toast.success(t('employees.deleted'))
     },
   })

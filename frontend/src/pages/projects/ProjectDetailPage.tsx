@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, tasksApi, filesApi, employeesApi } from '@/services/api.service'
-import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
+import { invalidateAfterTaskChange, invalidateAfterProjectChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, PriorityBadge, ProgressBar, Modal, Avatar, EmptyState, ConfirmDialog } from '@/components/ui'
 import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase, Save, X, UserPlus, Download } from 'lucide-react'
@@ -192,8 +192,8 @@ export default function ProjectDetailPage() {
       toast.error(e?.response?.data?.message || 'Ошибка')
     },
     onSuccess: () => {
+      invalidateAfterProjectChange(qc)
       qc.invalidateQueries({ queryKey: ['project', id] })
-      qc.invalidateQueries({ queryKey: ['projects'] })
       toast.success('Проект обновлён')
     },
   })
@@ -211,7 +211,7 @@ export default function ProjectDetailPage() {
       qc.setQueryData(['files', id], context?.previous)
       toast.error(t('common.error'))
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['files', id] }); toast.success('Файл удалён') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['files', id] }); qc.invalidateQueries({ queryKey: ['files-project', id] }); toast.success('Файл удалён') },
   })
 
   const handleSaveProject = () => {
@@ -249,6 +249,7 @@ export default function ProjectDetailPage() {
     try {
       await filesApi.upload(file, id)
       qc.invalidateQueries({ queryKey: ['files', id] })
+      qc.invalidateQueries({ queryKey: ['files-project', id] })
       toast.success(t('files.uploaded'))
     } catch { toast.error(t('files.uploadError')) }
   }

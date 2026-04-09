@@ -308,6 +308,8 @@ export default function TaskDetailPage() {
     try {
       await filesApi.upload(file, undefined, id)
       qc.invalidateQueries({ queryKey: ['task-files', id] })
+      qc.invalidateQueries({ queryKey: ['files'] })
+      qc.invalidateQueries({ queryKey: ['files-project'] })
       toast.success(t('files.uploaded'))
     } catch {
       toast.error(t('files.uploadError') || 'Ошибка загрузки файла')

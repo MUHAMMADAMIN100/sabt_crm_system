@@ -17,37 +17,67 @@ export function useSocket(token: string | null) {
       reconnectionAttempts: 5,
     })
 
-    socket.on('connect', () => {
-      // connected
-    })
+    socket.on('connect', () => {})
 
     socket.on('notification', (notif: any) => {
       qc.invalidateQueries({ queryKey: ['notifications'] })
       qc.invalidateQueries({ queryKey: ['notifications-count'] })
+      qc.invalidateQueries({ queryKey: ['unread-count'] })
       toast(notif.title || 'Новое уведомление', { icon: '🔔' })
     })
 
     socket.on('employees:changed', () => {
-      qc.refetchQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['users'] })
+      qc.invalidateQueries({ queryKey: ['employee-tasks'] })
+      qc.invalidateQueries({ queryKey: ['employee-stories'] })
+      qc.invalidateQueries({ queryKey: ['employee-efficiency'] })
+      qc.invalidateQueries({ queryKey: ['employee-workload'] })
+      qc.invalidateQueries({ queryKey: ['emp-eff'] })
+      qc.invalidateQueries({ queryKey: ['emp-activity'] })
+      qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
     })
 
     socket.on('projects:changed', () => {
       qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['projects-archived'] })
       qc.invalidateQueries({ queryKey: ['project'] })
       qc.invalidateQueries({ queryKey: ['overview'] })
+      qc.invalidateQueries({ queryKey: ['proj-status'] })
+      qc.invalidateQueries({ queryKey: ['proj-perf'] })
+      qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
+      qc.invalidateQueries({ queryKey: ['calendar'] })
+      qc.invalidateQueries({ queryKey: ['files'] })
+      qc.invalidateQueries({ queryKey: ['files-project'] })
     })
 
     socket.on('tasks:changed', () => {
       qc.invalidateQueries({ queryKey: ['tasks'] })
-      qc.invalidateQueries({ queryKey: ['project'] })
       qc.invalidateQueries({ queryKey: ['my-tasks'] })
+      qc.invalidateQueries({ queryKey: ['task'] })
+      qc.invalidateQueries({ queryKey: ['project'] })
       qc.invalidateQueries({ queryKey: ['overview'] })
       qc.invalidateQueries({ queryKey: ['task-status'] })
+      qc.invalidateQueries({ queryKey: ['task-priority'] })
+      qc.invalidateQueries({ queryKey: ['tasks-review'] })
+      qc.invalidateQueries({ queryKey: ['tasks-overdue'] })
+      qc.invalidateQueries({ queryKey: ['task-results'] })
+      qc.invalidateQueries({ queryKey: ['task-checklist'] })
+      qc.invalidateQueries({ queryKey: ['task-files'] })
+      qc.invalidateQueries({ queryKey: ['employee-tasks'] })
+      qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
+      qc.invalidateQueries({ queryKey: ['analytics-workload'] })
+      qc.invalidateQueries({ queryKey: ['employee-workload'] })
+      qc.invalidateQueries({ queryKey: ['employee-efficiency'] })
+      qc.invalidateQueries({ queryKey: ['emp-eff'] })
+      qc.invalidateQueries({ queryKey: ['emp-activity'] })
+      qc.invalidateQueries({ queryKey: ['proj-perf'] })
+      qc.invalidateQueries({ queryKey: ['calendar'] })
+      qc.invalidateQueries({ queryKey: ['unread-count'] })
+      qc.invalidateQueries({ queryKey: ['reports'] })
     })
 
-    socket.on('disconnect', () => {
-      // disconnected
-    })
+    socket.on('disconnect', () => {})
 
     socketRef.current = socket
     return () => { socket.disconnect() }

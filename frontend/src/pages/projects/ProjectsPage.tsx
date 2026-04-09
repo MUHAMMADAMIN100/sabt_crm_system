@@ -135,7 +135,7 @@ export default function ProjectsPage() {
       qc.setQueryData(['projects'], context?.previous)
       toast.error(t('common.error'))
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); toast.success(t('projects.archived')) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); qc.invalidateQueries({ queryKey: ['projects-archived'] }); qc.invalidateQueries({ queryKey: ['analytics-dashboard'] }); toast.success(t('projects.archived')) },
   })
 
   const deleteMut = useMutation({

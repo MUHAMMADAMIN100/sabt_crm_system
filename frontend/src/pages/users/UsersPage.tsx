@@ -27,7 +27,7 @@ export default function UsersPage() {
       qc.setQueryData(['users'], context?.previous)
       toast.error('Ошибка')
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['employees'] }); toast.success('Обновлено') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['employees'] }); qc.invalidateQueries({ queryKey: ['analytics-dashboard'] }); toast.success('Обновлено') },
   })
   const deleteMut = useMutation({
     mutationFn: usersApi.remove,
@@ -42,7 +42,7 @@ export default function UsersPage() {
       qc.setQueryData(['users'], context?.previous)
       toast.error('Ошибка')
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['employees'] }); toast.success('Удалён') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['employees'] }); qc.invalidateQueries({ queryKey: ['analytics-dashboard'] }); toast.success('Удалён') },
   })
   const cleanupMut = useMutation({
     mutationFn: usersApi.cleanupOrphans,
