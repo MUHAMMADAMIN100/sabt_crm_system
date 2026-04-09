@@ -40,16 +40,16 @@ export class AnalyticsService {
         .getRawOne(),
     ]);
 
-    const c = counts[0];
+    const c = counts?.[0] || {};
     return {
-      totalProjects: c.totalProjects,
-      activeProjects: c.activeProjects,
-      totalTasks: c.totalTasks,
-      doneTasks: c.doneTasks,
+      totalProjects: c.totalProjects || 0,
+      activeProjects: c.activeProjects || 0,
+      totalTasks: c.totalTasks || 0,
+      doneTasks: c.doneTasks || 0,
       completionRate: c.totalTasks ? Math.round((c.doneTasks / c.totalTasks) * 100) : 0,
-      totalEmployees: c.totalEmployees,
-      totalUsers: c.totalUsers,
-      overdueTasks: c.overdueTasks,
+      totalEmployees: c.totalEmployees || 0,
+      totalUsers: c.totalUsers || 0,
+      overdueTasks: c.overdueTasks || 0,
       hoursThisMonth: parseFloat(hoursRow?.total || '0'),
     };
   }
@@ -103,11 +103,12 @@ export class AnalyticsService {
   }
 
   async getHoursPerDay(employeeId?: string, days = 30) {
+    const safeDays = Math.max(1, Math.min(365, Number(days) || 30));
     const qb = this.timeRepo
       .createQueryBuilder('tl')
       .select('tl.date::date', 'date')
       .addSelect('SUM(tl.timeSpent)', 'hours')
-      .where("tl.date >= NOW() - (:days || ' days')::interval", { days })
+      .where("tl.date >= NOW() - make_interval(days => :days)", { days: safeDays })
       .groupBy('tl.date::date')
       .orderBy('tl.date::date', 'ASC');
 

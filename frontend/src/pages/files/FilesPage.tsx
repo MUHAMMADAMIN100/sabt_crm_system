@@ -40,6 +40,17 @@ export default function FilesPage() {
 
   const deleteMut = useMutation({
     mutationFn: filesApi.remove,
+    onMutate: async (fileId: string) => {
+      setDeleteId(null)
+      await qc.cancelQueries({ queryKey: ['files-project', projectId] })
+      const previous = qc.getQueryData(['files-project', projectId])
+      qc.setQueryData(['files-project', projectId], (old: any[]) => old?.filter((f: any) => f.id !== fileId) ?? [])
+      return { previous }
+    },
+    onError: (_e: any, _v: any, context: any) => {
+      qc.setQueryData(['files-project', projectId], context?.previous)
+      toast.error(t('common.error'))
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['files-project', projectId] })
       toast.success(t('files.deleted'))
@@ -103,7 +114,7 @@ export default function FilesPage() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {files.map((f: any) => {
             const Icon = getIcon(f.mimetype)
             return (

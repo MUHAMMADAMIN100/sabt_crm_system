@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ActivityLog, ActivityAction } from './activity-log.entity';
@@ -15,6 +15,8 @@ export interface LogDto {
 
 @Injectable()
 export class ActivityLogService {
+  private readonly logger = new Logger(ActivityLogService.name);
+
   constructor(
     @InjectRepository(ActivityLog)
     private repo: Repository<ActivityLog>,
@@ -24,8 +26,8 @@ export class ActivityLogService {
     try {
       const entry = this.repo.create(dto);
       await this.repo.save(entry);
-    } catch (_) {
-      // never crash the main flow due to logging failure
+    } catch (e) {
+      this.logger.warn(`Activity log failed: ${e?.message || e}`);
     }
   }
 
@@ -48,8 +50,8 @@ export class ActivityLogService {
     if (filters.from)    qb.andWhere('a.createdAt >= :from', { from: filters.from });
     if (filters.to)      qb.andWhere('a.createdAt <= :to', { to: filters.to });
 
-    const limit  = filters.limit  ?? 50;
-    const offset = filters.offset ?? 0;
+    const limit  = Math.max(1, Math.min(100, filters.limit ?? 50));
+    const offset = Math.max(0, filters.offset ?? 0);
     qb.take(limit).skip(offset);
 
     const [items, total] = await qb.getManyAndCount();

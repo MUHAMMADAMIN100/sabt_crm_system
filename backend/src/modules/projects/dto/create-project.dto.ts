@@ -1,12 +1,12 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsArray, IsNumber } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsDateString, IsArray, IsNumber, IsUUID, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { ProjectStatus } from '../project.entity';
 import { PartialType } from '@nestjs/mapped-types';
 
 export class CreateProjectDto {
-  @ApiProperty() @IsString() name: string;
+  @ApiProperty() @IsString() @MinLength(1) name: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() description?: string;
-  @ApiProperty({ required: false }) @IsOptional() @IsString() managerId?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsUUID() managerId?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() startDate?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() endDate?: string;
   @ApiProperty({ enum: ProjectStatus, required: false }) @IsOptional() @IsEnum(ProjectStatus) status?: ProjectStatus;

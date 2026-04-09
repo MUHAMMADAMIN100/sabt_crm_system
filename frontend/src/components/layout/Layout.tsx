@@ -7,13 +7,28 @@ import { useSocket } from '@/hooks/useSocket'
 import clsx from 'clsx'
 
 export default function Layout() {
-  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1024)
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 993)
   const fetchMe = useAuthStore(s => s.fetchMe)
   const token = useAuthStore(s => s.token)
   const location = useLocation()
 
   useEffect(() => { fetchMe() }, [])
   useSocket(token)
+
+  // Auto-close sidebar on mobile/tablet navigation
+  useEffect(() => {
+    if (window.innerWidth < 993) setSidebarOpen(false)
+  }, [location.pathname])
+
+  // Handle resize: auto-open on desktop, auto-close on mobile/tablet
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth >= 993) setSidebarOpen(true)
+      else setSidebarOpen(false)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   return (
     <div className="flex h-screen bg-surface-50 dark:bg-surface-900 overflow-hidden">

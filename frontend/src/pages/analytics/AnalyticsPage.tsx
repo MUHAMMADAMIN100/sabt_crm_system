@@ -59,14 +59,14 @@ export default function AnalyticsPage() {
       <h1 className="page-title">{t('analytics.title')}</h1>
 
       {overview && (
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 gap-4">
           <StatCard title={t('dashboard.activeProjectsCount')} value={overview.activeProjects} icon={FolderKanban} color="bg-primary-600" sub={`${t('common.from')} ${overview.totalProjects}`} />
           <StatCard title={t('common.completed')} value={`${overview.completionRate}%`} icon={CheckSquare} color="bg-green-500" sub={`${overview.doneTasks} ${t('common.from')} ${overview.totalTasks}`} />
           <StatCard title={t('dashboard.urgent')} value={overview.overdueTasks} icon={TrendingUp} color="bg-red-500" />
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {projByStatus && (
           <div className="card">
             <h3 className="section-title mb-4">{t('analytics.projectsByStatus')}</h3>

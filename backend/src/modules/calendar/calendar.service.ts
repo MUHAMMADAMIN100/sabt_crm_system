@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task } from '../tasks/task.entity';
@@ -12,6 +12,9 @@ export class CalendarService {
   ) {}
 
   async getEvents(from: string, to: string, employeeId?: string, projectId?: string) {
+    if (from && to && new Date(from) > new Date(to)) {
+      throw new BadRequestException('from date must be before to date');
+    }
     const taskQb = this.taskRepo
       .createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')

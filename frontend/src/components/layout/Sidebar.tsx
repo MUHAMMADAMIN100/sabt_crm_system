@@ -15,7 +15,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const { t } = useTranslation()
 
   const handleNavClick = () => {
-    if (window.innerWidth < 1024) onClose()
+    if (window.innerWidth < 993) onClose()
   }
 
   const role = user?.role || 'employee'

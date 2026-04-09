@@ -64,21 +64,21 @@ export class AnalyticsController {
 
   @Get('hours-per-day')
   getHoursPerDay(@Query('employeeId') employeeId?: string, @Query('days') days?: string) {
-    return this.service.getHoursPerDay(employeeId, days ? parseInt(days) : 30);
+    return this.service.getHoursPerDay(employeeId, days ? parseInt(days, 10) || 30 : 30);
   }
 
   @Get('projects-performance')
   @CacheKey('analytics:projects-performance')
   @CacheTTL(120000)
   getProjectsPerformance(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.service.getProjectsPerformance(parseInt(page || '1'), parseInt(limit || '9'));
+    return this.service.getProjectsPerformance(parseInt(page ?? '1', 10) || 1, parseInt(limit ?? '9', 10) || 9);
   }
 
   @Get('employee-efficiency')
   @CacheKey('analytics:employee-efficiency')
   @CacheTTL(120000)
   getEmployeeEfficiency(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.service.getEmployeeEfficiency(parseInt(page || '1'), parseInt(limit || '9'));
+    return this.service.getEmployeeEfficiency(parseInt(page ?? '1', 10) || 1, parseInt(limit ?? '9', 10) || 9);
   }
 
   @Get('employee-workload')

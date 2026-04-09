@@ -42,7 +42,7 @@ export default function ArchivePage() {
       {!projects?.length ? (
         <EmptyState title={t('archive.noArchived')} description={t('archive.noArchivedDesc')} />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map((p: any) => (
             <div key={p.id} className="card opacity-80 hover:opacity-100 transition-opacity">
               <div className="flex items-start justify-between mb-3">

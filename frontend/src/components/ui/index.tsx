@@ -44,30 +44,34 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
   const sizes = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-4xl' }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
       {/* Backdrop */}
       <div
         className={clsx(
-          'absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-200',
+          'absolute inset-0 bg-black/40 transition-opacity duration-200',
+          '-webkit-backdrop-filter: blur(4px)',
           visible ? 'opacity-100' : 'opacity-0',
         )}
+        style={{ WebkitBackdropFilter: 'blur(4px)', backdropFilter: 'blur(4px)' }}
         onClick={onClose}
       />
       {/* Panel */}
       <div
         className={clsx(
-          'relative bg-white dark:bg-surface-800 rounded-2xl shadow-modal w-full',
+          'relative bg-white dark:bg-surface-800 shadow-modal w-full',
+          'rounded-t-2xl sm:rounded-2xl',
+          'max-h-[90vh] sm:max-h-[85vh] flex flex-col',
           'transition-all duration-300 ease-out',
           sizes[size],
           visible
             ? 'opacity-100 scale-100 translate-y-0'
-            : 'opacity-0 scale-95 translate-y-5',
+            : 'opacity-0 sm:scale-95 translate-y-8 sm:translate-y-5',
         )}
         style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
       >
         {title && (
-          <div className="flex items-center justify-between p-5 border-b border-surface-100 dark:border-surface-700">
-            <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">{title}</h2>
+          <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-100 dark:border-surface-700 shrink-0">
+            <h2 className="text-base sm:text-lg font-semibold text-surface-900 dark:text-surface-100">{title}</h2>
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 transition-all duration-150 hover:rotate-90"
@@ -80,12 +84,11 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
           <button
             onClick={onClose}
             className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 z-10 transition-all duration-150 hover:rotate-90"
-
           >
             <X size={18} />
           </button>
         )}
-        <div className="p-5">{children}</div>
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>{children}</div>
       </div>
     </div>,
     document.body,

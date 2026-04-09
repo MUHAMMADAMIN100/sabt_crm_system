@@ -153,79 +153,165 @@ export default function TaskDetailPage() {
 
   const updateTask = useMutation({
     mutationFn: (data: any) => tasksApi.update(id!, data),
+    onMutate: async (data: any) => {
+      await qc.cancelQueries({ queryKey: ['task', id] })
+      const previous = qc.getQueryData(['task', id])
+      qc.setQueryData(['task', id], (old: any) => old ? { ...old, ...data } : old)
+      return { previous }
+    },
+    onError: (e: any, _v: any, context: any) => {
+      qc.setQueryData(['task', id], context?.previous)
+      toast.error(e?.response?.data?.message || 'Ошибка')
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['task', id] })
       invalidateAfterTaskChange(qc)
       toast.success('Статус обновлён')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
   })
 
   const addResult = useMutation({
     mutationFn: () => taskResultsApi.create(id!, { type: resultType, content: resultContent }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['task-results', id] })
+    onMutate: async () => {
+      const content = resultContent
+      const type = resultType
       setResultContent('')
       setShowResultModal(false)
+      await qc.cancelQueries({ queryKey: ['task-results', id] })
+      const previous = qc.getQueryData(['task-results', id])
+      const tempResult = { id: `temp-${Date.now()}`, type, content, submittedBy: { name: user?.name }, createdAt: new Date().toISOString() }
+      qc.setQueryData(['task-results', id], (old: any[]) => old ? [tempResult, ...old] : [tempResult])
+      return { previous }
+    },
+    onError: (e: any, _v: any, context: any) => {
+      qc.setQueryData(['task-results', id], context?.previous)
+      toast.error(e?.response?.data?.message || 'Ошибка')
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task-results', id] })
       toast.success('Результат загружен')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
   })
 
   const submitForReview = useMutation({
     mutationFn: () => tasksApi.update(id!, { status: 'review' }),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ['task', id] })
+      const previous = qc.getQueryData(['task', id])
+      qc.setQueryData(['task', id], (old: any) => old ? { ...old, status: 'review' } : old)
+      return { previous }
+    },
+    onError: (e: any, _v: any, context: any) => {
+      qc.setQueryData(['task', id], context?.previous)
+      toast.error(e?.response?.data?.message || 'Сначала загрузите результат работы')
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['task', id] })
       invalidateAfterTaskChange(qc)
       toast.success('Задача отправлена на проверку')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Сначала загрузите результат работы'),
   })
 
   const approveTask = useMutation({
     mutationFn: () => tasksApi.approve(id!),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ['task', id] })
+      const previous = qc.getQueryData(['task', id])
+      qc.setQueryData(['task', id], (old: any) => old ? { ...old, status: 'done', reviewedAt: new Date().toISOString() } : old)
+      return { previous }
+    },
+    onError: (e: any, _v: any, context: any) => {
+      qc.setQueryData(['task', id], context?.previous)
+      toast.error(e?.response?.data?.message || 'Ошибка')
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['task', id] })
       invalidateAfterTaskChange(qc)
       toast.success('Задача подтверждена ✓')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
   })
 
   const returnTask = useMutation({
     mutationFn: () => tasksApi.returnTask(id!, returnReason || 'Требует доработки'),
+    onMutate: async () => {
+      const reason = returnReason || 'Требует доработки'
+      setShowReturnModal(false)
+      setReturnReason('')
+      await qc.cancelQueries({ queryKey: ['task', id] })
+      const previous = qc.getQueryData(['task', id])
+      qc.setQueryData(['task', id], (old: any) => old ? { ...old, status: 'returned', returnReason: reason } : old)
+      return { previous }
+    },
+    onError: (e: any, _v: any, context: any) => {
+      qc.setQueryData(['task', id], context?.previous)
+      toast.error(e?.response?.data?.message || 'Ошибка')
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['task', id] })
       invalidateAfterTaskChange(qc)
-      setShowReturnModal(false)
-      setReturnReason('')
       toast.success('Задача возвращена в работу')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
   })
 
   const addComment = useMutation({
     mutationFn: () => commentsApi.create(id!, comment),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['task', id] }); setComment('') },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось добавить комментарий'),
+    onMutate: async () => {
+      const msg = comment
+      setComment('')
+      await qc.cancelQueries({ queryKey: ['task', id] })
+      const previous = qc.getQueryData(['task', id])
+      const tempComment = { id: `temp-${Date.now()}`, message: msg, authorId: user?.id, author: { name: user?.name }, createdAt: new Date().toISOString() }
+      qc.setQueryData(['task', id], (old: any) => old ? { ...old, comments: [...(old.comments || []), tempComment] } : old)
+      return { previous }
+    },
+    onError: (e: any, _v: any, context: any) => {
+      qc.setQueryData(['task', id], context?.previous)
+      toast.error(e?.response?.data?.message || 'Не удалось добавить комментарий')
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['task', id] }),
   })
 
   const deleteComment = useMutation({
     mutationFn: (cid: string) => commentsApi.remove(id!, cid),
+    onMutate: async (cid: string) => {
+      await qc.cancelQueries({ queryKey: ['task', id] })
+      const previous = qc.getQueryData(['task', id])
+      qc.setQueryData(['task', id], (old: any) => old ? { ...old, comments: (old.comments || []).filter((c: any) => c.id !== cid) } : old)
+      return { previous }
+    },
+    onError: (_e: any, _v: any, context: any) => {
+      qc.setQueryData(['task', id], context?.previous)
+      toast.error('Ошибка удаления')
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['task', id] }),
   })
 
   const updateComment = useMutation({
     mutationFn: ({ cid, msg }: any) => commentsApi.update(id!, cid, msg),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['task', id] }); setEditingComment(null) },
+    onMutate: async ({ cid, msg }: any) => {
+      setEditingComment(null)
+      await qc.cancelQueries({ queryKey: ['task', id] })
+      const previous = qc.getQueryData(['task', id])
+      qc.setQueryData(['task', id], (old: any) => old ? { ...old, comments: (old.comments || []).map((c: any) => c.id === cid ? { ...c, message: msg, isEdited: true } : c) } : old)
+      return { previous }
+    },
+    onError: (_e: any, _v: any, context: any) => {
+      qc.setQueryData(['task', id], context?.previous)
+      toast.error('Ошибка')
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['task', id] }),
   })
 
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    await filesApi.upload(file, undefined, id)
-    qc.invalidateQueries({ queryKey: ['task-files', id] })
-    toast.success(t('files.uploaded'))
+    try {
+      await filesApi.upload(file, undefined, id)
+      qc.invalidateQueries({ queryKey: ['task-files', id] })
+      toast.success(t('files.uploaded'))
+    } catch {
+      toast.error(t('files.uploadError') || 'Ошибка загрузки файла')
+    }
   }
 
   if (isLoading) return <PageLoader />

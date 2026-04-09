@@ -38,8 +38,23 @@ export default function CalendarPage() {
 
   const createTask = useMutation({
     mutationFn: tasksApi.create,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['calendar'] }); qc.invalidateQueries({ queryKey: ['tasks'] }); setShowTaskForm(false); toast.success(t('tasks.created')) },
-    onError: () => toast.error(t('common.error')),
+    onMutate: async (data: any) => {
+      setShowTaskForm(false)
+      await qc.cancelQueries({ queryKey: ['calendar', from, to, assigneeUserId, filterProjectId] })
+      const previous = qc.getQueryData(['calendar', from, to, assigneeUserId, filterProjectId])
+      const tempEvent = { id: `temp-${Date.now()}`, title: data.title || 'Новая задача', type: 'task', date: data.deadline || data.startDate, startDate: data.startDate, link: '#' }
+      qc.setQueryData(['calendar', from, to, assigneeUserId, filterProjectId], (old: any[]) => old ? [...old, tempEvent] : [tempEvent])
+      return { previous }
+    },
+    onError: (_e: any, _v: any, context: any) => {
+      qc.setQueryData(['calendar', from, to, assigneeUserId, filterProjectId], context?.previous)
+      toast.error(t('common.error'))
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['calendar'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      toast.success(t('tasks.created'))
+    },
   })
 
   const days = eachDayOfInterval({ start: startOfMonth(current), end: endOfMonth(current) })
@@ -91,14 +106,14 @@ export default function CalendarPage() {
       {isManagerPlus && (
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-xs font-medium text-surface-500 dark:text-surface-400">Исполнитель:</span>
-          <select value={assigneeUserId} onChange={e => setAssigneeUserId(e.target.value)} className="input w-48 text-sm">
+          <select value={assigneeUserId} onChange={e => setAssigneeUserId(e.target.value)} className="input w-full sm:w-48 text-sm">
             <option value="">Все сотрудники</option>
             {employees?.map((e: any) => (
               <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>
             ))}
           </select>
           <span className="text-xs font-medium text-surface-500 dark:text-surface-400">Проект:</span>
-          <select value={filterProjectId} onChange={e => setFilterProjectId(e.target.value)} className="input w-48 text-sm">
+          <select value={filterProjectId} onChange={e => setFilterProjectId(e.target.value)} className="input w-full sm:w-48 text-sm">
             <option value="">Все проекты</option>
             {projects?.map((p: any) => (
               <option key={p.id} value={p.id}>{p.name}</option>
@@ -107,7 +122,8 @@ export default function CalendarPage() {
         </div>
       )}
 
-      <div className="card p-0 overflow-hidden">
+      <div className="card p-0 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="min-w-[640px]">
         <div className="grid grid-cols-7 border-b border-surface-100 dark:border-surface-700">
           {weekDays.map((d: string) => (<div key={d} className="text-center text-xs font-semibold text-surface-400 dark:text-surface-500 py-3">{d}</div>))}
         </div>
@@ -183,6 +199,7 @@ export default function CalendarPage() {
               </div>
             )
           })}
+        </div>
         </div>
       </div>
 

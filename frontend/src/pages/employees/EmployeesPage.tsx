@@ -29,6 +29,9 @@ export default function EmployeesPage() {
   const { data: allEmployees, isLoading } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
   const allPositions = [...new Set(allEmployees?.map((e: any) => e.position).filter(Boolean) || [])] as string[]
 
+  // Reset page when filters change
+  useEffect(() => { setPage(1) }, [search, position])
+
   const employees = allEmployees?.filter((emp: any) => {
     const matchesSearch = !search || emp.fullName?.toLowerCase().includes(search.toLowerCase()) || emp.email?.toLowerCase().includes(search.toLowerCase()) || emp.position?.toLowerCase().includes(search.toLowerCase())
     const matchesPosition = !position || emp.position === position
@@ -135,7 +138,7 @@ export default function EmployeesPage() {
       </div>
 
       {!employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'cards' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {pagedEmployees.map((emp: any) => (
             <div key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className="card group cursor-pointer hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between">
@@ -293,13 +296,13 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
   return (
     <Modal open={open} onClose={onClose} title={initial ? t('common.edit') : t('employees.add')} size="lg">
       <form onSubmit={handleSubmit(submit)} className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="sm:col-span-2">
             <label className="label">{t('employees.fullName')} *</label>
             <input {...register('fullName', { required: 'Обязательное поле' })} className={`input ${errors.fullName ? 'border-red-400' : ''}`} />
             {errors.fullName && <p className="text-xs text-red-400 mt-1">{String(errors.fullName.message)}</p>}
           </div>
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="label">{t('employees.position')} *</label>
             <select {...register('position', { required: 'Выберите должность' })} className={`input ${errors.position ? 'border-red-400' : ''}`}>
               <option value="">Выберите должность</option>

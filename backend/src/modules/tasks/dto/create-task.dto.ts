@@ -1,10 +1,10 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsNumber, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsDateString, IsNumber, IsUUID, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { TaskPriority, TaskStatus } from '../task.entity';
 import { PartialType } from '@nestjs/mapped-types';
 
 export class CreateTaskDto {
-  @ApiProperty() @IsString() title: string;
+  @ApiProperty() @IsString() @MinLength(1) title: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() description?: string;
   @ApiProperty() @IsUUID() projectId: string;
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() assigneeId?: string;

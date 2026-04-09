@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FileAttachment } from './file.entity';
@@ -46,9 +46,12 @@ export class FilesService {
     return saved;
   }
 
-  async remove(id: string) {
+  async remove(id: string, userId?: string, userRole?: string) {
     const file = await this.repo.findOne({ where: { id } });
     if (!file) throw new NotFoundException('File not found');
+    if (userId && file.uploadedById !== userId && userRole !== 'admin') {
+      throw new ForbiddenException('Not allowed to delete this file');
+    }
 
     await this.activityLog.log({
       userId: file.uploadedById,

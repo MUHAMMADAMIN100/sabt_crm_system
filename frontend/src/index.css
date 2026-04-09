@@ -12,11 +12,35 @@
   body {
     @apply bg-surface-50 text-surface-900 antialiased;
     font-family: 'Inter', system-ui, sans-serif;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
   }
 
   .dark body,
   .dark {
     @apply bg-surface-900 text-surface-50;
+  }
+
+  /* ── Safari iOS fixes ──────────────────────────────── */
+  input, textarea, select, button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  select {
+    -webkit-appearance: menulist;
+    appearance: menulist;
+  }
+  input[type="color"] {
+    -webkit-appearance: auto;
+    appearance: auto;
+  }
+
+  /* Safe area for notch devices */
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 
   ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -25,11 +49,17 @@
   ::-webkit-scrollbar-thumb:hover { @apply bg-surface-300; }
   .dark ::-webkit-scrollbar-thumb { @apply bg-surface-700; }
   .dark ::-webkit-scrollbar-thumb:hover { @apply bg-surface-600; }
+
+  /* Hide scrollbar on mobile for horizontal scroll containers */
+  @media (max-width: 600px) {
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  }
 }
 
 @layer components {
   .card {
-    @apply bg-white rounded-2xl shadow-card border border-surface-100 p-5;
+    @apply bg-white rounded-2xl shadow-card border border-surface-100 p-4 sm:p-5;
     @apply transition-shadow duration-200;
   }
   .dark .card { @apply bg-surface-800 border-surface-700; }
@@ -69,7 +99,7 @@
   }
   .dark .sidebar-link.active { @apply bg-primary-900/30 text-primary-400; }
 
-  .page-title { @apply text-2xl font-bold text-surface-900; }
+  .page-title { @apply text-xl sm:text-2xl font-bold text-surface-900; }
   .dark .page-title { @apply text-surface-50; }
 
   .section-title { @apply text-lg font-semibold text-surface-900; }
@@ -353,4 +383,43 @@ aside {
   stroke-dasharray: 80;
   animation: spinnerArc 1.4s ease-in-out infinite, spin 1.4s linear infinite;
   transform-origin: center;
+}
+
+/* ====================== SAFARI iOS SUPPORT ====================== */
+.sticky-top {
+  position: -webkit-sticky;
+  position: sticky;
+  top: 0;
+}
+
+.backdrop-blur-safari {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* iOS rubber-band scroll fix */
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ====================== MOBILE RESPONSIVE ====================== */
+@media (max-width: 600px) {
+  .card { @apply rounded-xl; }
+
+  .page-title { @apply text-lg; }
+  .section-title { @apply text-base; }
+
+  /* Stack buttons on mobile */
+  .btn { @apply text-xs px-3 py-1.5; }
+
+  /* Full-width inputs on mobile */
+  .input { @apply text-sm; }
+
+  /* Compact table cells */
+  table th, table td { @apply px-2 py-1.5 text-xs; }
+}
+
+/* Tablet adjustments */
+@media (min-width: 601px) and (max-width: 992px) {
+  .page-title { @apply text-xl; }
 }

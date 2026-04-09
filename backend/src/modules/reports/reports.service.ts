@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DailyReport } from './daily-report.entity';
@@ -39,6 +39,9 @@ export class ReportsService {
   }
 
   async create(dto: { date: string; projectId?: string; taskId?: string; description: string; timeSpent: number; comments?: string; files?: string[] }, userId: string) {
+    if (dto.timeSpent != null && dto.timeSpent <= 0) {
+      throw new BadRequestException('timeSpent must be positive');
+    }
     const report = this.repo.create({ ...dto, employeeId: userId });
     const savedReport = await this.repo.save(report);
 
@@ -67,7 +70,7 @@ export class ReportsService {
 
   async update(id: string, dto: { date?: string; projectId?: string; taskId?: string; description?: string; timeSpent?: number; comments?: string; files?: string[] }, userId: string) {
     const report = await this.findOne(id);
-    if (report.employeeId !== userId) throw new NotFoundException('Not your report');
+    if (report.employeeId !== userId) throw new ForbiddenException('Not your report');
     await this.repo.update(id, dto);
 
     await this.activityLog.log({

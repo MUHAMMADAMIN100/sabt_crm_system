@@ -70,7 +70,7 @@ export default function TaskForm({
         <label className="label">{t('tasks.description')}</label>
         <textarea {...register('description')} className="input resize-none" rows={3} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {!fixedProjectId && projects && (
           <div>
             <label className="label">{t('tasks.project')} *</label>

@@ -18,7 +18,7 @@ export function useSocket(token: string | null) {
     })
 
     socket.on('connect', () => {
-      console.log('[WS] connected')
+      // connected
     })
 
     socket.on('notification', (notif: any) => {
@@ -46,7 +46,7 @@ export function useSocket(token: string | null) {
     })
 
     socket.on('disconnect', () => {
-      console.log('[WS] disconnected')
+      // disconnected
     })
 
     socketRef.current = socket

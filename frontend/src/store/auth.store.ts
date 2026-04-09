@@ -71,7 +71,9 @@ export const useAuthStore = create<AuthState>()(
           const { data } = await api.get('/auth/me')
           set({ user: data })
         } catch {
-          get().logout()
+          // Clear locally without calling API logout to avoid infinite recursion
+          localStorage.removeItem('token')
+          set({ token: null, user: null })
         }
       },
 

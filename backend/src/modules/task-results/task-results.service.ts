@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TaskResult } from './task-result.entity';
@@ -29,7 +29,7 @@ export class TaskResultsService {
   async remove(id: string, userId: string): Promise<{ message: string }> {
     const result = await this.repo.findOne({ where: { id } });
     if (!result) throw new NotFoundException('Result not found');
-    if (result.submittedById !== userId) throw new NotFoundException('Not allowed');
+    if (result.submittedById !== userId) throw new ForbiddenException('Not allowed');
     await this.repo.remove(result);
     return { message: 'Deleted' };
   }

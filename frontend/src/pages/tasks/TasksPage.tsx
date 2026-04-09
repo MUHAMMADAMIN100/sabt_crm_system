@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import StoryCalendar from '@/components/stories/StoryCalendar'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -54,6 +54,9 @@ export default function TasksPage() {
     employees?.forEach((e: any) => { if (e.userId) map[e.userId] = e.fullName })
     return map
   }, [employees])
+
+  // Reset page when filters change
+  useEffect(() => { setPage(1) }, [search, statuses, priorities, projectId, assigneeUserId])
 
   const tasks = allTasks?.filter((t: any) => {
     const matchesSearch = !search || t.title?.toLowerCase().includes(search.toLowerCase()) || t.description?.toLowerCase().includes(search.toLowerCase())
@@ -387,7 +390,7 @@ export default function TasksPage() {
           </table>
         </div>
       ) : (
-        <div key={page} className="animate-fade-in grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div key={page} className="animate-fade-in grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {pagedTasks.map((task: any) => (
             <div key={task.id} className="card hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-2">

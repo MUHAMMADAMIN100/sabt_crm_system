@@ -27,8 +27,19 @@ export default function PMDashboard() {
 
   const approve = useMutation({
     mutationFn: (id: string) => tasksApi.approve(id),
+    onMutate: async (taskId: string) => {
+      await qc.cancelQueries({ queryKey: ['tasks-review'] })
+      const previous = qc.getQueryData(['tasks-review'])
+      qc.setQueryData(['tasks-review'], (old: any[]) => old?.filter((t: any) => t.id !== taskId) ?? [])
+      return { previous }
+    },
+    onError: (_e: any, _v: any, context: any) => {
+      qc.setQueryData(['tasks-review'], context?.previous)
+      toast.error('Ошибка')
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks-review'] })
+      qc.invalidateQueries({ queryKey: ['tasks-overdue'] })
       toast.success('Задача подтверждена')
     },
   })

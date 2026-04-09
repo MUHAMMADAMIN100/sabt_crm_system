@@ -43,6 +43,9 @@ export default function ProjectsPage() {
 
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
 
+  // Reset page when filters change
+  useEffect(() => { setPage(1) }, [search, status])
+
   const projects = allProjects?.filter((p: any) => {
     const matchesSearch = !search ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -190,7 +193,7 @@ export default function ProjectsPage() {
           isManagerPlus && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
         } />
       ) : (
-        <div key={page} className="animate-fade-in grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div key={page} className="animate-fade-in grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {pagedProjects.map((p: any) => (
             <div
               key={p.id}
@@ -388,19 +391,19 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   return (
     <Modal open={open} onClose={onClose} title={initial ? t('common.edit') + ' ' + t('projects.title').toLowerCase() : t('projects.newProject')} size="xl">
       <form onSubmit={handleSubmit(submit)} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2">
             <label className="label">{t('projects.name')} *</label>
             <input {...register('name', { required: true })} className="input" placeholder={t('projects.name')} />
             {errors.name && <p className="text-xs text-red-500 mt-1">Обязательное поле</p>}
           </div>
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="label">{t('projects.description')}</label>
             <textarea {...register('description')} className="input resize-none" rows={3} />
           </div>
 
           {/* Project type */}
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="label">Тип проекта *</label>
             <select {...register('projectType', { required: true })} className="input">
               <option value="">— Выбрать тип —</option>
@@ -410,7 +413,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           </div>
 
           {/* Менеджер проекта */}
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="label">Менеджер проекта</label>
             <select {...register('managerId')} className="input">
               <option value="">— Не назначен —</option>
@@ -422,7 +425,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
 
           {/* SMM Questionnaire — appears right after type select */}
           {showSmmForm && (
-            <div className="col-span-2 border border-primary-300 dark:border-primary-700 rounded-xl p-4 bg-primary-50 dark:bg-primary-900/10 space-y-4">
+            <div className="sm:col-span-2 border border-primary-300 dark:border-primary-700 rounded-xl p-4 bg-primary-50 dark:bg-primary-900/10 space-y-4">
               <div className="flex items-center gap-2">
                 <span className="text-lg">📋</span>
                 <h3 className="font-semibold text-primary-700 dark:text-primary-300 text-sm">Анкета SMM-проекта</h3>
@@ -510,7 +513,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           )}
 
           {/* Участники проекта */}
-          <div className="col-span-2" ref={dropRef}>
+          <div className="sm:col-span-2" ref={dropRef}>
             <label className="label">Участники проекта</label>
 
             {/* Trigger */}

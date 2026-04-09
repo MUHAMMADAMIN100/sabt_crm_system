@@ -297,7 +297,7 @@ export default function ProjectDetailPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="card text-center">
           <CheckSquare size={18} className="text-primary-600 mx-auto mb-1" />
           <p className="text-2xl font-bold text-surface-900 dark:text-surface-100">{project.tasks?.length || 0}</p>
@@ -394,7 +394,7 @@ export default function ProjectDetailPage() {
             <input type="file" className="hidden" onChange={uploadFile} />
           </label>
           {!files?.length ? <EmptyState title={t('files.noFiles')} /> : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {files.map((f: any) => (
                 <div key={f.id} className="card flex items-center gap-3 hover:shadow-md transition-shadow group">
                   <a href={f.path} target="_blank" rel="noreferrer" className="flex items-center gap-3 flex-1 min-w-0">
@@ -420,7 +420,7 @@ export default function ProjectDetailPage() {
       )}
 
       {activeTab === 'about' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div className="card space-y-4">
             <div className="flex items-center justify-between border-b border-surface-100 dark:border-surface-700 pb-3">
               <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base">Информация о проекте</h3>
@@ -662,7 +662,7 @@ export default function ProjectDetailPage() {
             {project.manager && (
               <h3 className="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wider mb-2">Участники</h3>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {(project.members || [])
                 .filter((m: any) => m.id !== project.manager?.id)
                 .map((m: any) => (
@@ -705,7 +705,7 @@ export default function ProjectDetailPage() {
             <label className="label mb-1">Описание</label>
             <textarea value={projectForm.description || ''} onChange={e => setProjectForm((f: any) => ({ ...f, description: e.target.value }))} rows={3} className="input w-full resize-none" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label mb-1">Дата начала</label>
               <input type="date" value={projectForm.startDate || ''} onChange={e => setProjectForm((f: any) => ({ ...f, startDate: e.target.value }))} className="input w-full" />
@@ -715,7 +715,7 @@ export default function ProjectDetailPage() {
               <input type="date" value={projectForm.endDate || ''} onChange={e => setProjectForm((f: any) => ({ ...f, endDate: e.target.value }))} className="input w-full" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label mb-1">Статус</label>
               <select value={projectForm.status || ''} onChange={e => setProjectForm((f: any) => ({ ...f, status: e.target.value }))} className="input w-full">
@@ -750,7 +750,7 @@ export default function ProjectDetailPage() {
             <label className="label mb-1">Контактное лицо</label>
             <input value={clientForm.contactPerson || ''} onChange={e => setClientForm((f: any) => ({ ...f, contactPerson: e.target.value }))} className="input w-full" placeholder="Иван Иванов" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label mb-1">Телефон</label>
               <input value={clientForm.phone || ''} onChange={e => setClientForm((f: any) => ({ ...f, phone: e.target.value }))} className="input w-full" placeholder="+7..." />
@@ -760,7 +760,7 @@ export default function ProjectDetailPage() {
               <input type="email" value={clientForm.email || ''} onChange={e => setClientForm((f: any) => ({ ...f, email: e.target.value }))} className="input w-full" placeholder="email@..." />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label mb-1">WhatsApp</label>
               <input value={clientForm.whatsapp || ''} onChange={e => setClientForm((f: any) => ({ ...f, whatsapp: e.target.value }))} className="input w-full" placeholder="+7..." />

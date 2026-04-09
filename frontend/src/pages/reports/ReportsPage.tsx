@@ -157,7 +157,7 @@ function ReportForm({ onSubmit, onClose, projects, tasks, loading, t }: ReportFo
 
   return (
     <form onSubmit={handleSubmit(submit)} className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="label">{t('reports.date')}</label>
           <input type="date" {...register('date', { required: true })} className="input" />

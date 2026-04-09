@@ -29,8 +29,8 @@ export class TelegramService {
       const employee = await this.employeeRepo.findOne({ where: { userId } });
       if (!employee?.telegramChatId) return;
       await this.sendMessage(employee.telegramChatId, text);
-    } catch (_) {
-      // никогда не ломаем основной поток
+    } catch (e) {
+      this.logger.warn(`Failed to send Telegram to user ${userId}: ${e?.message || e}`);
     }
   }
 

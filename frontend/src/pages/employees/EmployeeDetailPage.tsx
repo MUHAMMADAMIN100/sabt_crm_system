@@ -54,7 +54,7 @@ export default function EmployeeDetailPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="card text-center">
           <CheckSquare size={18} className="text-primary-600 mx-auto mb-1" />
           <p className="text-2xl font-bold text-surface-900 dark:text-surface-100">{totalTasks}</p>
