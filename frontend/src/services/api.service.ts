@@ -154,3 +154,8 @@ export const filesApi = {
   },
   remove: (id: string) => api.delete(`/files/${id}`).then(r => r.data),
 }
+
+// ─── AI Assistant ────────────────────────────────────────
+export const aiApi = {
+  chat: (message: string) => api.post('/ai/chat', { message }).then(r => r.data),
+}

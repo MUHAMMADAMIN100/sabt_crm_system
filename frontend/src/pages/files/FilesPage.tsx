@@ -122,7 +122,7 @@ export default function FilesPage() {
                 <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
                   {f.mimetype.startsWith('image/') ? (
                     <img
-                      src={f.path}
+                      src={`${import.meta.env.VITE_API_URL || ''}${f.path}`}
                       alt={f.originalName}
                       className="w-10 h-10 rounded-xl object-cover"
                       onError={(e: any) => { e.target.style.display = 'none' }}
@@ -144,7 +144,7 @@ export default function FilesPage() {
                 </div>
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                   <a
-                    href={f.path}
+                    href={`${import.meta.env.VITE_API_URL || ''}${f.path}`}
                     target="_blank"
                     rel="noreferrer"
                     download={f.originalName}

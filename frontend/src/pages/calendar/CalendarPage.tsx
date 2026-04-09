@@ -18,6 +18,15 @@ const TYPE_COLORS: Record<string, string> = {
   project_end: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
+const TASK_STATUS_COLORS: Record<string, string> = {
+  new: 'bg-slate-400 dark:bg-slate-500',
+  in_progress: 'bg-blue-500 dark:bg-blue-500',
+  review: 'bg-amber-500 dark:bg-amber-500',
+  done: 'bg-emerald-500 dark:bg-emerald-500',
+  cancelled: 'bg-red-400 dark:bg-red-400',
+  returned: 'bg-orange-500 dark:bg-orange-500',
+}
+
 export default function CalendarPage() {
   const [current, setCurrent] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
@@ -150,11 +159,7 @@ export default function CalendarPage() {
                     const roundL = isStart || isStartOfWeek
                     const roundR = isEnd || isEndOfWeek
                     const initials = e.assigneeName ? e.assigneeName.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase() : ''
-                    const bgColor = isStart || isStartOfWeek
-                      ? 'bg-emerald-500 dark:bg-emerald-600'
-                      : isEnd || isEndOfWeek
-                        ? 'bg-red-400 dark:bg-red-500'
-                        : 'bg-blue-400 dark:bg-blue-500'
+                    const bgColor = TASK_STATUS_COLORS[e.status] || 'bg-blue-400 dark:bg-blue-500'
                     return (
                       <Link
                         key={e.id}
@@ -203,12 +208,17 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4">
-        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-emerald-500" /><span className="text-xs text-surface-500 dark:text-surface-400">Начало задачи</span></div>
-        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-blue-400" /><span className="text-xs text-surface-500 dark:text-surface-400">Выполняется</span></div>
-        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-red-400" /><span className="text-xs text-surface-500 dark:text-surface-400">Дедлайн</span></div>
-        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-green-100 dark:bg-green-900/30" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.projectStart')}</span></div>
-        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-red-100 dark:bg-red-900/30" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.projectEnd')}</span></div>
+      <div className="card p-3">
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          <span className="text-xs font-semibold text-surface-500 dark:text-surface-400">Задачи:</span>
+          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-slate-400" /><span className="text-xs text-surface-500 dark:text-surface-400">Новая</span></div>
+          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-blue-500" /><span className="text-xs text-surface-500 dark:text-surface-400">В работе</span></div>
+          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-amber-500" /><span className="text-xs text-surface-500 dark:text-surface-400">На проверке</span></div>
+          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-emerald-500" /><span className="text-xs text-surface-500 dark:text-surface-400">Готово</span></div>
+          <span className="text-xs font-semibold text-surface-500 dark:text-surface-400 ml-2">Проект:</span>
+          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-green-200 dark:bg-green-800" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.projectStart')}</span></div>
+          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-red-200 dark:bg-red-800" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.projectEnd')}</span></div>
+        </div>
       </div>
 
       {isManagerPlus && showTaskForm && (

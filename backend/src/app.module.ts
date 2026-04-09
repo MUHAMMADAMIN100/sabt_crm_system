@@ -28,6 +28,7 @@ import { ActivityLogModule } from './modules/activity-log/activity-log.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
 import { TaskResultsModule } from './modules/task-results/task-results.module';
 import { TaskChecklistsModule } from './modules/task-checklists/task-checklists.module';
+import { AiAssistantModule } from './modules/ai-assistant/ai-assistant.module';
 
 @Module({
   controllers: [HealthController],
@@ -79,6 +80,7 @@ import { TaskChecklistsModule } from './modules/task-checklists/task-checklists.
     TelegramModule,
     TaskResultsModule,
     TaskChecklistsModule,
+    AiAssistantModule,
   ],
 })
 export class AppModule {}

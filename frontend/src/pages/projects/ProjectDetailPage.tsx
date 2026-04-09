@@ -15,6 +15,8 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
 const TASK_STATUSES = ['new', 'in_progress', 'review', 'done', 'cancelled']
+const API_URL = import.meta.env.VITE_API_URL || ''
+const fileUrl = (path: string) => path?.startsWith('http') ? path : `${API_URL}${path}`
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -155,9 +157,34 @@ export default function ProjectDetailPage() {
       setShowEditProject(false)
       setShowEditClient(false)
       setShowAddMember(false)
+      setShowChangeManager(false)
       await qc.cancelQueries({ queryKey: ['project', id] })
       const previous = qc.getQueryData(['project', id])
-      qc.setQueryData(['project', id], (old: any) => old ? { ...old, ...data } : old)
+      qc.setQueryData(['project', id], (old: any) => {
+        if (!old) return old
+        const updated = { ...old, ...data }
+        // Update manager object when managerId changes
+        if (data.managerId !== undefined) {
+          if (!data.managerId) {
+            updated.manager = null
+            updated.managerId = null
+          } else {
+            const emp = (employees || []).find((e: any) => (e.userId || e.id) === data.managerId)
+            if (emp) updated.manager = { id: data.managerId, name: emp.fullName || emp.name, avatar: emp.avatar }
+            updated.managerId = data.managerId
+          }
+        }
+        // Update members array when memberIds changes
+        if (data.memberIds !== undefined) {
+          updated.members = data.memberIds.map((mid: string) => {
+            const existing = old.members?.find((m: any) => m.id === mid)
+            if (existing) return existing
+            const emp = (employees || []).find((e: any) => (e.userId || e.id) === mid)
+            return emp ? { id: mid, name: emp.fullName || emp.name, role: emp.position, avatar: emp.avatar } : { id: mid, name: '...' }
+          })
+        }
+        return updated
+      })
       return { previous }
     },
     onError: (e: any, _vars: any, context: any) => {
@@ -237,11 +264,7 @@ export default function ProjectDetailPage() {
     return acc
   }, {})
 
-  const uniqueAssignees = new Map()
-  project.tasks?.forEach((task: any) => {
-    if (task.assignee) uniqueAssignees.set(task.assignee.id || task.assigneeId, task.assignee)
-  })
-  const participantCount = uniqueAssignees.size
+  const participantCount = project.members?.length || 0
 
   // Drag and drop - for admins/managers and employees own tasks
   const canDrag = (task: any) => isManagerPlus || task.assigneeId === user?.id
@@ -397,7 +420,7 @@ export default function ProjectDetailPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {files.map((f: any) => (
                 <div key={f.id} className="card flex items-center gap-3 hover:shadow-md transition-shadow group">
-                  <a href={f.path} target="_blank" rel="noreferrer" className="flex items-center gap-3 flex-1 min-w-0">
+                  <a href={fileUrl(f.path)} target="_blank" rel="noreferrer" download={f.originalName} className="flex items-center gap-3 flex-1 min-w-0">
                     <Paperclip size={18} className="text-primary-600 shrink-0" />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{f.originalName}</p>

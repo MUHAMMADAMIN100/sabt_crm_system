@@ -693,7 +693,7 @@ export default function TaskDetailPage() {
               </label>
               <div className="space-y-2">
                 {files?.map((f: any) => (
-                  <a key={f.id} href={f.path} target="_blank" rel="noreferrer"
+                  <a key={f.id} href={`${import.meta.env.VITE_API_URL || ''}${f.path}`} target="_blank" rel="noreferrer" download={f.originalName}
                     className="flex items-center gap-3 p-3 bg-surface-50 dark:bg-surface-700/50 rounded-xl hover:bg-surface-100 dark:hover:bg-surface-700"
                   >
                     <Paperclip size={15} className="text-primary-600 dark:text-primary-400 shrink-0" />

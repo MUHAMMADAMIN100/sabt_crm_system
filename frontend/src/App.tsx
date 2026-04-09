@@ -19,6 +19,7 @@ const NotificationsPage = lazy(() => import('@/pages/notifications/Notifications
 const ProfilePage       = lazy(() => import('@/pages/profile/ProfilePage'))
 const ArchivePage       = lazy(() => import('@/pages/archive/ArchivePage'))
 const FilesPage         = lazy(() => import('@/pages/files/FilesPage'))
+const AiChatPage        = lazy(() => import('@/pages/ai/AiChatPage'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore(s => s.token)
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="profile" element={<ProfilePage />} />
           <Route path="archive" element={<ArchivePage />} />
           <Route path="files" element={<FilesPage />} />
+          <Route path="ai" element={<AiChatPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

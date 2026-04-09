@@ -4,7 +4,7 @@ import { useTranslation } from '@/i18n'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Bell, Archive, HardDrive,
-  X, ChevronRight,
+  X, ChevronRight, Sparkles,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -32,6 +32,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/archive', icon: Archive, label: t('nav.archive'), pmOnly: true },
     { to: '/notifications', icon: Bell, label: t('nav.notifications') },
     { to: '/employees', icon: Users, label: t('nav.employees'), founderOnly: true },
+    { to: '/ai', icon: Sparkles, label: 'ИИ-помощник', founderOnly: true },
   ]
 
   const filtered = navItems.filter(item => {

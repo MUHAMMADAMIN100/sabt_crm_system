@@ -91,7 +91,7 @@ export class TasksController {
 
   @Post(':id/return')
   @Roles(ADMIN, FOUNDER, PROJECT_MANAGER)
-  return(@Param('id') id: string, @Body('reason') reason: string, @Request() req) {
+  returnTask(@Param('id') id: string, @Body('reason') reason: string, @Request() req) {
     return this.service.returnTask(id, req.user, reason || 'Требует доработки');
   }
 
