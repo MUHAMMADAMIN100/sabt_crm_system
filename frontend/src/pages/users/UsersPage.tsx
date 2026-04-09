@@ -46,13 +46,16 @@ export default function UsersPage() {
   })
   const cleanupMut = useMutation({
     mutationFn: usersApi.cleanupOrphans,
+    onMutate: async () => {
+      setShowCleanupConfirm(false)
+    },
     onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ['users'] })
       qc.invalidateQueries({ queryKey: ['employees'] })
       qc.invalidateQueries({ queryKey: ['emp-eff'] })
-      setShowCleanupConfirm(false)
       toast.success(res.count > 0 ? `Удалено призраков: ${res.count}` : 'Призраков не найдено')
     },
+    onError: () => toast.error('Ошибка очистки'),
   })
 
   if (isLoading) return <PageLoader />
