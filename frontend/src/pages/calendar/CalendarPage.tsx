@@ -27,7 +27,7 @@ export default function CalendarPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'manager'].includes(user?.role || '')
+  const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
 
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')

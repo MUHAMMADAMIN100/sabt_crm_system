@@ -17,6 +17,16 @@ export default function ArchivePage() {
 
   const restoreMut = useMutation({
     mutationFn: projectsApi.restore,
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['projects-archived'] })
+      const previous = qc.getQueryData(['projects-archived'])
+      qc.setQueryData(['projects-archived'], (old: any[]) => old?.filter((p: any) => p.id !== id) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['projects-archived'], context?.previous)
+      toast.error('Ошибка')
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['projects-archived'] })
       qc.invalidateQueries({ queryKey: ['projects'] })

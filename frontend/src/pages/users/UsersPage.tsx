@@ -61,7 +61,16 @@ export default function UsersPage() {
     !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
   ) || []
 
-  const ROLE_LABELS: Record<string, string> = { admin: 'Администратор', employee: 'Сотрудник' }
+  const ROLE_LABELS: Record<string, string> = {
+    admin: 'Администратор',
+    founder: 'Основатель',
+    project_manager: 'Проект-менеджер',
+    smm_specialist: 'SMM специалист',
+    designer: 'Дизайнер',
+    targetologist: 'Таргетолог',
+    sales_manager: 'Менеджер по продажам',
+    employee: 'Сотрудник',
+  }
 
   return (
     <div className="space-y-5">
