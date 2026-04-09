@@ -332,14 +332,13 @@ export class TasksService {
       throw new ForbiddenException('Only project managers can return tasks');
     }
 
-    // Use query builder to avoid eager loading issues
-    const task = await this.repo
+    const taskRaw = await this.repo
       .createQueryBuilder('t')
-      .leftJoinAndSelect('t.project', 'project')
+      .select(['t.id', 't.title', 't.status', 't.assigneeId', 't.projectId'])
       .where('t.id = :id', { id })
-      .getOne();
-    if (!task) throw new NotFoundException('Task not found');
-    if (task.status !== TaskStatus.REVIEW) {
+      .getRawOne();
+    if (!taskRaw) throw new NotFoundException('Task not found');
+    if (taskRaw.t_status !== TaskStatus.REVIEW) {
       throw new BadRequestException('Задача должна быть на проверке');
     }
 
@@ -348,44 +347,41 @@ export class TasksService {
       returnReason: reason,
     });
 
-    try {
-      if (task.assigneeId) {
-        await this.notificationsService.create({
-          userId: task.assigneeId,
-          type: NotificationType.TASK_RETURNED,
-          title: 'Задача возвращена в работу',
-          message: `"${task.title}": ${reason}`,
-          link: `/tasks/${id}`,
-          data: { reason },
-        });
+    // Fire-and-forget: notifications, telegram, activity log
+    const taskTitle = taskRaw.t_title;
+    const assigneeId = taskRaw.t_assigneeId;
+    const projectId = taskRaw.t_projectId;
 
-        await this.telegramService.sendToUser(
-          task.assigneeId,
-          `🔁 <b>Задача возвращена в работу</b>\n\n📋 ${task.title}\n💬 ${reason}\n\n👉 ${this.telegramService.appUrl}/tasks/${id}`,
-        );
-      }
+    if (assigneeId) {
+      this.notificationsService.create({
+        userId: assigneeId,
+        type: NotificationType.TASK_RETURNED,
+        title: 'Задача возвращена в работу',
+        message: `"${taskTitle}": ${reason}`,
+        link: `/tasks/${id}`,
+        data: { reason },
+      }).catch(() => {});
 
-      await this.activityLog.log({
-        userId: user.id,
-        userName: user.name,
-        action: ActivityAction.TASK_REVIEW_RETURN,
-        entity: 'task',
-        entityId: id,
-        entityName: task.title,
-        details: { reason },
-      });
-    } catch (e) {
-      // Don't fail the return if notifications crash
+      this.telegramService.sendToUser(
+        assigneeId,
+        `🔁 <b>Задача возвращена в работу</b>\n\n📋 ${taskTitle}\n💬 ${reason}\n\n👉 ${this.telegramService.appUrl}/tasks/${id}`,
+      ).catch(() => {});
     }
 
-    try {
-      await this.projectsService.updateProgress(task.projectId);
-    } catch (e) {
-      // Don't crash if progress update fails
-    }
-    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.TASK_REVIEW_RETURN,
+      entity: 'task',
+      entityId: id,
+      entityName: taskTitle,
+      details: { reason },
+    }).catch(() => {});
 
-    return { id, status: TaskStatus.RETURNED, returnReason: reason, title: task.title };
+    this.projectsService.updateProgress(projectId).catch(() => {});
+    this.gateway.broadcast('tasks:changed', { projectId });
+
+    return { id, status: 'returned', returnReason: reason, title: taskTitle };
   }
 
   getStats(projectId?: string) {
