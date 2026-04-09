@@ -45,6 +45,9 @@ export default function TaskDetailPage() {
   const [resultType, setResultType] = useState<'link' | 'comment' | 'media'>('comment')
   const [resultContent, setResultContent] = useState('')
   const [newCheckItem, setNewCheckItem] = useState('')
+  const [editingCheckItem, setEditingCheckItem] = useState<string | null>(null)
+  const [editCheckText, setEditCheckText] = useState('')
+  const [deleteResultId, setDeleteResultId] = useState<string | null>(null)
 
   const role = user?.role || 'employee'
   const isPM = PM_ROLES.includes(role)
@@ -114,6 +117,38 @@ export default function TaskDetailPage() {
       qc.setQueryData(['task-checklist', id], context?.previous)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['task-checklist', id] }),
+  })
+
+  const editCheckItemMut = useMutation({
+    mutationFn: ({ itemId, text }: { itemId: string; text: string }) => taskChecklistApi.update(id!, itemId, text),
+    onMutate: async ({ itemId, text }: { itemId: string; text: string }) => {
+      setEditingCheckItem(null)
+      await qc.cancelQueries({ queryKey: ['task-checklist', id] })
+      const previous = qc.getQueryData(['task-checklist', id])
+      qc.setQueryData(['task-checklist', id], (old: any[]) => old?.map((item: any) => item.id === itemId ? { ...item, text } : item) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['task-checklist', id], context?.previous)
+      toast.error('Ошибка')
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['task-checklist', id] }),
+  })
+
+  const deleteResult = useMutation({
+    mutationFn: (resultId: string) => taskResultsApi.remove(id!, resultId),
+    onMutate: async (resultId: string) => {
+      setDeleteResultId(null)
+      await qc.cancelQueries({ queryKey: ['task-results', id] })
+      const previous = qc.getQueryData(['task-results', id])
+      qc.setQueryData(['task-results', id], (old: any[]) => old?.filter((r: any) => r.id !== resultId) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['task-results', id], context?.previous)
+      toast.error('Ошибка')
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['task-results', id] }),
   })
 
   const updateTask = useMutation({
@@ -400,10 +435,10 @@ export default function TaskDetailPage() {
                 </div>
               ) : (
                 results.map((r: any) => (
-                  <div key={r.id} className="flex gap-3 p-3 rounded-xl bg-surface-50 dark:bg-surface-700/50">
+                  <div key={r.id} className="flex gap-3 p-3 rounded-xl bg-surface-50 dark:bg-surface-700/50 group">
                     <Avatar name={r.submittedBy?.name} size={32} />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="text-sm font-medium text-surface-900 dark:text-surface-100">{r.submittedBy?.name}</span>
                         <span className="text-xs text-surface-400">{format(new Date(r.createdAt), 'dd.MM HH:mm', { locale: ru })}</span>
                         <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full font-medium', {
@@ -423,6 +458,14 @@ export default function TaskDetailPage() {
                         <p className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-wrap">{r.content}</p>
                       )}
                     </div>
+                    {isPM && (
+                      <button
+                        onClick={() => setDeleteResultId(r.id)}
+                        className="hidden group-hover:flex p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400 shrink-0 self-start"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </div>
                 ))
               )}
@@ -440,16 +483,41 @@ export default function TaskDetailPage() {
                   >
                     {item.isDone ? <CheckSquare size={18} /> : <Square size={18} />}
                   </button>
-                  <span className={clsx('flex-1 text-sm', item.isDone ? 'line-through text-surface-400 dark:text-surface-500' : 'text-surface-800 dark:text-surface-200')}>
-                    {item.text}
-                  </span>
-                  {isPM && (
-                    <button
-                      onClick={() => removeCheckItem.mutate(item.id)}
-                      className="hidden group-hover:block text-surface-400 hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                  {editingCheckItem === item.id ? (
+                    <div className="flex gap-2 flex-1">
+                      <input
+                        autoFocus
+                        value={editCheckText}
+                        onChange={e => setEditCheckText(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && editCheckText.trim()) editCheckItemMut.mutate({ itemId: item.id, text: editCheckText })
+                          if (e.key === 'Escape') setEditingCheckItem(null)
+                        }}
+                        className="input flex-1 text-sm py-1"
+                      />
+                      <button onClick={() => editCheckText.trim() && editCheckItemMut.mutate({ itemId: item.id, text: editCheckText })} className="btn-primary text-xs px-2 py-1">✓</button>
+                      <button onClick={() => setEditingCheckItem(null)} className="btn-secondary text-xs px-2 py-1">✕</button>
+                    </div>
+                  ) : (
+                    <span className={clsx('flex-1 text-sm', item.isDone ? 'line-through text-surface-400 dark:text-surface-500' : 'text-surface-800 dark:text-surface-200')}>
+                      {item.text}
+                    </span>
+                  )}
+                  {isPM && editingCheckItem !== item.id && (
+                    <div className="hidden group-hover:flex items-center gap-1">
+                      <button
+                        onClick={() => { setEditingCheckItem(item.id); setEditCheckText(item.text) }}
+                        className="p-1 text-surface-400 hover:text-primary-500 transition-colors"
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                      <button
+                        onClick={() => removeCheckItem.mutate(item.id)}
+                        className="p-1 text-surface-400 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   )}
                 </div>
               ))}
@@ -669,6 +737,15 @@ export default function TaskDetailPage() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!deleteResultId}
+        onClose={() => setDeleteResultId(null)}
+        onConfirm={() => deleteResult.mutate(deleteResultId!)}
+        title="Удалить результат?"
+        message="Результат работы будет удалён безвозвратно."
+        danger
+      />
 
       {/* Modal: Return reason */}
       <Modal open={showReturnModal} onClose={() => setShowReturnModal(false)} title="Вернуть задачу в работу" size="sm">

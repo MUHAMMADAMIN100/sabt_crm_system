@@ -27,6 +27,9 @@ export default function ProjectDetailPage() {
   const [showEditProject, setShowEditProject] = useState(false)
   const [showEditClient, setShowEditClient] = useState(false)
   const [showAddMember, setShowAddMember] = useState(false)
+  const [showChangeManager, setShowChangeManager] = useState(false)
+  const [newManagerId, setNewManagerId] = useState('')
+  const [deleteFileId, setDeleteFileId] = useState<string | null>(null)
   const [projectForm, setProjectForm] = useState<any>({})
   const [clientForm, setClientForm] = useState<any>({})
   const [addMemberId, setAddMemberId] = useState('')
@@ -166,6 +169,22 @@ export default function ProjectDetailPage() {
       qc.invalidateQueries({ queryKey: ['projects'] })
       toast.success('Проект обновлён')
     },
+  })
+
+  const deleteFileMut = useMutation({
+    mutationFn: (fileId: string) => filesApi.remove(fileId),
+    onMutate: async (fileId: string) => {
+      setDeleteFileId(null)
+      await qc.cancelQueries({ queryKey: ['files', id] })
+      const previous = qc.getQueryData(['files', id])
+      qc.setQueryData(['files', id], (old: any[]) => old?.filter((f: any) => f.id !== fileId) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['files', id], context?.previous)
+      toast.error(t('common.error'))
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['files', id] }); toast.success('Файл удалён') },
   })
 
   const handleSaveProject = () => {
@@ -377,13 +396,23 @@ export default function ProjectDetailPage() {
           {!files?.length ? <EmptyState title={t('files.noFiles')} /> : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {files.map((f: any) => (
-                <a key={f.id} href={f.path} target="_blank" rel="noreferrer" className="card flex items-center gap-3 hover:shadow-md transition-shadow">
-                  <Paperclip size={18} className="text-primary-600 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{f.originalName}</p>
-                    <p className="text-xs text-surface-400 dark:text-surface-500">{(f.size / 1024).toFixed(1)} KB</p>
-                  </div>
-                </a>
+                <div key={f.id} className="card flex items-center gap-3 hover:shadow-md transition-shadow group">
+                  <a href={f.path} target="_blank" rel="noreferrer" className="flex items-center gap-3 flex-1 min-w-0">
+                    <Paperclip size={18} className="text-primary-600 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{f.originalName}</p>
+                      <p className="text-xs text-surface-400 dark:text-surface-500">{(f.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                  </a>
+                  {isManagerPlus && (
+                    <button
+                      onClick={() => setDeleteFileId(f.id)}
+                      className="hidden group-hover:flex p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400 shrink-0"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -601,9 +630,19 @@ export default function ProjectDetailPage() {
           )}
 
           {/* Менеджер проекта */}
-          {project.manager && (
-            <div>
-              <h3 className="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wider mb-2">Менеджер проекта</h3>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wider">Менеджер проекта</h3>
+              {isManagerPlus && (
+                <button
+                  onClick={() => { setNewManagerId((project as any).managerId || ''); setShowChangeManager(true) }}
+                  className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline"
+                >
+                  <Edit size={12} /> {project.manager ? 'Сменить' : 'Назначить'}
+                </button>
+              )}
+            </div>
+            {project.manager ? (
               <div className="card flex items-center gap-3 max-w-xs border-primary-200 dark:border-primary-800 bg-primary-50/50 dark:bg-primary-900/10">
                 <Avatar name={project.manager.name} src={project.manager.avatar} size={40} />
                 <div className="flex-1 min-w-0">
@@ -613,8 +652,10 @@ export default function ProjectDetailPage() {
                   </span>
                 </div>
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="text-sm text-surface-400 dark:text-surface-500 italic">Менеджер не назначен</p>
+            )}
+          </div>
 
           {/* Участники */}
           <div>
@@ -781,6 +822,34 @@ export default function ProjectDetailPage() {
 
       <ConfirmDialog open={!!deleteTaskId} onClose={() => setDeleteTaskId(null)}
         onConfirm={() => deleteTask.mutate(deleteTaskId!)} title={t('tasks.deleteConfirm')} message={t('tasks.deleteMessage')} danger />
+
+      <ConfirmDialog open={!!deleteFileId} onClose={() => setDeleteFileId(null)}
+        onConfirm={() => deleteFileMut.mutate(deleteFileId!)} title="Удалить файл?" message="Файл будет удалён безвозвратно." danger />
+
+      {/* Modal: Change Manager */}
+      <Modal open={showChangeManager} onClose={() => setShowChangeManager(false)} title="Менеджер проекта" size="sm">
+        <div className="space-y-4">
+          <div>
+            <label className="label mb-1">Выбрать менеджера</label>
+            <select value={newManagerId} onChange={e => setNewManagerId(e.target.value)} className="input w-full">
+              <option value="">— Не назначен —</option>
+              {(employees || []).map((e: any) => (
+                <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setShowChangeManager(false)} className="btn-secondary">Отмена</button>
+            <button
+              onClick={() => { updateProject.mutate({ managerId: newManagerId || null }); setShowChangeManager(false) }}
+              disabled={updateProject.isPending}
+              className="btn-primary flex items-center gap-2"
+            >
+              <Save size={15} /> Сохранить
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
