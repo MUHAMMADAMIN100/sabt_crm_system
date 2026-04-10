@@ -6,6 +6,7 @@ import { useThemeStore } from '@/store/theme.store'
 import { useTranslation } from '@/i18n'
 import { useQuery } from '@tanstack/react-query'
 import { notificationsApi, tasksApi, projectsApi, employeesApi } from '@/services/api.service'
+import { getUserPositionLabel } from '@/lib/permissions'
 import clsx from 'clsx'
 
 interface HeaderProps { onMenuClick: () => void }
@@ -203,18 +204,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           </div>
           <div className="hidden sm:block text-left">
             <p className="text-sm font-medium text-surface-900 dark:text-surface-100 leading-tight">{user?.name}</p>
-            <p className="text-xs text-surface-500 dark:text-surface-400">{({
-              admin: 'Администратор',
-              founder: 'Основатель',
-              project_manager: 'Проект-менеджер',
-              smm_specialist: 'SMM-специалист',
-              designer: 'Дизайнер',
-              targetologist: 'Таргетолог',
-              sales_manager: 'Менеджер по продажам',
-              marketer: 'Маркетолог',
-              developer: 'Разработчик',
-              employee: 'Сотрудник',
-            } as Record<string, string>)[user?.role || ''] || 'Сотрудник'}</p>
+            <p className="text-xs text-surface-500 dark:text-surface-400">{getUserPositionLabel(user)}</p>
           </div>
           <ChevronDown size={14} className="text-surface-400 hidden sm:block" />
         </button>

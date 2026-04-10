@@ -4,7 +4,8 @@ import { useAuthStore } from '@/store/auth.store'
 import { authApi, projectsApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
 import { Avatar, ProgressBar, StatusBadge } from '@/components/ui'
-import { User, Mail, Key, Clock, FolderKanban, CalendarDays } from 'lucide-react'
+import { User, Mail, Briefcase, Key, Clock, FolderKanban, CalendarDays } from 'lucide-react'
+import { getUserPositionLabel } from '@/lib/permissions'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import { Link } from 'react-router-dom'
@@ -56,18 +57,6 @@ export default function ProfilePage() {
     return sum + ms / 3600000
   }, 0)
 
-  const ROLE_LABELS: Record<string, string> = {
-    admin: 'Администратор',
-    founder: 'Основатель',
-    project_manager: 'Проект-менеджер',
-    smm_specialist: 'SMM специалист',
-    designer: 'Дизайнер',
-    targetologist: 'Таргетолог',
-    sales_manager: 'Менеджер по продажам',
-    developer: 'Разработчик',
-    employee: 'Сотрудник',
-  }
-
   return (
     <div className="space-y-5 max-w-2xl">
       <h1 className="page-title">{t('profile.title')}</h1>
@@ -79,7 +68,7 @@ export default function ProfilePage() {
           <div>
             <h2 className="text-xl font-bold text-surface-900 dark:text-surface-100">{user?.name}</h2>
             <div className="flex items-center gap-2 mt-1">
-              <span className="badge bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400">{ROLE_LABELS[user?.role || ''] || user?.role}</span>
+              <span className="badge bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400">{getUserPositionLabel(user)}</span>
               <span className={`badge ${user?.isActive ? 'status-done' : 'status-cancelled'}`}>
                 {user?.isActive ? t('common.active') : t('common.inactive')}
               </span>
@@ -100,6 +89,13 @@ export default function ProfilePage() {
             <div>
               <p className="text-xs text-surface-400 dark:text-surface-500">{t('profile.email')}</p>
               <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{user?.email}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 p-3 bg-surface-50 dark:bg-surface-700/50 rounded-xl">
+            <Briefcase size={16} className="text-surface-400 dark:text-surface-500 shrink-0" />
+            <div>
+              <p className="text-xs text-surface-400 dark:text-surface-500">Должность</p>
+              <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{getUserPositionLabel(user)}</p>
             </div>
           </div>
         </div>

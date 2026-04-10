@@ -3,7 +3,36 @@
  * Each role has a defined set of allowed routes and actions.
  */
 
-import type { UserRole } from '@/store/auth.store'
+import type { UserRole, User } from '@/store/auth.store'
+
+/** Maps role enum to a Russian display label */
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Администратор',
+  founder: 'Основатель',
+  project_manager: 'Проект-менеджер',
+  smm_specialist: 'SMM специалист',
+  designer: 'Дизайнер',
+  targetologist: 'Таргетолог',
+  sales_manager: 'Менеджер по продажам',
+  marketer: 'Маркетолог',
+  developer: 'Разработчик',
+  employee: 'Сотрудник',
+}
+
+/**
+ * Get the display label for a user — prefers their employee.position
+ * over the generic role label. Falls back gracefully.
+ */
+export function getUserPositionLabel(user: { role?: string; position?: string | null } | null | undefined): string {
+  if (!user) return ''
+  if (user.position && user.position.trim()) return user.position.trim()
+  return ROLE_LABELS[user.role || ''] || 'Сотрудник'
+}
+
+export function getRoleLabel(role: string | undefined | null): string {
+  if (!role) return 'Сотрудник'
+  return ROLE_LABELS[role] || role
+}
 
 export type Permission =
   | 'dashboard'

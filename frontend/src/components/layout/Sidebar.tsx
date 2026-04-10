@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermission, type Permission } from '@/lib/permissions'
+import { hasPermission, getUserPositionLabel, type Permission } from '@/lib/permissions'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Bell, Archive, HardDrive,
@@ -155,12 +155,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             )}>
               <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{user.name}</p>
               <p className="text-xs text-surface-500 dark:text-surface-400 truncate">
-                {({
-                  admin: 'Администратор', founder: 'Основатель',
-                  project_manager: 'Project Manager', smm_specialist: 'SMM-специалист',
-                  designer: 'Дизайнер', sales_manager: 'Sales', marketer: 'Маркетолог',
-                  targetologist: 'Таргетолог', developer: 'Разработчик', employee: 'Сотрудник',
-                } as Record<string, string>)[user.role] || user.role}
+                {getUserPositionLabel(user)}
               </p>
             </div>
             <ChevronRight size={14} className={clsx(

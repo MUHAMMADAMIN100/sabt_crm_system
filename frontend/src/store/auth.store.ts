@@ -22,6 +22,8 @@ export interface User {
   avatar?: string
   isActive: boolean
   isSubAdmin?: boolean
+  position?: string | null
+  department?: string | null
 }
 
 interface AuthState {

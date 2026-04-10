@@ -83,7 +83,15 @@ export class AuthService {
     });
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role });
-    return { token, user: this.sanitize(user) };
+    const emp = await this.employeeRepo.findOne({ where: { userId: user.id } });
+    return {
+      token,
+      user: {
+        ...this.sanitize(user),
+        position: emp?.position || null,
+        department: emp?.department || null,
+      },
+    };
   }
 
   async login(dto: LoginDto) {
@@ -115,7 +123,16 @@ export class AuthService {
       details: { role: effectiveRole },
     });
 
-    return { token, user: { ...sanitized, role: effectiveRole, isSubAdmin: employee?.isSubAdmin || false } };
+    return {
+      token,
+      user: {
+        ...sanitized,
+        role: effectiveRole,
+        position: employee?.position || null,
+        department: employee?.department || null,
+        isSubAdmin: employee?.isSubAdmin || false,
+      },
+    };
   }
 
   async logout(userId: string) {
@@ -159,7 +176,13 @@ export class AuthService {
     const employee = await this.employeeRepo.findOne({ where: { userId } });
     const effectiveRole = employee?.isSubAdmin ? UserRole.ADMIN : user.role;
     const sanitized = this.sanitize(user);
-    return { ...sanitized, role: effectiveRole, isSubAdmin: employee?.isSubAdmin || false };
+    return {
+      ...sanitized,
+      role: effectiveRole,
+      position: employee?.position || null,
+      department: employee?.department || null,
+      isSubAdmin: employee?.isSubAdmin || false,
+    };
   }
 
   async changePassword(userId: string, oldPassword: string, newPassword: string) {
