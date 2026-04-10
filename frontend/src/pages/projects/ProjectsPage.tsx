@@ -32,6 +32,8 @@ export default function ProjectsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
+  // Only admin/founder can create/archive/delete projects
+  const canCreateProject = ['admin', 'founder'].includes(user?.role || '')
   const qc = useQueryClient()
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -147,7 +149,7 @@ export default function ProjectsPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="page-title">{t('projects.title')}</h1>
-        {isManagerPlus && (
+        {canCreateProject && (
           <button onClick={() => setShowCreate(true)} className="btn-primary">
             <Plus size={16} /> <span className="hidden sm:inline">{t('projects.newProject')}</span>
           </button>
@@ -177,7 +179,7 @@ export default function ProjectsPage() {
       {/* Projects grid */}
       {!projects?.length ? (
         <EmptyState title={t('projects.noProjects')} description={t('projects.createFirst')} action={
-          isManagerPlus && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
+          canCreateProject && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
         } />
       ) : (
         <div key={page} className="animate-fade-in grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -205,8 +207,12 @@ export default function ProjectsPage() {
                 {isManagerPlus && (
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={(e) => { e.stopPropagation(); setEditProject(p) }} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500 dark:text-surface-400"><Edit size={14} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); archiveMut.mutate(p.id) }} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500 dark:text-surface-400"><Archive size={14} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); setDeleteId(p.id) }} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500 dark:text-red-400"><Trash2 size={14} /></button>
+                    {canCreateProject && (
+                      <>
+                        <button onClick={(e) => { e.stopPropagation(); archiveMut.mutate(p.id) }} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500 dark:text-surface-400"><Archive size={14} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); setDeleteId(p.id) }} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500 dark:text-red-400"><Trash2 size={14} /></button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

@@ -71,7 +71,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
   ],
   project_manager: [
-    'dashboard', 'projects.view', 'projects.create', 'projects.edit',
+    'dashboard', 'projects.view', 'projects.edit',
     'projects.members.manage',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
     'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',

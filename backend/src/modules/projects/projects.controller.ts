@@ -36,7 +36,7 @@ export class ProjectsController {
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   create(@Body() dto: CreateProjectDto, @Request() req) {
     return this.service.create(dto, req.user.id);
   }
@@ -48,15 +48,15 @@ export class ProjectsController {
   }
 
   @Patch(':id/archive')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   archive(@Param('id') id: string) { return this.service.archive(id); }
 
   @Patch(':id/restore')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   restore(@Param('id') id: string) { return this.service.restore(id); }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   remove(@Param('id') id: string, @Request() req) {
     return this.service.remove(id, req.user);
   }
