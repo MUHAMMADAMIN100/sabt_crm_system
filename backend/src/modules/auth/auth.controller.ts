@@ -18,6 +18,14 @@ export class AuthController {
     return this.authService.register(dto);
   }
 
+  @Get('founder-exists')
+  @SkipThrottle()
+  @ApiOperation({ summary: 'Check if a founder is already registered (public)' })
+  async founderExists() {
+    const exists = await this.authService.founderExists();
+    return { exists };
+  }
+
   @Post('login')
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   @ApiOperation({ summary: 'Login' })

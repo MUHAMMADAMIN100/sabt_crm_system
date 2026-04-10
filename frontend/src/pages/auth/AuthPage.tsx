@@ -29,8 +29,8 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (mode === 'register') {
-      api.get('/users', { params: { role: 'founder' } })
-        .then(r => setFounderExists((r.data?.length ?? 0) > 0))
+      api.get('/auth/founder-exists')
+        .then(r => setFounderExists(!!r.data?.exists))
         .catch(() => {})
     }
   }, [mode])

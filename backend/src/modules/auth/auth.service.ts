@@ -30,6 +30,14 @@ export class AuthService {
     const exists = await this.userRepo.findOne({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email already in use');
 
+    // Enforce single founder per system
+    if (dto.role === UserRole.FOUNDER) {
+      const founderCount = await this.userRepo.count({ where: { role: UserRole.FOUNDER } });
+      if (founderCount > 0) {
+        throw new ConflictException('В системе уже зарегистрирован основатель');
+      }
+    }
+
     const user = this.userRepo.create({
       name: dto.name,
       email: dto.email,
@@ -138,6 +146,11 @@ export class AuthService {
     const user = await this.userRepo.findOne({ where: { email } });
     if (user && (await user.validatePassword(password))) return user;
     return null;
+  }
+
+  async founderExists(): Promise<boolean> {
+    const count = await this.userRepo.count({ where: { role: UserRole.FOUNDER } });
+    return count > 0;
   }
 
   async getMe(userId: string) {
