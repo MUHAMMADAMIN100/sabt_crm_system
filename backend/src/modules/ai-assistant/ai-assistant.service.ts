@@ -96,10 +96,12 @@ export class AiAssistantService {
       if (m.provider === 'groq') return !!this.groqKey;
       return false;
     });
-    return {
-      models,
-      defaultModel: this.gemini ? 'gemini-2.5-flash' : 'llama-3.3-70b-versatile',
-    };
+    // Default: Llama 3.1 8B Instant (fastest), fall back to other Groq, then Gemini
+    let defaultModel = 'llama-3.1-8b-instant';
+    if (!this.groqKey) {
+      defaultModel = this.gemini ? 'gemini-2.5-flash' : '';
+    }
+    return { models, defaultModel };
   }
 
   async chat(question: string, selectedModel?: string): Promise<string> {
