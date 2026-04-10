@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useEffect, useMemo } from 'react'
+import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from '@/i18n'
 
 interface TaskFormProps {
@@ -21,8 +21,22 @@ export default function TaskForm({
   onSubmit, onClose, loading, initial, projects, employees,
   fixedProjectId, initialDeadline, isAdmin, currentUserId,
 }: TaskFormProps) {
-  const { register, handleSubmit, reset, formState: { errors } } = useForm()
+  const { register, handleSubmit, reset, control, formState: { errors } } = useForm()
   const { t } = useTranslation()
+
+  // Watch the selected projectId so we can filter assignees by project members
+  const selectedProjectId = useWatch({ control, name: 'projectId' }) || fixedProjectId
+
+  // Filter employees: only those who are members of the selected project
+  const filteredEmployees = useMemo(() => {
+    if (!employees) return []
+    if (!selectedProjectId || !projects) return employees
+    const project = projects.find((p: any) => p.id === selectedProjectId)
+    if (!project) return employees
+    const memberIds = (project.members || []).map((m: any) => m.id)
+    if (!memberIds.length) return employees
+    return employees.filter((e: any) => memberIds.includes(e.userId || e.id))
+  }, [employees, selectedProjectId, projects])
 
   useEffect(() => {
     if (initial) {
@@ -84,11 +98,16 @@ export default function TaskForm({
         {employees && (
           <div>
             <label className="label">{t('tasks.assignee')} *</label>
-            <select {...register('assigneeId', { required: true })} className="input">
-              <option value="">{t('common.selectOption')}</option>
-              {employees.map((e: any) => <option key={e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>)}
+            <select {...register('assigneeId', { required: true })} className="input" disabled={!selectedProjectId}>
+              <option value="">
+                {!selectedProjectId ? 'Сначала выберите проект' : (filteredEmployees.length ? t('common.selectOption') : 'Нет участников в проекте')}
+              </option>
+              {filteredEmployees.map((e: any) => <option key={e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>)}
             </select>
             {errors.assigneeId && <p className="text-xs text-red-500 mt-1">{t('tasks.assignee')} обязательно</p>}
+            {selectedProjectId && filteredEmployees.length === 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Сначала добавьте сотрудника как участника проекта</p>
+            )}
           </div>
         )}
         <div>

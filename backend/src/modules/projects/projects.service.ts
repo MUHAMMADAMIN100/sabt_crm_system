@@ -146,6 +146,13 @@ export class ProjectsService {
       project.members = dto.memberIds.map(id => ({ id })) as unknown as User[];
     }
 
+    // If managerId is being changed, clear the cached manager object
+    // so TypeORM uses the new managerId instead of the stale relation
+    if (dto.managerId !== undefined && dto.managerId !== project.managerId) {
+      (project as any).manager = null;
+      project.managerId = dto.managerId as any;
+    }
+
     Object.assign(project, {
       ...dto,
       members: project.members,
@@ -192,7 +199,8 @@ export class ProjectsService {
     }
 
     this.gateway.broadcast('projects:changed', {});
-    return saved;
+    // Return fresh project with relations loaded
+    return this.findOne(id);
   }
 
   async archive(id: string) {

@@ -11,6 +11,7 @@ export type UserRole =
   | 'sales_manager'
   | 'marketer'
   | 'targetologist'
+  | 'developer'
   | 'employee'
 
 export interface User {
@@ -103,7 +104,7 @@ export function useIsPM() {
 }
 
 export function useIsWorker() {
-  return useAuthStore(s => ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager', 'employee'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager', 'developer', 'employee'].includes(s.user?.role || ''))
 }
 
 export function useCanManageTasks() {

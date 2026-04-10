@@ -164,7 +164,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                   admin: 'Администратор', founder: 'Основатель',
                   project_manager: 'Project Manager', smm_specialist: 'SMM-специалист',
                   designer: 'Дизайнер', sales_manager: 'Sales', marketer: 'Маркетолог',
-                  targetologist: 'Таргетолог', employee: 'Сотрудник',
+                  targetologist: 'Таргетолог', developer: 'Разработчик', employee: 'Сотрудник',
                 } as Record<string, string>)[user.role] || user.role}
               </p>
             </div>

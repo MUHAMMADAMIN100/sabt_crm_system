@@ -17,7 +17,7 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
 const PM_ROLES = ['admin', 'founder', 'project_manager']
-const WORKER_ROLES = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager', 'employee']
+const WORKER_ROLES = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager', 'developer', 'employee']
 
 const STATUS_FLOW: Record<string, string[]> = {
   new:         ['in_progress'],

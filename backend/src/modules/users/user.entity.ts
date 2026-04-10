@@ -19,6 +19,7 @@ export enum UserRole {
   SALES_MANAGER   = 'sales_manager',
   MARKETER        = 'marketer',
   TARGETOLOGIST   = 'targetologist',
+  DEVELOPER       = 'developer',
   EMPLOYEE        = 'employee',
 }
 

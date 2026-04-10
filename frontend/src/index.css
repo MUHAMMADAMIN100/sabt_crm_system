@@ -22,7 +22,7 @@
   }
 
   /* ── Safari iOS fixes ──────────────────────────────── */
-  input, textarea, select, button {
+  input, textarea, button {
     -webkit-appearance: none;
     appearance: none;
   }
@@ -30,7 +30,11 @@
     -webkit-appearance: menulist;
     appearance: menulist;
   }
-  input[type="color"] {
+  input[type="color"],
+  input[type="radio"],
+  input[type="checkbox"],
+  input[type="range"],
+  input[type="file"] {
     -webkit-appearance: auto;
     appearance: auto;
   }

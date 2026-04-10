@@ -83,6 +83,11 @@ export class AnalyticsService {
   }
 
   async getEmployeeActivity(from?: string, to?: string) {
+    // Default to TODAY only — chart resets daily
+    const today = new Date().toISOString().split('T')[0];
+    const fromDate = from || today;
+    const toDate = to || today;
+
     const qb = this.sessionRepo
       .createQueryBuilder('ws')
       .leftJoin('ws.user', 'u')
@@ -91,12 +96,11 @@ export class AnalyticsService {
       .addSelect('u.id', 'id')
       .addSelect('SUM(ws.durationHours)', 'totalHours')
       .where('ws.logoutAt IS NOT NULL')
+      .andWhere('ws.date >= :fromDate', { fromDate })
+      .andWhere('ws.date <= :toDate', { toDate })
       .groupBy('u.id, u.name, emp.fullName')
       .orderBy('"totalHours"', 'DESC')
       .limit(10);
-
-    if (from) qb.andWhere('ws.date >= :from', { from });
-    if (to) qb.andWhere('ws.date <= :to', { to });
 
     const data = await qb.getRawMany();
     return data.map(d => ({ ...d, totalHours: parseFloat(d.totalHours || '0') }));

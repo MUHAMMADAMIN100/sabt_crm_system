@@ -105,25 +105,42 @@ export default function ProjectDetailPage() {
     mutationFn: ({ taskId, data }: any) => tasksApi.update(taskId, data),
     onMutate: async ({ taskId, data }: any) => {
       await qc.cancelQueries({ queryKey: ['project', id] })
+      await qc.cancelQueries({ queryKey: ['projects'] })
       const previous = qc.getQueryData(['project', id])
+      const previousProjects = qc.getQueryData(['projects'])
+
+      const statusWeight: Record<string, number> = { new: 0, in_progress: 30, returned: 25, review: 70, done: 100 }
+
+      // Update single project detail with new task status + recalc progress
       qc.setQueryData(['project', id], (old: any) => {
         if (!old) return old
         const updatedTasks = old.tasks?.map((t: any) => t.id === taskId ? { ...t, ...data } : t) || []
-        const statusWeight: Record<string, number> = { new: 0, in_progress: 30, review: 70, done: 100 }
         const activeTasks = updatedTasks.filter((t: any) => t.status !== 'cancelled')
         const totalWeight = activeTasks.reduce((sum: number, t: any) => sum + (statusWeight[t.status] ?? 0), 0)
         const progress = activeTasks.length > 0 ? Math.round(totalWeight / activeTasks.length) : 0
         return { ...old, tasks: updatedTasks, progress }
       })
-      return { previous }
+
+      // Also update projects list — recalc progress for this project
+      qc.setQueryData(['projects'], (oldList: any[]) => {
+        if (!Array.isArray(oldList)) return oldList
+        const projectData = qc.getQueryData(['project', id]) as any
+        const newProgress = projectData?.progress
+        return oldList.map((p: any) =>
+          p.id === id ? { ...p, progress: newProgress ?? p.progress } : p
+        )
+      })
+
+      return { previous, previousProjects }
     },
     onError: (_err: any, _vars: any, context: any) => {
       qc.setQueryData(['project', id], context?.previous)
+      qc.setQueryData(['projects'], context?.previousProjects)
       toast.error(t('common.error'))
     },
     onSuccess: () => {
-      // Don't invalidate project — optimistic update is already correct, socket will sync later
       qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['projects'] })
       qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
       qc.invalidateQueries({ queryKey: ['analytics-workload'] })
     },
@@ -834,7 +851,9 @@ export default function ProjectDetailPage() {
               else createTask.mutate({ ...data, projectId: id })
             }}
             onClose={() => { setShowTaskForm(false); setEditingTask(null) }}
-            employees={employees || []}
+            employees={(employees || []).filter((e: any) =>
+              (project?.members || []).some((m: any) => m.id === (e.userId || e.id))
+            )}
             loading={createTask.isPending || updateTask.isPending}
             initial={editingTask}
             fixedProjectId={id}

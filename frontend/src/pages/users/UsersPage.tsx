@@ -72,6 +72,7 @@ export default function UsersPage() {
     designer: 'Дизайнер',
     targetologist: 'Таргетолог',
     sales_manager: 'Менеджер по продажам',
+    developer: 'Разработчик',
     employee: 'Сотрудник',
   }
 

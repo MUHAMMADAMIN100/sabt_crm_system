@@ -501,11 +501,11 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 />
               </div>
               <div>
-                <label className="label">Публикаций в день</label>
+                <label className="label">Макетов в месяц</label>
                 <input
                   type="number" min={0}
-                  value={smmAnswers.publicationsPerDay || ''}
-                  onChange={e => setSmmAnswers(prev => ({ ...prev, publicationsPerDay: e.target.value }))}
+                  value={smmAnswers.layoutsPerMonth || ''}
+                  onChange={e => setSmmAnswers(prev => ({ ...prev, layoutsPerMonth: e.target.value }))}
                   className="input" placeholder="0"
                 />
               </div>
