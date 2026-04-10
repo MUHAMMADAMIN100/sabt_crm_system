@@ -75,7 +75,7 @@ export class TasksController {
 
   @Post()
   create(@Body() dto: CreateTaskDto, @Request() req) {
-    return this.service.create(dto, req.user.id);
+    return this.service.create(dto, req.user.id, req.user.role);
   }
 
   @Patch(':id')

@@ -64,7 +64,13 @@ export class TasksService {
     return task;
   }
 
-  async create(dto: CreateTaskDto, userId: string) {
+  async create(dto: CreateTaskDto, userId: string, userRole?: string) {
+    // Workers (non-PM) can only create tasks assigned to themselves
+    const isPM = userRole && PM_ROLES.includes(userRole as UserRole);
+    if (!isPM) {
+      dto.assigneeId = userId;
+    }
+
     const task = this.repo.create({ ...dto, createdById: userId });
     const saved = await this.repo.save(task);
 
@@ -253,7 +259,9 @@ export class TasksService {
 
   async removeWithAuth(id: string, user: { id: string; role: string; name?: string }) {
     const task = await this.findOne(id);
-    if (user.role === UserRole.EMPLOYEE && task.assigneeId !== user.id && task.createdById !== user.id) {
+    // Workers (any non-PM role) can only delete their own tasks (assigned to them or created by them)
+    const isPM = PM_ROLES.includes(user.role as UserRole);
+    if (!isPM && task.assigneeId !== user.id && task.createdById !== user.id) {
       throw new ForbiddenException('Not allowed');
     }
     const projectId = task.projectId;

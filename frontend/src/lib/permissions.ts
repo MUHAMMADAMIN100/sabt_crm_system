@@ -83,7 +83,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   smm_specialist: [
     'dashboard', 'projects.view',
-    'tasks.view', 'tasks.edit',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
@@ -91,7 +91,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   designer: [
     'dashboard', 'projects.view',
-    'tasks.view', 'tasks.edit',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
@@ -99,7 +99,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   targetologist: [
     'dashboard', 'projects.view',
-    'tasks.view', 'tasks.edit',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
@@ -107,7 +107,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   marketer: [
     'dashboard', 'projects.view',
-    'tasks.view', 'tasks.edit',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
@@ -115,7 +115,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   sales_manager: [
     'dashboard', 'projects.view',
-    'tasks.view', 'tasks.edit',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view',
@@ -123,7 +123,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   developer: [
     'dashboard', 'projects.view',
-    'tasks.view', 'tasks.edit',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
@@ -131,7 +131,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   employee: [
     'dashboard', 'projects.view',
-    'tasks.view', 'tasks.edit',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view',

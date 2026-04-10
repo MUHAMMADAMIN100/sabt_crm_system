@@ -31,7 +31,7 @@ export default function ProjectsPage() {
   const [editProject, setEditProject] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = user?.role === 'admin'
+  const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
   const qc = useQueryClient()
   const { t } = useTranslation()
   const navigate = useNavigate()

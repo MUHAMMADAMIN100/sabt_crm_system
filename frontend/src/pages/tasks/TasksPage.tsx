@@ -29,7 +29,7 @@ export default function TasksPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const PAGE_SIZE = 9
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = user?.role === 'admin'
+  const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
   const qc = useQueryClient()
   const { t } = useTranslation()
 
@@ -377,9 +377,11 @@ export default function TasksPage() {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex gap-1 justify-end">
-                        <button onClick={() => { setEditingTask(task); setShowCreate(true) }} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500 dark:text-surface-300"><Edit size={14} /></button>
-                        {isManagerPlus && (
-                          <button onClick={() => setDeleteTaskId(task.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500 dark:text-red-400"><Trash2 size={14} /></button>
+                        {(isManagerPlus || task.assigneeId === user?.id || task.createdById === user?.id) && (
+                          <>
+                            <button onClick={() => { setEditingTask(task); setShowCreate(true) }} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500 dark:text-surface-300"><Edit size={14} /></button>
+                            <button onClick={() => setDeleteTaskId(task.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500 dark:text-red-400"><Trash2 size={14} /></button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -396,7 +398,7 @@ export default function TasksPage() {
               <div className="flex items-start justify-between mb-2">
                 <Link to={`/tasks/${task.id}`} className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm flex-1 pr-2">{task.title}</Link>
                 <div className="flex gap-0.5 shrink-0">
-                  {(isManagerPlus || task.assigneeId === user?.id) && (
+                  {(isManagerPlus || task.assigneeId === user?.id || task.createdById === user?.id) && (
                     <>
                       <button onClick={() => { setEditingTask(task); setShowCreate(true) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400"><Edit size={13} /></button>
                       <button onClick={() => setDeleteTaskId(task.id)} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400"><Trash2 size={13} /></button>
