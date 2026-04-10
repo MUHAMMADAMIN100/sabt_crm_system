@@ -17,7 +17,7 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   findAll(@Query('role') role?: UserRole) {
     return this.usersService.findAll(role);
   }
@@ -28,25 +28,25 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   update(@Param('id') id: string, @Body() dto: Partial<{ name: string; email: string; role: UserRole; isActive: boolean }>) {
     return this.usersService.update(id, dto);
   }
 
   @Patch(':id/toggle-active')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   toggleActive(@Param('id') id: string) {
     return this.usersService.toggleActive(id);
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);
   }
 
   @Post('cleanup-orphans')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   cleanupOrphanedUsers() {
     return this.usersService.cleanupOrphanedUsers();
   }

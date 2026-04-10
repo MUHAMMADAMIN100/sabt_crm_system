@@ -21,7 +21,8 @@ export default function EmployeesPage() {
   const [editEmp, setEditEmp] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const user = useAuthStore(s => s.user)
-  const isAdmin = user?.role === 'admin'
+  const canManage = user?.role === 'admin' || user?.role === 'founder'
+  const isAdmin = canManage  // alias for backward compat
   const qc = useQueryClient()
   const { t } = useTranslation()
   const navigate = useNavigate()

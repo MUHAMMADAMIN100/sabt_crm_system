@@ -129,7 +129,7 @@ export default function DashboardPage() {
   const isPMView = role === 'project_manager'
   const isWorkerView = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager', 'developer', 'employee'].includes(role)
   const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(role)
-  const isAdmin = role === 'admin'
+  const isAdmin = ['admin', 'founder'].includes(role)
   const { t } = useTranslation()
 
   // Role-specific dashboards

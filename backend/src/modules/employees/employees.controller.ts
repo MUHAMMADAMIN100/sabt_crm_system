@@ -27,29 +27,28 @@ export class EmployeesController {
   getDepartments() { return this.service.getDepartments(); }
 
   @Get('stats')
-  @Roles(UserRole.ADMIN)
   getStats() { return this.service.getStats(); }
 
   @Get(':id')
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 
   @Post()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   create(@Body() dto: CreateEmployeeDto) { return this.service.create(dto); }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   update(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) {
     return this.service.update(id, dto);
   }
 
   @Patch(':id/toggle-sub-admin')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   toggleSubAdmin(@Param('id') id: string) {
     return this.service.toggleSubAdmin(id);
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   remove(@Param('id') id: string) { return this.service.remove(id); }
 }
