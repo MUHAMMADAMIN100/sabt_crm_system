@@ -27,7 +27,9 @@ export class UsersService {
 
   async update(id: string, dto: Partial<User>) {
     const user = await this.findOne(id);
-    await this.repo.update(id, dto);
+    // Use save (not update) so BeforeUpdate hooks fire (e.g., password hashing)
+    Object.assign(user, dto);
+    await this.repo.save(user);
 
     await this.activityLog.log({
       userId: id,
@@ -36,7 +38,7 @@ export class UsersService {
       entity: 'user',
       entityId: id,
       entityName: user.name,
-      details: { fields: Object.keys(dto) },
+      details: { fields: Object.keys(dto).filter(k => k !== 'password') },
     });
 
     return this.findOne(id);
