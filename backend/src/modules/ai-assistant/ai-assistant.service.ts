@@ -27,13 +27,13 @@ export class AiAssistantService {
     if (apiKey) {
       this.client = new GoogleGenerativeAI(apiKey);
       this.model = this.client.getGenerativeModel({
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash',
         generationConfig: {
           maxOutputTokens: 2048,
           temperature: 0.3,
         },
       });
-      this.logger.log('AI Assistant ready (Gemini 2.0 Flash connected)');
+      this.logger.log('AI Assistant ready (Gemini 2.5 Flash connected)');
     } else {
       this.logger.warn('GEMINI_API_KEY not set — AI Assistant disabled');
     }
