@@ -41,15 +41,28 @@ export class ProjectsService {
       )
       .where('p.isArchived = :archived', { archived });
 
-    // RBAC: filter by role
+    // RBAC: filter by role using SUBQUERY (not the joined members table)
+    // so leftJoinAndSelect still loads ALL members in the result
     if (requestUser) {
       const { id: userId, role } = requestUser;
       if (role === 'project_manager') {
         // PM sees only projects they manage or are members of
-        qb.andWhere('(p.managerId = :userId OR members.id = :userId)', { userId });
+        qb.andWhere(
+          `(p.managerId = :userId OR p.id IN (
+            SELECT pm."projectsId" FROM project_members pm
+            WHERE pm."usersId" = :userId
+          ))`,
+          { userId },
+        );
       } else if (!['admin', 'founder'].includes(role)) {
-        // All other roles (SMM, designer, etc.) see only projects they are members of
-        qb.andWhere('members.id = :userId', { userId });
+        // All other roles see only projects they are members of
+        qb.andWhere(
+          `p.id IN (
+            SELECT pm."projectsId" FROM project_members pm
+            WHERE pm."usersId" = :userId
+          )`,
+          { userId },
+        );
       }
       // admin & founder see all — no extra filter
     }
