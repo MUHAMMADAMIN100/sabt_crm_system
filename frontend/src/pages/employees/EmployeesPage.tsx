@@ -42,8 +42,10 @@ export default function EmployeesPage() {
   const pagedEmployees = employees.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const getTelegramUrl = (tg: string) => {
-    const clean = tg.replace(/https?:\/\/(www\.)?t\.me\//g, '').replace(/^@/, '')
-    return `https://t.me/${clean}`
+    const clean = tg.replace(/https?:\/\/(www\.)?t\.me\//g, '').replace(/^@/, '').trim()
+    // Use tg:// deep link — opens the local Telegram app directly,
+    // bypasses DNS issues if t.me is blocked (works in Tajikistan)
+    return `tg://resolve?domain=${clean}`
   }
 
   const createMut = useMutation({
