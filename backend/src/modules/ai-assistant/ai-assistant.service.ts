@@ -7,13 +7,21 @@ import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
-import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+// Fallback chain — try first, fall back if overloaded
+const MODEL_CHAIN = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-001',
+  'gemini-flash-latest',
+  'gemini-2.0-flash-lite',
+];
 
 @Injectable()
 export class AiAssistantService {
   private readonly logger = new Logger(AiAssistantService.name);
   private client: GoogleGenerativeAI | null = null;
-  private model: GenerativeModel | null = null;
 
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
@@ -26,28 +34,19 @@ export class AiAssistantService {
     const apiKey = process.env.GEMINI_API_KEY;
     if (apiKey) {
       this.client = new GoogleGenerativeAI(apiKey);
-      this.model = this.client.getGenerativeModel({
-        model: 'gemini-2.5-flash',
-        generationConfig: {
-          maxOutputTokens: 2048,
-          temperature: 0.3,
-        },
-      });
-      this.logger.log('AI Assistant ready (Gemini 2.5 Flash connected)');
+      this.logger.log('AI Assistant ready (Gemini connected, model fallback chain enabled)');
     } else {
       this.logger.warn('GEMINI_API_KEY not set — AI Assistant disabled');
     }
   }
 
   async chat(question: string): Promise<string> {
-    if (!this.model) {
+    if (!this.client) {
       return 'ИИ-помощник не настроен. Добавьте GEMINI_API_KEY в переменные окружения.';
     }
 
-    try {
-      const context = await this.gatherContext(question);
-
-      const systemPrompt = `Ты — ИИ-помощник CRM-системы "Sabt" для SMM-агентства. Отвечай на русском языке.
+    const context = await this.gatherContext(question);
+    const systemPrompt = `Ты — ИИ-помощник CRM-системы "Sabt" для SMM-агентства. Отвечай на русском языке.
 Ты анализируешь данные из базы данных проекта и отвечаешь на вопросы администратора.
 Будь точен, конкретен, давай цифры и факты. Форматируй ответ красиво с помощью markdown.
 Если данных нет — так и скажи, не придумывай.
@@ -57,14 +56,35 @@ ${context}
 
 Вопрос администратора: ${question}`;
 
-      const result = await this.model.generateContent(systemPrompt);
-      const response = result.response;
-      const text = response.text();
-      return text || 'Не удалось получить ответ.';
-    } catch (error) {
-      this.logger.error(`AI chat error: ${error?.message || error}`);
-      return `Ошибка ИИ: ${error?.message || 'Неизвестная ошибка'}`;
+    // Try models in order, fall back if 503/overloaded
+    let lastError: any = null;
+    for (const modelName of MODEL_CHAIN) {
+      try {
+        const model = this.client.getGenerativeModel({
+          model: modelName,
+          generationConfig: { maxOutputTokens: 2048, temperature: 0.3 },
+        });
+        const result = await model.generateContent(systemPrompt);
+        const text = result.response.text();
+        if (text) {
+          this.logger.log(`AI response from ${modelName}`);
+          return text;
+        }
+      } catch (error: any) {
+        lastError = error;
+        const msg = error?.message || '';
+        // 503 = overloaded, 429 = rate limit — try next model
+        if (msg.includes('503') || msg.includes('429') || msg.includes('overloaded') || msg.includes('high demand')) {
+          this.logger.warn(`${modelName} overloaded, trying next…`);
+          continue;
+        }
+        // Other errors — stop and return
+        break;
+      }
     }
+
+    this.logger.error(`AI chat failed after fallback: ${lastError?.message || 'unknown'}`);
+    return `Ошибка ИИ: ${lastError?.message || 'все модели Gemini временно недоступны, попробуйте через минуту'}`;
   }
 
   private async gatherContext(question: string): Promise<string> {
