@@ -4,7 +4,7 @@ import { useAuthStore } from '@/store/auth.store'
 import { authApi, projectsApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
 import { Avatar, ProgressBar, StatusBadge } from '@/components/ui'
-import { User, Mail, Shield, Key, Clock, FolderKanban, CalendarDays } from 'lucide-react'
+import { User, Mail, Key, Clock, FolderKanban, CalendarDays } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import { Link } from 'react-router-dom'
@@ -100,13 +100,6 @@ export default function ProfilePage() {
             <div>
               <p className="text-xs text-surface-400 dark:text-surface-500">{t('profile.email')}</p>
               <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{user?.email}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 p-3 bg-surface-50 dark:bg-surface-700/50 rounded-xl">
-            <Shield size={16} className="text-surface-400 dark:text-surface-500 shrink-0" />
-            <div>
-              <p className="text-xs text-surface-400 dark:text-surface-500">{t('profile.role')}</p>
-              <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{ROLE_LABELS[user?.role || ''] || user?.role}</p>
             </div>
           </div>
         </div>

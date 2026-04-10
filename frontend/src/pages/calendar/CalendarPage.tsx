@@ -37,12 +37,14 @@ export default function CalendarPage() {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
+  // All authenticated users can create tasks from calendar (workers create only for themselves)
+  const canCreate = !!user
 
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')
 
   const { data: events } = useQuery({ queryKey: ['calendar', from, to, assigneeUserId, filterProjectId], queryFn: () => calendarApi.events({ from, to, ...(assigneeUserId && { employeeId: assigneeUserId }), ...(filterProjectId && { projectId: filterProjectId }) }) })
-  const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list(), enabled: isManagerPlus })
+  const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list(), enabled: isManagerPlus })
 
   const createTask = useMutation({
@@ -96,7 +98,7 @@ export default function CalendarPage() {
   const weekDays = Array.isArray(weekDaysArr) ? weekDaysArr : ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
 
   const handleDayClick = (day: Date) => {
-    if (!isManagerPlus) return // employees can't add tasks
+    if (!canCreate) return
     setSelectedDay(day)
     setShowTaskForm(true)
   }
@@ -146,11 +148,11 @@ export default function CalendarPage() {
             return (
               <div key={day.toISOString()} onClick={() => handleDayClick(day)}
                 className={clsx('min-h-[90px] border-r border-b border-surface-50 dark:border-surface-700 p-1.5 transition-colors group overflow-hidden',
-                  isManagerPlus && 'cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700/30',
+                  canCreate && 'cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700/30',
                   today && 'bg-primary-50/30 dark:bg-primary-900/10')}>
                 <div className="flex items-center justify-between mb-1">
                   <span className={clsx('text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full', today ? 'bg-primary-600 text-white' : 'text-surface-500 dark:text-surface-400')}>{format(day, 'd')}</span>
-                  {isManagerPlus && <Plus size={14} className="text-surface-300 dark:text-surface-600 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                  {canCreate && <Plus size={14} className="text-surface-300 dark:text-surface-600 opacity-0 group-hover:opacity-100 transition-opacity" />}
                 </div>
                 <div className="space-y-0.5">
                   {/* Spanning task bars */}
@@ -221,7 +223,7 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {isManagerPlus && showTaskForm && (
+      {canCreate && showTaskForm && (
         <Modal
           open={showTaskForm}
           onClose={() => setShowTaskForm(false)}
@@ -234,7 +236,8 @@ export default function CalendarPage() {
             projects={projects || []} employees={employees || []}
             loading={createTask.isPending}
             initialDeadline={selectedDay ? format(selectedDay, 'yyyy-MM-dd') : undefined}
-            isAdmin={true}
+            isAdmin={isManagerPlus}
+            currentUserId={user?.id}
           />
         </Modal>
       )}

@@ -116,10 +116,10 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   sales_manager: [
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
+    'calendar.view', 'calendar.create',
     'reports.view', 'reports.create',
-    'files.view',
-    'notifications.view', 'profile.view',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'time-tracker.use',
   ],
   developer: [
     'dashboard', 'projects.view',
