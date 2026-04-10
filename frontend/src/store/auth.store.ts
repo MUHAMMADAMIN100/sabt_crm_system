@@ -70,7 +70,13 @@ export const useAuthStore = create<AuthState>()(
       fetchMe: async () => {
         try {
           const { data } = await api.get('/auth/me')
+          const oldRole = get().user?.role
           set({ user: data })
+          // If role changed (e.g. admin promoted/demoted user) — force a hard reload
+          // so all permissions, sidebar items, and React Query caches reset properly
+          if (oldRole && data.role && oldRole !== data.role) {
+            window.location.reload()
+          }
         } catch {
           // Clear locally without calling API logout to avoid infinite recursion
           localStorage.removeItem('token')
