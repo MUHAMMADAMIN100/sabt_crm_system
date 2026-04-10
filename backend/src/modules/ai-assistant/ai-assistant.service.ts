@@ -8,9 +8,10 @@ import { Employee } from '../employees/employee.entity';
 import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import * as https from 'https';
 
-// Fallback chain — try first, fall back if overloaded
-const MODEL_CHAIN = [
+// Gemini fallback chain (paid tier — only used if GEMINI_API_KEY has billing)
+const GEMINI_MODEL_CHAIN = [
   'gemini-2.5-flash',
   'gemini-2.0-flash',
   'gemini-2.0-flash-001',
@@ -18,10 +19,17 @@ const MODEL_CHAIN = [
   'gemini-2.0-flash-lite',
 ];
 
+// Groq fallback (free, fast, reliable)
+const GROQ_MODELS = [
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+];
+
 @Injectable()
 export class AiAssistantService {
   private readonly logger = new Logger(AiAssistantService.name);
-  private client: GoogleGenerativeAI | null = null;
+  private gemini: GoogleGenerativeAI | null = null;
+  private groqKey: string | null = null;
 
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
@@ -31,18 +39,21 @@ export class AiAssistantService {
     @InjectRepository(TimeLog) private timeRepo: Repository<TimeLog>,
     @InjectRepository(DailyReport) private reportRepo: Repository<DailyReport>,
   ) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
-      this.client = new GoogleGenerativeAI(apiKey);
-      this.logger.log('AI Assistant ready (Gemini connected, model fallback chain enabled)');
-    } else {
-      this.logger.warn('GEMINI_API_KEY not set — AI Assistant disabled');
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey) {
+      this.gemini = new GoogleGenerativeAI(geminiKey);
+      this.logger.log('Gemini ready');
+    }
+    this.groqKey = process.env.GROQ_API_KEY || null;
+    if (this.groqKey) this.logger.log('Groq ready (fallback)');
+    if (!this.gemini && !this.groqKey) {
+      this.logger.warn('No AI provider configured (GEMINI_API_KEY or GROQ_API_KEY)');
     }
   }
 
   async chat(question: string): Promise<string> {
-    if (!this.client) {
-      return 'ИИ-помощник не настроен. Добавьте GEMINI_API_KEY в переменные окружения.';
+    if (!this.gemini && !this.groqKey) {
+      return 'ИИ-помощник не настроен. Добавьте GEMINI_API_KEY или GROQ_API_KEY в переменные окружения.';
     }
 
     const context = await this.gatherContext(question);
@@ -56,42 +67,97 @@ ${context}
 
 Вопрос администратора: ${question}`;
 
-    // Try models in order, fall back if 503/overloaded
-    let lastError: any = null;
-    for (const modelName of MODEL_CHAIN) {
-      try {
-        const model = this.client.getGenerativeModel({
-          model: modelName,
-          generationConfig: { maxOutputTokens: 2048, temperature: 0.3 },
-        });
-        const result = await model.generateContent(systemPrompt);
-        const text = result.response.text();
-        if (text) {
-          this.logger.log(`AI response from ${modelName}`);
-          return text;
+    // Try Gemini first (paid tier or with quota)
+    if (this.gemini) {
+      for (const modelName of GEMINI_MODEL_CHAIN) {
+        try {
+          const model = this.gemini.getGenerativeModel({
+            model: modelName,
+            generationConfig: { maxOutputTokens: 2048, temperature: 0.3 },
+          });
+          const result = await model.generateContent(systemPrompt);
+          const text = result.response.text();
+          if (text) {
+            this.logger.log(`Response from Gemini (${modelName})`);
+            return text;
+          }
+        } catch (error: any) {
+          const msg = error?.message || '';
+          if (msg.includes('503') || msg.includes('429') || msg.includes('overloaded') || msg.includes('quota') || msg.includes('high demand')) {
+            continue;
+          }
+          break;
         }
-      } catch (error: any) {
-        lastError = error;
-        const msg = error?.message || '';
-        // 503 = overloaded, 429 = rate limit — try next model
-        if (msg.includes('503') || msg.includes('429') || msg.includes('overloaded') || msg.includes('high demand')) {
-          this.logger.warn(`${modelName} overloaded, trying next…`);
-          continue;
-        }
-        // Other errors — stop and return
-        break;
       }
     }
 
-    this.logger.error(`AI chat failed after fallback: ${lastError?.message || 'unknown'}`);
-    return `Ошибка ИИ: ${lastError?.message || 'все модели Gemini временно недоступны, попробуйте через минуту'}`;
+    // Fallback to Groq (free)
+    if (this.groqKey) {
+      for (const modelName of GROQ_MODELS) {
+        try {
+          const text = await this.callGroq(modelName, systemPrompt);
+          if (text) {
+            this.logger.log(`Response from Groq (${modelName})`);
+            return text;
+          }
+        } catch (error: any) {
+          this.logger.warn(`Groq ${modelName} failed: ${error?.message}`);
+          continue;
+        }
+      }
+    }
+
+    return 'Ошибка ИИ: все провайдеры временно недоступны, попробуйте через минуту.';
+  }
+
+  private callGroq(model: string, prompt: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const payload = JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 2048,
+        temperature: 0.3,
+      });
+      const req = https.request(
+        {
+          hostname: 'api.groq.com',
+          path: '/openai/v1/chat/completions',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload),
+            Authorization: `Bearer ${this.groqKey}`,
+          },
+          timeout: 30000,
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (c) => (body += c));
+          res.on('end', () => {
+            try {
+              const j = JSON.parse(body);
+              if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                resolve(j.choices?.[0]?.message?.content || '');
+              } else {
+                reject(new Error(`Groq ${res.statusCode}: ${j.error?.message || body.slice(0, 200)}`));
+              }
+            } catch (e) {
+              reject(e);
+            }
+          });
+        },
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Groq timeout')); });
+      req.write(payload);
+      req.end();
+    });
   }
 
   private async gatherContext(question: string): Promise<string> {
     const q = question.toLowerCase();
     const parts: string[] = [];
 
-    // Always include summary stats
     const [totalProjects, totalTasks, totalEmployees, totalUsers] = await Promise.all([
       this.projectRepo.count({ where: { isArchived: false } }),
       this.taskRepo.count(),
@@ -111,7 +177,6 @@ ${context}
 - Задач всего: ${totalTasks}, выполнено: ${doneTasks}, просрочено: ${overdueTasks?.[0]?.count || 0}
 - Сотрудников: ${totalEmployees}, пользователей: ${totalUsers}`);
 
-    // If question is about employees/people
     if (q.includes('сотрудник') || q.includes('работник') || q.includes('кто') || q.includes('команд') || q.includes('исполнител') || this.hasPersonName(q)) {
       const employees = await this.employeeRepo.find({
         relations: ['user'],
@@ -123,7 +188,6 @@ ${context}
       parts.push(`## Сотрудники\n${empList || 'Нет данных'}`);
     }
 
-    // If question is about tasks or specific person's tasks
     if (q.includes('задач') || q.includes('таск') || q.includes('делает') || q.includes('работает') || q.includes('статус') || this.hasPersonName(q)) {
       const tasks = await this.taskRepo.find({
         relations: ['assignee', 'project'],
@@ -138,7 +202,6 @@ ${context}
       parts.push(`## Задачи (последние 50)\n${taskList || 'Нет данных'}`);
     }
 
-    // If question is about projects
     if (q.includes('проект') || q.includes('клиент') || q.includes('бюджет') || q.includes('прогресс')) {
       const projects = await this.projectRepo.find({
         where: { isArchived: false },
@@ -154,7 +217,6 @@ ${context}
       parts.push(`## Проекты\n${projList || 'Нет данных'}`);
     }
 
-    // If question is about time/hours
     if (q.includes('час') || q.includes('врем') || q.includes('тайм') || q.includes('отчёт') || q.includes('отчет')) {
       const recentLogs = await this.timeRepo.find({
         relations: ['employee', 'task'],
@@ -167,7 +229,6 @@ ${context}
       parts.push(`## Последние тайм-логи\n${logList || 'Нет данных'}`);
     }
 
-    // If no specific context matched, include projects and tasks
     if (parts.length === 1) {
       const projects = await this.projectRepo.find({ where: { isArchived: false }, relations: ['tasks'], take: 10 });
       const projList = projects.map(p => `- "${p.name}" | ${p.status} | ${p.progress}% | Задач: ${p.tasks?.length || 0}`).join('\n');
