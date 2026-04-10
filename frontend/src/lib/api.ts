@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api',
-  timeout: 30000,
+  timeout: 90000, // 90s — AI requests can take 30-60s
 })
 
 api.interceptors.request.use(config => {
