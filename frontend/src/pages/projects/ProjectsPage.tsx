@@ -75,33 +75,20 @@ export default function ProjectsPage() {
       }
       return project
     },
-    onMutate: async (data: any) => {
+    onSuccess: async (newProject: any) => {
       setShowCreate(false)
-      await qc.cancelQueries({ queryKey: ['projects'] })
-      const previous = qc.getQueryData(['projects'])
-      const tempProject = {
-        id: `temp-${Date.now()}`,
-        name: data.name,
-        description: data.description,
-        status: data.status || 'planning',
-        color: data.color || '#6B4FCF',
-        projectType: data.projectType,
-        progress: 0,
-        members: [],
-        startDate: data.startDate,
-        endDate: data.endDate,
-        budget: data.budget,
-        createdAt: new Date().toISOString(),
-      }
-      qc.setQueryData(['projects'], (old: any[]) => old ? [tempProject, ...old] : [tempProject])
-      return { previous }
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['projects'] })
+      // Insert the real project into cache immediately so user sees it
+      qc.setQueryData(['projects'], (old: any[]) => {
+        if (!Array.isArray(old)) return [newProject]
+        // Avoid duplicates
+        if (old.some((p: any) => p.id === newProject.id)) return old
+        return [newProject, ...old]
+      })
+      // Then refetch to get full server state (with manager, members, counts)
+      await qc.refetchQueries({ queryKey: ['projects'] })
       toast.success(t('projects.created'))
     },
-    onError: (_err: any, _vars: any, context: any) => {
-      qc.setQueryData(['projects'], context?.previous)
+    onError: () => {
       setShowCreate(true)
       toast.error(t('common.error'))
     },
