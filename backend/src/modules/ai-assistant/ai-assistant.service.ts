@@ -7,10 +7,15 @@ import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
+import { Comment } from '../comments/comment.entity';
+import { Notification } from '../notifications/notification.entity';
+import { ActivityLog } from '../activity-log/activity-log.entity';
+import { StoryLog } from '../stories/story.entity';
+import { FileAttachment } from '../files/file.entity';
+import { WorkSession } from '../auth/work-session.entity';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as https from 'https';
 
-// Gemini fallback chain (paid tier — only used if GEMINI_API_KEY has billing)
 const GEMINI_MODEL_CHAIN = [
   'gemini-2.5-flash',
   'gemini-2.0-flash',
@@ -19,7 +24,6 @@ const GEMINI_MODEL_CHAIN = [
   'gemini-2.0-flash-lite',
 ];
 
-// Groq fallback (free, fast, reliable)
 const GROQ_MODELS = [
   'llama-3.3-70b-versatile',
   'llama-3.1-8b-instant',
@@ -38,6 +42,12 @@ export class AiAssistantService {
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     @InjectRepository(TimeLog) private timeRepo: Repository<TimeLog>,
     @InjectRepository(DailyReport) private reportRepo: Repository<DailyReport>,
+    @InjectRepository(Comment) private commentRepo: Repository<Comment>,
+    @InjectRepository(Notification) private notifRepo: Repository<Notification>,
+    @InjectRepository(ActivityLog) private activityRepo: Repository<ActivityLog>,
+    @InjectRepository(StoryLog) private storyRepo: Repository<StoryLog>,
+    @InjectRepository(FileAttachment) private fileRepo: Repository<FileAttachment>,
+    @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
   ) {
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey) {
@@ -56,24 +66,44 @@ export class AiAssistantService {
       return 'ИИ-помощник не настроен. Добавьте GEMINI_API_KEY или GROQ_API_KEY в переменные окружения.';
     }
 
-    const context = await this.gatherContext(question);
-    const systemPrompt = `Ты — ИИ-помощник CRM-системы "Sabt" для SMM-агентства. Отвечай на русском языке.
-Ты анализируешь данные из базы данных проекта и отвечаешь на вопросы администратора.
-Будь точен, конкретен, давай цифры и факты. Форматируй ответ красиво с помощью markdown.
-Если данных нет — так и скажи, не придумывай.
+    const context = await this.gatherFullContext();
+    const today = new Date().toLocaleDateString('ru-RU');
 
-Вот актуальные данные из базы:
+    const systemPrompt = `Ты — главный ИИ-аналитик CRM-системы "Sabt" для SMM-агентства. Твоя задача — помогать администратору и руководству глубоко понимать что происходит в компании, отвечать на ЛЮБЫЕ вопросы — от самых простых ("Сколько задач?") до сложных аналитических ("Кто из дизайнеров эффективнее справляется с дедлайнами в SMM-проектах за последний месяц?").
+
+ПРАВИЛА:
+1. Отвечай ВСЕГДА на русском языке.
+2. Используй ТОЛЬКО предоставленные ниже данные из БД. Никогда не выдумывай.
+3. Если данных недостаточно для ответа — честно скажи "В базе нет данных о X" и предложи что-то близкое.
+4. Будь МАКСИМАЛЬНО конкретным: давай имена, цифры, даты, проценты. НЕ обобщай.
+5. Делай выводы и рекомендации, если они уместны.
+6. Форматируй ответ красиво через markdown: заголовки (##), списки (-), жирный шрифт (**), эмодзи где уместно (📊 ✅ ⚠️ 🔥 👤 📁).
+7. Для коротких вопросов — короткий ответ. Для аналитических — структурированный с разделами.
+8. Если спросили про конкретного человека — найди его в данных и используй ВСЁ что про него знаешь (должность, email, телефон, telegram, проекты, задачи, активность, тайм-логи, комментарии).
+9. Если спросили "топ X" — выведи топ с цифрами.
+10. Если задают вопрос на узбекском/таджикском — отвечай на русском, но уважительно.
+
+СЕГОДНЯШНЯЯ ДАТА: ${today}
+
+═══════════════════════════════════════
+ПОЛНЫЕ ДАННЫЕ ИЗ БАЗЫ ДАННЫХ CRM "SABT":
+═══════════════════════════════════════
+
 ${context}
 
-Вопрос администратора: ${question}`;
+═══════════════════════════════════════
+ВОПРОС ПОЛЬЗОВАТЕЛЯ: ${question}
+═══════════════════════════════════════
 
-    // Try Gemini first (paid tier or with quota)
+Дай точный, полный, красиво оформленный ответ строго на основе данных выше.`;
+
+    // Try Gemini first
     if (this.gemini) {
       for (const modelName of GEMINI_MODEL_CHAIN) {
         try {
           const model = this.gemini.getGenerativeModel({
             model: modelName,
-            generationConfig: { maxOutputTokens: 2048, temperature: 0.3 },
+            generationConfig: { maxOutputTokens: 4096, temperature: 0.4 },
           });
           const result = await model.generateContent(systemPrompt);
           const text = result.response.text();
@@ -91,7 +121,7 @@ ${context}
       }
     }
 
-    // Fallback to Groq (free)
+    // Fallback to Groq
     if (this.groqKey) {
       for (const modelName of GROQ_MODELS) {
         try {
@@ -115,8 +145,8 @@ ${context}
       const payload = JSON.stringify({
         model,
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2048,
-        temperature: 0.3,
+        max_tokens: 4096,
+        temperature: 0.4,
       });
       const req = https.request(
         {
@@ -128,7 +158,7 @@ ${context}
             'Content-Length': Buffer.byteLength(payload),
             Authorization: `Bearer ${this.groqKey}`,
           },
-          timeout: 30000,
+          timeout: 60000,
         },
         (res) => {
           let body = '';
@@ -154,17 +184,25 @@ ${context}
     });
   }
 
-  private async gatherContext(question: string): Promise<string> {
-    const q = question.toLowerCase();
+  /**
+   * Loads ABSOLUTELY EVERYTHING from the database into the AI context.
+   * The DB is small enough that this fits comfortably in Gemini's 1M token window.
+   */
+  private async gatherFullContext(): Promise<string> {
     const parts: string[] = [];
 
-    // Always load EVERYTHING — Gemini has 1M context, our DB is small
+    // Run all queries in parallel
     const [
-      totalProjects, totalTasks, totalEmployees, totalUsers,
+      // Counts
+      totalActiveProjects, totalArchivedProjects, totalTasks, totalEmployees, totalUsers,
       doneTasks, overdueRow,
-      employees, projects, tasks,
+      // Full data
+      employees, projects, archivedProjects, tasks, comments,
+      timeLogs, reports, stories, files, recentActivity,
+      recentSessions, allUsers,
     ] = await Promise.all([
       this.projectRepo.count({ where: { isArchived: false } }),
+      this.projectRepo.count({ where: { isArchived: true } }),
       this.taskRepo.count(),
       this.employeeRepo.count(),
       this.userRepo.count(),
@@ -178,57 +216,171 @@ ${context}
         relations: ['members', 'tasks', 'manager'],
         order: { createdAt: 'DESC' },
       }),
-      this.taskRepo.find({
-        relations: ['assignee', 'project'],
+      this.projectRepo.find({
+        where: { isArchived: true },
+        relations: ['manager'],
         order: { updatedAt: 'DESC' },
+        take: 30,
+      }),
+      this.taskRepo.find({
+        relations: ['assignee', 'project', 'createdBy'],
+        order: { updatedAt: 'DESC' },
+        take: 200,
+      }),
+      this.commentRepo.find({
+        relations: ['author', 'task'],
+        order: { createdAt: 'DESC' },
         take: 100,
       }),
+      this.timeRepo.find({
+        relations: ['employee', 'task'],
+        order: { date: 'DESC' },
+        take: 100,
+      }),
+      this.reportRepo.find({
+        relations: ['employee', 'project', 'task'],
+        order: { date: 'DESC' },
+        take: 50,
+      }),
+      this.storyRepo.find({
+        relations: ['user', 'project'],
+        order: { date: 'DESC' },
+        take: 100,
+      }).catch(() => []),
+      this.fileRepo.find({
+        relations: ['uploadedBy', 'project', 'task'],
+        order: { createdAt: 'DESC' },
+        take: 50,
+      }).catch(() => []),
+      this.activityRepo.find({
+        relations: ['user'],
+        order: { createdAt: 'DESC' },
+        take: 100,
+      }).catch(() => []),
+      this.sessionRepo.find({
+        relations: ['user'],
+        order: { loginAt: 'DESC' },
+        take: 50,
+      }).catch(() => []),
+      this.userRepo.find({ order: { createdAt: 'DESC' } }),
     ]);
 
     const overdueCount = overdueRow?.[0]?.count || 0;
 
-    parts.push(`## Общая статистика
-- Активных проектов: ${totalProjects}
-- Задач всего: ${totalTasks}, выполнено: ${doneTasks}, просрочено: ${overdueCount}
-- Сотрудников: ${totalEmployees}, пользователей: ${totalUsers}`);
+    // ── 1. SUMMARY ─────────────────────────────────────────
+    parts.push(`## 📊 СВОДКА
+- Всего пользователей: ${totalUsers}
+- Сотрудников (employees): ${totalEmployees}
+- Активных проектов: ${totalActiveProjects}
+- Архивных проектов: ${totalArchivedProjects}
+- Задач всего: ${totalTasks} (выполнено: ${doneTasks}, просрочено: ${overdueCount})
+- Тайм-логов: ${timeLogs.length}, отчётов: ${reports.length}, комментариев: ${comments.length}, файлов: ${files.length}, сторис: ${stories.length}`);
 
-    // ── ALL EMPLOYEES (always) ──────────────────
+    // ── 2. USERS (system accounts) ─────────────────────────
+    const userList = allUsers.map((u, i) => {
+      return `${i + 1}. ${u.name} | role: ${u.role} | email: ${u.email} | active: ${u.isActive} | created: ${new Date(u.createdAt).toLocaleDateString('ru-RU')}`;
+    }).join('\n');
+    parts.push(`## 👥 ВСЕ ПОЛЬЗОВАТЕЛИ СИСТЕМЫ (${allUsers.length})\n${userList}`);
+
+    // ── 3. EMPLOYEES (full profiles) ───────────────────────
     const empList = employees.map((e, i) => {
       const status = e.status === 'active' ? '✅' : '⏸';
-      return `${i + 1}. ${status} **${e.fullName}** — Должность: ${e.position || '—'} | Отдел: ${e.department || '—'} | Email: ${e.email || '—'} | Phone: ${e.phone || '—'} | Telegram: ${e.telegram || '—'} | Активность: ${e.activityScore || 0}/100 | Задач выполнено: ${e.tasksCompleted || 0} | Просрочено: ${e.tasksOverdue || 0}${e.user?.role ? ` | Роль системы: ${e.user.role}` : ''}`;
-    }).join('\n');
-    parts.push(`## Все сотрудники (${employees.length})\n${empList || 'Нет данных'}`);
+      return `${i + 1}. ${status} **${e.fullName}**
+   - Должность: ${e.position || '—'}
+   - Отдел: ${e.department || '—'}
+   - Email: ${e.email || '—'}
+   - Phone: ${e.phone || '—'}
+   - Telegram: ${e.telegram || '—'}
+   - Instagram: ${(e as any).instagram || '—'}
+   - Дата найма: ${e.hireDate ? new Date(e.hireDate).toLocaleDateString('ru-RU') : '—'}
+   - Активность: ${e.activityScore || 0}/100
+   - Задач выполнено: ${e.tasksCompleted || 0}
+   - Задач просрочено: ${e.tasksOverdue || 0}
+   - Роль системы: ${e.user?.role || '—'}
+   - User ID: ${e.userId || '—'}
+   - Sub-admin: ${e.isSubAdmin ? 'да' : 'нет'}`;
+    }).join('\n\n');
+    parts.push(`## 👤 ВСЕ СОТРУДНИКИ (${employees.length})\n${empList}`);
 
-    // ── ALL PROJECTS (always) ──────────────────
+    // ── 4. PROJECTS (full details) ─────────────────────────
     const projList = projects.map((p, i) => {
       const taskCount = p.tasks?.length || 0;
       const doneCount = p.tasks?.filter(t => t.status === 'done').length || 0;
       const memberNames = (p.members || []).map(m => m.name).join(', ') || '—';
       const startDate = p.startDate ? new Date(p.startDate).toLocaleDateString('ru-RU') : '—';
       const endDate = p.endDate ? new Date(p.endDate).toLocaleDateString('ru-RU') : '—';
-      return `${i + 1}. **"${p.name}"** | Статус: ${p.status} | Прогресс: ${p.progress}% | Задач: ${taskCount} (готово: ${doneCount}) | Менеджер: ${p.manager?.name || '—'} | Участники: [${memberNames}] | Тип: ${p.projectType || '—'} | Бюджет: ${p.budget || '—'} | Старт: ${startDate} | Дедлайн: ${endDate}`;
-    }).join('\n');
-    parts.push(`## Все проекты (${projects.length})\n${projList || 'Нет данных'}`);
+      return `${i + 1}. **"${p.name}"**
+   - ID: ${p.id}
+   - Статус: ${p.status}
+   - Прогресс: ${p.progress}%
+   - Тип: ${p.projectType || '—'}
+   - Описание: ${p.description || '—'}
+   - Менеджер: ${p.manager?.name || '—'}
+   - Участники (${(p.members || []).length}): [${memberNames}]
+   - Задач: ${taskCount} (готово: ${doneCount})
+   - Бюджет: ${p.budget || '—'}
+   - Старт: ${startDate}, Дедлайн: ${endDate}
+   - Создан: ${new Date(p.createdAt).toLocaleDateString('ru-RU')}`;
+    }).join('\n\n');
+    parts.push(`## 📁 АКТИВНЫЕ ПРОЕКТЫ (${projects.length})\n${projList || 'Нет активных проектов'}`);
 
-    // ── RECENT TASKS (always, up to 100) ──────────────────
+    if (archivedProjects.length > 0) {
+      const archList = archivedProjects.map(p => `- "${p.name}" | менеджер: ${p.manager?.name || '—'} | завершён: ${new Date(p.updatedAt).toLocaleDateString('ru-RU')}`).join('\n');
+      parts.push(`## 📦 АРХИВНЫЕ ПРОЕКТЫ (${archivedProjects.length})\n${archList}`);
+    }
+
+    // ── 5. TASKS (recent 200) ──────────────────────────────
     const taskList = tasks.map((t, i) => {
       const deadline = t.deadline ? new Date(t.deadline).toLocaleDateString('ru-RU') : '—';
       const overdue = t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled'].includes(t.status) ? ' ⚠️ПРОСРОЧЕНА' : '';
-      return `${i + 1}. "${t.title}" | Проект: ${t.project?.name || '—'} | Статус: ${t.status} | Приоритет: ${t.priority} | Исполнитель: ${t.assignee?.name || '—'} | Дедлайн: ${deadline}${overdue}`;
+      return `${i + 1}. "${t.title}" | Проект: ${t.project?.name || '—'} | Статус: ${t.status} | Приоритет: ${t.priority} | Исполнитель: ${t.assignee?.name || '—'} | Создал: ${t.createdBy?.name || '—'} | Дедлайн: ${deadline}${overdue}${t.description ? ` | Описание: ${t.description.slice(0, 100)}` : ''}`;
     }).join('\n');
-    parts.push(`## Задачи (${tasks.length})\n${taskList || 'Нет данных'}`);
+    parts.push(`## ✅ ЗАДАЧИ (${tasks.length} последних)\n${taskList || 'Нет задач'}`);
 
-    // ── Time logs (only if relevant) ──────────────────
-    if (q.includes('час') || q.includes('врем') || q.includes('тайм') || q.includes('отчёт') || q.includes('отчет')) {
-      const recentLogs = await this.timeRepo.find({
-        relations: ['employee', 'task'],
-        order: { date: 'DESC' },
-        take: 50,
-      });
-      const logList = recentLogs.map(l => {
-        return `- ${l.employee?.name || '—'} | Задача: ${l.task?.title || '—'} | ${l.timeSpent}ч | Дата: ${new Date(l.date).toLocaleDateString('ru-RU')}`;
+    // ── 6. COMMENTS (recent) ───────────────────────────────
+    if (comments.length > 0) {
+      const cmtList = comments.map(c => `- ${c.author?.name || '?'} → "${c.task?.title || '?'}": ${(c.message || '').slice(0, 150)} (${new Date(c.createdAt).toLocaleDateString('ru-RU')})`).join('\n');
+      parts.push(`## 💬 КОММЕНТАРИИ (последние ${comments.length})\n${cmtList}`);
+    }
+
+    // ── 7. TIME LOGS ───────────────────────────────────────
+    if (timeLogs.length > 0) {
+      const logList = timeLogs.map(l => `- ${l.employee?.name || '—'} | ${l.task?.title || '—'} | ${l.timeSpent}ч | ${new Date(l.date).toLocaleDateString('ru-RU')}${l.description ? ` — ${l.description.slice(0, 80)}` : ''}`).join('\n');
+      parts.push(`## ⏱ ТАЙМ-ЛОГИ (${timeLogs.length} последних)\n${logList}`);
+    }
+
+    // ── 8. REPORTS ─────────────────────────────────────────
+    if (reports.length > 0) {
+      const repList = reports.map(r => `- ${r.employee?.name || '—'} | ${new Date(r.date).toLocaleDateString('ru-RU')} | ${r.timeSpent || 0}ч | Проект: ${r.project?.name || '—'} | ${(r.description || '').slice(0, 100)}`).join('\n');
+      parts.push(`## 📋 ОТЧЁТЫ (${reports.length})\n${repList}`);
+    }
+
+    // ── 9. STORIES (SMM) ───────────────────────────────────
+    if (stories.length > 0) {
+      const stList = stories.map((s: any) => `- ${s.user?.name || '—'} | Проект: ${s.project?.name || '—'} | ${s.storiesCount || 0} сторис | ${new Date(s.date).toLocaleDateString('ru-RU')}`).join('\n');
+      parts.push(`## 📸 СТОРИС (${stories.length})\n${stList}`);
+    }
+
+    // ── 10. FILES ──────────────────────────────────────────
+    if (files.length > 0) {
+      const fileList = files.map(f => `- ${f.originalName} | загрузил: ${f.uploadedBy?.name || '—'} | размер: ${Math.round(f.size / 1024)}KB | проект: ${f.project?.name || '—'} | задача: ${f.task?.title || '—'}`).join('\n');
+      parts.push(`## 📎 ФАЙЛЫ (${files.length})\n${fileList}`);
+    }
+
+    // ── 11. ACTIVITY LOG ───────────────────────────────────
+    if (recentActivity.length > 0) {
+      const actList = recentActivity.slice(0, 50).map(a => `- ${new Date(a.createdAt).toLocaleString('ru-RU')} | ${a.userName || a.user?.name || '?'} | ${a.action} | ${a.entity || ''} ${a.entityName || ''}`).join('\n');
+      parts.push(`## 📜 АКТИВНОСТЬ (последние 50 событий)\n${actList}`);
+    }
+
+    // ── 12. WORK SESSIONS ──────────────────────────────────
+    if (recentSessions.length > 0) {
+      const sesList = recentSessions.map(s => {
+        const login = new Date(s.loginAt).toLocaleString('ru-RU');
+        const logout = s.logoutAt ? new Date(s.logoutAt).toLocaleString('ru-RU') : 'в сети';
+        return `- ${s.user?.name || '?'} | ${login} → ${logout} | ${s.durationHours || 0}ч`;
       }).join('\n');
-      parts.push(`## Тайм-логи (последние 50)\n${logList || 'Нет данных'}`);
+      parts.push(`## 🕐 СЕССИИ ВХОДА (${recentSessions.length})\n${sesList}`);
     }
 
     return parts.join('\n\n');

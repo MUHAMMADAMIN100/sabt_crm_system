@@ -8,10 +8,19 @@ import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
+import { Comment } from '../comments/comment.entity';
+import { Notification } from '../notifications/notification.entity';
+import { ActivityLog } from '../activity-log/activity-log.entity';
+import { StoryLog } from '../stories/story.entity';
+import { FileAttachment } from '../files/file.entity';
+import { WorkSession } from '../auth/work-session.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Task, Project, User, Employee, TimeLog, DailyReport]),
+    TypeOrmModule.forFeature([
+      Task, Project, User, Employee, TimeLog, DailyReport,
+      Comment, Notification, ActivityLog, StoryLog, FileAttachment, WorkSession,
+    ]),
   ],
   controllers: [AiAssistantController],
   providers: [AiAssistantService],
