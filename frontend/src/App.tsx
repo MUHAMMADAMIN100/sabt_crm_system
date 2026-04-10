@@ -1,8 +1,9 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import Layout from '@/components/layout/Layout'
 import { PageLoader } from '@/components/ui'
+import { canAccessRoute } from '@/lib/permissions'
 
 const AuthPage          = lazy(() => import('@/pages/auth/AuthPage'))
 const DashboardPage     = lazy(() => import('@/pages/dashboard/DashboardPage'))
@@ -26,6 +27,18 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return token ? <>{children}</> : <Navigate to="/auth" replace />
 }
 
+function RoleGuard({ children }: { children: React.ReactNode }) {
+  const role = useAuthStore(s => s.user?.role)
+  const location = useLocation()
+  // Strip query/hash, get pathname
+  const path = location.pathname
+  // Build canonical path: /projects/:id → /projects/abc treated as /projects/abc
+  if (role && !canAccessRoute(role, path)) {
+    return <Navigate to="/" replace />
+  }
+  return <>{children}</>
+}
+
 export default function App() {
   const token = useAuthStore(s => s.token)
 
@@ -35,20 +48,20 @@ export default function App() {
         <Route path="/auth" element={token ? <Navigate to="/" replace /> : <AuthPage />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<DashboardPage />} />
-          <Route path="projects" element={<ProjectsPage />} />
-          <Route path="projects/:id" element={<ProjectDetailPage />} />
-          <Route path="tasks" element={<TasksPage />} />
-          <Route path="tasks/:id" element={<TaskDetailPage />} />
-          <Route path="employees" element={<EmployeesPage />} />
-          <Route path="employees/:id" element={<EmployeeDetailPage />} />
-          <Route path="calendar" element={<CalendarPage />} />
-          <Route path="reports" element={<ReportsPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="projects" element={<RoleGuard><ProjectsPage /></RoleGuard>} />
+          <Route path="projects/:id" element={<RoleGuard><ProjectDetailPage /></RoleGuard>} />
+          <Route path="tasks" element={<RoleGuard><TasksPage /></RoleGuard>} />
+          <Route path="tasks/:id" element={<RoleGuard><TaskDetailPage /></RoleGuard>} />
+          <Route path="employees" element={<RoleGuard><EmployeesPage /></RoleGuard>} />
+          <Route path="employees/:id" element={<RoleGuard><EmployeeDetailPage /></RoleGuard>} />
+          <Route path="calendar" element={<RoleGuard><CalendarPage /></RoleGuard>} />
+          <Route path="reports" element={<RoleGuard><ReportsPage /></RoleGuard>} />
+          <Route path="analytics" element={<RoleGuard><AnalyticsPage /></RoleGuard>} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="profile" element={<ProfilePage />} />
-          <Route path="archive" element={<ArchivePage />} />
-          <Route path="files" element={<FilesPage />} />
-          <Route path="ai" element={<AiChatPage />} />
+          <Route path="archive" element={<RoleGuard><ArchivePage /></RoleGuard>} />
+          <Route path="files" element={<RoleGuard><FilesPage /></RoleGuard>} />
+          <Route path="ai" element={<RoleGuard><AiChatPage /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

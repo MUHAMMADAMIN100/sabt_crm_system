@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
+import { hasPermission, type Permission } from '@/lib/permissions'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Bell, Archive, HardDrive,
@@ -18,28 +19,22 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     if (window.innerWidth < 993) onClose()
   }
 
-  const role = user?.role || 'employee'
-  const isFounderView = ['admin', 'founder'].includes(role)
-  const isPMView = ['admin', 'founder', 'project_manager'].includes(role)
+  const role = user?.role
 
-  const navItems = [
-    { to: '/', icon: LayoutDashboard, label: t('nav.dashboard'), exact: true },
-    { to: '/projects', icon: FolderKanban, label: t('nav.projects') },
-    { to: '/tasks', icon: CheckSquare, label: t('nav.tasks') },
-    { to: '/calendar', icon: Calendar, label: t('nav.calendar') },
-    { to: '/reports', icon: FileText, label: t('nav.reports') },
-    { to: '/analytics', icon: BarChart3, label: t('nav.analytics'), pmOnly: true },
-    { to: '/archive', icon: Archive, label: t('nav.archive'), pmOnly: true },
-    { to: '/notifications', icon: Bell, label: t('nav.notifications') },
-    { to: '/employees', icon: Users, label: t('nav.employees'), founderOnly: true },
-    { to: '/ai', icon: Sparkles, label: 'ИИ-помощник', founderOnly: true },
+  const navItems: { to: string; icon: any; label: string; permission: Permission; exact?: boolean }[] = [
+    { to: '/',              icon: LayoutDashboard, label: t('nav.dashboard'),  permission: 'dashboard',         exact: true },
+    { to: '/projects',      icon: FolderKanban,    label: t('nav.projects'),   permission: 'projects.view' },
+    { to: '/tasks',         icon: CheckSquare,     label: t('nav.tasks'),      permission: 'tasks.view' },
+    { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
+    { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
+    { to: '/analytics',     icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },
+    { to: '/archive',       icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
+    { to: '/notifications', icon: Bell,            label: t('nav.notifications'), permission: 'notifications.view' },
+    { to: '/employees',     icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
+    { to: '/ai',            icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]
 
-  const filtered = navItems.filter(item => {
-    if ((item as any).founderOnly && !isFounderView) return false
-    if ((item as any).pmOnly && !isPMView) return false
-    return true
-  })
+  const filtered = navItems.filter(item => hasPermission(role, item.permission))
 
   return (
     <aside

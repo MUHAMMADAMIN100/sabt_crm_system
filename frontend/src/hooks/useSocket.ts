@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { io, Socket } from 'socket.io-client'
 import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import { useAuthStore } from '@/store/auth.store'
 
 export function useSocket(token: string | null) {
   const qc = useQueryClient()
@@ -18,6 +19,16 @@ export function useSocket(token: string | null) {
     })
 
     socket.on('connect', () => {})
+
+    // When admin updates this user's role/profile — refresh auth store and notify
+    socket.on('me:changed', async (changes: any) => {
+      try {
+        await useAuthStore.getState().fetchMe()
+        if (changes?.role) {
+          toast.success('Ваша роль обновлена администратором', { icon: '👤', duration: 4000 })
+        }
+      } catch {}
+    })
 
     socket.on('notification', (notif: any) => {
       qc.invalidateQueries({ queryKey: ['notifications'] })

@@ -1,6 +1,7 @@
 import { IsString, IsEmail, IsOptional, IsEnum, IsDateString, IsNumber } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { EmployeeStatus } from '../employee.entity';
+import { UserRole } from '../../users/user.entity';
 import { PartialType } from '@nestjs/mapped-types';
 
 export class CreateEmployeeDto {
@@ -16,6 +17,7 @@ export class CreateEmployeeDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() bio?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() salary?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() userId?: string;
+  @ApiProperty({ enum: UserRole, required: false }) @IsOptional() @IsEnum(UserRole) role?: UserRole;
 }
 
 export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {}

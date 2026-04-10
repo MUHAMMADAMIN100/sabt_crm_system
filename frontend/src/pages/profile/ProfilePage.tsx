@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth.store'
 import { authApi, projectsApi } from '@/services/api.service'
@@ -12,9 +12,13 @@ import toast from 'react-hot-toast'
 
 export default function ProfilePage() {
   const user = useAuthStore(s => s.user)
+  const fetchMe = useAuthStore(s => s.fetchMe)
   const [changingPass, setChangingPass] = useState(false)
   const { register, handleSubmit, reset } = useForm()
   const { t } = useTranslation()
+
+  // Refresh user profile (incl. role) on mount — admin may have changed it
+  useEffect(() => { fetchMe() }, [fetchMe])
 
   const { data: sessions } = useQuery({
     queryKey: ['work-sessions'],

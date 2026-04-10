@@ -38,6 +38,11 @@ export class EmployeesService {
     const existing = await this.repo.findOne({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Сотрудник с таким email уже существует');
 
+    // Resolve role: explicit > position-derived > default EMPLOYEE
+    const explicitRole = (dto as any).role as UserRole | undefined;
+    const derivedRole = this.positionToRole(dto.position);
+    const newRole = explicitRole || derivedRole || UserRole.EMPLOYEE;
+
     // Ищем существующего User по email, если нет — создаём
     let savedUser = await this.userRepo.findOne({ where: { email: dto.email } });
     if (!savedUser) {
@@ -45,13 +50,17 @@ export class EmployeesService {
         name: dto.fullName,
         email: dto.email,
         password: 'Sabt@2024',
-        role: UserRole.EMPLOYEE,
+        role: newRole,
       });
       savedUser = await this.userRepo.save(user);
+    } else if (savedUser.role !== newRole) {
+      // Update existing user's role to match
+      await this.userRepo.update(savedUser.id, { role: newRole });
     }
 
-    const emp = this.repo.create({ ...dto, userId: savedUser.id });
-    const saved = await this.repo.save(emp);
+    const { role: _r, ...empDto } = dto as any;
+    const emp = this.repo.create({ ...empDto, userId: savedUser.id } as Partial<Employee>);
+    const saved = await this.repo.save(emp as Employee);
 
     await this.activityLog.log({
       action: ActivityAction.EMPLOYEE_CREATE,
@@ -67,17 +76,32 @@ export class EmployeesService {
 
   async update(id: string, dto: UpdateEmployeeDto) {
     const emp = await this.findOne(id);
-    await this.repo.update(id, dto);
 
-    // Синхронизируем User: обновляем все общие поля
+    // Strip role from dto before updating employee (role belongs to User)
+    const { role: newRole, ...empDto } = dto as any;
+    await this.repo.update(id, empDto);
+
+    // Синхронизируем User: обновляем все общие поля + role
     if (emp.userId) {
       const userUpdate: Partial<User> = {};
       if (dto.fullName) userUpdate.name = dto.fullName;
       if (dto.email) userUpdate.email = dto.email;
       if ((dto as any).avatar !== undefined) userUpdate.avatar = (dto as any).avatar;
       if (dto.status !== undefined) userUpdate.isActive = dto.status === 'active';
+
+      // Determine new role: explicit role param > position-derived
+      let resolvedRole: UserRole | undefined;
+      if (newRole) {
+        resolvedRole = newRole as UserRole;
+      } else if (dto.position) {
+        resolvedRole = this.positionToRole(dto.position);
+      }
+      if (resolvedRole) userUpdate.role = resolvedRole;
+
       if (Object.keys(userUpdate).length > 0) {
         await this.userRepo.update(emp.userId, userUpdate);
+        // Notify the affected user that their profile/role changed
+        this.gateway.notifyUser(emp.userId, 'me:changed', userUpdate);
       }
     }
 
@@ -172,5 +196,27 @@ export class EmployeesService {
       .addSelect('e.status', 'status')
       .groupBy('e.department, e.status')
       .getRawMany();
+  }
+
+  /** Maps a Russian position string to a UserRole enum value */
+  private positionToRole(position: string): UserRole | undefined {
+    if (!position) return undefined;
+    const map: Record<string, UserRole> = {
+      'SMM специалист':       UserRole.SMM_SPECIALIST,
+      'SMM-специалист':       UserRole.SMM_SPECIALIST,
+      'Дизайнер':             UserRole.DESIGNER,
+      'Таргетолог':           UserRole.TARGETOLOGIST,
+      'Менеджер по продажам': UserRole.SALES_MANAGER,
+      'Маркетолог':           UserRole.MARKETER,
+      'Проект-менеджер':      UserRole.PROJECT_MANAGER,
+      'Project Manager':      UserRole.PROJECT_MANAGER,
+      'Разработчик':          UserRole.DEVELOPER,
+      'Developer':            UserRole.DEVELOPER,
+      'Основатель':           UserRole.FOUNDER,
+      'Founder':              UserRole.FOUNDER,
+      'Сотрудник':            UserRole.EMPLOYEE,
+      'Администратор':        UserRole.ADMIN,
+    };
+    return map[position.trim()];
   }
 }
