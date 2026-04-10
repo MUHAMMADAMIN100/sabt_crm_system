@@ -16,6 +16,7 @@ import { WorkSession } from '../auth/work-session.entity';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as https from 'https';
 
+// Default fallback chain (used when user doesn't pick a specific model)
 const GEMINI_MODEL_CHAIN = [
   'gemini-2.5-flash',
   'gemini-2.0-flash',
@@ -29,11 +30,38 @@ const GROQ_MODELS = [
   'llama-3.1-8b-instant',
 ];
 
+// Models user can select from frontend
+export interface AiModelOption {
+  id: string;
+  name: string;
+  provider: 'gemini' | 'groq';
+  description: string;
+  speed: 'fast' | 'medium' | 'slow';
+}
+
+const AVAILABLE_MODELS: AiModelOption[] = [
+  // Gemini
+  { id: 'gemini-2.5-flash',       provider: 'gemini', name: 'Gemini 2.5 Flash',       description: 'Самая умная, лучшая для аналитики',     speed: 'medium' },
+  { id: 'gemini-2.0-flash',       provider: 'gemini', name: 'Gemini 2.0 Flash',       description: 'Быстрая и точная',                       speed: 'fast' },
+  { id: 'gemini-2.0-flash-lite',  provider: 'gemini', name: 'Gemini 2.0 Flash Lite',  description: 'Очень быстрая, для простых вопросов',    speed: 'fast' },
+  { id: 'gemini-flash-latest',    provider: 'gemini', name: 'Gemini Flash Latest',    description: 'Последняя стабильная версия',            speed: 'medium' },
+  // Groq
+  { id: 'llama-3.3-70b-versatile', provider: 'groq',  name: 'Llama 3.3 70B',          description: 'Открытая модель Meta, очень быстрая',    speed: 'fast' },
+  { id: 'llama-3.1-8b-instant',    provider: 'groq',  name: 'Llama 3.1 8B Instant',   description: 'Самая быстрая, для коротких вопросов',   speed: 'fast' },
+];
+
+// Context cache TTL
+const CONTEXT_CACHE_TTL_MS = 30_000; // 30 seconds
+
 @Injectable()
 export class AiAssistantService {
   private readonly logger = new Logger(AiAssistantService.name);
   private gemini: GoogleGenerativeAI | null = null;
   private groqKey: string | null = null;
+
+  // Context cache (shared across all requests)
+  private cachedContext: string | null = null;
+  private cachedAt: number = 0;
 
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
@@ -61,12 +89,25 @@ export class AiAssistantService {
     }
   }
 
-  async chat(question: string): Promise<string> {
+  /** List available models with their availability status */
+  listModels(): { models: AiModelOption[]; defaultModel: string } {
+    const models = AVAILABLE_MODELS.filter(m => {
+      if (m.provider === 'gemini') return !!this.gemini;
+      if (m.provider === 'groq') return !!this.groqKey;
+      return false;
+    });
+    return {
+      models,
+      defaultModel: this.gemini ? 'gemini-2.5-flash' : 'llama-3.3-70b-versatile',
+    };
+  }
+
+  async chat(question: string, selectedModel?: string): Promise<string> {
     if (!this.gemini && !this.groqKey) {
       return 'ИИ-помощник не настроен. Добавьте GEMINI_API_KEY или GROQ_API_KEY в переменные окружения.';
     }
 
-    const context = await this.gatherFullContext();
+    const context = await this.getCachedContext();
     const today = new Date().toLocaleDateString('ru-RU');
 
     const systemPrompt = `Ты — главный ИИ-аналитик CRM-системы "Sabt" для SMM-агентства. Твоя задача — помогать администратору и руководству глубоко понимать что происходит в компании, отвечать на ЛЮБЫЕ вопросы — от самых простых ("Сколько задач?") до сложных аналитических ("Кто из дизайнеров эффективнее справляется с дедлайнами в SMM-проектах за последний месяц?").
@@ -97,7 +138,37 @@ ${context}
 
 Дай точный, полный, красиво оформленный ответ строго на основе данных выше.`;
 
-    // Try Gemini first
+    // If user picked a specific model — try ONLY that model first, then fall back
+    if (selectedModel) {
+      const found = AVAILABLE_MODELS.find(m => m.id === selectedModel);
+      if (found) {
+        try {
+          if (found.provider === 'gemini' && this.gemini) {
+            const model = this.gemini.getGenerativeModel({
+              model: found.id,
+              generationConfig: { maxOutputTokens: 4096, temperature: 0.4 },
+            });
+            const result = await model.generateContent(systemPrompt);
+            const text = result.response.text();
+            if (text) {
+              this.logger.log(`Response from selected Gemini (${found.id})`);
+              return text;
+            }
+          }
+          if (found.provider === 'groq' && this.groqKey) {
+            const text = await this.callGroq(found.id, systemPrompt);
+            if (text) {
+              this.logger.log(`Response from selected Groq (${found.id})`);
+              return text;
+            }
+          }
+        } catch (error: any) {
+          this.logger.warn(`Selected model ${selectedModel} failed: ${error?.message}, falling back to chain`);
+        }
+      }
+    }
+
+    // Auto fallback chain — try Gemini first
     if (this.gemini) {
       for (const modelName of GEMINI_MODEL_CHAIN) {
         try {
@@ -138,6 +209,18 @@ ${context}
     }
 
     return 'Ошибка ИИ: все провайдеры временно недоступны, попробуйте через минуту.';
+  }
+
+  /** Returns cached context if fresh (<30s), otherwise loads fresh */
+  private async getCachedContext(): Promise<string> {
+    const now = Date.now();
+    if (this.cachedContext && now - this.cachedAt < CONTEXT_CACHE_TTL_MS) {
+      return this.cachedContext;
+    }
+    const fresh = await this.gatherFullContext();
+    this.cachedContext = fresh;
+    this.cachedAt = now;
+    return fresh;
   }
 
   private callGroq(model: string, prompt: string): Promise<string> {

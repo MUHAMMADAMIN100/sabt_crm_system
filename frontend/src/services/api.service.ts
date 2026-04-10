@@ -157,5 +157,6 @@ export const filesApi = {
 
 // ─── AI Assistant ────────────────────────────────────────
 export const aiApi = {
-  chat: (message: string) => api.post('/ai/chat', { message }).then(r => r.data),
+  chat: (message: string, model?: string) => api.post('/ai/chat', { message, model }).then(r => r.data),
+  models: () => api.get('/ai/models').then(r => r.data),
 }

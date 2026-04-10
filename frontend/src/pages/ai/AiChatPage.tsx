@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { aiApi } from '@/services/api.service'
-import { Send, Bot, User, Loader2, Sparkles, Trash2 } from 'lucide-react'
+import { Send, Bot, User, Loader2, Sparkles, Trash2, Cpu } from 'lucide-react'
 import clsx from 'clsx'
 
 interface Message {
@@ -8,6 +9,14 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+}
+
+interface AiModelOption {
+  id: string
+  name: string
+  provider: 'gemini' | 'groq'
+  description: string
+  speed: 'fast' | 'medium' | 'slow'
 }
 
 export default function AiChatPage() {
@@ -19,8 +28,27 @@ export default function AiChatPage() {
   })
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [selectedModel, setSelectedModel] = useState<string>(() => localStorage.getItem('ai-selected-model') || '')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Load available models from backend
+  const { data: modelsData } = useQuery<{ models: AiModelOption[]; defaultModel: string }>({
+    queryKey: ['ai-models'],
+    queryFn: () => aiApi.models(),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Set default model once loaded
+  useEffect(() => {
+    if (!selectedModel && modelsData?.defaultModel) {
+      setSelectedModel(modelsData.defaultModel)
+    }
+  }, [modelsData, selectedModel])
+
+  useEffect(() => {
+    if (selectedModel) localStorage.setItem('ai-selected-model', selectedModel)
+  }, [selectedModel])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -40,7 +68,7 @@ export default function AiChatPage() {
     setLoading(true)
 
     try {
-      const { reply } = await aiApi.chat(text)
+      const { reply } = await aiApi.chat(text, selectedModel || undefined)
       const assistantMsg: Message = { id: `a-${Date.now()}`, role: 'assistant', content: reply, timestamp: new Date() }
       setMessages(prev => [...prev, assistantMsg])
     } catch (e: any) {
@@ -84,7 +112,7 @@ export default function AiChatPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center">
             <Sparkles size={20} className="text-white" />
@@ -94,11 +122,28 @@ export default function AiChatPage() {
             <p className="text-xs text-surface-500 dark:text-surface-400">Анализирует данные CRM в реальном времени</p>
           </div>
         </div>
-        {messages.length > 0 && (
-          <button onClick={clearChat} className="btn-ghost text-xs flex items-center gap-1.5 text-surface-400 hover:text-red-500">
-            <Trash2 size={14} /> Очистить
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {modelsData?.models && modelsData.models.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-surface-100 dark:bg-surface-800 rounded-xl px-2.5 py-1.5 border border-surface-200 dark:border-surface-700">
+              <Cpu size={13} className="text-primary-500 shrink-0" />
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="bg-transparent text-xs font-medium text-surface-700 dark:text-surface-200 outline-none border-0 cursor-pointer pr-1"
+                title="Выбрать модель ИИ"
+              >
+                {modelsData.models.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {messages.length > 0 && (
+            <button onClick={clearChat} className="btn-ghost text-xs flex items-center gap-1.5 text-surface-400 hover:text-red-500">
+              <Trash2 size={14} /> Очистить
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
