@@ -7,12 +7,13 @@ import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
-import Groq from 'groq-sdk';
+import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 
 @Injectable()
 export class AiAssistantService {
   private readonly logger = new Logger(AiAssistantService.name);
-  private client: Groq | null = null;
+  private client: GoogleGenerativeAI | null = null;
+  private model: GenerativeModel | null = null;
 
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
@@ -22,43 +23,44 @@ export class AiAssistantService {
     @InjectRepository(TimeLog) private timeRepo: Repository<TimeLog>,
     @InjectRepository(DailyReport) private reportRepo: Repository<DailyReport>,
   ) {
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (apiKey) {
-      this.client = new Groq({ apiKey });
-      this.logger.log('AI Assistant ready (Groq API connected)');
+      this.client = new GoogleGenerativeAI(apiKey);
+      this.model = this.client.getGenerativeModel({
+        model: 'gemini-2.0-flash-exp',
+        generationConfig: {
+          maxOutputTokens: 2048,
+          temperature: 0.3,
+        },
+      });
+      this.logger.log('AI Assistant ready (Gemini 2.0 Flash connected)');
     } else {
-      this.logger.warn('GROQ_API_KEY not set — AI Assistant disabled');
+      this.logger.warn('GEMINI_API_KEY not set — AI Assistant disabled');
     }
   }
 
   async chat(question: string): Promise<string> {
-    if (!this.client) {
-      return 'ИИ-помощник не настроен. Добавьте GROQ_API_KEY в переменные окружения.';
+    if (!this.model) {
+      return 'ИИ-помощник не настроен. Добавьте GEMINI_API_KEY в переменные окружения.';
     }
 
     try {
       const context = await this.gatherContext(question);
 
-      const completion = await this.client.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 2048,
-        temperature: 0.3,
-        messages: [
-          {
-            role: 'system',
-            content: `Ты — ИИ-помощник CRM-системы "Sabt" для SMM-агентства. Отвечай на русском языке.
+      const systemPrompt = `Ты — ИИ-помощник CRM-системы "Sabt" для SMM-агентства. Отвечай на русском языке.
 Ты анализируешь данные из базы данных проекта и отвечаешь на вопросы администратора.
 Будь точен, конкретен, давай цифры и факты. Форматируй ответ красиво с помощью markdown.
 Если данных нет — так и скажи, не придумывай.
 
 Вот актуальные данные из базы:
-${context}`,
-          },
-          { role: 'user', content: question },
-        ],
-      });
+${context}
 
-      return completion.choices?.[0]?.message?.content || 'Не удалось получить ответ.';
+Вопрос администратора: ${question}`;
+
+      const result = await this.model.generateContent(systemPrompt);
+      const response = result.response;
+      const text = response.text();
+      return text || 'Не удалось получить ответ.';
     } catch (error) {
       this.logger.error(`AI chat error: ${error?.message || error}`);
       return `Ошибка ИИ: ${error?.message || 'Неизвестная ошибка'}`;
