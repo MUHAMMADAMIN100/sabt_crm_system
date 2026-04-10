@@ -242,9 +242,17 @@ export class ProjectsService {
     return this.findOne(id);
   }
 
-  async remove(id: string) {
+  async remove(id: string, user?: { id: string; role: string; name?: string }) {
     const p = await this.findOne(id);
+
+    // PM can only delete projects they manage
+    if (user && user.role === 'project_manager' && p.managerId !== user.id) {
+      throw new ForbiddenException('Можно удалять только свои проекты');
+    }
+
     await this.activityLog.log({
+      userId: user?.id,
+      userName: user?.name,
       action: ActivityAction.PROJECT_DELETE,
       entity: 'project',
       entityId: id,

@@ -56,6 +56,8 @@ export class ProjectsController {
   restore(@Param('id') id: string) { return this.service.restore(id); }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
-  remove(@Param('id') id: string) { return this.service.remove(id); }
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
+  remove(@Param('id') id: string, @Request() req) {
+    return this.service.remove(id, req.user);
+  }
 }
