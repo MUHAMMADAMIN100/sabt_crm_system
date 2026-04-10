@@ -279,10 +279,23 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
   }
 
   const submit = async (data: any) => {
+    // Map position label → role enum value
+    const positionToRoleMap: Record<string, string> = {
+      'SMM специалист': 'smm_specialist',
+      'Дизайнер': 'designer',
+      'Таргетолог': 'targetologist',
+      'Менеджер по продажам': 'sales_manager',
+      'Проект-менеджер': 'project_manager',
+      'Разработчик': 'developer',
+      'Сотрудник': 'employee',
+      'Основатель': 'founder',
+    }
+    const role = positionToRoleMap[data.position]
     try {
       await onSubmit({ fullName: data.fullName, position: data.position, department: 'Общий',
         email: data.email, phone: data.phone, telegram: data.telegram !== '@' ? data.telegram : undefined,
-        instagram: data.instagram||undefined, hireDate: data.hireDate, status: data.status, bio: data.bio||undefined })
+        instagram: data.instagram||undefined, hireDate: data.hireDate, status: data.status, bio: data.bio||undefined,
+        ...(role && { role }) })
     } catch (e: any) {
       const msg: string = e?.response?.data?.message || ''
       if (msg.toLowerCase().includes('email')) {

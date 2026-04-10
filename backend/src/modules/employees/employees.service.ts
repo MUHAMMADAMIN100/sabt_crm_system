@@ -198,25 +198,22 @@ export class EmployeesService {
       .getRawMany();
   }
 
-  /** Maps a Russian position string to a UserRole enum value */
+  /** Maps a Russian position string to a UserRole enum value (normalized) */
   private positionToRole(position: string): UserRole | undefined {
     if (!position) return undefined;
-    const map: Record<string, UserRole> = {
-      'SMM специалист':       UserRole.SMM_SPECIALIST,
-      'SMM-специалист':       UserRole.SMM_SPECIALIST,
-      'Дизайнер':             UserRole.DESIGNER,
-      'Таргетолог':           UserRole.TARGETOLOGIST,
-      'Менеджер по продажам': UserRole.SALES_MANAGER,
-      'Маркетолог':           UserRole.MARKETER,
-      'Проект-менеджер':      UserRole.PROJECT_MANAGER,
-      'Project Manager':      UserRole.PROJECT_MANAGER,
-      'Разработчик':          UserRole.DEVELOPER,
-      'Developer':            UserRole.DEVELOPER,
-      'Основатель':           UserRole.FOUNDER,
-      'Founder':              UserRole.FOUNDER,
-      'Сотрудник':            UserRole.EMPLOYEE,
-      'Администратор':        UserRole.ADMIN,
-    };
-    return map[position.trim()];
+    // Normalize: lowercase, collapse whitespace, remove dashes/hyphens
+    const norm = position.toLowerCase().replace(/[\s\-—_]+/g, '').trim();
+
+    if (norm.includes('smm')) return UserRole.SMM_SPECIALIST;
+    if (norm.includes('дизайнер') || norm.includes('designer')) return UserRole.DESIGNER;
+    if (norm.includes('таргетолог') || norm.includes('targetolog')) return UserRole.TARGETOLOGIST;
+    if (norm.includes('продаж') || norm.includes('sales')) return UserRole.SALES_MANAGER;
+    if (norm.includes('маркетолог') || norm.includes('marketer')) return UserRole.MARKETER;
+    if (norm.includes('проектменеджер') || norm.includes('projectmanager') || norm.includes('пм')) return UserRole.PROJECT_MANAGER;
+    if (norm.includes('разработчик') || norm.includes('developer') || norm.includes('программист')) return UserRole.DEVELOPER;
+    if (norm.includes('основатель') || norm.includes('founder')) return UserRole.FOUNDER;
+    if (norm.includes('администратор') || norm === 'admin') return UserRole.ADMIN;
+    if (norm.includes('сотрудник') || norm.includes('employee')) return UserRole.EMPLOYEE;
+    return undefined;
   }
 }
