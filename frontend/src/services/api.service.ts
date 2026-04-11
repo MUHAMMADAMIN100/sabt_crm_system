@@ -15,6 +15,7 @@ export const usersApi = {
   toggleActive: (id: string) => api.patch(`/users/${id}/toggle-active`).then(r => r.data),
   block: (id: string, reason?: string) => api.patch(`/users/${id}/block`, { reason }).then(r => r.data),
   unblock: (id: string) => api.patch(`/users/${id}/unblock`).then(r => r.data),
+  resetPassword: (id: string, newPassword?: string) => api.patch(`/users/${id}/reset-password`, { newPassword }).then(r => r.data),
   remove: (id: string) => api.delete(`/users/${id}`).then(r => r.data),
   cleanupOrphans: () => api.post('/users/cleanup-orphans').then(r => r.data),
 }

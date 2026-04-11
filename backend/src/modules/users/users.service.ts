@@ -74,6 +74,43 @@ export class UsersService {
     return user;
   }
 
+  /**
+   * Admin/founder resets a user's password to a new value.
+   * If newPassword is not provided, generates a random one.
+   * Returns the plain new password so admin can share it with the user.
+   */
+  async resetPassword(id: string, resetBy: { id: string; name?: string; role: string }, newPassword?: string) {
+    const user = await this.findOne(id);
+    if (['admin', 'founder'].includes(user.role) && user.id !== resetBy.id) {
+      throw new Error('Нельзя сбросить пароль другого администратора');
+    }
+    // Generate random password if not provided
+    const finalPassword = newPassword?.trim() || this.generateRandomPassword(10);
+    user.password = finalPassword; // BeforeUpdate hook will hash it
+    await this.repo.save(user);
+
+    await this.activityLog.log({
+      userId: resetBy.id,
+      userName: resetBy.name,
+      action: ActivityAction.PASSWORD_CHANGE,
+      entity: 'user',
+      entityId: id,
+      entityName: user.name,
+      details: { resetBy: resetBy.role, target: user.email },
+    });
+
+    return { newPassword: finalPassword, user: { id: user.id, name: user.name, email: user.email } };
+  }
+
+  private generateRandomPassword(length: number): string {
+    const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let pwd = '';
+    for (let i = 0; i < length; i++) {
+      pwd += charset[Math.floor(Math.random() * charset.length)];
+    }
+    return pwd;
+  }
+
   async block(id: string, blockedBy: { id: string; name?: string; role: string }, reason?: string) {
     const user = await this.findOne(id);
     if (user.id === blockedBy.id) {

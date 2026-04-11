@@ -49,6 +49,16 @@ export class UsersController {
     }
   }
 
+  @Patch(':id/reset-password')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  async resetPassword(@Param('id') id: string, @Body() body: { newPassword?: string }, @Request() req) {
+    try {
+      return await this.usersService.resetPassword(id, req.user, body?.newPassword);
+    } catch (e: any) {
+      throw new BadRequestException(e.message || 'Не удалось сбросить пароль');
+    }
+  }
+
   @Patch(':id/unblock')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   unblock(@Param('id') id: string, @Request() req) {

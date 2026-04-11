@@ -5,7 +5,7 @@ import { employeesApi, usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban } from 'lucide-react'
+import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
@@ -23,6 +23,10 @@ export default function EmployeesPage() {
   const [blockEmp, setBlockEmp] = useState<any>(null)
   const [blockReason, setBlockReason] = useState('')
   const [unblockId, setUnblockId] = useState<string | null>(null)
+  const [resetPwdEmp, setResetPwdEmp] = useState<any>(null)
+  const [customPwd, setCustomPwd] = useState('')
+  const [resetResult, setResetResult] = useState<{ name: string; password: string } | null>(null)
+  const [pwdCopied, setPwdCopied] = useState(false)
   const user = useAuthStore(s => s.user)
   const canManage = user?.role === 'admin' || user?.role === 'founder'
   const isAdmin = canManage  // alias for backward compat
@@ -158,6 +162,19 @@ export default function EmployeesPage() {
     },
   })
 
+  const resetPwdMut = useMutation({
+    mutationFn: ({ userId, password }: { userId: string; password?: string }) => usersApi.resetPassword(userId, password),
+    onSuccess: (data: any, vars) => {
+      const empName = resetPwdEmp?.fullName || 'Сотрудник'
+      setResetResult({ name: empName, password: data.newPassword })
+      setResetPwdEmp(null)
+      setCustomPwd('')
+    },
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.message || 'Не удалось сбросить пароль')
+    },
+  })
+
   if (isLoading) return <PageLoader />
 
   const getInitials = (name: string) => name?.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() || '?'
@@ -206,6 +223,9 @@ export default function EmployeesPage() {
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                     <button onClick={() => toggleSubAdmin.mutate(emp.id)} className={clsx('p-1.5 rounded-lg', emp.isSubAdmin ? 'bg-primary-50 dark:bg-primary-900/30' : 'hover:bg-surface-100 dark:hover:bg-surface-700')} title="Помощник админа">
                       <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400'} />
+                    </button>
+                    <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500" title="Сбросить пароль">
+                      <Key size={14} />
                     </button>
                     {emp.user?.isBlocked ? (
                       <button onClick={() => setUnblockId(emp.userId)} className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600" title="Разблокировать">
@@ -289,6 +309,9 @@ export default function EmployeesPage() {
                         <button onClick={() => toggleSubAdmin.mutate(emp.id)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg" title="Помощник админа">
                           <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600' : 'text-surface-400'} />
                         </button>
+                        <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500" title="Сбросить пароль">
+                          <Key size={14} />
+                        </button>
                         {emp.user?.isBlocked ? (
                           <button onClick={() => setUnblockId(emp.userId)} className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600" title="Разблокировать">
                             <Unlock size={14} />
@@ -359,6 +382,78 @@ export default function EmployeesPage() {
         title="Разблокировать сотрудника?"
         message="Сотрудник снова сможет войти в систему."
       />
+
+      {/* Reset password modal */}
+      <Modal open={!!resetPwdEmp} onClose={() => { setResetPwdEmp(null); setCustomPwd('') }} title="Сбросить пароль" size="sm">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+            <Key size={18} className="text-blue-500 shrink-0" />
+            <p className="text-sm text-blue-800 dark:text-blue-300">
+              Сбросить пароль для <strong>{resetPwdEmp?.fullName}</strong>?<br/>
+              <span className="text-xs">Старый пароль перестанет работать</span>
+            </p>
+          </div>
+          <div>
+            <label className="label mb-1">Новый пароль (или оставьте пустым для авто-генерации)</label>
+            <input
+              type="text"
+              value={customPwd}
+              onChange={e => setCustomPwd(e.target.value)}
+              placeholder="Случайный пароль будет сгенерирован"
+              className="input w-full"
+              minLength={4}
+            />
+            <p className="text-[10px] text-surface-400 mt-1">Минимум 4 символа</p>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setResetPwdEmp(null); setCustomPwd('') }} className="btn-secondary">Отмена</button>
+            <button
+              onClick={() => resetPwdEmp?.userId && resetPwdMut.mutate({ userId: resetPwdEmp.userId, password: customPwd || undefined })}
+              disabled={!resetPwdEmp?.userId || resetPwdMut.isPending || (customPwd.length > 0 && customPwd.length < 4)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-medium disabled:opacity-50"
+            >
+              <Key size={15} /> Сбросить
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reset result modal — shows the new password */}
+      <Modal open={!!resetResult} onClose={() => { setResetResult(null); setPwdCopied(false) }} title="Пароль изменён" size="sm">
+        {resetResult && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-xl">
+              <Check size={18} className="text-green-500 shrink-0" />
+              <p className="text-sm text-green-800 dark:text-green-300">
+                Новый пароль для <strong>{resetResult.name}</strong>:
+              </p>
+            </div>
+            <div className="bg-surface-100 dark:bg-surface-800 rounded-xl p-4 border-2 border-dashed border-primary-300 dark:border-primary-700">
+              <div className="flex items-center justify-between gap-3">
+                <code className="text-lg font-mono font-bold text-primary-700 dark:text-primary-300 select-all break-all">{resetResult.password}</code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(resetResult.password)
+                    setPwdCopied(true)
+                    setTimeout(() => setPwdCopied(false), 2000)
+                  }}
+                  className="shrink-0 p-2 hover:bg-surface-200 dark:hover:bg-surface-700 rounded-lg text-surface-600 dark:text-surface-300"
+                  title="Скопировать"
+                >
+                  {pwdCopied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-orange-600 dark:text-orange-400 flex items-start gap-1">
+              <span>⚠️</span>
+              <span>Запишите или скопируйте пароль и передайте сотруднику. После закрытия окна вы больше не сможете его увидеть.</span>
+            </p>
+            <div className="flex justify-end">
+              <button onClick={() => { setResetResult(null); setPwdCopied(false) }} className="btn-primary">Закрыть</button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
