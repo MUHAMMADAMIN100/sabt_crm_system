@@ -14,6 +14,19 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   res => res,
   err => {
+    // Нормализуем err.response.data.message до строки.
+    // NestJS ValidationPipe возвращает массив (["Пароль должен...", ...]),
+    // другие ошибки — строку. Без нормализации любой .toLowerCase()/.includes()
+    // в обработчиках крашит catch и глотает ошибку без уведомления пользователю.
+    const raw = err.response?.data?.message
+    if (err.response?.data) {
+      if (Array.isArray(raw)) {
+        err.response.data.message = raw.filter(Boolean).join('\n')
+      } else if (raw && typeof raw === 'object') {
+        err.response.data.message = Object.values(raw).filter(Boolean).join('\n')
+      }
+    }
+
     if (err.response?.status === 401 && !window.location.pathname.includes('/auth')) {
       // Capture blocked message so AuthPage can show the banner
       const msg: string = err.response?.data?.message || ''
