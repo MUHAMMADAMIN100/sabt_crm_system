@@ -13,6 +13,8 @@ export const usersApi = {
   get: (id: string) => api.get(`/users/${id}`).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/users/${id}`, data).then(r => r.data),
   toggleActive: (id: string) => api.patch(`/users/${id}/toggle-active`).then(r => r.data),
+  block: (id: string, reason?: string) => api.patch(`/users/${id}/block`, { reason }).then(r => r.data),
+  unblock: (id: string) => api.patch(`/users/${id}/unblock`).then(r => r.data),
   remove: (id: string) => api.delete(`/users/${id}`).then(r => r.data),
   cleanupOrphans: () => api.post('/users/cleanup-orphans').then(r => r.data),
 }

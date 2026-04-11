@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { employeesApi } from '@/services/api.service'
+import { employeesApi, usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send } from 'lucide-react'
+import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
@@ -20,6 +20,9 @@ export default function EmployeesPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [editEmp, setEditEmp] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [blockEmp, setBlockEmp] = useState<any>(null)
+  const [blockReason, setBlockReason] = useState('')
+  const [unblockId, setUnblockId] = useState<string | null>(null)
   const user = useAuthStore(s => s.user)
   const canManage = user?.role === 'admin' || user?.role === 'founder'
   const isAdmin = canManage  // alias for backward compat
@@ -114,6 +117,47 @@ export default function EmployeesPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('common.updated')) },
   })
 
+  const blockMut = useMutation({
+    mutationFn: ({ userId, reason }: { userId: string; reason?: string }) => usersApi.block(userId, reason),
+    onMutate: async ({ userId }) => {
+      await qc.cancelQueries({ queryKey: ['employees'] })
+      const previous = qc.getQueryData(['employees'])
+      qc.setQueryData(['employees'], (old: any[]) => old?.map((e: any) => e.userId === userId ? { ...e, user: { ...e.user, isBlocked: true } } : e) ?? [])
+      setBlockEmp(null)
+      setBlockReason('')
+      return { previous }
+    },
+    onError: (e: any, _v, context: any) => {
+      qc.setQueryData(['employees'], context?.previous)
+      toast.error(e?.response?.data?.message || 'Не удалось заблокировать')
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['users'] })
+      toast.success('Сотрудник заблокирован')
+    },
+  })
+
+  const unblockMut = useMutation({
+    mutationFn: (userId: string) => usersApi.unblock(userId),
+    onMutate: async (userId: string) => {
+      await qc.cancelQueries({ queryKey: ['employees'] })
+      const previous = qc.getQueryData(['employees'])
+      qc.setQueryData(['employees'], (old: any[]) => old?.map((e: any) => e.userId === userId ? { ...e, user: { ...e.user, isBlocked: false } } : e) ?? [])
+      setUnblockId(null)
+      return { previous }
+    },
+    onError: (_e, _v, context: any) => {
+      qc.setQueryData(['employees'], context?.previous)
+      toast.error('Не удалось разблокировать')
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['users'] })
+      toast.success('Сотрудник разблокирован')
+    },
+  })
+
   if (isLoading) return <PageLoader />
 
   const getInitials = (name: string) => name?.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() || '?'
@@ -163,6 +207,15 @@ export default function EmployeesPage() {
                     <button onClick={() => toggleSubAdmin.mutate(emp.id)} className={clsx('p-1.5 rounded-lg', emp.isSubAdmin ? 'bg-primary-50 dark:bg-primary-900/30' : 'hover:bg-surface-100 dark:hover:bg-surface-700')} title="Помощник админа">
                       <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400'} />
                     </button>
+                    {emp.user?.isBlocked ? (
+                      <button onClick={() => setUnblockId(emp.userId)} className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600" title="Разблокировать">
+                        <Unlock size={14} />
+                      </button>
+                    ) : (
+                      <button onClick={() => setBlockEmp(emp)} className="p-1.5 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg text-orange-500" title="Заблокировать">
+                        <Lock size={14} />
+                      </button>
+                    )}
                     <button onClick={() => setEditEmp(emp)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg"><Edit size={14} className="text-surface-500 dark:text-surface-400" /></button>
                     <button onClick={() => setDeleteId(emp.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500"><Trash2 size={14} /></button>
                   </div>
@@ -179,7 +232,13 @@ export default function EmployeesPage() {
                 )}
               </div>
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-surface-50 dark:border-surface-700">
-                <span className={clsx('badge', emp.status==='active' ? 'status-done' : 'status-cancelled')}>{emp.status==='active' ? t('common.active') : t('common.inactive')}</span>
+                {emp.user?.isBlocked ? (
+                  <span className="badge bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 flex items-center gap-1">
+                    <Ban size={11} /> Заблокирован
+                  </span>
+                ) : (
+                  <span className={clsx('badge', emp.status==='active' ? 'status-done' : 'status-cancelled')}>{emp.status==='active' ? t('common.active') : t('common.inactive')}</span>
+                )}
                 <span className="text-xs text-surface-400 dark:text-surface-500">{format(new Date(emp.hireDate), 'dd.MM.yyyy')}</span>
               </div>
             </div>
@@ -215,13 +274,30 @@ export default function EmployeesPage() {
                   <td className="px-4 py-3 hidden lg:table-cell">
                     {emp.telegram && <a href={getTelegramUrl(emp.telegram)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="text-xs text-primary-500 hover:underline">{emp.telegram}</a>}
                   </td>
-                  <td className="px-4 py-3"><span className={clsx('badge', emp.status==='active' ? 'status-done' : 'status-cancelled')}>{emp.status==='active' ? t('common.active') : t('common.inactive')}</span></td>
+                  <td className="px-4 py-3">
+                    {emp.user?.isBlocked ? (
+                      <span className="badge bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 flex items-center gap-1 w-fit">
+                        <Ban size={11} /> Заблокирован
+                      </span>
+                    ) : (
+                      <span className={clsx('badge', emp.status==='active' ? 'status-done' : 'status-cancelled')}>{emp.status==='active' ? t('common.active') : t('common.inactive')}</span>
+                    )}
+                  </td>
                   {isAdmin && (
                     <td className="px-4 py-3" onClick={e=>e.stopPropagation()}>
                       <div className="flex gap-1 justify-end">
                         <button onClick={() => toggleSubAdmin.mutate(emp.id)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg" title="Помощник админа">
                           <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600' : 'text-surface-400'} />
                         </button>
+                        {emp.user?.isBlocked ? (
+                          <button onClick={() => setUnblockId(emp.userId)} className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600" title="Разблокировать">
+                            <Unlock size={14} />
+                          </button>
+                        ) : (
+                          <button onClick={() => setBlockEmp(emp)} className="p-1.5 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg text-orange-500" title="Заблокировать">
+                            <Lock size={14} />
+                          </button>
+                        )}
                         <button onClick={() => setEditEmp(emp)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg"><Edit size={14} className="text-surface-500" /></button>
                         <button onClick={() => setDeleteId(emp.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400"><Trash2 size={14} /></button>
                       </div>
@@ -242,6 +318,47 @@ export default function EmployeesPage() {
         loading={createMut.isPending || updateMut.isPending} />
       <ConfirmDialog open={!!deleteId} onClose={() => setDeleteId(null)}
         onConfirm={() => deleteMut.mutate(deleteId!)} title={t('common.delete') + '?'} danger />
+
+      {/* Block modal */}
+      <Modal open={!!blockEmp} onClose={() => { setBlockEmp(null); setBlockReason('') }} title="Заблокировать сотрудника" size="sm">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-xl">
+            <Lock size={18} className="text-orange-500 shrink-0" />
+            <p className="text-sm text-orange-800 dark:text-orange-300">
+              <strong>{blockEmp?.fullName}</strong> не сможет войти в систему пока вы не разблокируете
+            </p>
+          </div>
+          <div>
+            <label className="label mb-1">Причина блокировки (необязательно)</label>
+            <textarea
+              value={blockReason}
+              onChange={e => setBlockReason(e.target.value)}
+              rows={3}
+              placeholder="Например: нарушение дисциплины, увольнение, отпуск..."
+              className="input w-full resize-none"
+            />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setBlockEmp(null); setBlockReason('') }} className="btn-secondary">Отмена</button>
+            <button
+              onClick={() => blockEmp?.userId && blockMut.mutate({ userId: blockEmp.userId, reason: blockReason || undefined })}
+              disabled={!blockEmp?.userId || blockMut.isPending}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-medium disabled:opacity-50"
+            >
+              <Lock size={15} /> Заблокировать
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Unblock confirm */}
+      <ConfirmDialog
+        open={!!unblockId}
+        onClose={() => setUnblockId(null)}
+        onConfirm={() => unblockId && unblockMut.mutate(unblockId)}
+        title="Разблокировать сотрудника?"
+        message="Сотрудник снова сможет войти в систему."
+      />
     </div>
   )
 }

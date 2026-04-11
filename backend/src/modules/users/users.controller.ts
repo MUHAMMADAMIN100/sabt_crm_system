@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Request, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
@@ -37,6 +37,22 @@ export class UsersController {
   @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   toggleActive(@Param('id') id: string) {
     return this.usersService.toggleActive(id);
+  }
+
+  @Patch(':id/block')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  async block(@Param('id') id: string, @Body() body: { reason?: string }, @Request() req) {
+    try {
+      return await this.usersService.block(id, req.user, body?.reason);
+    } catch (e: any) {
+      throw new BadRequestException(e.message || 'Не удалось заблокировать пользователя');
+    }
+  }
+
+  @Patch(':id/unblock')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  unblock(@Param('id') id: string, @Request() req) {
+    return this.usersService.unblock(id, req.user);
   }
 
   @Delete(':id')

@@ -44,6 +44,24 @@ export class User {
   @Column({ default: true })
   isActive: boolean;
 
+  @Column({ default: false })
+  isBlocked: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  blockedAt: Date;
+
+  @Column({ nullable: true })
+  blockedById: string;
+
+  @Column({ nullable: true })
+  blockedByName: string;
+
+  @Column({ nullable: true })
+  blockedByRole: string;
+
+  @Column({ type: 'text', nullable: true })
+  blockReason: string;
+
   @Column({ nullable: true })
   avatar: string;
 

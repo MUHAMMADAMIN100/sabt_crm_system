@@ -24,8 +24,18 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false)
   const [animKey, setAnimKey] = useState(0)
   const [founderExists, setFounderExists] = useState(false)
+  const [blockedMessage, setBlockedMessage] = useState<string | null>(null)
   const { login, register: doRegister } = useAuthStore()
   const { t } = useTranslation()
+
+  // Check if redirected here due to a block (set by api interceptor)
+  useEffect(() => {
+    const blockMsg = sessionStorage.getItem('blocked-message')
+    if (blockMsg) {
+      setBlockedMessage(blockMsg)
+      sessionStorage.removeItem('blocked-message')
+    }
+  }, [])
 
   useEffect(() => {
     if (mode === 'register') {
@@ -73,7 +83,9 @@ export default function AuthPage() {
     } catch (e: any) {
       const msg: string = e?.response?.data?.message || ''
       if (mode === 'login') {
-        if (
+        if (msg.includes('заблокировал') || msg.toLowerCase().includes('blocked')) {
+          setBlockedMessage(msg.replace(/^BLOCKED:\s*/i, ''))
+        } else if (
           msg.toLowerCase().includes('invalid') ||
           msg.toLowerCase().includes('credentials') ||
           msg.toLowerCase().includes('password')
@@ -158,6 +170,22 @@ export default function AuthPage() {
               </button>
             ))}
           </div>
+
+          {/* Blocked alert */}
+          {blockedMessage && mode === 'login' && (
+            <div className="mb-3 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 flex items-start gap-2 animate-fade-in">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 shrink-0 mt-0.5">
+                <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+              </svg>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-red-700 dark:text-red-300">Доступ заблокирован</p>
+                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 whitespace-pre-line">{blockedMessage}</p>
+              </div>
+              <button onClick={() => setBlockedMessage(null)} className="text-red-400 hover:text-red-600 shrink-0">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          )}
 
           {/* Form — key changes on tab switch to trigger animation */}
           <form key={animKey} onSubmit={handleSubmit(onSubmit)} className="space-y-3 auth-form-animate">

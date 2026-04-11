@@ -74,6 +74,59 @@ export class UsersService {
     return user;
   }
 
+  async block(id: string, blockedBy: { id: string; name?: string; role: string }, reason?: string) {
+    const user = await this.findOne(id);
+    if (user.id === blockedBy.id) {
+      throw new Error('Нельзя заблокировать самого себя');
+    }
+    if (['admin', 'founder'].includes(user.role)) {
+      throw new Error('Нельзя заблокировать администратора или основателя');
+    }
+
+    user.isBlocked = true;
+    user.blockedAt = new Date();
+    user.blockedById = blockedBy.id;
+    user.blockedByName = blockedBy.name || null;
+    user.blockedByRole = blockedBy.role;
+    user.blockReason = reason || null;
+    await this.repo.save(user);
+
+    await this.activityLog.log({
+      userId: blockedBy.id,
+      userName: blockedBy.name,
+      action: ActivityAction.USER_DEACTIVATE,
+      entity: 'user',
+      entityId: id,
+      entityName: user.name,
+      details: { blocked: true, reason },
+    });
+
+    return this.findOne(id);
+  }
+
+  async unblock(id: string, unblockedBy: { id: string; name?: string; role: string }) {
+    const user = await this.findOne(id);
+    user.isBlocked = false;
+    user.blockedAt = null;
+    user.blockedById = null;
+    user.blockedByName = null;
+    user.blockedByRole = null;
+    user.blockReason = null;
+    await this.repo.save(user);
+
+    await this.activityLog.log({
+      userId: unblockedBy.id,
+      userName: unblockedBy.name,
+      action: ActivityAction.USER_ACTIVATE,
+      entity: 'user',
+      entityId: id,
+      entityName: user.name,
+      details: { unblocked: true },
+    });
+
+    return this.findOne(id);
+  }
+
   async updateAvatar(id: string, avatar: string) {
     const user = await this.findOne(id);
     await this.repo.update(id, { avatar });

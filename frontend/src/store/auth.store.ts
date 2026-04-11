@@ -24,6 +24,11 @@ export interface User {
   isSubAdmin?: boolean
   position?: string | null
   department?: string | null
+  isBlocked?: boolean
+  blockedAt?: string | null
+  blockedByName?: string | null
+  blockedByRole?: string | null
+  blockReason?: string | null
 }
 
 interface AuthState {

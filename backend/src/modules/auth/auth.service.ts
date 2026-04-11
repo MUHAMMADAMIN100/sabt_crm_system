@@ -99,6 +99,15 @@ export class AuthService {
     if (!user || !(await user.validatePassword(dto.password))) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    if (user.isBlocked) {
+      const blockedByLabel = user.blockedByRole === 'founder'
+        ? 'основатель компании'
+        : user.blockedByRole === 'admin'
+          ? 'администратор'
+          : (user.blockedByName || 'администрация');
+      const reasonText = user.blockReason ? `\nПричина: ${user.blockReason}` : '';
+      throw new UnauthorizedException(`Вас заблокировал ${blockedByLabel}${user.blockedByName ? ` (${user.blockedByName})` : ''}.${reasonText}`);
+    }
     if (!user.isActive) throw new UnauthorizedException('Account is deactivated');
 
     // Check if employee is sub-admin — grant admin access

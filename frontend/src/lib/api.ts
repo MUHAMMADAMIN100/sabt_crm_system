@@ -15,7 +15,13 @@ api.interceptors.response.use(
   res => res,
   err => {
     if (err.response?.status === 401 && !window.location.pathname.includes('/auth')) {
+      // Capture blocked message so AuthPage can show the banner
+      const msg: string = err.response?.data?.message || ''
+      if (msg.includes('заблокировал') || msg.toLowerCase().startsWith('blocked')) {
+        sessionStorage.setItem('blocked-message', msg.replace(/^BLOCKED:\s*/i, ''))
+      }
       localStorage.removeItem('token')
+      localStorage.removeItem('auth-storage')
       window.location.href = '/auth'
     }
     return Promise.reject(err)

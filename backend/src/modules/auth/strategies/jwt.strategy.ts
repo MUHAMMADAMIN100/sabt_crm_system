@@ -21,9 +21,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: { sub: string; email: string; role: string }) {
     const user = await this.userRepo.findOne({ where: { id: payload.sub } });
     if (!user || !user.isActive) throw new UnauthorizedException();
-    // Use FRESH role from DB so admin role changes take effect immediately
-    // (JWT-encoded role can be stale if admin changed it after login)
-    // Sub-admin promotion is handled by storing 'admin' in DB.role temporarily.
+    if (user.isBlocked) {
+      const blockedByLabel = user.blockedByRole === 'founder'
+        ? 'основатель компании'
+        : user.blockedByRole === 'admin'
+          ? 'администратор'
+          : (user.blockedByName || 'администрация');
+      throw new UnauthorizedException(`BLOCKED: Вас заблокировал ${blockedByLabel}${user.blockedByName ? ` (${user.blockedByName})` : ''}`);
+    }
     return { ...user, role: user.role };
   }
 }
