@@ -11,9 +11,9 @@ export class RegisterDto {
   @IsEmail()
   email: string;
 
-  @ApiProperty()
+  @ApiProperty({ minLength: 8 })
   @IsString()
-  @MinLength(4)
+  @MinLength(8, { message: 'Пароль должен содержать минимум 8 символов' })
   password: string;
 
   @ApiProperty({ required: false })

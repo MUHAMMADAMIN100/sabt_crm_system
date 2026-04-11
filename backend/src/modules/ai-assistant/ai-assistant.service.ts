@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Task } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
-import { User } from '../users/user.entity';
+import { User, UserRole } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
@@ -15,6 +15,17 @@ import { FileAttachment } from '../files/file.entity';
 import { WorkSession } from '../auth/work-session.entity';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as https from 'https';
+
+export interface AiUserContext {
+  id: string;
+  role: UserRole;
+}
+
+/** Пользователи, которым доступна полная картина по БД. */
+const FULL_ACCESS_ROLES: ReadonlySet<UserRole> = new Set([UserRole.ADMIN, UserRole.FOUNDER]);
+
+/** Пользователи, которые видят только свои проекты (плюс команду и задачи в них). */
+const PROJECT_SCOPED_ROLES: ReadonlySet<UserRole> = new Set([UserRole.PROJECT_MANAGER]);
 
 // Default fallback chain (used when user doesn't pick a specific model)
 const GEMINI_MODEL_CHAIN = [
@@ -59,9 +70,9 @@ export class AiAssistantService {
   private gemini: GoogleGenerativeAI | null = null;
   private groqKey: string | null = null;
 
-  // Context cache (shared across all requests)
-  private cachedContext: string | null = null;
-  private cachedAt: number = 0;
+  // Кэш контекста — отдельный для каждого пользователя,
+  // потому что данные теперь фильтруются по роли/id.
+  private contextCache = new Map<string, { context: string; cachedAt: number }>();
 
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
@@ -104,15 +115,19 @@ export class AiAssistantService {
     return { models, defaultModel };
   }
 
-  async chat(question: string, selectedModel?: string): Promise<string> {
+  async chat(question: string, userCtx: AiUserContext, selectedModel?: string): Promise<string> {
     if (!this.gemini && !this.groqKey) {
       return 'ИИ-помощник не настроен. Добавьте GEMINI_API_KEY или GROQ_API_KEY в переменные окружения.';
     }
 
-    const context = await this.getCachedContext();
+    const context = await this.getCachedContext(userCtx);
     const today = new Date().toLocaleDateString('ru-RU');
+    const scopeNote = this.describeScope(userCtx.role);
 
-    const systemPrompt = `Ты — главный ИИ-аналитик CRM-системы "Sabt" для SMM-агентства. Твоя задача — помогать администратору и руководству глубоко понимать что происходит в компании, отвечать на ЛЮБЫЕ вопросы — от самых простых ("Сколько задач?") до сложных аналитических ("Кто из дизайнеров эффективнее справляется с дедлайнами в SMM-проектах за последний месяц?").
+    const systemPrompt = `Ты — главный ИИ-аналитик CRM-системы "Sabt" для SMM-агентства. Твоя задача — помогать пользователю глубоко понимать что происходит в его рабочем пространстве, отвечать на ЛЮБЫЕ вопросы — от самых простых ("Сколько задач?") до сложных аналитических ("Кто из дизайнеров эффективнее справляется с дедлайнами в SMM-проектах за последний месяц?").
+
+ВИДИМОСТЬ ДАННЫХ: ${scopeNote}
+Никогда не раскрывай и не строй гипотез о данных вне этого контекста. Если пользователь спросил про проект/задачу/сотрудника, которых нет в данных ниже — скажи "У вас нет доступа к этой информации" и не выдумывай.
 
 ПРАВИЛА:
 1. Отвечай ВСЕГДА на русском языке.
@@ -213,16 +228,34 @@ ${context}
     return 'Ошибка ИИ: все провайдеры временно недоступны, попробуйте через минуту.';
   }
 
-  /** Returns cached context if fresh (<30s), otherwise loads fresh */
-  private async getCachedContext(): Promise<string> {
+  /** Возвращает кэшированный контекст для конкретного пользователя (<30s), иначе строит свежий */
+  private async getCachedContext(userCtx: AiUserContext): Promise<string> {
     const now = Date.now();
-    if (this.cachedContext && now - this.cachedAt < CONTEXT_CACHE_TTL_MS) {
-      return this.cachedContext;
+    const key = `${userCtx.role}:${userCtx.id}`;
+    const cached = this.contextCache.get(key);
+    if (cached && now - cached.cachedAt < CONTEXT_CACHE_TTL_MS) {
+      return cached.context;
     }
-    const fresh = await this.gatherFullContext();
-    this.cachedContext = fresh;
-    this.cachedAt = now;
+    const fresh = await this.gatherFullContext(userCtx);
+    this.contextCache.set(key, { context: fresh, cachedAt: now });
+    // Чистим протухшие записи, чтобы мапа не росла бесконечно
+    if (this.contextCache.size > 50) {
+      for (const [k, v] of this.contextCache) {
+        if (now - v.cachedAt > CONTEXT_CACHE_TTL_MS) this.contextCache.delete(k);
+      }
+    }
     return fresh;
+  }
+
+  /** Текстовое описание scope для системного промпта — чтобы LLM понимала границы */
+  private describeScope(role: UserRole): string {
+    if (FULL_ACCESS_ROLES.has(role)) {
+      return 'полный доступ ко всей базе компании (все пользователи, проекты, задачи, отчёты, активность).';
+    }
+    if (PROJECT_SCOPED_ROLES.has(role)) {
+      return 'только проекты, где пользователь является менеджером или участником, и задачи/комментарии/файлы внутри них. Контакты других сотрудников (email, телефон, telegram) скрыты.';
+    }
+    return 'только собственные задачи, отчёты и тайм-логи + названия проектов, где пользователь состоит. Данные о других сотрудниках не видны.';
   }
 
   private callGroq(model: string, prompt: string): Promise<string> {
@@ -270,10 +303,26 @@ ${context}
   }
 
   /**
-   * Loads ABSOLUTELY EVERYTHING from the database into the AI context.
-   * The DB is small enough that this fits comfortably in Gemini's 1M token window.
+   * Собирает контекст для ИИ с учётом роли пользователя.
+   * - admin/founder → полный снимок БД
+   * - project_manager → только свои проекты, их задачи/команда/файлы (без PII сотрудников)
+   * - остальные роли → только свои задачи/отчёты/тайм-логи
    */
-  private async gatherFullContext(): Promise<string> {
+  private async gatherFullContext(userCtx: AiUserContext): Promise<string> {
+    if (FULL_ACCESS_ROLES.has(userCtx.role)) {
+      return this.gatherAdminContext();
+    }
+    if (PROJECT_SCOPED_ROLES.has(userCtx.role)) {
+      return this.gatherProjectManagerContext(userCtx.id);
+    }
+    return this.gatherEmployeeContext(userCtx.id);
+  }
+
+  /**
+   * Полный снимок БД для admin/founder.
+   * Small DB → влезает в Gemini 1M token context.
+   */
+  private async gatherAdminContext(): Promise<string> {
     const parts: string[] = [];
 
     // Run all queries in parallel
@@ -466,6 +515,213 @@ ${context}
         return `- ${s.user?.name || '?'} | ${login} → ${logout} | ${s.durationHours || 0}ч`;
       }).join('\n');
       parts.push(`## 🕐 СЕССИИ ВХОДА (${recentSessions.length})\n${sesList}`);
+    }
+
+    return parts.join('\n\n');
+  }
+
+  /**
+   * Контекст для project manager: только проекты, где он менеджер или участник,
+   * плюс их задачи/команда/файлы. PII сотрудников (phone, telegram, email) скрыты.
+   */
+  private async gatherProjectManagerContext(userId: string): Promise<string> {
+    const parts: string[] = [];
+
+    // 1. Находим проекты, где пользователь — менеджер
+    const managedProjects = await this.projectRepo.find({
+      where: { managerId: userId, isArchived: false },
+      relations: ['members', 'manager'],
+      order: { createdAt: 'DESC' },
+    });
+
+    // 2. И проекты, где он участник (через many-to-many)
+    const memberProjects = await this.projectRepo
+      .createQueryBuilder('p')
+      .innerJoin('p.members', 'm', 'm.id = :userId', { userId })
+      .leftJoinAndSelect('p.members', 'allMembers')
+      .leftJoinAndSelect('p.manager', 'manager')
+      .where('p.isArchived = false')
+      .orderBy('p.createdAt', 'DESC')
+      .getMany();
+
+    const allProjectsMap = new Map<string, Project>();
+    for (const p of [...managedProjects, ...memberProjects]) allProjectsMap.set(p.id, p);
+    const projects = Array.from(allProjectsMap.values());
+    const projectIds = projects.map(p => p.id);
+
+    if (projectIds.length === 0) {
+      return '## ⚠️ ДОСТУП\nУ вас пока нет проектов под управлением или участием. ИИ может отвечать только по вашим собственным задачам.';
+    }
+
+    // 3. Задачи и команда в рамках этих проектов
+    const [tasks, comments, timeLogs, files, self] = await Promise.all([
+      this.taskRepo.find({
+        where: { projectId: In(projectIds) },
+        relations: ['assignee', 'project', 'createdBy'],
+        order: { updatedAt: 'DESC' },
+        take: 300,
+      }),
+      this.commentRepo.createQueryBuilder('c')
+        .leftJoinAndSelect('c.author', 'author')
+        .leftJoinAndSelect('c.task', 'task')
+        .where('task.projectId IN (:...projectIds)', { projectIds })
+        .orderBy('c.createdAt', 'DESC')
+        .take(80)
+        .getMany(),
+      this.timeRepo.createQueryBuilder('l')
+        .leftJoinAndSelect('l.employee', 'employee')
+        .leftJoinAndSelect('l.task', 'task')
+        .where('task.projectId IN (:...projectIds)', { projectIds })
+        .orderBy('l.date', 'DESC')
+        .take(100)
+        .getMany(),
+      this.fileRepo.find({
+        where: [{ projectId: In(projectIds) }],
+        relations: ['uploadedBy', 'project', 'task'],
+        order: { createdAt: 'DESC' },
+        take: 50,
+      }).catch(() => [] as FileAttachment[]),
+      this.userRepo.findOne({ where: { id: userId } }),
+    ]);
+
+    parts.push(`## 📊 СВОДКА (ваш scope)
+- Вы: ${self?.name || '—'} (${self?.role || '—'})
+- Доступно проектов: ${projects.length}
+- Задач в них: ${tasks.length}
+- Комментариев: ${comments.length}, тайм-логов: ${timeLogs.length}, файлов: ${files.length}`);
+
+    // 4. Проекты (без бюджета)
+    const projList = projects.map((p, i) => {
+      const taskCount = tasks.filter(t => t.projectId === p.id).length;
+      const doneCount = tasks.filter(t => t.projectId === p.id && t.status === 'done').length;
+      const memberNames = (p.members || []).map(m => m.name).join(', ') || '—';
+      const startDate = p.startDate ? new Date(p.startDate).toLocaleDateString('ru-RU') : '—';
+      const endDate = p.endDate ? new Date(p.endDate).toLocaleDateString('ru-RU') : '—';
+      return `${i + 1}. **"${p.name}"**
+   - Статус: ${p.status} | Прогресс: ${p.progress}%
+   - Тип: ${p.projectType || '—'}
+   - Менеджер: ${p.manager?.name || '—'}
+   - Команда (${(p.members || []).length}): [${memberNames}]
+   - Задач: ${taskCount} (готово: ${doneCount})
+   - Старт: ${startDate}, Дедлайн: ${endDate}`;
+    }).join('\n\n');
+    parts.push(`## 📁 ВАШИ ПРОЕКТЫ (${projects.length})\n${projList}`);
+
+    // 5. Задачи
+    const taskList = tasks.map((t, i) => {
+      const deadline = t.deadline ? new Date(t.deadline).toLocaleDateString('ru-RU') : '—';
+      const overdue = t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled'].includes(t.status) ? ' ⚠️ПРОСРОЧЕНА' : '';
+      return `${i + 1}. "${t.title}" | Проект: ${t.project?.name || '—'} | Статус: ${t.status} | Приоритет: ${t.priority} | Исполнитель: ${t.assignee?.name || '—'} | Дедлайн: ${deadline}${overdue}`;
+    }).join('\n');
+    parts.push(`## ✅ ЗАДАЧИ (${tasks.length})\n${taskList || 'Нет задач'}`);
+
+    // 6. Комментарии
+    if (comments.length > 0) {
+      const cmtList = comments.map(c => `- ${c.author?.name || '?'} → "${c.task?.title || '?'}": ${(c.message || '').slice(0, 150)} (${new Date(c.createdAt).toLocaleDateString('ru-RU')})`).join('\n');
+      parts.push(`## 💬 КОММЕНТАРИИ\n${cmtList}`);
+    }
+
+    // 7. Тайм-логи
+    if (timeLogs.length > 0) {
+      const logList = timeLogs.map(l => `- ${l.employee?.name || '—'} | ${l.task?.title || '—'} | ${l.timeSpent}ч | ${new Date(l.date).toLocaleDateString('ru-RU')}`).join('\n');
+      parts.push(`## ⏱ ТАЙМ-ЛОГИ\n${logList}`);
+    }
+
+    // 8. Файлы
+    if (files.length > 0) {
+      const fileList = files.map(f => `- ${f.originalName} | загрузил: ${f.uploadedBy?.name || '—'} | проект: ${f.project?.name || '—'} | задача: ${f.task?.title || '—'}`).join('\n');
+      parts.push(`## 📎 ФАЙЛЫ\n${fileList}`);
+    }
+
+    return parts.join('\n\n');
+  }
+
+  /**
+   * Контекст для обычного сотрудника: только свои задачи, отчёты, тайм-логи.
+   * Данные о других людях не загружаются.
+   */
+  private async gatherEmployeeContext(userId: string): Promise<string> {
+    const parts: string[] = [];
+
+    const [self, myTasks, myTimeLogs, myReports, myComments, myStories, myMemberProjects] = await Promise.all([
+      this.userRepo.findOne({ where: { id: userId } }),
+      this.taskRepo.find({
+        where: { assigneeId: userId },
+        relations: ['project', 'createdBy'],
+        order: { updatedAt: 'DESC' },
+        take: 200,
+      }),
+      this.timeRepo.find({
+        where: { employeeId: userId },
+        relations: ['task'],
+        order: { date: 'DESC' },
+        take: 100,
+      }),
+      this.reportRepo.find({
+        where: { employeeId: userId },
+        relations: ['project', 'task'],
+        order: { date: 'DESC' },
+        take: 50,
+      }),
+      this.commentRepo.find({
+        where: { authorId: userId },
+        relations: ['task'],
+        order: { createdAt: 'DESC' },
+        take: 50,
+      }),
+      this.storyRepo.find({
+        where: { employeeId: userId },
+        order: { date: 'DESC' },
+        take: 50,
+      }).catch(() => [] as StoryLog[]),
+      this.projectRepo
+        .createQueryBuilder('p')
+        .innerJoin('p.members', 'm', 'm.id = :userId', { userId })
+        .where('p.isArchived = false')
+        .select(['p.id', 'p.name', 'p.status', 'p.progress'])
+        .getMany(),
+    ]);
+
+    const doneCount = myTasks.filter(t => t.status === 'done').length;
+    const overdueCount = myTasks.filter(
+      t => t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled'].includes(t.status),
+    ).length;
+
+    parts.push(`## 📊 СВОДКА (ваш scope)
+- Вы: ${self?.name || '—'} (${self?.role || '—'})
+- Ваших задач: ${myTasks.length} (готово: ${doneCount}, просрочено: ${overdueCount})
+- Ваших тайм-логов: ${myTimeLogs.length}
+- Ваших отчётов: ${myReports.length}
+- Ваших комментариев: ${myComments.length}
+- Проектов, где вы участник: ${myMemberProjects.length}`);
+
+    if (myMemberProjects.length > 0) {
+      const projList = myMemberProjects.map((p, i) => `${i + 1}. "${p.name}" | Статус: ${p.status} | Прогресс: ${p.progress}%`).join('\n');
+      parts.push(`## 📁 ПРОЕКТЫ, ГДЕ ВЫ УЧАСТНИК\n${projList}`);
+    }
+
+    if (myTasks.length > 0) {
+      const taskList = myTasks.map((t, i) => {
+        const deadline = t.deadline ? new Date(t.deadline).toLocaleDateString('ru-RU') : '—';
+        const overdue = t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled'].includes(t.status) ? ' ⚠️ПРОСРОЧЕНА' : '';
+        return `${i + 1}. "${t.title}" | Проект: ${t.project?.name || '—'} | Статус: ${t.status} | Приоритет: ${t.priority} | Дедлайн: ${deadline}${overdue}${t.description ? ` | Описание: ${t.description.slice(0, 100)}` : ''}`;
+      }).join('\n');
+      parts.push(`## ✅ ВАШИ ЗАДАЧИ (${myTasks.length})\n${taskList}`);
+    }
+
+    if (myTimeLogs.length > 0) {
+      const logList = myTimeLogs.map(l => `- ${l.task?.title || '—'} | ${l.timeSpent}ч | ${new Date(l.date).toLocaleDateString('ru-RU')}${l.description ? ` — ${l.description.slice(0, 80)}` : ''}`).join('\n');
+      parts.push(`## ⏱ ВАШИ ТАЙМ-ЛОГИ\n${logList}`);
+    }
+
+    if (myReports.length > 0) {
+      const repList = myReports.map(r => `- ${new Date(r.date).toLocaleDateString('ru-RU')} | ${r.timeSpent || 0}ч | Проект: ${r.project?.name || '—'} | ${(r.description || '').slice(0, 120)}`).join('\n');
+      parts.push(`## 📋 ВАШИ ОТЧЁТЫ\n${repList}`);
+    }
+
+    if (myStories.length > 0) {
+      const stList = myStories.map((s: any) => `- Проект: ${s.project?.name || '—'} | ${s.storiesCount || 0} сторис | ${new Date(s.date).toLocaleDateString('ru-RU')}`).join('\n');
+      parts.push(`## 📸 ВАШИ СТОРИС\n${stList}`);
     }
 
     return parts.join('\n\n');

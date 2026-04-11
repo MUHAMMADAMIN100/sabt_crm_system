@@ -1,13 +1,15 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FileAttachment } from './file.entity';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 
 @Injectable()
 export class FilesService {
+  private readonly logger = new Logger(FilesService.name);
+
   constructor(
     @InjectRepository(FileAttachment) private repo: Repository<FileAttachment>,
     private activityLog: ActivityLogService,
@@ -63,7 +65,14 @@ export class FilesService {
     });
 
     const fsPath = `./uploads/files/${file.filename}`;
-    if (fs.existsSync(fsPath)) fs.unlinkSync(fsPath);
+    try {
+      await fs.unlink(fsPath);
+    } catch (err: any) {
+      // ENOENT — файла уже нет на диске, это не ошибка
+      if (err?.code !== 'ENOENT') {
+        this.logger.warn(`Failed to delete file ${fsPath}: ${err?.message}`);
+      }
+    }
     await this.repo.remove(file);
     return { message: 'File deleted' };
   }
