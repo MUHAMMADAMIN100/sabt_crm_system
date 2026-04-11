@@ -401,15 +401,15 @@ export default function EmployeesPage() {
               onChange={e => setCustomPwd(e.target.value)}
               placeholder="Случайный пароль будет сгенерирован"
               className="input w-full"
-              minLength={4}
+              minLength={8}
             />
-            <p className="text-[10px] text-surface-400 mt-1">Минимум 4 символа</p>
+            <p className="text-[10px] text-surface-400 mt-1">Минимум 8 символов</p>
           </div>
           <div className="flex gap-2 justify-end">
             <button onClick={() => { setResetPwdEmp(null); setCustomPwd('') }} className="btn-secondary">Отмена</button>
             <button
               onClick={() => resetPwdEmp?.userId && resetPwdMut.mutate({ userId: resetPwdEmp.userId, password: customPwd || undefined })}
-              disabled={!resetPwdEmp?.userId || resetPwdMut.isPending || (customPwd.length > 0 && customPwd.length < 4)}
+              disabled={!resetPwdEmp?.userId || resetPwdMut.isPending || (customPwd.length > 0 && customPwd.length < 8)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-medium disabled:opacity-50"
             >
               <Key size={15} /> Сбросить

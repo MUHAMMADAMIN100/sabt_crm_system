@@ -84,8 +84,13 @@ export class UsersService {
     if (['admin', 'founder'].includes(user.role) && user.id !== resetBy.id) {
       throw new Error('Нельзя сбросить пароль другого администратора');
     }
+    // Validate custom password length (auto-generated is always 10 chars)
+    const trimmed = newPassword?.trim();
+    if (trimmed && trimmed.length < 8) {
+      throw new Error('Пароль должен содержать минимум 8 символов');
+    }
     // Generate random password if not provided
-    const finalPassword = newPassword?.trim() || this.generateRandomPassword(10);
+    const finalPassword = trimmed || this.generateRandomPassword(10);
     user.password = finalPassword; // BeforeUpdate hook will hash it
     await this.repo.save(user);
 

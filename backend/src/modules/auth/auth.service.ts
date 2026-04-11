@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
@@ -195,6 +195,9 @@ export class AuthService {
   }
 
   async changePassword(userId: string, oldPassword: string, newPassword: string) {
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException('Новый пароль должен содержать минимум 8 символов');
+    }
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user || !(await user.validatePassword(oldPassword))) {
       throw new UnauthorizedException('Wrong current password');

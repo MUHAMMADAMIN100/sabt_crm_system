@@ -303,7 +303,9 @@ export default function AuthPage() {
                 <input
                   {...reg('password', {
                     required: 'Пароль обязателен',
-                    minLength: { value: 4, message: 'Минимум 4 символа' },
+                    ...(mode === 'register' && {
+                      minLength: { value: 8, message: 'Минимум 8 символов' },
+                    }),
                   })}
                   type={showPass ? 'text' : 'password'}
                   placeholder="••••••••"

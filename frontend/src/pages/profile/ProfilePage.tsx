@@ -184,7 +184,7 @@ export default function ProfilePage() {
             </div>
             <div>
               <label className="label">{t('auth.newPassword')}</label>
-              <input type="password" {...register('newPassword', { required: true, minLength: 6 })} className="input" />
+              <input type="password" {...register('newPassword', { required: true, minLength: 8 })} className="input" minLength={8} />
             </div>
             <div>
               <label className="label">{t('auth.confirmPassword')}</label>
