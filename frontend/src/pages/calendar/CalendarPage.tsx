@@ -108,7 +108,8 @@ export default function CalendarPage() {
   const handleTaskClick = (e: React.MouseEvent, taskId: string) => {
     e.preventDefault()
     e.stopPropagation()
-    setSlidePanelTaskId(taskId)
+    // Calendar returns IDs as "task-{uuid}", strip the prefix
+    setSlidePanelTaskId(taskId.replace(/^task-/, ''))
   }
 
   return (

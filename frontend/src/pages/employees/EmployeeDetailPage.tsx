@@ -29,10 +29,10 @@ export default function EmployeeDetailPage() {
   const monthTo   = format(endOfMonth(today),   'yyyy-MM-dd')
 
   const { data: stories } = useQuery({
-    queryKey: ['employee-stories', emp?.id, monthFrom, monthTo],
+    queryKey: ['employee-stories', emp?.userId, monthFrom, monthTo],
     queryFn: () => storiesApi.all(monthFrom, monthTo),
-    enabled: !!emp?.id,
-    select: (data: any[]) => data.filter((s: any) => s.employee?.id === emp?.id || s.employeeId === emp?.id),
+    enabled: !!emp?.userId,
+    select: (data: any[]) => data.filter((s: any) => s.employeeId === emp?.userId),
   })
 
   // Stories for last 3 months (for admin/founder view)
@@ -256,29 +256,32 @@ export default function EmployeeDetailPage() {
             </div>
           )}
 
-          {/* Истории за текущий месяц */}
-          {stories && stories.length > 0 && (
-            <div className="card">
-              <h3 className="font-semibold mb-3 text-surface-700 dark:text-surface-300 text-sm flex items-center gap-2">
-                <Camera size={15} className="text-pink-500" /> Истории за месяц ({monthFrom.slice(0,7)})
-              </h3>
-              <div className="space-y-2">
-                {stories.map((s: any) => (
-                  <div key={s.id} className="flex items-center justify-between p-2.5 rounded-xl bg-surface-50 dark:bg-surface-700/50">
-                    <div>
-                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{s.project?.name || '—'}</p>
-                      <p className="text-xs text-surface-400 dark:text-surface-500">{s.date}</p>
+          {/* Ежедневные истории по проектам */}
+          <div className="card">
+            <h3 className="font-semibold mb-3 text-surface-700 dark:text-surface-300 text-sm flex items-center gap-2">
+              <Camera size={15} className="text-pink-500" /> Истории по проектам
+              <span className="ml-auto text-xs text-surface-400 dark:text-surface-500 font-normal">{monthFrom.slice(0,7)}</span>
+            </h3>
+            {!stories?.length ? (
+              <p className="text-sm text-surface-400 dark:text-surface-500 py-3 text-center">Историй за этот месяц нет</p>
+            ) : (
+              <div className="space-y-1.5">
+                {[...stories].sort((a: any, b: any) => b.date.localeCompare(a.date)).map((s: any) => (
+                  <div key={s.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface-50 dark:bg-surface-700/50">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{s.project?.name || '—'}</p>
+                      <p className="text-xs text-surface-400 dark:text-surface-500">{format(new Date(s.date), 'dd.MM.yyyy')}</p>
                     </div>
-                    <span className="text-sm font-bold text-pink-600 dark:text-pink-400">{s.storiesCount} шт.</span>
+                    <span className="text-sm font-bold text-pink-600 dark:text-pink-400 shrink-0">{s.storiesCount} шт.</span>
                   </div>
                 ))}
-                <div className="flex justify-between pt-2 border-t border-surface-100 dark:border-surface-700">
-                  <span className="text-sm text-surface-500 dark:text-surface-400">Итого:</span>
-                  <span className="text-sm font-bold text-surface-900 dark:text-surface-100">{totalStories} историй</span>
+                <div className="flex justify-between pt-2 border-t border-surface-100 dark:border-surface-700 mt-1">
+                  <span className="text-sm text-surface-500 dark:text-surface-400">Итого за месяц:</span>
+                  <span className="text-sm font-bold text-pink-600 dark:text-pink-400">{totalStories} историй</span>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {emp.bio && (
             <div className="card">

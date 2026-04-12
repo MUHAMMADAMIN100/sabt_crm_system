@@ -419,6 +419,22 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             </select>
           </div>
 
+          {/* Менеджер по продажам */}
+          {canCreateProject && (
+          <div className="sm:col-span-2">
+            <label className="label">Менеджер по продажам</label>
+            <select {...register('salesManagerId')} className="input">
+              <option value="">— Не назначен —</option>
+              {employees.map((e: any) => (
+                <option key={e.userId || e.id} value={e.userId || e.id}>
+                  {e.fullName || e.name}{e.position ? ` — ${e.position}` : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">Получит напоминание об оплате через 2 недели после создания проекта</p>
+          </div>
+          )}
+
           {/* SMM Questionnaire — appears right after type select */}
           {showSmmForm && (
             <div className="sm:col-span-2 border border-primary-300 dark:border-primary-700 rounded-xl p-4 bg-primary-50 dark:bg-primary-900/10 space-y-4">
@@ -620,20 +636,6 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             <label className="label">{t('projects.budget')}</label>
             <input type="number" {...register('budget', { min: 0 })} className="input" placeholder="0" min={0} />
           </div>
-          {canCreateProject && (
-          <div className="col-span-2">
-            <label className="label">Менеджер по продажам</label>
-            <select {...register('salesManagerId')} className="input">
-              <option value="">— Не назначен —</option>
-              {employees.map((e: any) => (
-                <option key={e.userId || e.id} value={e.userId || e.id}>
-                  {e.fullName || e.name}{e.position ? ` — ${e.position}` : ''}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">Получит напоминание об оплате через 2 недели после создания проекта</p>
-          </div>
-          )}
         </div>
 
         <div className="flex gap-2 justify-end pt-2">

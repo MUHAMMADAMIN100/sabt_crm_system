@@ -124,17 +124,6 @@ export default function TaskForm({
           {errors.deadline && <p className="text-xs text-red-500 mt-1">{t('tasks.deadline')} обязательно</p>}
         </div>
       </div>
-      <div>
-        <label className="label">Цель (количество)</label>
-        <input
-          type="number"
-          {...register('targetCount', { min: 0 })}
-          placeholder="Например: 3 сторис, 5 постов"
-          className="input"
-          min={0}
-        />
-        <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">Необязательно — для задач с количественным результатом</p>
-      </div>
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">{t('common.cancel')}</button>
         <button type="submit" disabled={loading} className="btn-primary min-w-[110px] justify-center">
