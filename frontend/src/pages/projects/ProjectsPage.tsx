@@ -286,6 +286,8 @@ export default function ProjectsPage() {
 function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: ProjectFormProps) {
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm()
   const { t } = useTranslation()
+  const formUser = useAuthStore(s => s.user)
+  const canCreateProject = ['admin', 'founder'].includes(formUser?.role || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
