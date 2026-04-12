@@ -618,7 +618,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             <label className="label">{t('projects.budget')}</label>
             <input type="number" {...register('budget', { min: 0 })} className="input" placeholder="0" min={0} />
           </div>
-          {user?.role === 'founder' && (
+          {canCreateProject && (
           <div className="col-span-2">
             <label className="label">Менеджер по продажам</label>
             <select {...register('salesManagerId')} className="input">
