@@ -4,8 +4,9 @@ import { employeesApi, tasksApi, storiesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar } from '@/components/ui'
-import { ArrowLeft, Mail, Phone, Calendar, CheckSquare, Send, AtSign, ShieldCheck, Briefcase, Building2, Clock, AlertTriangle, TrendingUp, Camera } from 'lucide-react'
-import { format, startOfMonth, endOfMonth } from 'date-fns'
+import { ArrowLeft, Mail, Phone, Calendar, CheckSquare, Send, AtSign, ShieldCheck, Briefcase, Building2, Clock, AlertTriangle, TrendingUp, Camera, BookOpen, BarChart2 } from 'lucide-react'
+import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
+import { ru } from 'date-fns/locale'
 
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -13,8 +14,10 @@ export default function EmployeeDetailPage() {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const canView = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
+  const isAdminOrFounder = ['admin', 'founder'].includes(user?.role || '')
 
   const { data: emp, isLoading } = useQuery({ queryKey: ['employee', id], queryFn: () => employeesApi.get(id!) })
+
   const { data: tasks } = useQuery({
     queryKey: ['employee-tasks', id],
     queryFn: () => tasksApi.list({ assigneeId: emp?.userId }),
@@ -32,6 +35,16 @@ export default function EmployeeDetailPage() {
     select: (data: any[]) => data.filter((s: any) => s.employee?.id === emp?.id || s.employeeId === emp?.id),
   })
 
+  // Stories for last 3 months (for admin/founder view)
+  const storiesFrom = format(startOfMonth(subMonths(new Date(), 2)), 'yyyy-MM-dd')
+  const storiesTo = format(endOfMonth(new Date()), 'yyyy-MM-dd')
+
+  const { data: allStories } = useQuery({
+    queryKey: ['stories-all', storiesFrom, storiesTo],
+    queryFn: () => storiesApi.all(storiesFrom, storiesTo),
+    enabled: isAdminOrFounder,
+  })
+
   if (isLoading) return <PageLoader />
   if (!emp) return <div className="text-surface-600 dark:text-surface-400">{t('common.noData')}</div>
 
@@ -46,10 +59,31 @@ export default function EmployeeDetailPage() {
   const totalStories  = stories?.reduce((s: number, l: any) => s + (l.storiesCount || 0), 0) || 0
   const currentTask   = inProgress[0] || null
 
+  // Group stories by project (only stories belonging to this employee's userId)
+  const employeeStories = (allStories || []).filter(
+    (s: any) => s.employeeId === emp.userId || s.employee?.id === emp.userId,
+  )
+
+  const storiesByProject: Record<string, { projectName: string; projectId: string; total: number; dates: string[] }> = {}
+  employeeStories.forEach((s: any) => {
+    const pid = s.projectId || s.project?.id
+    const pname = s.project?.name || pid
+    if (!pid) return
+    if (!storiesByProject[pid]) {
+      storiesByProject[pid] = { projectName: pname, projectId: pid, total: 0, dates: [] }
+    }
+    storiesByProject[pid].total += s.storiesCount || 0
+    storiesByProject[pid].dates.push(s.date)
+  })
+  const storiesList = Object.values(storiesByProject).sort((a, b) => b.total - a.total)
+  const totalStoriesCount = storiesList.reduce((s, p) => s + p.total, 0)
+
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400"><ArrowLeft size={18} /></button>
+        <button onClick={() => navigate(-1)} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400">
+          <ArrowLeft size={18} />
+        </button>
         <h1 className="page-title">{t('employees.title')}</h1>
       </div>
 
@@ -96,7 +130,7 @@ export default function EmployeeDetailPage() {
                 <Send size={14} className="text-primary-500 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-surface-400 dark:text-surface-500">Telegram</p>
-                  <a href={`https://t.me/${emp.telegram.replace('@','')}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline">{emp.telegram}</a>
+                  <a href={`https://t.me/${emp.telegram.replace('@', '')}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline">{emp.telegram}</a>
                 </div>
               </div>
             )}
@@ -105,13 +139,16 @@ export default function EmployeeDetailPage() {
                 <AtSign size={14} className="text-pink-500 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-surface-400 dark:text-surface-500">Instagram</p>
-                  <a href={`https://instagram.com/${emp.instagram.replace('@','')}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-pink-600 dark:text-pink-400 hover:underline">{emp.instagram}</a>
+                  <a href={`https://instagram.com/${emp.instagram.replace('@', '')}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-pink-600 dark:text-pink-400 hover:underline">{emp.instagram}</a>
                 </div>
               </div>
             )}
             <InfoRow icon={<Calendar size={14} />} label={t('employees.hireDate')} value={format(new Date(emp.hireDate), 'dd.MM.yyyy')} />
             <InfoRow icon={<Briefcase size={14} />} label={t('employees.position')} value={emp.position} />
             <InfoRow icon={<Building2 size={14} />} label={t('employees.department')} value={emp.department} />
+            {isAdminOrFounder && emp.salary > 0 && (
+              <InfoRow icon={<BarChart2 size={14} />} label="Зарплата" value={`${(emp.salary || 0).toLocaleString('ru-RU')} сум`} />
+            )}
           </div>
 
           {/* Progress */}
@@ -219,7 +256,7 @@ export default function EmployeeDetailPage() {
             </div>
           )}
 
-          {/* Истории по месяцам */}
+          {/* Истории за текущий месяц */}
           {stories && stories.length > 0 && (
             <div className="card">
               <h3 className="font-semibold mb-3 text-surface-700 dark:text-surface-300 text-sm flex items-center gap-2">
@@ -247,6 +284,55 @@ export default function EmployeeDetailPage() {
             <div className="card">
               <h3 className="font-semibold mb-2 text-surface-700 dark:text-surface-300 text-sm">{t('tasks.description')}</h3>
               <p className="text-sm text-surface-600 dark:text-surface-400">{emp.bio}</p>
+            </div>
+          )}
+
+          {/* Stories by project (admin/founder only) */}
+          {isAdminOrFounder && (
+            <div className="card">
+              <h3 className="font-semibold mb-3 text-surface-700 dark:text-surface-300 text-sm flex items-center gap-2">
+                <BookOpen size={15} className="text-pink-500" />
+                Истории по проектам
+                <span className="ml-auto text-xs text-surface-400 dark:text-surface-500 font-normal">последние 3 месяца</span>
+              </h3>
+              {!storiesList.length ? (
+                <p className="text-sm text-surface-400 dark:text-surface-500 py-3 text-center">Историй не найдено</p>
+              ) : (
+                <>
+                  <div className="mb-3 p-3 bg-pink-50 dark:bg-pink-900/20 rounded-xl flex items-center justify-between">
+                    <span className="text-sm text-surface-600 dark:text-surface-400">Всего историй</span>
+                    <span className="text-xl font-bold text-pink-600 dark:text-pink-400">{totalStoriesCount}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {storiesList.map(p => {
+                      const maxStories = Math.max(...storiesList.map(s => s.total), 1)
+                      const pct = Math.round((p.total / maxStories) * 100)
+                      return (
+                        <div key={p.projectId} className="flex items-center gap-3">
+                          <Link
+                            to={`/projects/${p.projectId}`}
+                            className="flex-1 min-w-0 text-sm font-medium text-surface-800 dark:text-surface-200 hover:text-primary-600 dark:hover:text-primary-400 truncate"
+                          >
+                            {p.projectName}
+                          </Link>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="w-20 bg-surface-100 dark:bg-surface-700 rounded-full h-1.5">
+                              <div
+                                className="h-1.5 rounded-full bg-pink-500"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="text-sm font-semibold text-pink-600 dark:text-pink-400 w-8 text-right">{p.total}</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-surface-400 dark:text-surface-500 mt-3 text-center">
+                    {format(new Date(storiesFrom), 'dd MMM', { locale: ru })} — {format(new Date(storiesTo), 'dd MMM yyyy', { locale: ru })}
+                  </p>
+                </>
+              )}
             </div>
           )}
         </div>

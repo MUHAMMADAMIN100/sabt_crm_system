@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm'
 import { Repository, Between, LessThan, Not, In } from 'typeorm'
 import { Task, TaskStatus } from '../tasks/task.entity'
 import { Employee } from '../employees/employee.entity'
+import { Project, ProjectStatus } from '../projects/project.entity'
 import { NotificationsService } from '../notifications/notifications.service'
 import { NotificationType } from '../notifications/notification.entity'
 import { MailService } from '../mail/mail.service'
@@ -18,6 +19,7 @@ export class DeadlineScheduler {
     @InjectRepository(Task) private taskRepo: Repository<Task>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     @InjectRepository(ActivityLog) private activityLogRepo: Repository<ActivityLog>,
+    @InjectRepository(Project) private projectRepo: Repository<Project>,
     private notificationsService: NotificationsService,
     private mailService: MailService,
     private telegramService: TelegramService,
@@ -239,7 +241,69 @@ export class DeadlineScheduler {
     this.logger.log('Activity scores recalculated')
   }
 
-  // ── 5. Notify PM about tasks pending review > 24h (daily at 10am) ─────────
+  // ── 5. Payment reminder for sales manager (daily at 9am) ──────────────────
+  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  async notifyPaymentReminder() {
+    this.logger.log('Checking payment reminders for projects...')
+
+    const twoWeeksAgo = new Date()
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
+
+    // Projects created exactly 14 days ago (±1 day window) that have a salesManagerId and unpaid balance
+    const dayStart = new Date(twoWeeksAgo)
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(twoWeeksAgo)
+    dayEnd.setHours(23, 59, 59, 999)
+
+    const projects = await this.projectRepo.find({
+      where: {
+        createdAt: Between(dayStart, dayEnd) as any,
+        isArchived: false,
+        status: Not(ProjectStatus.COMPLETED) as any,
+      },
+      relations: ['salesManager'],
+    })
+
+    let sent = 0
+    for (const project of projects) {
+      if (!project.salesManagerId) continue
+
+      const budget = project.budget || 0
+      const paid = Number(project.paidAmount) || 0
+      const remaining = budget - paid
+
+      if (remaining <= 0) continue // Already fully paid
+
+      const projectUrl = `/projects/${project.id}`
+      await this.notificationsService.create({
+        userId: project.salesManagerId,
+        type: NotificationType.PAYMENT_REMINDER,
+        title: '💰 Напоминание об оплате',
+        message: `Проект "${project.name}" создан 2 недели назад. Остаток: ${remaining.toLocaleString('ru')} сум. Запросите оплату у клиента.`,
+        link: projectUrl,
+        data: { projectId: project.id, budget, paid, remaining },
+      })
+
+      if (project.salesManager?.email) {
+        await this.telegramService.sendToUser(
+          project.salesManagerId,
+          `💰 <b>Напоминание об оплате</b>\n\n` +
+          `Проект: <b>${project.name}</b>\n` +
+          `Бюджет: ${budget.toLocaleString('ru')} сум\n` +
+          `Оплачено: ${paid.toLocaleString('ru')} сум\n` +
+          `Остаток: <b>${remaining.toLocaleString('ru')} сум</b>\n\n` +
+          `Пожалуйста, запросите оставшуюся сумму у клиента.\n\n` +
+          `👉 ${this.telegramService.appUrl}${projectUrl}`,
+        )
+      }
+
+      sent++
+    }
+
+    this.logger.log(`Sent ${sent} payment reminders`)
+  }
+
+  // ── 6. Notify PM about tasks pending review > 24h (daily at 10am) ─────────
   @Cron('0 10 * * *')
   async notifyPendingReview() {
     this.logger.log('Checking tasks pending review...')

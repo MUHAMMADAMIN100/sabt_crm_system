@@ -71,14 +71,14 @@ export class AnalyticsController {
   @CacheKey('analytics:projects-performance')
   @CacheTTL(120000)
   getProjectsPerformance(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.service.getProjectsPerformance(parseInt(page ?? '1', 10) || 1, parseInt(limit ?? '9', 10) || 9);
+    return this.service.getProjectsPerformance(parseInt(page ?? '1', 10) || 1, parseInt(limit ?? '10', 10) || 10);
   }
 
   @Get('employee-efficiency')
   @CacheKey('analytics:employee-efficiency')
   @CacheTTL(120000)
   getEmployeeEfficiency(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.service.getEmployeeEfficiency(parseInt(page ?? '1', 10) || 1, parseInt(limit ?? '9', 10) || 9);
+    return this.service.getEmployeeEfficiency(parseInt(page ?? '1', 10) || 1, parseInt(limit ?? '10', 10) || 10);
   }
 
   @Get('employee-workload')
@@ -104,4 +104,8 @@ export class AnalyticsController {
   @CacheKey('analytics:avg-completion')
   @CacheTTL(300000)
   getAvgCompletionTime() { return this.service.getAvgCompletionTime(); }
+
+  @Get('payroll')
+  @CacheTTL(60000)
+  getPayrollStats() { return this.service.getPayrollStats(); }
 }

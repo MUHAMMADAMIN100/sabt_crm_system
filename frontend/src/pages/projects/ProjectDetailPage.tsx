@@ -5,7 +5,7 @@ import { projectsApi, tasksApi, filesApi, employeesApi } from '@/services/api.se
 import { invalidateAfterTaskChange, invalidateAfterProjectChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, PriorityBadge, ProgressBar, Modal, Avatar, EmptyState, ConfirmDialog } from '@/components/ui'
-import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase, Save, X, UserPlus, Download } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase, Save, X, UserPlus, Download, DollarSign, Check } from 'lucide-react'
 import { format } from 'date-fns'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
@@ -39,6 +39,11 @@ export default function ProjectDetailPage() {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
+  const isSalesManager = user?.role === 'sales_manager'
+  const canManagePayment = isManagerPlus || isSalesManager
+
+  const [editingPayment, setEditingPayment] = useState(false)
+  const [paymentValue, setPaymentValue] = useState('')
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
@@ -243,6 +248,15 @@ export default function ProjectDetailPage() {
     })
   }
 
+  const handleSavePayment = () => {
+    const amount = Number(paymentValue)
+    if (isNaN(amount) || amount < 0) { toast.error('Введите корректную сумму'); return }
+    updateProject.mutate(
+      { paidAmount: amount },
+      { onSuccess: () => setEditingPayment(false) },
+    )
+  }
+
   const handleSaveClient = () => {
     updateProject.mutate({ clientInfo: clientForm })
   }
@@ -362,6 +376,61 @@ export default function ProjectDetailPage() {
           <ProgressBar value={project.progress} />
         </div>
       </div>
+
+      {/* Payment block — visible to sales manager, admin, founder */}
+      {canManagePayment && (project.budget > 0 || project.paidAmount > 0) && (
+        <div className="card flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <DollarSign size={16} className="text-emerald-500" />
+            <span className="text-sm font-semibold text-surface-800 dark:text-surface-200">Оплата проекта</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-4 flex-1">
+            <div className="text-center">
+              <p className="text-xs text-surface-400 dark:text-surface-500">Бюджет</p>
+              <p className="text-sm font-bold text-surface-800 dark:text-surface-200">{(project.budget || 0).toLocaleString('ru-RU')} сум</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-surface-400 dark:text-surface-500">Оплачено</p>
+              {editingPayment ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={paymentValue}
+                    onChange={e => setPaymentValue(e.target.value)}
+                    className="input py-0.5 px-2 text-sm w-32"
+                    min={0}
+                    autoFocus
+                  />
+                  <button onClick={handleSavePayment} className="p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded"><Check size={14} /></button>
+                  <button onClick={() => setEditingPayment(false)} className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"><X size={14} /></button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <p className="text-sm font-bold text-green-600 dark:text-green-400">{(project.paidAmount || 0).toLocaleString('ru-RU')} сум</p>
+                  <button onClick={() => { setPaymentValue(String(project.paidAmount || 0)); setEditingPayment(true) }} className="p-0.5 text-surface-400 hover:text-primary-600"><Edit size={12} /></button>
+                </div>
+              )}
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-surface-400 dark:text-surface-500">Остаток</p>
+              <p className={`text-sm font-bold ${((project.budget || 0) - (project.paidAmount || 0)) > 0 ? 'text-orange-500' : 'text-green-600 dark:text-green-400'}`}>
+                {((project.budget || 0) - (project.paidAmount || 0)).toLocaleString('ru-RU')} сум
+              </p>
+            </div>
+            <div className="flex-1 max-w-xs">
+              <div className="w-full bg-surface-100 dark:bg-surface-700 rounded-full h-2">
+                <div
+                  className="h-2 rounded-full bg-emerald-500 transition-all"
+                  style={{ width: `${Math.min(100, Math.round(((project.paidAmount || 0) / (project.budget || 1)) * 100))}%` }}
+                />
+              </div>
+              <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5 text-right">
+                {Math.min(100, Math.round(((project.paidAmount || 0) / (project.budget || 1)) * 100))}% оплачено
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto">
         {(['tasks', 'gantt', 'files', 'about', 'client', 'members'] as const).map(tab => (

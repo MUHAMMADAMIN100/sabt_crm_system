@@ -87,6 +87,7 @@ export class ProjectsService {
     const project = this.repo.create({
       ...dto,
       managerId: dto.managerId || userId,
+      salesManagerId: dto.salesManagerId || undefined,
       members: dto.memberIds?.map(id => ({ id })) as unknown as User[],
     });
     const saved = await this.repo.save(project);
@@ -265,7 +266,16 @@ export class ProjectsService {
 
   async updateProgress(id: string) {
     const project = await this.repo.findOne({ where: { id }, relations: ['tasks'] });
-    if (!project || !project.tasks.length) return;
+    if (!project) return;
+
+    // No tasks → progress = 0
+    if (!project.tasks || !project.tasks.length) {
+      if (project.progress !== 0) {
+        project.progress = 0;
+        await this.repo.save(project);
+      }
+      return;
+    }
 
     // Weight per status: new=0%, in_progress=30%, returned=25%, review=70%, done=100%, cancelled=excluded
     const statusWeight: Record<string, number> = {

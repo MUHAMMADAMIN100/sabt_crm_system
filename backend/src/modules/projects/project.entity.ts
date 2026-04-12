@@ -47,6 +47,16 @@ export class Project {
   @Column({ nullable: true })
   budget: number;
 
+  @Column({ nullable: true, type: 'decimal', precision: 15, scale: 2 })
+  paidAmount: number;
+
+  @Column({ nullable: true })
+  salesManagerId: string;
+
+  @ManyToOne(() => User, { nullable: true, eager: true })
+  @JoinColumn({ name: 'salesManagerId' })
+  salesManager: User;
+
   @Column({ default: 0 })
   progress: number;
 

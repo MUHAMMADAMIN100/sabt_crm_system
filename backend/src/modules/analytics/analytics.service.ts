@@ -6,7 +6,7 @@ import { Project, ProjectStatus } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
-import { Employee } from '../employees/employee.entity';
+import { Employee, EmployeeStatus } from '../employees/employee.entity';
 import { WorkSession } from '../auth/work-session.entity';
 
 @Injectable()
@@ -122,7 +122,7 @@ export class AnalyticsService {
     return data.map(d => ({ ...d, hours: parseFloat(d.hours || '0') }));
   }
 
-  async getProjectsPerformance(page = 1, limit = 9) {
+  async getProjectsPerformance(page = 1, limit = 10) {
     const [projects, total] = await this.projectRepo.findAndCount({
       where: { isArchived: false },
       relations: ['members', 'tasks'],
@@ -144,7 +144,7 @@ export class AnalyticsService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async getEmployeeEfficiency(page = 1, limit = 9) {
+  async getEmployeeEfficiency(page = 1, limit = 10) {
     const offset = (page - 1) * limit;
     const data = await this.userRepo
       .createQueryBuilder('u')
@@ -152,6 +152,7 @@ export class AnalyticsService {
       .leftJoin('u.tasks', 't')
       .leftJoin('u.timeLogs', 'tl')
       .select('u.id', 'id')
+      .addSelect('e.id', 'employeeEntityId')
       .addSelect('u.name', 'name')
       .addSelect('e.fullName', 'fullName')
       .addSelect('e.position', 'position')
@@ -160,7 +161,7 @@ export class AnalyticsService {
       .addSelect('SUM(tl.timeSpent)', 'totalHours')
       .where('u.isActive = true')
       .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] })
-      .groupBy('u.id, u.name, e.fullName, e.position')
+      .groupBy('u.id, u.name, e.fullName, e.position, e.id')
       .orderBy('"doneTasks"', 'DESC')
       .limit(limit)
       .offset(offset)
@@ -176,6 +177,7 @@ export class AnalyticsService {
     const mapped = data.map(d => ({
       ...d,
       name: d.fullName || d.name,
+      employeeEntityId: d.employeeEntityId,
       totalHours: parseFloat(d.totalHours || '0'),
       doneTasks: parseInt(d.doneTasks || '0'),
       totalTasks: parseInt(d.totalTasks || '0'),
@@ -256,6 +258,46 @@ export class AnalyticsService {
       .groupBy('e.department, e.status')
       .orderBy('count', 'DESC')
       .getRawMany();
+  }
+
+  async getPayrollStats() {
+    const employees = await this.employeeRepo.find({
+      where: { status: EmployeeStatus.ACTIVE },
+      relations: ['user'],
+    });
+
+    const totalPayroll = employees.reduce((sum, e) => sum + (e.salary || 0), 0);
+
+    const projects = await this.projectRepo.find({
+      where: { isArchived: false },
+      select: ['id', 'name', 'budget', 'paidAmount', 'status'],
+    });
+
+    const totalBudget = projects.reduce((sum, p) => sum + (p.budget || 0), 0);
+
+    const employeeList = employees.map(e => ({
+      id: e.id,
+      userId: e.userId,
+      fullName: e.fullName,
+      position: e.position,
+      department: e.department,
+      salary: e.salary || 0,
+      avatar: e.user?.avatar || null,
+    }));
+
+    return {
+      totalPayroll,
+      totalBudget,
+      employeeCount: employees.length,
+      employeeList,
+      projects: projects.map(p => ({
+        id: p.id,
+        name: p.name,
+        budget: p.budget || 0,
+        status: p.status,
+        paidAmount: Number(p.paidAmount) || 0,
+      })),
+    };
   }
 
   async getAvgCompletionTime(): Promise<{ avgHours: number; avgDays: number; totalDone: number }> {

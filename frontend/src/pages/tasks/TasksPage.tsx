@@ -27,9 +27,10 @@ export default function TasksPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [page, setPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const PAGE_SIZE = 9
+  const PAGE_SIZE = 10
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
+  const isSMM = user?.role === 'smm_specialist'
   const qc = useQueryClient()
   const { t } = useTranslation()
 
@@ -115,7 +116,7 @@ export default function TasksPage() {
       return { previous }
     },
     onError: (_err: any, _vars: any, context: any) => {
-      qc.setQueryData(['tasks'], context?.previous)
+      if (context?.previous) qc.setQueryData(['tasks'], context.previous)
       toast.error(t('common.error'))
     },
     onSuccess: () => invalidateAfterTaskChange(qc),
@@ -334,7 +335,7 @@ export default function TasksPage() {
             <tbody>
               {pagedTasks.map((task: any) => {
                 const isOwnTask = task.assigneeId === user?.id
-                const canChangeStatus = isManagerPlus || isOwnTask
+                const canChangeStatus = isManagerPlus || isOwnTask || (isSMM && isOwnTask)
                 const isSelected = selectedIds.has(task.id)
                 return (
                   <tr key={task.id} className={clsx('border-b border-surface-50 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors', isSelected && 'bg-primary-50/50 dark:bg-primary-900/10')}>
@@ -351,7 +352,9 @@ export default function TasksPage() {
                       {canChangeStatus ? (
                         <select value={task.status} onChange={e => updateStatusMut.mutate({ id: task.id, status: e.target.value })}
                           className="text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-white dark:bg-surface-800 dark:text-surface-200">
-                          {['new','in_progress','review','done','cancelled'].map(s => <option key={s} value={s}>{t(`statuses.${s}`)}</option>)}
+                          {['new','in_progress','review','returned','done','cancelled'].map(s => (
+                            <option key={s} value={s}>{t(`statuses.${s}`)}</option>
+                          ))}
                         </select>
                       ) : (
                         <StatusBadge status={task.status} />

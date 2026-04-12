@@ -26,7 +26,7 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
-  const PAGE_SIZE = 9
+  const PAGE_SIZE = 10
   const [showCreate, setShowCreate] = useState(false)
   const [editProject, setEditProject] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -322,14 +322,14 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           color: initial.color || '#6B4FCF',
           budget: initial.budget || '',
           projectType: initial.projectType || '',
-          managerId: initial.managerId || '',
+          salesManagerId: (initial as any).salesManagerId || '',
         })
         if (initial.smmData) setSmmAnswers(initial.smmData)
         setSelectedMembers(initial.members?.map((m: any) => m.id) || [])
       } else {
         reset({
           name: '', description: '', startDate: '', endDate: '',
-          status: 'planning', color: '#6B4FCF', budget: '', projectType: '', managerId: '',
+          status: 'planning', color: '#6B4FCF', budget: '', projectType: '', salesManagerId: '',
         })
         setSmmAnswers({})
         setShowSmmForm(false)
@@ -365,6 +365,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
       projectType: data.projectType || undefined,
       managerId: data.managerId || undefined,
       memberIds: selectedMembers,
+      salesManagerId: data.salesManagerId || undefined,
     }
     if (data.projectType === 'SMM' && Object.keys(smmAnswers).length > 0) {
       formattedData.smmData = smmAnswers
@@ -616,6 +617,18 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           <div>
             <label className="label">{t('projects.budget')}</label>
             <input type="number" {...register('budget', { min: 0 })} className="input" placeholder="0" min={0} />
+          </div>
+          <div className="col-span-2">
+            <label className="label">Менеджер по продажам</label>
+            <select {...register('salesManagerId')} className="input">
+              <option value="">— Не назначен —</option>
+              {employees.map((e: any) => (
+                <option key={e.userId || e.id} value={e.userId || e.id}>
+                  {e.fullName || e.name}{e.position ? ` — ${e.position}` : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">Получит напоминание об оплате через 2 недели после создания проекта</p>
           </div>
         </div>
 

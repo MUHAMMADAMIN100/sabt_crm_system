@@ -136,13 +136,16 @@ export class TasksService {
       throw new ForbiddenException('Not allowed');
     }
 
-    // Workers cannot directly set status to DONE — must go through review
-    if (WORKER_ROLES.includes(user.role as UserRole) && dto.status === TaskStatus.DONE) {
+    // SMM specialists have full status control over their own tasks
+    const isSmmSpecialist = user.role === UserRole.SMM_SPECIALIST;
+
+    // Workers (except SMM) cannot directly set status to DONE — must go through review
+    if (WORKER_ROLES.includes(user.role as UserRole) && !isSmmSpecialist && dto.status === TaskStatus.DONE) {
       throw new ForbiddenException('Only a project manager can confirm task completion');
     }
 
-    // Require at least one result before sending to review (workers only — PM/admin can drag freely)
-    if (dto.status === TaskStatus.REVIEW && WORKER_ROLES.includes(user.role as UserRole)) {
+    // Require at least one result before sending to review (workers only, except SMM)
+    if (dto.status === TaskStatus.REVIEW && WORKER_ROLES.includes(user.role as UserRole) && !isSmmSpecialist) {
       const resultCount = await this.taskResultsService.countByTask(id);
       if (resultCount === 0) {
         throw new BadRequestException('Загрузите результат работы перед отправкой на проверку');

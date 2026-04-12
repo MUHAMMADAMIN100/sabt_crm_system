@@ -12,6 +12,8 @@ export class CreateProjectDto {
   @ApiProperty({ enum: ProjectStatus, required: false }) @IsOptional() @IsEnum(ProjectStatus) status?: ProjectStatus;
   @ApiProperty({ required: false }) @IsOptional() @IsString() color?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() budget?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paidAmount?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() salesManagerId?: string;
   @ApiProperty({ required: false, type: [String] }) @IsOptional() @IsArray() memberIds?: string[];
   @ApiProperty({ required: false }) @IsOptional() @IsString() projectType?: string;
   @ApiProperty({ required: false }) @IsOptional() smmData?: Record<string, any>;

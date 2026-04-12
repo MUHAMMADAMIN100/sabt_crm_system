@@ -17,6 +17,7 @@ export enum NotificationType {
   TASK_OVERDUE         = 'task_overdue',
   REVIEW_NEEDED        = 'review_needed',
   INACTIVITY_24H       = 'inactivity_24h',
+  PAYMENT_REMINDER     = 'payment_reminder',
 }
 
 @Entity('notifications')
