@@ -618,6 +618,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             <label className="label">{t('projects.budget')}</label>
             <input type="number" {...register('budget', { min: 0 })} className="input" placeholder="0" min={0} />
           </div>
+          {user?.role === 'founder' && (
           <div className="col-span-2">
             <label className="label">Менеджер по продажам</label>
             <select {...register('salesManagerId')} className="input">
@@ -630,6 +631,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             </select>
             <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">Получит напоминание об оплате через 2 недели после создания проекта</p>
           </div>
+          )}
         </div>
 
         <div className="flex gap-2 justify-end pt-2">

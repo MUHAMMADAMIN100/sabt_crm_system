@@ -14,7 +14,7 @@ export default function EmployeeDetailPage() {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const canView = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
-  const isAdminOrFounder = ['admin', 'founder'].includes(user?.role || '')
+  const isAdminOrFounder = user?.role === 'founder'
 
   const { data: emp, isLoading } = useQuery({ queryKey: ['employee', id], queryFn: () => employeesApi.get(id!) })
 

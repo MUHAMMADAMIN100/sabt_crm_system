@@ -106,6 +106,7 @@ export class AnalyticsController {
   getAvgCompletionTime() { return this.service.getAvgCompletionTime(); }
 
   @Get('payroll')
+  @Roles(UserRole.FOUNDER)
   @CacheTTL(60000)
   getPayrollStats() { return this.service.getPayrollStats(); }
 }

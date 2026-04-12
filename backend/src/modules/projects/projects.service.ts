@@ -153,6 +153,10 @@ export class ProjectsService {
     if (!canEdit) {
       throw new ForbiddenException('Not allowed');
     }
+    // Only founder can change financial fields
+    if (('paidAmount' in dto || 'salesManagerId' in dto) && user.role !== 'founder') {
+      throw new ForbiddenException('Только основатель может изменять финансовые данные проекта');
+    }
 
     const oldMemberIds = project.members?.map(m => m.id) || [];
 

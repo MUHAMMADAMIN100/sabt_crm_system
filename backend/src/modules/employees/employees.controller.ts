@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Request, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { EmployeesService } from './employees.service';
 import { CreateEmployeeDto, UpdateEmployeeDto } from './dto/create-employee.dto';
@@ -38,7 +38,10 @@ export class EmployeesController {
 
   @Patch(':id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER)
-  update(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) {
+  update(@Param('id') id: string, @Body() dto: UpdateEmployeeDto, @Request() req) {
+    if ('salary' in dto && req.user?.role !== 'founder') {
+      throw new ForbiddenException('Только основатель может изменять зарплату сотрудника');
+    }
     return this.service.update(id, dto);
   }
 

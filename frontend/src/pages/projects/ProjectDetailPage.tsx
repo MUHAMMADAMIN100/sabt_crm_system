@@ -39,8 +39,7 @@ export default function ProjectDetailPage() {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
-  const isSalesManager = user?.role === 'sales_manager'
-  const canManagePayment = isManagerPlus || isSalesManager
+  const canManagePayment = user?.role === 'founder'
 
   const [editingPayment, setEditingPayment] = useState(false)
   const [paymentValue, setPaymentValue] = useState('')
