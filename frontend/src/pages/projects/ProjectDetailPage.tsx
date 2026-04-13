@@ -603,7 +603,7 @@ export default function ProjectDetailPage() {
                   </div>
                 </div>
               </div>
-              {canManagePayment && project.budget != null && (
+              {isManagerPlus && project.budget != null && (
                 <div className="flex items-start gap-3">
                   <div className="w-4 h-4 mt-0.5 shrink-0 text-amber-500 font-bold text-xs flex items-center">₸</div>
                   <div>
@@ -834,12 +834,10 @@ export default function ProjectDetailPage() {
                 <option value="on_hold">На паузе</option>
               </select>
             </div>
-            {canManagePayment && (
-              <div>
-                <label className="label mb-1">Бюджет (сом)</label>
-                <input type="number" value={projectForm.budget || ''} onChange={e => setProjectForm((f: any) => ({ ...f, budget: e.target.value }))} className="input w-full" placeholder="0" />
-              </div>
-            )}
+            <div>
+              <label className="label mb-1">Бюджет (сом)</label>
+              <input type="number" value={projectForm.budget || ''} onChange={e => setProjectForm((f: any) => ({ ...f, budget: e.target.value }))} className="input w-full" placeholder="0" />
+            </div>
           </div>
           <div className="flex gap-2 justify-end pt-2">
             <button onClick={() => setShowEditProject(false)} className="btn-secondary">Отмена</button>

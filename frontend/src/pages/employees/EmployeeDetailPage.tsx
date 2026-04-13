@@ -1,22 +1,51 @@
+import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { employeesApi, tasksApi, storiesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar } from '@/components/ui'
-import { ArrowLeft, Mail, Phone, Calendar, CheckSquare, Send, AtSign, ShieldCheck, Briefcase, Building2, Clock, AlertTriangle, TrendingUp, Camera, BookOpen, BarChart2 } from 'lucide-react'
+import { ArrowLeft, Mail, Phone, Calendar, CheckSquare, Send, AtSign, ShieldCheck, Briefcase, Building2, Clock, AlertTriangle, TrendingUp, Camera, BookOpen, BarChart2, Edit2, Check, X, Trash2, Plus, Minus } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
+import toast from 'react-hot-toast'
 
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
+  const qc = useQueryClient()
   const canView = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
   const isAdminOrFounder = user?.role === 'founder'
+  const canEditSalary = user?.role === 'founder'
+
+  const [editingSalary, setEditingSalary] = useState(false)
+  const [salaryInput, setSalaryInput] = useState('')
 
   const { data: emp, isLoading } = useQuery({ queryKey: ['employee', id], queryFn: () => employeesApi.get(id!) })
+
+  const salaryMut = useMutation({
+    mutationFn: (salary: number) => employeesApi.update(id!, { salary }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employee', id] })
+      qc.invalidateQueries({ queryKey: ['payroll'] })
+      setEditingSalary(false)
+      toast.success('Зарплата обновлена')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка обновления'),
+  })
+
+  const saveSalary = (value: number) => {
+    if (isNaN(value) || value < 0) { toast.error('Введите корректную сумму'); return }
+    salaryMut.mutate(value)
+  }
+
+  const adjustSalary = (delta: number) => {
+    const base = Number(salaryInput || emp?.salary || 0)
+    const next = Math.max(0, base + delta)
+    setSalaryInput(String(next))
+  }
 
   const { data: tasks } = useQuery({
     queryKey: ['employee-tasks', id],
@@ -146,8 +175,81 @@ export default function EmployeeDetailPage() {
             <InfoRow icon={<Calendar size={14} />} label={t('employees.hireDate')} value={format(new Date(emp.hireDate), 'dd.MM.yyyy')} />
             <InfoRow icon={<Briefcase size={14} />} label={t('employees.position')} value={emp.position} />
             <InfoRow icon={<Building2 size={14} />} label={t('employees.department')} value={emp.department} />
-            {isAdminOrFounder && emp.salary > 0 && (
-              <InfoRow icon={<BarChart2 size={14} />} label="Зарплата" value={`${(emp.salary || 0).toLocaleString('ru-RU')} сум`} />
+            {canEditSalary && (
+              <div className="flex items-center gap-3 p-2.5 bg-surface-50 dark:bg-surface-700/50 rounded-xl">
+                <BarChart2 size={14} className="text-surface-400 dark:text-surface-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-surface-400 dark:text-surface-500">Зарплата</p>
+                  {editingSalary ? (
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => adjustSalary(-100000)}
+                        className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500"
+                        title="−100 000"
+                      >
+                        <Minus size={13} />
+                      </button>
+                      <input
+                        type="number"
+                        value={salaryInput}
+                        onChange={ev => setSalaryInput(ev.target.value)}
+                        className="input py-1 text-sm w-28 text-right"
+                        min={0}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adjustSalary(100000)}
+                        className="p-1 hover:bg-green-50 dark:hover:bg-green-900/20 rounded text-green-600"
+                        title="+100 000"
+                      >
+                        <Plus size={13} />
+                      </button>
+                      <span className="text-xs text-surface-400">сум</span>
+                      <button
+                        onClick={() => saveSalary(Number(salaryInput))}
+                        disabled={salaryMut.isPending}
+                        className="p-1 hover:bg-green-50 dark:hover:bg-green-900/20 rounded text-green-600"
+                        title="Сохранить"
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        onClick={() => { setEditingSalary(false); setSalaryInput('') }}
+                        className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500"
+                        title="Отмена"
+                      >
+                        <X size={14} />
+                      </button>
+                      {(emp.salary || 0) > 0 && (
+                        <button
+                          onClick={() => { if (confirm('Удалить (обнулить) зарплату?')) saveSalary(0) }}
+                          className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500"
+                          title="Обнулить"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100">
+                        {(emp.salary || 0) > 0
+                          ? `${(emp.salary || 0).toLocaleString('ru-RU')} сум`
+                          : <span className="text-surface-400 dark:text-surface-500 italic">не задана</span>}
+                      </p>
+                      <button
+                        onClick={() => { setSalaryInput(String(emp.salary || 0)); setEditingSalary(true) }}
+                        className="p-1 hover:bg-surface-100 dark:hover:bg-surface-600 rounded text-surface-400 hover:text-primary-600"
+                        title="Изменить зарплату"
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
 

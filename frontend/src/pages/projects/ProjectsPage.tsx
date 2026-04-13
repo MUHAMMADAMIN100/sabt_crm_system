@@ -288,7 +288,6 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const { t } = useTranslation()
   const formUser = useAuthStore(s => s.user)
   const canCreateProject = ['admin', 'founder'].includes(formUser?.role || '')
-  const canSeeBudget = formUser?.role === 'founder'
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
@@ -633,12 +632,10 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             <label className="label">{t('projects.color')} *</label>
             <input type="color" {...register('color')} className="input h-10 p-1 cursor-pointer" />
           </div>
-          {canSeeBudget && (
-            <div>
-              <label className="label">{t('projects.budget')}</label>
-              <input type="number" {...register('budget', { min: 0 })} className="input" placeholder="0" min={0} />
-            </div>
-          )}
+          <div>
+            <label className="label">{t('projects.budget')}</label>
+            <input type="number" {...register('budget', { min: 0 })} className="input" placeholder="0" min={0} />
+          </div>
         </div>
 
         <div className="flex gap-2 justify-end pt-2">
