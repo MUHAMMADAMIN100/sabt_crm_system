@@ -279,7 +279,7 @@ export class DeadlineScheduler {
         userId: project.salesManagerId,
         type: NotificationType.PAYMENT_REMINDER,
         title: '💰 Напоминание об оплате',
-        message: `Проект "${project.name}" создан 2 недели назад. Остаток: ${remaining.toLocaleString('ru')} сум. Запросите оплату у клиента.`,
+        message: `Проект "${project.name}" создан 2 недели назад. Остаток: ${remaining.toLocaleString('ru')} сомони. Запросите оплату у клиента.`,
         link: projectUrl,
         data: { projectId: project.id, budget, paid, remaining },
       })
@@ -289,9 +289,9 @@ export class DeadlineScheduler {
           project.salesManagerId,
           `💰 <b>Напоминание об оплате</b>\n\n` +
           `Проект: <b>${project.name}</b>\n` +
-          `Бюджет: ${budget.toLocaleString('ru')} сум\n` +
-          `Оплачено: ${paid.toLocaleString('ru')} сум\n` +
-          `Остаток: <b>${remaining.toLocaleString('ru')} сум</b>\n\n` +
+          `Бюджет: ${budget.toLocaleString('ru')} сомони\n` +
+          `Оплачено: ${paid.toLocaleString('ru')} сомони\n` +
+          `Остаток: <b>${remaining.toLocaleString('ru')} сомони</b>\n\n` +
           `Пожалуйста, запросите оставшуюся сумму у клиента.\n\n` +
           `👉 ${this.telegramService.appUrl}${projectUrl}`,
         )

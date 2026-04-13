@@ -40,6 +40,7 @@ export function useSocket(token: string | null) {
     socket.on('employees:changed', () => {
       qc.invalidateQueries({ queryKey: ['employees'] })
       qc.invalidateQueries({ queryKey: ['users'] })
+      qc.invalidateQueries({ queryKey: ['employee'] })
       qc.invalidateQueries({ queryKey: ['employee-tasks'] })
       qc.invalidateQueries({ queryKey: ['employee-stories'] })
       qc.invalidateQueries({ queryKey: ['employee-efficiency'] })
@@ -47,6 +48,8 @@ export function useSocket(token: string | null) {
       qc.invalidateQueries({ queryKey: ['emp-eff'] })
       qc.invalidateQueries({ queryKey: ['emp-activity'] })
       qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
+      qc.invalidateQueries({ queryKey: ['analytics-overview'] })
+      qc.invalidateQueries({ queryKey: ['payroll'] })
     })
 
     socket.on('projects:changed', () => {

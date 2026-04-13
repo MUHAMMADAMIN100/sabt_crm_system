@@ -29,7 +29,9 @@ export default function EmployeeDetailPage() {
     mutationFn: (salary: number) => employeesApi.update(id!, { salary }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['employee', id] })
+      qc.invalidateQueries({ queryKey: ['employees'] })
       qc.invalidateQueries({ queryKey: ['payroll'] })
+      qc.invalidateQueries({ queryKey: ['analytics-overview'] })
       setEditingSalary(false)
       toast.success('Зарплата обновлена')
     },
@@ -206,7 +208,7 @@ export default function EmployeeDetailPage() {
                       >
                         <Plus size={13} />
                       </button>
-                      <span className="text-xs text-surface-400">сум</span>
+                      <span className="text-xs text-surface-400">сомони</span>
                       <button
                         onClick={() => saveSalary(Number(salaryInput))}
                         disabled={salaryMut.isPending}
@@ -236,7 +238,7 @@ export default function EmployeeDetailPage() {
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-surface-900 dark:text-surface-100">
                         {(emp.salary || 0) > 0
-                          ? `${(emp.salary || 0).toLocaleString('ru-RU')} сум`
+                          ? `${(emp.salary || 0).toLocaleString('ru-RU')} сомони`
                           : <span className="text-surface-400 dark:text-surface-500 italic">не задана</span>}
                       </p>
                       <button

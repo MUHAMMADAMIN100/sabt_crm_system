@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi, tasksApi, filesApi, employeesApi } from '@/services/api.service'
+import { projectsApi, tasksApi, filesApi, employeesApi, storiesApi } from '@/services/api.service'
 import { invalidateAfterTaskChange, invalidateAfterProjectChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, PriorityBadge, ProgressBar, Modal, Avatar, EmptyState, ConfirmDialog } from '@/components/ui'
-import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase, Save, X, UserPlus, Download, DollarSign, Check } from 'lucide-react'
-import { format } from 'date-fns'
+import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase, Save, X, UserPlus, Download, DollarSign, Check, Camera, Layers } from 'lucide-react'
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay } from 'date-fns'
+import { ru } from 'date-fns/locale'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import GanttChart from '@/components/projects/GanttChart'
@@ -56,6 +57,16 @@ export default function ProjectDetailPage() {
   })
 
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
+
+  // Stories for this project — current month, used for heatmap and fact vs plan
+  const monthFrom = format(startOfMonth(new Date()), 'yyyy-MM-dd')
+  const monthTo = format(endOfMonth(new Date()), 'yyyy-MM-dd')
+  const { data: projectStories } = useQuery({
+    queryKey: ['project-stories', id, monthFrom, monthTo],
+    queryFn: () => storiesApi.all(monthFrom, monthTo),
+    enabled: !!id,
+    select: (data: any[]) => data.filter((s: any) => (s.projectId || s.project?.id) === id),
+  })
 
   const createTask = useMutation({
     mutationFn: tasksApi.create,
@@ -386,7 +397,7 @@ export default function ProjectDetailPage() {
           <div className="flex flex-wrap items-center gap-4 flex-1">
             <div className="text-center">
               <p className="text-xs text-surface-400 dark:text-surface-500">Бюджет</p>
-              <p className="text-sm font-bold text-surface-800 dark:text-surface-200">{(project.budget || 0).toLocaleString('ru-RU')} сум</p>
+              <p className="text-sm font-bold text-surface-800 dark:text-surface-200">{(project.budget || 0).toLocaleString('ru-RU')} сомони</p>
             </div>
             <div className="text-center">
               <p className="text-xs text-surface-400 dark:text-surface-500">Оплачено</p>
@@ -405,7 +416,7 @@ export default function ProjectDetailPage() {
                 </div>
               ) : (
                 <div className="flex items-center gap-1">
-                  <p className="text-sm font-bold text-green-600 dark:text-green-400">{(project.paidAmount || 0).toLocaleString('ru-RU')} сум</p>
+                  <p className="text-sm font-bold text-green-600 dark:text-green-400">{(project.paidAmount || 0).toLocaleString('ru-RU')} сомони</p>
                   <button onClick={() => { setPaymentValue(String(project.paidAmount || 0)); setEditingPayment(true) }} className="p-0.5 text-surface-400 hover:text-primary-600"><Edit size={12} /></button>
                 </div>
               )}
@@ -413,7 +424,7 @@ export default function ProjectDetailPage() {
             <div className="text-center">
               <p className="text-xs text-surface-400 dark:text-surface-500">Остаток</p>
               <p className={`text-sm font-bold ${((project.budget || 0) - (project.paidAmount || 0)) > 0 ? 'text-orange-500' : 'text-green-600 dark:text-green-400'}`}>
-                {((project.budget || 0) - (project.paidAmount || 0)).toLocaleString('ru-RU')} сум
+                {((project.budget || 0) - (project.paidAmount || 0)).toLocaleString('ru-RU')} сомони
               </p>
             </div>
             <div className="flex-1 max-w-xs">
@@ -608,12 +619,21 @@ export default function ProjectDetailPage() {
                   <div className="w-4 h-4 mt-0.5 shrink-0 text-amber-500 font-bold text-xs flex items-center">₸</div>
                   <div>
                     <p className="text-xs text-surface-500 dark:text-surface-400">Бюджет</p>
-                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{Number(project.budget).toLocaleString()} сом</p>
+                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{Number(project.budget).toLocaleString()} сомони</p>
                   </div>
                 </div>
               )}
             </div>
           </div>
+
+          {/* SMM plan vs fact */}
+          {project.projectType === 'SMM' && (
+            <SmmPlanFactCard
+              storiesPerDay={Number((project.smmData as any)?.storiesPerDay || 0)}
+              layoutsPerMonth={Number((project.smmData as any)?.layoutsPerMonth || 0)}
+              stories={projectStories || []}
+            />
+          )}
 
           {project.smmData && Object.keys(project.smmData).length > 0 && (
             <div className="card md:col-span-2 space-y-3">
@@ -835,7 +855,7 @@ export default function ProjectDetailPage() {
               </select>
             </div>
             <div>
-              <label className="label mb-1">Бюджет (сом)</label>
+              <label className="label mb-1">Бюджет (сомони)</label>
               <input type="number" value={projectForm.budget || ''} onChange={e => setProjectForm((f: any) => ({ ...f, budget: e.target.value }))} className="input w-full" placeholder="0" />
             </div>
           </div>
@@ -961,6 +981,133 @@ export default function ProjectDetailPage() {
           </div>
         </div>
       </Modal>
+    </div>
+  )
+}
+
+/** SMM plan-vs-fact card: target stories/day, target layouts/month, and a month heatmap of stories done */
+function SmmPlanFactCard({
+  storiesPerDay, layoutsPerMonth, stories,
+}: {
+  storiesPerDay: number
+  layoutsPerMonth: number
+  stories: Array<{ date: string; storiesCount?: number; count?: number }>
+}) {
+  const now = new Date()
+  const days = eachDayOfInterval({ start: startOfMonth(now), end: endOfMonth(now) })
+  const startPad = (getDay(startOfMonth(now)) + 6) % 7 // Monday-first calendar
+
+  // Sum story counts per date
+  const byDate: Record<string, number> = {}
+  stories.forEach(s => {
+    const key = s.date?.slice(0, 10)
+    if (!key) return
+    byDate[key] = (byDate[key] || 0) + (s.storiesCount ?? s.count ?? 0)
+  })
+
+  const daysElapsed = now.getDate()
+  const totalActual = Object.values(byDate).reduce((a, b) => a + b, 0)
+  const planMonth = storiesPerDay * days.length
+  const planElapsed = storiesPerDay * daysElapsed
+  const pct = planElapsed > 0 ? Math.min(100, Math.round((totalActual / planElapsed) * 100)) : 0
+
+  const cellColor = (count: number) => {
+    if (!storiesPerDay) return count > 0 ? 'bg-emerald-400 dark:bg-emerald-500' : 'bg-surface-100 dark:bg-surface-700'
+    if (count === 0) return 'bg-red-200 dark:bg-red-900/40'
+    if (count < storiesPerDay) return 'bg-amber-300 dark:bg-amber-500/60'
+    if (count === storiesPerDay) return 'bg-emerald-400 dark:bg-emerald-500'
+    return 'bg-emerald-600 dark:bg-emerald-400'
+  }
+
+  const weekDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+
+  return (
+    <div className="card md:col-span-2 space-y-4">
+      <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base border-b border-surface-100 dark:border-surface-700 pb-3">
+        План и факт (SMM)
+      </h3>
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="p-3 rounded-xl bg-pink-50 dark:bg-pink-900/20">
+          <div className="flex items-center gap-2 mb-1">
+            <Camera size={14} className="text-pink-500" />
+            <p className="text-xs text-surface-500 dark:text-surface-400">План сторисов/день</p>
+          </div>
+          <p className="text-xl font-bold text-surface-900 dark:text-surface-100">{storiesPerDay || '—'}</p>
+        </div>
+        <div className="p-3 rounded-xl bg-primary-50 dark:bg-primary-900/20">
+          <div className="flex items-center gap-2 mb-1">
+            <Layers size={14} className="text-primary-500" />
+            <p className="text-xs text-surface-500 dark:text-surface-400">Макетов в месяц</p>
+          </div>
+          <p className="text-xl font-bold text-surface-900 dark:text-surface-100">{layoutsPerMonth || '—'}</p>
+        </div>
+        <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
+          <div className="flex items-center gap-2 mb-1">
+            <CheckSquare size={14} className="text-emerald-500" />
+            <p className="text-xs text-surface-500 dark:text-surface-400">Сделано сторисов (месяц)</p>
+          </div>
+          <p className="text-xl font-bold text-surface-900 dark:text-surface-100">
+            {totalActual} <span className="text-xs font-normal text-surface-500">/ {planMonth || '—'}</span>
+          </p>
+        </div>
+        <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20">
+          <div className="flex items-center gap-2 mb-1">
+            <Calendar size={14} className="text-amber-600" />
+            <p className="text-xs text-surface-500 dark:text-surface-400">Выполнение плана</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <p className={clsx(
+              'text-xl font-bold',
+              pct >= 100 ? 'text-emerald-600 dark:text-emerald-400'
+              : pct >= 70 ? 'text-amber-600 dark:text-amber-400'
+              : 'text-red-500',
+            )}>{pct}%</p>
+          </div>
+          <ProgressBar value={pct} className="mt-1" />
+        </div>
+      </div>
+
+      {/* Heatmap calendar */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-medium text-surface-700 dark:text-surface-200">
+            Календарь сторисов — {format(now, 'LLLL yyyy', { locale: ru })}
+          </p>
+          <div className="flex items-center gap-2 text-[10px] text-surface-500 dark:text-surface-400">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-200 dark:bg-red-900/40" />0</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-amber-300 dark:bg-amber-500/60" />&lt; плана</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-emerald-400 dark:bg-emerald-500" />план</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-emerald-600 dark:bg-emerald-400" />&gt; плана</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {weekDays.map(w => (
+            <div key={w} className="text-[10px] font-semibold text-surface-400 dark:text-surface-500 text-center pb-1">{w}</div>
+          ))}
+          {Array.from({ length: startPad }).map((_, i) => <div key={`pad-${i}`} />)}
+          {days.map(day => {
+            const key = format(day, 'yyyy-MM-dd')
+            const count = byDate[key] || 0
+            const isFuture = day > now && !isSameDay(day, now)
+            return (
+              <div
+                key={key}
+                title={`${format(day, 'dd.MM')}: ${count} сториса${storiesPerDay ? ` из ${storiesPerDay}` : ''}`}
+                className={clsx(
+                  'aspect-square rounded-md flex items-center justify-center text-[10px] font-semibold transition-all',
+                  isFuture ? 'bg-surface-50 dark:bg-surface-800 text-surface-300 dark:text-surface-600' : cellColor(count),
+                  !isFuture && count > 0 && 'text-white',
+                  !isFuture && count === 0 && 'text-red-600 dark:text-red-300',
+                )}
+              >
+                {isFuture ? format(day, 'd') : (count || format(day, 'd'))}
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }

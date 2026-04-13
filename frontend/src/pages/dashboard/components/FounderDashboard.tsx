@@ -57,6 +57,9 @@ export default function FounderDashboard() {
       employeesApi.update(id, { salary }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['payroll'] })
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['employee'] })
+      qc.invalidateQueries({ queryKey: ['analytics-overview'] })
       setEditingSalaryId(null)
       toast.success('Зарплата обновлена')
     },
@@ -123,7 +126,7 @@ export default function FounderDashboard() {
           <div>
             <p className="text-xs text-surface-500 dark:text-surface-400">Зарплатный фонд</p>
             <p className="text-xl font-bold text-surface-900 dark:text-surface-100">
-              {totalPayroll.toLocaleString('ru-RU')} <span className="text-sm font-normal">сум</span>
+              {totalPayroll.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
             </p>
             <p className="text-xs text-surface-400 dark:text-surface-500">{payroll?.employeeCount || 0} сотрудников</p>
           </div>
@@ -135,7 +138,7 @@ export default function FounderDashboard() {
           <div>
             <p className="text-xs text-surface-500 dark:text-surface-400">Бюджет проектов</p>
             <p className="text-xl font-bold text-surface-900 dark:text-surface-100">
-              {totalBudget.toLocaleString('ru-RU')} <span className="text-sm font-normal">сум</span>
+              {totalBudget.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
             </p>
             <p className="text-xs text-surface-400 dark:text-surface-500">{payroll?.projects?.length || 0} активных проектов</p>
           </div>
@@ -147,7 +150,7 @@ export default function FounderDashboard() {
           <div>
             <p className="text-xs text-surface-500 dark:text-surface-400">Прибыль (бюджет − ФОТ)</p>
             <p className={`text-xl font-bold ${totalBudget - totalPayroll >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
-              {(totalBudget - totalPayroll).toLocaleString('ru-RU')} <span className="text-sm font-normal">сум</span>
+              {(totalBudget - totalPayroll).toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
             </p>
             <p className="text-xs text-surface-400 dark:text-surface-500">расчётная маржа</p>
           </div>
@@ -293,7 +296,7 @@ export default function FounderDashboard() {
                 <th className="pb-2 font-medium">Сотрудник</th>
                 <th className="pb-2 font-medium">Должность</th>
                 <th className="pb-2 font-medium">Отдел</th>
-                <th className="pb-2 font-medium text-right">Зарплата (сум)</th>
+                <th className="pb-2 font-medium text-right">Зарплата (сомони)</th>
                 <th className="pb-2 font-medium text-right">Действия</th>
               </tr>
             </thead>
@@ -356,7 +359,7 @@ export default function FounderDashboard() {
               <tr className="border-t-2 border-surface-200 dark:border-surface-600">
                 <td colSpan={3} className="pt-3 font-semibold text-surface-700 dark:text-surface-300">Итого ФОТ</td>
                 <td className="pt-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                  {totalPayroll.toLocaleString('ru-RU')} сум
+                  {totalPayroll.toLocaleString('ru-RU')} сомони
                 </td>
                 <td />
               </tr>
