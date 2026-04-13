@@ -324,14 +324,15 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           color: initial.color || '#6B4FCF',
           budget: initial.budget || '',
           projectType: initial.projectType || '',
-          salesManagerId: (initial as any).salesManagerId || '',
+          managerId: (initial as any).managerId || (initial as any).manager?.id || '',
+          salesManagerId: (initial as any).salesManagerId || (initial as any).salesManager?.id || '',
         })
         if (initial.smmData) setSmmAnswers(initial.smmData)
         setSelectedMembers(initial.members?.map((m: any) => m.id) || [])
       } else {
         reset({
           name: '', description: '', startDate: '', endDate: '',
-          status: 'planning', color: '#6B4FCF', budget: '', projectType: '', salesManagerId: '',
+          status: 'planning', color: '#6B4FCF', budget: '', projectType: '', managerId: '', salesManagerId: '',
         })
         setSmmAnswers({})
         setShowSmmForm(false)
