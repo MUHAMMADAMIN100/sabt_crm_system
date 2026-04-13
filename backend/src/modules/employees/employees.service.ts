@@ -8,6 +8,21 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { AppGateway } from '../gateway/app.gateway';
+import { MailService } from '../mail/mail.service';
+import { TelegramService } from '../telegram/telegram.service';
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Администратор',
+  founder: 'Основатель',
+  project_manager: 'Проект-менеджер',
+  smm_specialist: 'SMM специалист',
+  designer: 'Дизайнер',
+  targetologist: 'Таргетолог',
+  sales_manager: 'Менеджер по продажам',
+  marketer: 'Маркетолог',
+  developer: 'Разработчик',
+  employee: 'Сотрудник',
+};
 
 @Injectable()
 export class EmployeesService {
@@ -17,6 +32,8 @@ export class EmployeesService {
     private activityLog: ActivityLogService,
     private dataSource: DataSource,
     private gateway: AppGateway,
+    private mailService: MailService,
+    private telegramService: TelegramService,
   ) {}
 
   /** Strip salary from employee(s) for non-founder users */
@@ -82,14 +99,20 @@ export class EmployeesService {
     return saved;
   }
 
-  async update(id: string, dto: UpdateEmployeeDto) {
+  async update(id: string, dto: UpdateEmployeeDto, actor?: { id: string; name?: string; role?: string }) {
     const emp = await this.findOne(id);
+    const oldPosition = emp.position;
+    const oldUser = emp.userId ? await this.userRepo.findOne({ where: { id: emp.userId } }) : null;
+    const oldRole = oldUser?.role;
 
     // Strip role from dto before updating employee (role belongs to User)
-    const { role: newRole, ...empDto } = dto as any;
+    const { role: newRoleParam, ...empDto } = dto as any;
     await this.repo.update(id, empDto);
 
     // Синхронизируем User: обновляем все общие поля + role
+    let resolvedRole: UserRole | undefined;
+    let positionDidntMatchRole = false;
+
     if (emp.userId) {
       const userUpdate: Partial<User> = {};
       if (dto.fullName) userUpdate.name = dto.fullName;
@@ -98,22 +121,34 @@ export class EmployeesService {
       if (dto.status !== undefined) userUpdate.isActive = dto.status === 'active';
 
       // Determine new role: explicit role param > position-derived
-      let resolvedRole: UserRole | undefined;
-      if (newRole) {
-        resolvedRole = newRole as UserRole;
-      } else if (dto.position) {
-        resolvedRole = this.positionToRole(dto.position);
+      if (newRoleParam) {
+        // Only founder can explicitly set admin/founder role
+        if ([UserRole.ADMIN, UserRole.FOUNDER].includes(newRoleParam as UserRole) && actor?.role !== 'founder') {
+          // Silently ignore escalation attempts from non-founder
+        } else {
+          resolvedRole = newRoleParam as UserRole;
+        }
+      } else if (dto.position && dto.position !== oldPosition) {
+        const derived = this.positionToRole(dto.position);
+        // Block escalation to admin/founder through position text — only explicit role
+        // param from founder can grant these. Ignore silently, flag as unmatched.
+        if (derived && ![UserRole.ADMIN, UserRole.FOUNDER].includes(derived)) {
+          resolvedRole = derived;
+        } else if (!derived) {
+          positionDidntMatchRole = true;
+        }
       }
       if (resolvedRole) userUpdate.role = resolvedRole;
 
       if (Object.keys(userUpdate).length > 0) {
         await this.userRepo.update(emp.userId, userUpdate);
-        // Notify the affected user that their profile/role changed
         this.gateway.notifyUser(emp.userId, 'me:changed', userUpdate);
       }
     }
 
     await this.activityLog.log({
+      userId: actor?.id,
+      userName: actor?.name,
       action: ActivityAction.EMPLOYEE_UPDATE,
       entity: 'employee',
       entityId: id,
@@ -122,7 +157,40 @@ export class EmployeesService {
     });
 
     this.gateway.broadcast('employees:changed', {});
-    return this.findOne(id);
+
+    // ── Notify the employee about position/role change via email + telegram ──
+    const positionChanged = dto.position !== undefined && dto.position !== oldPosition;
+    const roleChanged = !!resolvedRole && resolvedRole !== oldRole;
+    if ((positionChanged || roleChanged) && emp.userId && oldUser) {
+      const newPositionText = positionChanged ? dto.position! : emp.position;
+      const newRoleText = roleChanged ? (ROLE_LABELS[resolvedRole!] || resolvedRole!) : undefined;
+      const actorName = actor?.name;
+
+      if (oldUser.email) {
+        await this.mailService.sendPositionChanged(
+          oldUser.email,
+          oldUser.name,
+          oldPosition || '—',
+          newPositionText,
+          newRoleText,
+          actorName,
+        ).catch(() => { /* logged inside */ });
+      }
+
+      const tg =
+        `👤 <b>Изменены ваши данные</b>\n\n` +
+        (positionChanged ? `🏷 Должность: <b>${newPositionText}</b>\n` : '') +
+        (roleChanged ? `🎭 Роль: <b>${newRoleText}</b>\n` : '') +
+        (actorName ? `\n👤 Изменил: ${actorName}` : '');
+      await this.telegramService.sendToUser(emp.userId, tg).catch(() => {});
+    }
+
+    const updated = await this.findOne(id);
+    // Attach warning to response so frontend can show a toast
+    if (positionDidntMatchRole) {
+      (updated as any)._warning = 'Должность не соответствует стандартной роли — роль осталась прежней';
+    }
+    return updated;
   }
 
   async remove(id: string) {
@@ -206,10 +274,12 @@ export class EmployeesService {
       .getRawMany();
   }
 
-  /** Maps a Russian position string to a UserRole enum value (normalized) */
+  /** Maps a Russian position string to a UserRole enum value (normalized).
+   *  Never returns FOUNDER or ADMIN — those are privileged roles and can only
+   *  be set explicitly via the `role` parameter by an actor with sufficient
+   *  rights, never inferred from free-text position. */
   private positionToRole(position: string): UserRole | undefined {
     if (!position) return undefined;
-    // Normalize: lowercase, collapse whitespace, remove dashes/hyphens
     const norm = position.toLowerCase().replace(/[\s\-—_]+/g, '').trim();
 
     if (norm.includes('smm')) return UserRole.SMM_SPECIALIST;
@@ -219,9 +289,8 @@ export class EmployeesService {
     if (norm.includes('маркетолог') || norm.includes('marketer')) return UserRole.MARKETER;
     if (norm.includes('проектменеджер') || norm.includes('projectmanager') || norm.includes('пм')) return UserRole.PROJECT_MANAGER;
     if (norm.includes('разработчик') || norm.includes('developer') || norm.includes('программист')) return UserRole.DEVELOPER;
-    if (norm.includes('основатель') || norm.includes('founder')) return UserRole.FOUNDER;
-    if (norm.includes('администратор') || norm === 'admin') return UserRole.ADMIN;
     if (norm.includes('сотрудник') || norm.includes('employee')) return UserRole.EMPLOYEE;
+    // Explicitly NOT derived from position: FOUNDER, ADMIN
     return undefined;
   }
 }

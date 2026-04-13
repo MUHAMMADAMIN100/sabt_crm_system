@@ -84,7 +84,15 @@ export default function EmployeesPage() {
       qc.setQueryData(['employees'], context?.previous)
       toast.error(t('common.error'))
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); qc.invalidateQueries({ queryKey: ['users'] }); toast.success(t('employees.saved')) },
+    onSuccess: (resp: any) => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['users'] })
+      if (resp?._warning) {
+        toast(resp._warning, { icon: '⚠️', duration: 6000 })
+      } else {
+        toast.success(t('employees.saved'))
+      }
+    },
   })
   const deleteMut = useMutation({
     mutationFn: employeesApi.remove,

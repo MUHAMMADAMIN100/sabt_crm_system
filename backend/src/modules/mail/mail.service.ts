@@ -295,6 +295,43 @@ export class MailService {
     }
   }
 
+  /** Notify employee that their position/role was changed by admin */
+  async sendPositionChanged(
+    to: string,
+    recipientName: string,
+    oldPosition: string,
+    newPosition: string,
+    newRoleLabel?: string,
+    actorName?: string,
+  ) {
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('👤 Изменены ваши данные')}
+        <div style="padding:28px 36px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 18px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            ${actorName ? `<strong>${actorName}</strong> обновил${actorName.endsWith('а') ? 'а' : ''} ваши должностные данные.` : 'Ваши должностные данные были обновлены.'}
+          </p>
+          <div style="background:#f1f5f9;border-radius:10px;padding:18px 22px;margin-bottom:22px;">
+            <table style="width:100%;border-collapse:collapse;">
+              ${this.row('🏷 Было:', oldPosition)}
+              ${this.row('🏷 Стало:', newPosition)}
+              ${newRoleLabel ? this.row('🎭 Новая роль:', newRoleLabel) : ''}
+            </table>
+          </div>
+          <a href="${this.appUrl}/profile" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+            Открыть профиль →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+    try {
+      await this.sendViaBrevo(to, recipientName, `👤 Изменены ваши должностные данные`, html);
+    } catch (err) {
+      this.logger.error(`Failed to send position-changed to ${to}: ${err.message}`);
+    }
+  }
+
   /** Overdue task notification — reused for assignee / manager / founder */
   async sendOverdueTask(
     to: string,

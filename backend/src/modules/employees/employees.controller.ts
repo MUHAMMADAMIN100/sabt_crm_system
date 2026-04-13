@@ -45,7 +45,7 @@ export class EmployeesController {
     if ('salary' in dto && req.user?.role !== 'founder') {
       throw new ForbiddenException('Только основатель может изменять зарплату сотрудника');
     }
-    return this.service.update(id, dto);
+    return this.service.update(id, dto, { id: req.user.id, name: req.user.name, role: req.user.role });
   }
 
   @Patch(':id/toggle-sub-admin')
