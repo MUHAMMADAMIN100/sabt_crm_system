@@ -224,9 +224,13 @@ export default function CalendarPage() {
                     const roundL = isStart || isStartOfWeek
                     const roundR = isEnd || isEndOfWeek
                     const initials = e.assigneeName ? e.assigneeName.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase() : ''
-                    const bgColor = TASK_STATUS_COLORS[e.status] || 'bg-blue-400 dark:bg-blue-500'
+                    // Deadline day — mark red (like project end), unless task is done/cancelled
+                    const isDeadlineDay = isEnd && !['done', 'cancelled'].includes(e.status)
+                    const bgColor = isDeadlineDay
+                      ? 'bg-red-500 dark:bg-red-500'
+                      : (TASK_STATUS_COLORS[e.status] || 'bg-blue-400 dark:bg-blue-500')
                     const statusLabel = TASK_STATUS_LABELS[e.status] || ''
-                    const tooltip = `${e.title}${e.assigneeName ? ` · ${e.assigneeName}` : ''}${statusLabel ? ` · ${statusLabel}` : ''}`
+                    const tooltip = `${e.title}${e.assigneeName ? ` · ${e.assigneeName}` : ''}${statusLabel ? ` · ${statusLabel}` : ''}${isDeadlineDay ? ' · Дедлайн сегодня' : ''}`
                     return (
                       <button
                         key={e.id}
@@ -289,6 +293,7 @@ export default function CalendarPage() {
             <LegendItem color="bg-emerald-500" label="Готово" />
             <LegendItem color="bg-orange-500" label="Возвращена" />
             <LegendItem color="bg-red-400" label="Отменена" />
+            <LegendItem color="bg-red-500" label="Дедлайн задачи" />
           </div>
         </div>
         <div className="pt-3 border-t border-surface-100 dark:border-surface-700">
