@@ -255,8 +255,12 @@ export default function ProjectDetailPage() {
       startDate: projectForm.startDate || undefined,
       endDate: projectForm.endDate || undefined,
       budget: projectForm.budget ? Number(projectForm.budget) : undefined,
+      smmData: projectForm.projectType === 'SMM' ? (projectForm.smmData || {}) : undefined,
     })
   }
+
+  const updateSmmField = (key: string, value: string) =>
+    setProjectForm((f: any) => ({ ...f, smmData: { ...(f.smmData || {}), [key]: value } }))
 
   const handleSavePayment = () => {
     const amount = Number(paymentValue)
@@ -545,7 +549,7 @@ export default function ProjectDetailPage() {
             <div className="flex items-center justify-between border-b border-surface-100 dark:border-surface-700 pb-3">
               <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base">Информация о проекте</h3>
               {isManagerPlus && (
-                <button onClick={() => { setProjectForm({ name: project.name, projectType: project.projectType || '', description: project.description || '', status: project.status, startDate: project.startDate ? String(project.startDate).slice(0,10) : '', endDate: project.endDate ? String(project.endDate).slice(0,10) : '', budget: project.budget || '' }); setShowEditProject(true) }}
+                <button onClick={() => { setProjectForm({ name: project.name, projectType: project.projectType || '', description: project.description || '', status: project.status, startDate: project.startDate ? String(project.startDate).slice(0,10) : '', endDate: project.endDate ? String(project.endDate).slice(0,10) : '', budget: project.budget || '', smmData: project.smmData || {} }); setShowEditProject(true) }}
                   className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline">
                   <Edit size={13} /> Редактировать
                 </button>
@@ -820,15 +824,20 @@ export default function ProjectDetailPage() {
       )}
 
       {/* Modal: Edit Project */}
-      <Modal open={showEditProject} onClose={() => setShowEditProject(false)} title="Редактировать проект">
-        <div className="space-y-4">
+      <Modal open={showEditProject} onClose={() => setShowEditProject(false)} title="Редактировать проект" size="xl">
+        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
           <div>
             <label className="label mb-1">Название *</label>
             <input value={projectForm.name || ''} onChange={e => setProjectForm((f: any) => ({ ...f, name: e.target.value }))} className="input w-full" />
           </div>
           <div>
             <label className="label mb-1">Тип проекта</label>
-            <input value={projectForm.projectType || ''} onChange={e => setProjectForm((f: any) => ({ ...f, projectType: e.target.value }))} className="input w-full" placeholder="SMM, Web сайт, Дизайн..." />
+            <select value={projectForm.projectType || ''} onChange={e => setProjectForm((f: any) => ({ ...f, projectType: e.target.value }))} className="input w-full">
+              <option value="">— Не указан —</option>
+              <option value="Web сайт">Web сайт</option>
+              <option value="Дизайн">Дизайн</option>
+              <option value="SMM">SMM</option>
+            </select>
           </div>
           <div>
             <label className="label mb-1">Описание</label>
@@ -859,6 +868,80 @@ export default function ProjectDetailPage() {
               <input type="number" value={projectForm.budget || ''} onChange={e => setProjectForm((f: any) => ({ ...f, budget: e.target.value }))} className="input w-full" placeholder="0" />
             </div>
           </div>
+
+          {/* SMM-specific fields */}
+          {projectForm.projectType === 'SMM' && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="label mb-1">Историй в день</label>
+                  <input
+                    type="number" min={0}
+                    value={projectForm.smmData?.storiesPerDay || ''}
+                    onChange={e => updateSmmField('storiesPerDay', e.target.value)}
+                    className="input w-full"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="label mb-1">Макетов в месяц</label>
+                  <input
+                    type="number" min={0}
+                    value={projectForm.smmData?.layoutsPerMonth || ''}
+                    onChange={e => updateSmmField('layoutsPerMonth', e.target.value)}
+                    className="input w-full"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              <div className="border border-primary-300 dark:border-primary-700 rounded-xl p-4 bg-primary-50 dark:bg-primary-900/10 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📋</span>
+                  <h3 className="font-semibold text-primary-700 dark:text-primary-300 text-sm">SMM-анкета</h3>
+                </div>
+                {SMM_QUESTIONS.map(q => (
+                  <div key={q.key}>
+                    <label className="text-xs font-medium text-surface-700 dark:text-surface-300 block mb-1">{q.label}</label>
+                    {q.type === 'textarea' ? (
+                      <textarea
+                        value={projectForm.smmData?.[q.key] || ''}
+                        onChange={e => updateSmmField(q.key, e.target.value)}
+                        className="input resize-none text-sm"
+                        rows={2}
+                        placeholder="Введите ответ..."
+                      />
+                    ) : q.type === 'radio' ? (
+                      <div className="flex gap-4">
+                        {q.options?.map(opt => (
+                          <label key={opt} className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`edit-${q.key}`}
+                              value={opt}
+                              checked={projectForm.smmData?.[q.key] === opt}
+                              onChange={() => updateSmmField(q.key, opt)}
+                              className="w-3.5 h-3.5 text-primary-600"
+                            />
+                            <span className="text-xs text-surface-700 dark:text-surface-300">{opt}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        value={projectForm.smmData?.[q.key] || ''}
+                        onChange={e => updateSmmField(q.key, e.target.value)}
+                        className="input text-sm"
+                        placeholder="Введите ответ..."
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
           <div className="flex gap-2 justify-end pt-2">
             <button onClick={() => setShowEditProject(false)} className="btn-secondary">Отмена</button>
             <button onClick={handleSaveProject} disabled={!projectForm.name || updateProject.isPending} className="btn-primary flex items-center gap-2">
