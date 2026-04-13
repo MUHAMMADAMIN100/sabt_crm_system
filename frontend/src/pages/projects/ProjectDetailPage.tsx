@@ -305,8 +305,21 @@ export default function ProjectDetailPage() {
   const isMember = project.members?.some((m: any) => m.id === user?.id) ?? false
   const canCreateTask = isManagerPlus || isMember
 
+  // Sort active tasks by deadline ASC (closest/overdue first, no-deadline last).
+  // Closed statuses (done/cancelled) keep the same logic so recently-finished
+  // tasks with soonest deadlines surface above no-deadline items.
+  const sortByDeadline = (a: any, b: any) => {
+    const da = a.deadline ? new Date(a.deadline).getTime() : Infinity
+    const db = b.deadline ? new Date(b.deadline).getTime() : Infinity
+    if (da !== db) return da - db
+    // tie-breaker: newer createdAt first
+    const ca = a.createdAt ? new Date(a.createdAt).getTime() : 0
+    const cb = b.createdAt ? new Date(b.createdAt).getTime() : 0
+    return cb - ca
+  }
+
   const tasksByStatus = TASK_STATUSES.reduce((acc: any, s) => {
-    acc[s] = project.tasks?.filter((t: any) => t.status === s) || []
+    acc[s] = (project.tasks?.filter((t: any) => t.status === s) || []).sort(sortByDeadline)
     return acc
   }, {})
 
