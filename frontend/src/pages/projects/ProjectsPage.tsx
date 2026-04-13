@@ -22,9 +22,17 @@ interface ProjectFormProps {
   loading: boolean
 }
 
+const PROJECT_TYPE_FILTERS = [
+  { value: '', label: 'Все типы' },
+  { value: 'Web сайт', label: 'Web сайт' },
+  { value: 'Дизайн', label: 'Дизайн' },
+  { value: 'SMM', label: 'SMM' },
+]
+
 export default function ProjectsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
+  const [projectType, setProjectType] = useState('')
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 10
   const [showCreate, setShowCreate] = useState(false)
@@ -46,14 +54,15 @@ export default function ProjectsPage() {
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
 
   // Reset page when filters change
-  useEffect(() => { setPage(1) }, [search, status])
+  useEffect(() => { setPage(1) }, [search, status, projectType])
 
   const projects = allProjects?.filter((p: any) => {
     const matchesSearch = !search ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.description?.toLowerCase().includes(search.toLowerCase())
     const matchesStatus = !status || p.status === status
-    return matchesSearch && matchesStatus
+    const matchesType = !projectType || p.projectType === projectType
+    return matchesSearch && matchesStatus && matchesType
   }) || []
 
   const pagedProjects = projects.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -157,21 +166,38 @@ export default function ProjectsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row flex-wrap gap-3">
-        <div className="relative flex-1 min-w-0">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
-          <input
-            value={search} onChange={e => setSearch(e.target.value)}
-            placeholder={t('projects.searchPlaceholder')} className="input pl-9"
-          />
+      <div className="space-y-2.5">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+          <div className="relative flex-1 min-w-0">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
+            <input
+              value={search} onChange={e => setSearch(e.target.value)}
+              placeholder={t('projects.searchPlaceholder')} className="input pl-9"
+            />
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {STATUSES.map(s => (
+              <button
+                key={s.value}
+                onClick={() => setStatus(s.value)}
+                className={clsx('btn text-xs', status === s.value ? 'btn-primary' : 'btn-secondary')}
+              >{s.label}</button>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-1">
-          {STATUSES.map(s => (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Тип:</span>
+          {PROJECT_TYPE_FILTERS.map(pt => (
             <button
-              key={s.value}
-              onClick={() => setStatus(s.value)}
-              className={clsx('btn text-xs', status === s.value ? 'btn-primary' : 'btn-secondary')}
-            >{s.label}</button>
+              key={pt.value}
+              onClick={() => setProjectType(pt.value)}
+              className={clsx(
+                'px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                projectType === pt.value
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+              )}
+            >{pt.label}</button>
           ))}
         </div>
       </div>
@@ -199,7 +225,12 @@ export default function ProjectsPage() {
                     <div className="flex items-center gap-1 mt-0.5">
                       <StatusBadge status={p.status} />
                       {p.projectType && (
-                        <span className="text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-1.5 py-0.5 rounded-full">{p.projectType}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setProjectType(p.projectType) }}
+                          title={`Показать только "${p.projectType}"`}
+                          className="text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/50 px-1.5 py-0.5 rounded-full transition-colors"
+                        >{p.projectType}</button>
                       )}
                     </div>
                   </div>

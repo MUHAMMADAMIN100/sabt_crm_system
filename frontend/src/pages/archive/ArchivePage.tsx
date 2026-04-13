@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
@@ -6,14 +7,28 @@ import { RotateCcw, FolderKanban } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
+import clsx from 'clsx'
+
+const PROJECT_TYPE_FILTERS = [
+  { value: '', label: 'Все типы' },
+  { value: 'Web сайт', label: 'Web сайт' },
+  { value: 'Дизайн', label: 'Дизайн' },
+  { value: 'SMM', label: 'SMM' },
+]
 
 export default function ArchivePage() {
   const qc = useQueryClient()
   const { t } = useTranslation()
-  const { data: projects, isLoading } = useQuery({
+  const [projectType, setProjectType] = useState('')
+
+  const { data: allProjects, isLoading } = useQuery({
     queryKey: ['projects-archived'],
     queryFn: () => projectsApi.list({ archived: 'true' }),
   })
+
+  const projects = (allProjects || []).filter((p: any) =>
+    !projectType || p.projectType === projectType,
+  )
 
   const restoreMut = useMutation({
     mutationFn: projectsApi.restore,
@@ -39,6 +54,26 @@ export default function ArchivePage() {
   return (
     <div className="space-y-5">
       <h1 className="page-title">{t('archive.title')}</h1>
+
+      {/* Project type filter */}
+      {(allProjects?.length ?? 0) > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Тип:</span>
+          {PROJECT_TYPE_FILTERS.map(pt => (
+            <button
+              key={pt.value}
+              onClick={() => setProjectType(pt.value)}
+              className={clsx(
+                'px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                projectType === pt.value
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+              )}
+            >{pt.label}</button>
+          ))}
+        </div>
+      )}
+
       {!projects?.length ? (
         <EmptyState title={t('archive.noArchived')} description={t('archive.noArchivedDesc')} />
       ) : (
@@ -50,7 +85,17 @@ export default function ArchivePage() {
                   <div className="w-8 h-8 rounded-xl bg-surface-100 dark:bg-surface-700 flex items-center justify-center">
                     <FolderKanban size={16} className="text-surface-400 dark:text-surface-500" />
                   </div>
-                  <Link to={`/projects/${p.id}`} className="font-semibold text-surface-700 dark:text-surface-300 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{p.name}</Link>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Link to={`/projects/${p.id}`} className="font-semibold text-surface-700 dark:text-surface-300 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{p.name}</Link>
+                    {p.projectType && (
+                      <button
+                        type="button"
+                        onClick={() => setProjectType(p.projectType)}
+                        title={`Показать только "${p.projectType}"`}
+                        className="text-[10px] bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/50 px-1.5 py-0.5 rounded-full transition-colors"
+                      >{p.projectType}</button>
+                    )}
+                  </div>
                 </div>
                 <button onClick={() => restoreMut.mutate(p.id)} className="btn-secondary text-xs py-1">
                   <RotateCcw size={12} /> {t('common.restore')}
