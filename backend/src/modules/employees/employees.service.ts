@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource, FindOptionsWhere } from 'typeorm';
 import { Employee, EmployeeStatus } from './employee.entity';
+import { SalaryHistory } from './salary-history.entity';
 import { User, UserRole } from '../users/user.entity';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
@@ -29,6 +30,7 @@ export class EmployeesService {
   constructor(
     @InjectRepository(Employee) private repo: Repository<Employee>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(SalaryHistory) private salaryHistoryRepo: Repository<SalaryHistory>,
     private activityLog: ActivityLogService,
     private dataSource: DataSource,
     private gateway: AppGateway,
@@ -102,12 +104,23 @@ export class EmployeesService {
   async update(id: string, dto: UpdateEmployeeDto, actor?: { id: string; name?: string; role?: string }) {
     const emp = await this.findOne(id);
     const oldPosition = emp.position;
+    const oldSalary = Number(emp.salary || 0);
     const oldUser = emp.userId ? await this.userRepo.findOne({ where: { id: emp.userId } }) : null;
     const oldRole = oldUser?.role;
 
     // Strip role from dto before updating employee (role belongs to User)
     const { role: newRoleParam, ...empDto } = dto as any;
     await this.repo.update(id, empDto);
+
+    // ── Record salary history if salary actually changed ──────────────
+    if (dto.salary !== undefined && Number(dto.salary) !== oldSalary) {
+      await this.salaryHistoryRepo.save(this.salaryHistoryRepo.create({
+        employeeId: id,
+        salary: Number(dto.salary),
+        effectiveFrom: new Date(),
+        changedById: actor?.id,
+      }));
+    }
 
     // Синхронизируем User: обновляем все общие поля + role
     let resolvedRole: UserRole | undefined;

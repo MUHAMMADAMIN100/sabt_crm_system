@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike } from 'typeorm';
 import { Project, ProjectStatus } from './project.entity';
+import { ProjectPayment } from './payment.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UserRole, User } from '../users/user.entity';
@@ -18,6 +19,7 @@ export class ProjectsService {
   constructor(
     @InjectRepository(Project) private repo: Repository<Project>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(ProjectPayment) private paymentRepo: Repository<ProjectPayment>,
     private notificationsService: NotificationsService,
     private mailService: MailService,
     private activityLog: ActivityLogService,
@@ -179,6 +181,16 @@ export class ProjectsService {
       delete (dto as any).paidAmount;
     }
 
+    // Track paidAmount change as a Payment record (delta-based)
+    let paymentDelta: number | null = null;
+    if ('paidAmount' in dto && user.role === 'founder') {
+      const oldPaid = Number(project.paidAmount ?? 0);
+      const newPaid = Number(dto.paidAmount ?? 0);
+      if (newPaid !== oldPaid) {
+        paymentDelta = newPaid - oldPaid;
+      }
+    }
+
     const oldMemberIds = project.members?.map(m => m.id) || [];
     const oldManagerId = project.managerId;
     const managerChanged = dto.managerId !== undefined && dto.managerId !== oldManagerId;
@@ -200,6 +212,17 @@ export class ProjectsService {
     });
 
     const saved = await this.repo.save(project);
+
+    // Record payment delta if paidAmount changed
+    if (paymentDelta !== null) {
+      await this.paymentRepo.save(this.paymentRepo.create({
+        projectId: saved.id,
+        amount: paymentDelta,
+        paidAt: new Date(),
+        recordedById: user.id,
+        note: paymentDelta > 0 ? 'Оплата получена' : 'Корректировка',
+      }));
+    }
 
     await this.activityLog.log({
       userId: user.id,

@@ -107,6 +107,11 @@ export class AnalyticsController {
 
   @Get('payroll')
   @Roles(UserRole.FOUNDER)
-  @CacheTTL(60000)
-  getPayrollStats() { return this.service.getPayrollStats(); }
+  // No @CacheTTL — period queries differ per request
+  getPayrollStats(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.service.getPayrollStats(from, to);
+  }
 }

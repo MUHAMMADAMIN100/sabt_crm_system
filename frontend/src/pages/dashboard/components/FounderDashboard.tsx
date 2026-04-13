@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi, employeesApi } from '@/services/api.service'
@@ -8,11 +8,43 @@ import { StatCard, PageLoader, StatusBadge, Avatar } from '@/components/ui'
 import {
   FolderKanban, CheckSquare, Users, AlertTriangle,
   TrendingDown, UserX, Activity, Clock, DollarSign,
-  Briefcase, Edit2, Check, X,
+  Briefcase, Edit2, Check, X, Calendar,
 } from 'lucide-react'
-import { format } from 'date-fns'
+import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
+import clsx from 'clsx'
+
+type FinancePeriod = 'this_month' | 'last_3_months' | 'this_year' | 'all_time'
+
+const PERIOD_LABELS: Record<FinancePeriod, string> = {
+  this_month: 'Этот месяц',
+  last_3_months: 'Последние 3 месяца',
+  this_year: 'Этот год',
+  all_time: 'Всё время',
+}
+
+function periodToRange(period: FinancePeriod): { from?: string; to?: string } {
+  const now = new Date()
+  if (period === 'all_time') return {}
+  if (period === 'this_month') {
+    return {
+      from: format(startOfMonth(now), 'yyyy-MM-dd'),
+      to: format(endOfMonth(now), 'yyyy-MM-dd'),
+    }
+  }
+  if (period === 'last_3_months') {
+    return {
+      from: format(startOfMonth(subMonths(now, 2)), 'yyyy-MM-dd'),
+      to: format(endOfMonth(now), 'yyyy-MM-dd'),
+    }
+  }
+  // this_year
+  return {
+    from: format(startOfYear(now), 'yyyy-MM-dd'),
+    to: format(endOfYear(now), 'yyyy-MM-dd'),
+  }
+}
 
 export default function FounderDashboard() {
   const qc = useQueryClient()
@@ -20,6 +52,8 @@ export default function FounderDashboard() {
   const canSeeFinance = user?.role === 'founder'
   const [editingSalaryId, setEditingSalaryId] = useState<string | null>(null)
   const [salaryValue, setSalaryValue] = useState('')
+  const [period, setPeriod] = useState<FinancePeriod>('this_month')
+  const range = useMemo(() => periodToRange(period), [period])
 
   const { data: overview, isLoading } = useQuery({
     queryKey: ['analytics-overview'],
@@ -47,8 +81,8 @@ export default function FounderDashboard() {
   })
 
   const { data: payroll } = useQuery({
-    queryKey: ['payroll'],
-    queryFn: analyticsApi.payroll,
+    queryKey: ['payroll', range.from, range.to],
+    queryFn: () => analyticsApi.payroll(range),
     enabled: canSeeFinance,
   })
 
@@ -72,8 +106,13 @@ export default function FounderDashboard() {
   const inactiveEmployees = (workload || []).filter((e: any) => e.activeTasks === 0)
   const overloadedPMs = (workload || []).filter((e: any) => e.activeTasks >= 10)
 
-  const totalPayroll = payroll?.totalPayroll || 0
-  const totalBudget = payroll?.totalBudget || 0
+  const monthlyPayroll = Number(payroll?.monthlyPayroll || 0)
+  const totalBudget = Number(payroll?.totalBudget || 0)
+  const lifetimePaid = Number(payroll?.lifetimePaid || 0)
+  const revenueForPeriod = Number(payroll?.revenueForPeriod || 0)
+  const payrollForPeriod = Number(payroll?.payrollForPeriod || 0)
+  const profitForPeriod = Number(payroll?.profitForPeriod || 0)
+  const isAllTime = period === 'all_time'
 
   return (
     <div className="space-y-6">
@@ -116,43 +155,109 @@ export default function FounderDashboard() {
         />
       </div>
 
-      {/* Finance KPI row — founder only */}
+      {/* Finance section — founder only */}
       {canSeeFinance && (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="card flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
-            <DollarSign size={20} className="text-emerald-600 dark:text-emerald-400" />
-          </div>
-          <div>
-            <p className="text-xs text-surface-500 dark:text-surface-400">Зарплатный фонд</p>
-            <p className="text-xl font-bold text-surface-900 dark:text-surface-100">
-              {totalPayroll.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
-            </p>
-            <p className="text-xs text-surface-400 dark:text-surface-500">{payroll?.employeeCount || 0} сотрудников</p>
-          </div>
+      <div className="space-y-4">
+        {/* Period selector */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Calendar size={14} className="text-surface-400 dark:text-surface-500" />
+          <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Период:</span>
+          {(Object.keys(PERIOD_LABELS) as FinancePeriod[]).map(p => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={clsx(
+                'px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                period === p
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+              )}
+            >{PERIOD_LABELS[p]}</button>
+          ))}
         </div>
-        <div className="card flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-            <Briefcase size={20} className="text-blue-600 dark:text-blue-400" />
+
+        {/* Period-specific finance KPIs */}
+        {!isAllTime && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="card flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
+                <DollarSign size={20} className="text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-xs text-surface-500 dark:text-surface-400">Получено за период</p>
+                <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">
+                  {revenueForPeriod.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
+                </p>
+                <p className="text-xs text-surface-400 dark:text-surface-500">{payroll?.payments?.length || 0} платежей</p>
+              </div>
+            </div>
+            <div className="card flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
+                <Users size={20} className="text-orange-600 dark:text-orange-400" />
+              </div>
+              <div>
+                <p className="text-xs text-surface-500 dark:text-surface-400">Расход на ЗП за период</p>
+                <p className="text-xl font-bold text-orange-700 dark:text-orange-400">
+                  {payrollForPeriod.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
+                </p>
+                <p className="text-xs text-surface-400 dark:text-surface-500">по истории зарплат</p>
+              </div>
+            </div>
+            <div className="card flex items-center gap-4">
+              <div className={clsx(
+                'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
+                profitForPeriod >= 0 ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30',
+              )}>
+                <Activity size={20} className={profitForPeriod >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} />
+              </div>
+              <div>
+                <p className="text-xs text-surface-500 dark:text-surface-400">Прибыль за период</p>
+                <p className={`text-xl font-bold ${profitForPeriod >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
+                  {profitForPeriod.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
+                </p>
+                <p className="text-xs text-surface-400 dark:text-surface-500">получено − ЗП</p>
+              </div>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-surface-500 dark:text-surface-400">Бюджет проектов</p>
-            <p className="text-xl font-bold text-surface-900 dark:text-surface-100">
-              {totalBudget.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
-            </p>
-            <p className="text-xs text-surface-400 dark:text-surface-500">{payroll?.projects?.length || 0} активных проектов</p>
+        )}
+
+        {/* Lifetime / overall KPIs */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="card flex items-center gap-4 opacity-90">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
+              <DollarSign size={20} className="text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-xs text-surface-500 dark:text-surface-400">Месячный ФОТ (текущий)</p>
+              <p className="text-xl font-bold text-surface-900 dark:text-surface-100">
+                {monthlyPayroll.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
+              </p>
+              <p className="text-xs text-surface-400 dark:text-surface-500">{payroll?.employeeCount || 0} сотрудников</p>
+            </div>
           </div>
-        </div>
-        <div className="card flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
-            <Activity size={20} className="text-purple-600 dark:text-purple-400" />
+          <div className="card flex items-center gap-4 opacity-90">
+            <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+              <Briefcase size={20} className="text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="text-xs text-surface-500 dark:text-surface-400">Бюджет всех проектов</p>
+              <p className="text-xl font-bold text-surface-900 dark:text-surface-100">
+                {totalBudget.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
+              </p>
+              <p className="text-xs text-surface-400 dark:text-surface-500">контрактная сумма</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-surface-500 dark:text-surface-400">Прибыль (бюджет − ФОТ)</p>
-            <p className={`text-xl font-bold ${totalBudget - totalPayroll >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
-              {(totalBudget - totalPayroll).toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
-            </p>
-            <p className="text-xs text-surface-400 dark:text-surface-500">расчётная маржа</p>
+          <div className="card flex items-center gap-4 opacity-90">
+            <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
+              <Activity size={20} className="text-purple-600 dark:text-purple-400" />
+            </div>
+            <div>
+              <p className="text-xs text-surface-500 dark:text-surface-400">Всего получено (всё время)</p>
+              <p className="text-xl font-bold text-surface-900 dark:text-surface-100">
+                {lifetimePaid.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
+              </p>
+              <p className="text-xs text-surface-400 dark:text-surface-500">из {totalBudget.toLocaleString('ru-RU')} в контрактах</p>
+            </div>
           </div>
         </div>
       </div>
@@ -357,9 +462,9 @@ export default function FounderDashboard() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-surface-200 dark:border-surface-600">
-                <td colSpan={3} className="pt-3 font-semibold text-surface-700 dark:text-surface-300">Итого ФОТ</td>
+                <td colSpan={3} className="pt-3 font-semibold text-surface-700 dark:text-surface-300">Итого ФОТ (в месяц)</td>
                 <td className="pt-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                  {totalPayroll.toLocaleString('ru-RU')} сомони
+                  {monthlyPayroll.toLocaleString('ru-RU')} сомони
                 </td>
                 <td />
               </tr>

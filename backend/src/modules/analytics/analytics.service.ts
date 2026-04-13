@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Between, In } from 'typeorm';
 import { Task, TaskStatus } from '../tasks/task.entity';
 import { Project, ProjectStatus } from '../projects/project.entity';
+import { ProjectPayment } from '../projects/payment.entity';
 import { User } from '../users/user.entity';
 import { TimeLog } from '../time-tracker/time-log.entity';
 import { DailyReport } from '../reports/daily-report.entity';
 import { Employee, EmployeeStatus } from '../employees/employee.entity';
+import { SalaryHistory } from '../employees/salary-history.entity';
 import { WorkSession } from '../auth/work-session.entity';
 
 @Injectable()
@@ -19,6 +21,8 @@ export class AnalyticsService {
     @InjectRepository(DailyReport) private reportRepo: Repository<DailyReport>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
+    @InjectRepository(SalaryHistory) private salaryHistoryRepo: Repository<SalaryHistory>,
+    @InjectRepository(ProjectPayment) private paymentRepo: Repository<ProjectPayment>,
   ) {}
 
   async getDashboardOverview() {
@@ -260,20 +264,112 @@ export class AnalyticsService {
       .getRawMany();
   }
 
-  async getPayrollStats() {
+  /** Compute total payroll cost for a date range using salary history.
+   *  For each employee, sum (effective monthly salary at month M) for every
+   *  month that intersects [from, to]. Falls back to current employee.salary
+   *  if the employee has no history records (legacy data before tracking). */
+  private async computePayrollForPeriod(
+    employees: Employee[],
+    from: Date,
+    to: Date,
+  ): Promise<number> {
+    if (!employees.length) return 0;
+
+    // Compute the list of (year, month) buckets between from and to inclusive
+    const months: { y: number; m: number }[] = [];
+    const cur = new Date(from.getFullYear(), from.getMonth(), 1);
+    const end = new Date(to.getFullYear(), to.getMonth(), 1);
+    while (cur <= end) {
+      months.push({ y: cur.getFullYear(), m: cur.getMonth() });
+      cur.setMonth(cur.getMonth() + 1);
+    }
+    if (months.length === 0) return 0;
+
+    // Load all salary history rows for these employees, ordered by date desc
+    const history = await this.salaryHistoryRepo.find({
+      where: { employeeId: In(employees.map(e => e.id)) },
+      order: { effectiveFrom: 'DESC' },
+    });
+    const byEmp: Record<string, SalaryHistory[]> = {};
+    for (const h of history) {
+      (byEmp[h.employeeId] ||= []).push(h);
+    }
+
+    let total = 0;
+    for (const emp of employees) {
+      const empHistory = byEmp[emp.id] || [];
+      for (const { y, m } of months) {
+        // Effective salary on the FIRST day of this month
+        const monthStart = new Date(y, m, 1);
+        // Find the most recent history record with effectiveFrom <= monthStart
+        const effective = empHistory.find(h => new Date(h.effectiveFrom) <= monthStart);
+        const salaryThatMonth = effective ? Number(effective.salary) : Number(emp.salary || 0);
+        total += salaryThatMonth;
+      }
+    }
+    return total;
+  }
+
+  /** Founder's payroll & revenue dashboard.
+   *  - Without period: returns lifetime totals (legacy behavior).
+   *  - With period (from/to ISO yyyy-MM-dd): revenue from project_payments
+   *    in the window, payroll from salary_history per month in the window. */
+  async getPayrollStats(fromStr?: string, toStr?: string) {
     const employees = await this.employeeRepo.find({
       where: { status: EmployeeStatus.ACTIVE },
       relations: ['user'],
     });
 
-    const totalPayroll = employees.reduce((sum, e) => sum + (e.salary || 0), 0);
-
+    // Include both active and archived projects when looking at history,
+    // because completed projects should still show up in revenue reports.
     const projects = await this.projectRepo.find({
-      where: { isArchived: false },
-      select: ['id', 'name', 'budget', 'paidAmount', 'status'],
+      select: ['id', 'name', 'budget', 'paidAmount', 'status', 'endDate', 'isArchived'],
     });
 
-    const totalBudget = projects.reduce((sum, p) => sum + (p.budget || 0), 0);
+    const monthlyPayroll = employees.reduce((sum, e) => sum + Number(e.salary || 0), 0);
+    const totalBudget = projects.reduce((sum, p) => sum + Number(p.budget || 0), 0);
+    const lifetimePaid = projects.reduce((sum, p) => sum + Number(p.paidAmount || 0), 0);
+
+    let from: Date | null = null;
+    let to: Date | null = null;
+    let revenueForPeriod = 0;
+    let payrollForPeriod = 0;
+    let projectsInPeriod = projects;
+    let paymentsList: Array<{ id: string; projectId: string; projectName: string; amount: number; paidAt: string; note: string | null }> = [];
+
+    if (fromStr && toStr) {
+      from = new Date(fromStr + 'T00:00:00');
+      to = new Date(toStr + 'T23:59:59');
+
+      const periodPayments = await this.paymentRepo.find({
+        where: { paidAt: Between(from, to) },
+        relations: ['project'],
+        order: { paidAt: 'DESC' },
+      });
+      revenueForPeriod = periodPayments.reduce((s, p) => s + Number(p.amount), 0);
+      paymentsList = periodPayments.map(p => ({
+        id: p.id,
+        projectId: p.projectId,
+        projectName: p.project?.name || '—',
+        amount: Number(p.amount),
+        paidAt: new Date(p.paidAt).toISOString().slice(0, 10),
+        note: p.note,
+      }));
+
+      payrollForPeriod = await this.computePayrollForPeriod(employees, from, to);
+
+      // Per-project totals: sum payments per project IN PERIOD
+      const projectPaidInPeriod: Record<string, number> = {};
+      for (const p of periodPayments) {
+        projectPaidInPeriod[p.projectId] = (projectPaidInPeriod[p.projectId] || 0) + Number(p.amount);
+      }
+      projectsInPeriod = projects
+        .filter(p => projectPaidInPeriod[p.id] !== undefined || (!p.isArchived))
+        .map(p => ({
+          ...p,
+          paidAmount: projectPaidInPeriod[p.id] !== undefined ? projectPaidInPeriod[p.id] : Number(p.paidAmount || 0),
+        }) as any);
+    }
 
     const employeeList = employees.map(e => ({
       id: e.id,
@@ -281,22 +377,36 @@ export class AnalyticsService {
       fullName: e.fullName,
       position: e.position,
       department: e.department,
-      salary: e.salary || 0,
+      salary: Number(e.salary || 0),
       avatar: e.user?.avatar || null,
     }));
 
     return {
-      totalPayroll,
+      // Period info
+      from: fromStr || null,
+      to: toStr || null,
+      // Aggregates always present
+      monthlyPayroll,
+      totalPayroll: monthlyPayroll, // legacy alias
       totalBudget,
+      lifetimePaid,
+      // Period-specific (zeros if no period)
+      revenueForPeriod,
+      payrollForPeriod,
+      profitForPeriod: revenueForPeriod - payrollForPeriod,
+      // Lists
       employeeCount: employees.length,
       employeeList,
-      projects: projects.map(p => ({
+      projects: projectsInPeriod.map((p: any) => ({
         id: p.id,
         name: p.name,
-        budget: p.budget || 0,
+        budget: Number(p.budget) || 0,
         status: p.status,
         paidAmount: Number(p.paidAmount) || 0,
+        endDate: p.endDate,
+        isArchived: p.isArchived,
       })),
+      payments: paymentsList,
     };
   }
 
