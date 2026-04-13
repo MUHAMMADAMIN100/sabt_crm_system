@@ -27,10 +27,12 @@ export class ProjectsService {
     private gateway: AppGateway,
   ) {}
 
-  /** Remove actual money-paid field (paidAmount) from project(s) for non-founder users.
-   *  Budget, salesManager and other project-management fields stay visible. */
+  /** Remove actual money-paid field (paidAmount) from project(s) for users
+   *  who shouldn't see it. Founder + sales_manager need to see paid amount
+   *  to manage collections; everyone else gets it stripped.
+   *  Budget, salesManager stay visible for regular managers too. */
   stripFinance<T extends Project | Project[]>(data: T, role?: string): T {
-    if (role === 'founder') return data;
+    if (role === 'founder' || role === 'sales_manager') return data;
     const strip = (p: any) => {
       if (!p) return p;
       delete p.paidAmount;
@@ -68,7 +70,7 @@ export class ProjectsService {
           ))`,
           { userId },
         );
-      } else if (!['admin', 'founder'].includes(role)) {
+      } else if (!['admin', 'founder', 'sales_manager'].includes(role)) {
         // All other roles see only projects they are members of
         qb.andWhere(
           `p.id IN (
@@ -78,7 +80,7 @@ export class ProjectsService {
           { userId },
         );
       }
-      // admin & founder see all — no extra filter
+      // admin, founder & sales_manager see all — no extra filter
     }
 
     if (status) qb.andWhere('p.status = :status', { status });
@@ -489,5 +491,54 @@ export class ProjectsService {
       .where('p.isArchived = false')
       .groupBy('p.status')
       .getRawMany();
+  }
+
+  /** Send a payment-request email to the project's client.
+   *  Available to founder, admin and sales_manager. */
+  async sendPaymentRequest(
+    id: string,
+    actor: { id: string; name?: string; role: string },
+    customMessage?: string,
+  ) {
+    const project = await this.repo.findOne({ where: { id } });
+    if (!project) throw new NotFoundException('Project not found');
+
+    const clientInfo = (project.clientInfo || {}) as any;
+    const clientEmail: string | undefined = clientInfo.email;
+    const clientName: string = clientInfo.contactPerson || clientInfo.name || 'Клиент';
+    if (!clientEmail) {
+      throw new ForbiddenException('У проекта не указан email клиента. Добавьте его во вкладке "О клиенте".');
+    }
+
+    const budget = Number(project.budget || 0);
+    const paid = Number(project.paidAmount || 0);
+    const remaining = Math.max(0, budget - paid);
+
+    if (remaining <= 0) {
+      throw new ForbiddenException('По этому проекту нет задолженности');
+    }
+
+    const ok = await this.mailService.sendPaymentRequestToClient(
+      clientEmail,
+      clientName,
+      project.name,
+      budget,
+      paid,
+      remaining,
+      actor.name || 'Менеджер по продажам',
+      customMessage,
+    );
+
+    await this.activityLog.log({
+      userId: actor.id,
+      userName: actor.name,
+      action: ActivityAction.PROJECT_UPDATE,
+      entity: 'project',
+      entityId: id,
+      entityName: project.name,
+      details: { kind: 'payment_request_sent', to: clientEmail, remaining, byRole: actor.role },
+    });
+
+    return { sent: ok, to: clientEmail, remaining };
   }
 }

@@ -41,9 +41,13 @@ export default function ProjectDetailPage() {
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
   const canManagePayment = user?.role === 'founder'
+  const canSeePayment = ['admin', 'founder', 'sales_manager'].includes(user?.role || '')
+  const canRequestPayment = ['admin', 'founder', 'sales_manager'].includes(user?.role || '')
 
   const [editingPayment, setEditingPayment] = useState(false)
   const [paymentValue, setPaymentValue] = useState('')
+  const [showRequestPayment, setShowRequestPayment] = useState(false)
+  const [requestMessage, setRequestMessage] = useState('')
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
@@ -230,6 +234,15 @@ export default function ProjectDetailPage() {
     },
   })
 
+  const requestPaymentMut = useMutation({
+    mutationFn: (message?: string) => projectsApi.sendPaymentRequest(id!, message),
+    onSuccess: (res: any) => {
+      setShowRequestPayment(false)
+      toast.success(`Запрос оплаты отправлен на ${res?.to || 'email клиента'}`)
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось отправить'),
+  })
+
   const deleteFileMut = useMutation({
     mutationFn: (fileId: string) => filesApi.remove(fileId),
     onMutate: async (fileId: string) => {
@@ -405,7 +418,7 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* Payment block — visible to sales manager, admin, founder */}
-      {canManagePayment && (project.budget > 0 || project.paidAmount > 0) && (
+      {canSeePayment && (project.budget > 0 || project.paidAmount > 0) && (
         <div className="card flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <DollarSign size={16} className="text-emerald-500" />
@@ -418,7 +431,7 @@ export default function ProjectDetailPage() {
             </div>
             <div className="text-center">
               <p className="text-xs text-surface-400 dark:text-surface-500">Оплачено</p>
-              {editingPayment ? (
+              {editingPayment && canManagePayment ? (
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
@@ -434,7 +447,9 @@ export default function ProjectDetailPage() {
               ) : (
                 <div className="flex items-center gap-1">
                   <p className="text-sm font-bold text-green-600 dark:text-green-400">{(project.paidAmount || 0).toLocaleString('ru-RU')} сомони</p>
-                  <button onClick={() => { setPaymentValue(String(project.paidAmount || 0)); setEditingPayment(true) }} className="p-0.5 text-surface-400 hover:text-primary-600"><Edit size={12} /></button>
+                  {canManagePayment && (
+                    <button onClick={() => { setPaymentValue(String(project.paidAmount || 0)); setEditingPayment(true) }} className="p-0.5 text-surface-400 hover:text-primary-600"><Edit size={12} /></button>
+                  )}
                 </div>
               )}
             </div>
@@ -455,6 +470,22 @@ export default function ProjectDetailPage() {
                 {Math.min(100, Math.round(((project.paidAmount || 0) / (project.budget || 1)) * 100))}% оплачено
               </p>
             </div>
+            {canRequestPayment && ((project.budget || 0) - (project.paidAmount || 0)) > 0 && (
+              <button
+                onClick={() => {
+                  const remaining = (project.budget || 0) - (project.paidAmount || 0)
+                  setRequestMessage(
+                    `Здравствуйте!\n\nНапоминаем о необходимости оплаты по проекту «${project.name}».\n` +
+                    `К оплате: ${remaining.toLocaleString('ru-RU')} сомони.\n\n` +
+                    `Если у вас есть вопросы — дайте знать, будем рады помочь.`,
+                  )
+                  setShowRequestPayment(true)
+                }}
+                className="btn-primary text-xs flex items-center gap-1.5"
+              >
+                <Mail size={14} /> Запросить оплату
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1052,6 +1083,60 @@ export default function ProjectDetailPage() {
 
       <ConfirmDialog open={!!deleteFileId} onClose={() => setDeleteFileId(null)}
         onConfirm={() => deleteFileMut.mutate(deleteFileId!)} title="Удалить файл?" message="Файл будет удалён безвозвратно." danger />
+
+      {/* Modal: Request payment from client */}
+      <Modal open={showRequestPayment} onClose={() => setShowRequestPayment(false)} title="Запросить оплату у клиента">
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3 rounded-xl bg-primary-50 dark:bg-primary-900/20">
+            <Mail size={18} className="text-primary-600 dark:text-primary-400 shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium text-surface-900 dark:text-surface-100">
+                Email будет отправлен на: <span className="text-primary-600 dark:text-primary-400">{(project?.clientInfo as any)?.email || '—'}</span>
+              </p>
+              <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
+                Шаблон содержит бюджет, сумму оплачено и к оплате.
+              </p>
+            </div>
+          </div>
+          {!(project?.clientInfo as any)?.email && (
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-300">
+              ⚠️ У клиента не указан email. Откройте вкладку "О клиенте" и добавьте его.
+            </div>
+          )}
+          <div>
+            <label className="label mb-1">Сообщение (добавится в начало письма)</label>
+            <textarea
+              value={requestMessage}
+              onChange={e => setRequestMessage(e.target.value)}
+              rows={6}
+              className="input resize-none text-sm"
+              placeholder="Ваше личное сообщение клиенту..."
+            />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(requestMessage).then(
+                  () => toast.success('Текст скопирован'),
+                  () => toast.error('Не удалось скопировать'),
+                )
+              }}
+              className="btn-secondary text-sm"
+            >
+              Скопировать текст
+            </button>
+            <button onClick={() => setShowRequestPayment(false)} className="btn-secondary">Отмена</button>
+            <button
+              onClick={() => requestPaymentMut.mutate(requestMessage)}
+              disabled={!((project?.clientInfo as any)?.email) || requestPaymentMut.isPending}
+              className="btn-primary flex items-center gap-2"
+            >
+              <Mail size={15} /> {requestPaymentMut.isPending ? 'Отправка...' : 'Отправить email'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Modal: Change Manager */}
       <Modal open={showChangeManager} onClose={() => setShowChangeManager(false)} title="Менеджер проекта" size="sm">

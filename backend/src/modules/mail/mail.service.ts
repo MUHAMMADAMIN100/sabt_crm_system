@@ -295,6 +295,55 @@ export class MailService {
     }
   }
 
+  /** Send a payment-request email to a project's client. */
+  async sendPaymentRequestToClient(
+    to: string,
+    clientName: string,
+    projectName: string,
+    totalBudget: number,
+    paidAmount: number,
+    remaining: number,
+    fromName: string,
+    customMessage?: string,
+  ) {
+    const fmt = (n: number) => n.toLocaleString('ru-RU');
+    const customBlock = customMessage
+      ? `<p style="color:#334155;font-size:14px;margin:0 0 20px;line-height:1.55;white-space:pre-line;">${customMessage}</p>`
+      : '';
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('💰 Запрос оплаты')}
+        <div style="padding:28px 36px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 16px;">
+            Здравствуйте${clientName ? `, <strong>${clientName}</strong>` : ''}!
+          </p>
+          ${customBlock}
+          <p style="color:#334155;font-size:14px;margin:0 0 18px;">
+            Напоминаем о необходимости оплаты по проекту <strong>${projectName}</strong>.
+          </p>
+          <div style="background:#f1f5f9;border-radius:10px;padding:18px 22px;margin-bottom:22px;">
+            <table style="width:100%;border-collapse:collapse;">
+              ${this.row('📁 Проект:', projectName)}
+              ${this.row('💼 Стоимость:', `${fmt(totalBudget)} сомони`)}
+              ${this.row('✅ Оплачено:', `${fmt(paidAmount)} сомони`)}
+              ${this.row('⏳ К оплате:', `<strong style="color:#ef4444;">${fmt(remaining)} сомони</strong>`)}
+            </table>
+          </div>
+          <p style="color:#64748b;font-size:13px;margin:0 0 4px;">
+            С уважением,<br><strong>${fromName}</strong>
+          </p>
+        </div>
+        ${this.footer()}
+      </div>`;
+    try {
+      await this.sendViaBrevo(to, clientName || 'Клиент', `💰 Запрос оплаты по проекту «${projectName}»`, html);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send payment request to ${to}: ${err.message}`);
+      return false;
+    }
+  }
+
   /** Notify employee that their position/role was changed by admin */
   async sendPositionChanged(
     to: string,

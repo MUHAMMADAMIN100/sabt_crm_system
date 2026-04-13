@@ -62,4 +62,18 @@ export class ProjectsController {
   remove(@Param('id') id: string, @Request() req) {
     return this.service.remove(id, req.user);
   }
+
+  @Post(':id/send-payment-request')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SALES_MANAGER)
+  sendPaymentRequest(
+    @Param('id') id: string,
+    @Body() body: { message?: string },
+    @Request() req,
+  ) {
+    return this.service.sendPaymentRequest(
+      id,
+      { id: req.user.id, name: req.user.name, role: req.user.role },
+      body?.message,
+    );
+  }
 }
