@@ -8,7 +8,7 @@ import TaskForm from '@/components/tasks/TaskForm'
 import TaskSlidePanel from '@/components/tasks/TaskSlidePanel'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday, parseISO, isBefore, isAfter } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Info, MousePointerClick, CalendarPlus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -25,6 +25,15 @@ const TASK_STATUS_COLORS: Record<string, string> = {
   done: 'bg-emerald-500 dark:bg-emerald-500',
   cancelled: 'bg-red-400 dark:bg-red-400',
   returned: 'bg-orange-500 dark:bg-orange-500',
+}
+
+const TASK_STATUS_LABELS: Record<string, string> = {
+  new: 'Новая',
+  in_progress: 'В работе',
+  review: 'На проверке',
+  done: 'Готово',
+  cancelled: 'Отменена',
+  returned: 'Возвращена',
 }
 
 export default function CalendarPage() {
@@ -154,6 +163,24 @@ export default function CalendarPage() {
         </div>
       )}
 
+      {/* How-to hint for new users */}
+      <div className="flex items-start gap-3 p-3 rounded-xl bg-primary-50 dark:bg-primary-900/15 border border-primary-100 dark:border-primary-900/30">
+        <Info size={16} className="text-primary-600 dark:text-primary-400 shrink-0 mt-0.5" />
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-x-4 gap-y-1 text-xs text-surface-600 dark:text-surface-300">
+          <span className="inline-flex items-center gap-1.5">
+            <CalendarPlus size={12} className="text-primary-600 dark:text-primary-400" />
+            <b className="text-surface-800 dark:text-surface-100">Клик по дню</b> — создать задачу
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <MousePointerClick size={12} className="text-primary-600 dark:text-primary-400" />
+            <b className="text-surface-800 dark:text-surface-100">Клик по задаче</b> — подробности
+          </span>
+          <span className="text-surface-500 dark:text-surface-400">
+            Цвет полосы = статус · длина = срок выполнения
+          </span>
+        </div>
+      </div>
+
       <div className="card p-0 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="min-w-[640px]">
         <div className="grid grid-cols-7 border-b border-surface-100 dark:border-surface-700">
@@ -176,51 +203,59 @@ export default function CalendarPage() {
                   canCreate && 'cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700/30',
                   today && 'bg-primary-50/30 dark:bg-primary-900/10')}>
                 <div className="flex items-center justify-between mb-1">
-                  <span className={clsx('text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full', today ? 'bg-primary-600 text-white' : 'text-surface-500 dark:text-surface-400')}>{format(day, 'd')}</span>
-                  {canCreate && <Plus size={14} className="text-surface-300 dark:text-surface-600 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                  <span className={clsx(
+                    'text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full',
+                    today
+                      ? 'bg-primary-600 text-white shadow-sm ring-2 ring-primary-200 dark:ring-primary-900'
+                      : 'text-surface-600 dark:text-surface-300',
+                  )}>{format(day, 'd')}</span>
+                  {canCreate && (
+                    <span
+                      className="flex items-center gap-0.5 text-[10px] text-primary-600 dark:text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity font-medium"
+                      title="Кликните, чтобы создать задачу"
+                    >
+                      <Plus size={12} /> задача
+                    </span>
+                  )}
                 </div>
                 <div className="space-y-0.5">
                   {/* Spanning task bars — click opens slide panel */}
                   {spans.slice(0, 3).map(({ event: e, isStart, isEnd, isStartOfWeek, isEndOfWeek }) => {
-                    const showLabel = isStart || isStartOfWeek
                     const roundL = isStart || isStartOfWeek
                     const roundR = isEnd || isEndOfWeek
                     const initials = e.assigneeName ? e.assigneeName.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase() : ''
                     const bgColor = TASK_STATUS_COLORS[e.status] || 'bg-blue-400 dark:bg-blue-500'
+                    const statusLabel = TASK_STATUS_LABELS[e.status] || ''
+                    const tooltip = `${e.title}${e.assigneeName ? ` · ${e.assigneeName}` : ''}${statusLabel ? ` · ${statusLabel}` : ''}`
                     return (
                       <button
                         key={e.id}
                         type="button"
                         onClick={ev => handleTaskClick(ev, e.id)}
-                        title={e.title}
+                        title={tooltip}
                         className={clsx(
-                          'flex items-center h-5 text-xs text-white overflow-hidden w-full text-left',
+                          'flex items-center gap-1 h-[22px] text-xs text-white overflow-hidden w-full text-left',
                           bgColor,
-                          roundL ? 'rounded-l pl-1.5' : '-ml-1.5 pl-0',
-                          roundR ? 'rounded-r pr-1' : '-mr-1.5 pr-0',
-                          !roundL && !roundR && 'px-0',
+                          roundL ? 'rounded-l pl-1.5' : '-ml-1.5 pl-1',
+                          roundR ? 'rounded-r pr-1.5' : '-mr-1.5 pr-0',
                           'hover:brightness-110 transition-all cursor-pointer',
                         )}
                       >
-                        {showLabel && (
-                          <>
-                            {initials && (
-                              <span className="w-3.5 h-3.5 rounded-full bg-white/30 flex items-center justify-center text-[7px] font-bold shrink-0 mr-0.5">
-                                {initials}
-                              </span>
-                            )}
-                            <span className="truncate text-[10px] font-medium">{e.title}</span>
-                          </>
+                        {roundL && initials && (
+                          <span className="w-[18px] h-[18px] rounded-full bg-white/30 flex items-center justify-center text-[9px] font-bold shrink-0">
+                            {initials}
+                          </span>
                         )}
+                        <span className="truncate text-[11px] font-medium flex-1">{e.title}</span>
                       </button>
                     )
                   })}
                   {/* Single-day events (project start/end) */}
                   {nonSpanEvents.slice(0, 2).map((e: any) => (
-                    <div key={e.id} className="flex items-center gap-0.5">
+                    <div key={e.id} className="flex items-center gap-0.5" title={e.title}>
                       <div
                         className={clsx(
-                          'flex-1 text-xs px-1.5 py-0.5 rounded truncate',
+                          'flex-1 text-[11px] px-1.5 py-0.5 rounded truncate font-medium',
                           TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700',
                         )}
                       >
@@ -229,8 +264,11 @@ export default function CalendarPage() {
                     </div>
                   ))}
                   {(spans.length + nonSpanEvents.length) > 3 && (
-                    <div className="text-xs text-surface-400 dark:text-surface-500 px-1.5">
-                      +{spans.length + nonSpanEvents.length - 3}
+                    <div
+                      className="text-[11px] font-medium text-surface-500 dark:text-surface-400 px-1.5"
+                      title={`Ещё ${spans.length + nonSpanEvents.length - 3} событий в этот день`}
+                    >
+                      +{spans.length + nonSpanEvents.length - 3} ещё
                     </div>
                   )}
                 </div>
@@ -241,16 +279,24 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      <div className="card p-3">
-        <div className="flex flex-wrap gap-x-5 gap-y-2">
-          <span className="text-xs font-semibold text-surface-500 dark:text-surface-400">Задачи:</span>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-slate-400" /><span className="text-xs text-surface-500 dark:text-surface-400">Новая</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-blue-500" /><span className="text-xs text-surface-500 dark:text-surface-400">В работе</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-amber-500" /><span className="text-xs text-surface-500 dark:text-surface-400">На проверке</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-emerald-500" /><span className="text-xs text-surface-500 dark:text-surface-400">Готово</span></div>
-          <span className="text-xs font-semibold text-surface-500 dark:text-surface-400 ml-2">Проект:</span>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-green-200 dark:bg-green-800" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.projectStart')}</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-sm bg-red-200 dark:bg-red-800" /><span className="text-xs text-surface-500 dark:text-surface-400">{t('calendar.projectEnd')}</span></div>
+      <div className="card p-4 space-y-3">
+        <div>
+          <p className="text-xs font-semibold text-surface-700 dark:text-surface-200 mb-2">Статусы задач (цвет полосы)</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            <LegendItem color="bg-slate-400" label="Новая" />
+            <LegendItem color="bg-blue-500" label="В работе" />
+            <LegendItem color="bg-amber-500" label="На проверке" />
+            <LegendItem color="bg-emerald-500" label="Готово" />
+            <LegendItem color="bg-orange-500" label="Возвращена" />
+            <LegendItem color="bg-red-400" label="Отменена" />
+          </div>
+        </div>
+        <div className="pt-3 border-t border-surface-100 dark:border-surface-700">
+          <p className="text-xs font-semibold text-surface-700 dark:text-surface-200 mb-2">События проектов</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            <LegendItem colorClass="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" label={t('calendar.projectStart')} textBadge />
+            <LegendItem colorClass="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" label={t('calendar.projectEnd')} textBadge />
+          </div>
         </div>
       </div>
 
@@ -283,6 +329,24 @@ export default function CalendarPage() {
         taskId={slidePanelTaskId}
         onClose={() => setSlidePanelTaskId(null)}
       />
+    </div>
+  )
+}
+
+function LegendItem({
+  color, colorClass, label, textBadge,
+}: { color?: string; colorClass?: string; label: string; textBadge?: boolean }) {
+  if (textBadge) {
+    return (
+      <span className={clsx('inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded', colorClass)}>
+        {label}
+      </span>
+    )
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className={clsx('w-4 h-3 rounded-sm', color)} />
+      <span className="text-xs text-surface-600 dark:text-surface-300">{label}</span>
     </div>
   )
 }
