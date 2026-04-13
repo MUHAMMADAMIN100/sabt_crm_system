@@ -25,15 +25,13 @@ export class ProjectsService {
     private gateway: AppGateway,
   ) {}
 
-  /** Remove payment fields (paidAmount, salesManager) from project(s) for non-founder users.
-   *  Budget stays — it's part of project setup visible to managers. */
+  /** Remove actual money-paid field (paidAmount) from project(s) for non-founder users.
+   *  Budget, salesManager and other project-management fields stay visible. */
   stripFinance<T extends Project | Project[]>(data: T, role?: string): T {
     if (role === 'founder') return data;
     const strip = (p: any) => {
       if (!p) return p;
       delete p.paidAmount;
-      delete p.salesManagerId;
-      delete p.salesManager;
       return p;
     };
     return Array.isArray(data) ? (data.map(strip) as T) : (strip(data) as T);
@@ -168,10 +166,17 @@ export class ProjectsService {
     if (!canEdit) {
       throw new ForbiddenException('Not allowed');
     }
-    // Only founder can change payment fields (paidAmount + salesManager).
-    // Budget is part of the project setup — admin/PM may edit it.
-    if (('paidAmount' in dto || 'salesManagerId' in dto) && user.role !== 'founder') {
-      throw new ForbiddenException('Только основатель может изменять оплату и менеджера продаж');
+    // Only founder can change paidAmount (actual money paid).
+    // Other fields (budget, salesManager assignment, project manager) are
+    // project-management concerns — admin/PM can edit.
+    // If a non-founder submits paidAmount unchanged (form re-submit), silently
+    // drop it instead of erroring. Reject only real changes.
+    if ('paidAmount' in dto && user.role !== 'founder') {
+      const sameValue = Number(dto.paidAmount ?? 0) === Number(project.paidAmount ?? 0);
+      if (!sameValue) {
+        throw new ForbiddenException('Только основатель может изменять сумму оплаты');
+      }
+      delete (dto as any).paidAmount;
     }
 
     const oldMemberIds = project.members?.map(m => m.id) || [];
