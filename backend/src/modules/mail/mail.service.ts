@@ -295,6 +295,68 @@ export class MailService {
     }
   }
 
+  /** Overdue task notification — reused for assignee / manager / founder */
+  async sendOverdueTask(
+    to: string,
+    recipientName: string,
+    taskTitle: string,
+    taskId: string,
+    projectName: string,
+    deadline: string,
+    daysOverdue: number,
+    role: 'assignee' | 'manager' | 'founder',
+    assigneeName?: string,
+  ) {
+    const headline = role === 'founder'
+      ? '⚠️ Серьёзная просрочка'
+      : role === 'manager'
+        ? '🔴 Просрочка в команде'
+        : '🔴 Задача просрочена';
+
+    const intro = role === 'assignee'
+      ? `Ваша задача просрочена на <strong style="color:#ef4444;">${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}</strong>. Пожалуйста, закройте её как можно скорее.`
+      : role === 'manager'
+        ? `Задача сотрудника <strong>${assigneeName || ''}</strong> не закрыта уже <strong style="color:#ef4444;">${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}</strong> после дедлайна.`
+        : `Серьёзная просрочка в вашей компании: задача не закрыта <strong style="color:#ef4444;">${daysOverdue} дней</strong>. Требуется внимание.`;
+
+    const assigneeRow = (role !== 'assignee' && assigneeName)
+      ? this.row('👤 Исполнитель:', assigneeName)
+      : '';
+
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header(headline)}
+        <div style="padding:28px 36px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 22px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>${intro}
+          </p>
+          <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:8px;padding:16px 22px;margin-bottom:22px;">
+            <table style="width:100%;border-collapse:collapse;">
+              ${this.row('📝 Задача:', taskTitle)}
+              ${this.row('📁 Проект:', projectName)}
+              ${assigneeRow}
+              ${this.row('📅 Дедлайн:', deadline)}
+              ${this.row('⏱ Просрочено:', `${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}`)}
+            </table>
+          </div>
+          <a href="${this.appUrl}/tasks/${taskId}" style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
+            Открыть задачу →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+    const subject = role === 'founder'
+      ? `⚠️ Серьёзная просрочка (${daysOverdue} дн.): ${taskTitle}`
+      : role === 'manager'
+        ? `🔴 Просрочка у ${assigneeName || 'сотрудника'}: ${taskTitle}`
+        : `🔴 Задача просрочена: ${taskTitle}`;
+    try {
+      await this.sendViaBrevo(to, recipientName, subject, html);
+    } catch (err) {
+      this.logger.error(`Failed to send overdue mail to ${to}: ${err.message}`);
+    }
+  }
+
   /** Notify user they're now the project manager */
   async sendManagerAssigned(
     to: string,

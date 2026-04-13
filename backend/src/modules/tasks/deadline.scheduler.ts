@@ -5,6 +5,7 @@ import { Repository, Between, LessThan, Not, In } from 'typeorm'
 import { Task, TaskStatus } from '../tasks/task.entity'
 import { Employee } from '../employees/employee.entity'
 import { Project, ProjectStatus } from '../projects/project.entity'
+import { User, UserRole } from '../users/user.entity'
 import { NotificationsService } from '../notifications/notifications.service'
 import { NotificationType } from '../notifications/notification.entity'
 import { MailService } from '../mail/mail.service'
@@ -20,6 +21,7 @@ export class DeadlineScheduler {
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     @InjectRepository(ActivityLog) private activityLogRepo: Repository<ActivityLog>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
+    @InjectRepository(User) private userRepo: Repository<User>,
     private notificationsService: NotificationsService,
     private mailService: MailService,
     private telegramService: TelegramService,
@@ -94,43 +96,130 @@ export class DeadlineScheduler {
   async notifyOverdueTasks() {
     this.logger.log('Checking overdue tasks...')
 
+    const now = new Date()
     const overdue = await this.taskRepo.find({
       where: {
-        deadline: LessThan(new Date()),
+        deadline: LessThan(now),
         status: Not(In([TaskStatus.DONE, TaskStatus.CANCELLED])),
       },
-      relations: ['assignee', 'project'],
+      relations: ['assignee', 'project', 'project.manager'],
     })
 
+    // Lookup founder once (for escalation). Notify all founders if there are many.
+    const founders = await this.userRepo.find({ where: { role: UserRole.FOUNDER, isActive: true } })
+
     let sent = 0
+    let escalated = 0
+
     for (const task of overdue) {
       if (!task.assigneeId) continue
 
-      // Notify assignee
+      const daysOverdue = Math.max(1, Math.floor((now.getTime() - new Date(task.deadline).getTime()) / 86400000))
+      const deadlineStr = new Date(task.deadline).toLocaleDateString('ru-RU')
+      const taskLink = `/tasks/${task.id}`
+      const projectName = task.project?.name || '—'
+      const assigneeName = task.assignee?.name || 'без исполнителя'
+
+      // Skip email/TG spam for very long overdue — keep only in-app after 14 days
+      const sendExternal = daysOverdue <= 14
+
+      // ── Notify ASSIGNEE ─────────────────────────────────────────
       await this.notificationsService.create({
         userId: task.assigneeId,
         type: NotificationType.TASK_OVERDUE,
         title: '🔴 Задача просрочена',
-        message: `"${task.title}" — дедлайн пропущен`,
-        link: `/tasks/${task.id}`,
+        message: `"${task.title}" — дедлайн пропущен (${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'})`,
+        link: taskLink,
+        data: { daysOverdue, taskId: task.id },
       })
+      if (sendExternal && task.assignee?.email) {
+        await this.mailService.sendOverdueTask(
+          task.assignee.email, task.assignee.name,
+          task.title, task.id, projectName, deadlineStr, daysOverdue, 'assignee',
+        )
+      }
+      if (sendExternal) {
+        await this.telegramService.sendToUser(
+          task.assigneeId,
+          `🔴 <b>Задача просрочена</b>\n\n` +
+          `📝 ${task.title}\n` +
+          `📁 Проект: ${projectName}\n` +
+          `📅 Дедлайн был: ${deadlineStr}\n` +
+          `⏱ Просрочено: <b>${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}</b>\n\n` +
+          `👉 ${this.telegramService.appUrl}${taskLink}`,
+        )
+      }
 
-      // Notify project manager if project has one
-      if (task.project?.managerId && task.project.managerId !== task.assigneeId) {
+      // ── Notify PM ───────────────────────────────────────────────
+      const pmId = task.project?.managerId
+      if (pmId && pmId !== task.assigneeId) {
         await this.notificationsService.create({
-          userId: task.project.managerId,
+          userId: pmId,
           type: NotificationType.TASK_OVERDUE,
           title: '🔴 Просрочка в команде',
-          message: `Задача "${task.title}"${task.assignee ? ` (${task.assignee.name})` : ''} просрочена`,
-          link: `/tasks/${task.id}`,
-          data: { assigneeName: task.assignee?.name },
+          message: `${assigneeName} — "${task.title}" просрочено ${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}`,
+          link: taskLink,
+          data: { assigneeName, daysOverdue, taskId: task.id },
         })
+        const pm = task.project?.manager
+        if (sendExternal && pm?.email) {
+          await this.mailService.sendOverdueTask(
+            pm.email, pm.name,
+            task.title, task.id, projectName, deadlineStr, daysOverdue, 'manager',
+            assigneeName,
+          )
+        }
+        if (sendExternal) {
+          await this.telegramService.sendToUser(
+            pmId,
+            `🔴 <b>Просрочка в команде</b>\n\n` +
+            `📝 ${task.title}\n` +
+            `👤 Исполнитель: ${assigneeName}\n` +
+            `📁 Проект: ${projectName}\n` +
+            `📅 Дедлайн был: ${deadlineStr}\n` +
+            `⏱ Просрочено: <b>${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}</b>\n\n` +
+            `👉 ${this.telegramService.appUrl}${taskLink}`,
+          )
+        }
+      }
+
+      // ── Escalate to FOUNDER after 3 days overdue ────────────────
+      if (daysOverdue >= 3 && daysOverdue <= 14) {
+        for (const founder of founders) {
+          if (founder.id === task.assigneeId || founder.id === pmId) continue
+          await this.notificationsService.create({
+            userId: founder.id,
+            type: NotificationType.TASK_OVERDUE,
+            title: '⚠️ Серьёзная просрочка',
+            message: `${assigneeName} — "${task.title}" (проект "${projectName}") просрочено ${daysOverdue} дн.`,
+            link: taskLink,
+            data: { assigneeName, projectName, daysOverdue, taskId: task.id, escalation: true },
+          })
+          if (founder.email) {
+            await this.mailService.sendOverdueTask(
+              founder.email, founder.name,
+              task.title, task.id, projectName, deadlineStr, daysOverdue, 'founder',
+              assigneeName,
+            )
+          }
+          await this.telegramService.sendToUser(
+            founder.id,
+            `⚠️ <b>Серьёзная просрочка</b>\n\n` +
+            `📝 ${task.title}\n` +
+            `👤 Исполнитель: ${assigneeName}\n` +
+            `📁 Проект: ${projectName}\n` +
+            `📅 Дедлайн был: ${deadlineStr}\n` +
+            `⏱ Просрочено: <b>${daysOverdue} дней</b>\n\n` +
+            `👉 ${this.telegramService.appUrl}${taskLink}`,
+          )
+        }
+        escalated++
       }
 
       sent++
     }
 
-    this.logger.log(`Sent ${sent} overdue notifications`)
+    this.logger.log(`Sent ${sent} overdue notifications, ${escalated} escalated to founder`)
   }
 
   // ── 3. Inactivity check (every 2 hours) ───────────────────────────────────
