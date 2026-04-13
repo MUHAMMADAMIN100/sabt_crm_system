@@ -410,6 +410,111 @@ export class AnalyticsService {
     };
   }
 
+  /** Sales-manager dashboard data: every project with money + collections context */
+  async getSalesStats() {
+    const projects = await this.projectRepo.find({
+      relations: ['manager', 'salesManager'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const now = new Date();
+    const twoWeeks = new Date(now.getTime() + 14 * 86400000);
+
+    let totalBudget = 0;
+    let totalPaid = 0;
+    let totalOutstanding = 0;
+    let outstandingCount = 0;
+    let overdueOutstanding = 0;
+    let fullyPaidCount = 0;
+    let upcomingDeadlineOutstanding = 0;
+
+    const projectList = projects.map(p => {
+      const budget = Number(p.budget || 0);
+      const paid = Number(p.paidAmount || 0);
+      const remaining = Math.max(0, budget - paid);
+      const endDate = p.endDate ? new Date(p.endDate) : null;
+      const isOverdue = !!endDate && endDate < now && remaining > 0;
+      const isUpcoming = !!endDate && endDate >= now && endDate <= twoWeeks && remaining > 0;
+
+      totalBudget += budget;
+      totalPaid += paid;
+      totalOutstanding += remaining;
+      if (remaining > 0) outstandingCount++;
+      if (isOverdue) overdueOutstanding += remaining;
+      if (budget > 0 && remaining === 0) fullyPaidCount++;
+      if (isUpcoming) upcomingDeadlineOutstanding += remaining;
+
+      return {
+        id: p.id,
+        name: p.name,
+        projectType: p.projectType,
+        status: p.status,
+        isArchived: p.isArchived,
+        budget,
+        paidAmount: paid,
+        remaining,
+        endDate: p.endDate,
+        startDate: p.startDate,
+        managerName: p.manager?.name || null,
+        salesManagerName: p.salesManager?.name || null,
+        salesManagerId: p.salesManagerId || null,
+        clientInfo: p.clientInfo || null,
+        isOverdue,
+        isUpcoming,
+        paidPct: budget > 0 ? Math.round((paid / budget) * 100) : 0,
+        createdAt: p.createdAt,
+      };
+    });
+
+    // Revenue by month (last 6 months) — from project_payments
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+    sixMonthsAgo.setDate(1);
+    sixMonthsAgo.setHours(0, 0, 0, 0);
+
+    const monthlyRows = await this.paymentRepo
+      .createQueryBuilder('pp')
+      .select(`TO_CHAR(pp."paidAt", 'YYYY-MM')`, 'month')
+      .addSelect('SUM(pp.amount)', 'total')
+      .addSelect('COUNT(*)', 'count')
+      .where('pp."paidAt" >= :from', { from: sixMonthsAgo })
+      .groupBy('month')
+      .orderBy('month', 'ASC')
+      .getRawMany();
+
+    const monthlyRevenue = monthlyRows.map(r => ({
+      month: r.month as string,
+      total: Number(r.total),
+      count: Number(r.count),
+    }));
+
+    // By project type
+    const byType: Record<string, { count: number; budget: number; paid: number; outstanding: number }> = {};
+    for (const p of projectList) {
+      const t = p.projectType || '—';
+      byType[t] ||= { count: 0, budget: 0, paid: 0, outstanding: 0 };
+      byType[t].count++;
+      byType[t].budget += p.budget;
+      byType[t].paid += p.paidAmount;
+      byType[t].outstanding += p.remaining;
+    }
+    const byTypeList = Object.entries(byType).map(([type, v]) => ({ type, ...v }));
+
+    return {
+      totalBudget,
+      totalPaid,
+      totalOutstanding,
+      outstandingCount,
+      overdueOutstanding,
+      upcomingDeadlineOutstanding,
+      fullyPaidCount,
+      projectCount: projects.length,
+      projects: projectList,
+      monthlyRevenue,
+      byType: byTypeList,
+    };
+  }
+
   async getAvgCompletionTime(): Promise<{ avgHours: number; avgDays: number; totalDone: number }> {
     const row = await this.taskRepo.manager.query(`
       SELECT

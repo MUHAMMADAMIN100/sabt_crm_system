@@ -13,6 +13,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 const FounderDashboard = lazy(() => import('./components/FounderDashboard'))
 const PMDashboard = lazy(() => import('./components/PMDashboard'))
 const SMMDashboard = lazy(() => import('./components/SMMDashboard'))
+const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
 
 const PIE_COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7']
 
@@ -127,7 +128,8 @@ export default function DashboardPage() {
   const role = user?.role || 'employee'
   const isFounderView = ['admin', 'founder'].includes(role)
   const isPMView = role === 'project_manager'
-  const isWorkerView = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager', 'developer', 'employee'].includes(role)
+  const isSalesView = role === 'sales_manager'
+  const isWorkerView = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'developer', 'employee'].includes(role)
   const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(role)
   const isAdmin = ['admin', 'founder'].includes(role)
   const { t } = useTranslation()
@@ -160,6 +162,22 @@ export default function DashboardPage() {
         </div>
         <Suspense fallback={<PageLoader />}>
           <PMDashboard />
+        </Suspense>
+      </div>
+    )
+  }
+
+  if (isSalesView) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="page-title">Привет, {user?.name?.split(' ')[0] || ''} 👋</h1>
+          <p className="text-surface-500 dark:text-surface-400 mt-0.5">
+            Менеджер по продажам · {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
+          </p>
+        </div>
+        <Suspense fallback={<PageLoader />}>
+          <SalesDashboard />
         </Suspense>
       </div>
     )

@@ -136,6 +136,7 @@ export const analyticsApi = {
   avgCompletion: () => api.get('/analytics/avg-completion').then(r => r.data),
   payroll: (params?: { from?: string; to?: string }) =>
     api.get('/analytics/payroll', { params }).then(r => r.data),
+  sales: () => api.get('/analytics/sales').then(r => r.data),
   updateEmployeeSalary: (employeeId: string, salary: number) => api.patch(`/employees/${employeeId}`, { salary }).then(r => r.data),
 }
 

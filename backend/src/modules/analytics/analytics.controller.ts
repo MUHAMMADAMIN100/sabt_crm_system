@@ -105,6 +105,10 @@ export class AnalyticsController {
   @CacheTTL(300000)
   getAvgCompletionTime() { return this.service.getAvgCompletionTime(); }
 
+  @Get('sales')
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN, UserRole.SALES_MANAGER)
+  getSalesStats() { return this.service.getSalesStats(); }
+
   @Get('payroll')
   @Roles(UserRole.FOUNDER)
   // No @CacheTTL — period queries differ per request
