@@ -273,8 +273,8 @@ export default function EmployeesPage() {
           ))}
         </div>
       ) : (
-        <div className="card p-0 overflow-hidden">
-          <table className="w-full">
+        <div className="card p-0 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <table className="w-full min-w-[640px]">
             <thead>
               <tr className="border-b border-surface-100 dark:border-surface-700">
                 <th className="text-left text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3">{t('employees.fullName')}</th>
@@ -282,7 +282,7 @@ export default function EmployeesPage() {
                 <th className="text-left text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3 hidden lg:table-cell">{t('employees.department')}</th>
                 <th className="text-left text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3 hidden lg:table-cell">Telegram</th>
                 <th className="text-left text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3">{t('common.status')}</th>
-                {isAdmin && <th className="text-right text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3">{t('common.actions')}</th>}
+                {isAdmin && <th className="text-right text-xs font-semibold text-surface-500 dark:text-surface-400 px-4 py-3 whitespace-nowrap">{t('common.actions')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -312,7 +312,7 @@ export default function EmployeesPage() {
                     )}
                   </td>
                   {isAdmin && (
-                    <td className="px-4 py-3" onClick={e=>e.stopPropagation()}>
+                    <td className="px-4 py-3 whitespace-nowrap" onClick={e=>e.stopPropagation()}>
                       <div className="flex gap-1 justify-end">
                         <button onClick={() => toggleSubAdmin.mutate(emp.id)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg" title="Помощник админа">
                           <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600' : 'text-surface-400'} />

@@ -301,17 +301,18 @@ export function StatCard({ title, value, icon: Icon, color, sub }: {
   title: string; value: string | number; icon: any; color: string; sub?: string
 }) {
   return (
-    <div className="card flex items-center gap-4 hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200">
+    <div className="card flex items-center gap-2.5 sm:gap-4 hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200 min-w-0">
       <div className={clsx(
-        'w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-110',
+        'w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-110',
         color,
       )}>
-        <Icon size={22} className="text-white" />
+        <Icon size={18} className="text-white sm:hidden" />
+        <Icon size={22} className="text-white hidden sm:block" />
       </div>
-      <div className="animate-count-up">
-        <p className="text-sm text-surface-500 dark:text-surface-400">{title}</p>
-        <p className="text-2xl font-bold text-surface-900 dark:text-surface-100 tabular-nums">{value}</p>
-        {sub && <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5">{sub}</p>}
+      <div className="animate-count-up min-w-0 flex-1">
+        <p className="text-[11px] sm:text-sm leading-tight text-surface-500 dark:text-surface-400 break-words">{title}</p>
+        <p className="text-lg sm:text-2xl font-bold text-surface-900 dark:text-surface-100 tabular-nums leading-tight">{value}</p>
+        {sub && <p className="text-[10px] sm:text-xs leading-tight text-surface-400 dark:text-surface-500 mt-0.5 break-words">{sub}</p>}
       </div>
     </div>
   )
