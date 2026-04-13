@@ -51,26 +51,19 @@ export default function TaskSlidePanel({ taskId, onClose }: Props) {
     onError: () => toast.error('Ошибка обновления'),
   })
 
-  const isOpen = !!taskId
+  if (!taskId) return null
 
   return (
     <>
       {/* Backdrop */}
       <div
-        className={clsx(
-          'fixed inset-0 bg-black/40 z-40 transition-opacity duration-300',
-          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
-        )}
+        className="fixed inset-0 bg-black/40 z-40 animate-fade-in"
         onClick={onClose}
       />
 
       {/* Slide panel */}
       <div
-        className={clsx(
-          'fixed top-0 right-0 h-full w-full max-w-md bg-white dark:bg-surface-900 shadow-2xl z-50',
-          'flex flex-col transition-transform duration-300 ease-out',
-          isOpen ? 'translate-x-0' : 'translate-x-full',
-        )}
+        className="fixed top-0 right-0 h-full w-full max-w-md bg-white dark:bg-surface-900 shadow-2xl z-50 flex flex-col animate-slide-in-right"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-surface-100 dark:border-surface-700 shrink-0">
