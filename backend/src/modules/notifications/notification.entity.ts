@@ -19,6 +19,9 @@ export enum NotificationType {
   INACTIVITY_24H       = 'inactivity_24h',
   PAYMENT_REMINDER     = 'payment_reminder',
   DAILY_UNCOMPLETED    = 'daily_uncompleted',
+  MANAGER_ASSIGNED     = 'manager_assigned',
+  MANAGER_REMOVED      = 'manager_removed',
+  MEMBER_REMOVED       = 'member_removed',
 }
 
 @Entity('notifications')

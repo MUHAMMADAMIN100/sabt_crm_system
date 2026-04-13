@@ -295,6 +295,98 @@ export class MailService {
     }
   }
 
+  /** Notify user they're now the project manager */
+  async sendManagerAssigned(
+    to: string,
+    recipientName: string,
+    projectName: string,
+    projectId: string,
+    description?: string,
+    deadline?: string,
+    actorName?: string,
+  ) {
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('👑 Вы — менеджер проекта')}
+        <div style="padding:28px 36px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 16px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            ${actorName ? `<strong>${actorName}</strong> назначил${actorName.endsWith('а') ? 'а' : ''} вас` : 'Вас назначили'} менеджером проекта.
+          </p>
+          <div style="background:#f1f5f9;border-radius:10px;padding:18px 22px;margin-bottom:22px;">
+            <table style="width:100%;border-collapse:collapse;">
+              ${this.row('📁 Проект:', projectName)}
+              ${description ? this.row('📝 Описание:', description) : ''}
+              ${deadline ? this.row('📅 Дедлайн:', deadline) : ''}
+            </table>
+          </div>
+          <a href="${this.appUrl}/projects/${projectId}" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+            Открыть проект →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+    try {
+      await this.sendViaBrevo(to, recipientName, `👑 Вы теперь менеджер проекта «${projectName}»`, html);
+    } catch (err) {
+      this.logger.error(`Failed to send manager-assigned to ${to}: ${err.message}`);
+    }
+  }
+
+  /** Notify user they are no longer the project manager */
+  async sendManagerRemoved(
+    to: string,
+    recipientName: string,
+    projectName: string,
+    projectId: string,
+    actorName?: string,
+  ) {
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('📋 Смена менеджера проекта')}
+        <div style="padding:28px 36px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 16px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Вы больше не являетесь менеджером проекта <strong>${projectName}</strong>${actorName ? ` — изменение сделал ${actorName}` : ''}.
+          </p>
+          <a href="${this.appUrl}/projects/${projectId}" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#64748b,#475569);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+            Открыть проект →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+    try {
+      await this.sendViaBrevo(to, recipientName, `📋 Вы больше не менеджер проекта «${projectName}»`, html);
+    } catch (err) {
+      this.logger.error(`Failed to send manager-removed to ${to}: ${err.message}`);
+    }
+  }
+
+  /** Notify user they were removed from a project */
+  async sendMemberRemoved(
+    to: string,
+    recipientName: string,
+    projectName: string,
+    actorName?: string,
+  ) {
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('👥 Вас убрали из проекта')}
+        <div style="padding:28px 36px;">
+          <p style="color:#334155;font-size:15px;margin:0;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Вас больше нет в составе проекта <strong>${projectName}</strong>${actorName ? ` — изменение сделал ${actorName}` : ''}.
+          </p>
+        </div>
+        ${this.footer()}
+      </div>`;
+    try {
+      await this.sendViaBrevo(to, recipientName, `👥 Вас убрали из проекта «${projectName}»`, html);
+    } catch (err) {
+      this.logger.error(`Failed to send member-removed to ${to}: ${err.message}`);
+    }
+  }
+
   /** Daily end-of-day summary for PM: tasks not completed today */
   async sendDailyUncompletedSummary(
     to: string,

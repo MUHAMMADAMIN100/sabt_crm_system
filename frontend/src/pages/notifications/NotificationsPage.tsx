@@ -3,7 +3,7 @@ import { notificationsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState } from '@/components/ui'
-import { Bell, CheckCheck, Trash2, AlertTriangle, Clock, TrendingDown, UserX, DollarSign, ClipboardList } from 'lucide-react'
+import { Bell, CheckCheck, Trash2, AlertTriangle, Clock, TrendingDown, UserX, DollarSign, ClipboardList, Crown, UserPlus, UserMinus } from 'lucide-react'
 import { format } from 'date-fns'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
@@ -29,6 +29,10 @@ const NOTIFICATION_ICONS: Record<string, any> = {
   payment_reminder: DollarSign,
   project_overdue: AlertTriangle,
   daily_uncompleted: ClipboardList,
+  manager_assigned: Crown,
+  manager_removed: UserX,
+  project_assigned: UserPlus,
+  member_removed: UserMinus,
   default: Bell,
 }
 
@@ -41,6 +45,10 @@ const NOTIFICATION_COLORS: Record<string, string> = {
   payment_reminder: 'text-red-600 bg-red-50 dark:bg-red-900/20',
   project_overdue: 'text-red-600 bg-red-50 dark:bg-red-900/20',
   daily_uncompleted: 'text-red-600 bg-red-50 dark:bg-red-900/20',
+  manager_assigned: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20',
+  manager_removed: 'text-gray-500 bg-gray-100 dark:bg-gray-800',
+  project_assigned: 'text-primary-600 bg-primary-50 dark:bg-primary-900/20',
+  member_removed: 'text-gray-500 bg-gray-100 dark:bg-gray-800',
   default: 'text-primary-600 bg-primary-50 dark:bg-primary-900/20',
 }
 
