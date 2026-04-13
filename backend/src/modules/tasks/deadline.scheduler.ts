@@ -91,8 +91,8 @@ export class DeadlineScheduler {
     this.logger.log(`Sent ${sent} deadline reminders`)
   }
 
-  // ── 2. Overdue tasks (daily at 00:05) ─────────────────────────────────────
-  @Cron('5 0 * * *')
+  // ── 2. Overdue tasks (daily at 20:00 Dushanbe) ────────────────────────────
+  @Cron('0 20 * * *', { timeZone: 'Asia/Dushanbe' })
   async notifyOverdueTasks() {
     this.logger.log('Checking overdue tasks...')
 
