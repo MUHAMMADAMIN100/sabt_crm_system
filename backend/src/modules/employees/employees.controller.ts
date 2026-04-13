@@ -19,8 +19,9 @@ export class EmployeesController {
     @Query('search') search?: string,
     @Query('department') department?: string,
     @Query('status') status?: EmployeeStatus,
+    @Request() req?,
   ) {
-    return this.service.findAll(search, department, status);
+    return this.service.findAll(search, department, status, req?.user?.role);
   }
 
   @Get('departments')
@@ -30,7 +31,9 @@ export class EmployeesController {
   getStats() { return this.service.getStats(); }
 
   @Get(':id')
-  findOne(@Param('id') id: string) { return this.service.findOne(id); }
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.service.findOne(id, req.user?.role);
+  }
 
   @Post()
   @Roles(UserRole.ADMIN, UserRole.FOUNDER)

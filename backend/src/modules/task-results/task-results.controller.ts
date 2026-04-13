@@ -23,11 +23,11 @@ export class TaskResultsController {
     @Body() dto: CreateTaskResultDto,
     @Request() req,
   ) {
-    return this.service.create(taskId, req.user.id, dto);
+    return this.service.create(taskId, req.user.id, req.user.role, dto);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req) {
-    return this.service.remove(id, req.user.id);
+    return this.service.remove(id, req.user.id, req.user.role);
   }
 }

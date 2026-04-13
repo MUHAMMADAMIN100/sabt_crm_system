@@ -2,9 +2,13 @@ import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nest
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FileAttachment } from './file.entity';
+import { Task } from '../tasks/task.entity';
+import { Project } from '../projects/project.entity';
 import * as fs from 'fs/promises';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
+
+const PM_ROLES = ['admin', 'founder', 'project_manager'];
 
 @Injectable()
 export class FilesService {
@@ -12,6 +16,8 @@ export class FilesService {
 
   constructor(
     @InjectRepository(FileAttachment) private repo: Repository<FileAttachment>,
+    @InjectRepository(Task) private taskRepo: Repository<Task>,
+    @InjectRepository(Project) private projectRepo: Repository<Project>,
     private activityLog: ActivityLogService,
   ) {}
 
@@ -23,7 +29,23 @@ export class FilesService {
     return this.repo.find({ where: { taskId }, relations: ['uploadedBy'], order: { createdAt: 'DESC' } });
   }
 
-  async upload(file: Express.Multer.File, userId: string, projectId?: string, taskId?: string) {
+  async upload(file: Express.Multer.File, userId: string, role: string, projectId?: string, taskId?: string) {
+    if (!PM_ROLES.includes(role)) {
+      if (taskId) {
+        const task = await this.taskRepo.findOne({ where: { id: taskId } });
+        if (!task) throw new NotFoundException('Task not found');
+        if (task.assigneeId !== userId && task.createdById !== userId) {
+          throw new ForbiddenException('Нельзя прикреплять файлы к чужой задаче');
+        }
+      } else if (projectId) {
+        const project = await this.projectRepo.findOne({ where: { id: projectId }, relations: ['members'] });
+        if (!project) throw new NotFoundException('Project not found');
+        const isMember = project.members?.some(m => m.id === userId);
+        if (!isMember && project.managerId !== userId) {
+          throw new ForbiddenException('Нельзя прикреплять файлы к проекту, в котором вы не участвуете');
+        }
+      }
+    }
     const attachment = this.repo.create({
       originalName: file.originalname,
       filename: file.filename,
@@ -51,7 +73,7 @@ export class FilesService {
   async remove(id: string, userId?: string, userRole?: string) {
     const file = await this.repo.findOne({ where: { id } });
     if (!file) throw new NotFoundException('File not found');
-    if (userId && file.uploadedById !== userId && userRole !== 'admin') {
+    if (userId && file.uploadedById !== userId && !['admin', 'founder'].includes(userRole || '')) {
       throw new ForbiddenException('Not allowed to delete this file');
     }
 

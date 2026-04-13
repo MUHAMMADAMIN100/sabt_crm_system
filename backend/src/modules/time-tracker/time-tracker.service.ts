@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TimeLog } from './time-log.entity';
 import { Task } from '../tasks/task.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
+
+const PM_ROLES = ['admin', 'founder', 'project_manager'];
 
 @Injectable()
 export class TimeTrackerService {
@@ -13,6 +15,15 @@ export class TimeTrackerService {
     @InjectRepository(Task) private taskRepo: Repository<Task>,
     private activityLog: ActivityLogService,
   ) {}
+
+  private async assertCanLogTo(taskId: string, userId: string, role: string) {
+    if (PM_ROLES.includes(role)) return;
+    const task = await this.taskRepo.findOne({ where: { id: taskId } });
+    if (!task) throw new NotFoundException('Task not found');
+    if (task.assigneeId !== userId) {
+      throw new ForbiddenException('Нельзя логировать время в чужую задачу');
+    }
+  }
 
   private async syncLoggedHours(taskId: string) {
     const result = await this.repo
@@ -42,7 +53,8 @@ export class TimeTrackerService {
     return qb.orderBy('tl.date', 'DESC').getMany();
   }
 
-  async startTimer(taskId: string, employeeId: string) {
+  async startTimer(taskId: string, employeeId: string, role: string) {
+    await this.assertCanLogTo(taskId, employeeId, role);
     // Stop any running timers
     await this.repo.update(
       { employeeId, isRunning: true },
@@ -98,7 +110,8 @@ export class TimeTrackerService {
     });
   }
 
-  async logTime(taskId: string, employeeId: string, timeSpent: number, date: string, description?: string) {
+  async logTime(taskId: string, employeeId: string, role: string, timeSpent: number, date: string, description?: string) {
+    await this.assertCanLogTo(taskId, employeeId, role);
     if (timeSpent <= 0) throw new BadRequestException('Time must be positive');
     const log = this.repo.create({ taskId, employeeId, timeSpent, date: new Date(date), description });
     const saved = await this.repo.save(log);
@@ -115,16 +128,20 @@ export class TimeTrackerService {
     return saved;
   }
 
-  async remove(id: string) {
+  async remove(id: string, userId: string, role: string) {
     const log = await this.repo.findOne({ where: { id } });
+    if (!log) throw new NotFoundException('Time log not found');
+    if (!PM_ROLES.includes(role) && log.employeeId !== userId) {
+      throw new ForbiddenException('Нельзя удалять чужие записи времени');
+    }
     await this.activityLog.log({
-      userId: log?.employeeId,
+      userId: log.employeeId,
       action: ActivityAction.TIME_DELETE,
       entity: 'task',
-      entityId: log?.taskId,
-      details: { timeLogId: id, timeSpent: log?.timeSpent },
+      entityId: log.taskId,
+      details: { timeLogId: id, timeSpent: log.timeSpent },
     });
-    const taskId = log?.taskId;
+    const taskId = log.taskId;
     await this.repo.delete(id);
     if (taskId) await this.syncLoggedHours(taskId);
     return { message: 'Time log deleted' };

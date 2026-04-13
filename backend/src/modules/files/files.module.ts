@@ -6,6 +6,8 @@ import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { BadRequestException } from '@nestjs/common';
 import { FileAttachment } from './file.entity';
+import { Task } from '../tasks/task.entity';
+import { Project } from '../projects/project.entity';
 import { FilesService } from './files.service';
 import { FilesController } from './files.controller';
 import * as fs from 'fs';
@@ -30,7 +32,7 @@ const ALLOWED_MIMETYPES = new Set([
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([FileAttachment]),
+    TypeOrmModule.forFeature([FileAttachment, Task, Project]),
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads/files',

@@ -33,7 +33,9 @@ export class ProjectsController {
   getStats() { return this.service.getStats(); }
 
   @Get(':id')
-  findOne(@Param('id') id: string) { return this.service.findOne(id); }
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.service.findOne(id, req.user?.role);
+  }
 
   @Post()
   @Roles(UserRole.ADMIN, UserRole.FOUNDER)

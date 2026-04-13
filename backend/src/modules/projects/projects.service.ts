@@ -25,6 +25,20 @@ export class ProjectsService {
     private gateway: AppGateway,
   ) {}
 
+  /** Remove financial fields (budget, paidAmount, salesManagerId) from project(s) for non-founder users */
+  stripFinance<T extends Project | Project[]>(data: T, role?: string): T {
+    if (role === 'founder') return data;
+    const strip = (p: any) => {
+      if (!p) return p;
+      delete p.budget;
+      delete p.paidAmount;
+      delete p.salesManagerId;
+      delete p.salesManager;
+      return p;
+    };
+    return Array.isArray(data) ? (data.map(strip) as T) : (strip(data) as T);
+  }
+
   async findAll(
     search?: string,
     status?: ProjectStatus,
@@ -71,16 +85,17 @@ export class ProjectsService {
     if (managerId) qb.andWhere('p.managerId = :managerId', { managerId });
     if (search) qb.andWhere('p.name ILIKE :search', { search: `%${search}%` });
 
-    return qb.orderBy('p.createdAt', 'DESC').getMany();
+    const projects = await qb.orderBy('p.createdAt', 'DESC').getMany();
+    return this.stripFinance(projects, requestUser?.role);
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, requestUserRole?: string) {
     const project = await this.repo.findOne({
       where: { id },
       relations: ['manager', 'members', 'tasks', 'tasks.assignee', 'files'],
     });
     if (!project) throw new NotFoundException('Project not found');
-    return project;
+    return requestUserRole ? this.stripFinance(project, requestUserRole) : project;
   }
 
   async create(dto: CreateProjectDto, userId: string) {
@@ -154,7 +169,7 @@ export class ProjectsService {
       throw new ForbiddenException('Not allowed');
     }
     // Only founder can change financial fields
-    if (('paidAmount' in dto || 'salesManagerId' in dto) && user.role !== 'founder') {
+    if (('budget' in dto || 'paidAmount' in dto || 'salesManagerId' in dto) && user.role !== 'founder') {
       throw new ForbiddenException('Только основатель может изменять финансовые данные проекта');
     }
 

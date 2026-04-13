@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from '@/i18n'
+import { useAuthStore } from '@/store/auth.store'
 
 interface TaskFormProps {
   onSubmit: (data: any) => void
@@ -23,6 +24,7 @@ export default function TaskForm({
 }: TaskFormProps) {
   const { register, handleSubmit, reset, control, formState: { errors } } = useForm()
   const { t } = useTranslation()
+  const authUser = useAuthStore(s => s.user)
 
   // Watch the selected projectId so we can filter assignees by project members
   const selectedProjectId = useWatch({ control, name: 'projectId' }) || fixedProjectId
@@ -95,7 +97,19 @@ export default function TaskForm({
             {errors.projectId && <p className="text-xs text-red-500 mt-1">{t('tasks.project')} обязательно</p>}
           </div>
         )}
-        {employees && (
+        {!isAdmin ? (
+          <div>
+            <label className="label">{t('tasks.assignee')} *</label>
+            <input
+              type="text"
+              value={authUser?.name || ''}
+              readOnly
+              className="input bg-surface-50 dark:bg-surface-800 cursor-not-allowed"
+              title="Сотрудники могут создавать задачи только для себя"
+            />
+            <input type="hidden" {...register('assigneeId')} value={currentUserId || ''} />
+          </div>
+        ) : employees && (
           <div>
             <label className="label">{t('tasks.assignee')} *</label>
             <select {...register('assigneeId', { required: true })} className="input" disabled={!selectedProjectId}>

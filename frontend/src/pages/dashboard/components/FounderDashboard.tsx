@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi, employeesApi } from '@/services/api.service'
 import { tasksApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 import { StatCard, PageLoader, StatusBadge, Avatar } from '@/components/ui'
 import {
   FolderKanban, CheckSquare, Users, AlertTriangle,
@@ -15,6 +16,8 @@ import toast from 'react-hot-toast'
 
 export default function FounderDashboard() {
   const qc = useQueryClient()
+  const user = useAuthStore(s => s.user)
+  const canSeeFinance = user?.role === 'founder'
   const [editingSalaryId, setEditingSalaryId] = useState<string | null>(null)
   const [salaryValue, setSalaryValue] = useState('')
 
@@ -46,6 +49,7 @@ export default function FounderDashboard() {
   const { data: payroll } = useQuery({
     queryKey: ['payroll'],
     queryFn: analyticsApi.payroll,
+    enabled: canSeeFinance,
   })
 
   const salaryMut = useMutation({
@@ -109,7 +113,8 @@ export default function FounderDashboard() {
         />
       </div>
 
-      {/* Finance KPI row */}
+      {/* Finance KPI row — founder only */}
+      {canSeeFinance && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="card flex items-center gap-4">
           <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
@@ -148,6 +153,7 @@ export default function FounderDashboard() {
           </div>
         </div>
       </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Overdue tasks */}
@@ -274,7 +280,8 @@ export default function FounderDashboard() {
         </div>
       </div>
 
-      {/* Payroll table */}
+      {/* Payroll table — founder only */}
+      {canSeeFinance && (
       <div className="card">
         <h2 className="section-title mb-4 flex items-center gap-2">
           <DollarSign size={16} /> Зарплатный фонд — сотрудники
@@ -357,8 +364,10 @@ export default function FounderDashboard() {
           </table>
         </div>
       </div>
+      )}
 
-      {/* Projects revenue */}
+      {/* Projects revenue — founder only */}
+      {canSeeFinance && (
       <div className="card">
         <h2 className="section-title mb-4 flex items-center gap-2">
           <Briefcase size={16} /> Доход по проектам
@@ -399,6 +408,7 @@ export default function FounderDashboard() {
           </table>
         </div>
       </div>
+      )}
     </div>
   )
 }

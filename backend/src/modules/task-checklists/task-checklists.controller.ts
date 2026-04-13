@@ -4,8 +4,6 @@ import { TaskChecklistsService } from './task-checklists.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 
-const PM_ROLES = ['admin', 'founder', 'project_manager'];
-
 @ApiTags('Task Checklists')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -22,23 +20,23 @@ export class TaskChecklistsController {
   create(
     @Param('taskId') taskId: string,
     @Body('text') text: string,
+    @Request() req,
   ) {
-    return this.service.create(taskId, text);
+    return this.service.create(taskId, text, req.user.id, req.user.role);
   }
 
   @Patch(':id/toggle')
   toggle(@Param('id') id: string, @Request() req) {
-    return this.service.toggle(id, req.user.id);
+    return this.service.toggle(id, req.user.id, req.user.role);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body('text') text: string) {
-    return this.service.update(id, text);
+  update(@Param('id') id: string, @Body('text') text: string, @Request() req) {
+    return this.service.update(id, text, req.user.id, req.user.role);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req) {
-    const isManager = PM_ROLES.includes(req.user.role);
-    return this.service.remove(id, req.user.id, isManager);
+    return this.service.remove(id, req.user.id, req.user.role);
   }
 }

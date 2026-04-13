@@ -46,7 +46,7 @@ export class TimeTrackerController {
 
   @Post('start')
   start(@Body() body: { taskId: string }, @Request() req) {
-    return this.service.startTimer(body.taskId, req.user.id);
+    return this.service.startTimer(body.taskId, req.user.id, req.user.role);
   }
 
   @Post('stop')
@@ -59,11 +59,11 @@ export class TimeTrackerController {
     @Body() body: { taskId: string; timeSpent: number; date: string; description?: string },
     @Request() req,
   ) {
-    return this.service.logTime(body.taskId, req.user.id, body.timeSpent, body.date, body.description);
+    return this.service.logTime(body.taskId, req.user.id, req.user.role, body.timeSpent, body.date, body.description);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  remove(@Param('id') id: string, @Request() req) {
+    return this.service.remove(id, req.user.id, req.user.role);
   }
 }

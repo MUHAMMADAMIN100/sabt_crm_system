@@ -19,18 +19,26 @@ export class EmployeesService {
     private gateway: AppGateway,
   ) {}
 
-  findAll(search?: string, department?: string, status?: EmployeeStatus) {
+  /** Strip salary from employee(s) for non-founder users */
+  private stripSalary<T extends Employee | Employee[]>(data: T, role?: string): T {
+    if (role === 'founder') return data;
+    const strip = (e: any) => { if (e) delete e.salary; return e; };
+    return Array.isArray(data) ? (data.map(strip) as T) : (strip(data) as T);
+  }
+
+  async findAll(search?: string, department?: string, status?: EmployeeStatus, requestUserRole?: string) {
     const where: FindOptionsWhere<Employee> = {};
     if (department) where.department = department;
     if (status) where.status = status;
     if (search) where.fullName = ILike(`%${search}%`);
-    return this.repo.find({ where, order: { createdAt: 'DESC' }, relations: ['user'] });
+    const list = await this.repo.find({ where, order: { createdAt: 'DESC' }, relations: ['user'] });
+    return this.stripSalary(list, requestUserRole);
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, requestUserRole?: string) {
     const emp = await this.repo.findOne({ where: { id }, relations: ['user'] });
     if (!emp) throw new NotFoundException('Employee not found');
-    return emp;
+    return requestUserRole ? this.stripSalary(emp, requestUserRole) : emp;
   }
 
   async create(dto: CreateEmployeeDto) {
