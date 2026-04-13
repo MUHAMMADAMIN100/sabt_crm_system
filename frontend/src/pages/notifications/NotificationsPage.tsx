@@ -3,7 +3,7 @@ import { notificationsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState } from '@/components/ui'
-import { Bell, CheckCheck, Trash2, AlertTriangle, Clock, TrendingDown, UserX, DollarSign } from 'lucide-react'
+import { Bell, CheckCheck, Trash2, AlertTriangle, Clock, TrendingDown, UserX, DollarSign, ClipboardList } from 'lucide-react'
 import { format } from 'date-fns'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
@@ -17,6 +17,7 @@ const NEGATIVE_TYPES = [
   'inactivity_24h',
   'payment_reminder',
   'project_overdue',
+  'daily_uncompleted',
 ]
 
 const NOTIFICATION_ICONS: Record<string, any> = {
@@ -27,6 +28,7 @@ const NOTIFICATION_ICONS: Record<string, any> = {
   inactivity_24h: UserX,
   payment_reminder: DollarSign,
   project_overdue: AlertTriangle,
+  daily_uncompleted: ClipboardList,
   default: Bell,
 }
 
@@ -38,6 +40,7 @@ const NOTIFICATION_COLORS: Record<string, string> = {
   inactivity_24h: 'text-gray-500 bg-gray-100 dark:bg-gray-800',
   payment_reminder: 'text-red-600 bg-red-50 dark:bg-red-900/20',
   project_overdue: 'text-red-600 bg-red-50 dark:bg-red-900/20',
+  daily_uncompleted: 'text-red-600 bg-red-50 dark:bg-red-900/20',
   default: 'text-primary-600 bg-primary-50 dark:bg-primary-900/20',
 }
 

@@ -294,4 +294,62 @@ export class MailService {
       this.logger.error(`Failed to send deadline reminder to ${to}: ${err.message}`);
     }
   }
+
+  /** Daily end-of-day summary for PM: tasks not completed today */
+  async sendDailyUncompletedSummary(
+    to: string,
+    recipientName: string,
+    projectName: string,
+    tasks: Array<{ id: string; title: string; assigneeName: string; status: string }>,
+    dateStr: string,
+  ) {
+    const statusLabels: Record<string, string> = {
+      new: 'Новая',
+      in_progress: 'В работе',
+      review: 'На проверке',
+      returned: 'Возвращена',
+    };
+    const rows = tasks.map(t => `
+      <tr>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;">
+          <a href="${this.appUrl}/tasks/${t.id}" style="color:#4f6ef7;text-decoration:none;font-weight:600;">${t.title}</a>
+        </td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#475569;font-size:13px;">${t.assigneeName}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;">${statusLabels[t.status] || t.status}</td>
+      </tr>`).join('');
+
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('📋 Итоги дня: невыполненные задачи')}
+        <div style="padding:28px 36px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 6px;">
+            Здравствуйте, <strong>${recipientName}</strong>!
+          </p>
+          <p style="color:#64748b;font-size:14px;margin:0 0 20px;">
+            По проекту <strong style="color:#1e293b;">${projectName}</strong> за ${dateStr}
+            осталось <strong style="color:#ef4444;">${tasks.length}</strong>
+            невыполненных задач${tasks.length === 1 ? 'а' : ''}.
+          </p>
+          <table style="width:100%;border-collapse:collapse;background:#f8fafc;border-radius:10px;overflow:hidden;margin-bottom:22px;">
+            <thead>
+              <tr style="background:#eef2ff;">
+                <th style="text-align:left;padding:10px 14px;color:#475569;font-size:12px;font-weight:600;">Задача</th>
+                <th style="text-align:left;padding:10px 14px;color:#475569;font-size:12px;font-weight:600;">Исполнитель</th>
+                <th style="text-align:left;padding:10px 14px;color:#475569;font-size:12px;font-weight:600;">Статус</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <a href="${this.appUrl}/projects" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+            Открыть проекты →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+    try {
+      await this.sendViaBrevo(to, recipientName, `📋 Невыполнено за ${dateStr}: ${projectName} (${tasks.length})`, html);
+    } catch (err) {
+      this.logger.error(`Failed to send daily summary to ${to}: ${err.message}`);
+    }
+  }
 }

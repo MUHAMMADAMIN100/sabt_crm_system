@@ -303,6 +303,114 @@ export class DeadlineScheduler {
     this.logger.log(`Sent ${sent} payment reminders`)
   }
 
+  // ── 7. Daily 20:00 Dushanbe — remind PMs about uncompleted tasks ─────────
+  @Cron('0 20 * * *', { timeZone: 'Asia/Dushanbe' })
+  async notifyDailyUncompleted() {
+    this.logger.log('Daily 20:00 Dushanbe — collecting uncompleted tasks by project...')
+
+    // "Today" in Dushanbe (UTC+5). Compute explicit window in UTC.
+    const now = new Date()
+    const dushanbeNow = new Date(now.getTime() + 5 * 60 * 60 * 1000)
+    const yyyy = dushanbeNow.getUTCFullYear()
+    const mm = dushanbeNow.getUTCMonth()
+    const dd = dushanbeNow.getUTCDate()
+    // 00:00 Dushanbe today  = yesterday 19:00 UTC
+    const dayStart = new Date(Date.UTC(yyyy, mm, dd, 0, 0, 0) - 5 * 60 * 60 * 1000)
+    // 23:59:59 Dushanbe today = today 18:59:59 UTC
+    const dayEnd = new Date(Date.UTC(yyyy, mm, dd, 23, 59, 59, 999) - 5 * 60 * 60 * 1000)
+    const dateStr = dushanbeNow.toLocaleDateString('ru-RU', {
+      day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC',
+    })
+
+    // Include tasks overdue from earlier AND due today — as long as they weren't finished
+    const tasks = await this.taskRepo.find({
+      where: {
+        deadline: LessThan(dayEnd),
+        status: Not(In([TaskStatus.DONE, TaskStatus.CANCELLED])),
+      },
+      relations: ['assignee', 'project', 'project.manager'],
+    })
+
+    // Consider only tasks whose deadline is today in Dushanbe (not earlier ones — those
+    // are handled by the daily overdue notifier). This job is the end-of-day verdict.
+    const dueToday = tasks.filter(t => {
+      const d = new Date(t.deadline)
+      return d >= dayStart && d <= dayEnd
+    })
+
+    if (!dueToday.length) {
+      this.logger.log('No uncompleted tasks today — staying silent')
+      return
+    }
+
+    // Group by project manager
+    const byManager = new Map<string, { managerId: string; managerEmail?: string; managerName?: string; projectName: string; items: typeof dueToday }>()
+    for (const task of dueToday) {
+      const pm = task.project?.manager
+      if (!task.project || !pm?.id) continue
+      const key = `${pm.id}:${task.project.id}`
+      if (!byManager.has(key)) {
+        byManager.set(key, {
+          managerId: pm.id,
+          managerEmail: pm.email,
+          managerName: pm.name,
+          projectName: task.project.name,
+          items: [],
+        })
+      }
+      byManager.get(key)!.items.push(task)
+    }
+
+    let sent = 0
+    for (const group of byManager.values()) {
+      const count = group.items.length
+      const firstLines = group.items.slice(0, 5).map(t =>
+        `• ${t.title} — ${t.assignee?.name || 'без исполнителя'}`,
+      ).join('\n')
+      const extra = count > 5 ? `\n…и ещё ${count - 5}` : ''
+      const shortMessage = `Проект "${group.projectName}" — не выполнено ${count} задач${count === 1 ? 'а' : ''} за сегодня`
+
+      // In-app notification (+ realtime via gateway inside NotificationsService)
+      await this.notificationsService.create({
+        userId: group.managerId,
+        type: NotificationType.DAILY_UNCOMPLETED,
+        title: '📋 Итоги дня: невыполненные задачи',
+        message: shortMessage,
+        link: `/tasks?overdue=true`,
+        data: { projectName: group.projectName, count, date: dateStr },
+      })
+
+      // Email
+      if (group.managerEmail) {
+        await this.mailService.sendDailyUncompletedSummary(
+          group.managerEmail,
+          group.managerName || 'Менеджер',
+          group.projectName,
+          group.items.map(t => ({
+            id: t.id,
+            title: t.title,
+            assigneeName: t.assignee?.name || 'без исполнителя',
+            status: t.status,
+          })),
+          dateStr,
+        )
+      }
+
+      // Telegram
+      const tgText =
+        `📋 <b>Итоги дня — невыполненные задачи</b>\n\n` +
+        `Проект: <b>${group.projectName}</b>\n` +
+        `Дата: ${dateStr}\n` +
+        `Не выполнено: <b>${count}</b>\n\n` +
+        `${firstLines}${extra}`
+      await this.telegramService.sendToUser(group.managerId, tgText)
+
+      sent++
+    }
+
+    this.logger.log(`Daily 20:00 summary sent to ${sent} project manager(s)`)
+  }
+
   // ── 6. Notify PM about tasks pending review > 24h (daily at 10am) ─────────
   @Cron('0 10 * * *')
   async notifyPendingReview() {
