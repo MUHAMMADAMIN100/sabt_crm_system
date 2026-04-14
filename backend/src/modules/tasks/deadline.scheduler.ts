@@ -12,6 +12,31 @@ import { MailService } from '../mail/mail.service'
 import { TelegramService } from '../telegram/telegram.service'
 import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity'
 
+const STATUS_LABELS: Record<string, string> = {
+  new: 'Новая',
+  in_progress: 'В работе',
+  review: 'На проверке',
+  returned: 'Возвращена',
+  done: 'Готово',
+  cancelled: 'Отменена',
+}
+
+const PRIORITY_LABELS: Record<string, string> = {
+  low: '🟢 Низкий',
+  medium: '🟡 Средний',
+  high: '🟠 Высокий',
+  critical: '🔴 Критический',
+}
+
+const STATUS_ICON: Record<string, string> = {
+  new: '🆕',
+  in_progress: '⚙️',
+  review: '🔍',
+  returned: '↩️',
+  done: '✅',
+  cancelled: '⛔',
+}
+
 @Injectable()
 export class DeadlineScheduler implements OnModuleInit {
   private readonly logger = new Logger(DeadlineScheduler.name)
@@ -103,8 +128,8 @@ export class DeadlineScheduler implements OnModuleInit {
     this.logger.log(`Sent ${sent} deadline reminders`)
   }
 
-  // ── 2. Overdue tasks (daily at 20:00 Dushanbe) ────────────────────────────
-  @Cron('0 20 * * *', { timeZone: 'Asia/Dushanbe' })
+  // ── 2. Overdue tasks (daily at 18:00 Dushanbe) ────────────────────────────
+  @Cron('0 18 * * *', { timeZone: 'Asia/Dushanbe' })
   async notifyOverdueTasks() {
     this.logger.log('Checking overdue tasks...')
 
@@ -131,34 +156,44 @@ export class DeadlineScheduler implements OnModuleInit {
       const taskLink = `/tasks/${task.id}`
       const projectName = task.project?.name || '—'
       const assigneeName = task.assignee?.name || 'без исполнителя'
+      const statusLabel = `${STATUS_ICON[task.status] || ''} ${STATUS_LABELS[task.status] || task.status}`
+      const priorityLabel = PRIORITY_LABELS[task.priority] || ''
+      const loggedHours = Number(task.loggedHours || 0)
+      const daysWord = daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'
 
       // Skip email/TG spam for very long overdue — keep only in-app after 14 days
       const sendExternal = daysOverdue <= 14
+
+      // Common Telegram detail block (re-used per recipient)
+      const detailBlock =
+        `📝 <b>${task.title}</b>\n` +
+        `📁 Проект: ${projectName}\n` +
+        `📊 Статус: ${statusLabel}\n` +
+        `🎯 Приоритет: ${priorityLabel}\n` +
+        `⏱ Залогировано: <b>${loggedHours}ч</b>\n` +
+        `📅 Дедлайн был: <b>${deadlineStr}</b>\n` +
+        `🔥 Просрочено: <b>${daysOverdue} ${daysWord}</b>`
 
       // ── Notify ASSIGNEE ─────────────────────────────────────────
       await this.notificationsService.create({
         userId: task.assigneeId,
         type: NotificationType.TASK_OVERDUE,
         title: '🔴 Задача просрочена',
-        message: `"${task.title}" — дедлайн пропущен (${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'})`,
+        message: `"${task.title}" — ${daysOverdue} ${daysWord} · ${STATUS_LABELS[task.status]} · ${loggedHours}ч`,
         link: taskLink,
-        data: { daysOverdue, taskId: task.id },
+        data: { daysOverdue, taskId: task.id, status: task.status, priority: task.priority, loggedHours },
       })
       if (sendExternal && task.assignee?.email) {
         await this.mailService.sendOverdueTask(
           task.assignee.email, task.assignee.name,
           task.title, task.id, projectName, deadlineStr, daysOverdue, 'assignee',
+          undefined, task.status, task.priority, loggedHours,
         )
       }
       if (sendExternal) {
         await this.telegramService.sendToUser(
           task.assigneeId,
-          `🔴 <b>Задача просрочена</b>\n\n` +
-          `📝 ${task.title}\n` +
-          `📁 Проект: ${projectName}\n` +
-          `📅 Дедлайн был: ${deadlineStr}\n` +
-          `⏱ Просрочено: <b>${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}</b>\n\n` +
-          `👉 ${this.telegramService.appUrl}${taskLink}`,
+          `🔴 <b>Ваша задача просрочена</b>\n\n${detailBlock}\n\n👉 ${this.telegramService.appUrl}${taskLink}`,
         )
       }
 
@@ -169,28 +204,23 @@ export class DeadlineScheduler implements OnModuleInit {
           userId: pmId,
           type: NotificationType.TASK_OVERDUE,
           title: '🔴 Просрочка в команде',
-          message: `${assigneeName} — "${task.title}" просрочено ${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}`,
+          message: `${assigneeName} — "${task.title}" · ${daysOverdue} ${daysWord} · ${STATUS_LABELS[task.status]} · ${loggedHours}ч`,
           link: taskLink,
-          data: { assigneeName, daysOverdue, taskId: task.id },
+          data: { assigneeName, daysOverdue, taskId: task.id, status: task.status, priority: task.priority, loggedHours },
         })
         const pm = task.project?.manager
         if (sendExternal && pm?.email) {
           await this.mailService.sendOverdueTask(
             pm.email, pm.name,
             task.title, task.id, projectName, deadlineStr, daysOverdue, 'manager',
-            assigneeName,
+            assigneeName, task.status, task.priority, loggedHours,
           )
         }
         if (sendExternal) {
           await this.telegramService.sendToUser(
             pmId,
             `🔴 <b>Просрочка в команде</b>\n\n` +
-            `📝 ${task.title}\n` +
-            `👤 Исполнитель: ${assigneeName}\n` +
-            `📁 Проект: ${projectName}\n` +
-            `📅 Дедлайн был: ${deadlineStr}\n` +
-            `⏱ Просрочено: <b>${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}</b>\n\n` +
-            `👉 ${this.telegramService.appUrl}${taskLink}`,
+            `👤 Исполнитель: <b>${assigneeName}</b>\n${detailBlock}\n\n👉 ${this.telegramService.appUrl}${taskLink}`,
           )
         }
       }
@@ -203,26 +233,21 @@ export class DeadlineScheduler implements OnModuleInit {
             userId: founder.id,
             type: NotificationType.TASK_OVERDUE,
             title: '⚠️ Серьёзная просрочка',
-            message: `${assigneeName} — "${task.title}" (проект "${projectName}") просрочено ${daysOverdue} дн.`,
+            message: `${assigneeName} — "${task.title}" (${projectName}) · ${daysOverdue} ${daysWord} · ${STATUS_LABELS[task.status]}`,
             link: taskLink,
-            data: { assigneeName, projectName, daysOverdue, taskId: task.id, escalation: true },
+            data: { assigneeName, projectName, daysOverdue, taskId: task.id, status: task.status, priority: task.priority, loggedHours, escalation: true },
           })
           if (founder.email) {
             await this.mailService.sendOverdueTask(
               founder.email, founder.name,
               task.title, task.id, projectName, deadlineStr, daysOverdue, 'founder',
-              assigneeName,
+              assigneeName, task.status, task.priority, loggedHours,
             )
           }
           await this.telegramService.sendToUser(
             founder.id,
             `⚠️ <b>Серьёзная просрочка</b>\n\n` +
-            `📝 ${task.title}\n` +
-            `👤 Исполнитель: ${assigneeName}\n` +
-            `📁 Проект: ${projectName}\n` +
-            `📅 Дедлайн был: ${deadlineStr}\n` +
-            `⏱ Просрочено: <b>${daysOverdue} дней</b>\n\n` +
-            `👉 ${this.telegramService.appUrl}${taskLink}`,
+            `👤 Исполнитель: <b>${assigneeName}</b>\n${detailBlock}\n\n👉 ${this.telegramService.appUrl}${taskLink}`,
           )
         }
         escalated++
@@ -404,10 +429,10 @@ export class DeadlineScheduler implements OnModuleInit {
     this.logger.log(`Sent ${sent} payment reminders`)
   }
 
-  // ── 7. Daily 20:00 Dushanbe — remind PMs about uncompleted tasks ─────────
-  @Cron('0 20 * * *', { timeZone: 'Asia/Dushanbe' })
+  // ── 7. Daily 18:00 Dushanbe — remind PMs about uncompleted tasks ─────────
+  @Cron('0 18 * * *', { timeZone: 'Asia/Dushanbe' })
   async notifyDailyUncompleted() {
-    this.logger.log('Daily 20:00 Dushanbe — collecting uncompleted tasks by project...')
+    this.logger.log('Daily 18:00 Dushanbe — collecting uncompleted tasks by project...')
 
     // "Today" in Dushanbe (UTC+5). Compute explicit window in UTC.
     const now = new Date()
@@ -465,10 +490,28 @@ export class DeadlineScheduler implements OnModuleInit {
     let sent = 0
     for (const group of byManager.values()) {
       const count = group.items.length
-      const firstLines = group.items.slice(0, 5).map(t =>
-        `• ${t.title} — ${t.assignee?.name || 'без исполнителя'}`,
-      ).join('\n')
-      const extra = count > 5 ? `\n…и ещё ${count - 5}` : ''
+      const byStatus: Record<string, number> = {}
+      let totalLogged = 0
+      let critical = 0
+      for (const t of group.items) {
+        byStatus[t.status] = (byStatus[t.status] || 0) + 1
+        totalLogged += Number(t.loggedHours || 0)
+        if (t.priority === 'critical') critical++
+      }
+      const statusBreakdown = Object.entries(byStatus)
+        .map(([s, n]) => `${STATUS_ICON[s] || '·'} ${STATUS_LABELS[s] || s}: <b>${n}</b>`).join(' · ')
+
+      const visible = group.items.slice(0, 12)
+      const overflow = count - visible.length
+      const detailedLines = visible.map(t => {
+        const prio = PRIORITY_LABELS[t.priority] || ''
+        const status = `${STATUS_ICON[t.status] || ''} ${STATUS_LABELS[t.status] || t.status}`
+        const hours = Number(t.loggedHours || 0)
+        const hoursStr = hours > 0 ? ` · ⏱ ${hours}ч` : ''
+        return `• <b>${t.title}</b>\n   👤 ${t.assignee?.name || 'без исполнителя'} · ${status} · ${prio}${hoursStr}`
+      }).join('\n')
+      const overflowLine = overflow > 0 ? `\n…и ещё ${overflow}` : ''
+
       const shortMessage = `Проект "${group.projectName}" — не выполнено ${count} задач${count === 1 ? 'а' : ''} за сегодня`
 
       // In-app notification (+ realtime via gateway inside NotificationsService)
@@ -476,9 +519,9 @@ export class DeadlineScheduler implements OnModuleInit {
         userId: group.managerId,
         type: NotificationType.DAILY_UNCOMPLETED,
         title: '📋 Итоги дня: невыполненные задачи',
-        message: shortMessage,
+        message: shortMessage + (critical > 0 ? ` · 🔴 ${critical} критич.` : ''),
         link: `/tasks?overdue=true`,
-        data: { projectName: group.projectName, count, date: dateStr },
+        data: { projectName: group.projectName, count, date: dateStr, byStatus, totalLogged, critical },
       })
 
       // Email
@@ -492,18 +535,23 @@ export class DeadlineScheduler implements OnModuleInit {
             title: t.title,
             assigneeName: t.assignee?.name || 'без исполнителя',
             status: t.status,
+            priority: t.priority,
+            loggedHours: Number(t.loggedHours || 0),
           })),
           dateStr,
         )
       }
 
-      // Telegram
+      // Telegram — full detail
       const tgText =
         `📋 <b>Итоги дня — невыполненные задачи</b>\n\n` +
-        `Проект: <b>${group.projectName}</b>\n` +
-        `Дата: ${dateStr}\n` +
-        `Не выполнено: <b>${count}</b>\n\n` +
-        `${firstLines}${extra}`
+        `📁 Проект: <b>${group.projectName}</b>\n` +
+        `📅 Дата: ${dateStr}\n` +
+        `📊 Не выполнено: <b>${count}</b> · ⏱ потрачено ${totalLogged}ч` +
+        (critical > 0 ? ` · 🔴 ${critical} критич.` : '') +
+        `\n${statusBreakdown}\n\n` +
+        `<b>Подробно:</b>\n${detailedLines}${overflowLine}\n\n` +
+        `👉 ${this.telegramService.appUrl}/tasks?overdue=true`
       await this.telegramService.sendToUser(group.managerId, tgText)
 
       sent++

@@ -63,12 +63,12 @@ export class StoriesService {
   }
 
   /**
-   * Каждый день в 22:00 проверяем, кто из участников SMM-проектов
-   * не добавил ни одной истории за сегодня — уведомляем менеджера.
+   * Каждый день в 18:00 (Душанбе) — подробная сводка PM по сторис
+   * каждого SMM-проекта: кто сколько сделал, кто не сделал, общий процент.
    */
-  @Cron('0 22 * * *', { timeZone: 'Asia/Dushanbe' })
+  @Cron('0 18 * * *', { timeZone: 'Asia/Dushanbe' })
   async notifyManagerAboutMissingStories() {
-    this.logger.log('Running 22:00 stories check...');
+    this.logger.log('Running 18:00 stories check...');
 
     const today = new Date().toISOString().split('T')[0];
 
@@ -84,38 +84,76 @@ export class StoriesService {
     for (const project of projects) {
       if (!project.manager || !project.members?.length) continue;
 
-      // Истории за сегодня по этому проекту
+      // План на день для этого проекта
+      const target = Number((project.smmData as any)?.storiesPerDay) || 3;
+
+      // Истории за сегодня по проекту → суммируем по сотрудникам
       const todayLogs = await this.repo.find({ where: { projectId: project.id, date: today } });
-      const doneUserIds = new Set(todayLogs.map(l => l.employeeId));
+      const countByUser: Record<string, number> = {};
+      for (const log of todayLogs) {
+        countByUser[log.employeeId] = (countByUser[log.employeeId] || 0) + (log.storiesCount || 0);
+      }
 
-      // Участники, которые не сделали ни одной истории
-      const missed = project.members.filter(m => !doneUserIds.has(m.id));
-      if (!missed.length) continue;
+      const memberStats = project.members.map(m => ({
+        id: m.id,
+        name: m.name,
+        count: countByUser[m.id] || 0,
+        done: (countByUser[m.id] || 0) >= target,
+        partial: (countByUser[m.id] || 0) > 0 && (countByUser[m.id] || 0) < target,
+        missed: (countByUser[m.id] || 0) === 0,
+      }));
 
-      const names = missed.map(m => m.name).join(', ');
-      const msg = `📊 <b>Напоминание о сторис</b>\n\nПроект: <b>${project.name}</b>\nДата: ${today}\n\n❌ Не добавили истории сегодня:\n${missed.map(m => `• ${m.name}`).join('\n')}`;
+      const doneCount = memberStats.filter(s => s.done).length;
+      const partialCount = memberStats.filter(s => s.partial).length;
+      const missedCount = memberStats.filter(s => s.missed).length;
+      const totalActual = memberStats.reduce((s, m) => s + m.count, 0);
+      const totalExpected = target * project.members.length;
+      const pct = totalExpected > 0 ? Math.round((totalActual / totalExpected) * 100) : 0;
 
-      // Telegram менеджеру
+      // Skip silent days when EVERYONE met the target — no need to ping PM.
+      if (missedCount === 0 && partialCount === 0) continue;
+
+      // Build per-member lines (cap to first 25 to stay within TG 4096 char limit)
+      const sortedStats = [...memberStats].sort((a, b) => a.count - b.count);
+      const visible = sortedStats.slice(0, 25);
+      const overflow = sortedStats.length - visible.length;
+      const memberLines = visible.map(s => {
+        const icon = s.done ? '✅' : s.partial ? '🟡' : '❌';
+        return `${icon} <b>${s.name}</b> — ${s.count}/${target}`;
+      }).join('\n');
+      const overflowLine = overflow > 0 ? `\n…и ещё ${overflow} участников` : '';
+
+      const tgMsg =
+        `📊 <b>Сводка по сторис — ${project.name}</b>\n\n` +
+        `📅 Дата: ${today}\n` +
+        `🎯 План: <b>${target}</b> сторис/день · ${project.members.length} участников\n` +
+        `📈 Факт: <b>${totalActual}/${totalExpected}</b> (${pct}%)\n\n` +
+        `✅ Полностью: ${doneCount}\n` +
+        `🟡 Частично: ${partialCount}\n` +
+        `❌ Не делали: ${missedCount}\n\n` +
+        `<b>По участникам:</b>\n${memberLines}${overflowLine}\n\n` +
+        `👉 ${this.telegramService.appUrl}/projects/${project.id}`;
+
       try {
-        await this.telegramService.sendToUser(project.managerId, msg);
+        await this.telegramService.sendToUser(project.managerId, tgMsg);
       } catch (e) {
         this.logger.warn(`Failed to send Telegram to manager ${project.managerId}: ${e.message}`);
       }
 
-      // Внутреннее уведомление менеджеру
       try {
         await this.notificationsService.create({
           userId: project.managerId,
           type: NotificationType.DEADLINE_APPROACHING,
-          title: `Не сделаны истории — ${project.name}`,
-          message: `Сотрудники не добавили истории: ${names}`,
+          title: `📊 Сторис: ${project.name} — ${pct}%`,
+          message: `${totalActual}/${totalExpected} сторис · ✅${doneCount} 🟡${partialCount} ❌${missedCount}`,
           link: `/projects/${project.id}`,
+          data: { projectId: project.id, target, totalActual, totalExpected, doneCount, partialCount, missedCount },
         });
       } catch (e) {
         this.logger.warn(`Failed to create notification: ${e.message}`);
       }
 
-      this.logger.log(`Notified manager ${project.managerId} about ${missed.length} members in project ${project.name}`);
+      this.logger.log(`Stories summary sent for ${project.name}: ${pct}% (${totalActual}/${totalExpected})`);
     }
   }
 }

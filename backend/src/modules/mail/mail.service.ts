@@ -392,6 +392,9 @@ export class MailService {
     daysOverdue: number,
     role: 'assignee' | 'manager' | 'founder',
     assigneeName?: string,
+    status?: string,
+    priority?: string,
+    loggedHours?: number,
   ) {
     const headline = role === 'founder'
       ? '⚠️ Серьёзная просрочка'
@@ -399,15 +402,27 @@ export class MailService {
         ? '🔴 Просрочка в команде'
         : '🔴 Задача просрочена';
 
+    const daysWord = daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней';
     const intro = role === 'assignee'
-      ? `Ваша задача просрочена на <strong style="color:#ef4444;">${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}</strong>. Пожалуйста, закройте её как можно скорее.`
+      ? `Ваша задача просрочена на <strong style="color:#ef4444;">${daysOverdue} ${daysWord}</strong>. Пожалуйста, закройте её как можно скорее.`
       : role === 'manager'
-        ? `Задача сотрудника <strong>${assigneeName || ''}</strong> не закрыта уже <strong style="color:#ef4444;">${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}</strong> после дедлайна.`
-        : `Серьёзная просрочка в вашей компании: задача не закрыта <strong style="color:#ef4444;">${daysOverdue} дней</strong>. Требуется внимание.`;
+        ? `Задача сотрудника <strong>${assigneeName || ''}</strong> не закрыта уже <strong style="color:#ef4444;">${daysOverdue} ${daysWord}</strong> после дедлайна.`
+        : `Серьёзная просрочка в вашей компании: задача не закрыта <strong style="color:#ef4444;">${daysOverdue} ${daysWord}</strong>. Требуется внимание.`;
+
+    const statusLabels: Record<string, string> = {
+      new: '🆕 Новая', in_progress: '⚙️ В работе', review: '🔍 На проверке',
+      returned: '↩️ Возвращена', done: '✅ Готово', cancelled: '⛔ Отменена',
+    };
+    const priorityLabels: Record<string, string> = {
+      low: '🟢 Низкий', medium: '🟡 Средний', high: '🟠 Высокий', critical: '🔴 Критический',
+    };
 
     const assigneeRow = (role !== 'assignee' && assigneeName)
       ? this.row('👤 Исполнитель:', assigneeName)
       : '';
+    const statusRow = status ? this.row('📊 Статус:', statusLabels[status] || status) : '';
+    const priorityRow = priority ? this.row('🎯 Приоритет:', priorityLabels[priority] || priority) : '';
+    const hoursRow = loggedHours !== undefined ? this.row('⏱ Залогировано:', `${loggedHours}ч`) : '';
 
     const html = `
       <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
@@ -421,8 +436,11 @@ export class MailService {
               ${this.row('📝 Задача:', taskTitle)}
               ${this.row('📁 Проект:', projectName)}
               ${assigneeRow}
+              ${statusRow}
+              ${priorityRow}
+              ${hoursRow}
               ${this.row('📅 Дедлайн:', deadline)}
-              ${this.row('⏱ Просрочено:', `${daysOverdue} ${daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'}`)}
+              ${this.row('🔥 Просрочено:', `${daysOverdue} ${daysWord}`)}
             </table>
           </div>
           <a href="${this.appUrl}/tasks/${taskId}" style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
@@ -540,7 +558,7 @@ export class MailService {
     to: string,
     recipientName: string,
     projectName: string,
-    tasks: Array<{ id: string; title: string; assigneeName: string; status: string }>,
+    tasks: Array<{ id: string; title: string; assigneeName: string; status: string; priority?: string; loggedHours?: number }>,
     dateStr: string,
   ) {
     const statusLabels: Record<string, string> = {
@@ -549,33 +567,64 @@ export class MailService {
       review: 'На проверке',
       returned: 'Возвращена',
     };
-    const rows = tasks.map(t => `
-      <tr>
+    const priorityLabels: Record<string, string> = {
+      low: '🟢 Низкий',
+      medium: '🟡 Средний',
+      high: '🟠 Высокий',
+      critical: '🔴 Критический',
+    };
+
+    const totalLogged = tasks.reduce((s, t) => s + Number(t.loggedHours || 0), 0);
+    const critical = tasks.filter(t => t.priority === 'critical').length;
+
+    const rows = tasks.map(t => {
+      const prioBg =
+        t.priority === 'critical' ? 'background:#fef2f2;'
+        : t.priority === 'high' ? 'background:#fff7ed;'
+        : '';
+      return `
+      <tr style="${prioBg}">
         <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;">
           <a href="${this.appUrl}/tasks/${t.id}" style="color:#4f6ef7;text-decoration:none;font-weight:600;">${t.title}</a>
         </td>
         <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#475569;font-size:13px;">${t.assigneeName}</td>
         <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;">${statusLabels[t.status] || t.status}</td>
-      </tr>`).join('');
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;">${priorityLabels[t.priority || 'medium'] || ''}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;text-align:right;">${Number(t.loggedHours || 0)}ч</td>
+      </tr>`;
+    }).join('');
 
     const html = `
-      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:720px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
         ${this.header('📋 Итоги дня: невыполненные задачи')}
         <div style="padding:28px 36px;">
           <p style="color:#334155;font-size:15px;margin:0 0 6px;">
             Здравствуйте, <strong>${recipientName}</strong>!
           </p>
-          <p style="color:#64748b;font-size:14px;margin:0 0 20px;">
+          <p style="color:#64748b;font-size:14px;margin:0 0 16px;">
             По проекту <strong style="color:#1e293b;">${projectName}</strong> за ${dateStr}
             осталось <strong style="color:#ef4444;">${tasks.length}</strong>
             невыполненных задач${tasks.length === 1 ? 'а' : ''}.
           </p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;font-size:13px;">
+            <span style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:8px;padding:6px 12px;">
+              🔴 Критических: <b>${critical}</b>
+            </span>
+            <span style="background:#f0f9ff;border:1px solid #bae6fd;color:#0369a1;border-radius:8px;padding:6px 12px;">
+              ⏱ Залогировано: <b>${totalLogged}ч</b>
+            </span>
+            <span style="background:#f8fafc;border:1px solid #e2e8f0;color:#475569;border-radius:8px;padding:6px 12px;">
+              📊 Всего задач: <b>${tasks.length}</b>
+            </span>
+          </div>
           <table style="width:100%;border-collapse:collapse;background:#f8fafc;border-radius:10px;overflow:hidden;margin-bottom:22px;">
             <thead>
               <tr style="background:#eef2ff;">
                 <th style="text-align:left;padding:10px 14px;color:#475569;font-size:12px;font-weight:600;">Задача</th>
                 <th style="text-align:left;padding:10px 14px;color:#475569;font-size:12px;font-weight:600;">Исполнитель</th>
                 <th style="text-align:left;padding:10px 14px;color:#475569;font-size:12px;font-weight:600;">Статус</th>
+                <th style="text-align:left;padding:10px 14px;color:#475569;font-size:12px;font-weight:600;">Приоритет</th>
+                <th style="text-align:right;padding:10px 14px;color:#475569;font-size:12px;font-weight:600;">Часов</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
