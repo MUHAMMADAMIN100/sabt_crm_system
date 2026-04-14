@@ -255,6 +255,7 @@ export class TasksService {
       entityName: task.title,
     });
     await this.repo.remove(task);
+    await this.notificationsService.deleteByLink(`/tasks/${id}`);
     await this.projectsService.updateProgress(projectId);
     this.gateway.broadcast('tasks:changed', { projectId });
     return { message: 'Task deleted' };
@@ -277,6 +278,7 @@ export class TasksService {
       entityName: task.title,
     });
     await this.repo.remove(task);
+    await this.notificationsService.deleteByLink(`/tasks/${id}`);
     await this.projectsService.updateProgress(projectId);
     this.gateway.broadcast('tasks:changed', { projectId });
     return { message: 'Task deleted' };

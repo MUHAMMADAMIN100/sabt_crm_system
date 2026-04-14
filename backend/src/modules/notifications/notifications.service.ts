@@ -53,6 +53,16 @@ export class NotificationsService {
     return this.repo.count({ where: { userId, isRead: false } });
   }
 
+  /** Delete all notifications whose link points to a given path prefix
+   *  (e.g. `/tasks/abc-123`). Used as cleanup when an entity is deleted. */
+  async deleteByLink(linkPath: string) {
+    await this.repo
+      .createQueryBuilder()
+      .delete()
+      .where('link = :link', { link: linkPath })
+      .execute();
+  }
+
   async notifyDeadlines() {
     // Called by scheduler — notify tasks due in 24h
     // This would be implemented with TasksService injection

@@ -53,9 +53,10 @@ export default function TaskDetailPage() {
   const isPM = PM_ROLES.includes(role)
   const isWorker = WORKER_ROLES.includes(role)
 
-  const { data: task, isLoading } = useQuery({
+  const { data: task, isLoading, error } = useQuery({
     queryKey: ['task', id],
     queryFn: () => tasksApi.get(id!),
+    retry: false,
   })
 
   const { data: files } = useQuery({
@@ -317,7 +318,41 @@ export default function TaskDetailPage() {
   }
 
   if (isLoading) return <PageLoader />
-  if (!task) return <div className="text-surface-600 dark:text-surface-400">{t('common.noData')}</div>
+  if (!task) {
+    const status = (error as any)?.response?.status
+    const isMissing = status === 404 || status === 403
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => navigate(-1)}
+          className="inline-flex items-center gap-2 text-sm text-surface-500 dark:text-surface-400 hover:text-primary-600"
+        >
+          <ArrowLeft size={16} /> Назад
+        </button>
+        <div className="card flex flex-col items-center justify-center py-16 px-6 text-center max-w-lg mx-auto">
+          <div className="w-14 h-14 rounded-2xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center mb-4">
+            <AlertTriangle size={26} className="text-red-500" />
+          </div>
+          <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100 mb-1">
+            {isMissing ? 'Задача не найдена' : 'Не удалось загрузить задачу'}
+          </h2>
+          <p className="text-sm text-surface-500 dark:text-surface-400 mb-5">
+            {isMissing
+              ? 'Возможно, она была удалена или у вас нет к ней доступа. Уведомление можно удалить из списка.'
+              : 'Произошла ошибка при загрузке. Попробуйте обновить страницу.'}
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => navigate('/notifications')} className="btn-secondary text-sm">
+              К уведомлениям
+            </button>
+            <button onClick={() => navigate('/tasks')} className="btn-primary text-sm">
+              К списку задач
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const isOverdue = task.deadline && new Date(task.deadline) < new Date() && !['done', 'cancelled'].includes(task.status)
   const isReturned = task.status === 'returned'
