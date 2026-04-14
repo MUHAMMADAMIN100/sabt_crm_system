@@ -30,6 +30,10 @@ export default function TasksPage() {
   const PAGE_SIZE = 10
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
+  // Story widget visible to everyone except admin/founder (they have analytics).
+  // PM sees it too because they may be a member of other projects where they
+  // need to publish stories themselves.
+  const showStoryWidget = !['admin', 'founder'].includes(user?.role || '')
   const isSMM = user?.role === 'smm_specialist'
   const qc = useQueryClient()
   const { t } = useTranslation()
@@ -302,8 +306,8 @@ export default function TasksPage() {
         </div>
       )}
 
-      <div className={clsx(!isManagerPlus && 'grid grid-cols-1 lg:grid-cols-3 gap-4')}>
-      <div className={clsx(!isManagerPlus && 'lg:col-span-2')}>
+      <div className={clsx(showStoryWidget && 'grid grid-cols-1 lg:grid-cols-3 gap-4')}>
+      <div className={clsx(showStoryWidget && 'lg:col-span-2')}>
       {!tasks?.length ? (
         <EmptyState title={t('tasks.noTasks')} description={t('tasks.createFirst')} action={
           <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
@@ -430,7 +434,7 @@ export default function TasksPage() {
       <Pagination page={page} total={tasks.length} pageSize={PAGE_SIZE} onChange={setPage} />
       </div>{/* end tasks col */}
 
-      {!isManagerPlus && (
+      {showStoryWidget && (
         <div className="lg:col-span-1">
           <StoryCalendar compact />
         </div>

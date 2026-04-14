@@ -91,8 +91,11 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
     const base = projects?.filter((p: any) => !p.isArchived && p.status !== 'completed') || []
     // Admin all view or readonly (employee detail) sees all projects
     if (adminAll || isReadonly) return base
-    if (user?.role === 'admin') return base
-    return base.filter((p: any) => p.members?.some((m: any) => m.id === user?.id))
+    if (['admin', 'founder'].includes(user?.role || '')) return base
+    // Everyone else (PM, SMM, designer, etc.): projects where they are member OR manager
+    return base.filter((p: any) =>
+      p.members?.some((m: any) => m.id === user?.id) || p.managerId === user?.id,
+    )
   }, [projects, user, isReadonly, adminAll])
 
   // Build story map: projectId -> dateKey -> count
