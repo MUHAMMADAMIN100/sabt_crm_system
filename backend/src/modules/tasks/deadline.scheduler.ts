@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { Cron, CronExpression } from '@nestjs/schedule'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository, Between, LessThan, Not, In } from 'typeorm'
@@ -13,8 +13,20 @@ import { TelegramService } from '../telegram/telegram.service'
 import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity'
 
 @Injectable()
-export class DeadlineScheduler {
+export class DeadlineScheduler implements OnModuleInit {
   private readonly logger = new Logger(DeadlineScheduler.name)
+
+  /** Run a one-shot cleanup at boot so existing orphan notifications
+   *  (created before the cascade-delete fix) get cleared without waiting
+   *  for the daily cron. */
+  async onModuleInit() {
+    try {
+      const removed = await this.cleanupOrphanTaskNotifications()
+      if (removed > 0) this.logger.log(`Boot cleanup: removed ${removed} orphan task notifications`)
+    } catch (e: any) {
+      this.logger.warn(`Boot cleanup failed: ${e?.message}`)
+    }
+  }
 
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
@@ -529,5 +541,32 @@ export class DeadlineScheduler {
     }
 
     this.logger.log(`Notified about ${pendingReview.length} long-pending reviews`)
+  }
+
+  // ── 8. Cleanup orphan task notifications (daily at 03:00) ────────────────
+  /** Removes notifications whose link points to a task that no longer exists.
+   *  Returns the number of deleted rows. */
+  async cleanupOrphanTaskNotifications(): Promise<number> {
+    const result = await this.taskRepo.manager.query(`
+      DELETE FROM notifications
+      WHERE link LIKE '/tasks/%'
+        AND NOT EXISTS (
+          SELECT 1 FROM tasks t
+          WHERE t.id::text = SUBSTRING(notifications.link FROM '/tasks/(.+)')
+        )
+    `)
+    // pg driver returns [, count] for DELETE
+    const count = Array.isArray(result) ? Number(result[1] ?? 0) : 0
+    return count
+  }
+
+  @Cron('0 3 * * *')
+  async dailyOrphanCleanup() {
+    try {
+      const removed = await this.cleanupOrphanTaskNotifications()
+      this.logger.log(`Daily 03:00 cleanup: removed ${removed} orphan task notifications`)
+    } catch (e: any) {
+      this.logger.warn(`Daily orphan cleanup failed: ${e?.message}`)
+    }
   }
 }
