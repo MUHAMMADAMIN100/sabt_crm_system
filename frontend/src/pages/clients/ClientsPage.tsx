@@ -151,36 +151,38 @@ export default function ClientsPage() {
         </button>
       </div>
 
-      {/* Status counter chips */}
-      {stats?.byStatus && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setStatus('')}
-            className={clsx(
-              'px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
-              !status ? 'bg-primary-600 text-white border-primary-600' : 'bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-300 border-surface-200 dark:border-surface-700',
-            )}
-          >
-            Все · {stats.total}
-          </button>
-          {STATUS_OPTIONS.map(s => {
-            const n = stats.byStatus[s.value] || 0
-            if (n === 0 && status !== s.value) return null
-            return (
-              <button
-                key={s.value}
-                onClick={() => setStatus(status === s.value ? '' : s.value)}
-                className={clsx(
-                  'px-3 py-1.5 rounded-full text-xs font-medium transition-all',
-                  status === s.value ? 'ring-2 ring-primary-500 ' + s.color : s.color,
-                )}
-              >
-                {s.label} · {n}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      {/* Status chips — always visible, same style as interest row */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Статус:</span>
+        <button
+          onClick={() => setStatus('')}
+          className={clsx(
+            'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+            !status
+              ? 'bg-primary-600 text-white'
+              : 'bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
+          )}
+        >
+          Все
+          {stats?.total !== undefined && <> · {stats.total}</>}
+        </button>
+        {STATUS_OPTIONS.map(s => {
+          const n = stats?.byStatus?.[s.value]
+          const active = status === s.value
+          return (
+            <button
+              key={s.value}
+              onClick={() => setStatus(active ? '' : s.value)}
+              className={clsx(
+                'px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                active ? 'ring-2 ring-primary-500 ' + s.color : s.color,
+              )}
+            >
+              {s.label}{n !== undefined && <> · {n}</>}
+            </button>
+          )
+        })}
+      </div>
 
       {/* Interest chips — always visible. Counts come from backend stats
           if available (byInterest field), otherwise omitted gracefully. */}
