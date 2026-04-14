@@ -18,11 +18,17 @@ const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
 const PIE_COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7']
 
 // ── Helpers for story dot colors ──────────────────────────────────
-function storyDotColor(index: number, count: number) {
+function storyDotColor(index: number, count: number, target: number) {
   if (index > count) return 'bg-surface-200 dark:bg-surface-600'
-  if (count === 1) return 'bg-pink-400'
-  if (count === 2) return 'bg-yellow-400'
-  return 'bg-green-500'
+  if (count >= target) return 'bg-green-500'
+  const pct = target > 0 ? count / target : 0
+  if (pct >= 0.5) return 'bg-yellow-400'
+  return 'bg-pink-400'
+}
+
+function projectDailyTarget(project: any): number {
+  const v = Number(project?.smmData?.storiesPerDay)
+  return Number.isFinite(v) && v > 0 ? Math.min(v, 12) : 3
 }
 
 // ── Stories widget ────────────────────────────────────────────────
@@ -34,7 +40,7 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
   monthPct: number
   daysElapsed: number
 }) {
-  const todayDone = myProjects.filter(p => (todayStoryMap[p.id] || 0) >= 3).length
+  const todayDone = myProjects.filter(p => (todayStoryMap[p.id] || 0) >= projectDailyTarget(p)).length
   const allDoneToday = myProjects.length > 0 && todayDone === myProjects.length
 
   return (
@@ -62,7 +68,8 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
         <div className="space-y-2">
           {myProjects.map((project: any) => {
             const count = todayStoryMap[project.id] || 0
-            const done = count >= 3
+            const target = projectDailyTarget(project)
+            const done = count >= target
             return (
               <div key={project.id} className="flex items-center gap-2 group">
                 <div
@@ -72,22 +79,22 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
                 <p className="text-xs font-medium text-surface-800 dark:text-surface-200 flex-1 truncate">
                   {project.name}
                 </p>
-                {/* 3 dots */}
+                {/* dots = project's daily target */}
                 <div className="flex gap-1 shrink-0">
-                  {[1, 2, 3].map(i => (
+                  {Array.from({ length: target }, (_, idx) => idx + 1).map(i => (
                     <div
                       key={i}
-                      className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${storyDotColor(i, count)}`}
+                      className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${storyDotColor(i, count, target)}`}
                     />
                   ))}
                 </div>
                 {/* Status */}
                 {done ? (
-                  <span className="text-[10px] font-bold text-green-600 dark:text-green-400 shrink-0 w-6 text-right">✓</span>
+                  <span className="text-[10px] font-bold text-green-600 dark:text-green-400 shrink-0 w-7 text-right">✓</span>
                 ) : (
-                  <span className={`text-[10px] font-semibold shrink-0 w-6 text-right ${
+                  <span className={`text-[10px] font-semibold shrink-0 w-8 text-right ${
                     count === 0 ? 'text-red-500 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'
-                  }`}>{count}/3</span>
+                  }`}>{count}/{target}</span>
                 )}
               </div>
             )
@@ -115,7 +122,7 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
           <p className="text-[10px] text-surface-400 dark:text-surface-500">
             {daysElapsed} {daysElapsed === 1 ? 'день' : daysElapsed < 5 ? 'дня' : 'дней'} •{' '}
             {myProjects.length} {myProjects.length === 1 ? 'проект' : myProjects.length < 5 ? 'проекта' : 'проектов'} •{' '}
-            план 3 истории/день
+            план по проекту
           </p>
         </div>
       )}
@@ -283,7 +290,9 @@ export default function DashboardPage() {
   ) || []
 
   const daysElapsed = new Date().getDate()
-  const monthTotalExpected = myProjects.length * daysElapsed * 3
+  // Sum of (per-project storiesPerDay) × daysElapsed
+  const monthTotalExpected = myProjects.reduce((sum: number, p: any) =>
+    sum + projectDailyTarget(p) * daysElapsed, 0)
   const monthPct = monthTotalExpected > 0 ? Math.min(100, Math.round((monthTotalActual / monthTotalExpected) * 100)) : 0
 
   // Admin stats

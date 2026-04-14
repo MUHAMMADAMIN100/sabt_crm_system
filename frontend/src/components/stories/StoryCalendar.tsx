@@ -14,8 +14,14 @@ interface StoryCalendarProps {
   adminAll?: boolean
 }
 
-const MAX_STORIES = 3
+const FALLBACK_TARGET = 3 // used only if project has no smmData.storiesPerDay
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+
+/** Per-project daily target taken from smmData.storiesPerDay. */
+function getDailyTarget(project: any): number {
+  const v = Number(project?.smmData?.storiesPerDay)
+  return Number.isFinite(v) && v > 0 ? Math.min(v, 12) : FALLBACK_TARGET
+}
 
 export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCalendarProps) {
   const [current, setCurrent] = useState(new Date())
@@ -144,14 +150,17 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
   const days = eachDayOfInterval({ start: startOfMonth(current), end: endOfMonth(current) })
   const startPad = (getDay(startOfMonth(current)) + 6) % 7
 
-  const getDayColor = (count: number, date: Date) => {
+  /** Color a day by progress against the target. */
+  const getDayColor = (count: number, date: Date, target: number) => {
     const past = date < new Date() && !isToday(date)
     const relevant = past || isToday(date)
     if (!relevant) return 'bg-surface-50 dark:bg-surface-700 text-surface-400'
     if (count === 0) return 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
-    if (count === 1) return 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400'
-    if (count === 2) return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-    return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+    if (count >= target) return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+    // Partially done — between 1 and target-1
+    const pct = target > 0 ? count / target : 0
+    if (pct >= 0.5) return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+    return 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400'
   }
 
   const triggerAnim = useCallback((key: string, type: 'pop' | 'unpop') => {
@@ -163,12 +172,11 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
     }), 400)
   }, [])
 
-  const handleCheck = (projectId: string, dateStr: string, checkboxIndex: number, currentCount: number) => {
+  const handleCheck = (projectId: string, dateStr: string, checkboxIndex: number, currentCount: number, target: number) => {
     if (isReadonly) return
     const newCount = checkboxIndex > currentCount ? checkboxIndex : checkboxIndex - 1
-    const isActivating = newCount >= checkboxIndex
     // animate all affected checkboxes
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= target; i++) {
       const key = `${dateStr}-${i}`
       const wasActive = i <= currentCount
       const willBeActive = i <= Math.max(0, newCount)
@@ -179,11 +187,13 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
     upsertStory.mutate({ projectId, date: dateStr, storiesCount: Math.max(0, newCount) })
   }
 
-  const getCheckboxColor = (index: number, count: number) => {
+  /** Checkbox color: filled vs target. */
+  const getCheckboxColor = (index: number, count: number, target: number) => {
     if (index > count) return 'bg-surface-200 dark:bg-surface-600'
-    if (count === 1) return 'bg-pink-400'
-    if (count === 2) return 'bg-yellow-400'
-    return 'bg-green-500'
+    if (count >= target) return 'bg-green-500'
+    const pct = target > 0 ? count / target : 0
+    if (pct >= 0.5) return 'bg-yellow-400'
+    return 'bg-pink-400'
   }
 
   // Project list view
@@ -217,7 +227,8 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
               const daysWithStories = Object.values(pm).filter((c: any) => c > 0).length
               const todayKey = format(new Date(), 'yyyy-MM-dd')
               const todayCount = pm[todayKey] || 0
-              const todayDone = todayCount >= MAX_STORIES
+              const dailyTarget = getDailyTarget(project)
+              const todayDone = todayCount >= dailyTarget
               return (
                 <button
                   key={project.id}
@@ -255,21 +266,25 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-1 shrink-0">
-                    {[1, 2, 3].map(i => {
-                      let dotColor: string
-                      if (todayCount === 0) {
-                        dotColor = 'bg-red-500'
-                      } else if (i <= todayCount) {
-                        dotColor =
-                          todayCount === 1 ? 'bg-pink-400' :
-                          todayCount === 2 ? 'bg-yellow-400' :
-                          'bg-green-500'
-                      } else {
-                        dotColor = 'bg-surface-300 dark:bg-surface-600'
-                      }
-                      return <div key={i} className={clsx('w-2 h-2 rounded-full transition-colors duration-300', dotColor)} />
-                    })}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex gap-1">
+                      {Array.from({ length: dailyTarget }, (_, idx) => idx + 1).map(i => {
+                        let dotColor: string
+                        if (todayCount === 0) {
+                          dotColor = 'bg-red-500'
+                        } else if (i <= todayCount) {
+                          if (todayCount >= dailyTarget) dotColor = 'bg-green-500'
+                          else if (todayCount / dailyTarget >= 0.5) dotColor = 'bg-yellow-400'
+                          else dotColor = 'bg-pink-400'
+                        } else {
+                          dotColor = 'bg-surface-300 dark:bg-surface-600'
+                        }
+                        return <div key={i} className={clsx('w-2 h-2 rounded-full transition-colors duration-300', dotColor)} />
+                      })}
+                    </div>
+                    <span className="text-[9px] font-semibold text-surface-400 dark:text-surface-500 min-w-[26px] text-right">
+                      {todayCount}/{dailyTarget}
+                    </span>
                   </div>
                 </button>
               )
@@ -289,6 +304,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
 
   // Project calendar view
   const projectStories = storyMap[selectedProject.id] || {}
+  const dailyTarget = getDailyTarget(selectedProject)
 
   return (
     <div className={clsx('card', compact && 'p-3')}>
@@ -300,6 +316,9 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: selectedProject.color || '#6B4FCF' }} />
             <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate">{selectedProject.name}</h3>
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 shrink-0">
+              план: {dailyTarget}/день
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -357,18 +376,18 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
                   </div>
                 )
               })()}
-              <div className="flex gap-0.5">
-                {[1, 2, 3].map(i => {
+              <div className={clsx('flex flex-wrap justify-center gap-0.5', dailyTarget > 4 && 'max-w-[40px]')}>
+                {Array.from({ length: dailyTarget }, (_, idx) => idx + 1).map(i => {
                   const animKey = `${dateKey}-${i}`
                   const animType = animMap[animKey]
                   return (
                     <button
                       key={i}
                       disabled={isReadonly || future}
-                      onClick={() => !future && handleCheck(selectedProject.id, dateKey, i, count)}
+                      onClick={() => !future && handleCheck(selectedProject.id, dateKey, i, count, dailyTarget)}
                       className={clsx(
                         'w-3 h-3 rounded-sm transition-colors duration-200',
-                        i <= count ? getCheckboxColor(i, count) : 'bg-surface-200 dark:bg-surface-600',
+                        getCheckboxColor(i, count, dailyTarget),
                         i <= count && 'shadow-sm',
                         !isReadonly && !future && 'hover:scale-125 cursor-pointer',
                         (isReadonly || future) && 'cursor-default',
@@ -393,10 +412,11 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
       </div>
 
       {/* Legend */}
-      <div className="flex gap-3 text-[10px] mt-2">
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-pink-400" /><span className="text-surface-400">1</span></div>
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-yellow-400" /><span className="text-surface-400">2</span></div>
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-green-500" /><span className="text-surface-400">3</span></div>
+      <div className="flex flex-wrap gap-3 text-[10px] mt-2">
+        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-red-400" /><span className="text-surface-400">0 (нет)</span></div>
+        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-pink-400" /><span className="text-surface-400">&lt; половины</span></div>
+        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-yellow-400" /><span className="text-surface-400">≥ половины</span></div>
+        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-green-500" /><span className="text-surface-400">план ({dailyTarget})</span></div>
       </div>
 
       {/* Per-employee breakdown (admin only, multi-member) */}
