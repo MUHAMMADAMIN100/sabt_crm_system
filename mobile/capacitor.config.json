@@ -1,0 +1,34 @@
+{
+  "appId": "com.sabtsystem.crm",
+  "appName": "Sabt CRM",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://sabt-crm-system-frontend.vercel.app",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "ios": {
+    "contentInset": "always",
+    "scrollEnabled": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "launchAutoHide": true,
+      "backgroundColor": "#6B4FCF",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#6B4FCF"
+    }
+  }
+}
