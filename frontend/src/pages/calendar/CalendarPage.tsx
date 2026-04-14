@@ -43,6 +43,7 @@ export default function CalendarPage() {
   const [assigneeUserId, setAssigneeUserId] = useState('')
   const [filterProjectId, setFilterProjectId] = useState('')
   const [slidePanelTaskId, setSlidePanelTaskId] = useState<string | null>(null)
+  const [moreDay, setMoreDay] = useState<{ date: Date; items: any[] } | null>(null)
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -53,7 +54,16 @@ export default function CalendarPage() {
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')
 
-  const { data: events } = useQuery({ queryKey: ['calendar', from, to, assigneeUserId, filterProjectId], queryFn: () => calendarApi.events({ from, to, ...(assigneeUserId && { employeeId: assigneeUserId }), ...(filterProjectId && { projectId: filterProjectId }) }) })
+  // Regular workers always see only their own tasks. PMs/admin/founder can filter.
+  const forcedEmployeeId = isManagerPlus ? assigneeUserId : user?.id
+  const { data: events } = useQuery({
+    queryKey: ['calendar', from, to, forcedEmployeeId, filterProjectId],
+    queryFn: () => calendarApi.events({
+      from, to,
+      ...(forcedEmployeeId && { employeeId: forcedEmployeeId }),
+      ...(filterProjectId && { projectId: filterProjectId }),
+    }),
+  })
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list(), enabled: isManagerPlus })
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list(), enabled: isManagerPlus })
 
@@ -61,14 +71,14 @@ export default function CalendarPage() {
     mutationFn: tasksApi.create,
     onMutate: async (data: any) => {
       setShowTaskForm(false)
-      await qc.cancelQueries({ queryKey: ['calendar', from, to, assigneeUserId, filterProjectId] })
-      const previous = qc.getQueryData(['calendar', from, to, assigneeUserId, filterProjectId])
+      await qc.cancelQueries({ queryKey: ['calendar', from, to, forcedEmployeeId, filterProjectId] })
+      const previous = qc.getQueryData(['calendar', from, to, forcedEmployeeId, filterProjectId])
       const tempEvent = { id: `temp-${Date.now()}`, title: data.title || 'Новая задача', type: 'task', date: data.deadline || data.startDate, startDate: data.startDate, link: '#' }
-      qc.setQueryData(['calendar', from, to, assigneeUserId, filterProjectId], (old: any[]) => old ? [...old, tempEvent] : [tempEvent])
+      qc.setQueryData(['calendar', from, to, forcedEmployeeId, filterProjectId], (old: any[]) => old ? [...old, tempEvent] : [tempEvent])
       return { previous }
     },
     onError: (_e: any, _v: any, context: any) => {
-      qc.setQueryData(['calendar', from, to, assigneeUserId, filterProjectId], context?.previous)
+      qc.setQueryData(['calendar', from, to, forcedEmployeeId, filterProjectId], context?.previous)
       toast.error(t('common.error'))
     },
     onSuccess: () => {
@@ -163,8 +173,8 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* How-to hint for new users */}
-      <div className="flex items-start gap-3 p-3 rounded-xl bg-primary-50 dark:bg-primary-900/15 border border-primary-100 dark:border-primary-900/30">
+      {/* How-to hint for new users — hidden on mobile, shown from sm */}
+      <div className="hidden sm:flex items-start gap-3 p-3 rounded-xl bg-primary-50 dark:bg-primary-900/15 border border-primary-100 dark:border-primary-900/30">
         <Info size={16} className="text-primary-600 dark:text-primary-400 shrink-0 mt-0.5" />
         <div className="flex flex-col sm:flex-row sm:flex-wrap gap-x-4 gap-y-1 text-xs text-surface-600 dark:text-surface-300">
           <span className="inline-flex items-center gap-1.5">
@@ -181,8 +191,8 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      <div className="card p-0 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-        <div className="min-w-[640px]">
+      <div className="card p-0 sm:overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="w-full sm:min-w-[640px]">
         <div className="grid grid-cols-7 border-b border-surface-100 dark:border-surface-700">
           {weekDays.map((d: string) => (
             <div key={d} className="text-center text-xs font-semibold text-surface-400 dark:text-surface-500 py-3">{d}</div>
@@ -190,7 +200,7 @@ export default function CalendarPage() {
         </div>
         <div className="grid grid-cols-7">
           {Array.from({ length: startPad }).map((_, i) => (
-            <div key={`pad-${i}`} className="min-h-[90px] border-r border-b border-surface-50 dark:border-surface-700" />
+            <div key={`pad-${i}`} className="min-h-[60px] sm:min-h-[90px] border-r border-b border-surface-50 dark:border-surface-700" />
           ))}
           {days.map(day => {
             const dateKey = format(day, 'yyyy-MM-dd')
@@ -199,7 +209,7 @@ export default function CalendarPage() {
             const nonSpanEvents = getNonSpanEvents(day)
             return (
               <div key={day.toISOString()} onClick={() => handleDayClick(day)}
-                className={clsx('min-h-[90px] border-r border-b border-surface-50 dark:border-surface-700 p-1.5 transition-colors group overflow-hidden',
+                className={clsx('min-h-[60px] sm:min-h-[90px] border-r border-b border-surface-50 dark:border-surface-700 p-0.5 sm:p-1.5 transition-colors group overflow-hidden',
                   canCreate && 'cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700/30',
                   today && 'bg-primary-50/30 dark:bg-primary-900/10')}>
                 <div className="flex items-center justify-between mb-1">
@@ -268,12 +278,21 @@ export default function CalendarPage() {
                     </div>
                   ))}
                   {(spans.length + nonSpanEvents.length) > 3 && (
-                    <div
-                      className="text-[11px] font-medium text-surface-500 dark:text-surface-400 px-1.5"
-                      title={`Ещё ${spans.length + nonSpanEvents.length - 3} событий в этот день`}
+                    <button
+                      type="button"
+                      onClick={ev => {
+                        ev.stopPropagation()
+                        const allItems = [
+                          ...spans.map(s => ({ kind: 'task', ...s.event })),
+                          ...nonSpanEvents.map((e: any) => ({ kind: 'single', ...e })),
+                        ]
+                        setMoreDay({ date: day, items: allItems })
+                      }}
+                      className="text-[11px] font-medium text-primary-600 dark:text-primary-400 hover:underline px-1.5 text-left"
+                      title={`Показать все (${spans.length + nonSpanEvents.length})`}
                     >
                       +{spans.length + nonSpanEvents.length - 3} ещё
-                    </div>
+                    </button>
                   )}
                 </div>
               </div>
@@ -334,6 +353,52 @@ export default function CalendarPage() {
         taskId={slidePanelTaskId}
         onClose={() => setSlidePanelTaskId(null)}
       />
+
+      {/* "+N ещё" — full day list modal */}
+      {moreDay && (
+        <Modal
+          open={true}
+          onClose={() => setMoreDay(null)}
+          title={`События · ${format(moreDay.date, 'd MMMM yyyy', { locale: ru })}`}
+          size="md"
+        >
+          <div className="space-y-1.5 max-h-[70vh] overflow-y-auto">
+            {moreDay.items.map((e: any, idx: number) => {
+              const isTask = e.kind === 'task'
+              const statusLabel = isTask ? (TASK_STATUS_LABELS[e.status] || e.status) : ''
+              const bgColor = isTask ? (TASK_STATUS_COLORS[e.status] || 'bg-blue-400') : (TYPE_COLORS[e.type] || 'bg-gray-100')
+              return (
+                <button
+                  key={`${e.id}-${idx}`}
+                  type="button"
+                  onClick={() => {
+                    if (isTask) {
+                      setSlidePanelTaskId(String(e.id).replace(/^task-/, ''))
+                      setMoreDay(null)
+                    }
+                  }}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors text-left"
+                >
+                  <div className={clsx('w-2 h-8 rounded-full shrink-0', bgColor)} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{e.title}</p>
+                    <p className="text-xs text-surface-500 dark:text-surface-400 truncate">
+                      {isTask ? (
+                        <>
+                          {e.assigneeName ? `👤 ${e.assigneeName}` : 'без исполнителя'}
+                          {statusLabel && <> · {statusLabel}</>}
+                        </>
+                      ) : (
+                        e.type === 'project_start' ? 'Начало проекта' : 'Конец проекта'
+                      )}
+                    </p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

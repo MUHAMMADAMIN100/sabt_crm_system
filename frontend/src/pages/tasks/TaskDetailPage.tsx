@@ -782,14 +782,6 @@ export default function TaskDetailPage() {
                   {task.deadline ? format(new Date(task.deadline), 'dd.MM.yyyy') : '—'}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-surface-500 dark:text-surface-400">{t('tasks.estimatedHours')}</span>
-                <span className="font-medium text-surface-900 dark:text-surface-100">{task.estimatedHours || 0}ч</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-surface-500 dark:text-surface-400">{t('dashboard.hours')}</span>
-                <span className="font-medium text-primary-600 dark:text-primary-400">{task.loggedHours || 0}ч</span>
-              </div>
               {isDone && task.reviewedAt && (
                 <div className="flex justify-between">
                   <span className="text-surface-500 dark:text-surface-400">Подтверждено</span>

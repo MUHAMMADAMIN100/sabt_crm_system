@@ -87,6 +87,23 @@
   }
   .dark .input { @apply bg-surface-800 border-surface-700 text-surface-100; }
 
+  /* Native date / datetime inputs render smaller text + weird heights on mobile
+   * Safari/Chrome by default. Force matching size with other .input fields. */
+  input.input[type="date"],
+  input.input[type="time"],
+  input.input[type="datetime-local"],
+  input.input[type="month"],
+  input.input[type="week"] {
+    @apply text-sm min-h-[42px];
+    line-height: 1.4;
+    -webkit-appearance: none;
+  }
+  input.input[type="date"]::-webkit-date-and-time-value,
+  input.input[type="datetime-local"]::-webkit-date-and-time-value,
+  input.input[type="time"]::-webkit-date-and-time-value {
+    text-align: left;
+  }
+
   .label { @apply block text-sm font-medium text-surface-700 mb-1; }
   .dark .label { @apply text-surface-300; }
 

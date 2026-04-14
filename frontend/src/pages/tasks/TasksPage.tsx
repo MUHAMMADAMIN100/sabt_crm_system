@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import StoryCalendar from '@/components/stories/StoryCalendar'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { shortenName } from '@/lib/name'
 import { tasksApi, projectsApi, employeesApi } from '@/services/api.service'
 import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
@@ -29,6 +30,7 @@ export default function TasksPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const PAGE_SIZE = 10
   const user = useAuthStore(s => s.user)
+  const navigate = useNavigate()
   const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
   // Story widget visible to everyone except admin/founder (they have analytics).
   // PM sees it too because they may be a member of other projects where they
@@ -342,17 +344,30 @@ export default function TasksPage() {
                 const canChangeStatus = isManagerPlus || isOwnTask || (isSMM && isOwnTask)
                 const isSelected = selectedIds.has(task.id)
                 return (
-                  <tr key={task.id} className={clsx('border-b border-surface-50 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors', isSelected && 'bg-primary-50/50 dark:bg-primary-900/10')}>
+                  <tr
+                    key={task.id}
+                    onClick={() => navigate(`/tasks/${task.id}`)}
+                    className={clsx(
+                      'border-b border-surface-50 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors cursor-pointer',
+                      isSelected && 'bg-primary-50/50 dark:bg-primary-900/10',
+                    )}
+                  >
                     {isManagerPlus && (
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                         <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(task.id)} className="rounded" />
                       </td>
                     )}
                     <td className="px-4 py-3">
-                      <Link to={`/tasks/${task.id}`} className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{task.title}</Link>
+                      <span className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{task.title}</span>
+                      {/* Mobile: show project under title */}
+                      {task.project?.name && (
+                        <div className="md:hidden text-[10px] text-surface-400 dark:text-surface-500 mt-0.5 truncate">
+                          📁 {task.project.name}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell"><span className="text-sm text-surface-500 dark:text-surface-400">{task.project?.name || '—'}</span></td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       {canChangeStatus ? (
                         <select value={task.status} onChange={e => updateStatusMut.mutate({ id: task.id, status: e.target.value })}
                           className="text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-white dark:bg-surface-800 dark:text-surface-200">
@@ -369,10 +384,10 @@ export default function TasksPage() {
                       {task.assignee ? (
                         <div className="flex items-center gap-2">
                           <Avatar name={empNameMap[task.assigneeId] || task.assignee.name} size={22} />
-                          {!isManagerPlus ? (
+                          {task.assigneeId === user?.id ? (
                             <span className="text-sm font-medium text-primary-600 dark:text-primary-400">Вы</span>
                           ) : (
-                            <span className="text-sm text-surface-600 dark:text-surface-300">{empNameMap[task.assigneeId] || task.assignee.name}</span>
+                            <span className="text-sm text-surface-600 dark:text-surface-300">{shortenName(empNameMap[task.assigneeId] || task.assignee.name)}</span>
                           )}
                         </div>
                       ) : <span className="text-surface-400 dark:text-surface-500 text-sm">—</span>}
@@ -382,7 +397,7 @@ export default function TasksPage() {
                         <span className={`text-sm ${new Date(task.deadline) < new Date() ? 'text-red-500 font-medium' : 'text-surface-500 dark:text-surface-400'}`}>{format(new Date(task.deadline), 'dd.MM.yyyy')}</span>
                       ) : <span className="text-surface-400 dark:text-surface-500 text-sm">—</span>}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
                       <div className="flex gap-1 justify-end">
                         {(isManagerPlus || task.assigneeId === user?.id || task.createdById === user?.id) && (
                           <>
