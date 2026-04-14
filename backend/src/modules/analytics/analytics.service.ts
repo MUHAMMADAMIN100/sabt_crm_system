@@ -195,7 +195,8 @@ export class AnalyticsService {
       .createQueryBuilder('u')
       .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
       .leftJoin('u.tasks', 't', "t.status NOT IN ('done','cancelled')")
-      .select('u.id', 'id')
+      .select('e.id', 'employeeId')
+      .addSelect('u.id', 'userId')
       .addSelect('u.name', 'name')
       .addSelect('e.fullName', 'fullName')
       .addSelect('e.position', 'position')
@@ -206,12 +207,15 @@ export class AnalyticsService {
       .addSelect("SUM(CASE WHEN t.deadline < NOW() AND t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END)", 'overdueTasks')
       .where('u.isActive = true')
       .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] })
-      .groupBy('u.id, u.name, e.fullName, e.position, e.department, u.avatar')
+      .groupBy('e.id, u.id, u.name, e.fullName, e.position, e.department, u.avatar')
       .orderBy('"activeTasks"', 'DESC')
       .getRawMany();
 
     return data.map(d => ({
-      id: d.id,
+      // Primary `id` is the EMPLOYEE id — used for /employees/:id routes
+      id: d.employeeId,
+      employeeId: d.employeeId,
+      userId: d.userId,
       name: d.fullName || d.name,
       position: d.position,
       department: d.department,
