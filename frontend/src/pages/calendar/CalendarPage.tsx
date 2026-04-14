@@ -8,7 +8,7 @@ import TaskForm from '@/components/tasks/TaskForm'
 import TaskSlidePanel from '@/components/tasks/TaskSlidePanel'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday, parseISO, isBefore, isAfter } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Plus, Info, MousePointerClick, CalendarPlus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -171,24 +171,6 @@ export default function CalendarPage() {
           </select>
         </div>
       )}
-
-      {/* How-to hint for new users — hidden on mobile, shown from sm */}
-      <div className="hidden sm:flex items-start gap-3 p-3 rounded-xl bg-primary-50 dark:bg-primary-900/15 border border-primary-100 dark:border-primary-900/30">
-        <Info size={16} className="text-primary-600 dark:text-primary-400 shrink-0 mt-0.5" />
-        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-x-4 gap-y-1 text-xs text-surface-600 dark:text-surface-300">
-          <span className="inline-flex items-center gap-1.5">
-            <CalendarPlus size={12} className="text-primary-600 dark:text-primary-400" />
-            <b className="text-surface-800 dark:text-surface-100">Клик по дню</b> — создать задачу
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <MousePointerClick size={12} className="text-primary-600 dark:text-primary-400" />
-            <b className="text-surface-800 dark:text-surface-100">Клик по задаче</b> — подробности
-          </span>
-          <span className="text-surface-500 dark:text-surface-400">
-            Цвет полосы = статус · длина = срок выполнения
-          </span>
-        </div>
-      </div>
 
       <div className="card p-0 sm:overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="w-full sm:min-w-[640px]">
