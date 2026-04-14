@@ -25,6 +25,13 @@ const INTEREST_OPTIONS: { value: string; label: string; icon: string; color: str
   { value: 'hot',  label: 'Горячий',  icon: '🔥', color: 'text-red-500' },
 ]
 
+// Chip styles for interest filter — visual states
+const INTEREST_CHIPS: { value: string; label: string; bg: string; bgActive: string }[] = [
+  { value: 'hot',  label: '🔥 Горячие',  bg: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',           bgActive: 'bg-red-500 text-white' },
+  { value: 'warm', label: '☀️ Тёплые',   bg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',   bgActive: 'bg-amber-500 text-white' },
+  { value: 'cold', label: '🧊 Холодные', bg: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',           bgActive: 'bg-sky-500 text-white' },
+]
+
 const CHANNEL_OPTIONS = ['WhatsApp', 'Telegram', 'Instagram', 'Звонок', 'Email', 'Личная встреча']
 const SOURCE_OPTIONS = ['Instagram', 'Рекомендация', 'Холодный обзвон', 'Сайт', 'Реклама', 'Другое']
 const SPHERE_SUGGESTIONS = ['Ресторан', 'Кафе', 'Клиника', 'Школа', 'Салон красоты', 'Отель', 'Магазин', 'Блогер', 'Модель', 'SMM', 'Разработка', 'Другое']
@@ -49,25 +56,74 @@ export default function ClientsPage() {
     queryFn: clientsApi.stats,
   })
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['clients'] })
-    qc.invalidateQueries({ queryKey: ['clients-stats'] })
-  }
+  const queryKey = ['clients', search, status, interest, sphere]
 
   const createMut = useMutation({
     mutationFn: clientsApi.create,
-    onSuccess: () => { invalidate(); setShowCreate(false); toast.success('Клиент добавлен') },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
+    onMutate: async (newLead: any) => {
+      setShowCreate(false)
+      await qc.cancelQueries({ queryKey: ['clients'] })
+      const previous = qc.getQueryData(queryKey)
+      const tempLead = {
+        id: `temp-${Date.now()}`,
+        ...newLead,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+      qc.setQueryData(queryKey, (old: any[] = []) => [tempLead, ...old])
+      return { previous, tempLead }
+    },
+    onError: (e: any, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(queryKey, ctx.previous)
+      toast.error(e?.response?.data?.message || 'Ошибка')
+    },
+    onSuccess: (server: any, _vars, ctx) => {
+      qc.setQueryData(queryKey, (old: any[] = []) =>
+        old.map(l => l.id === ctx?.tempLead.id ? server : l),
+      )
+      qc.invalidateQueries({ queryKey: ['clients-stats'] })
+      toast.success('Клиент добавлен')
+    },
   })
+
   const updateMut = useMutation({
     mutationFn: ({ id, data }: any) => clientsApi.update(id, data),
-    onSuccess: () => { invalidate(); setEditLead(null); toast.success('Сохранено') },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
+    onMutate: async ({ id, data }: any) => {
+      setEditLead(null)
+      await qc.cancelQueries({ queryKey: ['clients'] })
+      const previous = qc.getQueryData(queryKey)
+      qc.setQueryData(queryKey, (old: any[] = []) =>
+        old.map(l => l.id === id ? { ...l, ...data, updatedAt: new Date().toISOString() } : l),
+      )
+      return { previous }
+    },
+    onError: (e: any, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(queryKey, ctx.previous)
+      toast.error(e?.response?.data?.message || 'Ошибка')
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clients-stats'] })
+      toast.success('Сохранено')
+    },
   })
+
   const deleteMut = useMutation({
     mutationFn: clientsApi.remove,
-    onSuccess: () => { invalidate(); setDeleteId(null); toast.success('Удалено') },
-    onError: () => toast.error('Ошибка'),
+    onMutate: async (id: string) => {
+      setDeleteId(null)
+      await qc.cancelQueries({ queryKey: ['clients'] })
+      const previous = qc.getQueryData(queryKey)
+      qc.setQueryData(queryKey, (old: any[] = []) => old.filter(l => l.id !== id))
+      return { previous }
+    },
+    onError: (_e, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(queryKey, ctx.previous)
+      toast.error('Ошибка')
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clients-stats'] })
+      toast.success('Удалено')
+    },
   })
 
   const spheres = useMemo(() => {
@@ -126,7 +182,41 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* Filters row */}
+      {/* Interest chips */}
+      {stats?.byInterest && (
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Интерес:</span>
+          <button
+            onClick={() => setInterest('')}
+            className={clsx(
+              'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+              !interest
+                ? 'bg-primary-600 text-white'
+                : 'bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
+            )}
+          >
+            ⚪ Все · {(stats.byInterest.cold || 0) + (stats.byInterest.warm || 0) + (stats.byInterest.hot || 0) + (stats.byInterest.none || 0)}
+          </button>
+          {INTEREST_CHIPS.map(c => {
+            const n = stats.byInterest[c.value] || 0
+            const active = interest === c.value
+            return (
+              <button
+                key={c.value}
+                onClick={() => setInterest(active ? '' : c.value)}
+                className={clsx(
+                  'px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                  active ? c.bgActive + ' shadow-sm' : c.bg,
+                )}
+              >
+                {c.label} · {n}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Search + sphere row */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1 min-w-0">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
@@ -137,12 +227,7 @@ export default function ClientsPage() {
             className="input pl-9"
           />
         </div>
-        <select value={interest} onChange={e => setInterest(e.target.value)} className="input sm:w-40">
-          {INTEREST_OPTIONS.map(i => (
-            <option key={i.value} value={i.value}>{i.icon} {i.label}</option>
-          ))}
-        </select>
-        <select value={sphere} onChange={e => setSphere(e.target.value)} className="input sm:w-40">
+        <select value={sphere} onChange={e => setSphere(e.target.value)} className="input sm:w-48">
           <option value="">Все сферы</option>
           {spheres.map(s => <option key={s} value={s}>{s}</option>)}
         </select>

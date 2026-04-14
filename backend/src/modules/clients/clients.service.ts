@@ -61,21 +61,33 @@ export class ClientsService {
 
   /** Aggregated counters for the Clients page header */
   async stats() {
-    const rows = await this.repo
+    const statusRows = await this.repo
       .createQueryBuilder('c')
       .select('c.status', 'status')
       .addSelect('COUNT(*)', 'count')
       .groupBy('c.status')
       .getRawMany();
     const byStatus: Record<string, number> = {};
-    for (const r of rows) byStatus[r.status] = Number(r.count);
+    for (const r of statusRows) byStatus[r.status] = Number(r.count);
+
+    const interestRows = await this.repo
+      .createQueryBuilder('c')
+      .select('COALESCE(c.interest, \'none\')', 'interest')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('c.interest')
+      .getRawMany();
+    const byInterest: Record<string, number> = {};
+    for (const r of interestRows) byInterest[r.interest] = Number(r.count);
+
     const totalPotentialRow = await this.repo
       .createQueryBuilder('c')
       .select('COALESCE(SUM(c.dealPotential), 0)', 'total')
       .where('c.status NOT IN (:...bad)', { bad: ['lost'] })
       .getRawOne();
+
     return {
       byStatus,
+      byInterest,
       total: Object.values(byStatus).reduce((a, b) => a + b, 0),
       openPotential: Number(totalPotentialRow?.total || 0),
     };
