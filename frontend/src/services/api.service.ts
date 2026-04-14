@@ -145,6 +145,17 @@ export const calendarApi = {
   events: (params: any) => api.get('/calendar/events', { params }).then(r => r.data),
 }
 
+// ─── Clients (sales CRM) ─────────────────────────────────
+export const clientsApi = {
+  list: (params?: { search?: string; status?: string; interest?: string; sphere?: string; ownerId?: string; source?: string }) =>
+    api.get('/clients', { params }).then(r => r.data),
+  stats: () => api.get('/clients/stats').then(r => r.data),
+  get: (id: string) => api.get(`/clients/${id}`).then(r => r.data),
+  create: (data: any) => api.post('/clients', data).then(r => r.data),
+  update: (id: string, data: any) => api.patch(`/clients/${id}`, data).then(r => r.data),
+  remove: (id: string) => api.delete(`/clients/${id}`).then(r => r.data),
+}
+
 // ─── Stories ─────────────────────────────────────────────
 export const storiesApi = {
   my: (from: string, to: string) => api.get('/stories/my', { params: { from, to } }).then(r => r.data),

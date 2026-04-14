@@ -36,6 +36,7 @@ export function getRoleLabel(role: string | undefined | null): string {
 }
 
 export type Permission =
+  | 'clients.view'
   | 'dashboard'
   | 'projects.view'
   | 'projects.create'
@@ -87,6 +88,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
+    'clients.view',
   ],
   founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -99,6 +101,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
+    'clients.view',
   ],
   project_manager: [
     'dashboard', 'projects.view', 'projects.edit',
@@ -168,6 +171,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use',
     'ai.chat',
+    'clients.view',
   ],
   developer: [
     'dashboard', 'projects.view',
@@ -218,6 +222,7 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
   'archive.view': '/archive',
   'files.view': '/files',
   'ai.chat': '/ai',
+  'clients.view': '/clients',
 }
 
 export function canAccessRoute(role: UserRole | undefined, route: string): boolean {
