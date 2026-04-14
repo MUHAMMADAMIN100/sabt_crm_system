@@ -46,8 +46,12 @@ export class FilesService {
         }
       }
     }
+    // Multer (busboy) decodes the multipart filename as latin1 by default,
+    // so UTF-8 names (Cyrillic, emoji, etc.) arrive mangled. Re-decode.
+    const fixedName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
     const attachment = this.repo.create({
-      originalName: file.originalname,
+      originalName: fixedName,
       filename: file.filename,
       path: `/uploads/files/${file.filename}`,
       mimetype: file.mimetype,
@@ -63,7 +67,7 @@ export class FilesService {
       action: ActivityAction.FILE_UPLOAD,
       entity: projectId ? 'project' : 'task',
       entityId: projectId || taskId,
-      entityName: file.originalname,
+      entityName: fixedName,
       details: { filename: file.filename, size: file.size, mimetype: file.mimetype },
     });
 
