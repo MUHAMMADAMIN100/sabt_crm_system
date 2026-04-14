@@ -10,6 +10,7 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   founder: 'Основатель',
   project_manager: 'Проект-менеджер',
+  head_smm: 'Главный SMM специалист',
   smm_specialist: 'SMM специалист',
   designer: 'Дизайнер',
   targetologist: 'Таргетолог',
@@ -109,6 +110,19 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'ai.chat',
+  ],
+  head_smm: [
+    'dashboard', 'projects.view', 'projects.edit',
+    'projects.members.manage',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
+    'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',
+    'employees.view', 'analytics.view',
+    'reports.view', 'reports.create',
+    'calendar.view', 'calendar.create', 'archive.view',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'ai.chat',
   ],
   smm_specialist: [
     'dashboard', 'projects.view',
@@ -117,6 +131,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'ai.chat',
   ],
   designer: [
     'dashboard', 'projects.view',
@@ -125,6 +140,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
   ],
   targetologist: [
     'dashboard', 'projects.view',
@@ -133,6 +149,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
   ],
   marketer: [
     'dashboard', 'projects.view',
@@ -141,6 +158,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
   ],
   sales_manager: [
     'dashboard', 'projects.view',
@@ -149,6 +167,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
   ],
   developer: [
     'dashboard', 'projects.view',
@@ -157,6 +176,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
   ],
   employee: [
     'dashboard', 'projects.view',
@@ -165,6 +185,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'files.view',
     'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
   ],
 }
 

@@ -14,8 +14,9 @@ import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
 import { TaskResultsService } from '../task-results/task-results.service';
+import { DailyReport } from '../reports/daily-report.entity';
 
-const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER];
+const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM];
 const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.MARKETER, UserRole.TARGETOLOGIST, UserRole.SALES_MANAGER, UserRole.EMPLOYEE];
 
 @Injectable()
@@ -23,6 +24,7 @@ export class TasksService {
   constructor(
     @InjectRepository(Task) private repo: Repository<Task>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(DailyReport) private reportRepo: Repository<DailyReport>,
     private notificationsService: NotificationsService,
     private projectsService: ProjectsService,
     private mailService: MailService,
@@ -31,6 +33,27 @@ export class TasksService {
     private gateway: AppGateway,
     private taskResultsService: TaskResultsService,
   ) {}
+
+  /** Auto-create a daily_report row when a task transitions to DONE. */
+  private async autoReportFromTask(task: Task) {
+    if (!task.assigneeId) return;
+    try {
+      await this.reportRepo.save(this.reportRepo.create({
+        employeeId: task.assigneeId,
+        projectId: task.projectId || null,
+        taskId: task.id,
+        date: new Date(),
+        description: `✅ Выполнена задача "${task.title}"`,
+        timeSpent: Number(task.loggedHours || 0),
+        comments: task.description || null,
+      }));
+    } catch (err: any) {
+      // Non-critical — just log. Missing reportRepo or schema issues shouldn't
+      // block the task completion flow.
+      // eslint-disable-next-line no-console
+      console.warn('autoReportFromTask failed:', err?.message);
+    }
+  }
 
   findAll(filters: {
     projectId?: string;
@@ -158,6 +181,10 @@ export class TasksService {
 
     // Notify on status change
     if (dto.status && dto.status !== oldStatus) {
+      // Auto-generate daily report when a task becomes DONE
+      if (dto.status === TaskStatus.DONE) {
+        await this.autoReportFromTask({ ...task, ...dto } as Task);
+      }
       const notifyId = task.createdById !== user.id ? task.createdById : task.assigneeId;
       if (notifyId) {
         await this.notificationsService.create({
@@ -336,6 +363,7 @@ export class TasksService {
     });
 
     await this.projectsService.updateProgress(task.projectId);
+    await this.autoReportFromTask(task);
     this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
     return this.findOne(id);
   }

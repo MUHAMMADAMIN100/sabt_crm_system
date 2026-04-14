@@ -25,7 +25,7 @@ export interface AiUserContext {
 const FULL_ACCESS_ROLES: ReadonlySet<UserRole> = new Set([UserRole.ADMIN, UserRole.FOUNDER]);
 
 /** Пользователи, которые видят только свои проекты (плюс команду и задачи в них). */
-const PROJECT_SCOPED_ROLES: ReadonlySet<UserRole> = new Set([UserRole.PROJECT_MANAGER]);
+const PROJECT_SCOPED_ROLES: ReadonlySet<UserRole> = new Set([UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM]);
 
 // Default fallback chain (used when user doesn't pick a specific model)
 const GEMINI_MODEL_CHAIN = [

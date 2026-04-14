@@ -591,6 +591,109 @@ export class DeadlineScheduler implements OnModuleInit {
     this.logger.log(`Notified about ${pendingReview.length} long-pending reviews`)
   }
 
+  // ── 9. Weekly digest (Monday 08:00 Dushanbe) ─────────────────────────────
+  /** Every Monday 08:00 Dushanbe: for every active employee, send their weekly
+   *  "what I did last 7 days" digest to them + to all admin/founder/PM users
+   *  (one consolidated letter per recipient, employees grouped inside). */
+  @Cron('0 8 * * 1', { timeZone: 'Asia/Dushanbe' })
+  async weeklyDigest() {
+    this.logger.log('Running weekly digest cron (Monday 08:00 Dushanbe)...')
+
+    const now = new Date()
+    const weekAgo = new Date(now.getTime() - 7 * 86400000)
+
+    // Load all active employees with linked user
+    const employees = await this.employeeRepo.find({
+      where: { status: 'active' as any },
+      relations: ['user'],
+    })
+
+    // Build per-employee weekly data: done tasks, total logged hours
+    const rows = await Promise.all(employees.map(async emp => {
+      if (!emp.userId) return null
+      const doneTasks = await this.taskRepo
+        .createQueryBuilder('t')
+        .where('t.assigneeId = :uid', { uid: emp.userId })
+        .andWhere('t.status = :s', { s: TaskStatus.DONE })
+        .andWhere('t.reviewedAt >= :from', { from: weekAgo })
+        .andWhere('t.reviewedAt <= :to', { to: now })
+        .select(['t.id', 't.title', 't.loggedHours', 't.projectId'])
+        .addSelect(['t.reviewedAt'])
+        .getMany()
+      const totalHours = doneTasks.reduce((s, t) => s + Number(t.loggedHours || 0), 0)
+      return {
+        employeeId: emp.id,
+        userId: emp.userId,
+        fullName: emp.fullName,
+        email: emp.user?.email,
+        doneCount: doneTasks.length,
+        totalHours,
+        tasks: doneTasks.map(t => ({ title: t.title, hours: Number(t.loggedHours || 0) })),
+      }
+    }))
+    const stats = rows.filter((r): r is Exclude<typeof r, null> => r !== null)
+
+    // ── 1. Send a personal summary to each employee (email + telegram + in-app)
+    for (const row of stats) {
+      if (row.doneCount === 0) continue // skip silent weeks
+      const taskLines = row.tasks.slice(0, 10)
+        .map(t => `• ${t.title}${t.hours > 0 ? ` (${t.hours}ч)` : ''}`)
+        .join('\n')
+      const overflow = row.tasks.length > 10 ? `\n…и ещё ${row.tasks.length - 10}` : ''
+
+      await this.notificationsService.create({
+        userId: row.userId,
+        type: NotificationType.NEW_REPORT,
+        title: '📅 Итоги недели',
+        message: `Выполнено задач: ${row.doneCount} · Часов: ${row.totalHours}`,
+        link: `/reports`,
+      })
+      if (row.email) {
+        await this.mailService.sendWeeklyPersonalDigest(
+          row.email, row.fullName, row.doneCount, row.totalHours, row.tasks,
+        ).catch(() => {})
+      }
+      await this.telegramService.sendToUser(
+        row.userId,
+        `📅 <b>Итоги недели</b>\n\n` +
+        `✅ Выполнено: <b>${row.doneCount}</b> задач\n` +
+        `⏱ Часов: <b>${row.totalHours}</b>\n\n` +
+        (taskLines ? `<b>Задачи:</b>\n${taskLines}${overflow}` : ''),
+      ).catch(() => {})
+    }
+
+    // ── 2. Send consolidated team digest to every admin/founder/PM
+    const supervisors = await this.userRepo.find({
+      where: [
+        { role: UserRole.ADMIN, isActive: true },
+        { role: UserRole.FOUNDER, isActive: true },
+        { role: UserRole.PROJECT_MANAGER, isActive: true },
+        { role: UserRole.HEAD_SMM, isActive: true },
+      ],
+    })
+
+    const teamData = stats
+      .filter(s => s.doneCount > 0)
+      .sort((a, b) => b.doneCount - a.doneCount)
+
+    for (const sup of supervisors) {
+      await this.notificationsService.create({
+        userId: sup.id,
+        type: NotificationType.NEW_REPORT,
+        title: '📊 Недельный отчёт по команде',
+        message: `Выполнено задач командой: ${teamData.reduce((s, r) => s + r.doneCount, 0)}`,
+        link: `/reports`,
+      })
+      if (sup.email) {
+        await this.mailService.sendWeeklyTeamDigest(
+          sup.email, sup.name, teamData,
+        ).catch(() => {})
+      }
+    }
+
+    this.logger.log(`Weekly digest sent: ${stats.filter(r => r.doneCount > 0).length} employees, ${supervisors.length} supervisors`)
+  }
+
   // ── 8. Cleanup orphan task notifications (daily at 03:00) ────────────────
   /** Removes notifications whose link points to a task that no longer exists.
    *  Returns the number of deleted rows. */

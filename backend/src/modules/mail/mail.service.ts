@@ -461,6 +461,110 @@ export class MailService {
     }
   }
 
+  /** Personal weekly digest sent to the employee themselves */
+  async sendWeeklyPersonalDigest(
+    to: string, recipientName: string, doneCount: number, totalHours: number,
+    tasks: Array<{ title: string; hours: number }>,
+  ) {
+    const taskRows = tasks.slice(0, 20).map(t => `
+      <tr>
+        <td style="padding:8px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;">${t.title}</td>
+        <td style="padding:8px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;text-align:right;">${t.hours}ч</td>
+      </tr>`).join('');
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('📅 Ваши итоги недели')}
+        <div style="padding:28px 36px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 16px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Вот что вы сделали за прошедшие 7 дней:
+          </p>
+          <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+            <span style="background:#ecfdf5;border:1px solid #86efac;color:#047857;border-radius:8px;padding:10px 14px;">
+              ✅ Выполнено: <b>${doneCount}</b>
+            </span>
+            <span style="background:#eef2ff;border:1px solid #c7d2fe;color:#4338ca;border-radius:8px;padding:10px 14px;">
+              ⏱ Часов: <b>${totalHours}</b>
+            </span>
+          </div>
+          ${tasks.length ? `
+          <table style="width:100%;border-collapse:collapse;background:#f8fafc;border-radius:10px;overflow:hidden;margin-bottom:22px;">
+            <thead>
+              <tr style="background:#eef2ff;">
+                <th style="text-align:left;padding:8px 14px;color:#475569;font-size:12px;font-weight:600;">Задача</th>
+                <th style="text-align:right;padding:8px 14px;color:#475569;font-size:12px;font-weight:600;">Часы</th>
+              </tr>
+            </thead>
+            <tbody>${taskRows}</tbody>
+          </table>` : ''}
+          <a href="${this.appUrl}/reports" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+            Открыть отчёты →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+    try {
+      await this.sendViaBrevo(to, recipientName, `📅 Итоги недели — ${doneCount} задач (${totalHours}ч)`, html);
+    } catch (err) {
+      this.logger.error(`Failed weekly personal digest to ${to}: ${err.message}`);
+    }
+  }
+
+  /** Team weekly digest sent to admin/founder/PM — aggregated by employee */
+  async sendWeeklyTeamDigest(
+    to: string, recipientName: string,
+    stats: Array<{ fullName: string; doneCount: number; totalHours: number }>,
+  ) {
+    const totalTasks = stats.reduce((s, r) => s + r.doneCount, 0);
+    const totalHours = stats.reduce((s, r) => s + r.totalHours, 0);
+    const rows = stats.map(r => `
+      <tr>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;font-weight:500;">${r.fullName}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#047857;font-size:14px;font-weight:600;text-align:right;">${r.doneCount}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;text-align:right;">${r.totalHours}ч</td>
+      </tr>`).join('');
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('📊 Недельный отчёт по команде')}
+        <div style="padding:28px 36px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 16px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Сводка по всем сотрудникам за прошедшие 7 дней.
+          </p>
+          <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+            <span style="background:#ecfdf5;border:1px solid #86efac;color:#047857;border-radius:8px;padding:10px 14px;">
+              ✅ Задач: <b>${totalTasks}</b>
+            </span>
+            <span style="background:#eef2ff;border:1px solid #c7d2fe;color:#4338ca;border-radius:8px;padding:10px 14px;">
+              ⏱ Часов: <b>${totalHours}</b>
+            </span>
+            <span style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:10px 14px;">
+              👥 Активных: <b>${stats.length}</b>
+            </span>
+          </div>
+          <table style="width:100%;border-collapse:collapse;background:#f8fafc;border-radius:10px;overflow:hidden;margin-bottom:22px;">
+            <thead>
+              <tr style="background:#eef2ff;">
+                <th style="text-align:left;padding:10px 14px;color:#475569;font-size:12px;font-weight:600;">Сотрудник</th>
+                <th style="text-align:right;padding:10px 14px;color:#475569;font-size:12px;font-weight:600;">Задач</th>
+                <th style="text-align:right;padding:10px 14px;color:#475569;font-size:12px;font-weight:600;">Часов</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <a href="${this.appUrl}/analytics" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+            Открыть аналитику →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+    try {
+      await this.sendViaBrevo(to, recipientName, `📊 Недельный отчёт: ${totalTasks} задач (${totalHours}ч)`, html);
+    } catch (err) {
+      this.logger.error(`Failed weekly team digest to ${to}: ${err.message}`);
+    }
+  }
+
   /** Notify user they're now the project manager */
   async sendManagerAssigned(
     to: string,

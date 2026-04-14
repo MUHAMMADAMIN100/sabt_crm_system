@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import api from '@/lib/api'
 
 const ROLES: { value: string; label: string; position: string }[] = [
+  { value: 'head_smm',         label: 'Главный SMM специалист', position: 'Главный SMM специалист' },
   { value: 'smm_specialist',   label: 'SMM специалист',       position: 'SMM специалист' },
   { value: 'designer',         label: 'Дизайнер',             position: 'Дизайнер' },
   { value: 'targetologist',    label: 'Таргетолог',           position: 'Таргетолог' },

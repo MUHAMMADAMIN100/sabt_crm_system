@@ -500,10 +500,10 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto">
+      <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
         {(['tasks', 'gantt', 'files', 'about', 'client', 'members'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
-            className={clsx('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
+            className={clsx('px-4 py-3 sm:py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px]',
               activeTab === tab ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400' : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300')}>
             {t(`tabs.${tab}`)}
           </button>

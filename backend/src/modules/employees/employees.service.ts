@@ -16,6 +16,7 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   founder: 'Основатель',
   project_manager: 'Проект-менеджер',
+  head_smm: 'Главный SMM специалист',
   smm_specialist: 'SMM специалист',
   designer: 'Дизайнер',
   targetologist: 'Таргетолог',
@@ -295,6 +296,7 @@ export class EmployeesService {
     if (!position) return undefined;
     const norm = position.toLowerCase().replace(/[\s\-—_]+/g, '').trim();
 
+    if (norm.includes('главныйsmm') || norm.includes('headsmm') || (norm.includes('smm') && (norm.includes('главн') || norm.includes('head')))) return UserRole.HEAD_SMM;
     if (norm.includes('smm')) return UserRole.SMM_SPECIALIST;
     if (norm.includes('дизайнер') || norm.includes('designer')) return UserRole.DESIGNER;
     if (norm.includes('таргетолог') || norm.includes('targetolog')) return UserRole.TARGETOLOGIST;

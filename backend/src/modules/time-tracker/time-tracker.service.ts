@@ -6,7 +6,7 @@ import { Task } from '../tasks/task.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 
-const PM_ROLES = ['admin', 'founder', 'project_manager'];
+const PM_ROLES = ['admin', 'founder', 'project_manager', 'head_smm'];
 
 @Injectable()
 export class TimeTrackerService {

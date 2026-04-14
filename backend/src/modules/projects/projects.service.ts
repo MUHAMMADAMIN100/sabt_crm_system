@@ -61,8 +61,8 @@ export class ProjectsService {
     // so leftJoinAndSelect still loads ALL members in the result
     if (requestUser) {
       const { id: userId, role } = requestUser;
-      if (role === 'project_manager') {
-        // PM sees only projects they manage or are members of
+      if (role === 'project_manager' || role === 'head_smm') {
+        // PM / head_smm sees only projects they manage or are members of
         qb.andWhere(
           `(p.managerId = :userId OR p.id IN (
             SELECT pm."projectsId" FROM project_members pm
@@ -166,7 +166,7 @@ export class ProjectsService {
   async update(id: string, dto: UpdateProjectDto, user: { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
     const canEdit = ['admin', 'founder'].includes(user.role) ||
-      (user.role === 'project_manager' && project.managerId === user.id);
+      ((user.role === 'project_manager' || user.role === 'head_smm') && project.managerId === user.id);
     if (!canEdit) {
       throw new ForbiddenException('Not allowed');
     }
@@ -424,7 +424,7 @@ export class ProjectsService {
     const p = await this.findOne(id);
 
     // PM can only delete projects they manage
-    if (user && user.role === 'project_manager' && p.managerId !== user.id) {
+    if (user && (user.role === 'project_manager' || user.role === 'head_smm') && p.managerId !== user.id) {
       throw new ForbiddenException('Можно удалять только свои проекты');
     }
 

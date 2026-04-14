@@ -6,6 +6,7 @@ export type UserRole =
   | 'admin'
   | 'founder'
   | 'project_manager'
+  | 'head_smm'
   | 'smm_specialist'
   | 'designer'
   | 'sales_manager'

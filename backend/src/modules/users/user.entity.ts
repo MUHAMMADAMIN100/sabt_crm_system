@@ -14,6 +14,7 @@ export enum UserRole {
   ADMIN           = 'admin',
   FOUNDER         = 'founder',
   PROJECT_MANAGER = 'project_manager',
+  HEAD_SMM        = 'head_smm',
   SMM_SPECIALIST  = 'smm_specialist',
   DESIGNER        = 'designer',
   SALES_MANAGER   = 'sales_manager',
