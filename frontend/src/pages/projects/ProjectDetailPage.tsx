@@ -13,6 +13,7 @@ import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import GanttChart from '@/components/projects/GanttChart'
 import SMM_QUESTIONS from '@/config/smm-questions'
+import { downloadSmmBrief } from '@/lib/smmBrief'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -716,20 +717,10 @@ export default function ProjectDetailPage() {
               <div className="flex items-center justify-between border-b border-surface-100 dark:border-surface-700 pb-3">
                 <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base">SMM-анкета</h3>
                 <button
-                  onClick={() => {
-                    const lines = SMM_QUESTIONS.map(q => `${q.label}:\n${(project.smmData as any)[q.key] || '—'}`).join('\n\n')
-                    const content = `SMM-АНКЕТА\nПроект: ${project.name}\nДата: ${new Date().toLocaleDateString('ru-RU')}\n${'─'.repeat(40)}\n\n${lines}`
-                    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-                    const url = URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = url
-                    a.download = `SMM_Анкета_${project.name}.txt`
-                    a.click()
-                    URL.revokeObjectURL(url)
-                  }}
+                  onClick={() => downloadSmmBrief({ name: project.name, smmData: project.smmData as any })}
                   className="flex items-center gap-1.5 text-xs text-primary-600 dark:text-primary-400 hover:underline"
                 >
-                  <Download size={13} /> Скачать .txt
+                  <Download size={13} /> Скачать PDF
                 </button>
               </div>
               <div className="space-y-2">
