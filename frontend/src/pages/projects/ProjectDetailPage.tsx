@@ -1274,7 +1274,10 @@ function SmmPlanFactCard({
               : 'text-red-500',
             )}>{pct}%</p>
           </div>
-          <ProgressBar value={pct} className="mt-1" />
+          <p className="text-[11px] text-surface-500 dark:text-surface-400 leading-tight">
+            {totalActual} из {planElapsed} · план {storiesPerDay}/день
+          </p>
+          <ProgressBar value={pct} className="mt-1.5" />
         </div>
       </div>
 
