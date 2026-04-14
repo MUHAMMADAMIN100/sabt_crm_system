@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { projectsApi, employeesApi, filesApi } from '@/services/api.service'
+import { projectsApi, employeesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar, Pagination } from '@/components/ui'
@@ -76,15 +76,11 @@ export default function ProjectsPage() {
 
   const createMut = useMutation({
     mutationFn: async (data: any) => {
-      const project = await projectsApi.create(data)
-      if (data.projectType === 'SMM' && data.smmData && Object.keys(data.smmData).length > 0) {
-        const lines = SMM_QUESTIONS.map(q => `${q.label}:\n${data.smmData[q.key] || '—'}`).join('\n\n')
-        const content = `SMM-АНКЕТА\nПроект: ${project.name}\nДата: ${new Date().toLocaleDateString('ru-RU')}\n${'─'.repeat(40)}\n\n${lines}`
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-        const file = new File([blob], `SMM_Анкета_${project.name}.txt`, { type: 'text/plain' })
-        await filesApi.upload(file, project.id).catch(() => toast.error('Не удалось сохранить SMM-анкету как файл'))
-      }
-      return project
+      // SMM questionnaire is stored in project.smmData — the dedicated PDF
+      // download button on ProjectDetailPage renders it live, no need to
+      // attach a text file that would eventually 404 when Railway's
+      // ephemeral filesystem rotates.
+      return await projectsApi.create(data)
     },
     onSuccess: async (newProject: any) => {
       setShowCreate(false)
