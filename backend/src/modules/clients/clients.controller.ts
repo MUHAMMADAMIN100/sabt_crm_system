@@ -11,7 +11,7 @@ import { UserRole } from '../users/user.entity';
 @ApiTags('Client Leads')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SALES_MANAGER)
+@Roles(UserRole.SALES_MANAGER)
 @Controller('clients')
 export class ClientsController {
   constructor(private service: ClientsService) {}
