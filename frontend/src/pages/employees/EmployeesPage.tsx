@@ -544,7 +544,19 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
             <label className="label">{t('employees.position')} *</label>
             <select {...register('position', { required: 'Выберите должность' })} className={`input ${errors.position ? 'border-red-400' : ''}`}>
               <option value="">Выберите должность</option>
-              {['SMM специалист', 'Дизайнер', 'Таргетолог', 'Менеджер по продажам', 'Проект-менеджер', 'Разработчик', 'Сотрудник', 'Основатель'].map(p => (
+              {[
+                'Главный SMM специалист',
+                'SMM специалист',
+                'Дизайнер',
+                'Таргетолог',
+                'Маркетолог',
+                'Менеджер по продажам',
+                'Проект-менеджер',
+                'Разработчик',
+                'Администратор',
+                'Сотрудник',
+                'Основатель',
+              ].map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>

@@ -12,9 +12,11 @@ const ROLES: { value: string; label: string; position: string }[] = [
   { value: 'smm_specialist',   label: 'SMM специалист',       position: 'SMM специалист' },
   { value: 'designer',         label: 'Дизайнер',             position: 'Дизайнер' },
   { value: 'targetologist',    label: 'Таргетолог',           position: 'Таргетолог' },
+  { value: 'marketer',         label: 'Маркетолог',           position: 'Маркетолог' },
   { value: 'sales_manager',    label: 'Менеджер по продажам', position: 'Менеджер по продажам' },
   { value: 'project_manager',  label: 'Проект-менеджер',      position: 'Проект-менеджер' },
   { value: 'developer',        label: 'Разработчик',          position: 'Разработчик' },
+  { value: 'admin',            label: 'Администратор',        position: 'Администратор' },
   { value: 'employee',         label: 'Сотрудник',            position: 'Сотрудник' },
   { value: 'founder',          label: 'Основатель',           position: 'Основатель' },
 ]
