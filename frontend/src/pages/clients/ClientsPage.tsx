@@ -182,39 +182,41 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* Interest chips */}
-      {stats?.byInterest && (
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Интерес:</span>
-          <button
-            onClick={() => setInterest('')}
-            className={clsx(
-              'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-              !interest
-                ? 'bg-primary-600 text-white'
-                : 'bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
-            )}
-          >
-            ⚪ Все · {(stats.byInterest.cold || 0) + (stats.byInterest.warm || 0) + (stats.byInterest.hot || 0) + (stats.byInterest.none || 0)}
-          </button>
-          {INTEREST_CHIPS.map(c => {
-            const n = stats.byInterest[c.value] || 0
-            const active = interest === c.value
-            return (
-              <button
-                key={c.value}
-                onClick={() => setInterest(active ? '' : c.value)}
-                className={clsx(
-                  'px-3 py-1.5 rounded-full text-xs font-medium transition-all',
-                  active ? c.bgActive + ' shadow-sm' : c.bg,
-                )}
-              >
-                {c.label} · {n}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      {/* Interest chips — always visible. Counts come from backend stats
+          if available (byInterest field), otherwise omitted gracefully. */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Интерес:</span>
+        <button
+          onClick={() => setInterest('')}
+          className={clsx(
+            'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+            !interest
+              ? 'bg-primary-600 text-white'
+              : 'bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
+          )}
+        >
+          ⚪ Все
+          {stats?.byInterest && (
+            <> · {(stats.byInterest.cold || 0) + (stats.byInterest.warm || 0) + (stats.byInterest.hot || 0) + (stats.byInterest.none || 0)}</>
+          )}
+        </button>
+        {INTEREST_CHIPS.map(c => {
+          const n = stats?.byInterest?.[c.value]
+          const active = interest === c.value
+          return (
+            <button
+              key={c.value}
+              onClick={() => setInterest(active ? '' : c.value)}
+              className={clsx(
+                'px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                active ? c.bgActive + ' shadow-sm' : c.bg,
+              )}
+            >
+              {c.label}{n !== undefined && <> · {n}</>}
+            </button>
+          )
+        })}
+      </div>
 
       {/* Search + sphere row */}
       <div className="flex flex-col sm:flex-row gap-2">
