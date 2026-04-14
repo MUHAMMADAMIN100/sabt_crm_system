@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react'
+import { useMemo, useRef, useEffect, useState } from 'react'
 import { differenceInDays, addDays, format, startOfDay, isToday, isWeekend } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { Link } from 'react-router-dom'
@@ -44,11 +44,26 @@ const PRIORITY_ICON: Record<string, string> = {
 
 const COL_WIDTH = 44
 const ROW_HEIGHT = 52
-const LABEL_WIDTH = 260
+// Sidebar with task names — narrow on mobile so the timeline gets
+// most of the screen. Wider on desktop where extra space is available.
+const LABEL_WIDTH_MOBILE = 130
+const LABEL_WIDTH_DESKTOP = 240
 
 export default function GanttChart({ tasks, projectStart, projectEnd }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const currentUserId = useAuthStore(s => s.user?.id)
+
+  // Sidebar width adapts to viewport — mobile gets a narrow column so the
+  // calendar timeline takes most of the screen.
+  const [labelWidth, setLabelWidth] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth >= 768 ? LABEL_WIDTH_DESKTOP : LABEL_WIDTH_MOBILE,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const onChange = (e: MediaQueryListEvent) => setLabelWidth(e.matches ? LABEL_WIDTH_DESKTOP : LABEL_WIDTH_MOBILE)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   const displayAssignee = (task: GanttTask) => {
     if (!task.assignee) return ''
@@ -163,28 +178,28 @@ export default function GanttChart({ tasks, projectStart, projectEnd }: Props) {
 
       <div className="flex overflow-hidden">
         {/* Task labels column */}
-        <div className="shrink-0 border-r border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 z-10" style={{ width: LABEL_WIDTH }}>
+        <div className="shrink-0 border-r border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 z-10" style={{ width: labelWidth }}>
           {/* Month header placeholder */}
           <div className="h-7 border-b border-surface-100 dark:border-surface-700" />
           {/* Day header placeholder */}
-          <div className="h-8 border-b border-surface-200 dark:border-surface-700 px-3 flex items-center">
-            <span className="text-[11px] font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wider">Задача / Исполнитель</span>
+          <div className="h-8 border-b border-surface-200 dark:border-surface-700 px-2 sm:px-3 flex items-center">
+            <span className="text-[10px] sm:text-[11px] font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wider truncate">Задача</span>
           </div>
           {tasksWithDates.map(task => {
             const sc = STATUS_COLORS[task.status] || STATUS_COLORS.new
             return (
-              <div key={task.id} className="flex items-center gap-2.5 px-3 border-b border-surface-50 dark:border-surface-700/50 hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors" style={{ height: ROW_HEIGHT }}>
+              <div key={task.id} className="flex items-center gap-1.5 sm:gap-2.5 px-2 sm:px-3 border-b border-surface-50 dark:border-surface-700/50 hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors" style={{ height: ROW_HEIGHT }}>
                 <span className="text-xs shrink-0" title={task.priority}>{PRIORITY_ICON[task.priority] || '○'}</span>
                 <div className="flex-1 min-w-0">
                   <Link to={`/tasks/${task.id}`} className="text-xs font-medium text-surface-800 dark:text-surface-200 hover:text-primary-600 dark:hover:text-primary-400 truncate block" title={task.title}>
                     {task.title}
                   </Link>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className={clsx('text-[10px] font-medium px-1.5 py-0 rounded', sc.bg, sc.text)}>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <span className={clsx('text-[9px] sm:text-[10px] font-medium px-1 sm:px-1.5 py-0 rounded', sc.bg, sc.text)}>
                       {STATUS_LABEL[task.status]}
                     </span>
                     {task.assignee && (
-                      <span className="text-[10px] text-surface-400 dark:text-surface-500 truncate">{displayAssignee(task)}</span>
+                      <span className="text-[9px] sm:text-[10px] text-surface-400 dark:text-surface-500 truncate hidden sm:inline">{displayAssignee(task)}</span>
                     )}
                   </div>
                 </div>
