@@ -143,7 +143,15 @@ export default function ClientsPage() {
         <div>
           <h1 className="page-title">База клиентов</h1>
           <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
-            {stats?.total || 0} лидов · потенциал {totalPotentialFmt} сомони
+            {(() => {
+              const total = stats?.total ?? leads?.length ?? 0
+              const shown = leads?.length ?? 0
+              const filtered = !!(search || status || interest || sphere)
+              if (filtered && shown !== total) {
+                return <>Показано <b className="text-surface-800 dark:text-surface-200">{shown}</b> из {total} лидов · потенциал {totalPotentialFmt} сомони</>
+              }
+              return <>{total} лидов · потенциал {totalPotentialFmt} сомони</>
+            })()}
           </p>
         </div>
         <button onClick={() => setShowCreate(true)} className="btn-primary">
@@ -246,9 +254,10 @@ export default function ClientsPage() {
         />
       ) : (
         <div className="card p-0 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-surface-100 dark:border-surface-700 text-left">
+                <th className="px-2 sm:px-3 py-3 text-xs font-semibold text-surface-400 dark:text-surface-500 w-10 text-center">#</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400">Название / Сфера</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden md:table-cell">ЛПР / Контакт</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400">Статус</th>
@@ -259,7 +268,7 @@ export default function ClientsPage() {
               </tr>
             </thead>
             <tbody>
-              {leads.map((l: any) => {
+              {leads.map((l: any, idx: number) => {
                 const statusOpt = STATUS_OPTIONS.find(s => s.value === l.status)
                 const interestOpt = INTEREST_OPTIONS.find(i => i.value === l.interest)
                 const nextIsSoon = l.nextContactAt && new Date(l.nextContactAt) <= new Date(Date.now() + 2 * 86400000)
@@ -270,6 +279,9 @@ export default function ClientsPage() {
                     onClick={() => setEditLead(l)}
                     className="border-b border-surface-50 dark:border-surface-700/50 hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors cursor-pointer"
                   >
+                    <td className="px-2 sm:px-3 py-3 text-center text-xs text-surface-400 dark:text-surface-500 tabular-nums font-medium align-top">
+                      {idx + 1}
+                    </td>
                     <td className="px-4 py-3 align-top">
                       <div className="font-medium text-surface-900 dark:text-surface-100">{l.name}</div>
                       {l.sphere && <div className="text-[11px] text-surface-400 dark:text-surface-500 mt-0.5">{l.sphere}</div>}
