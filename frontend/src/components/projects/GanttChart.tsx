@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useEffect } from 'react'
 import { differenceInDays, addDays, format, startOfDay, isToday, isWeekend } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { Link } from 'react-router-dom'
@@ -95,6 +95,23 @@ export default function GanttChart({ tasks, projectStart, projectEnd }: Props) {
 
   const todayOffset = differenceInDays(startOfDay(new Date()), rangeStart) * COL_WIDTH
 
+  // Auto-scroll so today is roughly 1/4 from the left edge — keeps past
+  // tasks visible without having to scroll back, and shows the next
+  // ~3 weeks of upcoming work to the right of the line.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || todayOffset < 0) return
+    const target = Math.max(0, todayOffset - el.clientWidth * 0.25)
+    el.scrollLeft = target
+  }, [todayOffset])
+
+  const scrollToToday = () => {
+    const el = scrollRef.current
+    if (!el || todayOffset < 0) return
+    const target = Math.max(0, todayOffset - el.clientWidth * 0.25)
+    el.scrollTo({ left: target, behavior: 'smooth' })
+  }
+
   // Group days by month for header
   const months = useMemo(() => {
     const result: { label: string; span: number }[] = []
@@ -133,10 +150,15 @@ export default function GanttChart({ tasks, projectStart, projectEnd }: Props) {
             <span className="text-xs text-surface-600 dark:text-surface-400">{v}</span>
           </div>
         ))}
-        <div className="flex items-center gap-1.5 ml-auto">
+        <button
+          type="button"
+          onClick={scrollToToday}
+          className="flex items-center gap-1.5 ml-auto px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          title="Прокрутить к сегодняшней дате"
+        >
           <div className="w-0.5 h-4 bg-red-500 rounded-full" />
           <span className="text-xs font-medium text-red-500">Сегодня</span>
-        </div>
+        </button>
       </div>
 
       <div className="flex overflow-hidden">
@@ -206,10 +228,16 @@ export default function GanttChart({ tasks, projectStart, projectEnd }: Props) {
 
             {/* Task rows */}
             <div className="relative">
-              {/* Today line */}
+              {/* Today line — vertical red line + label flag at the top */}
               {todayOffset >= 0 && todayOffset <= totalDays * COL_WIDTH && (
-                <div className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20 pointer-events-none" style={{ left: todayOffset }}>
-                  <div className="w-2 h-2 rounded-full bg-red-500 -ml-[3px] -mt-1" />
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20 pointer-events-none"
+                  style={{ left: todayOffset + COL_WIDTH / 2 }}
+                >
+                  <div className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-red-500" />
+                  <div className="absolute -top-5 left-1 px-1.5 py-0.5 bg-red-500 text-white text-[9px] font-semibold rounded whitespace-nowrap shadow-sm">
+                    Сегодня
+                  </div>
                 </div>
               )}
 
