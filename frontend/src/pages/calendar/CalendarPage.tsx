@@ -43,7 +43,6 @@ export default function CalendarPage() {
   const [assigneeUserId, setAssigneeUserId] = useState('')
   const [filterProjectId, setFilterProjectId] = useState('')
   const [slidePanelTaskId, setSlidePanelTaskId] = useState<string | null>(null)
-  const [moreDay, setMoreDay] = useState<{ date: Date; items: any[] } | null>(null)
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -277,23 +276,6 @@ export default function CalendarPage() {
                       </div>
                     </div>
                   ))}
-                  {(spans.length + nonSpanEvents.length) > 3 && (
-                    <button
-                      type="button"
-                      onClick={ev => {
-                        ev.stopPropagation()
-                        const allItems = [
-                          ...spans.map(s => ({ kind: 'task', ...s.event })),
-                          ...nonSpanEvents.map((e: any) => ({ kind: 'single', ...e })),
-                        ]
-                        setMoreDay({ date: day, items: allItems })
-                      }}
-                      className="text-[11px] font-medium text-primary-600 dark:text-primary-400 hover:underline px-1.5 text-left"
-                      title={`Показать все (${spans.length + nonSpanEvents.length})`}
-                    >
-                      +{spans.length + nonSpanEvents.length - 3} ещё
-                    </button>
-                  )}
                 </div>
               </div>
             )
@@ -354,51 +336,6 @@ export default function CalendarPage() {
         onClose={() => setSlidePanelTaskId(null)}
       />
 
-      {/* "+N ещё" — full day list modal */}
-      {moreDay && (
-        <Modal
-          open={true}
-          onClose={() => setMoreDay(null)}
-          title={`События · ${format(moreDay.date, 'd MMMM yyyy', { locale: ru })}`}
-          size="md"
-        >
-          <div className="space-y-1.5 max-h-[70vh] overflow-y-auto">
-            {moreDay.items.map((e: any, idx: number) => {
-              const isTask = e.kind === 'task'
-              const statusLabel = isTask ? (TASK_STATUS_LABELS[e.status] || e.status) : ''
-              const bgColor = isTask ? (TASK_STATUS_COLORS[e.status] || 'bg-blue-400') : (TYPE_COLORS[e.type] || 'bg-gray-100')
-              return (
-                <button
-                  key={`${e.id}-${idx}`}
-                  type="button"
-                  onClick={() => {
-                    if (isTask) {
-                      setSlidePanelTaskId(String(e.id).replace(/^task-/, ''))
-                      setMoreDay(null)
-                    }
-                  }}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors text-left"
-                >
-                  <div className={clsx('w-2 h-8 rounded-full shrink-0', bgColor)} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{e.title}</p>
-                    <p className="text-xs text-surface-500 dark:text-surface-400 truncate">
-                      {isTask ? (
-                        <>
-                          {e.assigneeName ? `👤 ${e.assigneeName}` : 'без исполнителя'}
-                          {statusLabel && <> · {statusLabel}</>}
-                        </>
-                      ) : (
-                        e.type === 'project_start' ? 'Начало проекта' : 'Конец проекта'
-                      )}
-                    </p>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        </Modal>
-      )}
     </div>
   )
 }
