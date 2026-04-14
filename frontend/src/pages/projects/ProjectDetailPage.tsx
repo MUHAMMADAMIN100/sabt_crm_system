@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, tasksApi, filesApi, employeesApi, storiesApi } from '@/services/api.service'
@@ -8,6 +8,7 @@ import { PageLoader, StatusBadge, PriorityBadge, ProgressBar, Modal, Avatar, Emp
 import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase, Save, X, UserPlus, Download, DollarSign, Check, Camera, Layers } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
+import { shortenName } from '@/lib/name'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import GanttChart from '@/components/projects/GanttChart'
@@ -43,6 +44,15 @@ export default function ProjectDetailPage() {
   const canManagePayment = user?.role === 'founder'
   const canSeePayment = ['admin', 'founder', 'sales_manager'].includes(user?.role || '')
   const canRequestPayment = ['admin', 'founder', 'sales_manager'].includes(user?.role || '')
+
+  // Detect desktop (lg and up) — mobile/tablet use select instead of drag
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   const [editingPayment, setEditingPayment] = useState(false)
   const [paymentValue, setPaymentValue] = useState('')
@@ -504,9 +514,9 @@ export default function ProjectDetailPage() {
         <div className="flex gap-4 overflow-x-auto pb-3 lg:grid lg:grid-cols-4 lg:overflow-x-visible">
           {TASK_STATUSES.map(status => (
             <div key={status} className="space-y-2 min-w-[260px] w-[260px] shrink-0 lg:min-w-0 lg:w-auto lg:shrink"
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, status)}>
+              onDragOver={isDesktop ? handleDragOver : undefined}
+              onDragLeave={isDesktop ? handleDragLeave : undefined}
+              onDrop={isDesktop ? (e) => handleDrop(e, status) : undefined}>
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-surface-700 dark:text-surface-300">{STATUS_LABELS[status]}</h3>
                 <span className="text-xs bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400 px-2 py-0.5 rounded-full">{tasksByStatus[status].length}</span>
@@ -514,12 +524,14 @@ export default function ProjectDetailPage() {
               <div className="space-y-2 min-h-[300px] rounded-xl p-2 border-2 border-dashed border-surface-100 dark:border-surface-700 transition-colors">
                 {tasksByStatus[status].map((task: any) => {
                   const isOwnTask = task.assigneeId === user?.id
+                  const canChangeStatus = isManagerPlus || isOwnTask
+                  const dragOn = isDesktop && canDrag(task)
                   return (
                     <div key={task.id}
-                      draggable={canDrag(task)}
-                      onDragStart={canDrag(task) ? (e) => handleDragStart(e, task) : undefined}
-                      onDragEnd={canDrag(task) ? handleDragEnd : undefined}
-                      className={clsx('card p-3 hover:shadow-md transition-all', canDrag(task) && 'cursor-grab active:cursor-grabbing')}>
+                      draggable={dragOn}
+                      onDragStart={dragOn ? (e) => handleDragStart(e, task) : undefined}
+                      onDragEnd={dragOn ? handleDragEnd : undefined}
+                      className={clsx('card p-3 hover:shadow-md transition-all', dragOn && 'cursor-grab active:cursor-grabbing')}>
                       <div className="flex items-start justify-between mb-2">
                         <Link to={`/tasks/${task.id}`} className="text-sm font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 flex-1 leading-snug">{task.title}</Link>
                         {(isManagerPlus || isOwnTask) && (
@@ -529,14 +541,30 @@ export default function ProjectDetailPage() {
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2">
                         <PriorityBadge priority={task.priority} />
                         {task.assignee && (
-                          <Avatar name={task.assignee.name} size={22} />
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Avatar name={task.assignee.name} size={22} />
+                            <span className="text-[11px] text-surface-500 dark:text-surface-400 truncate max-w-[90px]">
+                              {task.assigneeId === user?.id ? 'Вы' : shortenName(task.assignee.name)}
+                            </span>
+                          </div>
                         )}
                       </div>
                       {task.deadline && (
                         <p className={`text-xs mt-1 ${new Date(task.deadline) < new Date() ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>{format(new Date(task.deadline), 'dd.MM')}</p>
+                      )}
+                      {/* Mobile/tablet: select instead of drag */}
+                      {!isDesktop && canChangeStatus && (
+                        <select
+                          value={task.status}
+                          onChange={(e) => updateTask.mutate({ taskId: task.id, data: { status: e.target.value } })}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-2 w-full text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1.5 bg-white dark:bg-surface-800"
+                        >
+                          {TASK_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                        </select>
                       )}
                     </div>
                   )

@@ -3,6 +3,8 @@ import { differenceInDays, addDays, format, startOfDay, isToday, isWeekend } fro
 import { ru } from 'date-fns/locale'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
+import { useAuthStore } from '@/store/auth.store'
+import { shortenName } from '@/lib/name'
 
 interface GanttTask {
   id: string
@@ -12,7 +14,8 @@ interface GanttTask {
   startDate?: string
   createdAt: string
   deadline?: string
-  assignee?: { name: string }
+  assigneeId?: string
+  assignee?: { id?: string; name: string }
 }
 
 interface Props {
@@ -45,6 +48,13 @@ const LABEL_WIDTH = 260
 
 export default function GanttChart({ tasks, projectStart, projectEnd }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const currentUserId = useAuthStore(s => s.user?.id)
+
+  const displayAssignee = (task: GanttTask) => {
+    if (!task.assignee) return ''
+    const isSelf = (task.assigneeId || task.assignee.id) === currentUserId
+    return isSelf ? 'Вы' : shortenName(task.assignee.name)
+  }
 
   const tasksWithDates = useMemo(
     () => tasks.filter(t => t.deadline).sort((a, b) => {
@@ -152,7 +162,7 @@ export default function GanttChart({ tasks, projectStart, projectEnd }: Props) {
                       {STATUS_LABEL[task.status]}
                     </span>
                     {task.assignee && (
-                      <span className="text-[10px] text-surface-400 dark:text-surface-500 truncate">{task.assignee.name}</span>
+                      <span className="text-[10px] text-surface-400 dark:text-surface-500 truncate">{displayAssignee(task)}</span>
                     )}
                   </div>
                 </div>
@@ -222,7 +232,7 @@ export default function GanttChart({ tasks, projectStart, projectEnd }: Props) {
                       to={`/tasks/${task.id}`}
                       className={clsx('absolute h-7 rounded-md z-10 flex items-center gap-1.5 px-2 overflow-hidden transition-all hover:brightness-110 hover:shadow-md cursor-pointer', sc.bar)}
                       style={{ left, width }}
-                      title={`${task.title}\n${startDate} → ${endDate} (${daysCount} дн.)\nСтатус: ${STATUS_LABEL[task.status]}${task.assignee ? `\nИсполнитель: ${task.assignee.name}` : ''}`}
+                      title={`${task.title}\n${startDate} → ${endDate} (${daysCount} дн.)\nСтатус: ${STATUS_LABEL[task.status]}${task.assignee ? `\nИсполнитель: ${displayAssignee(task)}` : ''}`}
                     >
                       {width > 80 && (
                         <span className="text-white text-[11px] font-medium truncate">{task.title}</span>

@@ -53,6 +53,10 @@ export default function TaskDetailPage() {
   const isPM = PM_ROLES.includes(role)
   const isWorker = WORKER_ROLES.includes(role)
 
+  // Computed later once task is loaded — assignee + creator may also edit checklist
+  const canEditChecklist = (task: any) => isPM ||
+    task?.assigneeId === user?.id || task?.createdById === user?.id
+
   const { data: task, isLoading, error } = useQuery({
     queryKey: ['task', id],
     queryFn: () => tasksApi.get(id!),
@@ -626,8 +630,8 @@ export default function TaskDetailPage() {
                       {item.text}
                     </span>
                   )}
-                  {isPM && editingCheckItem !== item.id && (
-                    <div className="hidden group-hover:flex items-center gap-1">
+                  {canEditChecklist(task) && editingCheckItem !== item.id && (
+                    <div className="flex sm:hidden sm:group-hover:flex items-center gap-1">
                       <button
                         onClick={() => { setEditingCheckItem(item.id); setEditCheckText(item.text) }}
                         className="p-1 text-surface-400 hover:text-primary-500 transition-colors"
@@ -647,7 +651,7 @@ export default function TaskDetailPage() {
               {!checklist?.length && (
                 <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-4">Чек-лист пуст</p>
               )}
-              {isPM && !isDone && (
+              {canEditChecklist(task) && !isDone && (
                 <div className="flex gap-2 pt-2">
                   <input
                     value={newCheckItem}
