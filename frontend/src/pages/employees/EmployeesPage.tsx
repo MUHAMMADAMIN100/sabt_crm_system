@@ -35,7 +35,27 @@ export default function EmployeesPage() {
   const navigate = useNavigate()
 
   const { data: allEmployees, isLoading } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
-  const allPositions = [...new Set(allEmployees?.map((e: any) => e.position).filter(Boolean) || [])] as string[]
+  // Canonical list of positions — mirrors the edit form so the filter always
+  // lists every role even if nobody currently holds it. Custom positions
+  // entered through free-text elsewhere are merged in.
+  const POSITION_CANON = [
+    'Основатель',
+    'Администратор',
+    'Проект-менеджер',
+    'Главный SMM специалист',
+    'SMM специалист',
+    'Дизайнер',
+    'Таргетолог',
+    'Маркетолог',
+    'Менеджер по продажам',
+    'Разработчик',
+    'Сотрудник',
+  ]
+  const existingPositions = [...new Set(allEmployees?.map((e: any) => e.position).filter(Boolean) || [])] as string[]
+  const allPositions = [
+    ...POSITION_CANON,
+    ...existingPositions.filter(p => !POSITION_CANON.includes(p)),
+  ]
 
   // Reset page when filters change
   useEffect(() => { setPage(1) }, [search, position])
