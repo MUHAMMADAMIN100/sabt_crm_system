@@ -137,8 +137,15 @@ export class EmployeesService {
 
       // Determine new role: explicit role param > position-derived
       if (newRoleParam) {
-        // Only founder/co_founder can explicitly set admin/founder/co_founder role
-        if ([UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(newRoleParam as UserRole) && !['founder', 'co_founder'].includes(actor?.role || '')) {
+        // Only founder can explicitly set co_founder role — admin/co_founder cannot.
+        // Only founder/co_founder can set admin/founder roles.
+        const isElevated = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(newRoleParam as UserRole);
+        const isCoFounder = newRoleParam === UserRole.CO_FOUNDER;
+        const actorIsFounder = actor?.role === 'founder';
+        const actorCanElevate = actorIsFounder || actor?.role === 'co_founder';
+        if (isCoFounder && !actorIsFounder) {
+          // Only founder may grant co_founder — silently ignore
+        } else if (isElevated && !actorCanElevate) {
           // Silently ignore escalation attempts from non-founder
         } else {
           resolvedRole = newRoleParam as UserRole;

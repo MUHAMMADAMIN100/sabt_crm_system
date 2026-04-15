@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from './user.entity';
@@ -25,11 +25,15 @@ export class UsersService {
     return user;
   }
 
-  async update(id: string, dto: Partial<User>) {
+  async update(id: string, dto: Partial<User>, actorRole?: string) {
     const user = await this.findOne(id);
 
     // Enforce single founder / co-founder in the system when role is changed.
     if (dto.role && dto.role !== user.role) {
+      // Only founder can grant the co_founder role — not admin, not co_founder.
+      if (dto.role === UserRole.CO_FOUNDER && actorRole !== 'founder') {
+        throw new ForbiddenException('Назначить сооснователя может только основатель');
+      }
       if (dto.role === UserRole.FOUNDER) {
         const count = await this.repo.count({ where: { role: UserRole.FOUNDER } });
         if (count > 0) throw new ConflictException('В системе уже зарегистрирован основатель');

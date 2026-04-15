@@ -499,6 +499,8 @@ interface EmployeeFormProps {
 function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFormProps) {
   const { register, handleSubmit, reset, setValue, setError, formState: { errors } } = useForm()
   const { t } = useTranslation()
+  const actorRole = useAuthStore(s => s.user?.role)
+  const isFounderActor = actorRole === 'founder'
 
   useEffect(() => {
     if (initial) {
@@ -577,7 +579,9 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
                 'Администратор',
                 'Основатель',
                 'Сооснователь',
-              ].map(p => (
+              ]
+                .filter(p => isFounderActor || p !== 'Сооснователь')
+                .map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>

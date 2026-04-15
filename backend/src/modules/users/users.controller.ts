@@ -29,8 +29,8 @@ export class UsersController {
 
   @Patch(':id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  update(@Param('id') id: string, @Body() dto: Partial<{ name: string; email: string; role: UserRole; isActive: boolean }>) {
-    return this.usersService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: Partial<{ name: string; email: string; role: UserRole; isActive: boolean }>, @Request() req) {
+    return this.usersService.update(id, dto, req.user?.role);
   }
 
   @Patch(':id/toggle-active')
