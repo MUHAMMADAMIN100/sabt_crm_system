@@ -46,7 +46,7 @@ export default function CalendarPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
   // All authenticated users can create tasks from calendar (workers create only for themselves)
   const canCreate = !!user
 

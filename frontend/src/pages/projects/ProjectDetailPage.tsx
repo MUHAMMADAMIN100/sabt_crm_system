@@ -42,10 +42,10 @@ export default function ProjectDetailPage() {
   const qc = useQueryClient()
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
-  const canManagePayment = user?.role === 'founder'
-  const canSeePayment = ['admin', 'founder', 'sales_manager'].includes(user?.role || '')
-  const canRequestPayment = ['admin', 'founder', 'sales_manager'].includes(user?.role || '')
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
+  const canManagePayment = user?.role === 'founder' || user?.role === 'co_founder'
+  const canSeePayment = ['admin', 'founder', 'co_founder', 'sales_manager'].includes(user?.role || '')
+  const canRequestPayment = ['admin', 'founder', 'co_founder', 'sales_manager'].includes(user?.role || '')
 
   // Detect desktop (lg and up) — mobile/tablet use select instead of drag
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)

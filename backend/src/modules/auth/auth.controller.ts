@@ -26,6 +26,14 @@ export class AuthController {
     return { exists };
   }
 
+  @Get('co-founder-exists')
+  @SkipThrottle()
+  @ApiOperation({ summary: 'Check if a co-founder is already registered (public)' })
+  async coFounderExists() {
+    const exists = await this.authService.coFounderExists();
+    return { exists };
+  }
+
   @Post('login')
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   @ApiOperation({ summary: 'Login' })

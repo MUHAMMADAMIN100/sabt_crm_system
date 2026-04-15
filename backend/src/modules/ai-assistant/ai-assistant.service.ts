@@ -22,7 +22,7 @@ export interface AiUserContext {
 }
 
 /** Пользователи, которым доступна полная картина по БД. */
-const FULL_ACCESS_ROLES: ReadonlySet<UserRole> = new Set([UserRole.ADMIN, UserRole.FOUNDER]);
+const FULL_ACCESS_ROLES: ReadonlySet<UserRole> = new Set([UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER]);
 
 /** Пользователи, которые видят только свои проекты (плюс команду и задачи в них). */
 const PROJECT_SCOPED_ROLES: ReadonlySet<UserRole> = new Set([UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM]);

@@ -9,7 +9,7 @@ import { UserRole } from '../users/user.entity';
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
+@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER)
 @Controller('analytics')
 @UseInterceptors(CacheInterceptor)
 export class AnalyticsController {
@@ -106,11 +106,11 @@ export class AnalyticsController {
   getAvgCompletionTime() { return this.service.getAvgCompletionTime(); }
 
   @Get('sales')
-  @Roles(UserRole.FOUNDER, UserRole.ADMIN, UserRole.SALES_MANAGER)
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN, UserRole.SALES_MANAGER)
   getSalesStats() { return this.service.getSalesStats(); }
 
   @Get('payroll')
-  @Roles(UserRole.FOUNDER)
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
   // No @CacheTTL — period queries differ per request
   getPayrollStats(
     @Query('from') from?: string,

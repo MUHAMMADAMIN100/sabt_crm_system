@@ -8,7 +8,7 @@ import * as fs from 'fs/promises';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 
-const PM_ROLES = ['admin', 'founder', 'project_manager', 'head_smm'];
+const PM_ROLES = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'];
 
 @Injectable()
 export class FilesService {
@@ -77,7 +77,7 @@ export class FilesService {
   async remove(id: string, userId?: string, userRole?: string) {
     const file = await this.repo.findOne({ where: { id } });
     if (!file) throw new NotFoundException('File not found');
-    if (userId && file.uploadedById !== userId && !['admin', 'founder'].includes(userRole || '')) {
+    if (userId && file.uploadedById !== userId && !['admin', 'founder', 'co_founder'].includes(userRole || '')) {
       throw new ForbiddenException('Not allowed to delete this file');
     }
 

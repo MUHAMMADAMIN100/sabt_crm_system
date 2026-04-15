@@ -39,9 +39,9 @@ export default function ProjectsPage() {
   const [editProject, setEditProject] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
-  // Only admin/founder can create/archive/delete projects
-  const canCreateProject = ['admin', 'founder'].includes(user?.role || '')
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
+  // Only admin/founder/co-founder can create/archive/delete projects
+  const canCreateProject = ['admin', 'founder', 'co_founder'].includes(user?.role || '')
   const qc = useQueryClient()
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -326,7 +326,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm()
   const { t } = useTranslation()
   const formUser = useAuthStore(s => s.user)
-  const canCreateProject = ['admin', 'founder'].includes(formUser?.role || '')
+  const canCreateProject = ['admin', 'founder', 'co_founder'].includes(formUser?.role || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])

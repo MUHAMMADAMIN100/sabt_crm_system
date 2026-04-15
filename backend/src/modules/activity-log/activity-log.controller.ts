@@ -7,7 +7,7 @@ import { ActivityAction } from './activity-log.entity';
 
 @Controller('activity-log')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN, UserRole.FOUNDER)
+@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
 export class ActivityLogController {
   constructor(private service: ActivityLogService) {}
 

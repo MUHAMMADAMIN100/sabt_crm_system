@@ -41,7 +41,7 @@ export class EmployeesService {
 
   /** Strip salary from employee(s) for non-founder users */
   private stripSalary<T extends Employee | Employee[]>(data: T, role?: string): T {
-    if (role === 'founder') return data;
+    if (role === 'founder' || role === 'co_founder') return data;
     const strip = (e: any) => { if (e) delete e.salary; return e; };
     return Array.isArray(data) ? (data.map(strip) as T) : (strip(data) as T);
   }
@@ -136,17 +136,17 @@ export class EmployeesService {
 
       // Determine new role: explicit role param > position-derived
       if (newRoleParam) {
-        // Only founder can explicitly set admin/founder role
-        if ([UserRole.ADMIN, UserRole.FOUNDER].includes(newRoleParam as UserRole) && actor?.role !== 'founder') {
+        // Only founder/co_founder can explicitly set admin/founder/co_founder role
+        if ([UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(newRoleParam as UserRole) && !['founder', 'co_founder'].includes(actor?.role || '')) {
           // Silently ignore escalation attempts from non-founder
         } else {
           resolvedRole = newRoleParam as UserRole;
         }
       } else if (dto.position && dto.position !== oldPosition) {
         const derived = this.positionToRole(dto.position);
-        // Block escalation to admin/founder through position text — only explicit role
+        // Block escalation to admin/founder/co_founder through position text — only explicit role
         // param from founder can grant these. Ignore silently, flag as unmatched.
-        if (derived && ![UserRole.ADMIN, UserRole.FOUNDER].includes(derived)) {
+        if (derived && ![UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(derived)) {
           resolvedRole = derived;
         } else if (!derived) {
           positionDidntMatchRole = true;

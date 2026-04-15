@@ -56,7 +56,7 @@ export default function NotificationsPage() {
   const qc = useQueryClient()
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
-  const isFounder = user?.role === 'founder'
+  const isFounder = user?.role === 'founder' || user?.role === 'co_founder'
 
   const { data: notifications, isLoading } = useQuery({
     queryKey: ['notifications'],

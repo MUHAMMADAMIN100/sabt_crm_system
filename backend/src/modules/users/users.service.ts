@@ -81,7 +81,7 @@ export class UsersService {
    */
   async resetPassword(id: string, resetBy: { id: string; name?: string; role: string }, newPassword?: string) {
     const user = await this.findOne(id);
-    if (['admin', 'founder'].includes(user.role) && user.id !== resetBy.id) {
+    if (['admin', 'founder', 'co_founder'].includes(user.role) && user.id !== resetBy.id) {
       throw new Error('Нельзя сбросить пароль другого администратора');
     }
     // Validate custom password length (auto-generated is always 10 chars)
@@ -121,8 +121,8 @@ export class UsersService {
     if (user.id === blockedBy.id) {
       throw new Error('Нельзя заблокировать самого себя');
     }
-    if (['admin', 'founder'].includes(user.role)) {
-      throw new Error('Нельзя заблокировать администратора или основателя');
+    if (['admin', 'founder', 'co_founder'].includes(user.role)) {
+      throw new Error('Нельзя заблокировать администратора, основателя или сооснователя');
     }
 
     user.isBlocked = true;

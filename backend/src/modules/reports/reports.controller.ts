@@ -14,7 +14,7 @@ export class ReportsController {
   constructor(private service: ReportsService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER)
   findAll(
     @Query('employeeId') employeeId?: string,
     @Query('projectId') projectId?: string,
@@ -25,7 +25,7 @@ export class ReportsController {
   }
 
   @Get('export/csv')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER)
   async exportCsv(
     @Query('employeeId') employeeId: string,
     @Query('projectId') projectId: string,
@@ -70,6 +70,6 @@ export class ReportsController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   remove(@Param('id') id: string) { return this.service.remove(id); }
 }

@@ -133,12 +133,12 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
 export default function DashboardPage() {
   const user = useAuthStore(s => s.user)
   const role = user?.role || 'employee'
-  const isFounderView = ['admin', 'founder'].includes(role)
+  const isFounderView = ['admin', 'founder', 'co_founder'].includes(role)
   const isPMView = role === 'project_manager'
   const isSalesView = role === 'sales_manager'
   const isWorkerView = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'developer', 'employee'].includes(role)
-  const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(role)
-  const isAdmin = ['admin', 'founder'].includes(role)
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(role)
+  const isAdmin = ['admin', 'founder', 'co_founder'].includes(role)
   const { t } = useTranslation()
 
   // Role-specific dashboards

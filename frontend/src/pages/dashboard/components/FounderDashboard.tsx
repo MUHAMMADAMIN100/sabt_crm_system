@@ -49,7 +49,7 @@ function periodToRange(period: FinancePeriod): { from?: string; to?: string } {
 export default function FounderDashboard() {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
-  const canSeeFinance = user?.role === 'founder'
+  const canSeeFinance = user?.role === 'founder' || user?.role === 'co_founder'
   const [editingSalaryId, setEditingSalaryId] = useState<string | null>(null)
   const [salaryValue, setSalaryValue] = useState('')
   const [period, setPeriod] = useState<FinancePeriod>('this_month')
