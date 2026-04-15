@@ -49,7 +49,6 @@ export default function EmployeesPage() {
     'Маркетолог',
     'Менеджер по продажам',
     'Разработчик',
-    'Сотрудник',
   ]
   const existingPositions = [...new Set(allEmployees?.map((e: any) => e.position).filter(Boolean) || [])] as string[]
   const allPositions = [
