@@ -36,25 +36,25 @@ export class EmployeesController {
   }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   create(@Body() dto: CreateEmployeeDto) { return this.service.create(dto); }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   update(@Param('id') id: string, @Body() dto: UpdateEmployeeDto, @Request() req) {
-    if ('salary' in dto && req.user?.role !== 'founder') {
-      throw new ForbiddenException('Только основатель может изменять зарплату сотрудника');
+    if ('salary' in dto && !['founder', 'co_founder'].includes(req.user?.role)) {
+      throw new ForbiddenException('Только основатель или сооснователь может изменять зарплату сотрудника');
     }
     return this.service.update(id, dto, { id: req.user.id, name: req.user.name, role: req.user.role });
   }
 
   @Patch(':id/toggle-sub-admin')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   toggleSubAdmin(@Param('id') id: string) {
     return this.service.toggleSubAdmin(id);
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   remove(@Param('id') id: string) { return this.service.remove(id); }
 }

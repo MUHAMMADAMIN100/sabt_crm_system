@@ -164,7 +164,7 @@ export class AnalyticsService {
       .addSelect("SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END)", 'doneTasks')
       .addSelect('SUM(tl.timeSpent)', 'totalHours')
       .where('u.isActive = true')
-      .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] })
+      .andWhere('u.role::text NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder', 'co_founder'] })
       .groupBy('u.id, u.name, e.fullName, e.position, e.id')
       .orderBy('"doneTasks"', 'DESC')
       .limit(limit)
@@ -175,7 +175,7 @@ export class AnalyticsService {
       .createQueryBuilder('u')
       .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
       .where('u.isActive = true')
-      .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] })
+      .andWhere('u.role::text NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder', 'co_founder'] })
       .getCount();
 
     const mapped = data.map(d => ({
@@ -206,7 +206,7 @@ export class AnalyticsService {
       .addSelect("SUM(CASE WHEN t.priority = 'critical' THEN 1 ELSE 0 END)", 'criticalTasks')
       .addSelect("SUM(CASE WHEN t.deadline < NOW() AND t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END)", 'overdueTasks')
       .where('u.isActive = true')
-      .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] })
+      .andWhere('u.role::text NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder', 'co_founder'] })
       .groupBy('e.id, u.id, u.name, e.fullName, e.position, e.department, u.avatar')
       .orderBy('"activeTasks"', 'DESC')
       .getRawMany();

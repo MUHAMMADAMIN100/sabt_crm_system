@@ -17,7 +17,7 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   findAll(@Query('role') role?: UserRole) {
     return this.usersService.findAll(role);
   }
@@ -28,19 +28,19 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   update(@Param('id') id: string, @Body() dto: Partial<{ name: string; email: string; role: UserRole; isActive: boolean }>) {
     return this.usersService.update(id, dto);
   }
 
   @Patch(':id/toggle-active')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   toggleActive(@Param('id') id: string) {
     return this.usersService.toggleActive(id);
   }
 
   @Patch(':id/block')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   async block(@Param('id') id: string, @Body() body: { reason?: string }, @Request() req) {
     try {
       return await this.usersService.block(id, req.user, body?.reason);
@@ -50,7 +50,7 @@ export class UsersController {
   }
 
   @Patch(':id/reset-password')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   async resetPassword(@Param('id') id: string, @Body() body: { newPassword?: string }, @Request() req) {
     try {
       return await this.usersService.resetPassword(id, req.user, body?.newPassword);
@@ -60,19 +60,19 @@ export class UsersController {
   }
 
   @Patch(':id/unblock')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   unblock(@Param('id') id: string, @Request() req) {
     return this.usersService.unblock(id, req.user);
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);
   }
 
   @Post('cleanup-orphans')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   cleanupOrphanedUsers() {
     return this.usersService.cleanupOrphanedUsers();
   }

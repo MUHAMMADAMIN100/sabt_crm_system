@@ -31,11 +31,11 @@ export default function TasksPage() {
   const PAGE_SIZE = 10
   const user = useAuthStore(s => s.user)
   const navigate = useNavigate()
-  const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
   // Story widget visible to everyone except admin/founder (they have analytics).
   // PM sees it too because they may be a member of other projects where they
   // need to publish stories themselves.
-  const showStoryWidget = !['admin', 'founder'].includes(user?.role || '')
+  const showStoryWidget = !['admin', 'founder', 'co_founder'].includes(user?.role || '')
   const isSMM = user?.role === 'smm_specialist'
   const qc = useQueryClient()
   const { t } = useTranslation()

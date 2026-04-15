@@ -18,6 +18,7 @@ const ROLES: { value: string; label: string; position: string }[] = [
   { value: 'developer',        label: 'Разработчик',          position: 'Разработчик' },
   { value: 'admin',            label: 'Администратор',        position: 'Администратор' },
   { value: 'founder',          label: 'Основатель',           position: 'Основатель' },
+  { value: 'co_founder',       label: 'Сооснователь',         position: 'Сооснователь' },
 ]
 
 export default function AuthPage() {
@@ -26,6 +27,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false)
   const [animKey, setAnimKey] = useState(0)
   const [founderExists, setFounderExists] = useState(false)
+  const [coFounderExists, setCoFounderExists] = useState(false)
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null)
   const { login, register: doRegister } = useAuthStore()
   const { t } = useTranslation()
@@ -43,6 +45,9 @@ export default function AuthPage() {
     if (mode === 'register') {
       api.get('/auth/founder-exists')
         .then(r => setFounderExists(!!r.data?.exists))
+        .catch(() => {})
+      api.get('/auth/co-founder-exists')
+        .then(r => setCoFounderExists(!!r.data?.exists))
         .catch(() => {})
     }
   }, [mode])
@@ -219,6 +224,7 @@ export default function AuthPage() {
                       <option value="">{t('common.selectOption')}</option>
                       {ROLES
                         .filter(r => !(r.value === 'founder' && founderExists))
+                        .filter(r => !(r.value === 'co_founder' && coFounderExists))
                         .map(r => <option key={r.value} value={r.value}>{r.label}</option>)
                       }
                     </select>

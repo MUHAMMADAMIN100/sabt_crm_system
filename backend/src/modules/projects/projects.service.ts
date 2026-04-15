@@ -32,7 +32,7 @@ export class ProjectsService {
    *  to manage collections; everyone else gets it stripped.
    *  Budget, salesManager stay visible for regular managers too. */
   stripFinance<T extends Project | Project[]>(data: T, role?: string): T {
-    if (role === 'founder' || role === 'sales_manager') return data;
+    if (role === 'founder' || role === 'co_founder' || role === 'sales_manager') return data;
     const strip = (p: any) => {
       if (!p) return p;
       delete p.paidAmount;
@@ -80,7 +80,7 @@ export class ProjectsService {
           ))`,
           { userId },
         );
-      } else if (!['admin', 'founder', 'sales_manager'].includes(role)) {
+      } else if (!['admin', 'founder', 'co_founder', 'sales_manager'].includes(role)) {
         // All other roles see only projects they are members of
         qb.andWhere(
           `p.id IN (
@@ -208,7 +208,7 @@ export class ProjectsService {
 
   async update(id: string, dto: UpdateProjectDto, user: { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
-    const canEdit = ['admin', 'founder'].includes(user.role) ||
+    const canEdit = ['admin', 'founder', 'co_founder'].includes(user.role) ||
       ((user.role === 'project_manager' || user.role === 'head_smm') && project.managerId === user.id);
     if (!canEdit) {
       throw new ForbiddenException('Not allowed');
@@ -218,10 +218,10 @@ export class ProjectsService {
     // project-management concerns — admin/PM can edit.
     // If a non-founder submits paidAmount unchanged (form re-submit), silently
     // drop it instead of erroring. Reject only real changes.
-    if ('paidAmount' in dto && user.role !== 'founder') {
+    if ('paidAmount' in dto && !['founder', 'co_founder'].includes(user.role)) {
       const sameValue = Number(dto.paidAmount ?? 0) === Number(project.paidAmount ?? 0);
       if (!sameValue) {
-        throw new ForbiddenException('Только основатель может изменять сумму оплаты');
+        throw new ForbiddenException('Только основатель или сооснователь может изменять сумму оплаты');
       }
       delete (dto as any).paidAmount;
     }
@@ -235,7 +235,7 @@ export class ProjectsService {
 
     // Track paidAmount change as a Payment record (delta-based)
     let paymentDelta: number | null = null;
-    if ('paidAmount' in dto && user.role === 'founder') {
+    if ('paidAmount' in dto && ['founder', 'co_founder'].includes(user.role)) {
       const oldPaid = Number(project.paidAmount ?? 0);
       const newPaid = Number(dto.paidAmount ?? 0);
       if (newPaid !== oldPaid) {
@@ -503,8 +503,8 @@ export class ProjectsService {
     // Only admin and founder can delete projects. PM / head_smm manage
     // their projects but cannot remove them — deletion is an irreversible
     // operation that wipes tasks, files and activity, reserved for top roles.
-    if (user && !['admin', 'founder'].includes(user.role)) {
-      throw new ForbiddenException('Удалять проекты могут только администратор и основатель');
+    if (user && !['admin', 'founder', 'co_founder'].includes(user.role)) {
+      throw new ForbiddenException('Удалять проекты могут только администратор, основатель и сооснователь');
     }
 
     await this.activityLog.log({

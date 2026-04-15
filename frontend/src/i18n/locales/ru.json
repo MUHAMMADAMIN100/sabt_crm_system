@@ -235,6 +235,7 @@
   "roles": {
     "admin": "Администратор",
     "founder": "Основатель",
+    "co_founder": "Сооснователь",
     "project_manager": "Проект-менеджер",
     "smm_specialist": "SMM-специалист",
     "designer": "Дизайнер",

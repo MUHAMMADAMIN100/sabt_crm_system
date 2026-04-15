@@ -67,6 +67,7 @@ export default function UsersPage() {
   const ROLE_LABELS: Record<string, string> = {
     admin: 'Администратор',
     founder: 'Основатель',
+    co_founder: 'Сооснователь',
     project_manager: 'Проект-менеджер',
     head_smm: 'Главный SMM специалист',
     smm_specialist: 'SMM специалист',

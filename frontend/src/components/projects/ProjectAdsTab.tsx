@@ -20,7 +20,7 @@ const CHANNEL_OPTIONS = [
   { value: 'other',     label: 'Другое',          icon: '🌐' },
 ]
 
-const MANAGE_ROLES = ['admin', 'founder', 'project_manager', 'head_smm']
+const MANAGE_ROLES = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm']
 
 interface Props { projectId: string }
 
