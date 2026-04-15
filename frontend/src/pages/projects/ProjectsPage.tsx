@@ -436,15 +436,29 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             {errors.projectType && <p className="text-xs text-red-500 mt-1">Выберите тип проекта</p>}
           </div>
 
-          {/* Менеджер проекта */}
+          {/* Менеджер проекта — head_smm показываем только для SMM-проектов */}
           <div className="sm:col-span-2">
             <label className="label">Менеджер проекта</label>
             <select {...register('managerId')} className="input">
               <option value="">— Не назначен —</option>
-              {employees.map((e: any) => (
-                <option key={e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>
-              ))}
+              {employees
+                .filter((e: any) => {
+                  const role = e.user?.role
+                  if (role === 'head_smm' && projectType !== 'SMM') return false
+                  return true
+                })
+                .map((e: any) => (
+                  <option key={e.id} value={e.userId || e.id}>
+                    {e.fullName || e.name}
+                    {e.user?.role === 'head_smm' ? ' — Главный SMM' : ''}
+                  </option>
+                ))}
             </select>
+            {projectType !== 'SMM' && (
+              <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-1">
+                Главный SMM специалист может быть менеджером только SMM-проектов
+              </p>
+            )}
           </div>
 
           {/* Менеджер по продажам */}

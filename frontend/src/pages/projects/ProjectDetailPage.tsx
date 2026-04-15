@@ -1164,10 +1164,23 @@ export default function ProjectDetailPage() {
             <label className="label mb-1">Выбрать менеджера</label>
             <select value={newManagerId} onChange={e => setNewManagerId(e.target.value)} className="input w-full">
               <option value="">— Не назначен —</option>
-              {(employees || []).map((e: any) => (
-                <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>
-              ))}
+              {(employees || [])
+                .filter((e: any) => {
+                  const role = e.user?.role
+                  if (role === 'head_smm' && project?.projectType !== 'SMM') return false
+                  return true
+                })
+                .map((e: any) => (
+                  <option key={e.userId || e.id} value={e.userId || e.id}>
+                    {e.fullName}{e.user?.role === 'head_smm' ? ' — Главный SMM' : ''}
+                  </option>
+                ))}
             </select>
+            {project?.projectType !== 'SMM' && (
+              <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-1">
+                Главный SMM специалист — только для SMM-проектов
+              </p>
+            )}
           </div>
           <div className="flex gap-2 justify-end">
             <button onClick={() => setShowChangeManager(false)} className="btn-secondary">Отмена</button>

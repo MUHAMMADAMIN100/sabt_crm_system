@@ -61,8 +61,18 @@ export class ProjectsService {
     // so leftJoinAndSelect still loads ALL members in the result
     if (requestUser) {
       const { id: userId, role } = requestUser;
-      if (role === 'project_manager' || role === 'head_smm') {
-        // PM / head_smm sees only projects they manage or are members of
+      if (role === 'project_manager') {
+        qb.andWhere(
+          `(p.managerId = :userId OR p.id IN (
+            SELECT pm."projectsId" FROM project_members pm
+            WHERE pm."usersId" = :userId
+          ))`,
+          { userId },
+        );
+      } else if (role === 'head_smm') {
+        // head_smm owns SMM specifically — only see SMM projects they manage or
+        // are members of. Non-SMM projects are not visible at all.
+        qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
         qb.andWhere(
           `(p.managerId = :userId OR p.id IN (
             SELECT pm."projectsId" FROM project_members pm
@@ -100,7 +110,20 @@ export class ProjectsService {
     return requestUserRole ? this.stripFinance(project, requestUserRole) : project;
   }
 
+  /** Guard: head_smm can only be manager of SMM projects. */
+  private async validateManagerAssignment(managerId: string | undefined, projectType: string | undefined) {
+    if (!managerId) return;
+    const mgr = await this.userRepo.findOne({ where: { id: managerId } });
+    if (!mgr) return;
+    if (mgr.role === UserRole.HEAD_SMM && projectType !== 'SMM') {
+      throw new ForbiddenException(
+        'Главный SMM специалист может быть менеджером только SMM-проектов',
+      );
+    }
+  }
+
   async create(dto: CreateProjectDto, userId: string) {
+    await this.validateManagerAssignment(dto.managerId, dto.projectType);
     const project = this.repo.create({
       ...dto,
       managerId: dto.managerId || userId,
@@ -182,6 +205,13 @@ export class ProjectsService {
       }
       delete (dto as any).paidAmount;
     }
+
+    // Guard: head_smm may only manage SMM projects.
+    // Considers both: assigning a new head_smm manager to non-SMM project,
+    // and changing projectType of a project currently managed by head_smm.
+    const nextManagerId = 'managerId' in dto ? dto.managerId : project.managerId;
+    const nextType = 'projectType' in dto ? dto.projectType : project.projectType;
+    await this.validateManagerAssignment(nextManagerId as string | undefined, nextType as string | undefined);
 
     // Track paidAmount change as a Payment record (delta-based)
     let paymentDelta: number | null = null;
