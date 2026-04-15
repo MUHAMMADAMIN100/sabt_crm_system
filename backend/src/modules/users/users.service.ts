@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from './user.entity';
@@ -27,6 +27,19 @@ export class UsersService {
 
   async update(id: string, dto: Partial<User>) {
     const user = await this.findOne(id);
+
+    // Enforce single founder / co-founder in the system when role is changed.
+    if (dto.role && dto.role !== user.role) {
+      if (dto.role === UserRole.FOUNDER) {
+        const count = await this.repo.count({ where: { role: UserRole.FOUNDER } });
+        if (count > 0) throw new ConflictException('В системе уже зарегистрирован основатель');
+      }
+      if (dto.role === UserRole.CO_FOUNDER) {
+        const count = await this.repo.count({ where: { role: UserRole.CO_FOUNDER } });
+        if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
+      }
+    }
+
     // Use save (not update) so BeforeUpdate hooks fire (e.g., password hashing)
     Object.assign(user, dto);
     await this.repo.save(user);

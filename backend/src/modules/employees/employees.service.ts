@@ -15,6 +15,7 @@ import { TelegramService } from '../telegram/telegram.service';
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   founder: 'Основатель',
+  co_founder: 'Сооснователь',
   project_manager: 'Проект-менеджер',
   head_smm: 'Главный SMM специалист',
   smm_specialist: 'SMM специалист',
@@ -152,7 +153,18 @@ export class EmployeesService {
           positionDidntMatchRole = true;
         }
       }
-      if (resolvedRole) userUpdate.role = resolvedRole;
+      if (resolvedRole && resolvedRole !== oldRole) {
+        // Enforce single founder / co-founder in the system.
+        if (resolvedRole === UserRole.FOUNDER) {
+          const count = await this.userRepo.count({ where: { role: UserRole.FOUNDER } });
+          if (count > 0) throw new ConflictException('В системе уже зарегистрирован основатель');
+        }
+        if (resolvedRole === UserRole.CO_FOUNDER) {
+          const count = await this.userRepo.count({ where: { role: UserRole.CO_FOUNDER } });
+          if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
+        }
+        userUpdate.role = resolvedRole;
+      }
 
       if (Object.keys(userUpdate).length > 0) {
         await this.userRepo.update(emp.userId, userUpdate);
