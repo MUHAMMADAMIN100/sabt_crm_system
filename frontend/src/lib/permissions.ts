@@ -9,7 +9,6 @@ import type { UserRole, User } from '@/store/auth.store'
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   founder: 'Основатель',
-  co_founder: 'Сооснователь',
   project_manager: 'Проект-менеджер',
   head_smm: 'Главный SMM специалист',
   smm_specialist: 'SMM специалист',
@@ -91,18 +90,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
   ],
   founder: [
-    'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
-    'projects.archive', 'projects.members.manage', 'projects.manager.change',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
-    'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',
-    'employees.view', 'employees.create', 'employees.edit', 'employees.delete',
-    'employees.role.change', 'users.manage',
-    'analytics.view', 'reports.view', 'reports.create', 'reports.edit.all',
-    'calendar.view', 'calendar.create', 'archive.view',
-    'files.view', 'files.upload', 'files.delete.any',
-    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
-  ],
-  co_founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
     'projects.archive', 'projects.members.manage', 'projects.manager.change',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',

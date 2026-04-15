@@ -38,33 +38,33 @@ export class ProjectsController {
   }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   create(@Body() dto: CreateProjectDto, @Request() req) {
     return this.service.create(dto, req.user.id);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER)
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto, @Request() req) {
     return this.service.update(id, dto, req.user);
   }
 
   @Patch(':id/archive')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   archive(@Param('id') id: string) { return this.service.archive(id); }
 
   @Patch(':id/restore')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   restore(@Param('id') id: string) { return this.service.restore(id); }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   remove(@Param('id') id: string, @Request() req) {
     return this.service.remove(id, req.user);
   }
 
   @Post(':id/send-payment-request')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SALES_MANAGER)
   sendPaymentRequest(
     @Param('id') id: string,
     @Body() body: { message?: string },

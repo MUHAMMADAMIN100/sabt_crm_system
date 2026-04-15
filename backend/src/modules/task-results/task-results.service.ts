@@ -5,7 +5,7 @@ import { TaskResult } from './task-result.entity';
 import { Task } from '../tasks/task.entity';
 import { CreateTaskResultDto } from './dto/create-task-result.dto';
 
-const PM_ROLES = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'];
+const PM_ROLES = ['admin', 'founder', 'project_manager', 'head_smm'];
 
 @Injectable()
 export class TaskResultsService {

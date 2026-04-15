@@ -17,10 +17,10 @@ export function usePermissions() {
     can: (permission: Permission) => hasPermission(role, permission),
     canAny: (permissions: Permission[]) => permissions.some(p => hasPermission(role, p)),
     canAll: (permissions: Permission[]) => permissions.every(p => hasPermission(role, p)),
-    /** Check if user is admin or founder (includes co-founder) */
-    isFounder: role === 'admin' || role === 'founder' || role === 'co_founder',
-    /** Check if user is admin, founder, co-founder, or project manager */
-    isManager: role === 'admin' || role === 'founder' || role === 'co_founder' || role === 'project_manager',
+    /** Check if user is admin or founder */
+    isFounder: role === 'admin' || role === 'founder',
+    /** Check if user is admin, founder, or project manager */
+    isManager: role === 'admin' || role === 'founder' || role === 'project_manager',
     /** Check if user is admin */
     isAdmin: role === 'admin',
   }

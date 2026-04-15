@@ -16,7 +16,7 @@ import { AppGateway } from '../gateway/app.gateway';
 import { TaskResultsService } from '../task-results/task-results.service';
 import { DailyReport } from '../reports/daily-report.entity';
 
-const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM];
+const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM];
 const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.MARKETER, UserRole.TARGETOLOGIST, UserRole.SALES_MANAGER, UserRole.EMPLOYEE];
 
 @Injectable()

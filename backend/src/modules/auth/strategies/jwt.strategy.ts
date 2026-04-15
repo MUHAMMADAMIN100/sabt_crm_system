@@ -24,11 +24,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (user.isBlocked) {
       const blockedByLabel = user.blockedByRole === 'founder'
         ? 'основатель компании'
-        : user.blockedByRole === 'co_founder'
-          ? 'сооснователь компании'
-          : user.blockedByRole === 'admin'
-            ? 'администратор'
-            : (user.blockedByName || 'администрация');
+        : user.blockedByRole === 'admin'
+          ? 'администратор'
+          : (user.blockedByName || 'администрация');
       throw new UnauthorizedException(`BLOCKED: Вас заблокировал ${blockedByLabel}${user.blockedByName ? ` (${user.blockedByName})` : ''}`);
     }
     return { ...user, role: user.role };

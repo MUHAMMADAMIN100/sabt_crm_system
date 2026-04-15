@@ -16,7 +16,7 @@ import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-const PM_ROLES = ['admin', 'founder', 'co_founder', 'project_manager']
+const PM_ROLES = ['admin', 'founder', 'project_manager']
 const WORKER_ROLES = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager', 'developer', 'employee']
 
 const STATUS_FLOW: Record<string, string[]> = {

@@ -142,11 +142,8 @@ export class DeadlineScheduler implements OnModuleInit {
       relations: ['assignee', 'project', 'project.manager'],
     })
 
-    // Lookup founder/co-founder once (for escalation). Notify all if there are many.
-    const founders = await this.userRepo.find({ where: [
-      { role: UserRole.FOUNDER, isActive: true },
-      { role: UserRole.CO_FOUNDER, isActive: true },
-    ] })
+    // Lookup founder once (for escalation). Notify all founders if there are many.
+    const founders = await this.userRepo.find({ where: { role: UserRole.FOUNDER, isActive: true } })
 
     let sent = 0
     let escalated = 0
@@ -670,7 +667,6 @@ export class DeadlineScheduler implements OnModuleInit {
       where: [
         { role: UserRole.ADMIN, isActive: true },
         { role: UserRole.FOUNDER, isActive: true },
-        { role: UserRole.CO_FOUNDER, isActive: true },
         { role: UserRole.PROJECT_MANAGER, isActive: true },
         { role: UserRole.HEAD_SMM, isActive: true },
       ],

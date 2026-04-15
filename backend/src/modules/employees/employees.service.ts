@@ -15,7 +15,6 @@ import { TelegramService } from '../telegram/telegram.service';
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   founder: 'Основатель',
-  co_founder: 'Сооснователь',
   project_manager: 'Проект-менеджер',
   head_smm: 'Главный SMM специалист',
   smm_specialist: 'SMM специалист',
@@ -42,7 +41,7 @@ export class EmployeesService {
 
   /** Strip salary from employee(s) for non-founder users */
   private stripSalary<T extends Employee | Employee[]>(data: T, role?: string): T {
-    if (role === 'founder' || role === 'co_founder') return data;
+    if (role === 'founder') return data;
     const strip = (e: any) => { if (e) delete e.salary; return e; };
     return Array.isArray(data) ? (data.map(strip) as T) : (strip(data) as T);
   }
@@ -137,34 +136,23 @@ export class EmployeesService {
 
       // Determine new role: explicit role param > position-derived
       if (newRoleParam) {
-        // Only founder/co_founder can explicitly set admin/founder/co_founder role
-        if ([UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(newRoleParam as UserRole) && !['founder', 'co_founder'].includes(actor?.role || '')) {
+        // Only founder can explicitly set admin/founder role
+        if ([UserRole.ADMIN, UserRole.FOUNDER].includes(newRoleParam as UserRole) && actor?.role !== 'founder') {
           // Silently ignore escalation attempts from non-founder
         } else {
           resolvedRole = newRoleParam as UserRole;
         }
       } else if (dto.position && dto.position !== oldPosition) {
         const derived = this.positionToRole(dto.position);
-        // Block escalation to admin/founder/co_founder through position text — only explicit role
+        // Block escalation to admin/founder through position text — only explicit role
         // param from founder can grant these. Ignore silently, flag as unmatched.
-        if (derived && ![UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(derived)) {
+        if (derived && ![UserRole.ADMIN, UserRole.FOUNDER].includes(derived)) {
           resolvedRole = derived;
         } else if (!derived) {
           positionDidntMatchRole = true;
         }
       }
-      if (resolvedRole && resolvedRole !== oldRole) {
-        // Enforce single founder / co-founder in the system.
-        if (resolvedRole === UserRole.FOUNDER) {
-          const count = await this.userRepo.count({ where: { role: UserRole.FOUNDER } });
-          if (count > 0) throw new ConflictException('В системе уже зарегистрирован основатель');
-        }
-        if (resolvedRole === UserRole.CO_FOUNDER) {
-          const count = await this.userRepo.count({ where: { role: UserRole.CO_FOUNDER } });
-          if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
-        }
-        userUpdate.role = resolvedRole;
-      }
+      if (resolvedRole) userUpdate.role = resolvedRole;
 
       if (Object.keys(userUpdate).length > 0) {
         await this.userRepo.update(emp.userId, userUpdate);

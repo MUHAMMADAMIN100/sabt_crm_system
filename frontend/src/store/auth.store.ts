@@ -5,7 +5,6 @@ import api from '@/lib/api'
 export type UserRole =
   | 'admin'
   | 'founder'
-  | 'co_founder'
   | 'project_manager'
   | 'head_smm'
   | 'smm_specialist'
@@ -111,11 +110,11 @@ export function useIsAdmin() {
 }
 
 export function useIsFounder() {
-  return useAuthStore(s => ['admin', 'founder', 'co_founder'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['admin', 'founder'].includes(s.user?.role || ''))
 }
 
 export function useIsPM() {
-  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'project_manager'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['admin', 'founder', 'project_manager'].includes(s.user?.role || ''))
 }
 
 export function useIsWorker() {
@@ -123,5 +122,5 @@ export function useIsWorker() {
 }
 
 export function useCanManageTasks() {
-  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'project_manager'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['admin', 'founder', 'project_manager'].includes(s.user?.role || ''))
 }

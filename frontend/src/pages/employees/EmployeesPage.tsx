@@ -28,7 +28,7 @@ export default function EmployeesPage() {
   const [resetResult, setResetResult] = useState<{ name: string; password: string } | null>(null)
   const [pwdCopied, setPwdCopied] = useState(false)
   const user = useAuthStore(s => s.user)
-  const canManage = user?.role === 'admin' || user?.role === 'founder' || user?.role === 'co_founder'
+  const canManage = user?.role === 'admin' || user?.role === 'founder'
   const isAdmin = canManage  // alias for backward compat
   const qc = useQueryClient()
   const { t } = useTranslation()
@@ -40,7 +40,6 @@ export default function EmployeesPage() {
   // entered through free-text elsewhere are merged in.
   const POSITION_CANON = [
     'Основатель',
-    'Сооснователь',
     'Администратор',
     'Проект-менеджер',
     'Главный SMM специалист',
@@ -532,7 +531,6 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
       'Разработчик': 'developer',
       'Сотрудник': 'employee',
       'Основатель': 'founder',
-      'Сооснователь': 'co_founder',
     }
     const role = positionToRoleMap[data.position]
     try {
@@ -576,7 +574,6 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
                 'Разработчик',
                 'Администратор',
                 'Основатель',
-                'Сооснователь',
               ].map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}

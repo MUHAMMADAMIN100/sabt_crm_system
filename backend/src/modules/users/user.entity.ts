@@ -13,7 +13,6 @@ import { DailyReport } from '../reports/daily-report.entity';
 export enum UserRole {
   ADMIN           = 'admin',
   FOUNDER         = 'founder',
-  CO_FOUNDER      = 'co_founder',
   PROJECT_MANAGER = 'project_manager',
   HEAD_SMM        = 'head_smm',
   SMM_SPECIALIST  = 'smm_specialist',

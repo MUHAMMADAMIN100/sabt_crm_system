@@ -38,14 +38,6 @@ export class AuthService {
       }
     }
 
-    // Enforce single co-founder per system
-    if (dto.role === UserRole.CO_FOUNDER) {
-      const coFounderCount = await this.userRepo.count({ where: { role: UserRole.CO_FOUNDER } });
-      if (coFounderCount > 0) {
-        throw new ConflictException('В системе уже зарегистрирован сооснователь');
-      }
-    }
-
     const user = this.userRepo.create({
       name: dto.name,
       email: dto.email,
@@ -110,11 +102,9 @@ export class AuthService {
     if (user.isBlocked) {
       const blockedByLabel = user.blockedByRole === 'founder'
         ? 'основатель компании'
-        : user.blockedByRole === 'co_founder'
-          ? 'сооснователь компании'
-          : user.blockedByRole === 'admin'
-            ? 'администратор'
-            : (user.blockedByName || 'администрация');
+        : user.blockedByRole === 'admin'
+          ? 'администратор'
+          : (user.blockedByName || 'администрация');
       const reasonText = user.blockReason ? `\nПричина: ${user.blockReason}` : '';
       throw new UnauthorizedException(`Вас заблокировал ${blockedByLabel}${user.blockedByName ? ` (${user.blockedByName})` : ''}.${reasonText}`);
     }
@@ -186,11 +176,6 @@ export class AuthService {
 
   async founderExists(): Promise<boolean> {
     const count = await this.userRepo.count({ where: { role: UserRole.FOUNDER } });
-    return count > 0;
-  }
-
-  async coFounderExists(): Promise<boolean> {
-    const count = await this.userRepo.count({ where: { role: UserRole.CO_FOUNDER } });
     return count > 0;
   }
 

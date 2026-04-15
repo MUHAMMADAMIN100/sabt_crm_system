@@ -12,7 +12,7 @@ import toast from 'react-hot-toast'
 
 export default function ReportsPage() {
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
+  const isManagerPlus = ['admin', 'founder', 'project_manager'].includes(user?.role || '')
   const [showCreate, setShowCreate] = useState(false)
   const qc = useQueryClient()
   const { t } = useTranslation()
