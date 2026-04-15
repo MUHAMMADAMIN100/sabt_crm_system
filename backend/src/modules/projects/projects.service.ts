@@ -98,6 +98,26 @@ export class ProjectsService {
     if (search) qb.andWhere('p.name ILIKE :search', { search: `%${search}%` });
 
     const projects = await qb.orderBy('p.createdAt', 'DESC').getMany();
+
+    // Annotate SMM projects with active-ad status. Today must fall inside
+    // [startDate, endDate] of at least one ad for the project to be "live".
+    const smmIds = projects.filter(p => p.projectType === 'SMM').map(p => p.id);
+    let activeMap: Record<string, boolean> = {};
+    if (smmIds.length > 0) {
+      const rows = await this.repo.manager.query(
+        `SELECT DISTINCT "projectId" FROM project_ads
+         WHERE "projectId" = ANY($1::uuid[])
+           AND CURRENT_DATE BETWEEN "startDate" AND "endDate"`,
+        [smmIds],
+      );
+      activeMap = Object.fromEntries((rows as Array<{ projectId: string }>).map(r => [r.projectId, true]));
+    }
+    for (const p of projects) {
+      if (p.projectType === 'SMM') {
+        (p as any).hasActiveAd = !!activeMap[p.id];
+      }
+    }
+
     return this.stripFinance(projects, requestUser?.role);
   }
 

@@ -145,6 +145,14 @@ export const calendarApi = {
   events: (params: any) => api.get('/calendar/events', { params }).then(r => r.data),
 }
 
+// ─── Project ads (SMM "Важное") ──────────────────────────
+export const projectAdsApi = {
+  list: (projectId: string) => api.get(`/projects/${projectId}/ads`).then(r => r.data),
+  create: (projectId: string, data: any) => api.post(`/projects/${projectId}/ads`, data).then(r => r.data),
+  update: (projectId: string, id: string, data: any) => api.patch(`/projects/${projectId}/ads/${id}`, data).then(r => r.data),
+  remove: (projectId: string, id: string) => api.delete(`/projects/${projectId}/ads/${id}`).then(r => r.data),
+}
+
 // ─── Clients (sales CRM) ─────────────────────────────────
 export const clientsApi = {
   list: (params?: { search?: string; status?: string; interest?: string; sphere?: string; ownerId?: string; source?: string }) =>

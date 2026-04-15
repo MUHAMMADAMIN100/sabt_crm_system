@@ -209,8 +209,20 @@ export default function ProjectsPage() {
             <div
               key={p.id}
               onClick={() => navigate(`/projects/${p.id}`)}
-              className="card group hover:shadow-md transition-shadow cursor-pointer"
+              className="card group hover:shadow-md transition-shadow cursor-pointer relative"
             >
+              {/* Ad status dot — SMM projects only */}
+              {p.projectType === 'SMM' && (
+                <span
+                  title={p.hasActiveAd ? 'Реклама идёт' : 'Рекламы нет или завершена'}
+                  className={clsx(
+                    'absolute top-3 right-3 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-surface-800',
+                    p.hasActiveAd
+                      ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.2)]'
+                      : 'bg-red-500',
+                  )}
+                />
+              )}
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: p.color || '#eff2ff' }}>
