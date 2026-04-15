@@ -573,7 +573,6 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
                 'Проект-менеджер',
                 'Разработчик',
                 'Администратор',
-                'Сотрудник',
                 'Основатель',
               ].map(p => (
                 <option key={p} value={p}>{p}</option>

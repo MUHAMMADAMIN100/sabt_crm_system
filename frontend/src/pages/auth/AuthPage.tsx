@@ -17,7 +17,6 @@ const ROLES: { value: string; label: string; position: string }[] = [
   { value: 'project_manager',  label: 'Проект-менеджер',      position: 'Проект-менеджер' },
   { value: 'developer',        label: 'Разработчик',          position: 'Разработчик' },
   { value: 'admin',            label: 'Администратор',        position: 'Администратор' },
-  { value: 'employee',         label: 'Сотрудник',            position: 'Сотрудник' },
   { value: 'founder',          label: 'Основатель',           position: 'Основатель' },
 ]
 
