@@ -423,9 +423,11 @@ export class ProjectsService {
   async remove(id: string, user?: { id: string; role: string; name?: string }) {
     const p = await this.findOne(id);
 
-    // PM can only delete projects they manage
-    if (user && (user.role === 'project_manager' || user.role === 'head_smm') && p.managerId !== user.id) {
-      throw new ForbiddenException('Можно удалять только свои проекты');
+    // Only admin and founder can delete projects. PM / head_smm manage
+    // their projects but cannot remove them — deletion is an irreversible
+    // operation that wipes tasks, files and activity, reserved for top roles.
+    if (user && !['admin', 'founder'].includes(user.role)) {
+      throw new ForbiddenException('Удалять проекты могут только администратор и основатель');
     }
 
     await this.activityLog.log({
