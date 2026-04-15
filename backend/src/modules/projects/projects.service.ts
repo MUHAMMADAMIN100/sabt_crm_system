@@ -293,64 +293,65 @@ export class ProjectsService {
     if (managerChanged) {
       // Notify NEW manager (if set)
       if (dto.managerId) {
-        const newManager = await this.userRepo.findOne({ where: { id: dto.managerId } });
+        const newManager = await this.userRepo.findOne({ where: { id: dto.managerId } }).catch(() => null);
         if (newManager && newManager.id !== user.id) {
-          await this.notificationsService.create({
-            userId: newManager.id,
-            type: NotificationType.MANAGER_ASSIGNED,
-            title: '👑 Вы — менеджер проекта',
-            message: `Вас назначили менеджером проекта "${saved.name}"`,
-            link: projectLink,
-            data: { projectId: saved.id, actorId: user.id, actorName: user.name },
-          });
+          try {
+            await this.notificationsService.create({
+              userId: newManager.id,
+              type: NotificationType.MANAGER_ASSIGNED,
+              title: '👑 Вы — менеджер проекта',
+              message: `Вас назначили менеджером проекта "${saved.name}"`,
+              link: projectLink,
+              data: { projectId: saved.id, actorId: user.id, actorName: user.name },
+            });
+          } catch (e: any) { console.warn('manager-assigned in-app failed:', e?.message); }
           if (newManager.email) {
-            await this.mailService.sendManagerAssigned(
-              newManager.email,
-              newManager.name,
-              saved.name,
-              saved.id,
-              saved.description || undefined,
-              deadlineStr,
-              user.name,
-            );
+            await this.mailService
+              .sendManagerAssigned(
+                newManager.email, newManager.name, saved.name, saved.id,
+                saved.description || undefined, deadlineStr, user.name,
+              )
+              .catch((e: any) => console.warn('manager-assigned mail failed:', e?.message));
           }
-          await this.telegramService.sendToUser(
-            newManager.id,
-            `👑 <b>Вы — менеджер проекта</b>\n\n` +
-            `📌 ${saved.name}\n` +
-            (user.name ? `👤 Назначил: ${user.name}\n` : '') +
-            (deadlineStr ? `📅 Дедлайн: ${deadlineStr}\n` : '') +
-            `\n👉 ${this.telegramService.appUrl}${projectLink}`,
-          );
+          await this.telegramService
+            .sendToUser(
+              newManager.id,
+              `👑 <b>Вы — менеджер проекта</b>\n\n` +
+              `📌 ${saved.name}\n` +
+              (user.name ? `👤 Назначил: ${user.name}\n` : '') +
+              (deadlineStr ? `📅 Дедлайн: ${deadlineStr}\n` : '') +
+              `\n👉 ${this.telegramService.appUrl}${projectLink}`,
+            )
+            .catch((e: any) => console.warn('manager-assigned telegram failed:', e?.message));
         }
       }
       // Notify OLD manager (if they had one and still exist)
       if (oldManagerId && oldManagerId !== user.id) {
-        const oldManager = await this.userRepo.findOne({ where: { id: oldManagerId } });
+        const oldManager = await this.userRepo.findOne({ where: { id: oldManagerId } }).catch(() => null);
         if (oldManager) {
-          await this.notificationsService.create({
-            userId: oldManager.id,
-            type: NotificationType.MANAGER_REMOVED,
-            title: '📋 Смена менеджера проекта',
-            message: `Вы больше не менеджер проекта "${saved.name}"`,
-            link: projectLink,
-            data: { projectId: saved.id, actorId: user.id, actorName: user.name },
-          });
+          try {
+            await this.notificationsService.create({
+              userId: oldManager.id,
+              type: NotificationType.MANAGER_REMOVED,
+              title: '📋 Смена менеджера проекта',
+              message: `Вы больше не менеджер проекта "${saved.name}"`,
+              link: projectLink,
+              data: { projectId: saved.id, actorId: user.id, actorName: user.name },
+            });
+          } catch (e: any) { console.warn('manager-removed in-app failed:', e?.message); }
           if (oldManager.email) {
-            await this.mailService.sendManagerRemoved(
-              oldManager.email,
-              oldManager.name,
-              saved.name,
-              saved.id,
-              user.name,
-            );
+            await this.mailService
+              .sendManagerRemoved(oldManager.email, oldManager.name, saved.name, saved.id, user.name)
+              .catch((e: any) => console.warn('manager-removed mail failed:', e?.message));
           }
-          await this.telegramService.sendToUser(
-            oldManager.id,
-            `📋 <b>Смена менеджера проекта</b>\n\n` +
-            `Вы больше не менеджер проекта <b>${saved.name}</b>` +
-            (user.name ? `\n\n👤 Изменение сделал: ${user.name}` : ''),
-          );
+          await this.telegramService
+            .sendToUser(
+              oldManager.id,
+              `📋 <b>Смена менеджера проекта</b>\n\n` +
+              `Вы больше не менеджер проекта <b>${saved.name}</b>` +
+              (user.name ? `\n\n👤 Изменение сделал: ${user.name}` : ''),
+            )
+            .catch((e: any) => console.warn('manager-removed telegram failed:', e?.message));
         }
       }
     }
@@ -361,81 +362,107 @@ export class ProjectsService {
       const removedMemberIds = oldMemberIds.filter(mid => !dto.memberIds.includes(mid));
 
       for (const memberId of newMemberIds) {
-        await this.activityLog.log({
-          userId: user.id,
-          userName: user.name,
-          action: ActivityAction.MEMBER_ADD,
-          entity: 'project',
-          entityId: id,
-          entityName: project.name,
-          details: { memberId },
-        });
+        // Notifications are best-effort — never block the member-add itself.
+        try {
+          await this.activityLog.log({
+            userId: user.id,
+            userName: user.name,
+            action: ActivityAction.MEMBER_ADD,
+            entity: 'project',
+            entityId: id,
+            entityName: project.name,
+            details: { memberId },
+          });
+        } catch (e: any) {
+          // eslint-disable-next-line no-console
+          console.warn('member-add activity log failed:', e?.message);
+        }
 
-        if (memberId === user.id) continue; // skip self-adds
-        const member = await this.userRepo.findOne({ where: { id: memberId } });
+        if (memberId === user.id) continue;
+        const member = await this.userRepo.findOne({ where: { id: memberId } }).catch(() => null);
         if (!member) continue;
 
-        await this.notificationsService.create({
-          userId: memberId,
-          type: NotificationType.PROJECT_ASSIGNED,
-          title: '👥 Вас добавили в проект',
-          message: `Вас добавили в проект "${saved.name}"`,
-          link: projectLink,
-          data: { projectId: saved.id, actorId: user.id, actorName: user.name },
-        });
-        if (member.email) {
-          await this.mailService.sendProjectAssigned(
-            member.email,
-            member.name,
-            saved.name,
-            projectLink,
-            saved.description || undefined,
-            deadlineStr,
-            user.name,
-          );
+        try {
+          await this.notificationsService.create({
+            userId: memberId,
+            type: NotificationType.PROJECT_ASSIGNED,
+            title: '👥 Вас добавили в проект',
+            message: `Вас добавили в проект "${saved.name}"`,
+            link: projectLink,
+            data: { projectId: saved.id, actorId: user.id, actorName: user.name },
+          });
+        } catch (e: any) {
+          // eslint-disable-next-line no-console
+          console.warn('member-add in-app notification failed:', e?.message);
         }
-        await this.telegramService.sendToUser(
-          memberId,
-          `👥 <b>Вас добавили в проект</b>\n\n` +
-          `📌 ${saved.name}` +
-          (user.name ? `\n👤 Добавил: ${user.name}` : '') +
-          (deadlineStr ? `\n📅 Дедлайн: ${deadlineStr}` : '') +
-          `\n\n👉 ${this.telegramService.appUrl}${projectLink}`,
-        );
+        if (member.email) {
+          await this.mailService
+            .sendProjectAssigned(
+              member.email, member.name, saved.name, projectLink,
+              saved.description || undefined, deadlineStr, user.name,
+            )
+            .catch((e: any) => console.warn('member-add mail failed:', e?.message));
+        }
+        await this.telegramService
+          .sendToUser(
+            memberId,
+            `👥 <b>Вас добавили в проект</b>\n\n` +
+            `📌 ${saved.name}` +
+            (user.name ? `\n👤 Добавил: ${user.name}` : '') +
+            (deadlineStr ? `\n📅 Дедлайн: ${deadlineStr}` : '') +
+            `\n\n👉 ${this.telegramService.appUrl}${projectLink}`,
+          )
+          .catch((e: any) => console.warn('member-add telegram failed:', e?.message));
       }
 
       for (const memberId of removedMemberIds) {
-        await this.activityLog.log({
-          userId: user.id,
-          userName: user.name,
-          action: ActivityAction.MEMBER_REMOVE,
-          entity: 'project',
-          entityId: id,
-          entityName: project.name,
-          details: { memberId },
-        });
+        // Notifications are best-effort — a failing email/telegram/enum-not-yet-
+        // migrated-on-DB must not roll back the actual member removal.
+        try {
+          await this.activityLog.log({
+            userId: user.id,
+            userName: user.name,
+            action: ActivityAction.MEMBER_REMOVE,
+            entity: 'project',
+            entityId: id,
+            entityName: project.name,
+            details: { memberId },
+          });
+        } catch (e: any) {
+          // eslint-disable-next-line no-console
+          console.warn('member-remove activity log failed:', e?.message);
+        }
 
         if (memberId === user.id) continue;
-        const member = await this.userRepo.findOne({ where: { id: memberId } });
+        const member = await this.userRepo.findOne({ where: { id: memberId } }).catch(() => null);
         if (!member) continue;
 
-        await this.notificationsService.create({
-          userId: memberId,
-          type: NotificationType.MEMBER_REMOVED,
-          title: '👥 Вас убрали из проекта',
-          message: `Вас больше нет в составе проекта "${saved.name}"`,
-          link: projectLink,
-          data: { projectId: saved.id, actorId: user.id, actorName: user.name },
-        });
-        if (member.email) {
-          await this.mailService.sendMemberRemoved(member.email, member.name, saved.name, user.name);
+        try {
+          await this.notificationsService.create({
+            userId: memberId,
+            type: NotificationType.MEMBER_REMOVED,
+            title: '👥 Вас убрали из проекта',
+            message: `Вас больше нет в составе проекта "${saved.name}"`,
+            link: projectLink,
+            data: { projectId: saved.id, actorId: user.id, actorName: user.name },
+          });
+        } catch (e: any) {
+          // eslint-disable-next-line no-console
+          console.warn('member-remove in-app notification failed:', e?.message);
         }
-        await this.telegramService.sendToUser(
-          memberId,
-          `👥 <b>Вас убрали из проекта</b>\n\n` +
-          `📌 ${saved.name}` +
-          (user.name ? `\n👤 Изменение сделал: ${user.name}` : ''),
-        );
+        if (member.email) {
+          await this.mailService
+            .sendMemberRemoved(member.email, member.name, saved.name, user.name)
+            .catch((e: any) => console.warn('member-remove mail failed:', e?.message));
+        }
+        await this.telegramService
+          .sendToUser(
+            memberId,
+            `👥 <b>Вас убрали из проекта</b>\n\n` +
+            `📌 ${saved.name}` +
+            (user.name ? `\n👤 Изменение сделал: ${user.name}` : ''),
+          )
+          .catch((e: any) => console.warn('member-remove telegram failed:', e?.message));
       }
     }
 
