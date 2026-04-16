@@ -509,7 +509,7 @@ export default function ProjectDetailPage() {
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={clsx('px-4 py-3 sm:py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px]',
                 activeTab === tab ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400' : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300')}>
-              {tab === 'ads' ? '🎯 Важное' : t(`tabs.${tab}`)}
+              {tab === 'ads' ? '📢 Реклама' : t(`tabs.${tab}`)}
             </button>
           ))}
       </div>
