@@ -407,7 +407,18 @@ export default function DashboardPage() {
                     className="block p-3 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors group"
                   >
                     <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 min-w-0 flex-1 leading-snug">{task.title}</p>
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <p className="text-sm font-medium text-surface-900 dark:text-surface-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 leading-snug truncate">{task.title}</p>
+                        {task.createdById && task.assigneeId && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${
+                            task.createdById === task.assigneeId
+                              ? 'bg-surface-100 dark:bg-surface-700 text-surface-400 dark:text-surface-500'
+                              : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                          }`}>
+                            {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] ? `от ${task.createdBy.name.trim().split(' ')[0]}` : 'назначено')}
+                          </span>
+                        )}
+                      </div>
                       {task.deadline && (
                         <span className={`text-xs shrink-0 ${new Date(task.deadline) < new Date() ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>
                           {format(new Date(task.deadline), 'dd.MM')}

@@ -54,7 +54,14 @@ export default function SMMDashboard() {
                     to={`/tasks/${t.id}`}
                     className="block p-2 rounded-lg bg-red-100 dark:bg-red-900/20 hover:bg-red-200 dark:hover:bg-red-900/30 transition-colors"
                   >
-                    <p className="text-sm font-medium text-red-800 dark:text-red-300 truncate">{t.title}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium text-red-800 dark:text-red-300 truncate">{t.title}</p>
+                      {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                          {t.createdBy?.name?.trim().split(' ')[0] || 'назначено'}
+                        </span>
+                      )}
+                    </div>
                     {t.deadline && (
                       <p className="text-xs text-red-500">
                         Дедлайн: {format(new Date(t.deadline), 'dd MMMM', { locale: ru })}
@@ -81,7 +88,14 @@ export default function SMMDashboard() {
                     to={`/tasks/${t.id}`}
                     className="block p-2 rounded-lg bg-orange-100 dark:bg-orange-900/20 hover:bg-orange-200 dark:hover:bg-orange-900/30 transition-colors"
                   >
-                    <p className="text-sm font-medium text-orange-800 dark:text-orange-300 truncate">{t.title}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium text-orange-800 dark:text-orange-300 truncate">{t.title}</p>
+                      {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                          {t.createdBy?.name?.trim().split(' ')[0] || 'назначено'}
+                        </span>
+                      )}
+                    </div>
                     {t.returnReason && (
                       <p className="text-xs text-orange-600 dark:text-orange-400 truncate">💬 {t.returnReason}</p>
                     )}
@@ -106,7 +120,14 @@ export default function SMMDashboard() {
                 to={`/tasks/${t.id}`}
                 className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/10"
               >
-                <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate flex-1">{t.title}</p>
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{t.title}</p>
+                  {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                      {t.createdBy?.name?.trim().split(' ')[0] || 'назначено'}
+                    </span>
+                  )}
+                </div>
                 <StatusBadge status={t.status} />
               </Link>
             ))}
@@ -132,9 +153,16 @@ export default function SMMDashboard() {
                   className="block p-3 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors group border border-transparent hover:border-surface-200 dark:hover:border-surface-600"
                 >
                   <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 leading-snug flex-1">
-                      {t.title}
-                    </p>
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 leading-snug truncate">
+                        {t.title}
+                      </p>
+                      {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                          {t.createdBy?.name?.trim().split(' ')[0] || 'назначено'}
+                        </span>
+                      )}
+                    </div>
                     {t.deadline && (
                       <span className={`text-xs shrink-0 font-medium ${isUrgent ? 'text-orange-500' : 'text-surface-400 dark:text-surface-500'}`}>
                         {format(new Date(t.deadline), 'dd.MM', { locale: ru })}

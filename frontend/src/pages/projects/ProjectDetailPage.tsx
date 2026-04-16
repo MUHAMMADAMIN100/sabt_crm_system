@@ -537,7 +537,18 @@ export default function ProjectDetailPage() {
                       onDragEnd={dragOn ? handleDragEnd : undefined}
                       className={clsx('card p-3 hover:shadow-md transition-all', dragOn && 'cursor-grab active:cursor-grabbing')}>
                       <div className="flex items-start justify-between mb-2">
-                        <Link to={`/tasks/${task.id}`} className="text-sm font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 flex-1 leading-snug">{task.title}</Link>
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <Link to={`/tasks/${task.id}`} className="text-sm font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 leading-snug truncate">{task.title}</Link>
+                          {task.createdById && task.assigneeId && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${
+                              task.createdById === task.assigneeId
+                                ? 'bg-surface-100 dark:bg-surface-700 text-surface-400 dark:text-surface-500'
+                                : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                            }`}>
+                              {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] ? `от ${task.createdBy.name.trim().split(' ')[0]}` : 'назначено')}
+                            </span>
+                          )}
+                        </div>
                         {(isManagerPlus || isOwnTask) && (
                           <div className="flex gap-0.5 ml-1 shrink-0">
                             <button onClick={(e) => { e.stopPropagation(); setEditingTask(task); setShowTaskForm(true) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400"><Edit size={12} /></button>

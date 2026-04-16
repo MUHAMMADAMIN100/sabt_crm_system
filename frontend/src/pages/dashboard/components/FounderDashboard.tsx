@@ -287,7 +287,14 @@ export default function FounderDashboard() {
                   className="flex items-center justify-between gap-3 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{t.title}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{t.title}</p>
+                      {t.createdById && t.assigneeId && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${t.createdById === t.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
+                          {t.createdById === t.assigneeId ? 'сам' : (t.createdBy?.name?.trim().split(' ')[0] || 'назначено')}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-surface-400 dark:text-surface-500">{t.project?.name}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
