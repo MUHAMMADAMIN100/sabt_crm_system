@@ -3,12 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProjectAd, BudgetSource } from './project-ad.entity';
 import { Project } from '../projects/project.entity';
+import { AppGateway } from '../gateway/app.gateway';
 
 @Injectable()
 export class ProjectAdsService {
   constructor(
     @InjectRepository(ProjectAd) private repo: Repository<ProjectAd>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
+    private gateway: AppGateway,
   ) {}
 
   findByProject(projectId: string) {
@@ -44,6 +46,7 @@ export class ProjectAdsService {
       await this.adjustProjectBudget(projectId, Number(saved.budget));
     }
 
+    this.gateway.broadcast('projects:changed', {});
     return saved;
   }
 
@@ -61,6 +64,7 @@ export class ProjectAdsService {
       await this.adjustProjectBudget(updated.projectId, delta);
     }
 
+    this.gateway.broadcast('projects:changed', {});
     return updated;
   }
 
@@ -73,6 +77,7 @@ export class ProjectAdsService {
     }
 
     await this.repo.remove(ad);
+    this.gateway.broadcast('projects:changed', {});
     return { message: 'Ad deleted' };
   }
 }
