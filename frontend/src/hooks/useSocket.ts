@@ -65,6 +65,12 @@ export function useSocket(token: string | null) {
       qc.invalidateQueries({ queryKey: ['files-project'] })
     })
 
+    socket.on('stories:changed', () => {
+      qc.invalidateQueries({ queryKey: ['stories'] })
+      qc.invalidateQueries({ queryKey: ['employee-stories'] })
+      qc.invalidateQueries({ queryKey: ['stories-all'] })
+    })
+
     socket.on('tasks:changed', () => {
       qc.invalidateQueries({ queryKey: ['tasks'] })
       qc.invalidateQueries({ queryKey: ['my-tasks'] })

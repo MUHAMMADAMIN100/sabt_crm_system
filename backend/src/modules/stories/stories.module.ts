@@ -8,6 +8,7 @@ import { User } from '../users/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TelegramModule } from '../telegram/telegram.module';
 import { ActivityLogModule } from '../activity-log/activity-log.module';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { ActivityLogModule } from '../activity-log/activity-log.module';
     NotificationsModule,
     TelegramModule,
     ActivityLogModule,
+    GatewayModule,
   ],
   controllers: [StoriesController],
   providers: [StoriesService],

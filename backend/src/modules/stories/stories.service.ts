@@ -10,6 +10,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
+import { AppGateway } from '../gateway/app.gateway';
 
 @Injectable()
 export class StoriesService {
@@ -22,6 +23,7 @@ export class StoriesService {
     private activityLog: ActivityLogService,
     private telegramService: TelegramService,
     private notificationsService: NotificationsService,
+    private gateway: AppGateway,
   ) {}
 
   async getByEmployee(employeeId: string, from: string, to: string) {
@@ -59,6 +61,7 @@ export class StoriesService {
       details: { date, storiesCount, isUpdate },
     });
 
+    this.gateway.broadcast('stories:changed', { projectId, employeeId, date });
     return saved;
   }
 
