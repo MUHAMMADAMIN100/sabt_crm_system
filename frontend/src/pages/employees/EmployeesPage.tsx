@@ -580,7 +580,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
                 'Основатель',
                 'Сооснователь',
               ]
-                .filter(p => isFounderActor || p !== 'Сооснователь')
+                .filter(p => isFounderActor || (p !== 'Сооснователь' && p !== 'Основатель'))
                 .map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}
