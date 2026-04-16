@@ -190,6 +190,7 @@ function AdSection({ title, ads, canManage, onEdit, onDelete, accent }: any) {
                   <div className="flex items-center gap-2 mt-1 text-xs text-surface-500 dark:text-surface-400">
                     <span>{ch?.icon} {ch?.label || a.channel}</span>
                     {a.budget && <span>· 💰 {Number(a.budget).toLocaleString('ru-RU')} сомони</span>}
+                    {a.budgetSource === 'company' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">из компании</span>}
                   </div>
                 </div>
                 {canManage && (
@@ -223,6 +224,7 @@ function AdForm({ initial, onClose, onSubmit, loading }: any) {
       title: initial?.title || '',
       channel: initial?.channel || 'instagram',
       budget: initial?.budget || '',
+      budgetSource: initial?.budgetSource || 'client',
       startDate: initial?.startDate ? String(initial.startDate).slice(0, 10) : '',
       endDate: initial?.endDate ? String(initial.endDate).slice(0, 10) : '',
       note: initial?.note || '',
@@ -257,6 +259,13 @@ function AdForm({ initial, onClose, onSubmit, loading }: any) {
             <label className="label">Бюджет (сомони)</label>
             <input type="number" min={0} step="0.01" {...register('budget')} className="input" placeholder="500" />
           </div>
+        </div>
+        <div>
+          <label className="label">Кто платит *</label>
+          <select {...register('budgetSource', { required: true })} className="input">
+            <option value="client">От клиента — клиент оплачивает</option>
+            <option value="company">Из компании — мы платим (добавится в бюджет проекта)</option>
+          </select>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>

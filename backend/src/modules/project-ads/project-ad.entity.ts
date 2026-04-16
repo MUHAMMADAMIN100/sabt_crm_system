@@ -5,6 +5,11 @@ import {
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 
+export enum BudgetSource {
+  COMPANY = 'company',
+  CLIENT  = 'client',
+}
+
 export enum AdChannel {
   INSTAGRAM = 'instagram',
   TIKTOK    = 'tiktok',
@@ -36,6 +41,10 @@ export class ProjectAd {
   /** Рекламный бюджет в сомони */
   @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
   budget: number;
+
+  /** Кто платит за рекламу: company = наша компания, client = клиент */
+  @Column({ type: 'enum', enum: BudgetSource, default: BudgetSource.CLIENT })
+  budgetSource: BudgetSource;
 
   @Column({ type: 'date' })
   startDate: Date;
