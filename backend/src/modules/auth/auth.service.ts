@@ -120,9 +120,10 @@ export class AuthService {
     }
     if (!user.isActive) throw new UnauthorizedException('Account is deactivated');
 
-    // Check if employee is sub-admin — grant admin access
+    // Check if employee is sub-admin — grant admin access (but don't downgrade founder/co_founder)
     const employee = await this.employeeRepo.findOne({ where: { userId: user.id } });
-    const effectiveRole = employee?.isSubAdmin ? UserRole.ADMIN : user.role;
+    const topRoles = [UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN];
+    const effectiveRole = employee?.isSubAdmin && !topRoles.includes(user.role) ? UserRole.ADMIN : user.role;
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: effectiveRole });
     const sanitized = this.sanitize(user);
@@ -198,7 +199,8 @@ export class AuthService {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     const employee = await this.employeeRepo.findOne({ where: { userId } });
-    const effectiveRole = employee?.isSubAdmin ? UserRole.ADMIN : user.role;
+    const topRoles = [UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN];
+    const effectiveRole = employee?.isSubAdmin && !topRoles.includes(user.role) ? UserRole.ADMIN : user.role;
     const sanitized = this.sanitize(user);
     return {
       ...sanitized,
