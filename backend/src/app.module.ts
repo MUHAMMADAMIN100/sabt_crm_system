@@ -31,6 +31,7 @@ import { TaskChecklistsModule } from './modules/task-checklists/task-checklists.
 import { AiAssistantModule } from './modules/ai-assistant/ai-assistant.module';
 import { ClientsModule } from './modules/clients/clients.module';
 import { ProjectAdsModule } from './modules/project-ads/project-ads.module';
+import { ProjectAnnouncementsModule } from './modules/project-announcements/project-announcements.module';
 
 @Module({
   controllers: [HealthController],
@@ -85,6 +86,7 @@ import { ProjectAdsModule } from './modules/project-ads/project-ads.module';
     AiAssistantModule,
     ClientsModule,
     ProjectAdsModule,
+    ProjectAnnouncementsModule,
   ],
 })
 export class AppModule {}

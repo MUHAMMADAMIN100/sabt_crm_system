@@ -153,6 +153,13 @@ export const projectAdsApi = {
   remove: (projectId: string, id: string) => api.delete(`/projects/${projectId}/ads/${id}`).then(r => r.data),
 }
 
+// ─── Project announcements ("Важное") ───────────────────
+export const projectAnnouncementsApi = {
+  list: (projectId: string) => api.get(`/projects/${projectId}/announcements`).then(r => r.data),
+  create: (projectId: string, data: any) => api.post(`/projects/${projectId}/announcements`, data).then(r => r.data),
+  remove: (projectId: string, id: string) => api.delete(`/projects/${projectId}/announcements/${id}`).then(r => r.data),
+}
+
 // ─── Clients (sales CRM) ─────────────────────────────────
 export const clientsApi = {
   list: (params?: { search?: string; status?: string; interest?: string; sphere?: string; ownerId?: string; source?: string }) =>

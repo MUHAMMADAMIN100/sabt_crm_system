@@ -104,6 +104,18 @@ export class MailService {
       </tr>`;
   }
 
+  async sendGenericNotification(to: string, recipientName: string, subject: string, bodyHtml: string) {
+    const html = `
+      <div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
+        ${this.header(subject)}
+        <div style="padding:32px 40px;">
+          <p style="color:#334155;font-size:15px;line-height:1.7;">${bodyHtml}</p>
+        </div>
+        ${this.footer()}
+      </div>`;
+    await this.sendViaBrevo(to, recipientName, subject, html);
+  }
+
   async sendProjectAssigned(
     to: string,
     recipientName: string,

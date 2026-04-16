@@ -13,6 +13,7 @@ import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import GanttChart from '@/components/projects/GanttChart'
 import ProjectAdsTab from '@/components/projects/ProjectAdsTab'
+import ProjectImportantTab from '@/components/projects/ProjectImportantTab'
 import SMM_QUESTIONS from '@/config/smm-questions'
 import { downloadSmmBrief } from '@/lib/smmBrief'
 import toast from 'react-hot-toast'
@@ -25,7 +26,7 @@ const fileUrl = (path: string) => path?.startsWith('http') ? path : `${API_URL}$
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'tasks' | 'files' | 'about' | 'client' | 'members' | 'gantt' | 'ads'>('tasks')
+  const [activeTab, setActiveTab] = useState<'tasks' | 'files' | 'about' | 'client' | 'members' | 'gantt' | 'ads' | 'important'>('tasks')
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
@@ -503,13 +504,13 @@ export default function ProjectDetailPage() {
       )}
 
       <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
-        {(['tasks', 'gantt', 'files', 'about', 'client', 'members', 'ads'] as const)
+        {(['tasks', 'gantt', 'files', 'about', 'client', 'members', 'ads', 'important'] as const)
           .filter(tab => tab !== 'ads' || project?.projectType === 'SMM')
           .map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={clsx('px-4 py-3 sm:py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px]',
                 activeTab === tab ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400' : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300')}>
-              {tab === 'ads' ? '📢 Реклама' : t(`tabs.${tab}`)}
+              {tab === 'ads' ? 'Реклама' : tab === 'important' ? 'Важное' : t(`tabs.${tab}`)}
             </button>
           ))}
       </div>
@@ -902,6 +903,10 @@ export default function ProjectDetailPage() {
 
       {activeTab === 'ads' && project?.projectType === 'SMM' && (
         <ProjectAdsTab projectId={project.id} />
+      )}
+
+      {activeTab === 'important' && (
+        <ProjectImportantTab projectId={project.id} />
       )}
 
       {/* Modal: Edit Project */}
