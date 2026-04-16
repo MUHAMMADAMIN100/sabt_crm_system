@@ -219,7 +219,7 @@ export default function ProjectsPage() {
                   className={clsx(
                     'absolute top-3 right-3 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-surface-800',
                     p.hasActiveAd
-                      ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.2)]'
+                      ? 'bg-emerald-500 animate-pulse shadow-[0_0_0_3px_rgba(16,185,129,0.2)]'
                       : 'bg-red-500',
                   )}
                 />
