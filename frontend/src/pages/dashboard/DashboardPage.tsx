@@ -84,7 +84,7 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
                   {Array.from({ length: target }, (_, idx) => idx + 1).map(i => (
                     <div
                       key={i}
-                      className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${storyDotColor(i, count, target)}`}
+                      className={`w-3.5 h-3.5 rounded-full transition-all duration-300 ${storyDotColor(i, count, target)}`}
                     />
                   ))}
                 </div>

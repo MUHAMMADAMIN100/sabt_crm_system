@@ -95,14 +95,20 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
 
   const activeProjects = useMemo(() => {
     const base = projects?.filter((p: any) => !p.isArchived && p.status !== 'completed') || []
-    // Admin all view or readonly (employee detail) sees all projects
-    if (adminAll || isReadonly) return base
+    // Admin all view sees all projects
+    if (adminAll) return base
+    // Viewing a specific employee — show only projects they belong to
+    if (employeeId) {
+      return base.filter((p: any) =>
+        p.members?.some((m: any) => m.id === employeeId) || p.managerId === employeeId,
+      )
+    }
     if (['admin', 'founder', 'co_founder'].includes(user?.role || '')) return base
     // Everyone else (PM, SMM, designer, etc.): projects where they are member OR manager
     return base.filter((p: any) =>
       p.members?.some((m: any) => m.id === user?.id) || p.managerId === user?.id,
     )
-  }, [projects, user, isReadonly, adminAll])
+  }, [projects, user, employeeId, adminAll])
 
   // Build story map: projectId -> dateKey -> count
   const storyMap = useMemo(() => {
@@ -279,7 +285,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
                         } else {
                           dotColor = 'bg-surface-300 dark:bg-surface-600'
                         }
-                        return <div key={i} className={clsx('w-2 h-2 rounded-full transition-colors duration-300', dotColor)} />
+                        return <div key={i} className={clsx('w-3 h-3 rounded-full transition-colors duration-300', dotColor)} />
                       })}
                     </div>
                     <span className="text-[9px] font-semibold text-surface-400 dark:text-surface-500 min-w-[26px] text-right">
@@ -376,7 +382,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
                   </div>
                 )
               })()}
-              <div className={clsx('flex flex-wrap justify-center gap-0.5', dailyTarget > 4 && 'max-w-[40px]')}>
+              <div className={clsx('flex flex-wrap justify-center gap-1', dailyTarget > 4 && 'max-w-[52px]')}>
                 {Array.from({ length: dailyTarget }, (_, idx) => idx + 1).map(i => {
                   const animKey = `${dateKey}-${i}`
                   const animType = animMap[animKey]
@@ -386,7 +392,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
                       disabled={isReadonly || future}
                       onClick={() => !future && handleCheck(selectedProject.id, dateKey, i, count, dailyTarget)}
                       className={clsx(
-                        'w-3 h-3 rounded-sm transition-colors duration-200',
+                        'w-4 h-4 rounded-sm transition-colors duration-200',
                         getCheckboxColor(i, count, dailyTarget),
                         i <= count && 'shadow-sm',
                         !isReadonly && !future && 'hover:scale-125 cursor-pointer',
