@@ -19,7 +19,7 @@ import { downloadSmmBrief } from '@/lib/smmBrief'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-const TASK_STATUSES = ['new', 'in_progress', 'review', 'done', 'cancelled']
+const TASK_STATUSES = ['new', 'in_progress', 'review', 'done']
 const API_URL = import.meta.env.VITE_API_URL || ''
 const fileUrl = (path: string) => path?.startsWith('http') ? path : `${API_URL}${path}`
 
