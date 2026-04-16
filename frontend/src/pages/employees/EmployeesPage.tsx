@@ -69,7 +69,12 @@ export default function EmployeesPage() {
   // Reset page when filters change
   useEffect(() => { setPage(1) }, [search, position])
 
+  const isHeadSMM = user?.role === 'head_smm'
+  const smmPositions = ['SMM специалист', 'Главный SMM специалист']
+
   const employees = allEmployees?.filter((emp: any) => {
+    // head_smm sees only SMM employees
+    if (isHeadSMM && !smmPositions.includes(emp.position || '') && !['smm_specialist', 'head_smm'].includes(emp.user?.role || '')) return false
     const matchesSearch = !search || emp.fullName?.toLowerCase().includes(search.toLowerCase()) || emp.email?.toLowerCase().includes(search.toLowerCase()) || emp.position?.toLowerCase().includes(search.toLowerCase())
     const matchesPosition = !position || emp.position === position
     return matchesSearch && matchesPosition

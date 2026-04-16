@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { analyticsApi, tasksApi, employeesApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatCard, ProgressBar, Avatar, StatusBadge, PriorityBadge } from '@/components/ui'
 import { FolderKanban, CheckSquare, Clock, TrendingUp, ChevronDown, ChevronRight, AlertTriangle, Zap } from 'lucide-react'
@@ -14,6 +15,8 @@ const COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4'
 
 export default function AnalyticsPage() {
   const { t } = useTranslation()
+  const user = useAuthStore(s => s.user)
+  const isHeadSMM = user?.role === 'head_smm'
   const [expandedEmp, setExpandedEmp] = useState<string | null>(null)
   const [expandedWorkload, setExpandedWorkload] = useState<string | null>(null)
 
@@ -34,9 +37,18 @@ export default function AnalyticsPage() {
 
   if (isLoading) return <PageLoader />
 
-  // Group tasks by employee
+  const smmPositions = ['SMM специалист', 'Главный SMM специалист']
+  const smmRoles = ['smm_specialist', 'head_smm']
+  const isSMMEmployee = (emp: any) => smmRoles.includes(emp?.user?.role || emp?.role || '') || smmPositions.includes(emp?.position || '')
+
+  // Filter workload & efficiency for head_smm
+  const filteredWorkload = isHeadSMM ? (workload || []).filter((e: any) => smmPositions.includes(e.position || '')) : workload
+  const filteredEmpEff = isHeadSMM ? (empEff || []).filter((e: any) => smmPositions.includes(e.position || '')) : empEff
+
+  // Group tasks by employee (filter to SMM projects for head_smm)
   const tasksByEmployee: Record<string, any[]> = {}
   allTasks?.forEach((task: any) => {
+    if (isHeadSMM && task.project?.projectType !== 'SMM') return
     if (task.assignee) {
       const key = task.assignee.id || task.assigneeId
       if (!tasksByEmployee[key]) tasksByEmployee[key] = []
@@ -178,7 +190,7 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      {workload && workload.length > 0 && (
+      {filteredWorkload && filteredWorkload.length > 0 && (
         <div className="card">
           <h3 className="section-title mb-4">Загруженность сотрудников</h3>
           <div className="overflow-x-auto">
@@ -198,8 +210,8 @@ export default function AnalyticsPage() {
                 </tr>
               </thead>
               <tbody>
-                {workload.map((e: any) => {
-                  const maxTasks = Math.max(...workload.map((w: any) => w.activeTasks), 1)
+                {filteredWorkload.map((e: any) => {
+                  const maxTasks = Math.max(...filteredWorkload.map((w: any) => w.activeTasks), 1)
                   const pct = Math.round((e.activeTasks / maxTasks) * 100)
                   const loadColor = e.activeTasks >= 10 ? 'bg-red-500' : e.activeTasks >= 5 ? 'bg-amber-500' : 'bg-emerald-500'
                   const isExpanded = expandedWorkload === e.id
@@ -295,11 +307,11 @@ export default function AnalyticsPage() {
         <StoryCalendar adminAll />
       </div>
 
-      {empEff?.length > 0 && (
+      {filteredEmpEff?.length > 0 && (
         <div className="card">
           <h3 className="section-title mb-4">{t('analytics.employeeActivity')}</h3>
           <div className="space-y-2">
-            {empEff.map((e: any) => {
+            {filteredEmpEff.map((e: any) => {
               const pct = e.totalTasks > 0 ? Math.round((e.doneTasks / e.totalTasks) * 100) : 0
               const isExpanded = expandedEmp === e.id
               const empTasks = tasksByEmployee[e.id] || []

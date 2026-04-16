@@ -31,7 +31,8 @@ export default function TasksPage() {
   const PAGE_SIZE = 10
   const user = useAuthStore(s => s.user)
   const navigate = useNavigate()
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
+  const isHeadSMM = user?.role === 'head_smm'
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(user?.role || '')
   // Story widget visible to everyone except admin/founder (they have analytics).
   // PM sees it too because they may be a member of other projects where they
   // need to publish stories themselves.
@@ -48,10 +49,12 @@ export default function TasksPage() {
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
 
   // Employees only see their own projects in the task form
-  const availableProjects = useMemo(() =>
-    isManagerPlus
-      ? (projects || [])
-      : (projects || []).filter((p: any) => p.members?.some((m: any) => m.id === user?.id)),
+  const availableProjects = useMemo(() => {
+    const all = projects || []
+    if (isHeadSMM) return all.filter((p: any) => p.projectType === 'SMM')
+    if (isManagerPlus) return all
+    return all.filter((p: any) => p.members?.some((m: any) => m.id === user?.id))
+  },
     [projects, isManagerPlus, user?.id]
   )
 
@@ -269,7 +272,10 @@ export default function TasksPage() {
               <span className="text-xs font-medium text-surface-500 dark:text-surface-400">{t('tasks.assignee')}</span>
               <select value={assigneeUserId} onChange={e => setAssigneeUserId(e.target.value)} className="input w-48">
                 <option value="">Все исполнители</option>
-                {employees?.map((e: any) => (
+                {(isHeadSMM
+                  ? employees?.filter((e: any) => ['smm_specialist', 'head_smm'].includes(e.user?.role || '') || ['SMM специалист', 'Главный SMM специалист'].includes(e.position || ''))
+                  : employees
+                )?.map((e: any) => (
                   <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>
                 ))}
               </select>

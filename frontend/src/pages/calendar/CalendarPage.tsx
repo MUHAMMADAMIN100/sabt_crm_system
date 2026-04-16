@@ -46,7 +46,8 @@ export default function CalendarPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
+  const isHeadSMM = user?.role === 'head_smm'
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(user?.role || '')
   // All authenticated users can create tasks from calendar (workers create only for themselves)
   const canCreate = !!user
 
@@ -158,14 +159,20 @@ export default function CalendarPage() {
           <span className="text-xs font-medium text-surface-500 dark:text-surface-400">Исполнитель:</span>
           <select value={assigneeUserId} onChange={e => setAssigneeUserId(e.target.value)} className="input w-full sm:w-48 text-sm">
             <option value="">Все сотрудники</option>
-            {employees?.map((e: any) => (
+            {(isHeadSMM
+              ? employees?.filter((e: any) => ['smm_specialist', 'head_smm'].includes(e.user?.role || '') || ['SMM специалист', 'Главный SMM специалист'].includes(e.position || ''))
+              : employees
+            )?.map((e: any) => (
               <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>
             ))}
           </select>
           <span className="text-xs font-medium text-surface-500 dark:text-surface-400">Проект:</span>
           <select value={filterProjectId} onChange={e => setFilterProjectId(e.target.value)} className="input w-full sm:w-48 text-sm">
             <option value="">Все проекты</option>
-            {projects?.map((p: any) => (
+            {(isHeadSMM
+              ? projects?.filter((p: any) => p.projectType === 'SMM')
+              : projects
+            )?.map((p: any) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>

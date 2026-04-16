@@ -12,7 +12,8 @@ import toast from 'react-hot-toast'
 
 export default function ReportsPage() {
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
+  const isHeadSMM = user?.role === 'head_smm'
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(user?.role || '')
   const [showCreate, setShowCreate] = useState(false)
   const qc = useQueryClient()
   const { t } = useTranslation()
@@ -67,6 +68,11 @@ export default function ReportsPage() {
 
   if (isLoading) return <PageLoader />
 
+  // head_smm sees only reports from SMM projects
+  const filteredReports = isHeadSMM
+    ? (reports || []).filter((r: any) => r.project?.projectType === 'SMM' || !r.project)
+    : reports
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -83,13 +89,13 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {!reports?.length ? (
+      {!filteredReports?.length ? (
         <EmptyState title={t('reports.noReports')} description={t('reports.noReportsDesc')} action={
           !isManagerPlus ? <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button> : undefined
         } />
       ) : (
         <div className="space-y-3">
-          {reports.map((r: any) => (
+          {filteredReports.map((r: any) => (
             <div key={r.id} className="card flex items-start gap-4">
               <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
                 <FileText size={18} className="text-primary-600 dark:text-primary-400" />
