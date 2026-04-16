@@ -65,6 +65,7 @@ export class AuthService {
         phone: dto.phone || null,
         telegram: dto.telegram || null,
         instagram: dto.instagram || null,
+        birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
         hireDate: new Date(),
         status: EmployeeStatus.ACTIVE,
         userId: user.id,

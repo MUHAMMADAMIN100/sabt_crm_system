@@ -46,6 +46,7 @@ interface AuthState {
     phone?: string
     telegram?: string
     instagram?: string
+    birthDate?: string
   }) => Promise<void>
   logout: () => Promise<void>
   fetchMe: () => Promise<void>

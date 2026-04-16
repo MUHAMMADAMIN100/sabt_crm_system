@@ -38,6 +38,9 @@ export class Employee {
   @Column({ nullable: true })
   instagram: string;
 
+  @Column({ type: 'date', nullable: true })
+  birthDate: Date;
+
   @Column({ type: 'date', default: () => 'CURRENT_DATE' })
   hireDate: Date;
 

@@ -34,6 +34,7 @@ export interface Employee {
   phone: string | null;
   telegram: string | null;
   instagram: string | null;
+  birthDate: string | null;
   hireDate: string;
   status: EmployeeStatus;
   avatar: string | null;

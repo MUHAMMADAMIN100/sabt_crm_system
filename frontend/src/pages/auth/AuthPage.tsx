@@ -85,6 +85,7 @@ export default function AuthPage() {
           phone: data.phone ? '+992' + data.phone.replace(/\D/g, '') : undefined,
           telegram: data.telegram,
           instagram: data.instagram || undefined,
+          birthDate: data.birthDate || undefined,
         })
       }
     } catch (e: any) {
@@ -278,6 +279,12 @@ export default function AuthPage() {
                     <AtSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
                     <input {...reg('instagram')} placeholder="@username" className="input pl-9" />
                   </div>
+                </div>
+
+                {/* День рождения */}
+                <div className="auth-field" style={{ animationDelay: '250ms' }}>
+                  <label className="label">День рождения</label>
+                  <input type="date" {...reg('birthDate')} className="input" />
                 </div>
               </>
             )}

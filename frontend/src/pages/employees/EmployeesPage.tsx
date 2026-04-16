@@ -528,9 +528,10 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
     if (initial) {
       reset({ fullName: initial.fullName||'', position: initial.position||'',
         email: initial.email||'', phone: initial.phone||'', telegram: initial.telegram ? (initial.telegram.startsWith('@') ? initial.telegram : '@' + initial.telegram) : '@', instagram: initial.instagram||'',
+        birthDate: initial.birthDate ? new Date(initial.birthDate).toISOString().split('T')[0] : '',
         hireDate: initial.hireDate ? new Date(initial.hireDate).toISOString().split('T')[0] : '', status: initial.status||'active', bio: initial.bio||'' })
     } else {
-      reset({ fullName:'', position:'', email:'', phone:'', telegram:'@', instagram:'', hireDate:'', status:'active', bio:'' })
+      reset({ fullName:'', position:'', email:'', phone:'', telegram:'@', instagram:'', birthDate:'', hireDate:'', status:'active', bio:'' })
     }
   }, [initial, open, reset])
 
@@ -562,7 +563,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
     try {
       await onSubmit({ fullName: data.fullName, position: data.position, department: 'Общий',
         email: data.email, phone: data.phone, telegram: data.telegram !== '@' ? data.telegram : undefined,
-        instagram: data.instagram||undefined, hireDate: data.hireDate, status: data.status, bio: data.bio||undefined,
+        instagram: data.instagram||undefined, birthDate: data.birthDate||null, hireDate: data.hireDate, status: data.status, bio: data.bio||undefined,
         ...(role && { role }) })
     } catch (e: any) {
       const msg: string = e?.response?.data?.message || ''
@@ -628,6 +629,10 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
           <div>
             <label className="label">Instagram</label>
             <input {...register('instagram')} className="input" placeholder="@username" />
+          </div>
+          <div>
+            <label className="label">День рождения</label>
+            <input type="date" {...register('birthDate')} className="input" />
           </div>
           <div>
             <label className="label">{t('employees.hireDate')} *</label>

@@ -724,4 +724,85 @@ export class DeadlineScheduler implements OnModuleInit {
       this.logger.warn(`Daily orphan cleanup failed: ${e?.message}`)
     }
   }
+
+  // ── 9. Birthday reminder (daily at 9:30am) ───────────────────────────────
+  @Cron('30 9 * * *', { timeZone: 'Asia/Dushanbe' })
+  async notifyUpcomingBirthdays() {
+    this.logger.log('Checking upcoming birthdays...')
+
+    // Find employees whose birthday is in 3 days
+    const in3days = new Date()
+    in3days.setDate(in3days.getDate() + 3)
+    const targetMonth = in3days.getMonth() + 1
+    const targetDay = in3days.getDate()
+
+    const employees = await this.employeeRepo.find({
+      where: { status: 'active' as any },
+      relations: ['user'],
+    })
+
+    const birthdayEmployees = employees.filter(emp => {
+      if (!emp.birthDate) return false
+      const bd = new Date(emp.birthDate)
+      return bd.getMonth() + 1 === targetMonth && bd.getDate() === targetDay
+    })
+
+    if (birthdayEmployees.length === 0) {
+      this.logger.log('No upcoming birthdays in 3 days')
+      return
+    }
+
+    // Get founders and co-founders to notify
+    const leaders = await this.userRepo.find({
+      where: [
+        { role: 'founder' as any, isActive: true },
+        { role: 'co_founder' as any, isActive: true },
+      ],
+    })
+
+    const dateStr = in3days.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long' })
+
+    for (const emp of birthdayEmployees) {
+      const birthYear = new Date(emp.birthDate).getFullYear()
+      const age = in3days.getFullYear() - birthYear
+
+      for (const leader of leaders) {
+        // In-app notification
+        try {
+          await this.notificationsService.create({
+            userId: leader.id,
+            type: 'birthday_reminder' as any,
+            title: `🎂 День рождения через 3 дня`,
+            message: `${emp.fullName} — ${dateStr}${age > 0 ? ` (${age} лет)` : ''}`,
+            link: `/employees/${emp.id}`,
+          })
+        } catch {}
+
+        // Email
+        try {
+          if (leader.email) {
+            await this.mailService.sendGenericNotification(
+              leader.email,
+              leader.name,
+              `🎂 День рождения сотрудника через 3 дня`,
+              `<b>${emp.fullName}</b> отмечает день рождения <b>${dateStr}</b>${age > 0 ? ` (исполняется ${age} лет)` : ''}.<br/><br/>Должность: ${emp.position || '—'}`,
+            )
+          }
+        } catch {}
+
+        // Telegram
+        try {
+          await this.telegramService.sendToUser(
+            leader.id,
+            `🎂 <b>День рождения через 3 дня</b>\n\n` +
+            `👤 ${emp.fullName}\n` +
+            `📅 ${dateStr}${age > 0 ? ` (${age} лет)` : ''}\n` +
+            `💼 ${emp.position || '—'}`,
+          )
+        } catch {}
+      }
+    }
+
+    this.logger.log(`Birthday reminders sent for ${birthdayEmployees.length} employee(s) to ${leaders.length} leader(s)`)
+  }
 }

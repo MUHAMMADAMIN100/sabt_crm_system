@@ -36,6 +36,11 @@ export class RegisterDto {
   @IsString()
   instagram?: string;
 
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  birthDate?: string;
+
   @ApiProperty({ enum: UserRole, required: false })
   @IsOptional()
   @IsEnum(UserRole)

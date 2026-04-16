@@ -12,6 +12,7 @@ export class CreateEmployeeDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() phone?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() telegram?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() instagram?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsDateString() birthDate?: string;
   @ApiProperty() @IsDateString() hireDate: string;
   @ApiProperty({ enum: EmployeeStatus, required: false }) @IsOptional() @IsEnum(EmployeeStatus) status?: EmployeeStatus;
   @ApiProperty({ required: false }) @IsOptional() @IsString() bio?: string;
