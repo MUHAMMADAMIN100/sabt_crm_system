@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi, employeesApi } from '@/services/api.service'
@@ -8,8 +8,10 @@ import { StatCard, PageLoader, StatusBadge, Avatar } from '@/components/ui'
 import {
   FolderKanban, CheckSquare, Users, AlertTriangle,
   TrendingDown, UserX, Activity, Clock, DollarSign,
-  Briefcase, Edit2, Check, X, Calendar,
+  Briefcase, Edit2, Check, X, Calendar, Camera,
 } from 'lucide-react'
+
+const StoryCalendar = lazy(() => import('@/components/stories/StoryCalendar'))
 import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -386,6 +388,16 @@ export default function FounderDashboard() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Story calendar — admin view (all employees) */}
+      <div className="card">
+        <h2 className="section-title mb-4 flex items-center gap-2">
+          <Camera size={16} /> Истории сотрудников
+        </h2>
+        <Suspense fallback={<div className="text-center text-sm text-surface-400 py-4">Загрузка...</div>}>
+          <StoryCalendar adminAll compact />
+        </Suspense>
       </div>
 
       {/* Payroll table — founder only */}

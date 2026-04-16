@@ -358,7 +358,18 @@ export default function TasksPage() {
                       </td>
                     )}
                     <td className="px-4 py-3">
-                      <span className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{task.title}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{task.title}</span>
+                        {isManagerPlus && task.createdById && task.assigneeId && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${
+                            task.createdById === task.assigneeId
+                              ? 'bg-surface-100 dark:bg-surface-700 text-surface-400 dark:text-surface-500'
+                              : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                          }`}>
+                            {task.createdById === task.assigneeId ? 'сам' : task.createdBy?.name ? `от ${task.createdBy.name.split(' ')[0]}` : 'назначено'}
+                          </span>
+                        )}
+                      </div>
                       {/* Mobile: show project under title */}
                       {task.project?.name && (
                         <div className="md:hidden text-[10px] text-surface-400 dark:text-surface-500 mt-0.5 truncate">

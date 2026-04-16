@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { employeesApi, tasksApi, storiesApi } from '@/services/api.service'
+
+const StoryCalendar = lazy(() => import('@/components/stories/StoryCalendar'))
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar } from '@/components/ui'
@@ -358,6 +360,13 @@ export default function EmployeeDetailPage() {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Календарь историй сотрудника */}
+          {emp?.userId && (
+            <Suspense fallback={<div className="text-center text-sm text-surface-400 py-4">Загрузка...</div>}>
+              <StoryCalendar employeeId={emp.userId} compact />
+            </Suspense>
           )}
 
           {/* Ежедневные истории по проектам */}
