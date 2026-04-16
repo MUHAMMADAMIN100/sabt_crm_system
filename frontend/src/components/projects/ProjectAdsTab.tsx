@@ -209,6 +209,11 @@ function AdSection({ title, ads, canManage, onEdit, onDelete, accent }: any) {
                   {format(parseISO(a.endDate.slice(0, 10)), 'dd MMM yyyy', { locale: ru })}
                 </span>
               </div>
+              {a.createdBy?.name && (
+                <div className="flex items-center gap-1.5 mt-2 text-[11px] text-surface-400 dark:text-surface-500">
+                  <span>Создал: <span className="font-medium text-surface-600 dark:text-surface-300">{a.createdBy.name}</span></span>
+                </div>
+              )}
               {a.note && <p className="text-xs text-surface-500 dark:text-surface-400 mt-2 line-clamp-2">{a.note}</p>}
             </div>
           )

@@ -16,6 +16,7 @@ export class ProjectAdsService {
   findByProject(projectId: string) {
     return this.repo.find({
       where: { projectId },
+      relations: ['createdBy'],
       order: { startDate: 'DESC' },
     });
   }
