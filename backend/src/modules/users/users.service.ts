@@ -46,8 +46,6 @@ export class UsersService {
         );
         if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
       }
-      // Ensure enum value exists in PostgreSQL
-      await this.ensureRoleEnum(dto.role);
     }
 
     // Use save (not update) so BeforeUpdate hooks fire (e.g., password hashing)
@@ -222,24 +220,4 @@ export class UsersService {
     return { deleted, count: deleted.length };
   }
 
-  private async ensureRoleEnum(role: string) {
-    const ds = this.repo.manager.connection;
-    const qr = ds.createQueryRunner();
-    try {
-      await qr.connect();
-      await qr.query(`
-        DO $$ BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM pg_enum
-            WHERE enumlabel = '${role}'
-              AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'users_role_enum')
-          ) THEN
-            ALTER TYPE "users_role_enum" ADD VALUE '${role}';
-          END IF;
-        END $$;
-      `);
-    } catch {} finally {
-      await qr.release();
-    }
-  }
 }

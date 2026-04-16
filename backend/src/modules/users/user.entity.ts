@@ -40,7 +40,7 @@ export class User {
   @Exclude()
   password: string;
 
-  @Column({ type: 'enum', enum: UserRole, default: UserRole.EMPLOYEE })
+  @Column({ type: 'varchar', length: 50, default: UserRole.EMPLOYEE })
   role: UserRole;
 
   @Column({ default: true })

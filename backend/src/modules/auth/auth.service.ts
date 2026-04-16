@@ -46,17 +46,11 @@ export class AuthService {
       if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
     }
 
-    // Ensure enum value exists in PostgreSQL before creating user
-    const targetRole = dto.role || UserRole.EMPLOYEE;
-    if (targetRole === UserRole.CO_FOUNDER || targetRole === UserRole.FOUNDER) {
-      await this.ensureRoleEnum(targetRole);
-    }
-
     const user = this.userRepo.create({
       name: dto.name,
       email: dto.email,
       password: dto.password,
-      role: targetRole,
+      role: dto.role || UserRole.EMPLOYEE,
     });
     await this.userRepo.save(user);
 
@@ -299,24 +293,4 @@ export class AuthService {
     return rest;
   }
 
-  private async ensureRoleEnum(role: string) {
-    const ds = this.userRepo.manager.connection;
-    const qr = ds.createQueryRunner();
-    try {
-      await qr.connect();
-      await qr.query(`
-        DO $$ BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM pg_enum
-            WHERE enumlabel = '${role}'
-              AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'users_role_enum')
-          ) THEN
-            ALTER TYPE "users_role_enum" ADD VALUE '${role}';
-          END IF;
-        END $$;
-      `);
-    } catch {} finally {
-      await qr.release();
-    }
-  }
 }
