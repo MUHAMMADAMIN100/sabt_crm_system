@@ -38,9 +38,9 @@ export class ProjectsController {
   }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.HEAD_SMM)
   create(@Body() dto: CreateProjectDto, @Request() req) {
-    return this.service.create(dto, req.user.id);
+    return this.service.create(dto, req.user.id, req.user.role);
   }
 
   @Patch(':id')

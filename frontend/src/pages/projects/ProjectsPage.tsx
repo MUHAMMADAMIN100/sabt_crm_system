@@ -40,8 +40,9 @@ export default function ProjectsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
-  // Only admin/founder/co-founder can create/archive/delete projects
-  const canCreateProject = ['admin', 'founder', 'co_founder'].includes(user?.role || '')
+  const isHeadSMM = user?.role === 'head_smm'
+  // admin/founder/co-founder + head_smm (SMM only) can create projects
+  const canCreateProject = ['admin', 'founder', 'co_founder', 'head_smm'].includes(user?.role || '')
   const qc = useQueryClient()
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -326,7 +327,8 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm()
   const { t } = useTranslation()
   const formUser = useAuthStore(s => s.user)
-  const canCreateProject = ['admin', 'founder', 'co_founder'].includes(formUser?.role || '')
+  const isFormHeadSMM = formUser?.role === 'head_smm'
+  const canCreateProject = ['admin', 'founder', 'co_founder', 'head_smm'].includes(formUser?.role || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
@@ -371,7 +373,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
       } else {
         reset({
           name: '', description: '', startDate: '', endDate: '',
-          status: 'planning', color: '#6B4FCF', budget: '', projectType: '', managerId: '', salesManagerId: '',
+          status: 'planning', color: '#6B4FCF', budget: '', projectType: isFormHeadSMM ? 'SMM' : '', managerId: '', salesManagerId: '',
         })
         setSmmAnswers({})
         setShowSmmForm(false)
@@ -441,10 +443,17 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           {/* Project type */}
           <div className="sm:col-span-2">
             <label className="label">Тип проекта *</label>
-            <select {...register('projectType', { required: true })} className="input">
-              <option value="">— Выбрать тип —</option>
-              {PROJECT_TYPES.map(pt => <option key={pt} value={pt}>{pt}</option>)}
-            </select>
+            {isFormHeadSMM ? (
+              <>
+                <input type="hidden" {...register('projectType')} value="SMM" />
+                <div className="input bg-surface-50 dark:bg-surface-700 cursor-not-allowed">SMM</div>
+              </>
+            ) : (
+              <select {...register('projectType', { required: true })} className="input">
+                <option value="">— Выбрать тип —</option>
+                {PROJECT_TYPES.map(pt => <option key={pt} value={pt}>{pt}</option>)}
+              </select>
+            )}
             {errors.projectType && <p className="text-xs text-red-500 mt-1">Выберите тип проекта</p>}
           </div>
 

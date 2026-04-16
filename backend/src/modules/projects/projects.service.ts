@@ -142,7 +142,11 @@ export class ProjectsService {
     }
   }
 
-  async create(dto: CreateProjectDto, userId: string) {
+  async create(dto: CreateProjectDto, userId: string, userRole?: string) {
+    // head_smm can only create SMM projects
+    if (userRole === UserRole.HEAD_SMM && dto.projectType !== 'SMM') {
+      throw new ForbiddenException('Главный SMM специалист может создавать только SMM-проекты');
+    }
     await this.validateManagerAssignment(dto.managerId, dto.projectType);
     const project = this.repo.create({
       ...dto,
