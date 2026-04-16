@@ -283,7 +283,7 @@ export default function EmployeeDetailPage() {
                 </div>
                 <PriorityBadge priority={currentTask.priority} />
                 {currentTask.deadline && (
-                  <span className={`text-xs ${new Date(currentTask.deadline) < today ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>
+                  <span className={`text-xs ${new Date(currentTask.deadline) < today && !['done','cancelled'].includes(currentTask.status) ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>
                     {format(new Date(currentTask.deadline), 'dd.MM')}
                   </span>
                 )}
