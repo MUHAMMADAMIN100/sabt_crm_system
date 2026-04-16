@@ -324,35 +324,41 @@ export default function AnalyticsPage() {
                       <ProgressBar value={pct} />
                     </div>
                   </button>
-                  {isExpanded && empTasks.length > 0 && (
-                    <div className="border-t border-surface-100 dark:border-surface-700 bg-surface-50/50 dark:bg-surface-900/30 p-2 space-y-1">
-                      {empTasks.map((task: any) => {
-                        const selfAssigned = task.createdById === task.assigneeId
-                        return (
-                        <div key={task.id} className="flex items-center gap-2 p-2 rounded-lg">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-xs text-surface-400 dark:text-surface-500">{task.project?.name || ''}</p>
-                              {task.assignee && (
-                                <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-1 py-0.5 rounded">
-                                  {task.assignee.name?.trim().split(/\s+/).slice(0,2).map((w:string) => w[0]?.toUpperCase()).join('')}
-                                </span>
-                              )}
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                selfAssigned
-                                  ? 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400'
-                                  : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                              }`}>
-                                {selfAssigned ? 'сам' : task.createdBy?.name ? `от ${task.createdBy.name.split(' ')[0]}` : 'назначено'}
-                              </span>
+                  {isExpanded && (
+                    <div className="border-t border-surface-100 dark:border-surface-700 bg-surface-50/50 dark:bg-surface-900/30 p-2 space-y-2">
+                      <StoryCalendar employeeId={e.id} compact />
+                      {empTasks.length > 0 && (
+                        <div className="space-y-1">
+                          {empTasks.map((task: any) => {
+                            const selfAssigned = task.createdById === task.assigneeId
+                            const creatorName = task.createdBy?.name?.trim().split(' ')[0]
+                            return (
+                            <div key={task.id} className="flex items-center gap-2 p-2 rounded-lg">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-xs text-surface-400 dark:text-surface-500">{task.project?.name || ''}</p>
+                                  {task.assignee && (
+                                    <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-1 py-0.5 rounded">
+                                      {task.assignee.name?.trim().split(/\s+/).slice(0,2).map((w:string) => w[0]?.toUpperCase()).join('')}
+                                    </span>
+                                  )}
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                    selfAssigned
+                                      ? 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400'
+                                      : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                                  }`}>
+                                    {selfAssigned ? 'сам' : creatorName ? `от ${creatorName}` : 'назначено'}
+                                  </span>
+                                </div>
+                              </div>
+                              <PriorityBadge priority={task.priority} />
+                              <StatusBadge status={task.status} />
                             </div>
-                          </div>
-                          <PriorityBadge priority={task.priority} />
-                          <StatusBadge status={task.status} />
+                            )
+                          })}
                         </div>
-                        )
-                      })}
+                      )}
                     </div>
                   )}
                 </div>

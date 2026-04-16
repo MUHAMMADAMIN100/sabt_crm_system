@@ -783,7 +783,7 @@ export default function TaskDetailPage() {
                           ? 'bg-surface-100 dark:bg-surface-700 text-surface-400 dark:text-surface-500'
                           : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
                       }`}>
-                        {task.createdById === task.assigneeId ? 'сам' : task.createdBy?.name ? `от ${task.createdBy.name.split(' ')[0]}` : 'назначено'}
+                        {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] ? `от ${task.createdBy.name.trim().split(' ')[0]}` : 'назначено')}
                       </span>
                     )}
                   </div>
