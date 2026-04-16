@@ -314,7 +314,7 @@ export class TasksService {
   getMyTasks(userId: string) {
     return this.repo.find({
       where: { assigneeId: userId },
-      relations: ['project'],
+      relations: ['project', 'createdBy'],
       order: { deadline: 'ASC' },
     });
   }
@@ -322,6 +322,7 @@ export class TasksService {
   getOverdueTasks() {
     return this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
+      .leftJoinAndSelect('t.createdBy', 'createdBy')
       .leftJoinAndSelect('t.project', 'project')
       .where('t.deadline < NOW()')
       .andWhere('t.status NOT IN (:...statuses)', { statuses: [TaskStatus.DONE, TaskStatus.CANCELLED] })
