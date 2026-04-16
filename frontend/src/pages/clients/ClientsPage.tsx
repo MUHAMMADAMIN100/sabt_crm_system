@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
-import { Modal, EmptyState, PageLoader, ConfirmDialog } from '@/components/ui'
+import { Modal, EmptyState, PageLoader, ConfirmDialog, Pagination } from '@/components/ui'
 import { Plus, Search, Edit, Trash2 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { format, parseISO } from 'date-fns'
@@ -45,6 +45,8 @@ export default function ClientsPage() {
   const [editLead, setEditLead] = useState<any>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 5
 
   const { data: leads, isLoading } = useQuery({
     queryKey: ['clients', search, status, interest, sphere],
@@ -125,6 +127,10 @@ export default function ClientsPage() {
       toast.success('Удалено')
     },
   })
+
+  // Reset page when filters change
+  const filterKey = `${search}|${status}|${interest}|${sphere}`
+  useMemo(() => setPage(1), [filterKey])
 
   const spheres = useMemo(() => {
     const set = new Set<string>()
@@ -253,6 +259,7 @@ export default function ClientsPage() {
           action={<button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} /> Добавить клиента</button>}
         />
       ) : (
+        <>
         <div className="card p-0 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
           <table className="w-full min-w-[760px] text-sm">
             <thead>
@@ -268,7 +275,7 @@ export default function ClientsPage() {
               </tr>
             </thead>
             <tbody>
-              {leads.map((l: any, idx: number) => {
+              {leads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((l: any, idx: number) => {
                 const statusOpt = STATUS_OPTIONS.find(s => s.value === l.status)
                 const interestOpt = INTEREST_OPTIONS.find(i => i.value === l.interest)
                 const nextIsSoon = l.nextContactAt && new Date(l.nextContactAt) <= new Date(Date.now() + 2 * 86400000)
@@ -280,7 +287,7 @@ export default function ClientsPage() {
                     className="border-b border-surface-50 dark:border-surface-700/50 hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors cursor-pointer"
                   >
                     <td className="px-2 sm:px-3 py-3 text-center text-xs text-surface-400 dark:text-surface-500 tabular-nums font-medium align-top">
-                      {idx + 1}
+                      {(page - 1) * PAGE_SIZE + idx + 1}
                     </td>
                     <td className="px-4 py-3 align-top">
                       <div className="font-medium text-surface-900 dark:text-surface-100">{l.name}</div>
@@ -329,6 +336,8 @@ export default function ClientsPage() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} total={leads.length} pageSize={PAGE_SIZE} onChange={setPage} />
+        </>
       )}
 
       {(showCreate || editLead) && (
