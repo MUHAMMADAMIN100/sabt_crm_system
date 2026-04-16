@@ -30,6 +30,15 @@ export default function EmployeesPage() {
   const user = useAuthStore(s => s.user)
   const canManage = user?.role === 'admin' || user?.role === 'founder' || user?.role === 'co_founder'
   const isAdmin = canManage  // alias for backward compat
+  const isFounderUser = user?.role === 'founder'
+  const canEditEmployee = (emp: any) => {
+    if (isFounderUser) return true
+    // Admin cannot edit founder/co-founder employees
+    const pos = emp.position?.toLowerCase() || ''
+    const empRole = emp.user?.role || ''
+    if (['founder', 'co_founder'].includes(empRole) || pos === 'основатель' || pos === 'сооснователь') return false
+    return canManage
+  }
   const qc = useQueryClient()
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -264,8 +273,12 @@ export default function EmployeesPage() {
                         <Lock size={14} />
                       </button>
                     )}
-                    <button onClick={() => setEditEmp(emp)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg"><Edit size={14} className="text-surface-500 dark:text-surface-400" /></button>
-                    <button onClick={() => setDeleteId(emp.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500"><Trash2 size={14} /></button>
+                    {canEditEmployee(emp) && (
+                      <>
+                        <button onClick={() => setEditEmp(emp)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg"><Edit size={14} className="text-surface-500 dark:text-surface-400" /></button>
+                        <button onClick={() => setDeleteId(emp.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500"><Trash2 size={14} /></button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -349,8 +362,12 @@ export default function EmployeesPage() {
                             <Lock size={14} />
                           </button>
                         )}
-                        <button onClick={() => setEditEmp(emp)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg"><Edit size={14} className="text-surface-500" /></button>
-                        <button onClick={() => setDeleteId(emp.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400"><Trash2 size={14} /></button>
+                        {canEditEmployee(emp) && (
+                          <>
+                            <button onClick={() => setEditEmp(emp)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg"><Edit size={14} className="text-surface-500" /></button>
+                            <button onClick={() => setDeleteId(emp.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400"><Trash2 size={14} /></button>
+                          </>
+                        )}
                       </div>
                     </td>
                   )}
