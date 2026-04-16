@@ -5,6 +5,7 @@ import { useAuthStore } from '@/store/auth.store'
 import { useThemeStore } from '@/store/theme.store'
 import { useTranslation } from '@/i18n'
 import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { notificationsApi, tasksApi, projectsApi, employeesApi } from '@/services/api.service'
 import { getUserPositionLabel } from '@/lib/permissions'
 import clsx from 'clsx'
@@ -26,11 +27,29 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const { theme, toggleTheme } = useThemeStore()
   const { t, locale, setLocale } = useTranslation()
 
+  const isFounderRole = user?.role === 'founder' || user?.role === 'co_founder'
+
   const { data: unreadData } = useQuery({
     queryKey: ['unread-count'],
     queryFn: notificationsApi.unreadCount,
     refetchInterval: 30000,
+    enabled: !isFounderRole,
   })
+
+  // Founder/co-founder: count only negative notification types
+  const NEGATIVE_TYPES = ['task_overdue', 'deadline_approaching', 'deadline_tomorrow', 'task_returned', 'inactivity_24h', 'payment_reminder', 'project_overdue', 'daily_uncompleted']
+  const { data: allNotifications } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => notificationsApi.list(),
+    refetchInterval: 30000,
+    enabled: isFounderRole,
+  })
+  const founderUnreadCount = useMemo(() => {
+    if (!isFounderRole || !allNotifications) return 0
+    return allNotifications.filter((n: any) => !n.isRead && NEGATIVE_TYPES.includes(n.type)).length
+  }, [allNotifications, isFounderRole])
+
+  const badgeCount = isFounderRole ? founderUnreadCount : (unreadData?.count || 0)
 
   // Search data
   const { data: allTasks } = useQuery({ queryKey: ['tasks'], queryFn: () => tasksApi.list() })
@@ -164,9 +183,9 @@ export default function Header({ onMenuClick }: HeaderProps) {
         {/* Notifications */}
         <button onClick={() => navigate('/notifications')} className="relative p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
           <Bell size={18} />
-          {unreadData?.count > 0 && (
+          {badgeCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium">
-              {unreadData.count > 99 ? '99+' : unreadData.count}
+              {badgeCount > 99 ? '99+' : badgeCount}
             </span>
           )}
         </button>
