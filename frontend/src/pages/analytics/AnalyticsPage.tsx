@@ -343,13 +343,15 @@ export default function AnalyticsPage() {
                                       {task.assignee.name?.trim().split(/\s+/).slice(0,2).map((w:string) => w[0]?.toUpperCase()).join('')}
                                     </span>
                                   )}
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                    selfAssigned
-                                      ? 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400'
-                                      : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                                  }`}>
-                                    {selfAssigned ? 'сам' : creatorName ? `от ${creatorName}` : 'назначено'}
-                                  </span>
+                                  {(selfAssigned || creatorName) && (
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                      selfAssigned
+                                        ? 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400'
+                                        : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                                    }`}>
+                                      {selfAssigned ? 'сам' : `от ${creatorName}`}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                               <PriorityBadge priority={task.priority} />

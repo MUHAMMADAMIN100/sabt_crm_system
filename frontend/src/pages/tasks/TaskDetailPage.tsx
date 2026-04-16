@@ -777,13 +777,13 @@ export default function TaskDetailPage() {
                   <div className="flex items-center gap-1.5">
                     <Avatar name={task.assignee.name} size={20} />
                     <span className="font-medium text-surface-900 dark:text-surface-100">{task.assignee.name}</span>
-                    {isPM && task.createdById && task.assigneeId && (
+                    {isPM && task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                         task.createdById === task.assigneeId
                           ? 'bg-surface-100 dark:bg-surface-700 text-surface-400 dark:text-surface-500'
                           : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
                       }`}>
-                        {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] ? `от ${task.createdBy.name.trim().split(' ')[0]}` : 'назначено')}
+                        {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] ? `от ${task.createdBy.name.trim().split(' ')[0]}` : `от ${task.createdBy.name.trim().split(' ')[0]}`)}
                       </span>
                     )}
                   </div>

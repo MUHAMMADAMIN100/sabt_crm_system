@@ -56,9 +56,9 @@ export default function SMMDashboard() {
                   >
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-red-800 dark:text-red-300 truncate">{t.title}</p>
-                      {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && (
+                      {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && t.createdBy?.name?.trim() && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
-                          {t.createdBy?.name?.trim().split(' ')[0] || 'назначено'}
+                          {t.createdBy?.name?.trim().split(' ')[0] || ''}
                         </span>
                       )}
                     </div>
@@ -90,9 +90,9 @@ export default function SMMDashboard() {
                   >
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-orange-800 dark:text-orange-300 truncate">{t.title}</p>
-                      {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && (
+                      {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && t.createdBy?.name?.trim() && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
-                          {t.createdBy?.name?.trim().split(' ')[0] || 'назначено'}
+                          {t.createdBy?.name?.trim().split(' ')[0] || ''}
                         </span>
                       )}
                     </div>
@@ -122,9 +122,9 @@ export default function SMMDashboard() {
               >
                 <div className="flex items-center gap-1.5 flex-1 min-w-0">
                   <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{t.title}</p>
-                  {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && (
+                  {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && t.createdBy?.name?.trim() && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
-                      {t.createdBy?.name?.trim().split(' ')[0] || 'назначено'}
+                      {t.createdBy?.name?.trim().split(' ')[0] || ''}
                     </span>
                   )}
                 </div>
@@ -157,9 +157,9 @@ export default function SMMDashboard() {
                       <p className="text-sm font-medium text-surface-900 dark:text-surface-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 leading-snug truncate">
                         {t.title}
                       </p>
-                      {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && (
+                      {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && t.createdBy?.name?.trim() && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
-                          {t.createdBy?.name?.trim().split(' ')[0] || 'назначено'}
+                          {t.createdBy?.name?.trim().split(' ')[0] || ''}
                         </span>
                       )}
                     </div>

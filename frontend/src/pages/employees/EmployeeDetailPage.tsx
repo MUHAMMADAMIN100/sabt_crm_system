@@ -303,9 +303,9 @@ export default function EmployeeDetailPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
-                        {task.createdById && task.assigneeId && (
+                        {task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${task.createdById === task.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
-                            {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] || 'назначено')}
+                            {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] || '')}
                           </span>
                         )}
                       </div>
@@ -331,9 +331,9 @@ export default function EmployeeDetailPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
-                        {task.createdById && task.assigneeId && (
+                        {task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${task.createdById === task.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
-                            {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] || 'назначено')}
+                            {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] || '')}
                           </span>
                         )}
                       </div>
@@ -361,9 +361,9 @@ export default function EmployeeDetailPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
-                          {task.createdById && task.assigneeId && (
+                          {task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${task.createdById === task.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
-                              {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] || 'назначено')}
+                              {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] || '')}
                             </span>
                           )}
                         </div>
