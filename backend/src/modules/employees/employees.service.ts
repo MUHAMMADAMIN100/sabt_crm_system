@@ -162,12 +162,17 @@ export class EmployeesService {
       }
       if (resolvedRole && resolvedRole !== oldRole) {
         // Enforce single founder / co-founder in the system.
+        // Use ::text cast to avoid enum resolution errors if migration hasn't run.
         if (resolvedRole === UserRole.FOUNDER) {
-          const count = await this.userRepo.count({ where: { role: UserRole.FOUNDER } });
+          const [{ count }] = await this.userRepo.manager.query(
+            `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'founder'`,
+          );
           if (count > 0) throw new ConflictException('В системе уже зарегистрирован основатель');
         }
         if (resolvedRole === UserRole.CO_FOUNDER) {
-          const count = await this.userRepo.count({ where: { role: UserRole.CO_FOUNDER } });
+          const [{ count }] = await this.userRepo.manager.query(
+            `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'co_founder'`,
+          );
           if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
         }
         userUpdate.role = resolvedRole;

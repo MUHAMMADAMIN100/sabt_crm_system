@@ -30,20 +30,20 @@ export class AuthService {
     const exists = await this.userRepo.findOne({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email already in use');
 
-    // Enforce single founder per system
+    // Enforce single founder per system (::text cast avoids enum resolution errors)
     if (dto.role === UserRole.FOUNDER) {
-      const founderCount = await this.userRepo.count({ where: { role: UserRole.FOUNDER } });
-      if (founderCount > 0) {
-        throw new ConflictException('В системе уже зарегистрирован основатель');
-      }
+      const [{ count }] = await this.userRepo.manager.query(
+        `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'founder'`,
+      );
+      if (count > 0) throw new ConflictException('В системе уже зарегистрирован основатель');
     }
 
     // Enforce single co-founder per system
     if (dto.role === UserRole.CO_FOUNDER) {
-      const coFounderCount = await this.userRepo.count({ where: { role: UserRole.CO_FOUNDER } });
-      if (coFounderCount > 0) {
-        throw new ConflictException('В системе уже зарегистрирован сооснователь');
-      }
+      const [{ count }] = await this.userRepo.manager.query(
+        `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'co_founder'`,
+      );
+      if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
     }
 
     const user = this.userRepo.create({
@@ -186,12 +186,16 @@ export class AuthService {
   }
 
   async founderExists(): Promise<boolean> {
-    const count = await this.userRepo.count({ where: { role: UserRole.FOUNDER } });
+    const [{ count }] = await this.userRepo.manager.query(
+      `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'founder'`,
+    );
     return count > 0;
   }
 
   async coFounderExists(): Promise<boolean> {
-    const count = await this.userRepo.count({ where: { role: UserRole.CO_FOUNDER } });
+    const [{ count }] = await this.userRepo.manager.query(
+      `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'co_founder'`,
+    );
     return count > 0;
   }
 

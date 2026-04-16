@@ -35,11 +35,15 @@ export class UsersService {
         throw new ForbiddenException('Назначить сооснователя может только основатель');
       }
       if (dto.role === UserRole.FOUNDER) {
-        const count = await this.repo.count({ where: { role: UserRole.FOUNDER } });
+        const [{ count }] = await this.repo.manager.query(
+          `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'founder'`,
+        );
         if (count > 0) throw new ConflictException('В системе уже зарегистрирован основатель');
       }
       if (dto.role === UserRole.CO_FOUNDER) {
-        const count = await this.repo.count({ where: { role: UserRole.CO_FOUNDER } });
+        const [{ count }] = await this.repo.manager.query(
+          `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'co_founder'`,
+        );
         if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
       }
     }
