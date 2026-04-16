@@ -337,8 +337,10 @@ export class EmployeesService {
 
   /** Ensure a role enum value exists in PostgreSQL before writing it */
   private async ensureRoleEnum(role: string) {
+    const qr = this.dataSource.createQueryRunner();
     try {
-      await this.userRepo.manager.query(`
+      await qr.connect();
+      await qr.query(`
         DO $$ BEGIN
           IF NOT EXISTS (
             SELECT 1 FROM pg_enum
@@ -349,6 +351,8 @@ export class EmployeesService {
           END IF;
         END $$;
       `);
-    } catch {}
+    } catch {} finally {
+      await qr.release();
+    }
   }
 }

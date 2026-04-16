@@ -300,8 +300,11 @@ export class AuthService {
   }
 
   private async ensureRoleEnum(role: string) {
+    const ds = this.userRepo.manager.connection;
+    const qr = ds.createQueryRunner();
     try {
-      await this.userRepo.manager.query(`
+      await qr.connect();
+      await qr.query(`
         DO $$ BEGIN
           IF NOT EXISTS (
             SELECT 1 FROM pg_enum
@@ -312,6 +315,8 @@ export class AuthService {
           END IF;
         END $$;
       `);
-    } catch {}
+    } catch {} finally {
+      await qr.release();
+    }
   }
 }
