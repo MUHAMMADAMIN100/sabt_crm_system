@@ -65,6 +65,7 @@ export default function ProjectDetailPage() {
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
     queryFn: () => projectsApi.get(id!),
+    refetchInterval: 30000,
   })
 
   const { data: files } = useQuery({

@@ -44,7 +44,7 @@ export default function TasksPage() {
   const STATUSES = ['new', 'in_progress', 'review', 'done']
   const PRIORITIES = ['low', 'medium', 'high', 'critical']
 
-  const { data: allTasks, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => isManagerPlus ? tasksApi.list() : tasksApi.my() })
+  const { data: allTasks, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => isManagerPlus ? tasksApi.list() : tasksApi.my(), refetchInterval: 30000 })
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
 

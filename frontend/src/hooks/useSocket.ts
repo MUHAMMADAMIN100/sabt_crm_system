@@ -18,7 +18,10 @@ export function useSocket(token: string | null) {
       reconnectionAttempts: 5,
     })
 
-    socket.on('connect', () => {})
+    socket.on('connect', () => {
+      // On (re)connect refetch everything that might have been missed
+      qc.refetchQueries({ type: 'active' })
+    })
 
     // When admin updates this user's role/profile — refresh auth store and notify
     socket.on('me:changed', async (changes: any) => {
@@ -56,6 +59,8 @@ export function useSocket(token: string | null) {
       qc.invalidateQueries({ queryKey: ['projects'] })
       qc.invalidateQueries({ queryKey: ['projects-archived'] })
       qc.invalidateQueries({ queryKey: ['project'] })
+      qc.invalidateQueries({ queryKey: ['project-ads'] })
+      qc.invalidateQueries({ queryKey: ['project-announcements'] })
       qc.invalidateQueries({ queryKey: ['overview'] })
       qc.invalidateQueries({ queryKey: ['proj-status'] })
       qc.invalidateQueries({ queryKey: ['proj-perf'] })
@@ -63,6 +68,9 @@ export function useSocket(token: string | null) {
       qc.invalidateQueries({ queryKey: ['calendar'] })
       qc.invalidateQueries({ queryKey: ['files'] })
       qc.invalidateQueries({ queryKey: ['files-project'] })
+      qc.refetchQueries({ queryKey: ['projects'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['project'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['project-ads'], type: 'active' })
     })
 
     socket.on('stories:changed', () => {
@@ -76,6 +84,7 @@ export function useSocket(token: string | null) {
       qc.invalidateQueries({ queryKey: ['my-tasks'] })
       qc.invalidateQueries({ queryKey: ['task'] })
       qc.invalidateQueries({ queryKey: ['project'] })
+      qc.invalidateQueries({ queryKey: ['projects'] })
       qc.invalidateQueries({ queryKey: ['overview'] })
       qc.invalidateQueries({ queryKey: ['task-status'] })
       qc.invalidateQueries({ queryKey: ['task-priority'] })
@@ -95,6 +104,10 @@ export function useSocket(token: string | null) {
       qc.invalidateQueries({ queryKey: ['calendar'] })
       qc.invalidateQueries({ queryKey: ['unread-count'] })
       qc.invalidateQueries({ queryKey: ['reports'] })
+      // Force active queries to refetch immediately
+      qc.refetchQueries({ queryKey: ['tasks'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['project'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['my-tasks'], type: 'active' })
     })
 
     socket.on('disconnect', () => {})
