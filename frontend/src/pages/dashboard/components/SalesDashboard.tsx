@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi } from '@/services/api.service'
-import { PageLoader, StatusBadge, ProgressBar } from '@/components/ui'
+import { PageLoader, StatusBadge, ProgressBar, CollapsibleSection } from '@/components/ui'
 import {
   DollarSign, Briefcase, TrendingDown, Clock, Calendar,
   AlertTriangle, CheckCircle2, Mail, TrendingUp,
@@ -164,8 +164,10 @@ export default function SalesDashboard() {
 
       {/* By project type */}
       {byType.length > 0 && (
-        <div className="card">
-          <h3 className="section-title mb-3 flex items-center gap-2"><Briefcase size={16} /> По типам проектов</h3>
+        <CollapsibleSection
+          id="sales-by-type"
+          title={<h3 className="section-title flex items-center gap-2"><Briefcase size={16} /> По типам проектов</h3>}
+        >
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={byType}>
               <XAxis dataKey="type" tick={{ fontSize: 11 }} />
@@ -176,15 +178,20 @@ export default function SalesDashboard() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </CollapsibleSection>
       )}
 
       {/* Projects table */}
-      <div className="card space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="section-title">Все проекты</h3>
-          <span className="text-xs text-surface-400">{projects.length} из {data?.projectCount || 0}</span>
-        </div>
+      <CollapsibleSection
+        id="sales-projects"
+        title={
+          <div className="flex items-center justify-between w-full">
+            <h3 className="section-title">Все проекты</h3>
+            <span className="text-xs text-surface-400">{projects.length} из {data?.projectCount || 0}</span>
+          </div>
+        }
+      >
+      <div className="space-y-4">
 
         <div className="flex flex-wrap gap-1.5">
           {TYPE_FILTERS.map(f => (
@@ -302,6 +309,7 @@ export default function SalesDashboard() {
           ))}
         </div>
       </div>
+      </CollapsibleSection>
     </div>
   )
 }

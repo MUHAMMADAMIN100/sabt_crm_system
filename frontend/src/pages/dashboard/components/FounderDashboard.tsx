@@ -573,6 +573,7 @@ const CHART_PERIODS: { value: FinancePeriod; label: string }[] = [
 function IncomeExpenseChart({ title, perProject, sectionId }: { title: string; perProject?: boolean; sectionId: string }) {
   const [period, setPeriod] = useState<FinancePeriod>('this_year')
   const [projectId, setProjectId] = useState<string>('')
+  const [projectType, setProjectType] = useState<string>('')
   const range = useMemo(() => periodToRange(period), [period])
 
   const { data: projects } = useQuery({
@@ -581,6 +582,11 @@ function IncomeExpenseChart({ title, perProject, sectionId }: { title: string; p
     enabled: perProject,
   })
 
+  const filteredProjects = useMemo(() => {
+    if (!perProject) return []
+    return (projects || []).filter((p: any) => !projectType || p.projectType === projectType)
+  }, [projects, projectType, perProject])
+
   const { data, isLoading } = useQuery({
     queryKey: ['income-expense', range.from, range.to, perProject ? projectId : null],
     queryFn: () => analyticsApi.incomeExpense({
@@ -588,7 +594,6 @@ function IncomeExpenseChart({ title, perProject, sectionId }: { title: string; p
       to: range.to,
       projectId: perProject && projectId ? projectId : undefined,
     }),
-    enabled: !perProject || !!projectId,
   })
 
   const fmt = (n: number) => n.toLocaleString('ru-RU')
@@ -606,10 +611,18 @@ function IncomeExpenseChart({ title, perProject, sectionId }: { title: string; p
           <h2 className="section-title flex items-center gap-2"><TrendingUp size={16} /> {title}</h2>
           <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
             {perProject && (
-              <select value={projectId} onChange={e => setProjectId(e.target.value)} className="input text-xs py-1.5 w-48">
-                <option value="">— Выберите проект —</option>
-                {projects?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              <>
+                <select value={projectType} onChange={e => { setProjectType(e.target.value); setProjectId('') }} className="input text-xs py-1.5 w-32">
+                  <option value="">Все типы</option>
+                  <option value="Web сайт">Web сайт</option>
+                  <option value="Дизайн">Дизайн</option>
+                  <option value="SMM">SMM</option>
+                </select>
+                <select value={projectId} onChange={e => setProjectId(e.target.value)} className="input text-xs py-1.5 w-48">
+                  <option value="">Все проекты</option>
+                  {filteredProjects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </>
             )}
             {CHART_PERIODS.map(p => (
               <button
@@ -628,9 +641,7 @@ function IncomeExpenseChart({ title, perProject, sectionId }: { title: string; p
       }
     >
 
-      {perProject && !projectId ? (
-        <p className="text-sm text-surface-400 text-center py-12">Выберите проект чтобы увидеть данные</p>
-      ) : isLoading ? (
+      {isLoading ? (
         <p className="text-sm text-surface-400 text-center py-12">Загрузка...</p>
       ) : (
         <>

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { analyticsApi, tasksApi, employeesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { PageLoader, StatCard, ProgressBar, Avatar, StatusBadge, PriorityBadge } from '@/components/ui'
+import { PageLoader, StatCard, ProgressBar, Avatar, StatusBadge, PriorityBadge, CollapsibleSection } from '@/components/ui'
 import { FolderKanban, CheckSquare, Clock, TrendingUp, ChevronDown, ChevronRight, AlertTriangle, Zap } from 'lucide-react'
 import StoryCalendar from '@/components/stories/StoryCalendar'
 import {
@@ -143,8 +143,10 @@ export default function AnalyticsPage() {
       </div>
 
       {projPerf?.length > 0 && (
-        <div className="card">
-          <h3 className="section-title mb-4">{t('analytics.performance')}</h3>
+        <CollapsibleSection
+          id="analytics-performance"
+          title={<h3 className="section-title">{t('analytics.performance')}</h3>}
+        >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -187,12 +189,14 @@ export default function AnalyticsPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </CollapsibleSection>
       )}
 
       {filteredWorkload && filteredWorkload.length > 0 && (
-        <div className="card">
-          <h3 className="section-title mb-4">Загруженность сотрудников</h3>
+        <CollapsibleSection
+          id="analytics-workload"
+          title={<h3 className="section-title">Загруженность сотрудников</h3>}
+        >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -299,17 +303,22 @@ export default function AnalyticsPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </CollapsibleSection>
       )}
 
-      <div className="card">
-        <h3 className="section-title mb-4">📸 Истории по проектам</h3>
+      <CollapsibleSection
+        id="analytics-stories"
+        title={<h3 className="section-title">📸 Истории по проектам</h3>}
+        defaultOpen={false}
+      >
         <StoryCalendar adminAll />
-      </div>
+      </CollapsibleSection>
 
       {filteredEmpEff?.length > 0 && (
-        <div className="card">
-          <h3 className="section-title mb-4">{t('analytics.employeeActivity')}</h3>
+        <CollapsibleSection
+          id="analytics-emp-activity"
+          title={<h3 className="section-title">{t('analytics.employeeActivity')}</h3>}
+        >
           <div className="space-y-2">
             {filteredEmpEff.map((e: any) => {
               const pct = e.totalTasks > 0 ? Math.round((e.doneTasks / e.totalTasks) * 100) : 0
@@ -379,7 +388,7 @@ export default function AnalyticsPage() {
               )
             })}
           </div>
-        </div>
+        </CollapsibleSection>
       )}
 
     </div>

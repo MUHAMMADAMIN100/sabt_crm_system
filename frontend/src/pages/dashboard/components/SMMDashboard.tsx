@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { tasksApi } from '@/services/api.service'
-import { PageLoader, StatusBadge, PriorityBadge } from '@/components/ui'
+import { PageLoader, StatusBadge, PriorityBadge, CollapsibleSection } from '@/components/ui'
 import { AlertTriangle, RotateCcw, Clock, CheckSquare } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -109,10 +109,11 @@ export default function SMMDashboard() {
 
       {/* On review */}
       {reviewTasks.length > 0 && (
-        <div className="card border-amber-200 dark:border-amber-800">
-          <h2 className="section-title mb-3 flex items-center gap-2">
-            <Clock size={16} className="text-amber-500" /> На проверке ({reviewTasks.length})
-          </h2>
+        <CollapsibleSection
+          id="smm-review"
+          title={<h2 className="section-title flex items-center gap-2"><Clock size={16} className="text-amber-500" /> На проверке ({reviewTasks.length})</h2>}
+          className="border-amber-200 dark:border-amber-800"
+        >
           <div className="space-y-2">
             {reviewTasks.map((t: any) => (
               <Link
@@ -132,14 +133,14 @@ export default function SMMDashboard() {
               </Link>
             ))}
           </div>
-        </div>
+        </CollapsibleSection>
       )}
 
       {/* Today tasks */}
-      <div className="card">
-        <h2 className="section-title mb-4 flex items-center gap-2">
-          <CheckSquare size={16} className="text-primary-600" /> Мои задачи
-        </h2>
+      <CollapsibleSection
+        id="smm-my-tasks"
+        title={<h2 className="section-title flex items-center gap-2"><CheckSquare size={16} className="text-primary-600" /> Мои задачи</h2>}
+      >
         {!todayTasks.length ? (
           <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-8">Нет активных задач 🎉</p>
         ) : (
@@ -196,7 +197,7 @@ export default function SMMDashboard() {
             })}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
     </div>
   )
 }

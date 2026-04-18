@@ -6,7 +6,7 @@ import { employeesApi, tasksApi, storiesApi } from '@/services/api.service'
 const StoryCalendar = lazy(() => import('@/components/stories/StoryCalendar'))
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar } from '@/components/ui'
+import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar, CollapsibleSection } from '@/components/ui'
 import { ArrowLeft, Mail, Phone, Calendar, CheckSquare, Send, AtSign, ShieldCheck, Briefcase, Building2, Clock, AlertTriangle, TrendingUp, Camera, BookOpen, BarChart2, Edit2, Check, X, Trash2, Plus, Minus } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -348,10 +348,10 @@ export default function EmployeeDetailPage() {
 
           {/* Все задачи */}
           {canView && (
-            <div className="card">
-              <h3 className="font-semibold mb-3 text-surface-700 dark:text-surface-300 text-sm flex items-center gap-2">
-                <CheckSquare size={15} /> {t('tasks.title')} ({totalTasks})
-              </h3>
+            <CollapsibleSection
+              id={`emp-${id}-tasks`}
+              title={<h3 className="font-semibold text-surface-700 dark:text-surface-300 text-sm flex items-center gap-2"><CheckSquare size={15} /> {t('tasks.title')} ({totalTasks})</h3>}
+            >
               {!tasks?.length ? (
                 <p className="text-sm text-surface-400 dark:text-surface-500 py-3 text-center">{t('tasks.noTasks')}</p>
               ) : (
@@ -380,7 +380,7 @@ export default function EmployeeDetailPage() {
                   ))}
                 </div>
               )}
-            </div>
+            </CollapsibleSection>
           )}
 
           {/* Календарь историй сотрудника */}
@@ -400,12 +400,17 @@ export default function EmployeeDetailPage() {
 
           {/* Stories by project (admin/founder only) */}
           {isAdminOrFounder && (
-            <div className="card">
-              <h3 className="font-semibold mb-3 text-surface-700 dark:text-surface-300 text-sm flex items-center gap-2">
-                <BookOpen size={15} className="text-pink-500" />
-                Истории по проектам
-                <span className="ml-auto text-xs text-surface-400 dark:text-surface-500 font-normal">последние 3 месяца</span>
-              </h3>
+            <CollapsibleSection
+              id={`emp-${id}-stories-3m`}
+              title={
+                <h3 className="font-semibold text-surface-700 dark:text-surface-300 text-sm flex items-center gap-2 w-full">
+                  <BookOpen size={15} className="text-pink-500" />
+                  Истории по проектам
+                  <span className="ml-auto text-xs text-surface-400 dark:text-surface-500 font-normal">последние 3 месяца</span>
+                </h3>
+              }
+              defaultOpen={false}
+            >
               {!storiesList.length ? (
                 <p className="text-sm text-surface-400 dark:text-surface-500 py-3 text-center">Историй не найдено</p>
               ) : (
@@ -444,7 +449,7 @@ export default function EmployeeDetailPage() {
                   </p>
                 </>
               )}
-            </div>
+            </CollapsibleSection>
           )}
         </div>
       </div>

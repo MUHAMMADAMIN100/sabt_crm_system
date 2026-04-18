@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { tasksApi, analyticsApi } from '@/services/api.service'
-import { PageLoader, StatusBadge, PriorityBadge, Avatar } from '@/components/ui'
+import { PageLoader, StatusBadge, PriorityBadge, Avatar, CollapsibleSection } from '@/components/ui'
 import { TrendingDown, Clock, Eye, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -77,10 +77,10 @@ export default function PMDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Tasks on review */}
-        <div className="card">
-          <h2 className="section-title mb-4 flex items-center gap-2">
-            <Eye size={16} className="text-amber-500" /> Ожидают проверки
-          </h2>
+        <CollapsibleSection
+          id="pm-review"
+          title={<h2 className="section-title flex items-center gap-2"><Eye size={16} className="text-amber-500" /> Ожидают проверки</h2>}
+        >
           {!reviewTasks?.length ? (
             <p className="text-sm text-surface-400 py-4 text-center">Нет задач на проверке</p>
           ) : (
@@ -122,13 +122,13 @@ export default function PMDashboard() {
               ))}
             </div>
           )}
-        </div>
+        </CollapsibleSection>
 
         {/* Overdue tasks */}
-        <div className="card">
-          <h2 className="section-title mb-4 flex items-center gap-2 text-red-600 dark:text-red-400">
-            <TrendingDown size={16} /> Просроченные
-          </h2>
+        <CollapsibleSection
+          id="pm-overdue"
+          title={<h2 className="section-title flex items-center gap-2 text-red-600 dark:text-red-400"><TrendingDown size={16} /> Просроченные</h2>}
+        >
           {!overdueTasks?.length ? (
             <p className="text-sm text-green-600 dark:text-green-400 py-4 text-center">Просрочек нет ✓</p>
           ) : (
@@ -159,14 +159,14 @@ export default function PMDashboard() {
               ))}
             </div>
           )}
-        </div>
+        </CollapsibleSection>
       </div>
 
       {/* Team workload */}
-      <div className="card">
-        <h2 className="section-title mb-4 flex items-center gap-2">
-          <AlertTriangle size={16} className="text-orange-500" /> Нагрузка команды
-        </h2>
+      <CollapsibleSection
+        id="pm-workload"
+        title={<h2 className="section-title flex items-center gap-2"><AlertTriangle size={16} className="text-orange-500" /> Нагрузка команды</h2>}
+      >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {(workload || []).map((e: any) => (
             <Link
@@ -188,7 +188,7 @@ export default function PMDashboard() {
             </Link>
           ))}
         </div>
-      </div>
+      </CollapsibleSection>
     </div>
   )
 }
