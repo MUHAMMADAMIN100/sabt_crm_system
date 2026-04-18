@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { analyticsApi } from '@/services/api.service'
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday } from 'date-fns'
+import { analyticsApi, projectsApi } from '@/services/api.service'
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isAfter } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Camera } from 'lucide-react'
 import clsx from 'clsx'
 
-const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+const WEEKDAYS = ['П', 'В', 'С', 'Ч', 'П', 'С', 'В']
 
 interface ProjectCount {
   projectId: string
@@ -23,32 +23,45 @@ interface DayData {
 
 export default function GlobalStoriesCalendar() {
   const [current, setCurrent] = useState(new Date())
-  const [hoveredDay, setHoveredDay] = useState<string | null>(null)
 
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')
 
-  const { data, isLoading } = useQuery({
+  const { data: storiesData, isLoading } = useQuery({
     queryKey: ['stories-global', from, to],
     queryFn: () => analyticsApi.storiesGlobal(from, to),
   })
 
-  const byDate = useMemo(() => {
-    const map: Record<string, DayData> = {}
-    for (const d of (data || []) as DayData[]) {
-      map[d.date] = d
+  const { data: allProjects } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => projectsApi.list(),
+  })
+
+  // Active SMM projects only
+  const projects = useMemo(() => {
+    return (allProjects || []).filter((p: any) =>
+      !p.isArchived && p.status !== 'completed' && p.projectType === 'SMM',
+    )
+  }, [allProjects])
+
+  // Build per-project per-day map: projectId → dateKey → count
+  const map = useMemo(() => {
+    const m: Record<string, Record<string, number>> = {}
+    for (const d of (storiesData || []) as DayData[]) {
+      for (const p of d.projects) {
+        if (!m[p.projectId]) m[p.projectId] = {}
+        m[p.projectId][d.date] = (m[p.projectId][d.date] || 0) + p.count
+      }
     }
-    return map
-  }, [data])
+    return m
+  }, [storiesData])
 
   const days = eachDayOfInterval({ start: startOfMonth(current), end: endOfMonth(current) })
   const startPad = (getDay(startOfMonth(current)) + 6) % 7
 
-  const monthTotal = useMemo(() => (data || []).reduce((s: number, d: DayData) => s + d.total, 0), [data])
-
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <h2 className="section-title flex items-center gap-2">
           <Camera size={16} className="text-pink-500" /> Календарь историй (все проекты)
         </h2>
@@ -71,85 +84,90 @@ export default function GlobalStoriesCalendar() {
         </div>
       </div>
 
-      {/* Weekday header */}
-      <div className="grid grid-cols-7 gap-1 mb-1">
-        {WEEKDAYS.map(d => (
-          <div key={d} className="text-[10px] text-center font-medium text-surface-400 dark:text-surface-500 py-1">
-            {d}
-          </div>
-        ))}
-      </div>
-
-      {/* Calendar grid */}
       {isLoading ? (
         <p className="text-sm text-surface-400 text-center py-8">Загрузка...</p>
+      ) : projects.length === 0 ? (
+        <p className="text-sm text-surface-400 text-center py-8">Нет активных SMM-проектов</p>
       ) : (
-        <div className="grid grid-cols-7 gap-1">
-          {Array.from({ length: startPad }).map((_, i) => <div key={`pad-${i}`} />)}
-          {days.map(day => {
-            const dateKey = format(day, 'yyyy-MM-dd')
-            const dayData = byDate[dateKey]
-            const total = dayData?.total || 0
-            const projects = dayData?.projects || []
-            const isHover = hoveredDay === dateKey
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {projects.map((p: any) => {
+            const target = Math.min(Number(p?.smmData?.storiesPerDay) || 3, 12)
+            const projectMap = map[p.id] || {}
+            const projectTotal = Object.values(projectMap).reduce((s, n) => s + n, 0)
             return (
-              <div
-                key={dateKey}
-                onMouseEnter={() => setHoveredDay(dateKey)}
-                onMouseLeave={() => setHoveredDay(null)}
-                className={clsx(
-                  'relative min-h-[64px] p-1.5 rounded-lg border transition-all cursor-default',
-                  isToday(day)
-                    ? 'border-primary-400 bg-primary-50/50 dark:bg-primary-900/20'
-                    : 'border-surface-100 dark:border-surface-700 hover:border-surface-300 dark:hover:border-surface-600',
-                )}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className={clsx(
-                    'text-[11px] font-medium',
-                    isToday(day) ? 'text-primary-700 dark:text-primary-400' : 'text-surface-500 dark:text-surface-400',
-                  )}>{format(day, 'd')}</span>
-                  {total > 0 && (
-                    <span className="text-[10px] font-bold text-pink-600 dark:text-pink-400">{total}</span>
-                  )}
-                </div>
-                {/* Project color dots */}
-                <div className="flex flex-wrap gap-0.5">
-                  {projects.slice(0, 6).map(p => (
-                    <div
-                      key={p.projectId}
-                      title={`${p.projectName}: ${p.count}`}
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: p.projectColor }}
-                    />
-                  ))}
-                  {projects.length > 6 && (
-                    <span className="text-[8px] text-surface-400">+{projects.length - 6}</span>
-                  )}
-                </div>
-                {/* Hover tooltip */}
-                {isHover && projects.length > 0 && (
-                  <div className="absolute z-10 left-1/2 -translate-x-1/2 top-full mt-1 bg-surface-900 dark:bg-surface-800 text-white p-2 rounded-lg shadow-xl min-w-[160px] text-[11px] space-y-1 pointer-events-none">
-                    {projects.map(p => (
-                      <div key={p.projectId} className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.projectColor }} />
-                          <span className="truncate">{p.projectName}</span>
-                        </div>
-                        <span className="font-bold text-pink-300">{p.count}</span>
-                      </div>
-                    ))}
+              <div key={p.id} className="border border-surface-100 dark:border-surface-700 rounded-xl p-3 bg-surface-50/50 dark:bg-surface-900/30">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color || '#6B4FCF' }} />
+                    <p className="text-xs font-semibold text-surface-900 dark:text-surface-100 truncate">{p.name}</p>
                   </div>
-                )}
+                  <span className="text-[10px] font-bold text-pink-600 dark:text-pink-400 shrink-0">{projectTotal}</span>
+                </div>
+
+                {/* Weekday header */}
+                <div className="grid grid-cols-7 gap-0.5 mb-0.5">
+                  {WEEKDAYS.map((d, i) => (
+                    <div key={i} className="text-[8px] text-center text-surface-400 dark:text-surface-500">{d}</div>
+                  ))}
+                </div>
+
+                {/* Mini calendar */}
+                <div className="grid grid-cols-7 gap-0.5">
+                  {Array.from({ length: startPad }).map((_, i) => <div key={`pad-${i}`} />)}
+                  {days.map(day => {
+                    const dateKey = format(day, 'yyyy-MM-dd')
+                    const count = projectMap[dateKey] || 0
+                    const future = isAfter(day, new Date()) && !isToday(day)
+                    const today = isToday(day)
+                    let bg = 'bg-surface-100 dark:bg-surface-700/40'
+                    let textColor = 'text-surface-400 dark:text-surface-500'
+                    if (future) {
+                      bg = 'bg-surface-50 dark:bg-surface-800/50'
+                    } else if (count >= target) {
+                      bg = 'bg-emerald-500'
+                      textColor = 'text-white'
+                    } else if (count > 0) {
+                      const pct = count / target
+                      bg = pct >= 0.5 ? 'bg-yellow-400' : 'bg-pink-400'
+                      textColor = 'text-white'
+                    } else {
+                      bg = 'bg-red-400/70 dark:bg-red-500/40'
+                      textColor = 'text-white'
+                    }
+                    return (
+                      <div
+                        key={dateKey}
+                        title={count > 0 ? `${format(day, 'd MMM', { locale: ru })}: ${count} сторис` : `${format(day, 'd MMM', { locale: ru })}: нет`}
+                        className={clsx(
+                          'aspect-square rounded text-[8px] flex items-center justify-center font-medium relative',
+                          bg, textColor,
+                          today && 'ring-1 ring-primary-500',
+                        )}
+                      >
+                        {format(day, 'd')}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Footer */}
+                <div className="mt-2 pt-1.5 border-t border-surface-100 dark:border-surface-700 flex items-center justify-between text-[9px] text-surface-400 dark:text-surface-500">
+                  <span>план: {target}/день</span>
+                  <span className="font-medium">{projectTotal} историй</span>
+                </div>
               </div>
             )
           })}
         </div>
       )}
 
-      <div className="flex justify-between items-center mt-4 pt-3 border-t border-surface-100 dark:border-surface-700">
-        <span className="text-xs text-surface-500 dark:text-surface-400">Итого за месяц</span>
-        <span className="text-base font-bold text-pink-600 dark:text-pink-400">{monthTotal} историй</span>
+      {/* Legend */}
+      <div className="flex flex-wrap gap-3 mt-3 pt-3 border-t border-surface-100 dark:border-surface-700 text-[10px]">
+        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-emerald-500" /><span className="text-surface-500">план</span></div>
+        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-yellow-400" /><span className="text-surface-500">≥50%</span></div>
+        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-pink-400" /><span className="text-surface-500">&lt;50%</span></div>
+        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-red-400/70" /><span className="text-surface-500">не сделано</span></div>
       </div>
     </div>
   )
