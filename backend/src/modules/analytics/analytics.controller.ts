@@ -118,4 +118,23 @@ export class AnalyticsController {
   ) {
     return this.service.getPayrollStats(from, to);
   }
+
+  @Get('income-expense')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  getIncomeExpense(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('projectId') projectId?: string,
+  ) {
+    return this.service.getIncomeExpense(from, to, projectId);
+  }
+
+  @Get('stories-global')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  getStoriesGlobal(
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ) {
+    return this.service.getStoriesGlobal(from, to);
+  }
 }

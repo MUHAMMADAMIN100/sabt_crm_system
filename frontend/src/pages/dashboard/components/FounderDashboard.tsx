@@ -1,18 +1,20 @@
 import { useState, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { analyticsApi, employeesApi } from '@/services/api.service'
+import { analyticsApi, employeesApi, projectsApi } from '@/services/api.service'
 import { tasksApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { StatCard, PageLoader, StatusBadge, Avatar } from '@/components/ui'
 import {
   FolderKanban, CheckSquare, Users, AlertTriangle,
   TrendingDown, UserX, Activity, Clock, DollarSign,
-  Briefcase, Edit2, Check, X, Calendar, Camera,
+  Briefcase, Edit2, Check, X, Calendar, Camera, TrendingUp,
 } from 'lucide-react'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts'
 
 const StoryCalendar = lazy(() => import('@/components/stories/StoryCalendar'))
-import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear } from 'date-fns'
+const GlobalStoriesCalendar = lazy(() => import('./GlobalStoriesCalendar'))
+import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, eachDayOfInterval, getDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -407,6 +409,23 @@ export default function FounderDashboard() {
         </Suspense>
       </div>
 
+      {/* Global stories calendar (aggregated across all projects) */}
+      {canSeeFinance && (
+        <Suspense fallback={<div className="card text-center text-sm text-surface-400 py-4">Загрузка...</div>}>
+          <GlobalStoriesCalendar />
+        </Suspense>
+      )}
+
+      {/* Income vs Expense — global */}
+      {canSeeFinance && (
+        <IncomeExpenseChart title="🌍 Доходы и расходы компании (все проекты)" />
+      )}
+
+      {/* Income vs Expense — per project */}
+      {canSeeFinance && (
+        <IncomeExpenseChart title="📁 Доходы и расходы по проекту" perProject />
+      )}
+
       {/* Payroll table — founder only */}
       {canSeeFinance && (
       <div className="card">
@@ -535,6 +554,120 @@ export default function FounderDashboard() {
           </table>
         </div>
       </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Income vs Expense chart ─────────────────────────────────────
+const CHART_PERIODS: { value: FinancePeriod; label: string }[] = [
+  { value: 'this_month', label: 'Этот месяц' },
+  { value: 'last_3_months', label: '3 месяца' },
+  { value: 'this_year', label: 'Этот год' },
+  { value: 'all_time', label: 'Всё время' },
+]
+
+function IncomeExpenseChart({ title, perProject }: { title: string; perProject?: boolean }) {
+  const [period, setPeriod] = useState<FinancePeriod>('this_year')
+  const [projectId, setProjectId] = useState<string>('')
+  const range = useMemo(() => periodToRange(period), [period])
+
+  const { data: projects } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => projectsApi.list(),
+    enabled: perProject,
+  })
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['income-expense', range.from, range.to, perProject ? projectId : null],
+    queryFn: () => analyticsApi.incomeExpense({
+      from: range.from,
+      to: range.to,
+      projectId: perProject && projectId ? projectId : undefined,
+    }),
+    enabled: !perProject || !!projectId,
+  })
+
+  const fmt = (n: number) => n.toLocaleString('ru-RU')
+  const series = (data?.series || []).map((s: any) => ({
+    ...s,
+    monthLabel: format(new Date(s.month + '-01'), 'LLL yy', { locale: ru }),
+  }))
+  const totals = data?.totals || { income: 0, payroll: 0, ads: 0, expense: 0, profit: 0 }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <h2 className="section-title flex items-center gap-2">
+          <TrendingUp size={16} /> {title}
+        </h2>
+        <div className="flex items-center gap-2 flex-wrap">
+          {perProject && (
+            <select value={projectId} onChange={e => setProjectId(e.target.value)} className="input text-xs py-1.5 w-48">
+              <option value="">— Выберите проект —</option>
+              {projects?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          )}
+          {CHART_PERIODS.map(p => (
+            <button
+              key={p.value}
+              onClick={() => setPeriod(p.value)}
+              className={clsx(
+                'px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                period === p.value
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200',
+              )}
+            >{p.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {perProject && !projectId ? (
+        <p className="text-sm text-surface-400 text-center py-12">Выберите проект чтобы увидеть данные</p>
+      ) : isLoading ? (
+        <p className="text-sm text-surface-400 text-center py-12">Загрузка...</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
+              <p className="text-xs text-emerald-700 dark:text-emerald-400">Доход</p>
+              <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400">{fmt(totals.income)}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-orange-50 dark:bg-orange-900/20">
+              <p className="text-xs text-orange-700 dark:text-orange-400">Зарплаты</p>
+              <p className="text-lg font-bold text-orange-700 dark:text-orange-400">{fmt(totals.payroll)}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-900/20">
+              <p className="text-xs text-purple-700 dark:text-purple-400">Реклама</p>
+              <p className="text-lg font-bold text-purple-700 dark:text-purple-400">{fmt(totals.ads)}</p>
+            </div>
+            <div className={clsx(
+              'p-3 rounded-xl',
+              totals.profit >= 0 ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20',
+            )}>
+              <p className={clsx('text-xs', totals.profit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400')}>Прибыль</p>
+              <p className={clsx('text-lg font-bold', totals.profit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400')}>{fmt(totals.profit)}</p>
+            </div>
+          </div>
+
+          {series.length === 0 ? (
+            <p className="text-sm text-surface-400 text-center py-8">Нет данных за период</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={series}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+                <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v >= 1000 ? `${Math.round(v/1000)}к` : v} />
+                <Tooltip formatter={(v: any) => `${fmt(Number(v))} сомони`} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="income" name="Доход" fill="#10b981" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="payroll" name="Зарплаты" fill="#f97316" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="ads" name="Реклама" fill="#a855f7" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </>
       )}
     </div>
   )

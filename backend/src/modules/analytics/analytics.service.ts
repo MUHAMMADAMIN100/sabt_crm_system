@@ -10,6 +10,8 @@ import { DailyReport } from '../reports/daily-report.entity';
 import { Employee, EmployeeStatus } from '../employees/employee.entity';
 import { SalaryHistory } from '../employees/salary-history.entity';
 import { WorkSession } from '../auth/work-session.entity';
+import { ProjectAd, BudgetSource } from '../project-ads/project-ad.entity';
+import { StoryLog } from '../stories/story.entity';
 
 @Injectable()
 export class AnalyticsService {
@@ -23,6 +25,8 @@ export class AnalyticsService {
     @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
     @InjectRepository(SalaryHistory) private salaryHistoryRepo: Repository<SalaryHistory>,
     @InjectRepository(ProjectPayment) private paymentRepo: Repository<ProjectPayment>,
+    @InjectRepository(ProjectAd) private adRepo: Repository<ProjectAd>,
+    @InjectRepository(StoryLog) private storyRepo: Repository<StoryLog>,
   ) {}
 
   async getDashboardOverview() {
@@ -319,10 +323,13 @@ export class AnalyticsService {
    *  - With period (from/to ISO yyyy-MM-dd): revenue from project_payments
    *    in the window, payroll from salary_history per month in the window. */
   async getPayrollStats(fromStr?: string, toStr?: string) {
-    const employees = await this.employeeRepo.find({
+    const allEmployees = await this.employeeRepo.find({
       where: { status: EmployeeStatus.ACTIVE },
       relations: ['user'],
     });
+    // Exclude top management from payroll — they're owners, not regular staff
+    const TOP_ROLES = ['founder', 'co_founder', 'admin'];
+    const employees = allEmployees.filter(e => !TOP_ROLES.includes(e.user?.role || ''));
 
     // Include both active and archived projects when looking at history,
     // because completed projects should still show up in revenue reports.
@@ -538,5 +545,157 @@ export class AnalyticsService {
       avgDays: Math.round(avgHours / 24 * 10) / 10,
       totalDone: row[0]?.totalDone ?? 0,
     };
+  }
+
+  /**
+   * Income vs Expense report — global or per-project, broken down by month.
+   * Income = client payments (positive deltas).
+   * Expense = payroll + company-paid ads.
+   * If projectId provided, scope all data to that project (payments, salaries
+   * are pro-rated to project members, ads filtered to that project).
+   */
+  async getIncomeExpense(fromStr?: string, toStr?: string, projectId?: string) {
+    const now = new Date();
+    const from = fromStr ? new Date(fromStr + 'T00:00:00') : new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const to = toStr ? new Date(toStr + 'T23:59:59') : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+    // 1. Income: payments
+    const paymentsQ = this.paymentRepo.createQueryBuilder('p')
+      .where('p."paidAt" BETWEEN :from AND :to', { from, to });
+    if (projectId) paymentsQ.andWhere('p."projectId" = :pid', { pid: projectId });
+    const payments = await paymentsQ.getMany();
+
+    // 2. Payroll expense (per month, excluding top roles)
+    const allEmployees = await this.employeeRepo.find({
+      where: { status: EmployeeStatus.ACTIVE },
+      relations: ['user'],
+    });
+    const TOP_ROLES = ['founder', 'co_founder', 'admin'];
+    let employees = allEmployees.filter(e => !TOP_ROLES.includes(e.user?.role || ''));
+
+    // If filtering by project — only include employees who are members of that project
+    if (projectId) {
+      const project = await this.projectRepo.findOne({
+        where: { id: projectId },
+        relations: ['members'],
+      });
+      const memberIds = new Set((project?.members || []).map(m => m.id));
+      employees = employees.filter(e => e.userId && memberIds.has(e.userId));
+    }
+
+    // 3. Company-paid ads expense
+    const adsQ = this.adRepo.createQueryBuilder('a')
+      .where('a."budgetSource" = :src', { src: BudgetSource.COMPANY })
+      .andWhere('a."startDate" <= :to AND a."endDate" >= :from', { from, to });
+    if (projectId) adsQ.andWhere('a."projectId" = :pid', { pid: projectId });
+    const ads = await adsQ.getMany();
+
+    // Build monthly buckets between from and to
+    const buckets: { key: string; year: number; month: number; income: number; payroll: number; ads: number }[] = [];
+    const cur = new Date(from.getFullYear(), from.getMonth(), 1);
+    const end = new Date(to.getFullYear(), to.getMonth(), 1);
+    while (cur <= end) {
+      buckets.push({
+        key: `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`,
+        year: cur.getFullYear(),
+        month: cur.getMonth(),
+        income: 0,
+        payroll: 0,
+        ads: 0,
+      });
+      cur.setMonth(cur.getMonth() + 1);
+    }
+
+    // Distribute payments
+    for (const p of payments) {
+      const d = new Date(p.paidAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const b = buckets.find(x => x.key === key);
+      if (b) b.income += Number(p.amount);
+    }
+
+    // Compute payroll per month using salary history
+    const history = await this.salaryHistoryRepo.find({
+      where: { employeeId: In(employees.map(e => e.id)) },
+      order: { effectiveFrom: 'DESC' },
+    });
+    const byEmp: Record<string, SalaryHistory[]> = {};
+    for (const h of history) (byEmp[h.employeeId] ||= []).push(h);
+
+    for (const b of buckets) {
+      const monthStart = new Date(b.year, b.month, 1);
+      let monthlyTotal = 0;
+      for (const emp of employees) {
+        const empHistory = byEmp[emp.id] || [];
+        const effective = empHistory.find(h => new Date(h.effectiveFrom) <= monthStart);
+        const salary = effective ? Number(effective.salary) : Number(emp.salary || 0);
+        monthlyTotal += salary;
+      }
+      b.payroll = monthlyTotal;
+    }
+
+    // Distribute ad budgets — assign full budget to the start month
+    for (const a of ads) {
+      const d = new Date(a.startDate);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const b = buckets.find(x => x.key === key);
+      if (b) b.ads += Number(a.budget || 0);
+    }
+
+    const series = buckets.map(b => ({
+      month: b.key,
+      income: Math.round(b.income),
+      payroll: Math.round(b.payroll),
+      ads: Math.round(b.ads),
+      expense: Math.round(b.payroll + b.ads),
+      profit: Math.round(b.income - b.payroll - b.ads),
+    }));
+
+    const totalIncome = series.reduce((s, x) => s + x.income, 0);
+    const totalPayroll = series.reduce((s, x) => s + x.payroll, 0);
+    const totalAds = series.reduce((s, x) => s + x.ads, 0);
+    const totalExpense = totalPayroll + totalAds;
+    const totalProfit = totalIncome - totalExpense;
+
+    return {
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      projectId: projectId || null,
+      series,
+      totals: {
+        income: totalIncome,
+        payroll: totalPayroll,
+        ads: totalAds,
+        expense: totalExpense,
+        profit: totalProfit,
+      },
+    };
+  }
+
+  /** Aggregated stories per day across all projects (global founder view) */
+  async getStoriesGlobal(fromStr: string, toStr: string) {
+    const stories = await this.storyRepo.createQueryBuilder('s')
+      .leftJoinAndSelect('s.project', 'project')
+      .where('s.date BETWEEN :from AND :to', { from: fromStr, to: toStr })
+      .getMany();
+
+    // Group by date → array of { projectName, projectColor, count }
+    const byDate: Record<string, Array<{ projectId: string; projectName: string; projectColor: string; count: number }>> = {};
+    for (const s of stories) {
+      const dateKey = typeof s.date === 'string' ? (s.date as string).slice(0, 10) : new Date(s.date).toISOString().slice(0, 10);
+      const pid = s.projectId;
+      const pname = s.project?.name || pid;
+      const pcolor = (s.project as any)?.color || '#6B4FCF';
+      if (!byDate[dateKey]) byDate[dateKey] = [];
+      const existing = byDate[dateKey].find(x => x.projectId === pid);
+      if (existing) existing.count += s.storiesCount || 0;
+      else byDate[dateKey].push({ projectId: pid, projectName: pname, projectColor: pcolor, count: s.storiesCount || 0 });
+    }
+
+    return Object.entries(byDate).map(([date, projects]) => ({
+      date,
+      total: projects.reduce((s, p) => s + p.count, 0),
+      projects,
+    }));
   }
 }

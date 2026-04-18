@@ -11,9 +11,11 @@ import { Employee } from '../employees/employee.entity';
 import { SalaryHistory } from '../employees/salary-history.entity';
 import { ProjectPayment } from '../projects/payment.entity';
 import { WorkSession } from '../auth/work-session.entity';
+import { ProjectAd } from '../project-ads/project-ad.entity';
+import { StoryLog } from '../stories/story.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Task, Project, User, TimeLog, DailyReport, Employee, WorkSession, SalaryHistory, ProjectPayment])],
+  imports: [TypeOrmModule.forFeature([Task, Project, User, TimeLog, DailyReport, Employee, WorkSession, SalaryHistory, ProjectPayment, ProjectAd, StoryLog])],
   controllers: [AnalyticsController],
   providers: [AnalyticsService],
   exports: [AnalyticsService],

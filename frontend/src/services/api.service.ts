@@ -137,6 +137,10 @@ export const analyticsApi = {
   payroll: (params?: { from?: string; to?: string }) =>
     api.get('/analytics/payroll', { params }).then(r => r.data),
   sales: () => api.get('/analytics/sales').then(r => r.data),
+  incomeExpense: (params?: { from?: string; to?: string; projectId?: string }) =>
+    api.get('/analytics/income-expense', { params }).then(r => r.data),
+  storiesGlobal: (from: string, to: string) =>
+    api.get('/analytics/stories-global', { params: { from, to } }).then(r => r.data),
   updateEmployeeSalary: (employeeId: string, salary: number) => api.patch(`/employees/${employeeId}`, { salary }).then(r => r.data),
 }
 
