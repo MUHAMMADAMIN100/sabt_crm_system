@@ -4,13 +4,13 @@ import { Link } from 'react-router-dom'
 import { analyticsApi, employeesApi, projectsApi } from '@/services/api.service'
 import { tasksApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { StatCard, PageLoader, StatusBadge, Avatar } from '@/components/ui'
+import { StatCard, PageLoader, StatusBadge, Avatar, CollapsibleSection } from '@/components/ui'
 import {
   FolderKanban, CheckSquare, Users, AlertTriangle,
   TrendingDown, UserX, Activity, Clock, DollarSign,
   Briefcase, Edit2, Check, X, Calendar, Camera, TrendingUp,
 } from 'lucide-react'
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts'
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts'
 
 const StoryCalendar = lazy(() => import('@/components/stories/StoryCalendar'))
 const GlobalStoriesCalendar = lazy(() => import('./GlobalStoriesCalendar'))
@@ -360,10 +360,10 @@ export default function FounderDashboard() {
       </div>
 
       {/* Employee efficiency table */}
-      <div className="card">
-        <h2 className="section-title mb-4 flex items-center gap-2">
-          <CheckSquare size={16} /> Эффективность сотрудников
-        </h2>
+      <CollapsibleSection
+        id="efficiency"
+        title={<h2 className="section-title flex items-center gap-2"><CheckSquare size={16} /> Эффективность сотрудников</h2>}
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -397,17 +397,18 @@ export default function FounderDashboard() {
             </tbody>
           </table>
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* Story calendar — admin view (all employees) */}
-      <div className="card">
-        <h2 className="section-title mb-4 flex items-center gap-2">
-          <Camera size={16} /> Истории сотрудников
-        </h2>
+      <CollapsibleSection
+        id="stories-admin"
+        title={<h2 className="section-title flex items-center gap-2"><Camera size={16} /> Истории сотрудников</h2>}
+        defaultOpen={false}
+      >
         <Suspense fallback={<div className="text-center text-sm text-surface-400 py-4">Загрузка...</div>}>
           <StoryCalendar adminAll compact />
         </Suspense>
-      </div>
+      </CollapsibleSection>
 
       {/* Global stories calendar (aggregated across all projects) */}
       {canSeeFinance && (
@@ -418,20 +419,21 @@ export default function FounderDashboard() {
 
       {/* Income vs Expense — global */}
       {canSeeFinance && (
-        <IncomeExpenseChart title="🌍 Доходы и расходы компании (все проекты)" />
+        <IncomeExpenseChart sectionId="ie-global" title="🌍 Доходы и расходы компании (все проекты)" />
       )}
 
       {/* Income vs Expense — per project */}
       {canSeeFinance && (
-        <IncomeExpenseChart title="📁 Доходы и расходы по проекту" perProject />
+        <IncomeExpenseChart sectionId="ie-project" title="📁 Доходы и расходы по проекту" perProject />
       )}
 
       {/* Payroll table — founder only */}
       {canSeeFinance && (
-      <div className="card">
-        <h2 className="section-title mb-4 flex items-center gap-2">
-          <DollarSign size={16} /> Зарплатный фонд — сотрудники
-        </h2>
+      <CollapsibleSection
+        id="payroll"
+        title={<h2 className="section-title flex items-center gap-2"><DollarSign size={16} /> Зарплатный фонд — сотрудники</h2>}
+        defaultOpen={false}
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -509,15 +511,16 @@ export default function FounderDashboard() {
             </tfoot>
           </table>
         </div>
-      </div>
+      </CollapsibleSection>
       )}
 
       {/* Projects revenue — founder only */}
       {canSeeFinance && (
-      <div className="card">
-        <h2 className="section-title mb-4 flex items-center gap-2">
-          <Briefcase size={16} /> Доход по проектам
-        </h2>
+      <CollapsibleSection
+        id="projects-revenue"
+        title={<h2 className="section-title flex items-center gap-2"><Briefcase size={16} /> Доход по проектам</h2>}
+        defaultOpen={false}
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -553,7 +556,7 @@ export default function FounderDashboard() {
             </tbody>
           </table>
         </div>
-      </div>
+      </CollapsibleSection>
       )}
     </div>
   )
@@ -567,7 +570,7 @@ const CHART_PERIODS: { value: FinancePeriod; label: string }[] = [
   { value: 'all_time', label: 'Всё время' },
 ]
 
-function IncomeExpenseChart({ title, perProject }: { title: string; perProject?: boolean }) {
+function IncomeExpenseChart({ title, perProject, sectionId }: { title: string; perProject?: boolean; sectionId: string }) {
   const [period, setPeriod] = useState<FinancePeriod>('this_year')
   const [projectId, setProjectId] = useState<string>('')
   const range = useMemo(() => periodToRange(period), [period])
@@ -596,32 +599,34 @@ function IncomeExpenseChart({ title, perProject }: { title: string; perProject?:
   const totals = data?.totals || { income: 0, payroll: 0, ads: 0, expense: 0, profit: 0 }
 
   return (
-    <div className="card">
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <h2 className="section-title flex items-center gap-2">
-          <TrendingUp size={16} /> {title}
-        </h2>
-        <div className="flex items-center gap-2 flex-wrap">
-          {perProject && (
-            <select value={projectId} onChange={e => setProjectId(e.target.value)} className="input text-xs py-1.5 w-48">
-              <option value="">— Выберите проект —</option>
-              {projects?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          )}
-          {CHART_PERIODS.map(p => (
-            <button
-              key={p.value}
-              onClick={() => setPeriod(p.value)}
-              className={clsx(
-                'px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                period === p.value
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200',
-              )}
-            >{p.label}</button>
-          ))}
+    <CollapsibleSection
+      id={sectionId}
+      title={
+        <div className="flex items-center justify-between flex-wrap gap-3 w-full">
+          <h2 className="section-title flex items-center gap-2"><TrendingUp size={16} /> {title}</h2>
+          <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
+            {perProject && (
+              <select value={projectId} onChange={e => setProjectId(e.target.value)} className="input text-xs py-1.5 w-48">
+                <option value="">— Выберите проект —</option>
+                {projects?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            )}
+            {CHART_PERIODS.map(p => (
+              <button
+                key={p.value}
+                onClick={() => setPeriod(p.value)}
+                className={clsx(
+                  'px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                  period === p.value
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200',
+                )}
+              >{p.label}</button>
+            ))}
+          </div>
         </div>
-      </div>
+      }
+    >
 
       {perProject && !projectId ? (
         <p className="text-sm text-surface-400 text-center py-12">Выберите проект чтобы увидеть данные</p>
@@ -654,21 +659,29 @@ function IncomeExpenseChart({ title, perProject }: { title: string; perProject?:
           {series.length === 0 ? (
             <p className="text-sm text-surface-400 text-center py-8">Нет данных за период</p>
           ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={series}>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={series} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-                <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v >= 1000 ? `${Math.round(v/1000)}к` : v} />
+                <XAxis
+                  dataKey="monthLabel"
+                  tick={{ fontSize: 11 }}
+                  label={{ value: 'Месяц', position: 'insideBottom', offset: -2, style: { fontSize: 10, fill: '#94a3b8' } }}
+                />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={v => v >= 1000 ? `${Math.round(v/1000)}к` : v}
+                  label={{ value: 'Сомони', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }}
+                />
                 <Tooltip formatter={(v: any) => `${fmt(Number(v))} сомони`} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="income" name="Доход" fill="#10b981" radius={[6, 6, 0, 0]} />
-                <Bar dataKey="payroll" name="Зарплаты" fill="#f97316" radius={[6, 6, 0, 0]} />
-                <Bar dataKey="ads" name="Реклама" fill="#a855f7" radius={[6, 6, 0, 0]} />
-              </BarChart>
+                <Line type="monotone" dataKey="income" name="Доход" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="payroll" name="Зарплаты" stroke="#f97316" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="ads" name="Реклама" stroke="#a855f7" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              </LineChart>
             </ResponsiveContainer>
           )}
         </>
       )}
-    </div>
+    </CollapsibleSection>
   )
 }

@@ -1,7 +1,45 @@
 import { useEffect, useState, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import clsx from 'clsx'
+
+// ── Collapsible section with localStorage persistence ─────────────────
+interface CollapsibleSectionProps {
+  id: string
+  title: ReactNode
+  children: ReactNode
+  defaultOpen?: boolean
+  className?: string
+}
+
+export function CollapsibleSection({ id, title, children, defaultOpen = true, className }: CollapsibleSectionProps) {
+  const storageKey = `dash-collapse:${id}`
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(storageKey)
+      if (v === '1') return true
+      if (v === '0') return false
+    } catch {}
+    return defaultOpen
+  })
+
+  useEffect(() => {
+    try { localStorage.setItem(storageKey, open ? '1' : '0') } catch {}
+  }, [open, storageKey])
+
+  return (
+    <div className={clsx('card', className)}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 -mx-1 px-1 py-1 hover:bg-surface-50 dark:hover:bg-surface-700/30 rounded-lg transition-colors text-left"
+      >
+        <div className="flex-1 min-w-0">{title}</div>
+        {open ? <ChevronUp size={16} className="text-surface-400 shrink-0" /> : <ChevronDown size={16} className="text-surface-400 shrink-0" />}
+      </button>
+      {open && <div className="mt-3">{children}</div>}
+    </div>
+  )
+}
 
 // ── Modal ──────────────────────────────────────────────────────────
 interface ModalProps {

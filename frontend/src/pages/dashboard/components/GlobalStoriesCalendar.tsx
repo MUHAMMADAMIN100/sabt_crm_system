@@ -4,6 +4,7 @@ import { analyticsApi, projectsApi } from '@/services/api.service'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isAfter } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Camera } from 'lucide-react'
+import { CollapsibleSection } from '@/components/ui'
 import clsx from 'clsx'
 
 const WEEKDAYS = ['П', 'В', 'С', 'Ч', 'П', 'С', 'В']
@@ -60,36 +61,40 @@ export default function GlobalStoriesCalendar() {
   const startPad = (getDay(startOfMonth(current)) + 6) % 7
 
   return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h2 className="section-title flex items-center gap-2">
-          <Camera size={16} className="text-pink-500" /> Календарь историй (все проекты)
-        </h2>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() - 1))}
-            className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <span className="text-sm font-semibold min-w-[120px] text-center capitalize text-surface-900 dark:text-surface-100">
-            {format(current, 'LLLL yyyy', { locale: ru })}
-          </span>
-          <button
-            onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() + 1))}
-            className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500"
-          >
-            <ChevronRight size={16} />
-          </button>
+    <CollapsibleSection
+      id="global-stories"
+      title={
+        <div className="flex items-center justify-between flex-wrap gap-2 w-full">
+          <h2 className="section-title flex items-center gap-2">
+            <Camera size={16} className="text-pink-500" /> Календарь историй (все проекты)
+          </h2>
+          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() - 1))}
+              className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="text-sm font-semibold min-w-[120px] text-center capitalize text-surface-900 dark:text-surface-100">
+              {format(current, 'LLLL yyyy', { locale: ru })}
+            </span>
+            <button
+              onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() + 1))}
+              className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
-      </div>
+      }
+    >
 
       {isLoading ? (
         <p className="text-sm text-surface-400 text-center py-8">Загрузка...</p>
       ) : projects.length === 0 ? (
         <p className="text-sm text-surface-400 text-center py-8">Нет активных SMM-проектов</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {projects.map((p: any) => {
             const target = Math.min(Number(p?.smmData?.storiesPerDay) || 3, 12)
             const projectMap = map[p.id] || {}
@@ -169,6 +174,6 @@ export default function GlobalStoriesCalendar() {
         <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-pink-400" /><span className="text-surface-500">&lt;50%</span></div>
         <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-red-400/70" /><span className="text-surface-500">не сделано</span></div>
       </div>
-    </div>
+    </CollapsibleSection>
   )
 }
