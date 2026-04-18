@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Пирамида ролей — Sabt CRM</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #0f0f23 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: #fff;
+    padding: 40px 20px;
+  }
+  h1 {
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 8px;
+    background: linear-gradient(90deg, #6B4FCF, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .subtitle { color: #64748b; font-size: 14px; margin-bottom: 40px; }
+  .pyramid { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .level {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .role {
+    padding: 14px 24px;
+    border-radius: 14px;
+    text-align: center;
+    min-width: 140px;
+    position: relative;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .role:hover { transform: translateY(-3px); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
+  .role .icon { font-size: 28px; margin-bottom: 6px; }
+  .role .name { font-weight: 700; font-size: 14px; }
+  .role .code { font-size: 11px; opacity: 0.6; margin-top: 3px; font-family: monospace; }
+  .role .desc { font-size: 10px; opacity: 0.7; margin-top: 4px; line-height: 1.3; }
+
+  /* Level 1 — Founder */
+  .l1 .role {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    box-shadow: 0 4px 20px rgba(245, 158, 11, 0.3);
+    min-width: 220px;
+  }
+  /* Level 2 — Co-founder */
+  .l2 .role {
+    background: linear-gradient(135deg, #eab308, #ca8a04);
+    box-shadow: 0 4px 20px rgba(234, 179, 8, 0.25);
+    min-width: 200px;
+  }
+  /* Level 3 — Admin */
+  .l3 .role {
+    background: linear-gradient(135deg, #6B4FCF, #7c3aed);
+    box-shadow: 0 4px 20px rgba(107, 79, 207, 0.3);
+    min-width: 200px;
+  }
+  /* Level 4 — PM & Head SMM */
+  .l4 .role {
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    box-shadow: 0 4px 20px rgba(37, 99, 235, 0.25);
+    min-width: 180px;
+  }
+  /* Level 5 — Specialists */
+  .l5 .role {
+    background: linear-gradient(135deg, #1e293b, #334155);
+    border: 1px solid #475569;
+    min-width: 120px;
+    padding: 10px 14px;
+  }
+  .l5 .role .icon { font-size: 22px; }
+  .l5 .role .name { font-size: 12px; }
+  /* Level 6 — Employee */
+  .l6 .role {
+    background: linear-gradient(135deg, #1e293b, #0f172a);
+    border: 1px solid #334155;
+    min-width: 160px;
+  }
+
+  .connector {
+    width: 2px;
+    height: 16px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.3), rgba(255,255,255,0.05));
+    margin: 0 auto;
+  }
+  .branch {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .branch-line {
+    height: 2px;
+    width: 40px;
+    background: rgba(255,255,255,0.15);
+  }
+  .legend {
+    margin-top: 40px;
+    background: rgba(30, 41, 59, 0.5);
+    border: 1px solid #334155;
+    border-radius: 16px;
+    padding: 20px 28px;
+    max-width: 500px;
+    width: 100%;
+  }
+  .legend h3 { font-size: 14px; font-weight: 700; margin-bottom: 10px; color: #94a3b8; }
+  .legend-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; border-bottom: 1px solid rgba(51,65,85,0.5); }
+  .legend-row:last-child { border: none; }
+  .legend-row .lr-level { color: #6B4FCF; font-weight: 700; width: 70px; }
+  .legend-row .lr-roles { color: #e2e8f0; flex: 1; }
+  .legend-row .lr-access { color: #64748b; text-align: right; width: 200px; }
+
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+  .badge-gold { background: rgba(255,255,255,0.15); color: #fef3c7; }
+  .badge-purple { background: rgba(255,255,255,0.15); color: #ddd6fe; }
+  .badge-blue { background: rgba(255,255,255,0.15); color: #bfdbfe; }
+</style>
+</head>
+<body>
+  <h1>Sabt CRM — Пирамида ролей</h1>
+  <p class="subtitle">11 ролей · 5 уровней доступа</p>
+
+  <div class="pyramid">
+    <!-- Level 1: Founder -->
+    <div class="level l1">
+      <div class="role">
+        <div class="icon">👑</div>
+        <div class="name">Основатель</div>
+        <div class="code">founder</div>
+        <span class="badge badge-gold">Полный доступ</span>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <!-- Level 2: Co-founder -->
+    <div class="level l2">
+      <div class="role">
+        <div class="icon">👑</div>
+        <div class="name">Сооснователь</div>
+        <div class="code">co_founder</div>
+        <span class="badge badge-gold">= Основатель</span>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <!-- Level 3: Admin -->
+    <div class="level l3">
+      <div class="role">
+        <div class="icon">🛡️</div>
+        <div class="name">Администратор</div>
+        <div class="code">admin</div>
+        <span class="badge badge-purple">Всё кроме ЗП и назнач. основателей</span>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <!-- Level 4: PM + Head SMM -->
+    <div class="level l4">
+      <div class="role">
+        <div class="icon">📋</div>
+        <div class="name">Проект-менеджер</div>
+        <div class="code">project_manager</div>
+        <div class="desc">Все типы проектов</div>
+      </div>
+      <div class="role">
+        <div class="icon">📱</div>
+        <div class="name">Главный SMM</div>
+        <div class="code">head_smm</div>
+        <div class="desc">Только SMM проекты</div>
+      </div>
+      <div class="role">
+        <div class="icon">💼</div>
+        <div class="name">Менеджер продаж</div>
+        <div class="code">sales_manager</div>
+        <div class="desc">Аналитика оплат + база клиентов</div>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <!-- Level 5: Specialists -->
+    <div class="level l5">
+      <div class="role">
+        <div class="icon">📸</div>
+        <div class="name">SMM спец.</div>
+        <div class="code">smm_specialist</div>
+      </div>
+      <div class="role">
+        <div class="icon">🎨</div>
+        <div class="name">Дизайнер</div>
+        <div class="code">designer</div>
+      </div>
+      <div class="role">
+        <div class="icon">🎯</div>
+        <div class="name">Таргетолог</div>
+        <div class="code">targetologist</div>
+      </div>
+      <div class="role">
+        <div class="icon">📈</div>
+        <div class="name">Маркетолог</div>
+        <div class="code">marketer</div>
+      </div>
+      <div class="role">
+        <div class="icon">💻</div>
+        <div class="name">Разработчик</div>
+        <div class="code">developer</div>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <!-- Level 6: Employee -->
+    <div class="level l6">
+      <div class="role">
+        <div class="icon">👤</div>
+        <div class="name">Сотрудник</div>
+        <div class="code">employee</div>
+        <div class="desc">Базовая роль (fallback)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <h3>Уровни доступа</h3>
+    <div class="legend-row">
+      <span class="lr-level">Ур. 1–2</span>
+      <span class="lr-roles">Основатель / Сооснователь</span>
+      <span class="lr-access">Всё + зарплаты + финансы</span>
+    </div>
+    <div class="legend-row">
+      <span class="lr-level">Ур. 3</span>
+      <span class="lr-roles">Администратор</span>
+      <span class="lr-access">Всё кроме ЗП и основателей</span>
+    </div>
+    <div class="legend-row">
+      <span class="lr-level">Ур. 4</span>
+      <span class="lr-roles">ПМ / Гл. SMM / Менеджер продаж</span>
+      <span class="lr-access">Проекты, задачи, аналитика</span>
+    </div>
+    <div class="legend-row">
+      <span class="lr-level">Ур. 5</span>
+      <span class="lr-roles">Специалисты (5 ролей)</span>
+      <span class="lr-access">Свои задачи, отчёты</span>
+    </div>
+    <div class="legend-row">
+      <span class="lr-level">Ур. 6</span>
+      <span class="lr-roles">Сотрудник</span>
+      <span class="lr-access">Минимальный доступ</span>
+    </div>
+  </div>
+</body>
+</html>

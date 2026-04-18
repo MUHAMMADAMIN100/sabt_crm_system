@@ -178,6 +178,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view', 'calendar.create',
+    'analytics.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use',
