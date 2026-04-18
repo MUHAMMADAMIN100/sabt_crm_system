@@ -46,10 +46,10 @@ export class ProjectAd {
   @Column({ type: 'enum', enum: BudgetSource, default: BudgetSource.CLIENT })
   budgetSource: BudgetSource;
 
-  @Column({ type: 'date' })
+  @Column({ type: 'timestamp' })
   startDate: Date;
 
-  @Column({ type: 'date' })
+  @Column({ type: 'timestamp' })
   endDate: Date;
 
   @Column({ type: 'text', nullable: true })

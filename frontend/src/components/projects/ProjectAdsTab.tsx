@@ -35,6 +35,7 @@ export default function ProjectAdsTab({ projectId }: Props) {
   const { data: ads, isLoading } = useQuery({
     queryKey: ['project-ads', projectId],
     queryFn: () => projectAdsApi.list(projectId),
+    refetchInterval: 60000,
   })
 
   const queryKey = ['project-ads', projectId]
@@ -202,11 +203,11 @@ function AdSection({ title, ads, canManage, onEdit, onDelete, accent }: any) {
               </div>
               <div className="flex items-center gap-2 text-xs text-surface-600 dark:text-surface-300">
                 <span className="font-medium">
-                  {format(parseISO(a.startDate.slice(0, 10)), 'dd MMM', { locale: ru })}
+                  {format(new Date(a.startDate), 'dd MMM HH:mm', { locale: ru })}
                 </span>
                 <span className="text-surface-300">→</span>
                 <span className="font-medium">
-                  {format(parseISO(a.endDate.slice(0, 10)), 'dd MMM yyyy', { locale: ru })}
+                  {format(new Date(a.endDate), 'dd MMM yyyy HH:mm', { locale: ru })}
                 </span>
               </div>
               {a.createdBy?.name && (
@@ -230,8 +231,8 @@ function AdForm({ initial, onClose, onSubmit, loading }: any) {
       channel: initial?.channel || 'instagram',
       budget: initial?.budget || '',
       budgetSource: initial?.budgetSource || 'client',
-      startDate: initial?.startDate ? String(initial.startDate).slice(0, 10) : '',
-      endDate: initial?.endDate ? String(initial.endDate).slice(0, 10) : '',
+      startDate: initial?.startDate ? String(initial.startDate).slice(0, 16) : '',
+      endDate: initial?.endDate ? String(initial.endDate).slice(0, 16) : '',
       note: initial?.note || '',
     },
   })
@@ -275,11 +276,11 @@ function AdForm({ initial, onClose, onSubmit, loading }: any) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Начало *</label>
-            <input type="date" {...register('startDate', { required: true })} className="input" />
+            <input type="datetime-local" {...register('startDate', { required: true })} className="input" />
           </div>
           <div>
             <label className="label">Конец *</label>
-            <input type="date" {...register('endDate', { required: true })} className="input" />
+            <input type="datetime-local" {...register('endDate', { required: true })} className="input" />
           </div>
         </div>
         <div>

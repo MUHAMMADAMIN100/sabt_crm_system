@@ -50,6 +50,7 @@ export default function ProjectsPage() {
   const { data: allProjects, isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: () => projectsApi.list(),
+    refetchInterval: 60000, // refresh every 60s to update ad status indicators
   })
 
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })

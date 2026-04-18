@@ -107,7 +107,7 @@ export class ProjectsService {
       const rows = await this.repo.manager.query(
         `SELECT DISTINCT "projectId" FROM project_ads
          WHERE "projectId" = ANY($1::uuid[])
-           AND CURRENT_DATE BETWEEN "startDate" AND "endDate"`,
+           AND NOW() BETWEEN "startDate" AND "endDate"`,
         [smmIds],
       );
       activeMap = Object.fromEntries((rows as Array<{ projectId: string }>).map(r => [r.projectId, true]));
