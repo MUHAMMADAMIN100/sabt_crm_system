@@ -1,19 +1,51 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { reportsApi, projectsApi, tasksApi } from '@/services/api.service'
+import { reportsApi, projectsApi, tasksApi, analyticsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar } from '@/components/ui'
-import { Plus, FileText, Trash2, Download } from 'lucide-react'
+import { Plus, FileText, Trash2, Download, FileBarChart, Users, FolderKanban } from 'lucide-react'
 import api from '@/lib/api'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
+import { generateProjectReport, generateEmployeeReport } from '@/lib/pdfReports'
 
 export default function ReportsPage() {
   const user = useAuthStore(s => s.user)
   const isHeadSMM = user?.role === 'head_smm'
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(user?.role || '')
+  const canDownloadReports = user?.role === 'founder' || user?.role === 'co_founder'
+
+  const [generating, setGenerating] = useState<string | null>(null)
+  const [projectsPeriod, setProjectsPeriod] = useState<'week' | 'month'>('week')
+  const [employeesPeriod, setEmployeesPeriod] = useState<'week' | 'month'>('week')
+
+  const downloadProjectReport = async () => {
+    setGenerating('projects')
+    try {
+      const data = await analyticsApi.reportProjects(projectsPeriod)
+      generateProjectReport(data)
+      toast.success('PDF скачан')
+    } catch {
+      toast.error('Не удалось сгенерировать отчёт')
+    } finally {
+      setGenerating(null)
+    }
+  }
+
+  const downloadEmployeeReport = async () => {
+    setGenerating('employees')
+    try {
+      const data = await analyticsApi.reportEmployees(employeesPeriod)
+      generateEmployeeReport(data)
+      toast.success('PDF скачан')
+    } catch {
+      toast.error('Не удалось сгенерировать отчёт')
+    } finally {
+      setGenerating(null)
+    }
+  }
   const [showCreate, setShowCreate] = useState(false)
   const qc = useQueryClient()
   const { t } = useTranslation()
@@ -88,6 +120,83 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+
+      {/* PDF reports — founder/co_founder only */}
+      {canDownloadReports && (
+        <div className="card">
+          <div className="flex items-center gap-2 mb-3">
+            <FileBarChart size={18} className="text-primary-500" />
+            <h2 className="font-semibold text-surface-900 dark:text-surface-100">PDF-отчёты</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Projects report */}
+            <div className="p-4 rounded-xl border border-surface-100 dark:border-surface-700 bg-gradient-to-br from-primary-50/50 to-transparent dark:from-primary-900/10">
+              <div className="flex items-center gap-2 mb-2">
+                <FolderKanban size={16} className="text-primary-600 dark:text-primary-400" />
+                <h3 className="font-semibold text-surface-900 dark:text-surface-100">По проектам</h3>
+              </div>
+              <p className="text-xs text-surface-500 dark:text-surface-400 mb-3">
+                Истории, задачи, прогресс — для каждого проекта за выбранный период
+              </p>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex gap-1">
+                  {(['week','month'] as const).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => setProjectsPeriod(p)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                        projectsPeriod === p
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300'
+                      }`}
+                    >{p === 'week' ? 'Неделя' : 'Месяц'}</button>
+                  ))}
+                </div>
+                <button
+                  onClick={downloadProjectReport}
+                  disabled={generating === 'projects'}
+                  className="btn-primary text-xs flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <Download size={14} /> {generating === 'projects' ? 'Создаю...' : 'Скачать PDF'}
+                </button>
+              </div>
+            </div>
+
+            {/* Employees report */}
+            <div className="p-4 rounded-xl border border-surface-100 dark:border-surface-700 bg-gradient-to-br from-emerald-50/50 to-transparent dark:from-emerald-900/10">
+              <div className="flex items-center gap-2 mb-2">
+                <Users size={16} className="text-emerald-600 dark:text-emerald-400" />
+                <h3 className="font-semibold text-surface-900 dark:text-surface-100">По сотрудникам</h3>
+              </div>
+              <p className="text-xs text-surface-500 dark:text-surface-400 mb-3">
+                Назначено, выполнено, просрочено, часы и эффективность каждого сотрудника
+              </p>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex gap-1">
+                  {(['week','month'] as const).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => setEmployeesPeriod(p)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                        employeesPeriod === p
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300'
+                      }`}
+                    >{p === 'week' ? 'Неделя' : 'Месяц'}</button>
+                  ))}
+                </div>
+                <button
+                  onClick={downloadEmployeeReport}
+                  disabled={generating === 'employees'}
+                  className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-colors disabled:opacity-50"
+                >
+                  <Download size={14} /> {generating === 'employees' ? 'Создаю...' : 'Скачать PDF'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!filteredReports?.length ? (
         <EmptyState title={t('reports.noReports')} description={t('reports.noReportsDesc')} action={

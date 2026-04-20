@@ -698,4 +698,221 @@ export class AnalyticsService {
       projects,
     }));
   }
+
+  /** Period helper */
+  private periodRange(period: 'week' | 'month'): { from: Date; to: Date; label: string } {
+    const now = new Date();
+    const to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    const from = new Date(to);
+    if (period === 'week') {
+      from.setDate(from.getDate() - 6);
+    } else {
+      from.setDate(from.getDate() - 29);
+    }
+    from.setHours(0, 0, 0, 0);
+    return {
+      from, to,
+      label: period === 'week' ? 'За неделю' : 'За месяц',
+    };
+  }
+
+  /** Project report — projects with stories/posts/tasks counts in period */
+  async getProjectReport(period: 'week' | 'month' = 'week') {
+    const { from, to, label } = this.periodRange(period);
+
+    const projects = await this.projectRepo.find({
+      where: { isArchived: false },
+      relations: ['manager', 'members', 'tasks'],
+    });
+
+    const result = await Promise.all(projects.map(async (p) => {
+      // Stories in period
+      const storiesRows = await this.storyRepo
+        .createQueryBuilder('s')
+        .select('COALESCE(SUM(s."storiesCount"), 0)', 'total')
+        .where('s.projectId = :pid', { pid: p.id })
+        .andWhere('s.date BETWEEN :from AND :to', {
+          from: from.toISOString().slice(0, 10),
+          to: to.toISOString().slice(0, 10),
+        })
+        .getRawOne();
+      const storiesCount = Number(storiesRows?.total || 0);
+
+      // Tasks done/total/created/in_progress in period (filter by createdAt or completedAt)
+      const tasksInPeriod = (p.tasks || []).filter(t => {
+        const ca = new Date(t.createdAt);
+        return ca >= from && ca <= to;
+      });
+      const tasksDoneInPeriod = (p.tasks || []).filter(t => {
+        if (t.status !== TaskStatus.DONE) return false;
+        const ca = new Date(t.reviewedAt || t.createdAt);
+        return ca >= from && ca <= to;
+      });
+
+      // Total stats (all time)
+      const totalTasks = p.tasks?.length || 0;
+      const totalDone = p.tasks?.filter(t => t.status === TaskStatus.DONE).length || 0;
+      const progressPct = totalTasks > 0 ? Math.round((totalDone / totalTasks) * 100) : 0;
+
+      // Ad campaigns active in period
+      const adsCount = await this.adRepo.count({
+        where: { projectId: p.id },
+      });
+
+      return {
+        id: p.id,
+        name: p.name,
+        type: p.projectType || '—',
+        managerName: p.manager?.name || '—',
+        membersCount: p.members?.length || 0,
+        status: p.status,
+        progress: progressPct,
+        endDate: p.endDate ? new Date(p.endDate).toLocaleDateString('ru-RU') : '—',
+        period: {
+          stories: storiesCount,
+          tasksCreated: tasksInPeriod.length,
+          tasksDone: tasksDoneInPeriod.length,
+          ads: adsCount,
+        },
+        totals: {
+          tasks: totalTasks,
+          done: totalDone,
+        },
+      };
+    }));
+
+    // Aggregate totals
+    const totals = {
+      projectCount: result.length,
+      stories: result.reduce((s, p) => s + p.period.stories, 0),
+      tasksCreated: result.reduce((s, p) => s + p.period.tasksCreated, 0),
+      tasksDone: result.reduce((s, p) => s + p.period.tasksDone, 0),
+    };
+
+    return {
+      period,
+      label,
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      projects: result.sort((a, b) => b.period.tasksDone - a.period.tasksDone),
+      totals,
+    };
+  }
+
+  /** Employee report — every employee with productivity stats in period */
+  async getEmployeeReport(period: 'week' | 'month' = 'week') {
+    const { from, to, label } = this.periodRange(period);
+
+    const employees = await this.employeeRepo.find({
+      where: { status: EmployeeStatus.ACTIVE },
+      relations: ['user'],
+    });
+
+    const result = await Promise.all(employees.map(async (emp) => {
+      if (!emp.userId) {
+        return {
+          id: emp.id,
+          name: emp.fullName,
+          position: emp.position || '—',
+          tasksAssigned: 0,
+          tasksDone: 0,
+          tasksOverdue: 0,
+          tasksReview: 0,
+          hoursLogged: 0,
+          stories: 0,
+          efficiency: 0,
+          doneTasksList: [],
+        };
+      }
+
+      // Tasks
+      const allTasks = await this.taskRepo.find({
+        where: { assigneeId: emp.userId },
+        relations: ['project'],
+      });
+
+      const tasksInPeriod = allTasks.filter(t => {
+        const ca = new Date(t.createdAt);
+        return ca >= from && ca <= to;
+      });
+
+      const doneInPeriod = allTasks.filter(t => {
+        if (t.status !== TaskStatus.DONE) return false;
+        const ca = new Date(t.reviewedAt || t.createdAt);
+        return ca >= from && ca <= to;
+      });
+
+      const overdueTasks = allTasks.filter(t =>
+        t.deadline && new Date(t.deadline) < new Date() &&
+        ![TaskStatus.DONE, TaskStatus.CANCELLED].includes(t.status),
+      );
+
+      const reviewTasks = allTasks.filter(t => t.status === TaskStatus.REVIEW);
+
+      // Hours logged in period
+      const hoursRow = await this.timeRepo
+        .createQueryBuilder('tl')
+        .select('COALESCE(SUM(tl."timeSpent"), 0)', 'total')
+        .where('tl."employeeId" = :uid', { uid: emp.userId })
+        .andWhere('tl.date BETWEEN :from AND :to', { from, to })
+        .getRawOne();
+      const hoursLogged = Math.round(Number(hoursRow?.total || 0) * 10) / 10;
+
+      // Stories in period
+      const storiesRow = await this.storyRepo
+        .createQueryBuilder('s')
+        .select('COALESCE(SUM(s."storiesCount"), 0)', 'total')
+        .where('s."employeeId" = :uid', { uid: emp.userId })
+        .andWhere('s.date BETWEEN :from AND :to', {
+          from: from.toISOString().slice(0, 10),
+          to: to.toISOString().slice(0, 10),
+        })
+        .getRawOne();
+      const stories = Number(storiesRow?.total || 0);
+
+      const efficiency = tasksInPeriod.length > 0
+        ? Math.round((doneInPeriod.length / tasksInPeriod.length) * 100)
+        : 0;
+
+      return {
+        id: emp.id,
+        name: emp.fullName,
+        position: emp.position || '—',
+        role: emp.user?.role || '—',
+        tasksAssigned: tasksInPeriod.length,
+        tasksDone: doneInPeriod.length,
+        tasksOverdue: overdueTasks.length,
+        tasksReview: reviewTasks.length,
+        hoursLogged,
+        stories,
+        efficiency,
+        doneTasksList: doneInPeriod.slice(0, 20).map(t => ({
+          title: t.title,
+          project: t.project?.name || '—',
+          status: t.status,
+        })),
+      };
+    }));
+
+    // Skip top management from report
+    const TOP_ROLES = ['founder', 'co_founder', 'admin'];
+    const filtered = result.filter(r => !TOP_ROLES.includes((r as any).role || ''));
+
+    const totals = {
+      employeeCount: filtered.length,
+      tasksAssigned: filtered.reduce((s, e) => s + e.tasksAssigned, 0),
+      tasksDone: filtered.reduce((s, e) => s + e.tasksDone, 0),
+      hoursLogged: Math.round(filtered.reduce((s, e) => s + e.hoursLogged, 0) * 10) / 10,
+      stories: filtered.reduce((s, e) => s + e.stories, 0),
+    };
+
+    return {
+      period,
+      label,
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      employees: filtered.sort((a, b) => b.tasksDone - a.tasksDone),
+      totals,
+    };
+  }
 }

@@ -137,4 +137,16 @@ export class AnalyticsController {
   ) {
     return this.service.getStoriesGlobal(from, to);
   }
+
+  @Get('report/projects')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  getProjectReport(@Query('period') period: 'week' | 'month' = 'week') {
+    return this.service.getProjectReport(period);
+  }
+
+  @Get('report/employees')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  getEmployeeReport(@Query('period') period: 'week' | 'month' = 'week') {
+    return this.service.getEmployeeReport(period);
+  }
 }
