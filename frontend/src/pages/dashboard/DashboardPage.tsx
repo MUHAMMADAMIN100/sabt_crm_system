@@ -134,7 +134,7 @@ export default function DashboardPage() {
   const user = useAuthStore(s => s.user)
   const role = user?.role || 'employee'
   const isFounderView = ['admin', 'founder', 'co_founder'].includes(role)
-  const isPMView = role === 'project_manager'
+  const isPMView = role === 'project_manager' || role === 'head_smm'
   const isSalesView = role === 'sales_manager'
   const isWorkerView = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'developer', 'employee'].includes(role)
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(role)

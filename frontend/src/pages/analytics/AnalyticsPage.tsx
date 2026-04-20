@@ -41,9 +41,13 @@ export default function AnalyticsPage() {
   const smmRoles = ['smm_specialist', 'head_smm']
   const isSMMEmployee = (emp: any) => smmRoles.includes(emp?.user?.role || emp?.role || '') || smmPositions.includes(emp?.position || '')
 
-  // Filter workload & efficiency for head_smm
-  const filteredWorkload = isHeadSMM ? (workload || []).filter((e: any) => smmPositions.includes(e.position || '')) : workload
-  const filteredEmpEff = isHeadSMM ? (empEff || []).filter((e: any) => smmPositions.includes(e.position || '')) : empEff
+  // Filter workload & efficiency for head_smm — include both position and role check
+  const filteredWorkload = isHeadSMM
+    ? (workload || []).filter((e: any) => smmPositions.includes(e.position || '') || smmRoles.includes(e.role || ''))
+    : workload
+  const filteredEmpEff = isHeadSMM
+    ? (empEff || []).filter((e: any) => smmPositions.includes(e.position || '') || smmRoles.includes(e.role || ''))
+    : empEff
 
   // Group tasks by employee (filter to SMM projects for head_smm)
   const tasksByEmployee: Record<string, any[]> = {}

@@ -1,29 +1,54 @@
+import { useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { tasksApi, analyticsApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, PriorityBadge, Avatar, CollapsibleSection } from '@/components/ui'
 import { TrendingDown, Clock, Eye, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 
+const SMM_POSITIONS = ['SMM специалист', 'Главный SMM специалист']
+const SMM_ROLES = ['smm_specialist', 'head_smm']
+
 export default function PMDashboard() {
   const qc = useQueryClient()
+  const user = useAuthStore(s => s.user)
+  const isHeadSMM = user?.role === 'head_smm'
 
-  const { data: overdueTasks, isLoading: loadingOverdue } = useQuery({
+  const { data: overdueTasksRaw, isLoading: loadingOverdue } = useQuery({
     queryKey: ['tasks-overdue'],
     queryFn: tasksApi.overdue,
   })
 
-  const { data: reviewTasks, isLoading: loadingReview } = useQuery({
+  const { data: reviewTasksRaw, isLoading: loadingReview } = useQuery({
     queryKey: ['tasks-review'],
     queryFn: () => tasksApi.list({ status: 'review' }),
   })
 
-  const { data: workload } = useQuery({
+  const { data: workloadRaw } = useQuery({
     queryKey: ['employee-workload'],
     queryFn: analyticsApi.employeeWorkload,
   })
+
+  // For head_smm — filter to SMM-only data
+  const overdueTasks = useMemo(() => {
+    if (!isHeadSMM) return overdueTasksRaw
+    return (overdueTasksRaw || []).filter((t: any) => t.project?.projectType === 'SMM')
+  }, [overdueTasksRaw, isHeadSMM])
+
+  const reviewTasks = useMemo(() => {
+    if (!isHeadSMM) return reviewTasksRaw
+    return (reviewTasksRaw || []).filter((t: any) => t.project?.projectType === 'SMM')
+  }, [reviewTasksRaw, isHeadSMM])
+
+  const workload = useMemo(() => {
+    if (!isHeadSMM) return workloadRaw
+    return (workloadRaw || []).filter((e: any) =>
+      SMM_POSITIONS.includes(e.position || '') || SMM_ROLES.includes(e.role || ''),
+    )
+  }, [workloadRaw, isHeadSMM])
 
   const approve = useMutation({
     mutationFn: (id: string) => tasksApi.approve(id),
