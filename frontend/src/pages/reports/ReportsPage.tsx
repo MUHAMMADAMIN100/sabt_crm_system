@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { reportsApi, projectsApi, tasksApi, analyticsApi } from '@/services/api.service'
+import { reportsApi, projectsApi, tasksApi, analyticsApi, employeesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar } from '@/components/ui'
-import { Plus, FileText, Trash2, Download, FileBarChart, Users, FolderKanban } from 'lucide-react'
+import { Plus, FileText, Trash2, Download, FileBarChart, Users, FolderKanban, Search } from 'lucide-react'
 import api from '@/lib/api'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
-import { generateProjectReport, generateEmployeeReport } from '@/lib/pdfReports'
+import { generateProjectReport, generateEmployeeReport, generateSingleProjectReport, generateSingleEmployeeReport } from '@/lib/pdfReports'
 
 export default function ReportsPage() {
   const user = useAuthStore(s => s.user)
@@ -20,13 +20,30 @@ export default function ReportsPage() {
   const [generating, setGenerating] = useState<string | null>(null)
   const [projectsPeriod, setProjectsPeriod] = useState<'week' | 'month'>('week')
   const [employeesPeriod, setEmployeesPeriod] = useState<'week' | 'month'>('week')
+  const [showProjectsModal, setShowProjectsModal] = useState(false)
+  const [showEmployeesModal, setShowEmployeesModal] = useState(false)
+  const [reportSearch, setReportSearch] = useState('')
 
-  const downloadProjectReport = async () => {
+  const { data: allProjectsList } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => projectsApi.list(),
+    enabled: canDownloadReports,
+  })
+
+  const { data: allEmployeesList } = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => employeesApi.list(),
+    enabled: canDownloadReports,
+  })
+
+  const downloadProjectReport = async (projectId?: string) => {
     setGenerating('projects')
     try {
-      const data = await analyticsApi.reportProjects(projectsPeriod)
-      generateProjectReport(data)
+      const data = await analyticsApi.reportProjects(projectsPeriod, projectId)
+      if (projectId) generateSingleProjectReport(data)
+      else generateProjectReport(data)
       toast.success('PDF скачан')
+      setShowProjectsModal(false)
     } catch {
       toast.error('Не удалось сгенерировать отчёт')
     } finally {
@@ -34,18 +51,27 @@ export default function ReportsPage() {
     }
   }
 
-  const downloadEmployeeReport = async () => {
+  const downloadEmployeeReport = async (employeeId?: string) => {
     setGenerating('employees')
     try {
-      const data = await analyticsApi.reportEmployees(employeesPeriod)
-      generateEmployeeReport(data)
+      const data = await analyticsApi.reportEmployees(employeesPeriod, employeeId)
+      if (employeeId) generateSingleEmployeeReport(data)
+      else generateEmployeeReport(data)
       toast.success('PDF скачан')
+      setShowEmployeesModal(false)
     } catch {
       toast.error('Не удалось сгенерировать отчёт')
     } finally {
       setGenerating(null)
     }
   }
+
+  const filteredModalProjects = (allProjectsList || []).filter((p: any) =>
+    !reportSearch || p.name.toLowerCase().includes(reportSearch.toLowerCase()),
+  )
+  const filteredModalEmployees = (allEmployeesList || []).filter((e: any) =>
+    !reportSearch || (e.fullName || '').toLowerCase().includes(reportSearch.toLowerCase()),
+  )
   const [showCreate, setShowCreate] = useState(false)
   const qc = useQueryClient()
   const { t } = useTranslation()
@@ -153,7 +179,7 @@ export default function ReportsPage() {
                   ))}
                 </div>
                 <button
-                  onClick={downloadProjectReport}
+                  onClick={() => { setReportSearch(''); setShowProjectsModal(true) }}
                   disabled={generating === 'projects'}
                   className="btn-primary text-xs flex items-center gap-1.5 disabled:opacity-50"
                 >
@@ -186,7 +212,7 @@ export default function ReportsPage() {
                   ))}
                 </div>
                 <button
-                  onClick={downloadEmployeeReport}
+                  onClick={() => { setReportSearch(''); setShowEmployeesModal(true) }}
                   disabled={generating === 'employees'}
                   className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-colors disabled:opacity-50"
                 >
@@ -252,6 +278,108 @@ export default function ReportsPage() {
           loading={createMut.isPending}
           t={t}
         />
+      </Modal>
+
+      {/* Project selection modal */}
+      <Modal open={showProjectsModal} onClose={() => setShowProjectsModal(false)} title="Выберите проект для отчёта" size="md">
+        <div className="space-y-3">
+          <button
+            onClick={() => downloadProjectReport()}
+            disabled={generating === 'projects'}
+            className="w-full p-3 rounded-xl border-2 border-primary-500 bg-primary-50/50 dark:bg-primary-900/10 hover:bg-primary-100/50 dark:hover:bg-primary-900/20 transition-colors text-left flex items-center gap-3 disabled:opacity-50"
+          >
+            <div className="w-8 h-8 rounded-lg bg-primary-600 text-white flex items-center justify-center"><FolderKanban size={16} /></div>
+            <div className="flex-1">
+              <p className="font-semibold text-surface-900 dark:text-surface-100">Все проекты (сводный)</p>
+              <p className="text-xs text-surface-500 dark:text-surface-400">Общий отчёт по всем активным проектам</p>
+            </div>
+            <Download size={16} className="text-primary-600" />
+          </button>
+
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
+            <input
+              value={reportSearch}
+              onChange={e => setReportSearch(e.target.value)}
+              placeholder="Поиск проекта..."
+              className="input pl-9 w-full text-sm"
+            />
+          </div>
+
+          <div className="max-h-[400px] overflow-y-auto space-y-1.5">
+            {filteredModalProjects.length === 0 ? (
+              <p className="text-sm text-surface-400 text-center py-6">Нет проектов</p>
+            ) : (
+              filteredModalProjects.map((p: any) => (
+                <button
+                  key={p.id}
+                  onClick={() => downloadProjectReport(p.id)}
+                  disabled={generating === 'projects'}
+                  className="w-full p-2.5 rounded-lg border border-surface-100 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors text-left flex items-center gap-3 disabled:opacity-50"
+                >
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: p.color || '#6B4FCF' }}>
+                    <FolderKanban size={14} className="text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm text-surface-900 dark:text-surface-100 truncate">{p.name}</p>
+                    <p className="text-[11px] text-surface-400 dark:text-surface-500">{p.projectType || '—'}</p>
+                  </div>
+                  <Download size={14} className="text-surface-400" />
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Employee selection modal */}
+      <Modal open={showEmployeesModal} onClose={() => setShowEmployeesModal(false)} title="Выберите сотрудника для отчёта" size="md">
+        <div className="space-y-3">
+          <button
+            onClick={() => downloadEmployeeReport()}
+            disabled={generating === 'employees'}
+            className="w-full p-3 rounded-xl border-2 border-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/10 hover:bg-emerald-100/50 dark:hover:bg-emerald-900/20 transition-colors text-left flex items-center gap-3 disabled:opacity-50"
+          >
+            <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center"><Users size={16} /></div>
+            <div className="flex-1">
+              <p className="font-semibold text-surface-900 dark:text-surface-100">Все сотрудники (сводный)</p>
+              <p className="text-xs text-surface-500 dark:text-surface-400">Общий отчёт со всей командой</p>
+            </div>
+            <Download size={16} className="text-emerald-600" />
+          </button>
+
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
+            <input
+              value={reportSearch}
+              onChange={e => setReportSearch(e.target.value)}
+              placeholder="Поиск сотрудника..."
+              className="input pl-9 w-full text-sm"
+            />
+          </div>
+
+          <div className="max-h-[400px] overflow-y-auto space-y-1.5">
+            {filteredModalEmployees.length === 0 ? (
+              <p className="text-sm text-surface-400 text-center py-6">Нет сотрудников</p>
+            ) : (
+              filteredModalEmployees.map((e: any) => (
+                <button
+                  key={e.id}
+                  onClick={() => downloadEmployeeReport(e.id)}
+                  disabled={generating === 'employees'}
+                  className="w-full p-2.5 rounded-lg border border-surface-100 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors text-left flex items-center gap-3 disabled:opacity-50"
+                >
+                  <Avatar name={e.fullName} src={e.avatar} size={28} />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm text-surface-900 dark:text-surface-100 truncate">{e.fullName}</p>
+                    <p className="text-[11px] text-surface-400 dark:text-surface-500">{e.position || '—'}</p>
+                  </div>
+                  <Download size={14} className="text-surface-400" />
+                </button>
+              ))
+            )}
+          </div>
+        </div>
       </Modal>
     </div>
   )

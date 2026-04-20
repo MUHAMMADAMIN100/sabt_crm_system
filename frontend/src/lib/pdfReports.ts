@@ -289,3 +289,267 @@ export function generateEmployeeReport(data: any) {
   const fileName = `Отчёт-сотрудники-${data.from}-${data.to}.pdf`
   doc.save(fileName)
 }
+
+// ─── SINGLE PROJECT REPORT ─────────────────────────────────────────
+export function generateSingleProjectReport(data: any) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const project = (data.projects || [])[0]
+  if (!project) return
+
+  const period = data.period as 'week' | 'month'
+  const subtitle = `${project.name} · ${periodLabel(period)} · ${formatDate(data.from)} — ${formatDate(data.to)}`
+  drawHeader(doc, 'Отчёт по проекту', subtitle)
+
+  let y = 48
+  // KPI cards
+  y = drawKpiRow(doc, y, [
+    { label: 'Историй', value: fmt(project.period.stories), color: [236, 72, 153] },
+    { label: 'Задач создано', value: String(project.period.tasksCreated), color: WARN },
+    { label: 'Задач выполнено', value: String(project.period.tasksDone), color: ACCENT },
+    { label: 'Прогресс', value: `${project.progress}%`, color: PRIMARY },
+  ])
+
+  // Project info card
+  setFill(doc, SURFACE)
+  doc.roundedRect(14, y, doc.internal.pageSize.getWidth() - 28, 32, 3, 3, 'F')
+  setText(doc, TEXT)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.text('Информация о проекте', 18, y + 7)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  setText(doc, MUTED)
+  const infoLines = [
+    `Тип: ${project.type}    Менеджер: ${project.managerName}    Участников: ${project.membersCount}`,
+    `Бюджет: ${fmt(project.budget || 0)} сомони    Оплачено: ${fmt(project.paidAmount || 0)} сомони`,
+    `Старт: ${project.startDate || '—'}    Дедлайн: ${project.endDate}    Реклам: ${project.period.ads}`,
+  ]
+  infoLines.forEach((line, i) => doc.text(line, 18, y + 14 + i * 5))
+  y += 38
+
+  // Description
+  if (project.description) {
+    setText(doc, TEXT)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text('Описание', 14, y)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    setText(doc, MUTED)
+    const lines = doc.splitTextToSize(project.description, doc.internal.pageSize.getWidth() - 28)
+    doc.text(lines, 14, y + 5)
+    y += 5 + lines.length * 4 + 4
+  }
+
+  // Members
+  if (project.membersList?.length > 0) {
+    setText(doc, TEXT)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text(`Участники (${project.membersList.length})`, 14, y)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      head: [['#', 'Имя', 'Email']],
+      body: project.membersList.map((m: any, i: number) => [String(i + 1), m.name, m.email || '—']),
+      theme: 'grid',
+      headStyles: { fillColor: PRIMARY, textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 9 },
+      columnStyles: { 0: { cellWidth: 8, halign: 'center' }, 2: { textColor: MUTED } },
+      margin: { left: 14, right: 14 },
+    })
+    y = (doc as any).lastAutoTable.finalY + 6
+  }
+
+  // Done tasks in period
+  if (project.tasksDoneInPeriodList?.length > 0) {
+    if (y > 230) { doc.addPage(); drawHeader(doc, 'Отчёт по проекту (продолжение)', subtitle); y = 48 }
+    setText(doc, TEXT)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text(`Выполненные задачи за период (${project.tasksDoneInPeriodList.length})`, 14, y)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      head: [['#', 'Задача', 'Исполнитель', 'Приоритет', 'Дата']],
+      body: project.tasksDoneInPeriodList.map((t: any, i: number) => [
+        String(i + 1), t.title, t.assignee, t.priority, t.reviewedAt,
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: ACCENT, textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 9 },
+      alternateRowStyles: { fillColor: SURFACE },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center', textColor: MUTED },
+        1: { fontStyle: 'bold' },
+        2: { cellWidth: 35 },
+        3: { cellWidth: 22, halign: 'center' },
+        4: { cellWidth: 24, halign: 'center', textColor: MUTED },
+      },
+      margin: { left: 14, right: 14 },
+    })
+    y = (doc as any).lastAutoTable.finalY + 6
+  }
+
+  // Created in period
+  if (project.tasksCreatedInPeriodList?.length > 0) {
+    if (y > 230) { doc.addPage(); drawHeader(doc, 'Отчёт по проекту (продолжение)', subtitle); y = 48 }
+    setText(doc, TEXT)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text(`Созданные задачи за период (${project.tasksCreatedInPeriodList.length})`, 14, y)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      head: [['#', 'Задача', 'Исполнитель', 'Статус', 'Приоритет']],
+      body: project.tasksCreatedInPeriodList.map((t: any, i: number) => [
+        String(i + 1), t.title, t.assignee, t.status, t.priority,
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: WARN, textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 9 },
+      alternateRowStyles: { fillColor: SURFACE },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center', textColor: MUTED },
+        1: { fontStyle: 'bold' },
+        2: { cellWidth: 35 },
+        3: { cellWidth: 24, halign: 'center' },
+        4: { cellWidth: 22, halign: 'center' },
+      },
+      margin: { left: 14, right: 14 },
+    })
+  }
+
+  drawFooter(doc)
+  const fileName = `Отчёт-${project.name}-${data.from}-${data.to}.pdf`
+  doc.save(fileName)
+}
+
+// ─── SINGLE EMPLOYEE REPORT ────────────────────────────────────────
+export function generateSingleEmployeeReport(data: any) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const emp = (data.employees || [])[0]
+  if (!emp) return
+
+  const period = data.period as 'week' | 'month'
+  const subtitle = `${emp.name} · ${periodLabel(period)} · ${formatDate(data.from)} — ${formatDate(data.to)}`
+  drawHeader(doc, 'Отчёт по сотруднику', subtitle)
+
+  let y = 48
+  // KPI cards
+  y = drawKpiRow(doc, y, [
+    { label: 'Назначено', value: String(emp.tasksAssigned), color: WARN },
+    { label: 'Выполнено', value: String(emp.tasksDone), color: ACCENT },
+    { label: 'Просрочено', value: String(emp.tasksOverdue), color: DANGER },
+    { label: 'Эффективность', value: `${emp.efficiency}%`, color: PRIMARY },
+  ])
+
+  y = drawKpiRow(doc, y, [
+    { label: 'На проверке', value: String(emp.tasksReview), color: [99, 102, 241] },
+    { label: 'Часов', value: fmt(emp.hoursLogged), color: [99, 102, 241] },
+    { label: 'Историй', value: fmt(emp.stories), color: [236, 72, 153] },
+  ])
+
+  // Profile card
+  setFill(doc, SURFACE)
+  doc.roundedRect(14, y, doc.internal.pageSize.getWidth() - 28, 30, 3, 3, 'F')
+  setText(doc, TEXT)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.text('Профиль', 18, y + 7)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  setText(doc, MUTED)
+  const profileLines = [
+    `Должность: ${emp.position}    Отдел: ${emp.department || '—'}`,
+    `Email: ${emp.email || '—'}    Телефон: ${emp.phone || '—'}`,
+    `Принят: ${emp.hireDate || '—'}` + (emp.birthDate ? `    День рождения: ${emp.birthDate}` : ''),
+  ]
+  profileLines.forEach((line, i) => doc.text(line, 18, y + 14 + i * 5))
+  y += 36
+
+  // Done tasks
+  if (emp.doneTasksList?.length > 0) {
+    setText(doc, TEXT)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text(`Выполненные задачи (${emp.doneTasksList.length})`, 14, y)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      head: [['#', 'Задача', 'Проект']],
+      body: emp.doneTasksList.map((t: any, i: number) => [String(i + 1), t.title, t.project]),
+      theme: 'grid',
+      headStyles: { fillColor: ACCENT, textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 9 },
+      alternateRowStyles: { fillColor: SURFACE },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center', textColor: MUTED },
+        1: { fontStyle: 'bold' },
+        2: { cellWidth: 50, textColor: PRIMARY, fontSize: 8 },
+      },
+      margin: { left: 14, right: 14 },
+    })
+    y = (doc as any).lastAutoTable.finalY + 6
+  }
+
+  // Overdue tasks
+  if (emp.overdueTasksList?.length > 0) {
+    if (y > 230) { doc.addPage(); drawHeader(doc, 'Отчёт по сотруднику (продолжение)', subtitle); y = 48 }
+    setText(doc, TEXT)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text(`Просроченные задачи (${emp.overdueTasksList.length})`, 14, y)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      head: [['#', 'Задача', 'Проект', 'Дедлайн']],
+      body: emp.overdueTasksList.map((t: any, i: number) => [String(i + 1), t.title, t.project, t.deadline]),
+      theme: 'grid',
+      headStyles: { fillColor: DANGER, textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 9 },
+      alternateRowStyles: { fillColor: SURFACE },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center', textColor: MUTED },
+        1: { fontStyle: 'bold' },
+        2: { cellWidth: 50, textColor: PRIMARY, fontSize: 8 },
+        3: { cellWidth: 24, halign: 'center', textColor: DANGER, fontStyle: 'bold' },
+      },
+      margin: { left: 14, right: 14 },
+    })
+    y = (doc as any).lastAutoTable.finalY + 6
+  }
+
+  // All tasks in period (paged if needed)
+  if (emp.allTasksInPeriod?.length > 0) {
+    if (y > 220) { doc.addPage(); drawHeader(doc, 'Отчёт по сотруднику (продолжение)', subtitle); y = 48 }
+    setText(doc, TEXT)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text(`Все задачи за период (${emp.allTasksInPeriod.length})`, 14, y)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      head: [['#', 'Задача', 'Проект', 'Статус', 'Дедлайн']],
+      body: emp.allTasksInPeriod.map((t: any, i: number) => [
+        String(i + 1), t.title, t.project, t.status, t.deadline,
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: PRIMARY, textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 9 },
+      alternateRowStyles: { fillColor: SURFACE },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center', textColor: MUTED },
+        1: { fontStyle: 'bold' },
+        2: { cellWidth: 38, textColor: PRIMARY, fontSize: 8 },
+        3: { cellWidth: 22, halign: 'center' },
+        4: { cellWidth: 24, halign: 'center', textColor: MUTED },
+      },
+      margin: { left: 14, right: 14 },
+    })
+  }
+
+  drawFooter(doc)
+  const fileName = `Отчёт-${emp.name}-${data.from}-${data.to}.pdf`
+  doc.save(fileName)
+}

@@ -140,13 +140,19 @@ export class AnalyticsController {
 
   @Get('report/projects')
   @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  getProjectReport(@Query('period') period: 'week' | 'month' = 'week') {
-    return this.service.getProjectReport(period);
+  getProjectReport(
+    @Query('period') period: 'week' | 'month' = 'week',
+    @Query('projectId') projectId?: string,
+  ) {
+    return this.service.getProjectReport(period, projectId || undefined);
   }
 
   @Get('report/employees')
   @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  getEmployeeReport(@Query('period') period: 'week' | 'month' = 'week') {
-    return this.service.getEmployeeReport(period);
+  getEmployeeReport(
+    @Query('period') period: 'week' | 'month' = 'week',
+    @Query('employeeId') employeeId?: string,
+  ) {
+    return this.service.getEmployeeReport(period, employeeId || undefined);
   }
 }

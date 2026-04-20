@@ -141,10 +141,10 @@ export const analyticsApi = {
     api.get('/analytics/income-expense', { params }).then(r => r.data),
   storiesGlobal: (from: string, to: string) =>
     api.get('/analytics/stories-global', { params: { from, to } }).then(r => r.data),
-  reportProjects: (period: 'week' | 'month') =>
-    api.get('/analytics/report/projects', { params: { period } }).then(r => r.data),
-  reportEmployees: (period: 'week' | 'month') =>
-    api.get('/analytics/report/employees', { params: { period } }).then(r => r.data),
+  reportProjects: (period: 'week' | 'month', projectId?: string) =>
+    api.get('/analytics/report/projects', { params: { period, projectId } }).then(r => r.data),
+  reportEmployees: (period: 'week' | 'month', employeeId?: string) =>
+    api.get('/analytics/report/employees', { params: { period, employeeId } }).then(r => r.data),
   updateEmployeeSalary: (employeeId: string, salary: number) => api.patch(`/employees/${employeeId}`, { salary }).then(r => r.data),
 }
 

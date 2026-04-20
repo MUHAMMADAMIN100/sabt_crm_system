@@ -716,13 +716,15 @@ export class AnalyticsService {
     };
   }
 
-  /** Project report — projects with stories/posts/tasks counts in period */
-  async getProjectReport(period: 'week' | 'month' = 'week') {
+  /** Project report — projects with stories/posts/tasks counts in period.
+   *  If projectId provided — returns single project with deeper detail. */
+  async getProjectReport(period: 'week' | 'month' = 'week', projectId?: string) {
     const { from, to, label } = this.periodRange(period);
 
+    const where: any = projectId ? { id: projectId } : { isArchived: false };
     const projects = await this.projectRepo.find({
-      where: { isArchived: false },
-      relations: ['manager', 'members', 'tasks'],
+      where,
+      relations: ['manager', 'members', 'tasks', 'tasks.assignee'],
     });
 
     const result = await Promise.all(projects.map(async (p) => {
@@ -759,7 +761,7 @@ export class AnalyticsService {
         where: { projectId: p.id },
       });
 
-      return {
+      const baseInfo = {
         id: p.id,
         name: p.name,
         type: p.projectType || '—',
@@ -779,6 +781,32 @@ export class AnalyticsService {
           done: totalDone,
         },
       };
+
+      // For single-project report — include detailed task list & members
+      if (projectId) {
+        return {
+          ...baseInfo,
+          description: p.description || null,
+          budget: Number(p.budget || 0),
+          paidAmount: Number(p.paidAmount || 0),
+          startDate: p.startDate ? new Date(p.startDate).toLocaleDateString('ru-RU') : '—',
+          membersList: (p.members || []).map(m => ({ name: m.name, email: m.email })),
+          tasksDoneInPeriodList: tasksDoneInPeriod.slice(0, 50).map(t => ({
+            title: t.title,
+            assignee: t.assignee?.name || '—',
+            priority: t.priority,
+            reviewedAt: t.reviewedAt ? new Date(t.reviewedAt).toLocaleDateString('ru-RU') : '—',
+          })),
+          tasksCreatedInPeriodList: tasksInPeriod.slice(0, 50).map(t => ({
+            title: t.title,
+            assignee: t.assignee?.name || '—',
+            status: t.status,
+            priority: t.priority,
+          })),
+        };
+      }
+
+      return baseInfo;
     }));
 
     // Aggregate totals
@@ -799,12 +827,14 @@ export class AnalyticsService {
     };
   }
 
-  /** Employee report — every employee with productivity stats in period */
-  async getEmployeeReport(period: 'week' | 'month' = 'week') {
+  /** Employee report — every employee with productivity stats in period.
+   *  If employeeId provided — returns single employee with deeper detail. */
+  async getEmployeeReport(period: 'week' | 'month' = 'week', employeeId?: string) {
     const { from, to, label } = this.periodRange(period);
 
+    const where: any = employeeId ? { id: employeeId } : { status: EmployeeStatus.ACTIVE };
     const employees = await this.employeeRepo.find({
-      where: { status: EmployeeStatus.ACTIVE },
+      where,
       relations: ['user'],
     });
 
@@ -874,7 +904,7 @@ export class AnalyticsService {
         ? Math.round((doneInPeriod.length / tasksInPeriod.length) * 100)
         : 0;
 
-      return {
+      const baseInfo = {
         id: emp.id,
         name: emp.fullName,
         position: emp.position || '—',
@@ -892,11 +922,41 @@ export class AnalyticsService {
           status: t.status,
         })),
       };
+
+      // For single-employee report — include richer details
+      if (employeeId) {
+        return {
+          ...baseInfo,
+          email: emp.email,
+          phone: emp.phone,
+          telegram: emp.telegram,
+          department: emp.department,
+          hireDate: emp.hireDate ? new Date(emp.hireDate).toLocaleDateString('ru-RU') : '—',
+          birthDate: emp.birthDate ? new Date(emp.birthDate).toLocaleDateString('ru-RU') : null,
+          allTasksInPeriod: tasksInPeriod.slice(0, 100).map(t => ({
+            title: t.title,
+            project: t.project?.name || '—',
+            status: t.status,
+            priority: t.priority,
+            createdAt: new Date(t.createdAt).toLocaleDateString('ru-RU'),
+            deadline: t.deadline ? new Date(t.deadline).toLocaleDateString('ru-RU') : '—',
+          })),
+          overdueTasksList: overdueTasks.slice(0, 50).map(t => ({
+            title: t.title,
+            project: t.project?.name || '—',
+            deadline: t.deadline ? new Date(t.deadline).toLocaleDateString('ru-RU') : '—',
+          })),
+        };
+      }
+
+      return baseInfo;
     }));
 
-    // Skip top management from report
+    // Skip top management from list view (but allow single fetch)
     const TOP_ROLES = ['founder', 'co_founder', 'admin'];
-    const filtered = result.filter(r => !TOP_ROLES.includes((r as any).role || ''));
+    const filtered = employeeId
+      ? result
+      : result.filter(r => !TOP_ROLES.includes((r as any).role || ''));
 
     const totals = {
       employeeCount: filtered.length,
