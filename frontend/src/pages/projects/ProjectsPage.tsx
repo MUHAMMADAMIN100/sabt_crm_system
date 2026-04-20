@@ -34,7 +34,7 @@ export default function ProjectsPage() {
   const [status, setStatus] = useState('')
   const [projectType, setProjectType] = useState('')
   const [page, setPage] = useState(1)
-  const PAGE_SIZE = 10
+  const PAGE_SIZE = 9
   const [showCreate, setShowCreate] = useState(false)
   const [editProject, setEditProject] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
