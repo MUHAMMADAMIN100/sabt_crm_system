@@ -51,7 +51,7 @@ function buildHeader(title: string, subtitle: string): any[] {
         body: [[
           {
             stack: [
-              { text: 'sabt •', fontSize: 24, bold: true, color: WHITE, margin: [0, 0, 0, 4] },
+              { text: 'WeBrand', fontSize: 24, bold: true, color: WHITE, margin: [0, 0, 0, 4] },
               { text: title, fontSize: 16, bold: true, color: WHITE },
               { text: subtitle, fontSize: 9, color: '#DDD6FE', margin: [0, 2, 0, 0] },
             ],
@@ -59,7 +59,7 @@ function buildHeader(title: string, subtitle: string): any[] {
           {
             stack: [
               { text: now, fontSize: 9, color: WHITE, alignment: 'right' },
-              { text: 'Sabt CRM System', fontSize: 8, color: '#DDD6FE', alignment: 'right', margin: [0, 2, 0, 0] },
+              { text: 'WeBrand', fontSize: 8, color: '#DDD6FE', alignment: 'right', margin: [0, 2, 0, 0] },
             ],
           },
         ]],
@@ -180,7 +180,7 @@ function commonFooter(currentPage: number, pageCount: number): any {
   return {
     margin: [40, 8, 40, 0],
     columns: [
-      { text: 'Sabt CRM — отчёт сгенерирован автоматически', fontSize: 8, color: MUTED },
+      { text: 'WeBrand — отчёт сгенерирован автоматически', fontSize: 8, color: MUTED },
       { text: `Стр. ${currentPage} из ${pageCount}`, fontSize: 8, color: MUTED, alignment: 'right' },
     ],
   }
@@ -222,7 +222,7 @@ export function generateProjectReport(data: any) {
     footer: commonFooter,
   }
 
-  pdfMake.createPdf(docDefinition).download(`Отчёт-проекты-${data.from}-${data.to}.pdf`)
+  pdfMake.createPdf(docDefinition).open()
 }
 
 // ─── SINGLE PROJECT REPORT ─────────────────────────────────────────
@@ -250,7 +250,6 @@ export function generateSingleProjectReport(data: any) {
           stack: [
             { text: 'Информация о проекте', bold: true, fontSize: 10, color: TEXT, margin: [0, 0, 0, 6] },
             { text: `Тип: ${project.type}    Менеджер: ${project.managerName}    Участников: ${project.membersCount}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 3] },
-            { text: `Бюджет: ${fmt(project.budget || 0)} сомони    Оплачено: ${fmt(project.paidAmount || 0)} сомони`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 3] },
             { text: `Старт: ${project.startDate || '—'}    Дедлайн: ${project.endDate}    Реклам: ${project.period.ads}`, fontSize: 9, color: MUTED },
           ],
           fillColor: SURFACE,
@@ -266,17 +265,6 @@ export function generateSingleProjectReport(data: any) {
   if (project.description) {
     content.push(buildSectionTitle('Описание'))
     content.push({ text: project.description, fontSize: 9, color: MUTED, margin: [0, 0, 0, 10] })
-  }
-
-  if (project.membersList?.length > 0) {
-    content.push(buildSectionTitle(`Участники (${project.membersList.length})`))
-    content.push(buildTable({
-      headers: ['#', 'Имя', 'Email'],
-      rows: project.membersList.map((m: any, i: number) => [i + 1, m.name, m.email || '—']),
-      widths: [25, 'auto', '*'],
-      alignments: { 0: 'center' },
-      cellColors: { 2: MUTED },
-    }))
   }
 
   if (project.tasksDoneInPeriodList?.length > 0) {
@@ -314,7 +302,7 @@ export function generateSingleProjectReport(data: any) {
     footer: commonFooter,
   }
 
-  pdfMake.createPdf(docDefinition).download(`Отчёт-${project.name}-${data.from}-${data.to}.pdf`)
+  pdfMake.createPdf(docDefinition).open()
 }
 
 // ─── EMPLOYEES REPORT (aggregate) ──────────────────────────────────
@@ -384,7 +372,7 @@ export function generateEmployeeReport(data: any) {
     footer: commonFooter,
   }
 
-  pdfMake.createPdf(docDefinition).download(`Отчёт-сотрудники-${data.from}-${data.to}.pdf`)
+  pdfMake.createPdf(docDefinition).open()
 }
 
 // ─── SINGLE EMPLOYEE REPORT ────────────────────────────────────────
@@ -475,7 +463,7 @@ export function generateSingleEmployeeReport(data: any) {
     footer: commonFooter,
   }
 
-  pdfMake.createPdf(docDefinition).download(`Отчёт-${emp.name}-${data.from}-${data.to}.pdf`)
+  pdfMake.createPdf(docDefinition).open()
 }
 
 // Suppress unused style warning

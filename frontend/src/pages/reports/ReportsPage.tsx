@@ -183,7 +183,7 @@ export default function ReportsPage() {
                   disabled={generating === 'projects'}
                   className="btn-primary text-xs flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  <Download size={14} /> {generating === 'projects' ? 'Создаю...' : 'Скачать PDF'}
+                  <Download size={14} /> {generating === 'projects' ? 'Создаю...' : 'Открыть PDF'}
                 </button>
               </div>
             </div>
@@ -216,7 +216,7 @@ export default function ReportsPage() {
                   disabled={generating === 'employees'}
                   className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-colors disabled:opacity-50"
                 >
-                  <Download size={14} /> {generating === 'employees' ? 'Создаю...' : 'Скачать PDF'}
+                  <Download size={14} /> {generating === 'employees' ? 'Создаю...' : 'Открыть PDF'}
                 </button>
               </div>
             </div>
