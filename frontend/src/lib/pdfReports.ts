@@ -236,9 +236,9 @@ export function generateSingleProjectReport(data: any) {
   const content: any[] = [
     ...buildHeader('Отчёт по проекту', subtitle),
     buildKpiRow([
-      { label: 'Историй за период', value: fmt(project.period.stories), color: PINK },
-      { label: 'Задач в проекте', value: String(project.totals?.tasks ?? 0), color: WARN },
-      { label: 'Выполнено', value: String(project.totals?.done ?? 0), color: ACCENT },
+      { label: 'Историй', value: fmt(project.period.stories), color: PINK },
+      { label: 'Задач создано', value: String(project.period.tasksCreated), color: WARN },
+      { label: 'Задач выполнено', value: String(project.period.tasksDone), color: ACCENT },
       { label: 'Прогресс', value: `${project.progress}%`, color: PRIMARY },
     ]),
 

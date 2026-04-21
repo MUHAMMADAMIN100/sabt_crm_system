@@ -747,8 +747,8 @@ export class AnalyticsService {
       });
       const tasksDoneInPeriod = (p.tasks || []).filter(t => {
         if (t.status !== TaskStatus.DONE) return false;
-        const ca = new Date(t.reviewedAt || t.createdAt);
-        return ca >= from && ca <= to;
+        const completedAt = new Date((t as any).reviewedAt || (t as any).updatedAt || t.createdAt);
+        return completedAt >= from && completedAt <= to;
       });
 
       // Total stats (all time)
@@ -868,8 +868,8 @@ export class AnalyticsService {
 
       const doneInPeriod = allTasks.filter(t => {
         if (t.status !== TaskStatus.DONE) return false;
-        const ca = new Date(t.reviewedAt || t.createdAt);
-        return ca >= from && ca <= to;
+        const completedAt = new Date((t as any).reviewedAt || (t as any).updatedAt || t.createdAt);
+        return completedAt >= from && completedAt <= to;
       });
 
       const overdueTasks = allTasks.filter(t =>
