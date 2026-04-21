@@ -139,7 +139,7 @@ export class AnalyticsController {
   }
 
   @Get('report/projects')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
   getProjectReport(
     @Query('period') period: 'week' | 'month' = 'week',
     @Query('projectId') projectId?: string,
@@ -148,7 +148,7 @@ export class AnalyticsController {
   }
 
   @Get('report/employees')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
   getEmployeeReport(
     @Query('period') period: 'week' | 'month' = 'week',
     @Query('employeeId') employeeId?: string,
