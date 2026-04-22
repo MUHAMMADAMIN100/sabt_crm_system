@@ -25,7 +25,7 @@ export function ProjectOverviewTab({ project }: { project: any }) {
     t.deadline && new Date(t.deadline) < new Date() && !['done', 'approved', 'published', 'cancelled'].includes(t.status),
   ).length
 
-  const fmt = (v: any) => v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' ₽'
+  const fmt = (v: any) => v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' сомони'
 
   return (
     <div className="space-y-5">

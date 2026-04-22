@@ -19,7 +19,7 @@ const LEVEL_CHIP: Record<Level, string> = {
 
 const COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4']
 
-const fmtMoney = (v: any) => v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' ₽'
+const fmtMoney = (v: any) => v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' сомони'
 
 // ═══════════════════════════════════════════════════════════════════
 // 1. FOUNDER ANALYTICS — KPI верхнего уровня (выручка / маржа / total)

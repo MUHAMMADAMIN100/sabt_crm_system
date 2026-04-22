@@ -28,7 +28,7 @@ interface Tariff {
 }
 
 const fmtMoney = (v: number | string | null | undefined) =>
-  v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' ₽'
+  v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' сомони'
 
 export default function TariffsPage() {
   const role = useAuthStore(s => s.user?.role)
@@ -320,7 +320,7 @@ function TariffForm({ initial, onSubmit, onCancel, loading }: {
       </FormField>
 
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Цена / мес (₽)" required>
+        <FormField label="Цена / мес (сомони)" required>
           <input type="number" step="0.01" {...register('monthlyPrice')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" />
         </FormField>
         <FormField label="Длительность (дней)">

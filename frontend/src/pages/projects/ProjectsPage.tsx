@@ -608,7 +608,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 <option value="">— Без тарифа —</option>
                 {(tariffs || []).map((t: any) => (
                   <option key={t.id} value={t.id}>
-                    {t.name} — {Number(t.monthlyPrice).toLocaleString('ru-RU')} ₽/мес
+                    {t.name} — {Number(t.monthlyPrice).toLocaleString('ru-RU')} сомони/мес
                   </option>
                 ))}
               </select>

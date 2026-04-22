@@ -38,7 +38,7 @@ const fmt = (v: number | string | null | undefined) => {
   if (v == null || v === '') return '—'
   const n = Number(v)
   if (isNaN(n)) return '—'
-  return new Intl.NumberFormat('ru-RU').format(n) + ' ₽'
+  return new Intl.NumberFormat('ru-RU').format(n) + ' сомони'
 }
 
 const FINANCE_ROLES = ['founder', 'co_founder']
@@ -219,7 +219,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
         <Field label="Маржа (авто)" hint={`= контракт − себестоимость · ${previewMarginPct}%`}>
           <input value={fmt(previewMargin)} disabled className="input bg-gray-50 dark:bg-gray-800 cursor-not-allowed" />
         </Field>
-        <Field label="Перерасход тарифа (₽)" hint="Авто-пересчёт по факту published > limit. Можно перебить вручную.">
+        <Field label="Перерасход тарифа (сомони)" hint="Авто-пересчёт по факту published > limit. Можно перебить вручную.">
           <input type="number" step="0.01" {...register('tariffLimitOveruseCost')} className="input" />
         </Field>
         <Field label="Ежемесячная плата">

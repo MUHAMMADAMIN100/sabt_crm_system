@@ -16,7 +16,7 @@ const LEVEL_CHIP: Record<Level, string> = {
   red:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
-const fmtMoney = (v: any) => v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' ₽'
+const fmtMoney = (v: any) => v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' сомони'
 
 // ═══════════════════════════════════════════════════════════════════
 // FounderWidgets — TZ п.11: проекты в риске, просрочки оплат, перегруженные
