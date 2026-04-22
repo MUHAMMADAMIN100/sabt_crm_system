@@ -1,11 +1,19 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike } from 'typeorm';
-import { Project, ProjectStatus } from './project.entity';
+import { Project, ProjectStatus, ProjectBillingType, ProjectPaymentStatus } from './project.entity';
 import { ProjectPayment } from './payment.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UserRole, User } from '../users/user.entity';
+import { SmmTariff } from '../smm-tariffs/smm-tariff.entity';
+import { ContentPlanService } from '../content-plan/content-plan.service';
+import { ContentItemType, ContentPlanItem } from '../content-plan/content-plan-item.entity';
+import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
+import {
+  LAUNCH_KEYS, MANUAL_LAUNCH_KEYS, LAUNCH_LABELS,
+  computeLaunchState, LaunchState, LaunchSignals,
+} from './launch-checklist.helper';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { MailService } from '../mail/mail.service';
@@ -20,12 +28,332 @@ export class ProjectsService {
     @InjectRepository(Project) private repo: Repository<Project>,
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(ProjectPayment) private paymentRepo: Repository<ProjectPayment>,
+    @InjectRepository(SmmTariff) private tariffRepo: Repository<SmmTariff>,
+    @InjectRepository(Task) private taskRepo: Repository<Task>,
     private notificationsService: NotificationsService,
     private mailService: MailService,
     private activityLog: ActivityLogService,
     private telegramService: TelegramService,
     private gateway: AppGateway,
+    private contentPlanService: ContentPlanService,
   ) {}
+
+  /** Заполняет проект полями из выбранного тарифа (snapshot имени и цены).
+   *  Не перезаписывает уже заданные monthlyFee / billingType — клиент мог
+   *  указать индивидуальную скидку. Используется в create() и при смене
+   *  tariffId в update(). */
+  private async applyTariffSnapshot(
+    target: Partial<Project>,
+    tariffId: string,
+  ): Promise<void> {
+    const tariff = await this.tariffRepo.findOne({ where: { id: tariffId } });
+    if (!tariff) throw new NotFoundException('Tariff not found');
+    target.tariffId = tariff.id;
+    target.tariffNameSnapshot = tariff.name;
+    target.tariffPriceSnapshot = tariff.monthlyPrice;
+    if (target.monthlyFee == null) target.monthlyFee = tariff.monthlyPrice;
+    if (target.billingType == null) target.billingType = ProjectBillingType.MONTHLY;
+  }
+
+  // ─── Wave 7: Launch Setup checklist ──────────────────────────────────
+
+  /** Собирает сигналы из БД для расчёта состояния чеклиста. */
+  private async collectLaunchSignals(projectId: string, project: Project): Promise<LaunchSignals> {
+    // 1) есть ли в команде SMM-специалист или head_smm
+    const smmRows: Array<{ cnt: string }> = await this.repo.manager.query(
+      `SELECT COUNT(*) AS cnt
+       FROM project_members pm
+       JOIN users u ON u.id = pm."usersId"
+       WHERE pm."projectsId" = $1
+         AND u.role IN ('smm_specialist','head_smm')`,
+      [projectId],
+    );
+    const hasSmmMember = Number(smmRows?.[0]?.cnt || 0) > 0;
+
+    // 2) общее число позиций контент-плана и сколько в первую неделю
+    //    (от startBillingDate или createdAt)
+    const start = project.startBillingDate
+      ? new Date(project.startBillingDate)
+      : new Date(project.createdAt || Date.now());
+    const weekEnd = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const cpiRows: Array<{ total: string; firstWeek: string }> = await this.repo.manager.query(
+      `SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN "publishDate" BETWEEN $2 AND $3 THEN 1 ELSE 0 END) AS "firstWeek"
+       FROM content_plan_items
+       WHERE "projectId" = $1`,
+      [projectId, start.toISOString(), weekEnd.toISOString()],
+    );
+
+    // 3) число задач
+    const taskRows: Array<{ cnt: string }> = await this.repo.manager.query(
+      `SELECT COUNT(*) AS cnt FROM tasks WHERE "projectId" = $1`,
+      [projectId],
+    );
+
+    return {
+      hasSmmMember,
+      contentPlanCount: Number(cpiRows?.[0]?.total || 0),
+      contentPlanFirstWeekCount: Number(cpiRows?.[0]?.firstWeek || 0),
+      taskCount: Number(taskRows?.[0]?.cnt || 0),
+    };
+  }
+
+  /** Возвращает текущее состояние launch-чеклиста проекта. */
+  async getLaunchChecklist(projectId: string): Promise<LaunchState> {
+    const project = await this.findOne(projectId);
+    const signals = await this.collectLaunchSignals(projectId, project);
+    return computeLaunchState(project, signals);
+  }
+
+  /** Переключает ручной пункт чеклиста (materials_received / accesses_received). */
+  async setManualLaunchItem(projectId: string, itemKey: string, value: boolean): Promise<LaunchState> {
+    if (!MANUAL_LAUNCH_KEYS.includes(itemKey)) {
+      throw new ForbiddenException(
+        `Пункт "${itemKey}" вычисляется автоматически и не может быть переключён вручную`,
+      );
+    }
+    const project = await this.findOne(projectId);
+    const checklist = { ...(project.launchChecklist || {}) };
+    checklist[itemKey] = !!value;
+    await this.repo.update(projectId, { launchChecklist: checklist });
+    this.gateway.broadcast('projects:changed', {});
+    return this.getLaunchChecklist(projectId);
+  }
+
+  // ─── Wave 13: автопересчёт финансовых полей ─────────────────────────
+
+  /** Список финансовых полей, изменять которые могут только founder/co_founder. */
+  private readonly FINANCE_FIELDS = [
+    'totalContractValue',
+    'outstandingAmount',
+    'internalCostEstimate',
+    'marginEstimate',
+    'tariffLimitOveruseCost',
+    // paidAmount гвардится отдельно ниже (исторически был раньше)
+  ] as const;
+
+  /** Пересчитывает производные финансовые поля:
+   *  - outstandingAmount = totalContractValue − paidAmount
+   *  - marginEstimate    = totalContractValue − internalCostEstimate
+   *  - tariffLimitOveruseCost — best-effort оценка по перерасходу * unit price
+   *
+   *  Не перезаписывает явно переданные значения если они отличаются от
+   *  пересчёта (manual override имеет приоритет). */
+  private async recomputeFinancials(
+    target: Partial<Project>,
+    existing: Partial<Project>,
+    explicit: Set<string>,
+  ): Promise<void> {
+    const total = Number(
+      target.totalContractValue ?? existing.totalContractValue ?? 0,
+    );
+    const paid = Number(target.paidAmount ?? existing.paidAmount ?? 0);
+    const internalCost = Number(
+      target.internalCostEstimate ?? existing.internalCostEstimate ?? 0,
+    );
+
+    if (!explicit.has('outstandingAmount') && total > 0) {
+      target.outstandingAmount = Math.max(0, total - paid);
+    }
+    if (!explicit.has('marginEstimate') && total > 0) {
+      target.marginEstimate = total - internalCost;
+    }
+
+    // Перерасход тарифа: считаем только если есть тариф и проект SMM.
+    if (!explicit.has('tariffLimitOveruseCost')) {
+      const tariffId = (target.tariffId ?? existing.tariffId) as string | undefined;
+      const projectType = (target.projectType ?? existing.projectType) as string | undefined;
+      const projectId = (existing.id ?? target.id) as string | undefined;
+      if (tariffId && projectType === 'SMM' && projectId) {
+        const tariff = await this.tariffRepo.findOne({ where: { id: tariffId } });
+        if (tariff) {
+          const totalPlanned =
+            (tariff.storiesPerMonth || 0) +
+            (tariff.reelsPerMonth || 0) +
+            (tariff.postsPerMonth || 0) +
+            (tariff.designsPerMonth || 0);
+          if (totalPlanned > 0) {
+            const unitPrice = Number(tariff.monthlyPrice || 0) / totalPlanned;
+            const overuseRows: Array<{ overuse: string }> = await this.repo.manager.query(
+              `SELECT GREATEST(0,
+                 SUM(CASE WHEN c.status = 'published' THEN 1 ELSE 0 END)
+                 - $2::int
+               ) AS overuse
+               FROM content_plan_items c
+               WHERE c."projectId" = $1
+               GROUP BY c."contentType"`,
+              [projectId, 0],
+            );
+            // Грубая оценка: для каждого type считаем published > limit
+            // но т.к. лимиты разные, делаем точнее ниже:
+            let totalOveruseUnits = 0;
+            const types: Array<[string, number]> = [
+              ['story', tariff.storiesPerMonth || 0],
+              ['reel', tariff.reelsPerMonth || 0],
+              ['post', tariff.postsPerMonth || 0],
+              ['design', tariff.designsPerMonth || 0],
+            ];
+            for (const [type, limit] of types) {
+              if (limit <= 0) continue;
+              const r: Array<{ cnt: string }> = await this.repo.manager.query(
+                `SELECT COUNT(*) AS cnt FROM content_plan_items
+                 WHERE "projectId" = $1 AND "contentType" = $2 AND status = 'published'`,
+                [projectId, type],
+              );
+              const published = Number(r?.[0]?.cnt || 0);
+              totalOveruseUnits += Math.max(0, published - limit);
+            }
+            target.tariffLimitOveruseCost = Math.round(totalOveruseUnits * unitPrice * 100) / 100;
+            void overuseRows; // подавляем unused
+          }
+        }
+      }
+    }
+  }
+
+  /** Авто-генерация шаблонного контент-плана из тарифа.
+   *  Запускается ОДИН раз для проекта (флаг isAutoGeneratedFromTariff).
+   *  Раскладывает deliverables (stories/reels/posts/designs) равномерно
+   *  по durationDays тарифа от startBillingDate (или от createdAt). */
+  private async generateContentPlanFromTariff(project: Project): Promise<void> {
+    if (!project.tariffId || project.isAutoGeneratedFromTariff) return;
+    if (project.projectType !== 'SMM') return;
+
+    const tariff = await this.tariffRepo.findOne({ where: { id: project.tariffId } });
+    if (!tariff) return;
+
+    const buckets: Array<{ type: ContentItemType; count: number; label: string }> = [
+      { type: ContentItemType.STORY,  count: tariff.storiesPerMonth || 0, label: 'История' },
+      { type: ContentItemType.REEL,   count: tariff.reelsPerMonth || 0,   label: 'Reels' },
+      { type: ContentItemType.POST,   count: tariff.postsPerMonth || 0,   label: 'Пост' },
+      { type: ContentItemType.DESIGN, count: tariff.designsPerMonth || 0, label: 'Дизайн' },
+    ];
+
+    const totalUnits = buckets.reduce((s, b) => s + b.count, 0);
+    if (totalUnits === 0) return;
+
+    const startDate = project.startBillingDate
+      ? new Date(project.startBillingDate)
+      : new Date(project.createdAt || Date.now());
+    const durationMs = (tariff.durationDays || 30) * 24 * 60 * 60 * 1000;
+
+    const items: Partial<ContentPlanItem>[] = [];
+    for (const bucket of buckets) {
+      if (bucket.count <= 0) continue;
+      const stepMs = durationMs / bucket.count;
+      for (let i = 0; i < bucket.count; i++) {
+        const publishDate = new Date(startDate.getTime() + Math.round(stepMs * (i + 0.5)));
+        const preparationDeadline = new Date(publishDate.getTime() - 24 * 60 * 60 * 1000);
+        items.push({
+          projectId: project.id,
+          contentType: bucket.type,
+          topic: `${bucket.label} #${i + 1}`,
+          publishDate,
+          preparationDeadline,
+          pmId: project.managerId,
+        });
+      }
+    }
+
+    try {
+      await this.contentPlanService.createMany(items);
+      // Стартовые задачи запуска SMM-проекта (TZ п.2)
+      await this.generateStarterTasksFromTariff(project, tariff);
+      await this.repo.update(project.id, { isAutoGeneratedFromTariff: true });
+    } catch (e: any) {
+      // Авто-генерация не должна блокировать создание проекта.
+      // eslint-disable-next-line no-console
+      console.warn('content plan auto-generation failed:', e?.message);
+    }
+  }
+
+  /** Wave 18: создаёт стартовый набор задач для нового SMM-проекта с тарифом.
+   *  Это последняя необработанная часть TZ п.2 («автоматически создаётся
+   *  стартовый набор задач»). Задачи назначаются на менеджера проекта. */
+  private async generateStarterTasksFromTariff(
+    project: Project,
+    tariff: SmmTariff,
+  ): Promise<void> {
+    const start = project.startBillingDate
+      ? new Date(project.startBillingDate)
+      : new Date(project.createdAt || Date.now());
+    const day = (n: number) => {
+      const d = new Date(start);
+      d.setDate(d.getDate() + n);
+      return d;
+    };
+
+    const templates: Array<Partial<Task>> = [
+      {
+        title: 'Брифинг с клиентом и сбор материалов',
+        description: 'Провести стартовую встречу, собрать референсы, бренд-материалы, фото/видео.',
+        priority: TaskPriority.HIGH,
+        deadline: day(2),
+        estimatedHours: 2,
+      },
+      {
+        title: 'Запросить и проверить доступы',
+        description: 'Доступы к Instagram, TikTok, Facebook, рекламным кабинетам.',
+        priority: TaskPriority.HIGH,
+        deadline: day(3),
+        estimatedHours: 1,
+      },
+      {
+        title: 'Подготовить контент-стратегию на месяц',
+        description: `Тариф "${tariff.name}": ${tariff.storiesPerMonth} stories, ${tariff.reelsPerMonth} reels, ${tariff.postsPerMonth} posts, ${tariff.designsPerMonth} дизайнов в месяц.`,
+        priority: TaskPriority.HIGH,
+        deadline: day(5),
+        estimatedHours: 4,
+      },
+      {
+        title: 'Согласовать контент-план с клиентом',
+        description: 'Отправить план на согласование, собрать правки, утвердить.',
+        priority: TaskPriority.MEDIUM,
+        deadline: day(7),
+        estimatedHours: 2,
+      },
+    ];
+
+    if ((tariff.shootingDaysPerMonth || 0) > 0) {
+      templates.push({
+        title: 'Запланировать первую съёмку',
+        description: `По тарифу полагается ${tariff.shootingDaysPerMonth} съёмочных дней в месяц.`,
+        priority: TaskPriority.MEDIUM,
+        deadline: day(10),
+        estimatedHours: 1,
+      });
+    }
+
+    if ((tariff.reportsPerMonth || 0) > 0) {
+      templates.push({
+        title: 'Подготовить шаблон ежемесячного отчёта',
+        description: `Клиент ожидает ${tariff.reportsPerMonth} отчётов в месяц.`,
+        priority: TaskPriority.LOW,
+        deadline: day(14),
+        estimatedHours: 1,
+      });
+    }
+
+    const tasks = templates.map(t => this.taskRepo.create({
+      ...t,
+      projectId: project.id,
+      assigneeId: project.managerId,
+      createdById: project.managerId,
+      status: TaskStatus.NEW,
+      deliveryType: 'task',
+    }));
+
+    if (tasks.length === 0) return;
+
+    try {
+      await this.taskRepo.save(tasks);
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.warn('starter tasks generation failed:', e?.message);
+    }
+  }
 
   /** Remove actual money-paid field (paidAmount) from project(s) for users
    *  who shouldn't see it. Founder + sales_manager need to see paid amount
@@ -154,7 +482,37 @@ export class ProjectsService {
       salesManagerId: dto.salesManagerId || undefined,
       members: dto.memberIds?.map(id => ({ id })) as unknown as User[],
     });
+    // If a tariff was selected → snapshot its name+price into the project so
+    // future tariff renames/deletions don't rewrite history.
+    if (dto.tariffId) {
+      await this.applyTariffSnapshot(project, dto.tariffId);
+    }
+
+    // Wave 13: при создании пересчитываем outstanding/margin (overuse_cost
+    // в этот момент 0 — контент-плана ещё нет).
+    const explicitOnCreate = new Set<string>();
+    for (const f of this.FINANCE_FIELDS) {
+      if ((dto as any)[f] != null) explicitOnCreate.add(f);
+    }
+    await this.recomputeFinancials(project, project, explicitOnCreate);
+
     const saved = await this.repo.save(project);
+
+    // Авто-генерация контент-плана для SMM-проекта с тарифом.
+    // Best-effort — ошибка не должна валить создание проекта.
+    await this.generateContentPlanFromTariff(saved);
+
+    // Wave 6: алерт «SMM-проект создан без тарифа» — менеджеру проекта.
+    if (saved.projectType === 'SMM' && !saved.tariffId && saved.managerId) {
+      this.notificationsService.createIfNotRecent({
+        userId: saved.managerId,
+        type: NotificationType.PROJECT_NO_TARIFF,
+        title: '⚠️ Проект без тарифа',
+        message: `SMM-проект "${saved.name}" создан без выбранного тарифа. Привяжите тариф в настройках проекта.`,
+        link: `/projects/${saved.id}`,
+        data: { alertKey: `project-no-tariff:${saved.id}`, projectId: saved.id },
+      }, 72).catch(() => {});
+    }
 
     const creator = await this.userRepo.findOne({ where: { id: userId } });
 
@@ -217,6 +575,21 @@ export class ProjectsService {
     if (!canEdit) {
       throw new ForbiddenException('Not allowed');
     }
+
+    // Wave 7: блок перевода проекта в IN_PROGRESS пока launch-чеклист не закрыт.
+    // Не применяется если проект уже в IN_PROGRESS — мы блокируем только переход.
+    if (
+      dto.status === ProjectStatus.IN_PROGRESS &&
+      project.status !== ProjectStatus.IN_PROGRESS
+    ) {
+      const state = await this.getLaunchChecklist(id);
+      if (!state.isComplete) {
+        const missing = state.items.filter(i => !i.done).map(i => i.label).join(', ');
+        throw new ForbiddenException(
+          `Нельзя перевести проект в работу: не закрыты пункты launch-чеклиста — ${missing}`,
+        );
+      }
+    }
     // Only founder can change paidAmount (actual money paid).
     // Other fields (budget, salesManager assignment, project manager) are
     // project-management concerns — admin/PM can edit.
@@ -228,6 +601,22 @@ export class ProjectsService {
         throw new ForbiddenException('Только основатель или сооснователь может изменять сумму оплаты');
       }
       delete (dto as any).paidAmount;
+    }
+
+    // Wave 13: финансовые поля могут менять только founder/co_founder.
+    // Если не founder — молча отбрасываем поля с реальными изменениями.
+    const isFinanceRole = ['founder', 'co_founder'].includes(user.role);
+    if (!isFinanceRole) {
+      for (const field of this.FINANCE_FIELDS) {
+        if (field in dto) {
+          const incoming = Number((dto as any)[field] ?? 0);
+          const current = Number((project as any)[field] ?? 0);
+          if (incoming !== current) {
+            throw new ForbiddenException('Только основатель или сооснователь может изменять финансовые поля');
+          }
+          delete (dto as any)[field];
+        }
+      }
     }
 
     // Guard: head_smm may only manage SMM projects.
@@ -251,6 +640,17 @@ export class ProjectsService {
     const oldManagerId = project.managerId;
     const managerChanged = dto.managerId !== undefined && dto.managerId !== oldManagerId;
 
+    // Tariff change handling: re-snapshot when tariffId changes,
+    // wipe snapshot when tariff is detached.
+    if ('tariffId' in dto && dto.tariffId !== project.tariffId) {
+      if (dto.tariffId) {
+        await this.applyTariffSnapshot(dto as unknown as Partial<Project>, dto.tariffId);
+      } else {
+        (dto as any).tariffNameSnapshot = null;
+        (dto as any).tariffPriceSnapshot = null;
+      }
+    }
+
     if (dto.memberIds !== undefined) {
       project.members = dto.memberIds.map(id => ({ id })) as unknown as User[];
     }
@@ -267,7 +667,26 @@ export class ProjectsService {
       members: project.members,
     });
 
+    // Wave 13: пересчёт финансов до save. Поля из dto имеют приоритет
+    // (manual override), производные авто-перезаписываются если их явно
+    // не передавали.
+    const explicitOnUpdate = new Set<string>()
+    for (const f of this.FINANCE_FIELDS) {
+      if (f in dto) explicitOnUpdate.add(f)
+    }
+    if ('paidAmount' in dto || 'totalContractValue' in dto || 'internalCostEstimate' in dto || 'tariffId' in dto) {
+      await this.recomputeFinancials(project, project, explicitOnUpdate)
+    }
+
     const saved = await this.repo.save(project);
+
+    // Если тариф только что привязан к SMM-проекту впервые (раньше его не было),
+    // и контент-план ещё не сгенерирован — генерируем сейчас.
+    // Флаг isAutoGeneratedFromTariff в самом методе предотвратит двойную генерацию.
+    const tariffJustAttached = 'tariffId' in dto && dto.tariffId && saved.tariffId === dto.tariffId;
+    if (tariffJustAttached && !saved.isAutoGeneratedFromTariff) {
+      await this.generateContentPlanFromTariff(saved);
+    }
 
     // Record payment delta if paidAmount changed
     if (paymentDelta !== null) {

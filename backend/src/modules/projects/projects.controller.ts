@@ -76,4 +76,22 @@ export class ProjectsController {
       body?.message,
     );
   }
+
+  // ─── Wave 7: Launch Setup checklist ───────────────────────────────
+  @Get(':id/launch-checklist')
+  getLaunchChecklist(@Param('id') id: string) {
+    return this.service.getLaunchChecklist(id);
+  }
+
+  @Patch(':id/launch-checklist')
+  @Roles(
+    UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
+    UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM,
+  )
+  setManualLaunchItem(
+    @Param('id') id: string,
+    @Body() body: { item: string; value: boolean },
+  ) {
+    return this.service.setManualLaunchItem(id, body.item, body.value);
+  }
 }

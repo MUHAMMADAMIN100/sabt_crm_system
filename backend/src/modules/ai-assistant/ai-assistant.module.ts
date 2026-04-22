@@ -14,6 +14,7 @@ import { ActivityLog } from '../activity-log/activity-log.entity';
 import { StoryLog } from '../stories/story.entity';
 import { FileAttachment } from '../files/file.entity';
 import { WorkSession } from '../auth/work-session.entity';
+import { RiskAnalyticsModule } from '../risk-analytics/risk-analytics.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { WorkSession } from '../auth/work-session.entity';
       Task, Project, User, Employee, TimeLog, DailyReport,
       Comment, Notification, ActivityLog, StoryLog, FileAttachment, WorkSession,
     ]),
+    RiskAnalyticsModule,
   ],
   controllers: [AiAssistantController],
   providers: [AiAssistantService],

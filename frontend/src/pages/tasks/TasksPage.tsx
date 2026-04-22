@@ -8,6 +8,7 @@ import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
+import DeleteWithReasonDialog from '@/components/tasks/DeleteWithReasonDialog'
 import { Plus, Search, LayoutGrid, List, Filter, Edit, Trash2, Download, CheckSquare, X } from 'lucide-react'
 import api from '@/lib/api'
 import { format } from 'date-fns'
@@ -26,6 +27,11 @@ export default function TasksPage() {
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
+  // Wave 16: фильтры по новым полям задач (TZ п.13)
+  const [filterReviewer, setFilterReviewer] = useState('')
+  const [filterReturnReason, setFilterReturnReason] = useState('')
+  const [filterReworkMin, setFilterReworkMin] = useState('')
+  const [filterDeliveryType, setFilterDeliveryType] = useState('')
   const [page, setPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const PAGE_SIZE = 10
@@ -41,7 +47,29 @@ export default function TasksPage() {
   const qc = useQueryClient()
   const { t } = useTranslation()
 
+  // Wave 17: расширенный пайплайн (TZ п.4). STATUSES = быстрые фильтр-чипы;
+  // ALL_STATUSES = полный список для dropdown смены статуса задачи.
   const STATUSES = ['new', 'in_progress', 'review', 'done']
+  const ALL_STATUSES = [
+    'new', 'accepted', 'in_progress', 'on_pm_review', 'on_rework',
+    'review', 'on_client_approval', 'approved', 'done', 'published',
+    'returned', 'rescheduled', 'cancelled',
+  ]
+  const STATUS_LABELS: Record<string, string> = {
+    new: t('statuses.new'),
+    accepted: 'Принято',
+    in_progress: t('statuses.in_progress'),
+    on_pm_review: 'У PM',
+    on_rework: 'На доработке',
+    review: t('statuses.review'),
+    on_client_approval: 'У клиента',
+    approved: 'Утверждено',
+    done: t('statuses.done'),
+    published: 'Опубликовано',
+    returned: t('statuses.returned'),
+    rescheduled: 'Перенесено',
+    cancelled: t('statuses.cancelled'),
+  }
   const PRIORITIES = ['low', 'medium', 'high', 'critical']
 
   const { data: allTasks, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => isManagerPlus ? tasksApi.list() : tasksApi.my(), refetchInterval: 30000 })
@@ -66,7 +94,7 @@ export default function TasksPage() {
   }, [employees])
 
   // Reset page when filters change
-  useEffect(() => { setPage(1) }, [search, statuses, priorities, projectId, assigneeUserId])
+  useEffect(() => { setPage(1) }, [search, statuses, priorities, projectId, assigneeUserId, filterReviewer, filterReturnReason, filterReworkMin, filterDeliveryType])
 
   const tasks = allTasks?.filter((t: any) => {
     const matchesSearch = !search || t.title?.toLowerCase().includes(search.toLowerCase()) || t.description?.toLowerCase().includes(search.toLowerCase())
@@ -76,7 +104,15 @@ export default function TasksPage() {
     const matchesAssignee = !assigneeUserId || t.assigneeId === assigneeUserId
     // Employee sees only own tasks
     const matchesEmployee = isManagerPlus || t.assigneeId === user?.id
+    // Wave 16 фильтры
+    const matchesReviewer = !filterReviewer || t.reviewerId === filterReviewer
+    const matchesReturn = !filterReturnReason ||
+      (t.returnReason || '').toLowerCase().includes(filterReturnReason.toLowerCase())
+    const minRework = filterReworkMin === '' ? null : Number(filterReworkMin)
+    const matchesRework = minRework == null || (t.reworkCount ?? 0) >= minRework
+    const matchesDelivery = !filterDeliveryType || t.deliveryType === filterDeliveryType
     return matchesSearch && matchesStatus && matchesPriority && matchesProject && matchesAssignee && matchesEmployee
+      && matchesReviewer && matchesReturn && matchesRework && matchesDelivery
   }) || []
 
   const pagedTasks = tasks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -132,8 +168,9 @@ export default function TasksPage() {
   })
 
   const deleteMut = useMutation({
-    mutationFn: tasksApi.remove,
-    onMutate: async (id: string) => {
+    // Wave 17: передаём reason — без него бэк вернёт 400
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => tasksApi.remove(id, reason),
+    onMutate: async ({ id }: { id: string; reason: string }) => {
       setDeleteTaskId(null)
       await qc.cancelQueries({ queryKey: ['tasks'] })
       const previous = qc.getQueryData(['tasks'])
@@ -281,6 +318,51 @@ export default function TasksPage() {
               </select>
             </div>
           )}
+          {/* Wave 16 фильтры (TZ п.13) */}
+          {isManagerPlus && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-surface-500 dark:text-surface-400">Reviewer</span>
+              <select value={filterReviewer} onChange={e => setFilterReviewer(e.target.value)} className="input w-48">
+                <option value="">Любой проверяющий</option>
+                {employees?.map((e: any) => (
+                  <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-surface-500 dark:text-surface-400">Причина возврата</span>
+            <input
+              value={filterReturnReason}
+              onChange={e => setFilterReturnReason(e.target.value)}
+              placeholder="поиск в return_reason..."
+              className="input w-48"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-surface-500 dark:text-surface-400">Возвратов ≥</span>
+            <input
+              type="number"
+              min={0}
+              value={filterReworkMin}
+              onChange={e => setFilterReworkMin(e.target.value)}
+              placeholder="0"
+              className="input w-24"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-surface-500 dark:text-surface-400">Тип результата</span>
+            <select value={filterDeliveryType} onChange={e => setFilterDeliveryType(e.target.value)} className="input w-40">
+              <option value="">Любой</option>
+              <option value="post">Post</option>
+              <option value="reel">Reel</option>
+              <option value="story">Story</option>
+              <option value="design">Design</option>
+              <option value="ad">Ad</option>
+              <option value="video">Video</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
         </div>
       )}
 
@@ -302,7 +384,15 @@ export default function TasksPage() {
               ))}
             </select>
             <button
-              onClick={() => bulkMut.mutate({ action: 'delete' })}
+              onClick={() => {
+                const reason = window.prompt('Причина массового удаления (обязательно):')
+                const trimmed = (reason ?? '').trim()
+                if (!trimmed) {
+                  toast.error('Без причины массовое удаление невозможно')
+                  return
+                }
+                bulkMut.mutate({ action: 'delete', value: trimmed })
+              }}
               className="flex items-center gap-1 px-3 py-1 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600"
             >
               <Trash2 size={12} /> Удалить
@@ -388,8 +478,8 @@ export default function TasksPage() {
                       {canChangeStatus ? (
                         <select value={task.status} onChange={e => updateStatusMut.mutate({ id: task.id, status: e.target.value })}
                           className="text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-white dark:bg-surface-800 dark:text-surface-200">
-                          {['new','in_progress','review','returned','done','cancelled'].map(s => (
-                            <option key={s} value={s}>{t(`statuses.${s}`)}</option>
+                          {ALL_STATUSES.map(s => (
+                            <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>
                           ))}
                         </select>
                       ) : (
@@ -486,8 +576,13 @@ export default function TasksPage() {
         </Modal>
       )}
 
-      <ConfirmDialog open={!!deleteTaskId} onClose={() => setDeleteTaskId(null)}
-        onConfirm={() => deleteMut.mutate(deleteTaskId!)} title={t('tasks.deleteConfirm')} message={t('tasks.deleteMessage')} danger />
+      <DeleteWithReasonDialog
+        open={!!deleteTaskId}
+        loading={deleteMut.isPending}
+        onClose={() => setDeleteTaskId(null)}
+        onConfirm={(reason) => deleteMut.mutate({ id: deleteTaskId!, reason })}
+        title={t('tasks.deleteConfirm')}
+      />
 
     </div>
   )

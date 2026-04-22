@@ -15,6 +15,7 @@ import { FileAttachment } from '../files/file.entity';
 import { WorkSession } from '../auth/work-session.entity';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as https from 'https';
+import { RiskAnalyticsService } from '../risk-analytics/risk-analytics.service';
 
 export interface AiUserContext {
   id: string;
@@ -87,6 +88,7 @@ export class AiAssistantService {
     @InjectRepository(StoryLog) private storyRepo: Repository<StoryLog>,
     @InjectRepository(FileAttachment) private fileRepo: Repository<FileAttachment>,
     @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
+    private riskAnalytics: RiskAnalyticsService,
   ) {
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey) {
@@ -124,22 +126,34 @@ export class AiAssistantService {
     const today = new Date().toLocaleDateString('ru-RU');
     const scopeNote = this.describeScope(userCtx.role);
 
-    const systemPrompt = `Ты — главный ИИ-аналитик CRM-системы "Sabt" для SMM-агентства. Твоя задача — помогать пользователю глубоко понимать что происходит в его рабочем пространстве, отвечать на ЛЮБЫЕ вопросы — от самых простых ("Сколько задач?") до сложных аналитических ("Кто из дизайнеров эффективнее справляется с дедлайнами в SMM-проектах за последний месяц?").
+    const systemPrompt = `Ты — главный ИИ-аналитик CRM-системы "WeBrand" для SMM-агентства. Твоя задача — помогать пользователю глубоко понимать что происходит в его рабочем пространстве, отвечать на ЛЮБЫЕ вопросы — от самых простых ("Сколько задач?") до сложных аналитических ("Кто из дизайнеров эффективнее справляется с дедлайнами в SMM-проектах за последний месяц?").
 
 ВИДИМОСТЬ ДАННЫХ: ${scopeNote}
 Никогда не раскрывай и не строй гипотез о данных вне этого контекста. Если пользователь спросил про проект/задачу/сотрудника, которых нет в данных ниже — скажи "У вас нет доступа к этой информации" и не выдумывай.
+
+АНАЛИТИЧЕСКИЕ ВОЗМОЖНОСТИ:
+Помимо обычных вопросов, ты умеешь готовить:
+- Еженедельные сводки для founder/co_founder (главные риски, перегрузы, перерасход тарифов, выручка/маржа).
+- Еженедельные сводки для head_smm (рейтинг PM/SMM, возвраты, качество, сложные проекты).
+- Анализ рисков по проектам — какие проекты в зоне yellow/red и почему (см. раздел "РИСКИ И НАГРУЗКА" ниже).
+- Анализ перегруза команды — кто конкретно перегружен, по каким метрикам.
+- Анализ перерасхода по тарифам — какие проекты выходят за лимит и насколько.
+- Рекомендации по перераспределению задач: кому можно передать задачу с перегруженного сотрудника на свободного, исходя из ролей и текущей нагрузки.
+
+При запросе weekly summary — собирай данные сразу из нескольких разделов и оформляй структурированно: сначала выручка/проекты, потом риски, потом нагрузка, потом отдельные кейсы.
 
 ПРАВИЛА:
 1. Отвечай ВСЕГДА на русском языке.
 2. Используй ТОЛЬКО предоставленные ниже данные из БД. Никогда не выдумывай.
 3. Если данных недостаточно для ответа — честно скажи "В базе нет данных о X" и предложи что-то близкое.
 4. Будь МАКСИМАЛЬНО конкретным: давай имена, цифры, даты, проценты. НЕ обобщай.
-5. Делай выводы и рекомендации, если они уместны.
+5. Делай выводы и рекомендации, если они уместны. Для рисков — называй конкретные факторы из секции "РИСКИ И НАГРУЗКА".
 6. Форматируй ответ красиво через markdown: заголовки (##), списки (-), жирный шрифт (**), эмодзи где уместно (📊 ✅ ⚠️ 🔥 👤 📁).
 7. Для коротких вопросов — короткий ответ. Для аналитических — структурированный с разделами.
-8. Если спросили про конкретного человека — найди его в данных и используй ВСЁ что про него знаешь (должность, email, телефон, telegram, проекты, задачи, активность, тайм-логи, комментарии).
+8. Если спросили про конкретного человека — найди его в данных и используй ВСЁ что про него знаешь (должность, email, телефон, telegram, проекты, задачи, активность, тайм-логи, комментарии, нагрузку, риск).
 9. Если спросили "топ X" — выведи топ с цифрами.
 10. Если задают вопрос на узбекском/таджикском — отвечай на русском, но уважительно.
+11. Когда рекомендуешь перераспределить задачу — называй и того, у кого забрать (с обоснованием перегруза), и того, кому передать (с обоснованием свободы и подходящей роли).
 
 СЕГОДНЯШНЯЯ ДАТА: ${today}
 
@@ -309,13 +323,104 @@ ${context}
    * - остальные роли → только свои задачи/отчёты/тайм-логи
    */
   private async gatherFullContext(userCtx: AiUserContext): Promise<string> {
+    let base: string;
     if (FULL_ACCESS_ROLES.has(userCtx.role)) {
-      return this.gatherAdminContext();
+      base = await this.gatherAdminContext();
+    } else if (PROJECT_SCOPED_ROLES.has(userCtx.role)) {
+      base = await this.gatherProjectManagerContext(userCtx.id);
+    } else {
+      base = await this.gatherEmployeeContext(userCtx.id);
     }
-    if (PROJECT_SCOPED_ROLES.has(userCtx.role)) {
-      return this.gatherProjectManagerContext(userCtx.id);
+    // Wave 8: добавляем секцию рисков и нагрузки в любой контекст.
+    const riskSection = await this.gatherRiskAndWorkloadContext(userCtx).catch(() => '');
+    return riskSection ? `${base}\n\n${riskSection}` : base;
+  }
+
+  /** Wave 8: компактная сводка по рискам, нагрузке и план-факту.
+   *  Что включается зависит от роли:
+   *  - admin/founder/co_founder: топ-10 рисковых проектов, топ-10 рисковых сотрудников,
+   *    PM-нагрузка, перерасход тарифов;
+   *  - project_manager/head_smm: только их проекты + workload их команды;
+   *  - workers: только собственная нагрузка. */
+  private async gatherRiskAndWorkloadContext(userCtx: AiUserContext): Promise<string> {
+    const isAdmin = FULL_ACCESS_ROLES.has(userCtx.role);
+    const isPm = PROJECT_SCOPED_ROLES.has(userCtx.role);
+    const sections: string[] = [];
+
+    if (isAdmin) {
+      const [projectRisks, employeeRisks, pmWorkloads] = await Promise.all([
+        this.riskAnalytics.getProjectRisks().catch(() => []),
+        this.riskAnalytics.getEmployeeRisks().catch(() => []),
+        this.riskAnalytics.getPmWorkload().catch(() => []),
+      ]);
+
+      const topProjectRisks = projectRisks
+        .filter(r => r.level !== 'green')
+        .slice(0, 10);
+      if (topProjectRisks.length > 0) {
+        const lines = topProjectRisks.map(r => {
+          const triggered = r.factors.filter(f => f.triggered).map(f => f.label).join(', ');
+          return `- "${r.projectName}" (PM: ${r.managerName ?? '—'}): ${r.level.toUpperCase()} (score ${r.score}). Триггеры: ${triggered || '—'}`;
+        }).join('\n');
+        sections.push(`### Проекты в риске (yellow/red):\n${lines}`);
+      }
+
+      const topEmployeeRisks = employeeRisks
+        .filter(r => r.level !== 'green')
+        .slice(0, 10);
+      if (topEmployeeRisks.length > 0) {
+        const lines = topEmployeeRisks.map(r => {
+          const triggered = r.factors.filter(f => f.triggered).map(f => `${f.label}${f.detail ? ` (${f.detail})` : ''}`).join('; ');
+          return `- ${r.userName} (${r.role}): ${r.level.toUpperCase()} (score ${r.score}). ${triggered || '—'}`;
+        }).join('\n');
+        sections.push(`### Сотрудники в риске:\n${lines}`);
+      }
+
+      if (pmWorkloads.length > 0) {
+        const lines = pmWorkloads.map(p =>
+          `- ${p.pmName}: проектов ${p.projectCount}, SMM в команде ${p.smmSpecialistCount}, на проверке ${p.tasksOnReview}, на доработке ${p.tasksOnRework}, в риске ${p.projectsAtRisk}`,
+        ).join('\n');
+        sections.push(`### Нагрузка PM-ов:\n${lines}`);
+      }
+    } else if (isPm) {
+      // PM видит свою нагрузку и общий список рисковых проектов (он отфильтрует
+      // в голове, что его). Workload его команды через employee endpoint.
+      const [myWorkload, projectRisks] = await Promise.all([
+        this.riskAnalytics.getEmployeeWorkload(userCtx.id).catch(() => []),
+        this.riskAnalytics.getProjectRisks().catch(() => []),
+      ]);
+      if (myWorkload.length > 0) {
+        const w = myWorkload[0];
+        sections.push(
+          `### Моя нагрузка:\n- Проектов: ${w.projectCount}, в работе: ${w.tasksInProgress}, в очереди: ${w.tasksInQueue}, planned: ${w.plannedHours}ч, logged 30d: ${w.loggedHoursLast30d}ч, статус: ${w.overload}`,
+        );
+      }
+      const myProjectRisks = projectRisks.filter(r => r.managerId === userCtx.id && r.level !== 'green');
+      if (myProjectRisks.length > 0) {
+        const lines = myProjectRisks.map(r => {
+          const triggered = r.factors.filter(f => f.triggered).map(f => f.label).join(', ');
+          return `- "${r.projectName}": ${r.level.toUpperCase()} (score ${r.score}). ${triggered || '—'}`;
+        }).join('\n');
+        sections.push(`### Мои проекты в риске:\n${lines}`);
+      }
+    } else {
+      // Worker — только своя нагрузка
+      const myWorkload = await this.riskAnalytics.getEmployeeWorkload(userCtx.id).catch(() => []);
+      if (myWorkload.length > 0) {
+        const w = myWorkload[0];
+        sections.push(
+          `### Моя нагрузка:\n- Проектов: ${w.projectCount}, в работе: ${w.tasksInProgress}, в очереди: ${w.tasksInQueue}, planned: ${w.plannedHours}ч, logged 30d: ${w.loggedHoursLast30d}ч, статус: ${w.overload}`,
+        );
+      }
     }
-    return this.gatherEmployeeContext(userCtx.id);
+
+    if (sections.length === 0) return '';
+    return [
+      '═══════════════════════════════════════',
+      'РИСКИ И НАГРУЗКА (live)',
+      '═══════════════════════════════════════',
+      ...sections,
+    ].join('\n\n');
   }
 
   /**

@@ -28,6 +28,27 @@ export class NotificationsService {
     return saved;
   }
 
+  /** Wave 6: создаёт уведомление только если за последние `dedupHours`
+   *  не было такого же (по type + userId + data.alertKey).
+   *  Используется для риск-алертов, чтобы не спамить ежедневно одинаковыми
+   *  сообщениями. Возвращает true если создали, false если задедуплицировали. */
+  async createIfNotRecent(
+    dto: CreateNotificationDto & { data: { alertKey: string } },
+    dedupHours = 24,
+  ): Promise<boolean> {
+    const since = new Date(Date.now() - dedupHours * 60 * 60 * 1000);
+    const exists = await this.repo
+      .createQueryBuilder('n')
+      .where('n.userId = :uid', { uid: dto.userId })
+      .andWhere('n.type = :type', { type: dto.type })
+      .andWhere('n.createdAt > :since', { since })
+      .andWhere(`n.data->>'alertKey' = :key`, { key: dto.data.alertKey })
+      .getCount();
+    if (exists > 0) return false;
+    await this.create(dto);
+    return true;
+  }
+
   findByUser(userId: string, unreadOnly = false) {
     const where: { userId: string; isRead?: boolean } = { userId };
     if (unreadOnly) where.isRead = false;

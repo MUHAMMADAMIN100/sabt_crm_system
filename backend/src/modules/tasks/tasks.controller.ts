@@ -107,7 +107,13 @@ export class TasksController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @Request() req) {
-    return this.service.removeWithAuth(id, req.user);
+  remove(
+    @Param('id') id: string,
+    @Request() req,
+    @Body('reason') reasonBody?: string,
+    @Query('reason') reasonQuery?: string,
+  ) {
+    // Wave 3: причина удаления обязательна. Принимаем из body или query.
+    return this.service.removeWithAuth(id, req.user, reasonBody ?? reasonQuery);
   }
 }

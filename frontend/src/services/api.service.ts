@@ -52,7 +52,8 @@ export const tasksApi = {
   get: (id: string) => api.get(`/tasks/${id}`).then(r => r.data),
   create: (data: any) => api.post('/tasks', data).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/tasks/${id}`, data).then(r => r.data),
-  remove: (id: string) => api.delete(`/tasks/${id}`).then(r => r.data),
+  remove: (id: string, reason?: string) =>
+    api.delete(`/tasks/${id}`, { params: reason ? { reason } : undefined }).then(r => r.data),
   my: () => api.get('/tasks/my').then(r => r.data),
   overdue: () => api.get('/tasks/overdue').then(r => r.data),
   stats: (projectId?: string) => api.get('/tasks/stats', { params: { projectId } }).then(r => r.data),
@@ -202,4 +203,52 @@ export const filesApi = {
 export const aiApi = {
   chat: (message: string, model?: string) => api.post('/ai/chat', { message, model }).then(r => r.data),
   models: () => api.get('/ai/models').then(r => r.data),
+}
+
+// ─── Activity Log ────────────────────────────────────────
+export const activityLogApi = {
+  list: (params?: { userId?: string; entity?: string; entityId?: string; limit?: number }) =>
+    api.get('/activity-log', { params }).then(r => r.data),
+}
+
+// ─── SMM Tariffs (Wave 1) ────────────────────────────────
+export const smmTariffsApi = {
+  list: (params?: { search?: string; isActive?: boolean }) =>
+    api.get('/smm-tariffs', { params }).then(r => r.data),
+  get: (id: string) => api.get(`/smm-tariffs/${id}`).then(r => r.data),
+  create: (data: any) => api.post('/smm-tariffs', data).then(r => r.data),
+  update: (id: string, data: any) => api.patch(`/smm-tariffs/${id}`, data).then(r => r.data),
+  toggleActive: (id: string) => api.patch(`/smm-tariffs/${id}/toggle-active`).then(r => r.data),
+  clone: (id: string) => api.post(`/smm-tariffs/${id}/clone`).then(r => r.data),
+  remove: (id: string) => api.delete(`/smm-tariffs/${id}`).then(r => r.data),
+}
+
+// ─── Content Plan (Wave 4) ───────────────────────────────
+export const contentPlanApi = {
+  list: (params?: any) => api.get('/content-plan', { params }).then(r => r.data),
+  get: (id: string) => api.get(`/content-plan/${id}`).then(r => r.data),
+  create: (data: any) => api.post('/content-plan', data).then(r => r.data),
+  update: (id: string, data: any) => api.patch(`/content-plan/${id}`, data).then(r => r.data),
+  remove: (id: string) => api.delete(`/content-plan/${id}`).then(r => r.data),
+  planFact: (projectId: string) => api.get(`/content-plan/plan-fact/${projectId}`).then(r => r.data),
+}
+
+// ─── Project Launch Checklist (Wave 7) ───────────────────
+export const launchApi = {
+  get: (projectId: string) => api.get(`/projects/${projectId}/launch-checklist`).then(r => r.data),
+  setItem: (projectId: string, item: string, value: boolean) =>
+    api.patch(`/projects/${projectId}/launch-checklist`, { item, value }).then(r => r.data),
+}
+
+// ─── Risk Analytics (Wave 5) ─────────────────────────────
+export const riskApi = {
+  planFact: (projectId: string) => api.get(`/risk-analytics/plan-fact/${projectId}`).then(r => r.data),
+  workloadEmployees: (employeeId?: string) =>
+    api.get('/risk-analytics/workload/employees', { params: { employeeId } }).then(r => r.data),
+  workloadPm: (pmId?: string) =>
+    api.get('/risk-analytics/workload/pm', { params: { pmId } }).then(r => r.data),
+  projectRisks: () => api.get('/risk-analytics/risks/projects').then(r => r.data),
+  projectRiskDetail: (id: string) => api.get(`/risk-analytics/risks/projects/${id}`).then(r => r.data),
+  employeeRisks: () => api.get('/risk-analytics/risks/employees').then(r => r.data),
+  employeeRiskDetail: (id: string) => api.get(`/risk-analytics/risks/employees/${id}`).then(r => r.data),
 }

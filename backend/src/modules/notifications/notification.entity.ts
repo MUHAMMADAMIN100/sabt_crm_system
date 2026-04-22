@@ -22,6 +22,16 @@ export enum NotificationType {
   MANAGER_ASSIGNED     = 'manager_assigned',
   MANAGER_REMOVED      = 'manager_removed',
   MEMBER_REMOVED       = 'member_removed',
+  // Wave 6: алерты по рискам и операционным проблемам
+  PROJECT_NO_TARIFF       = 'project_no_tariff',
+  LAUNCH_INCOMPLETE       = 'launch_incomplete',
+  TASK_DOUBLE_RETURN      = 'task_double_return',
+  EMPLOYEE_INACTIVE_2D    = 'employee_inactive_2d',
+  PM_OVERLOAD             = 'pm_overload',
+  TARIFF_LIMIT_EXCEEDED   = 'tariff_limit_exceeded',
+  PAYMENT_OVERDUE_SOON    = 'payment_overdue_soon',
+  WEEK_NO_CONTENT         = 'week_no_content',
+  TOO_MANY_PM_REVIEWS     = 'too_many_pm_reviews',
 }
 
 @Entity('notifications')

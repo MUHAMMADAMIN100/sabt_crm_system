@@ -5,6 +5,11 @@ import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatCard, ProgressBar, Avatar, StatusBadge, PriorityBadge, CollapsibleSection } from '@/components/ui'
 import { FolderKanban, CheckSquare, Clock, TrendingUp, ChevronDown, ChevronRight, AlertTriangle, Zap } from 'lucide-react'
+import clsx from 'clsx'
+import {
+  FounderAnalyticsSection, TeamAnalyticsSection, SmmAnalyticsSection,
+  FinanceAnalyticsSection, RiskAnalyticsSection, TariffAnalyticsSection,
+} from './AnalyticsSections'
 import StoryCalendar from '@/components/stories/StoryCalendar'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -19,6 +24,8 @@ export default function AnalyticsPage() {
   const isHeadSMM = user?.role === 'head_smm'
   const [expandedEmp, setExpandedEmp] = useState<string | null>(null)
   const [expandedWorkload, setExpandedWorkload] = useState<string | null>(null)
+  // Wave 19: расщепление /analytics на 6 секций (TZ п.13)
+  const [section, setSection] = useState<'all' | 'founder' | 'team' | 'smm' | 'finance' | 'risk' | 'tariff'>('all')
 
   // Single combined request instead of 9 separate ones
   const { data: dash, isLoading } = useQuery({ queryKey: ['analytics-dashboard'], queryFn: analyticsApi.dashboard })
@@ -73,6 +80,27 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-6">
       <h1 className="page-title">{t('analytics.title')}</h1>
+
+      {/* Wave 19: section tabs */}
+      <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
+        {(['all', 'founder', 'team', 'smm', 'finance', 'risk', 'tariff'] as const).map(s => (
+          <button key={s} onClick={() => setSection(s)}
+            className={clsx('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
+              section === s ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400'
+                            : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300')}>
+            {s === 'all' ? 'Общая' : s === 'founder' ? 'Founder' : s === 'team' ? 'Команда' : s === 'smm' ? 'SMM' : s === 'finance' ? 'Финансы' : s === 'risk' ? 'Риски' : 'Тарифы'}
+          </button>
+        ))}
+      </div>
+
+      {section === 'founder' && <FounderAnalyticsSection />}
+      {section === 'team'    && <TeamAnalyticsSection />}
+      {section === 'smm'     && <SmmAnalyticsSection />}
+      {section === 'finance' && <FinanceAnalyticsSection />}
+      {section === 'risk'    && <RiskAnalyticsSection />}
+      {section === 'tariff'  && <TariffAnalyticsSection />}
+
+      {section === 'all' && <>
 
       {overview && (
         <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -395,6 +423,7 @@ export default function AnalyticsPage() {
         </CollapsibleSection>
       )}
 
+      </>}
     </div>
   )
 }

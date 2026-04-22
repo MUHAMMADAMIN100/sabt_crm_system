@@ -76,6 +76,8 @@ export type Permission =
   | 'ai.chat'
   | 'stories.manage'
   | 'time-tracker.use'
+  | 'tariffs.manage'
+  | 'risks.view'
 
 const PERMISSIONS: Record<UserRole, Permission[]> = {
   admin: [
@@ -89,6 +91,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
+    'tariffs.manage', 'risks.view',
   ],
   founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -101,6 +104,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
+    'tariffs.manage', 'risks.view',
   ],
   co_founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -113,6 +117,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
+    'tariffs.manage', 'risks.view',
   ],
   project_manager: [
     'dashboard', 'projects.view', 'projects.edit',
@@ -124,7 +129,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
-    'ai.chat',
+    'ai.chat', 'risks.view',
   ],
   head_smm: [
     'dashboard', 'projects.view', 'projects.edit',
@@ -136,7 +141,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
-    'ai.chat',
+    'ai.chat', 'tariffs.manage', 'risks.view',
   ],
   smm_specialist: [
     'dashboard', 'projects.view',
@@ -235,6 +240,8 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
   'files.view': '/files',
   'ai.chat': '/ai',
   'clients.view': '/clients',
+  'tariffs.manage': '/tariffs',
+  'risks.view': '/risks',
 }
 
 export function canAccessRoute(role: UserRole | undefined, route: string): boolean {

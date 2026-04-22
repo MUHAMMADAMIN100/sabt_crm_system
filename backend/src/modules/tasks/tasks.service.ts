@@ -288,7 +288,13 @@ export class TasksService {
     return { message: 'Task deleted' };
   }
 
-  async removeWithAuth(id: string, user: { id: string; role: string; name?: string }) {
+  async removeWithAuth(id: string, user: { id: string; role: string; name?: string }, reason?: string) {
+    // Wave 3: причина удаления обязательна. Без неё блокируем операцию.
+    const cleanReason = (reason ?? '').trim();
+    if (!cleanReason) {
+      throw new BadRequestException('Укажите причину удаления задачи');
+    }
+
     const task = await this.findOne(id);
     // Workers (any non-PM role) can only delete their own tasks (assigned to them or created by them)
     const isPM = PM_ROLES.includes(user.role as UserRole);
@@ -296,6 +302,11 @@ export class TasksService {
       throw new ForbiddenException('Not allowed');
     }
     const projectId = task.projectId;
+    // Сохраняем причину в самой записи перед удалением — на будущее (soft-delete).
+    // Сейчас задача всё равно удаляется, но в activity log фигурирует reason.
+    task.deletionReason = cleanReason;
+    await this.repo.save(task);
+
     await this.activityLog.log({
       userId: user.id,
       userName: user.name,
@@ -303,6 +314,7 @@ export class TasksService {
       entity: 'task',
       entityId: id,
       entityName: task.title,
+      details: { reason: cleanReason },
     });
     await this.repo.remove(task);
     await this.notificationsService.deleteByLink(`/tasks/${id}`);
@@ -376,7 +388,7 @@ export class TasksService {
 
     const taskRaw = await this.repo
       .createQueryBuilder('t')
-      .select(['t.id', 't.title', 't.status', 't.assigneeId', 't.projectId'])
+      .select(['t.id', 't.title', 't.status', 't.assigneeId', 't.projectId', 't.reworkCount'])
       .where('t.id = :id', { id })
       .getRawOne();
     if (!taskRaw) throw new NotFoundException('Task not found');
@@ -384,15 +396,38 @@ export class TasksService {
       throw new BadRequestException('Задача должна быть на проверке');
     }
 
+    // Wave 3+6: инкрементируем счётчик возвратов, обновляем acceptedOnFirstTry.
+    const newReworkCount = (Number(taskRaw.t_reworkCount) || 0) + 1;
     await this.repo.update(id, {
       status: TaskStatus.RETURNED,
       returnReason: reason,
+      reworkCount: newReworkCount,
+      acceptedOnFirstTry: false,
     });
 
     // Fire-and-forget: notifications, telegram, activity log
     const taskTitle = taskRaw.t_title;
     const assigneeId = taskRaw.t_assigneeId;
     const projectId = taskRaw.t_projectId;
+
+    // Wave 6: если задача возвращена 2+ раз — отправляем алерт PM-у проекта.
+    if (newReworkCount >= 2 && projectId) {
+      this.repo.manager
+        .query(`SELECT "managerId" FROM projects WHERE id = $1`, [projectId])
+        .then((rows: Array<{ managerId: string }>) => {
+          const pmId = rows?.[0]?.managerId;
+          if (!pmId) return;
+          this.notificationsService.createIfNotRecent({
+            userId: pmId,
+            type: NotificationType.TASK_DOUBLE_RETURN,
+            title: '⚠️ Задача возвращается повторно',
+            message: `"${taskTitle}" возвращена ${newReworkCount}-й раз. Стоит разобраться.`,
+            link: `/tasks/${id}`,
+            data: { alertKey: `task-double-return:${id}`, taskId: id, reworkCount: newReworkCount },
+          }, 24).catch(() => {});
+        })
+        .catch(() => {});
+    }
 
     if (assigneeId) {
       this.notificationsService.create({
@@ -447,7 +482,17 @@ export class TasksService {
     }
 
     if (action === 'delete') {
+      // Wave 3: причина удаления обязательна и для bulk-операции.
+      // Передаём её через `value` — для delete оно ранее не использовалось.
+      const reason = (value ?? '').trim();
+      if (!reason) {
+        throw new BadRequestException('Укажите причину массового удаления задач');
+      }
       const tasks = await this.repo.findByIds(ids);
+      // Помечаем все задачи причиной перед удалением — чтобы reason
+      // отразился в любых глобальных хуках/триггерах.
+      for (const t of tasks) t.deletionReason = reason;
+      if (tasks.length) await this.repo.save(tasks);
       await this.repo.remove(tasks);
       return { affected: tasks.length };
     }

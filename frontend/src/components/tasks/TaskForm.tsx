@@ -50,6 +50,13 @@ export default function TaskForm({
         priority: initial.priority || 'medium',
         deadline: initial.deadline ? new Date(initial.deadline).toISOString().slice(0, 16) : (initialDeadline || ''),
         targetCount: initial.targetCount || '',
+        // Wave 17: расширенные поля задач (TZ п.5)
+        reviewerId: initial.reviewerId || '',
+        estimatedHours: initial.estimatedHours ?? '',
+        actualCompletionHours: initial.actualCompletionHours ?? '',
+        deliveryType: initial.deliveryType || '',
+        qualityScore: initial.qualityScore ?? '',
+        acceptedOnFirstTry: !!initial.acceptedOnFirstTry,
       })
     } else {
       reset({
@@ -59,6 +66,12 @@ export default function TaskForm({
         assigneeId: isAdmin ? '' : (currentUserId || ''),
         priority: 'medium',
         deadline: initialDeadline || '',
+        reviewerId: '',
+        estimatedHours: '',
+        actualCompletionHours: '',
+        deliveryType: '',
+        qualityScore: '',
+        acceptedOnFirstTry: false,
       })
     }
   }, [initial, reset, fixedProjectId, initialDeadline, isAdmin, currentUserId])
@@ -72,6 +85,13 @@ export default function TaskForm({
       priority: data.priority,
       deadline: data.deadline,
       targetCount: data.targetCount ? Number(data.targetCount) : undefined,
+      // Wave 17 поля
+      reviewerId: data.reviewerId || undefined,
+      estimatedHours: data.estimatedHours !== '' ? Number(data.estimatedHours) : undefined,
+      actualCompletionHours: data.actualCompletionHours !== '' ? Number(data.actualCompletionHours) : undefined,
+      deliveryType: data.deliveryType || undefined,
+      qualityScore: data.qualityScore !== '' ? Number(data.qualityScore) : undefined,
+      acceptedOnFirstTry: !!data.acceptedOnFirstTry,
     })
   }
 
@@ -138,6 +158,54 @@ export default function TaskForm({
           {errors.deadline && <p className="text-xs text-red-500 mt-1">{t('tasks.deadline')} обязательно</p>}
         </div>
       </div>
+
+      {/* Wave 17: расширенные поля задачи (TZ п.5) — необязательные */}
+      {isAdmin && (
+        <details className="border border-surface-200 dark:border-surface-700 rounded-lg p-3 bg-surface-50 dark:bg-surface-800/50">
+          <summary className="cursor-pointer text-sm font-medium select-none">Доп. поля: проверяющий, тип результата, оценка качества</summary>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <div>
+              <label className="label">Проверяющий (PM/reviewer)</label>
+              <select {...register('reviewerId')} className="input">
+                <option value="">— Не назначен —</option>
+                {(employees || []).map((e: any) => (
+                  <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Тип результата (delivery_type)</label>
+              <select {...register('deliveryType')} className="input">
+                <option value="">— Не указан —</option>
+                <option value="post">Post</option>
+                <option value="reel">Reel</option>
+                <option value="story">Story</option>
+                <option value="design">Design</option>
+                <option value="ad">Ad</option>
+                <option value="video">Video</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Estimated time (часов)</label>
+              <input type="number" step="0.25" min="0" {...register('estimatedHours')} className="input" placeholder="0" />
+            </div>
+            <div>
+              <label className="label">Actual completion (часов)</label>
+              <input type="number" step="0.25" min="0" {...register('actualCompletionHours')} className="input" placeholder="0" />
+            </div>
+            <div>
+              <label className="label">Quality score (1-10)</label>
+              <input type="number" min="1" max="10" step="1" {...register('qualityScore')} className="input" placeholder="—" />
+            </div>
+            <label className="inline-flex items-center gap-2 mt-6 text-sm cursor-pointer select-none">
+              <input type="checkbox" {...register('acceptedOnFirstTry')} className="rounded" />
+              Принято с первого раза
+            </label>
+          </div>
+        </details>
+      )}
+
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">{t('common.cancel')}</button>
         <button type="submit" disabled={loading} className="btn-primary min-w-[110px] justify-center">

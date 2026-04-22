@@ -32,6 +32,9 @@ import { AiAssistantModule } from './modules/ai-assistant/ai-assistant.module';
 import { ClientsModule } from './modules/clients/clients.module';
 import { ProjectAdsModule } from './modules/project-ads/project-ads.module';
 import { ProjectAnnouncementsModule } from './modules/project-announcements/project-announcements.module';
+import { SmmTariffsModule } from './modules/smm-tariffs/smm-tariffs.module';
+import { ContentPlanModule } from './modules/content-plan/content-plan.module';
+import { RiskAnalyticsModule } from './modules/risk-analytics/risk-analytics.module';
 
 @Module({
   controllers: [HealthController],
@@ -87,6 +90,9 @@ import { ProjectAnnouncementsModule } from './modules/project-announcements/proj
     ClientsModule,
     ProjectAdsModule,
     ProjectAnnouncementsModule,
+    SmmTariffsModule,
+    ContentPlanModule,
+    RiskAnalyticsModule,
   ],
 })
 export class AppModule {}

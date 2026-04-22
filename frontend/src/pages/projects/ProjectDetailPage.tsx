@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi, tasksApi, filesApi, employeesApi, storiesApi } from '@/services/api.service'
+import { projectsApi, tasksApi, filesApi, employeesApi, storiesApi, launchApi, riskApi } from '@/services/api.service'
 import { invalidateAfterTaskChange, invalidateAfterProjectChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, PriorityBadge, ProgressBar, Modal, Avatar, EmptyState, ConfirmDialog } from '@/components/ui'
@@ -14,19 +14,54 @@ import TaskForm from '@/components/tasks/TaskForm'
 import GanttChart from '@/components/projects/GanttChart'
 import ProjectAdsTab from '@/components/projects/ProjectAdsTab'
 import ProjectImportantTab from '@/components/projects/ProjectImportantTab'
+import LaunchChecklistTab from '@/components/projects/LaunchChecklistTab'
+import DeleteWithReasonDialog from '@/components/tasks/DeleteWithReasonDialog'
+import ProjectRiskTab from '@/components/projects/ProjectRiskTab'
+import ProjectFinanceTab from '@/components/projects/ProjectFinanceTab'
+import ProjectContentPlanTab from '@/components/projects/ProjectContentPlanTab'
+import {
+  ProjectOverviewTab, ProjectDeliverablesTab, ProjectTeamWorkloadTab,
+  ProjectQualityTab, ProjectActivityTab,
+} from '@/components/projects/ProjectExtraTabs'
 import SMM_QUESTIONS from '@/config/smm-questions'
 import { downloadSmmBrief } from '@/lib/smmBrief'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
+// Канбан-колонки (4 группы). Новые статусы из Wave 17 маппятся в эти группы:
+// accepted/in_progress/on_pm_review/on_rework/on_client_approval → in_progress
+// approved/published → done
+// rescheduled/cancelled/returned → отдельной колонки нет, в кнопке статуса видно
 const TASK_STATUSES = ['new', 'in_progress', 'review', 'done']
+// Полный список статусов — используется в дропдаунах смены статуса.
+const ALL_TASK_STATUSES = [
+  'new', 'accepted', 'in_progress', 'on_pm_review', 'on_rework',
+  'review', 'on_client_approval', 'approved', 'done', 'published',
+  'returned', 'rescheduled', 'cancelled',
+]
+// Маппинг любого статуса в колонку канбана.
+const STATUS_TO_COLUMN: Record<string, string> = {
+  new: 'new',
+  accepted: 'in_progress',
+  in_progress: 'in_progress',
+  on_pm_review: 'review',
+  on_rework: 'in_progress',
+  review: 'review',
+  on_client_approval: 'review',
+  approved: 'done',
+  done: 'done',
+  published: 'done',
+  returned: 'in_progress',
+  rescheduled: 'new',
+  cancelled: 'new',
+}
 const API_URL = import.meta.env.VITE_API_URL || ''
 const fileUrl = (path: string) => path?.startsWith('http') ? path : `${API_URL}${path}`
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'tasks' | 'files' | 'about' | 'client' | 'members' | 'gantt' | 'ads' | 'important'>('tasks')
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files' | 'about' | 'client' | 'members' | 'gantt' | 'ads' | 'important' | 'launch' | 'risk' | 'finance' | 'content' | 'deliverables' | 'team' | 'quality' | 'activity'>('tasks')
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
@@ -66,6 +101,21 @@ export default function ProjectDetailPage() {
     queryKey: ['project', id],
     queryFn: () => projectsApi.get(id!),
     refetchInterval: 30000,
+  })
+
+  // Загружаем launch-чеклист только пока проект ещё в статусе planning
+  // — индикатор показывается только в этот период.
+  const { data: launchState } = useQuery({
+    queryKey: ['launch-checklist', id],
+    queryFn: () => launchApi.get(id!),
+    enabled: !!id && project?.status === 'planning',
+  })
+
+  // Risk score — для бейджа в шапке (только активные проекты)
+  const { data: riskInfo } = useQuery({
+    queryKey: ['project-risk', id],
+    queryFn: () => riskApi.projectRiskDetail(id!),
+    enabled: !!id && !!project && !project.isArchived,
   })
 
   const { data: files } = useQuery({
@@ -180,8 +230,9 @@ export default function ProjectDetailPage() {
   })
 
   const deleteTask = useMutation({
-    mutationFn: tasksApi.remove,
-    onMutate: async (taskId: string) => {
+    // Wave 17: причина обязательна
+    mutationFn: ({ id: taskId, reason }: { id: string; reason: string }) => tasksApi.remove(taskId, reason),
+    onMutate: async ({ id: taskId }: { id: string; reason: string }) => {
       setDeleteTaskId(null)
       await qc.cancelQueries({ queryKey: ['project', id] })
       const previous = qc.getQueryData(['project', id])
@@ -345,8 +396,9 @@ export default function ProjectDetailPage() {
     return cb - ca
   }
 
-  const tasksByStatus = TASK_STATUSES.reduce((acc: any, s) => {
-    acc[s] = (project.tasks?.filter((t: any) => t.status === s) || []).sort(sortByDeadline)
+  // Wave 17: задачи группируются по канбан-колонке через STATUS_TO_COLUMN.
+  const tasksByStatus = TASK_STATUSES.reduce((acc: any, col) => {
+    acc[col] = (project.tasks?.filter((t: any) => (STATUS_TO_COLUMN[t.status] || t.status) === col) || []).sort(sortByDeadline)
     return acc
   }, {})
 
@@ -383,7 +435,19 @@ export default function ProjectDetailPage() {
   }
 
   const STATUS_LABELS: Record<string, string> = {
-    new: t('statuses.new'), in_progress: t('statuses.in_progress'), review: t('statuses.review'), done: t('statuses.done'),
+    new: t('statuses.new'),
+    accepted: 'Принято',
+    in_progress: t('statuses.in_progress'),
+    on_pm_review: 'У PM на проверке',
+    on_rework: 'На доработке',
+    review: t('statuses.review'),
+    on_client_approval: 'У клиента',
+    approved: 'Утверждено',
+    done: t('statuses.done'),
+    published: 'Опубликовано',
+    returned: 'Возвращено',
+    rescheduled: 'Перенесено',
+    cancelled: 'Отменено',
   }
 
   return (
@@ -393,9 +457,39 @@ export default function ProjectDetailPage() {
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="page-title">{project.name}</h1>
             <StatusBadge status={project.status} />
+            {project.status === 'planning' && launchState && (
+              <button
+                onClick={() => setActiveTab('launch')}
+                title="Открыть launch-чеклист"
+                className={clsx(
+                  'text-xs px-2 py-1 rounded-full font-medium transition-colors',
+                  launchState.isComplete
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                    : launchState.percent >= 70
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                )}
+              >
+                🚧 Launch {launchState.completedCount}/{launchState.totalCount}
+              </button>
+            )}
+            {riskInfo && riskInfo.level !== 'green' && (
+              <button
+                onClick={() => setActiveTab('risk')}
+                title={`Риск-скор ${riskInfo.score}: ${riskInfo.factors.filter((f: any) => f.triggered).map((f: any) => f.label).join(', ')}`}
+                className={clsx(
+                  'text-xs px-2 py-1 rounded-full font-medium transition-colors',
+                  riskInfo.level === 'red'
+                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+                )}
+              >
+                {riskInfo.level === 'red' ? '🔥' : '⚠️'} Риск {riskInfo.score}
+              </button>
+            )}
           </div>
           {project.description && <p className="text-surface-500 dark:text-surface-400 text-sm mt-1">{project.description}</p>}
         </div>
@@ -505,16 +599,51 @@ export default function ProjectDetailPage() {
       )}
 
       <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
-        {(['tasks', 'gantt', 'files', 'about', 'client', 'members', 'ads', 'important'] as const)
+        {(['overview', 'tasks', 'gantt', 'files', 'about', 'client', 'members', 'ads', 'content', 'deliverables', 'team', 'quality', 'important', 'launch', 'risk', 'finance', 'activity'] as const)
           .filter(tab => tab !== 'ads' || project?.projectType === 'SMM')
+          .filter(tab => tab !== 'content' || project?.projectType === 'SMM')
+          .filter(tab => tab !== 'deliverables' || project?.projectType === 'SMM')
           .map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={clsx('px-4 py-3 sm:py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px]',
                 activeTab === tab ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400' : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300')}>
-              {tab === 'ads' ? 'Реклама' : tab === 'important' ? 'Важное' : t(`tabs.${tab}`)}
+              {tab === 'overview' ? 'Обзор'
+                : tab === 'ads' ? 'Реклама'
+                : tab === 'important' ? 'Важное'
+                : tab === 'launch' ? 'Launch'
+                : tab === 'risk' ? 'Риски'
+                : tab === 'finance' ? 'Финансы'
+                : tab === 'content' ? 'Контент-план'
+                : tab === 'deliverables' ? 'Deliverables'
+                : tab === 'team' ? 'Команда'
+                : tab === 'quality' ? 'Качество'
+                : tab === 'activity' ? 'Активность'
+                : t(`tabs.${tab}`)}
             </button>
           ))}
       </div>
+
+      {activeTab === 'overview' && project && <ProjectOverviewTab project={project} />}
+      {activeTab === 'deliverables' && project && <ProjectDeliverablesTab projectId={project.id} projectType={project.projectType} />}
+      {activeTab === 'team' && project && <ProjectTeamWorkloadTab project={project} />}
+      {activeTab === 'quality' && project && <ProjectQualityTab projectId={project.id} />}
+      {activeTab === 'activity' && project && <ProjectActivityTab projectId={project.id} />}
+
+      {activeTab === 'launch' && project && (
+        <LaunchChecklistTab projectId={project.id} />
+      )}
+
+      {activeTab === 'risk' && project && (
+        <ProjectRiskTab projectId={project.id} projectType={project.projectType} />
+      )}
+
+      {activeTab === 'finance' && project && (
+        <ProjectFinanceTab project={project as any} />
+      )}
+
+      {activeTab === 'content' && project && (
+        <ProjectContentPlanTab projectId={project.id} />
+      )}
 
       {activeTab === 'tasks' && (
         <div className="flex gap-4 overflow-x-auto pb-3 lg:grid lg:grid-cols-4 lg:overflow-x-visible">
@@ -580,7 +709,7 @@ export default function ProjectDetailPage() {
                           onClick={(e) => e.stopPropagation()}
                           className="mt-2 w-full text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1.5 bg-white dark:bg-surface-800"
                         >
-                          {TASK_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                          {ALL_TASK_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>)}
                         </select>
                       )}
                     </div>
@@ -1121,8 +1250,13 @@ export default function ProjectDetailPage() {
         </Modal>
       )}
 
-      <ConfirmDialog open={!!deleteTaskId} onClose={() => setDeleteTaskId(null)}
-        onConfirm={() => deleteTask.mutate(deleteTaskId!)} title={t('tasks.deleteConfirm')} message={t('tasks.deleteMessage')} danger />
+      <DeleteWithReasonDialog
+        open={!!deleteTaskId}
+        loading={deleteTask.isPending}
+        onClose={() => setDeleteTaskId(null)}
+        onConfirm={(reason) => deleteTask.mutate({ id: deleteTaskId!, reason })}
+        title={t('tasks.deleteConfirm')}
+      />
 
       <ConfirmDialog open={!!deleteFileId} onClose={() => setDeleteFileId(null)}
         onConfirm={() => deleteFileMut.mutate(deleteFileId!)} title="Удалить файл?" message="Файл будет удалён безвозвратно." danger />

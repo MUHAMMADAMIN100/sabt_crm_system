@@ -8,6 +8,10 @@ import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar, CollapsibleSection } from '@/components/ui'
 import { ArrowLeft, Mail, Phone, Calendar, CheckSquare, Send, AtSign, ShieldCheck, Briefcase, Building2, Clock, AlertTriangle, TrendingUp, Camera, BookOpen, BarChart2, Edit2, Check, X, Trash2, Plus, Minus } from 'lucide-react'
+import clsx from 'clsx'
+import {
+  EmployeeWorkloadTab, EmployeeQualityTab, EmployeeRiskTab, EmployeeActivityTab,
+} from '@/components/employees/EmployeeAnalyticsTabs'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -24,6 +28,7 @@ export default function EmployeeDetailPage() {
 
   const [editingSalary, setEditingSalary] = useState(false)
   const [salaryInput, setSalaryInput] = useState('')
+  const [activeTab, setActiveTab] = useState<'overview' | 'workload' | 'quality' | 'risk' | 'activity'>('overview')
 
   const { data: emp, isLoading } = useQuery({ queryKey: ['employee', id], queryFn: () => employeesApi.get(id!) })
 
@@ -119,6 +124,30 @@ export default function EmployeeDetailPage() {
         </button>
         <h1 className="page-title">{t('employees.title')}</h1>
       </div>
+
+      {/* Wave 15: tab strip — обзор оставляем как было, остальные дают глубокую аналитику */}
+      <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
+        {(['overview', 'workload', 'quality', 'risk', 'activity'] as const).map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)}
+            className={clsx('px-4 py-3 sm:py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px]',
+              activeTab === tab
+                ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400'
+                : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300')}>
+            {tab === 'overview' ? 'Обзор'
+              : tab === 'workload' ? 'Нагрузка'
+              : tab === 'quality' ? 'Качество'
+              : tab === 'risk' ? 'Риски'
+              : 'Активность'}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'workload' && emp?.userId && <EmployeeWorkloadTab userId={emp.userId} />}
+      {activeTab === 'quality'  && emp?.userId && <EmployeeQualityTab  userId={emp.userId} />}
+      {activeTab === 'risk'     && emp?.userId && <EmployeeRiskTab     userId={emp.userId} />}
+      {activeTab === 'activity' && emp?.userId && <EmployeeActivityTab userId={emp.userId} />}
+
+      {activeTab === 'overview' && <>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -453,6 +482,7 @@ export default function EmployeeDetailPage() {
           )}
         </div>
       </div>
+      </>}
     </div>
   )
 }

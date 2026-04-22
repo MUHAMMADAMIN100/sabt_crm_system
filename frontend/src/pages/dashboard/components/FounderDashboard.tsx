@@ -11,6 +11,7 @@ import {
   Briefcase, Edit2, Check, X, Calendar, Camera, TrendingUp,
 } from 'lucide-react'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts'
+import { FounderWidgets } from './RiskWidgets'
 
 const StoryCalendar = lazy(() => import('@/components/stories/StoryCalendar'))
 const GlobalStoriesCalendar = lazy(() => import('./GlobalStoriesCalendar'))
@@ -120,6 +121,9 @@ export default function FounderDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Wave 20: новые виджеты по TZ п.11 — риски/оплаты/перегруз/маржа */}
+      <FounderWidgets />
+
       {/* KPI row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard

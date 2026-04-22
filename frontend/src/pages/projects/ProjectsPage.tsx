@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { projectsApi, employeesApi } from '@/services/api.service'
+import { projectsApi, employeesApi, smmTariffsApi, riskApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar, Pagination } from '@/components/ui'
@@ -33,6 +33,12 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [projectType, setProjectType] = useState('')
+  // Wave 16: дополнительные фильтры из ТЗ п.13
+  const [filterTariff, setFilterTariff] = useState('')        // tariffId или ''
+  const [filterPm, setFilterPm] = useState('')                // managerId или ''
+  const [filterRisk, setFilterRisk] = useState('')            // 'red'|'yellow'|'green'|''
+  const [filterPayment, setFilterPayment] = useState('')      // paymentStatus или ''
+  const [filterOveruse, setFilterOveruse] = useState(false)   // только с перерасходом
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 12
   const [showCreate, setShowCreate] = useState(false)
@@ -55,8 +61,29 @@ export default function ProjectsPage() {
 
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
 
+  // Wave 16: тарифы — для дропдауна фильтра
+  const { data: tariffsList } = useQuery({
+    queryKey: ['smm-tariffs', { isActive: undefined }],
+    queryFn: () => smmTariffsApi.list(),
+  })
+
+  // Wave 16: риски всех проектов — для фильтрации по уровню
+  const { data: projectRisks } = useQuery({
+    queryKey: ['risks-projects'],
+    queryFn: riskApi.projectRisks,
+    enabled: !!filterRisk,
+  })
+  const riskByProject = new Map<string, string>(
+    (projectRisks ?? []).map((r: any) => [r.projectId, r.level]),
+  )
+
+  // Список PM-ов: только сотрудники с менеджерскими ролями
+  const pmList = (employees ?? []).filter((e: any) =>
+    ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(e.user?.role),
+  )
+
   // Reset page when filters change
-  useEffect(() => { setPage(1) }, [search, status, projectType])
+  useEffect(() => { setPage(1) }, [search, status, projectType, filterTariff, filterPm, filterRisk, filterPayment, filterOveruse])
 
   const projects = allProjects?.filter((p: any) => {
     const matchesSearch = !search ||
@@ -64,7 +91,12 @@ export default function ProjectsPage() {
       p.description?.toLowerCase().includes(search.toLowerCase())
     const matchesStatus = !status || p.status === status
     const matchesType = !projectType || p.projectType === projectType
-    return matchesSearch && matchesStatus && matchesType
+    const matchesTariff = !filterTariff || p.tariffId === filterTariff
+    const matchesPm = !filterPm || p.managerId === filterPm
+    const matchesPayment = !filterPayment || p.paymentStatus === filterPayment
+    const matchesOveruse = !filterOveruse || Number(p.tariffLimitOveruseCost ?? 0) > 0
+    const matchesRisk = !filterRisk || riskByProject.get(p.id) === filterRisk
+    return matchesSearch && matchesStatus && matchesType && matchesTariff && matchesPm && matchesPayment && matchesOveruse && matchesRisk
   }) || []
 
   const pagedProjects = projects.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -198,6 +230,46 @@ export default function ProjectsPage() {
             >{pt.label}</button>
           ))}
         </div>
+
+        {/* Wave 16: расширенные фильтры (TZ п.13) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={filterTariff} onChange={e => setFilterTariff(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-xs">
+            <option value="">Все тарифы</option>
+            {(tariffsList ?? []).map((t: any) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+          <select value={filterPm} onChange={e => setFilterPm(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-xs">
+            <option value="">Все PM</option>
+            {pmList.map((e: any) => (
+              <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>
+            ))}
+          </select>
+          <select value={filterRisk} onChange={e => setFilterRisk(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-xs">
+            <option value="">Любой риск</option>
+            <option value="red">🔥 Red</option>
+            <option value="yellow">⚠️ Yellow</option>
+            <option value="green">✓ Green</option>
+          </select>
+          <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-xs">
+            <option value="">Все оплаты</option>
+            <option value="pending">Ожидает</option>
+            <option value="invoice_sent">Счёт отправлен</option>
+            <option value="partially_paid">Частично</option>
+            <option value="paid">Оплачено</option>
+            <option value="overdue">Просрочено</option>
+            <option value="frozen">Заморожено</option>
+          </select>
+          <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-xs cursor-pointer">
+            <input type="checkbox" checked={filterOveruse} onChange={e => setFilterOveruse(e.target.checked)} />
+            Только с перерасходом
+          </label>
+          {(filterTariff || filterPm || filterRisk || filterPayment || filterOveruse) && (
+            <button onClick={() => { setFilterTariff(''); setFilterPm(''); setFilterRisk(''); setFilterPayment(''); setFilterOveruse(false) }} className="text-xs text-surface-500 hover:text-surface-700 underline">
+              Сбросить
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Projects grid */}
@@ -241,6 +313,18 @@ export default function ProjectsPage() {
                           title={`Показать только "${p.projectType}"`}
                           className="text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/50 px-1.5 py-0.5 rounded-full transition-colors"
                         >{p.projectType}</button>
+                      )}
+                      {(p as any).tariffNameSnapshot && (
+                        <span
+                          title={`Тариф: ${(p as any).tariffNameSnapshot}`}
+                          className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1.5 py-0.5 rounded-full inline-flex items-center gap-1"
+                        >🏷 {(p as any).tariffNameSnapshot}</span>
+                      )}
+                      {p.projectType === 'SMM' && !(p as any).tariffId && (
+                        <span
+                          title="SMM-проект без тарифа"
+                          className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full"
+                        >⚠ без тарифа</span>
                       )}
                     </div>
                   </div>
@@ -337,6 +421,14 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const [memberSearch, setMemberSearch] = useState('')
   const dropRef = useRef<HTMLDivElement>(null)
   const projectType = watch('projectType')
+  const tariffId = watch('tariffId')
+
+  // Load active tariffs only when project is SMM (avoid unnecessary requests for other types)
+  const { data: tariffs } = useQuery({
+    queryKey: ['smm-tariffs', { isActive: true }],
+    queryFn: () => smmTariffsApi.list({ isActive: true }),
+    enabled: projectType === 'SMM',
+  })
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -368,6 +460,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           projectType: initial.projectType || '',
           managerId: (initial as any).managerId || (initial as any).manager?.id || '',
           salesManagerId: (initial as any).salesManagerId || (initial as any).salesManager?.id || '',
+          tariffId: (initial as any).tariffId || '',
         })
         if (initial.smmData) setSmmAnswers(initial.smmData)
         setSelectedMembers(initial.members?.map((m: any) => m.id) || [])
@@ -375,6 +468,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
         reset({
           name: '', description: '', startDate: '', endDate: '',
           status: 'planning', color: '#6B4FCF', budget: '', projectType: isFormHeadSMM ? 'SMM' : '', managerId: '', salesManagerId: '',
+          tariffId: '',
         })
         setSmmAnswers({})
         setShowSmmForm(false)
@@ -420,6 +514,13 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
         contactPerson: smmAnswers.contactPerson || '',
         phone: smmAnswers.contactPhone || '',
       }
+    }
+    // Tariff applies only to SMM projects. Empty string → undefined to detach.
+    if (data.projectType === 'SMM' && data.tariffId) {
+      formattedData.tariffId = data.tariffId
+    } else if (initial && data.projectType === 'SMM') {
+      // Allows explicit detach via empty select option
+      formattedData.tariffId = data.tariffId || null
     }
     onSubmit(formattedData)
   }
@@ -497,6 +598,31 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             </select>
             <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">Получит напоминание об оплате через 2 недели после создания проекта</p>
           </div>
+          )}
+
+          {/* SMM-тариф (только для SMM-проектов) */}
+          {projectType === 'SMM' && (
+            <div className="sm:col-span-2">
+              <label className="label">SMM-тариф</label>
+              <select {...register('tariffId')} className="input">
+                <option value="">— Без тарифа —</option>
+                {(tariffs || []).map((t: any) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} — {Number(t.monthlyPrice).toLocaleString('ru-RU')} ₽/мес
+                  </option>
+                ))}
+              </select>
+              {tariffId && !initial && (
+                <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
+                  ✨ После создания проекта будет автоматически сгенерирован контент-план из тарифа
+                </p>
+              )}
+              {!tariffId && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                  ⚠️ Без тарифа SMM-проект попадёт в риск-зону. Выберите тариф или создайте новый в разделе «SMM-тарифы».
+                </p>
+              )}
+            </div>
           )}
 
           {/* SMM Questionnaire — appears right after type select */}

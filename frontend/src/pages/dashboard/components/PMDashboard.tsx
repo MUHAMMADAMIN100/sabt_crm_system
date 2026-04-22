@@ -8,6 +8,7 @@ import { TrendingDown, Clock, Eye, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
+import { PmWidgets, HeadSmmWidgets } from './RiskWidgets'
 
 const SMM_POSITIONS = ['SMM специалист', 'Главный SMM специалист']
 const SMM_ROLES = ['smm_specialist', 'head_smm']
@@ -80,6 +81,10 @@ export default function PMDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Wave 20: TZ п.11 — для head_smm показываем виджеты Head of SMM,
+          для project_manager — виджеты PM. Старая Summary row остаётся ниже. */}
+      {isHeadSMM ? <HeadSmmWidgets /> : <PmWidgets />}
+
       {/* Summary row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="card text-center">
