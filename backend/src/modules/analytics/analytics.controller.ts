@@ -130,7 +130,9 @@ export class AnalyticsController {
   }
 
   @Get('stories-global')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  // head_smm — главный SMM-специалист, должен видеть истории всей SMM-команды
+  // (без него глобальный календарь у него на дашборде не загружается).
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN, UserRole.HEAD_SMM)
   getStoriesGlobal(
     @Query('from') from: string,
     @Query('to') to: string,

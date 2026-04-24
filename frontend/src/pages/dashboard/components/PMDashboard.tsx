@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { tasksApi, analyticsApi } from '@/services/api.service'
@@ -9,6 +9,9 @@ import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import { PmWidgets, HeadSmmWidgets } from './RiskWidgets'
+
+// Глобальный календарь историй — для head_smm чтобы видеть отметки SMM-команды
+const GlobalStoriesCalendar = lazy(() => import('./GlobalStoriesCalendar'))
 
 const SMM_POSITIONS = ['SMM специалист', 'Главный SMM специалист']
 const SMM_ROLES = ['smm_specialist', 'head_smm']
@@ -84,6 +87,15 @@ export default function PMDashboard() {
       {/* Wave 20: TZ п.11 — для head_smm показываем виджеты Head of SMM,
           для project_manager — виджеты PM. Старая Summary row остаётся ниже. */}
       {isHeadSMM ? <HeadSmmWidgets /> : <PmWidgets />}
+
+      {/* Глобальный календарь сторис — head_smm видит отметки своей SMM-команды.
+          Раньше показывался только на FounderDashboard, что лишало главного SMM
+          обзора публикаций исполнителей. */}
+      {isHeadSMM && (
+        <Suspense fallback={null}>
+          <GlobalStoriesCalendar />
+        </Suspense>
+      )}
 
       {/* Summary row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
