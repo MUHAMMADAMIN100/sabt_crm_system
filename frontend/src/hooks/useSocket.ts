@@ -74,9 +74,16 @@ export function useSocket(token: string | null) {
     })
 
     socket.on('stories:changed', () => {
+      // Все возможные ключи запросов, использующие stories — иначе head_smm/PM
+      // не видит отметки SMM-команды без ручного refresh.
       qc.invalidateQueries({ queryKey: ['stories'] })
       qc.invalidateQueries({ queryKey: ['employee-stories'] })
       qc.invalidateQueries({ queryKey: ['stories-all'] })
+      qc.invalidateQueries({ queryKey: ['project-stories'] })   // ProjectDetailPage SMM heatmap
+      qc.invalidateQueries({ queryKey: ['stories-global'] })    // Global calendar (Founder/HeadSMM)
+      // Активный refetch — чтобы данные пришли мгновенно, не по визиту
+      qc.refetchQueries({ queryKey: ['project-stories'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['stories-global'], type: 'active' })
     })
 
     socket.on('tasks:changed', () => {

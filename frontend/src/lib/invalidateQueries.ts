@@ -51,6 +51,9 @@ export function invalidateAfterTaskChange(qc: QueryClient, projectId?: string) {
   // ── Reports & stories ─────────────────────────────────
   qc.invalidateQueries({ queryKey: ['reports'] })
   qc.invalidateQueries({ queryKey: ['stories'] })            // partial
+  qc.invalidateQueries({ queryKey: ['stories-all'] })
+  qc.invalidateQueries({ queryKey: ['project-stories'] })    // partial
+  qc.invalidateQueries({ queryKey: ['stories-global'] })     // partial
 }
 
 /**
