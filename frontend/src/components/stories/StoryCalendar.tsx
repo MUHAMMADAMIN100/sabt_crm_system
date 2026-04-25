@@ -32,14 +32,22 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
   // Track latest storiesCount per project+date to ignore stale mutation responses
   const latestCount = useRef<Record<string, number>>({})
   const isReadonly = !!employeeId || !!adminAll
+  // Менеджеры (admin/founder/co_founder/PM/head_smm) ВСЕГДА видят все
+  // сторис, а не только свои — иначе менеджер не видит отметки участников.
+  const MANAGER_ROLES = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm']
+  const isManager = !!user?.role && MANAGER_ROLES.includes(user.role)
+  const useAll = isReadonly || adminAll || isManager
 
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')
+  // Когда менеджер видит все сторис — кэшируем глобально, без привязки к userId
   const userId = employeeId || user?.id || ''
+  const cacheKey = useAll && !employeeId ? 'all' : userId
 
   const { data: stories } = useQuery({
-    queryKey: ['stories', userId, from, to],
-    queryFn: () => (isReadonly || adminAll) ? storiesApi.all(from, to) : storiesApi.my(from, to),
+    queryKey: ['stories', cacheKey, from, to],
+    queryFn: () => useAll ? storiesApi.all(from, to) : storiesApi.my(from, to),
+    refetchInterval: 30000, // страховка на случай разрыва socket
   })
 
   const { data: projects } = useQuery({
@@ -55,10 +63,10 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
       // Record latest intended count — used to discard stale responses
       latestCount.current[trackKey] = storiesCount
 
-      await qc.cancelQueries({ queryKey: ['stories', userId, from, to] })
-      const previous = qc.getQueryData(['stories', userId, from, to])
+      await qc.cancelQueries({ queryKey: ['stories', cacheKey, from, to] })
+      const previous = qc.getQueryData(['stories', cacheKey, from, to])
 
-      qc.setQueryData(['stories', userId, from, to], (old: any[]) => {
+      qc.setQueryData(['stories', cacheKey, from, to], (old: any[]) => {
         if (!old) return old
         const exists = old.some((s: any) => s.projectId === projectId && s.date?.split('T')[0] === dateKey)
         if (exists) {
@@ -73,7 +81,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
       return { previous, trackKey, storiesCount }
     },
     onError: (_err: any, _vars: any, context: any) => {
-      qc.setQueryData(['stories', userId, from, to], context?.previous)
+      qc.setQueryData(['stories', cacheKey, from, to], context?.previous)
     },
     onSuccess: (serverData: any, _vars: any, context: any) => {
       const { trackKey, storiesCount } = context || {}
@@ -81,7 +89,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
       if (trackKey && latestCount.current[trackKey] !== storiesCount) return
       if (trackKey) delete latestCount.current[trackKey]
 
-      qc.setQueryData(['stories', userId, from, to], (old: any[]) => {
+      qc.setQueryData(['stories', cacheKey, from, to], (old: any[]) => {
         if (!old || !serverData) return old
         const dateKey = serverData.date?.split('T')[0]
         return old.map((s: any) =>
