@@ -102,7 +102,9 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
   })
 
   const activeProjects = useMemo(() => {
-    const base = projects?.filter((p: any) => !p.isArchived && p.status !== 'completed') || []
+    // Завершённые проекты тоже остаются в календаре — нужно для истории
+    // и аналитики. Скрываем только архивные.
+    const base = projects?.filter((p: any) => !p.isArchived) || []
     // Admin all view sees all projects
     if (adminAll) return base
     // Viewing a specific employee — show only projects they belong to

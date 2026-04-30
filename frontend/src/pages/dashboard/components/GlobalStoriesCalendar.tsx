@@ -40,8 +40,10 @@ export default function GlobalStoriesCalendar() {
 
   // Active SMM projects only
   const projects = useMemo(() => {
+    // Завершённые SMM-проекты тоже показываем — нужно для истории/аналитики.
+    // Скрываем только архивные.
     return (allProjects || []).filter((p: any) =>
-      !p.isArchived && p.status !== 'completed' && p.projectType === 'SMM',
+      !p.isArchived && p.projectType === 'SMM',
     )
   }, [allProjects])
 
