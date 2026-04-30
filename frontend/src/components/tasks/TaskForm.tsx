@@ -29,15 +29,20 @@ export default function TaskForm({
   // Watch the selected projectId so we can filter assignees by project members
   const selectedProjectId = useWatch({ control, name: 'projectId' }) || fixedProjectId
 
-  // Filter employees: only those who are members of the selected project
+  // Filter employees: members of the selected project + project manager
+  // (менеджер проекта тоже должен быть доступен в дропдауне assignee/reviewer
+  // даже если он не числится в списке members).
   const filteredEmployees = useMemo(() => {
     if (!employees) return []
     if (!selectedProjectId || !projects) return employees
     const project = projects.find((p: any) => p.id === selectedProjectId)
     if (!project) return employees
-    const memberIds = (project.members || []).map((m: any) => m.id)
-    if (!memberIds.length) return employees
-    return employees.filter((e: any) => memberIds.includes(e.userId || e.id))
+    const allowedIds = new Set<string>(
+      (project.members || []).map((m: any) => m.id),
+    )
+    if (project.managerId) allowedIds.add(project.managerId)
+    if (allowedIds.size === 0) return employees
+    return employees.filter((e: any) => allowedIds.has(e.userId || e.id))
   }, [employees, selectedProjectId, projects])
 
   useEffect(() => {

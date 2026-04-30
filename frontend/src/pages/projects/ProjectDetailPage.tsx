@@ -1238,9 +1238,14 @@ export default function ProjectDetailPage() {
               else createTask.mutate({ ...data, projectId: id })
             }}
             onClose={() => { setShowTaskForm(false); setEditingTask(null) }}
-            employees={(employees || []).filter((e: any) =>
-              (project?.members || []).some((m: any) => m.id === (e.userId || e.id))
-            )}
+            // Передаём в форму участников проекта + менеджера проекта
+            // (менеджер должен иметь возможность назначить себя проверяющим
+            // или исполнителем, даже если он не числится в members).
+            employees={(employees || []).filter((e: any) => {
+              const eid = e.userId || e.id
+              return (project?.members || []).some((m: any) => m.id === eid)
+                || project?.managerId === eid
+            })}
             loading={createTask.isPending || updateTask.isPending}
             initial={editingTask}
             fixedProjectId={id}
