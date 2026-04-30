@@ -259,10 +259,11 @@ export default function DashboardPage() {
   })
 
   // ── Employee story analytics (hooks must be before any early return) ──
+  // Завершённые проекты тоже остаются — нужны для отметок задним числом
+  // и аналитики. Скрываем только архивные.
   const myProjects = useMemo(() =>
     (allProjectsList || []).filter((p: any) =>
       !p.isArchived &&
-      p.status !== 'completed' &&
       p.members?.some((m: any) => m.id === user?.id)
     ), [allProjectsList, user])
 
