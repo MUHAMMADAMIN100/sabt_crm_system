@@ -34,6 +34,9 @@ export class CreateProjectDto {
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() internalCostEstimate?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() marginEstimate?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() tariffLimitOveruseCost?: number;
+
+  // ─── Team (разделение по командам) ──────────────────────────────────
+  @ApiProperty({ required: false }) @IsOptional() @IsUUID() teamId?: string;
 }
 
 export class UpdateProjectDto extends PartialType(CreateProjectDto) {}

@@ -25,6 +25,7 @@ const ClientsPage       = lazy(() => import('@/pages/clients/ClientsPage'))
 const TariffsPage       = lazy(() => import('@/pages/tariffs/TariffsPage'))
 const RisksPage         = lazy(() => import('@/pages/risks/RisksPage'))
 const FinancePage       = lazy(() => import('@/pages/finance/FinancePage'))
+const TeamsPage         = lazy(() => import('@/pages/teams/TeamsPage'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore(s => s.token)
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="tariffs" element={<RoleGuard><TariffsPage /></RoleGuard>} />
           <Route path="risks" element={<RoleGuard><RisksPage /></RoleGuard>} />
           <Route path="finance" element={<RoleGuard><FinancePage /></RoleGuard>} />
+          <Route path="teams" element={<RoleGuard><TeamsPage /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

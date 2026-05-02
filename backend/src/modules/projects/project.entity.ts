@@ -165,6 +165,17 @@ export class Project {
   @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
   tariffLimitOveruseCost: number;
 
+  // ─── Teams (Wave: разделение по командам) ───────────────────────────
+  /** К какой команде привязан проект. ON DELETE SET NULL — при удалении
+   *  команды проект остаётся со snapshot имени. */
+  @Column({ nullable: true })
+  teamId: string;
+
+  /** Снимок имени команды на момент привязки — переименование/удаление
+   *  команды не ломает историю проекта. */
+  @Column({ nullable: true })
+  teamNameSnapshot: string;
+
   // ─── Wave 7: Launch Setup checklist ─────────────────────────────────
   /** Состояние launch-чеклиста проекта. Хранит ТОЛЬКО ручные пункты
    *  (materials_received, accesses_received). Остальные 8 пунктов

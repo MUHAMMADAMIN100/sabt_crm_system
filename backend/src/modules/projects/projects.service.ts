@@ -10,6 +10,7 @@ import { SmmTariff } from '../smm-tariffs/smm-tariff.entity';
 import { ContentPlanService } from '../content-plan/content-plan.service';
 import { ContentItemType, ContentPlanItem } from '../content-plan/content-plan-item.entity';
 import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
+import { Team } from '../teams/team.entity';
 import {
   LAUNCH_KEYS, MANUAL_LAUNCH_KEYS, LAUNCH_LABELS,
   computeLaunchState, LaunchState, LaunchSignals,
@@ -30,6 +31,7 @@ export class ProjectsService {
     @InjectRepository(ProjectPayment) private paymentRepo: Repository<ProjectPayment>,
     @InjectRepository(SmmTariff) private tariffRepo: Repository<SmmTariff>,
     @InjectRepository(Task) private taskRepo: Repository<Task>,
+    @InjectRepository(Team) private teamRepo: Repository<Team>,
     private notificationsService: NotificationsService,
     private mailService: MailService,
     private activityLog: ActivityLogService,
@@ -488,6 +490,16 @@ export class ProjectsService {
       await this.applyTariffSnapshot(project, dto.tariffId);
     }
 
+    // Team — snapshot имени, чтобы переименование/удаление команды
+    // не ломало карточку проекта.
+    if (dto.teamId) {
+      const team = await this.teamRepo.findOne({ where: { id: dto.teamId } });
+      if (team) {
+        project.teamId = team.id;
+        project.teamNameSnapshot = team.name;
+      }
+    }
+
     // Wave 13: при создании пересчитываем outstanding/margin (overuse_cost
     // в этот момент 0 — контент-плана ещё нет).
     const explicitOnCreate = new Set<string>();
@@ -648,6 +660,16 @@ export class ProjectsService {
       } else {
         (dto as any).tariffNameSnapshot = null;
         (dto as any).tariffPriceSnapshot = null;
+      }
+    }
+
+    // Team change — пересохраняем snapshot или обнуляем если отвязали.
+    if ('teamId' in (dto as any) && (dto as any).teamId !== project.teamId) {
+      if ((dto as any).teamId) {
+        const team = await this.teamRepo.findOne({ where: { id: (dto as any).teamId } });
+        if (team) (dto as any).teamNameSnapshot = team.name;
+      } else {
+        (dto as any).teamNameSnapshot = null;
       }
     }
 

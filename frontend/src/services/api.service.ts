@@ -240,6 +240,21 @@ export const launchApi = {
     api.patch(`/projects/${projectId}/launch-checklist`, { item, value }).then(r => r.data),
 }
 
+// ─── Teams (rotation/management — founder/co_founder only) ───────
+export const teamsApi = {
+  list: (includeInactive?: boolean) =>
+    api.get('/teams', { params: { includeInactive: includeInactive ? 'true' : undefined } }).then(r => r.data),
+  get: (id: string) => api.get(`/teams/${id}`).then(r => r.data),
+  members: (id: string) => api.get(`/teams/${id}/members`).then(r => r.data),
+  create: (data: any) => api.post('/teams', data).then(r => r.data),
+  update: (id: string, data: any) => api.patch(`/teams/${id}`, data).then(r => r.data),
+  remove: (id: string) => api.delete(`/teams/${id}`).then(r => r.data),
+  setMembers: (id: string, userIds: string[]) =>
+    api.patch(`/teams/${id}/members`, { userIds }).then(r => r.data),
+  setUserTeam: (userId: string, teamId: string | null) =>
+    api.patch(`/teams/user/${userId}`, { teamId }).then(r => r.data),
+}
+
 // ─── Finance (Founder/Co-founder only) ──────────────────
 export const financeApi = {
   list: (params?: any) => api.get('/finance', { params }).then(r => r.data),

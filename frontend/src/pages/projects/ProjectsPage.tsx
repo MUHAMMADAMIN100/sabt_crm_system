@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { projectsApi, employeesApi, smmTariffsApi, riskApi } from '@/services/api.service'
+import { projectsApi, employeesApi, smmTariffsApi, riskApi, teamsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar, Pagination } from '@/components/ui'
@@ -320,6 +320,12 @@ export default function ProjectsPage() {
                           className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1.5 py-0.5 rounded-full inline-flex items-center gap-1"
                         >🏷 {(p as any).tariffNameSnapshot}</span>
                       )}
+                      {(p as any).teamNameSnapshot && (
+                        <span
+                          title={`Команда: ${(p as any).teamNameSnapshot}`}
+                          className="text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 px-1.5 py-0.5 rounded-full inline-flex items-center gap-1"
+                        >👥 {(p as any).teamNameSnapshot}</span>
+                      )}
                       {p.projectType === 'SMM' && !(p as any).tariffId && (
                         <span
                           title="SMM-проект без тарифа"
@@ -422,12 +428,20 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const dropRef = useRef<HTMLDivElement>(null)
   const projectType = watch('projectType')
   const tariffId = watch('tariffId')
+  const teamId = watch('teamId')
+  const showAllMembers = watch('showAllMembers') as unknown as boolean
 
   // Load active tariffs only when project is SMM (avoid unnecessary requests for other types)
   const { data: tariffs } = useQuery({
     queryKey: ['smm-tariffs', { isActive: true }],
     queryFn: () => smmTariffsApi.list({ isActive: true }),
     enabled: projectType === 'SMM',
+  })
+
+  // Загружаем команды — для селектора команды и фильтрации участников
+  const { data: teams } = useQuery({
+    queryKey: ['teams'],
+    queryFn: () => teamsApi.list(),
   })
 
   useEffect(() => {
@@ -461,6 +475,8 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           managerId: (initial as any).managerId || (initial as any).manager?.id || '',
           salesManagerId: (initial as any).salesManagerId || (initial as any).salesManager?.id || '',
           tariffId: (initial as any).tariffId || '',
+          teamId: (initial as any).teamId || '',
+          showAllMembers: false,
         })
         if (initial.smmData) setSmmAnswers(initial.smmData)
         setSelectedMembers(initial.members?.map((m: any) => m.id) || [])
@@ -469,6 +485,8 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           name: '', description: '', startDate: '', endDate: '',
           status: 'planning', color: '#6B4FCF', budget: '', projectType: isFormHeadSMM ? 'SMM' : '', managerId: '', salesManagerId: '',
           tariffId: '',
+          teamId: '',
+          showAllMembers: false,
         })
         setSmmAnswers({})
         setShowSmmForm(false)
@@ -521,6 +539,10 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     } else if (initial && data.projectType === 'SMM') {
       // Allows explicit detach via empty select option
       formattedData.tariffId = data.tariffId || null
+    }
+    // Team — пустая строка означает "отвязать"
+    if ('teamId' in data) {
+      formattedData.teamId = data.teamId || null
     }
     onSubmit(formattedData)
   }
@@ -599,6 +621,26 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">Получит напоминание об оплате через 2 недели после создания проекта</p>
           </div>
           )}
+
+          {/* Команда — фильтрует список участников проекта */}
+          <div className="sm:col-span-2">
+            <label className="label">Команда</label>
+            <select {...register('teamId')} className="input">
+              <option value="">— Без команды —</option>
+              {(teams || []).map((t: any) => (
+                <option key={t.id} value={t.id}>{t.name}{t.memberCount ? ` (${t.memberCount})` : ''}</option>
+              ))}
+            </select>
+            {teamId ? (
+              <p className="text-[11px] text-purple-600 dark:text-purple-400 mt-1">
+                👥 В список участников ниже попадают только сотрудники из этой команды.
+              </p>
+            ) : (
+              <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-1">
+                Если команда не выбрана — в списке доступны все сотрудники.
+              </p>
+            )}
+          </div>
 
           {/* SMM-тариф (только для SMM-проектов) */}
           {projectType === 'SMM' && (
@@ -768,11 +810,29 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                       />
                     </div>
                   </div>
+                  {/* Wave: фильтрация по команде + escape-hatch «показать всех» */}
+                  {teamId && (
+                    <div className="px-3 py-1.5 bg-surface-50 dark:bg-surface-900/40 border-b border-surface-100 dark:border-surface-700">
+                      <label className="inline-flex items-center gap-2 text-xs cursor-pointer text-surface-600 dark:text-surface-400">
+                        <input type="checkbox" {...register('showAllMembers')} />
+                        Показать сотрудников из других команд тоже
+                      </label>
+                    </div>
+                  )}
                   <div className="max-h-44 overflow-y-auto">
                     {employees
                       .filter((e: any) => {
                         const name = (e.fullName || e.name || '').toLowerCase()
-                        return !memberSearch || name.includes(memberSearch.toLowerCase())
+                        if (memberSearch && !name.includes(memberSearch.toLowerCase())) return false
+                        // Если выбрана команда и не включён «показать всех» — фильтруем
+                        if (teamId && !showAllMembers) {
+                          const eid = e.userId || e.id
+                          const isAlreadySelected = selectedMembers.includes(eid)
+                          // Уже выбранных не прячем (на случай редактирования старого проекта)
+                          if (isAlreadySelected) return true
+                          return e.teamId === teamId
+                        }
+                        return true
                       })
                       .map((e: any) => {
                         const uid = e.userId || e.id

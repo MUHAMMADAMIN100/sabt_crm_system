@@ -73,6 +73,12 @@ export class User {
   @Column({ nullable: true })
   resetPasswordExpires: Date;
 
+  /** Команда сотрудника. m:1 — один сотрудник в одной команде.
+   *  ON DELETE SET NULL — при удалении команды сотрудник остаётся
+   *  «без команды». */
+  @Column({ nullable: true })
+  teamId: string;
+
   @CreateDateColumn()
   createdAt: Date;
 
