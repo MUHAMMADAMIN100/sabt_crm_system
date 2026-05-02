@@ -5,7 +5,7 @@ import { hasPermission, getUserPositionLabel, type Permission } from '@/lib/perm
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Bell, Archive, HardDrive,
-  X, ChevronRight, Sparkles, Contact, Tag, ShieldAlert,
+  X, ChevronRight, Sparkles, Contact, Tag, ShieldAlert, Wallet,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -34,6 +34,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/clients',       icon: Contact,         label: 'База клиентов',     permission: 'clients.view' },
     { to: '/tariffs',       icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/risks',         icon: ShieldAlert,     label: 'Риски',             permission: 'risks.view' },
+    { to: '/finance',       icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
     { to: '/ai',            icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]
 

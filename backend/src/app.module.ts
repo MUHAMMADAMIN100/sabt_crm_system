@@ -35,6 +35,7 @@ import { ProjectAnnouncementsModule } from './modules/project-announcements/proj
 import { SmmTariffsModule } from './modules/smm-tariffs/smm-tariffs.module';
 import { ContentPlanModule } from './modules/content-plan/content-plan.module';
 import { RiskAnalyticsModule } from './modules/risk-analytics/risk-analytics.module';
+import { FinanceModule } from './modules/finance/finance.module';
 
 @Module({
   controllers: [HealthController],
@@ -93,6 +94,7 @@ import { RiskAnalyticsModule } from './modules/risk-analytics/risk-analytics.mod
     SmmTariffsModule,
     ContentPlanModule,
     RiskAnalyticsModule,
+    FinanceModule,
   ],
 })
 export class AppModule {}

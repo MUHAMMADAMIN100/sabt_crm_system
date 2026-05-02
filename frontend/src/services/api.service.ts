@@ -240,6 +240,20 @@ export const launchApi = {
     api.patch(`/projects/${projectId}/launch-checklist`, { item, value }).then(r => r.data),
 }
 
+// ─── Finance (Founder/Co-founder only) ──────────────────
+export const financeApi = {
+  list: (params?: any) => api.get('/finance', { params }).then(r => r.data),
+  get: (id: string) => api.get(`/finance/${id}`).then(r => r.data),
+  create: (data: any) => api.post('/finance', data).then(r => r.data),
+  update: (id: string, data: any) => api.patch(`/finance/${id}`, data).then(r => r.data),
+  remove: (id: string) => api.delete(`/finance/${id}`).then(r => r.data),
+  accountsSummary: () => api.get('/finance/accounts-summary').then(r => r.data),
+  monthly: (params?: { account?: string; months?: number }) =>
+    api.get('/finance/monthly', { params }).then(r => r.data),
+  byCategory: (params?: { account?: string; from?: string; to?: string }) =>
+    api.get('/finance/by-category', { params }).then(r => r.data),
+}
+
 // ─── Risk Analytics (Wave 5) ─────────────────────────────
 export const riskApi = {
   planFact: (projectId: string) => api.get(`/risk-analytics/plan-fact/${projectId}`).then(r => r.data),

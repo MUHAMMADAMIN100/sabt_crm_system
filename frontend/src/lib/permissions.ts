@@ -78,6 +78,7 @@ export type Permission =
   | 'time-tracker.use'
   | 'tariffs.manage'
   | 'risks.view'
+  | 'finance.manage'
 
 const PERMISSIONS: Record<UserRole, Permission[]> = {
   admin: [
@@ -104,7 +105,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
-    'tariffs.manage', 'risks.view',
+    'tariffs.manage', 'risks.view', 'finance.manage',
   ],
   co_founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -117,7 +118,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
-    'tariffs.manage', 'risks.view',
+    'tariffs.manage', 'risks.view', 'finance.manage',
   ],
   project_manager: [
     'dashboard', 'projects.view', 'projects.edit',
@@ -242,6 +243,7 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
   'clients.view': '/clients',
   'tariffs.manage': '/tariffs',
   'risks.view': '/risks',
+  'finance.manage': '/finance',
 }
 
 export function canAccessRoute(role: UserRole | undefined, route: string): boolean {
