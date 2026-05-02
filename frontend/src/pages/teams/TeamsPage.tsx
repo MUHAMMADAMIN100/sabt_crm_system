@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
@@ -271,10 +271,9 @@ function MembersManager({ team, allEmployees, onClose }: {
   )
 
   const [selected, setSelected] = useState<Set<string>>(new Set<string>())
-  useMemo(() => {
-    if (members && selected.size === 0) {
-      setSelected(new Set<string>(memberIds))
-    }
+  // Инициализируем выбранных текущим составом — один раз при загрузке.
+  useEffect(() => {
+    if (members) setSelected(new Set<string>(memberIds))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members])
 

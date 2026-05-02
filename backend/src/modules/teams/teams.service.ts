@@ -12,14 +12,28 @@ export class TeamsService {
   ) {}
 
   async findAll(includeInactive = false) {
+    // Прежняя реализация с loadRelationCountAndMap('t.memberCount', 't.id', ...)
+    // падала с 500: relation 'id' не определён, Team не имеет OneToMany на users.
+    // Делаем простую загрузку + отдельный raw-запрос на подсчёт участников.
     const qb = this.repo.createQueryBuilder('t')
-      .leftJoinAndSelect('t.lead', 'lead')
-      .loadRelationCountAndMap('t.memberCount', 't.id', 'memberCount', qb2 =>
-        qb2.from(User, 'u').where('u.teamId = t.id'),
-      );
+      .leftJoinAndSelect('t.lead', 'lead');
     if (!includeInactive) qb.where('t.isActive = true');
     qb.orderBy('t.isActive', 'DESC').addOrderBy('t.name', 'ASC');
-    return qb.getMany();
+    const teams = await qb.getMany();
+
+    if (teams.length === 0) return teams;
+
+    const counts: Array<{ teamId: string; cnt: string }> = await this.userRepo.manager.query(
+      `SELECT "teamId", COUNT(*)::text AS cnt FROM users
+       WHERE "teamId" = ANY($1::uuid[])
+       GROUP BY "teamId"`,
+      [teams.map(t => t.id)],
+    );
+    const countMap = new Map(counts.map(r => [r.teamId, Number(r.cnt)]));
+    for (const t of teams) {
+      (t as any).memberCount = countMap.get(t.id) ?? 0;
+    }
+    return teams;
   }
 
   async findOne(id: string) {
