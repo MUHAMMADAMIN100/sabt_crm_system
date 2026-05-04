@@ -32,21 +32,21 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
   // Track latest storiesCount per project+date to ignore stale mutation responses
   const latestCount = useRef<Record<string, number>>({})
   const isReadonly = !!employeeId || !!adminAll
-  // Менеджеры (admin/founder/co_founder/PM/head_smm) ВСЕГДА видят все
-  // сторис, а не только свои — иначе менеджер не видит отметки участников.
-  const MANAGER_ROLES = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm']
-  const isManager = !!user?.role && MANAGER_ROLES.includes(user.role)
-  const useAll = isReadonly || adminAll || isManager
+  // ВСЕ авторизованные видят все отметки команды — иначе:
+  //  - менеджер не видит отметки участников (фикс был раньше)
+  //  - участник не видит отметки менеджера (этот фикс — асимметрия)
+  // Просмотр общий, редактирование своих — через employeeId на бэке.
 
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')
-  // Когда менеджер видит все сторис — кэшируем глобально, без привязки к userId
+  // Если открыт календарь конкретного employee — кэшируем под его id
+  // (для удобства EmployeeDetailPage), иначе общий кэш 'all'.
   const userId = employeeId || user?.id || ''
-  const cacheKey = useAll && !employeeId ? 'all' : userId
+  const cacheKey = employeeId ? userId : 'all'
 
   const { data: stories } = useQuery({
     queryKey: ['stories', cacheKey, from, to],
-    queryFn: () => useAll ? storiesApi.all(from, to) : storiesApi.my(from, to),
+    queryFn: () => storiesApi.all(from, to),
     refetchInterval: 30000, // страховка на случай разрыва socket
   })
 
