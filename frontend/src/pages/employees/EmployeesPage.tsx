@@ -263,23 +263,23 @@ export default function EmployeesPage() {
                 </div>
                 {isAdmin && (
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => toggleSubAdmin.mutate(emp.id)} className={clsx('p-1.5 rounded-lg', emp.isSubAdmin ? 'bg-primary-50 dark:bg-primary-900/30' : 'hover:bg-surface-100 dark:hover:bg-surface-700')} title="Помощник админа">
-                      <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400'} />
-                    </button>
-                    <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500" title="Сбросить пароль">
-                      <Key size={14} />
-                    </button>
-                    {emp.user?.isBlocked ? (
-                      <button onClick={() => setUnblockId(emp.userId)} className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600" title="Разблокировать">
-                        <Unlock size={14} />
-                      </button>
-                    ) : (
-                      <button onClick={() => setBlockEmp(emp)} className="p-1.5 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg text-orange-500" title="Заблокировать">
-                        <Lock size={14} />
-                      </button>
-                    )}
                     {canEditEmployee(emp) && (
                       <>
+                        <button onClick={() => toggleSubAdmin.mutate(emp.id)} className={clsx('p-1.5 rounded-lg', emp.isSubAdmin ? 'bg-primary-50 dark:bg-primary-900/30' : 'hover:bg-surface-100 dark:hover:bg-surface-700')} title="Помощник админа">
+                          <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400'} />
+                        </button>
+                        <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500" title="Сбросить пароль">
+                          <Key size={14} />
+                        </button>
+                        {emp.user?.isBlocked ? (
+                          <button onClick={() => setUnblockId(emp.userId)} className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600" title="Разблокировать">
+                            <Unlock size={14} />
+                          </button>
+                        ) : (
+                          <button onClick={() => setBlockEmp(emp)} className="p-1.5 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg text-orange-500" title="Заблокировать">
+                            <Lock size={14} />
+                          </button>
+                        )}
                         <button onClick={() => setEditEmp(emp)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg"><Edit size={14} className="text-surface-500 dark:text-surface-400" /></button>
                         <button onClick={() => setDeleteId(emp.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500"><Trash2 size={14} /></button>
                       </>
@@ -352,23 +352,23 @@ export default function EmployeesPage() {
                   {isAdmin && (
                     <td className="px-4 py-3 whitespace-nowrap" onClick={e=>e.stopPropagation()}>
                       <div className="flex gap-1 justify-end">
-                        <button onClick={() => toggleSubAdmin.mutate(emp.id)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg" title="Помощник админа">
-                          <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600' : 'text-surface-400'} />
-                        </button>
-                        <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500" title="Сбросить пароль">
-                          <Key size={14} />
-                        </button>
-                        {emp.user?.isBlocked ? (
-                          <button onClick={() => setUnblockId(emp.userId)} className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600" title="Разблокировать">
-                            <Unlock size={14} />
-                          </button>
-                        ) : (
-                          <button onClick={() => setBlockEmp(emp)} className="p-1.5 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg text-orange-500" title="Заблокировать">
-                            <Lock size={14} />
-                          </button>
-                        )}
                         {canEditEmployee(emp) && (
                           <>
+                            <button onClick={() => toggleSubAdmin.mutate(emp.id)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg" title="Помощник админа">
+                              <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600' : 'text-surface-400'} />
+                            </button>
+                            <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500" title="Сбросить пароль">
+                              <Key size={14} />
+                            </button>
+                            {emp.user?.isBlocked ? (
+                              <button onClick={() => setUnblockId(emp.userId)} className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600" title="Разблокировать">
+                                <Unlock size={14} />
+                              </button>
+                            ) : (
+                              <button onClick={() => setBlockEmp(emp)} className="p-1.5 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg text-orange-500" title="Заблокировать">
+                                <Lock size={14} />
+                              </button>
+                            )}
                             <button onClick={() => setEditEmp(emp)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg"><Edit size={14} className="text-surface-500" /></button>
                             <button onClick={() => setDeleteId(emp.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400"><Trash2 size={14} /></button>
                           </>

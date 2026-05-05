@@ -25,8 +25,21 @@ export class UsersService {
     return user;
   }
 
+  /** Защита: основателем/сооснователем может управлять только основатель
+   *  или сооснователь. Админ — НЕТ. Бросает ForbiddenException. */
+  private assertCanManage(target: User, actorRole?: string) {
+    const isTargetTop = target.role === UserRole.FOUNDER || target.role === UserRole.CO_FOUNDER;
+    const isActorTop = actorRole === 'founder' || actorRole === 'co_founder';
+    if (isTargetTop && !isActorTop) {
+      throw new ForbiddenException(
+        'Управлять учётной записью основателя или сооснователя может только сам основатель/сооснователь',
+      );
+    }
+  }
+
   async update(id: string, dto: Partial<User>, actorRole?: string) {
     const user = await this.findOne(id);
+    this.assertCanManage(user, actorRole);
 
     // Enforce single founder / co-founder in the system when role is changed.
     if (dto.role && dto.role !== user.role) {
@@ -65,8 +78,9 @@ export class UsersService {
     return this.findOne(id);
   }
 
-  async remove(id: string) {
+  async remove(id: string, actorRole?: string) {
     const user = await this.findOne(id);
+    this.assertCanManage(user, actorRole);
     // Delete linked employee record first (FK references user)
     const employee = await this.employeeRepo.findOne({ where: { userId: id } });
     if (employee) await this.employeeRepo.remove(employee);
@@ -74,8 +88,9 @@ export class UsersService {
     return { message: 'User deleted' };
   }
 
-  async toggleActive(id: string) {
+  async toggleActive(id: string, actorRole?: string) {
     const user = await this.findOne(id);
+    this.assertCanManage(user, actorRole);
     user.isActive = !user.isActive;
     await this.repo.save(user);
 
@@ -102,8 +117,12 @@ export class UsersService {
    */
   async resetPassword(id: string, resetBy: { id: string; name?: string; role: string }, newPassword?: string) {
     const user = await this.findOne(id);
-    if (['admin', 'founder', 'co_founder'].includes(user.role) && user.id !== resetBy.id) {
-      throw new Error('Нельзя сбросить пароль другого администратора');
+    this.assertCanManage(user, resetBy.role);
+    // Дополнительно: даже founder не может сбросить пароль другому admin
+    // (только тот сам себе и founder/co_founder себе или другому top-tier).
+    if (['admin', 'founder', 'co_founder'].includes(user.role) && user.id !== resetBy.id
+        && !['founder', 'co_founder'].includes(resetBy.role)) {
+      throw new ForbiddenException('Нельзя сбросить пароль другого администратора');
     }
     // Validate custom password length (auto-generated is always 10 chars)
     const trimmed = newPassword?.trim();
@@ -140,10 +159,14 @@ export class UsersService {
   async block(id: string, blockedBy: { id: string; name?: string; role: string }, reason?: string) {
     const user = await this.findOne(id);
     if (user.id === blockedBy.id) {
-      throw new Error('Нельзя заблокировать самого себя');
+      throw new ForbiddenException('Нельзя заблокировать самого себя');
     }
-    if (['admin', 'founder', 'co_founder'].includes(user.role)) {
-      throw new Error('Нельзя заблокировать администратора, основателя или сооснователя');
+    // Основателя/сооснователя может блокировать только основатель/сооснователь.
+    this.assertCanManage(user, blockedBy.role);
+    // Админа никто не блокирует автоматом — только основатель/сооснователь
+    // (защита от перехвата системы при компрометации одного админа).
+    if (user.role === UserRole.ADMIN && !['founder', 'co_founder'].includes(blockedBy.role)) {
+      throw new ForbiddenException('Заблокировать администратора может только основатель/сооснователь');
     }
 
     user.isBlocked = true;
@@ -169,6 +192,7 @@ export class UsersService {
 
   async unblock(id: string, unblockedBy: { id: string; name?: string; role: string }) {
     const user = await this.findOne(id);
+    this.assertCanManage(user, unblockedBy.role);
     user.isBlocked = false;
     user.blockedAt = null;
     user.blockedById = null;

@@ -35,8 +35,8 @@ export class UsersController {
 
   @Patch(':id/toggle-active')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  toggleActive(@Param('id') id: string) {
-    return this.usersService.toggleActive(id);
+  toggleActive(@Param('id') id: string, @Request() req) {
+    return this.usersService.toggleActive(id, req.user?.role);
   }
 
   @Patch(':id/block')
@@ -67,8 +67,8 @@ export class UsersController {
 
   @Delete(':id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  remove(@Param('id') id: string) {
-    return this.usersService.remove(id);
+  remove(@Param('id') id: string, @Request() req) {
+    return this.usersService.remove(id, req.user?.role);
   }
 
   @Post('cleanup-orphans')
