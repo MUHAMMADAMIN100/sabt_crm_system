@@ -488,16 +488,7 @@ export default function TasksPage() {
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell"><PriorityBadge priority={task.priority} /></td>
                     <td className="px-4 py-3 hidden lg:table-cell">
-                      {task.assignee ? (
-                        <div className="flex items-center gap-2">
-                          <Avatar name={empNameMap[task.assigneeId] || task.assignee.name} size={22} />
-                          {task.assigneeId === user?.id ? (
-                            <span className="text-sm font-medium text-primary-600 dark:text-primary-400">Вы</span>
-                          ) : (
-                            <span className="text-sm text-surface-600 dark:text-surface-300">{shortenName(empNameMap[task.assigneeId] || task.assignee.name)}</span>
-                          )}
-                        </div>
-                      ) : <span className="text-surface-400 dark:text-surface-500 text-sm">—</span>}
+                      <AssigneesStack task={task} currentUserId={user?.id} />
                     </td>
                     <td className="px-4 py-3 hidden xl:table-cell">
                       {task.deadline ? (
@@ -584,6 +575,62 @@ export default function TasksPage() {
         title={t('tasks.deleteConfirm')}
       />
 
+    </div>
+  )
+}
+
+/** Стек аватарок исполнителей с индикатором готовности.
+ *  Если ассистент 1 — показываем имя; если несколько — стек с количеством готовых. */
+function AssigneesStack({ task, currentUserId }: { task: any; currentUserId?: string }) {
+  const list: Array<{ userId: string; isDone: boolean; user: any }> =
+    Array.isArray(task?.assignees) && task.assignees.length > 0
+      ? task.assignees
+      : (task?.assigneeId
+          ? [{ userId: task.assigneeId, isDone: false, user: task.assignee }]
+          : [])
+
+  if (list.length === 0) return <span className="text-surface-400 dark:text-surface-500 text-sm">—</span>
+
+  if (list.length === 1) {
+    const a = list[0]
+    return (
+      <div className="flex items-center gap-2">
+        <div className="relative">
+          <Avatar name={a.user?.name} size={22} />
+          {a.isDone && (
+            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-surface-800" />
+          )}
+        </div>
+        {a.userId === currentUserId ? (
+          <span className="text-sm font-medium text-primary-600 dark:text-primary-400">Вы</span>
+        ) : (
+          <span className="text-sm text-surface-600 dark:text-surface-300">{shortenName(a.user?.name || '')}</span>
+        )}
+      </div>
+    )
+  }
+
+  const doneCount = list.filter(a => a.isDone).length
+  return (
+    <div className="flex items-center gap-2" title={list.map(a => `${a.user?.name || '—'}${a.isDone ? ' ✓' : ''}`).join('\n')}>
+      <div className="flex -space-x-1.5">
+        {list.slice(0, 3).map(a => (
+          <div key={a.userId} className="relative">
+            <Avatar name={a.user?.name} size={22} />
+            {a.isDone && (
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-surface-800" />
+            )}
+          </div>
+        ))}
+        {list.length > 3 && (
+          <div className="w-[22px] h-[22px] rounded-full bg-surface-200 dark:bg-surface-700 text-[10px] font-medium flex items-center justify-center text-surface-600 dark:text-surface-300 ring-2 ring-white dark:ring-surface-800">
+            +{list.length - 3}
+          </div>
+        )}
+      </div>
+      <span className={clsx('text-xs', doneCount === list.length ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-surface-500 dark:text-surface-400')}>
+        {doneCount}/{list.length} {doneCount === list.length ? '✓' : ''}
+      </span>
     </div>
   )
 }

@@ -9,7 +9,7 @@ import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar, Modal, Con
 import {
   ArrowLeft, Send, Edit2, Trash2, Paperclip, Upload,
   CheckCircle, RotateCcw, LinkIcon, MessageSquare, AlertTriangle,
-  Plus, Square, CheckSquare,
+  Plus, Square, CheckSquare, Users, Check,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -771,24 +771,8 @@ export default function TaskDetailPage() {
           <div className="card space-y-3">
             <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300">Детали</h3>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-surface-500 dark:text-surface-400">{t('tasks.assignee')}</span>
-                {task.assignee ? (
-                  <div className="flex items-center gap-1.5">
-                    <Avatar name={task.assignee.name} size={20} />
-                    <span className="font-medium text-surface-900 dark:text-surface-100">{task.assignee.name}</span>
-                    {isPM && task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                        task.createdById === task.assigneeId
-                          ? 'bg-surface-100 dark:bg-surface-700 text-surface-400 dark:text-surface-500'
-                          : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                      }`}>
-                        {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] ? `от ${task.createdBy.name.trim().split(' ')[0]}` : `от ${task.createdBy.name.trim().split(' ')[0]}`)}
-                      </span>
-                    )}
-                  </div>
-                ) : <span className="text-surface-400 dark:text-surface-500">—</span>}
-              </div>
+              {/* Multi-assignee: компактный список + индикатор готовности */}
+              <MultiAssigneesBlock task={task} currentUserId={user?.id} />
               <div className="flex justify-between">
                 <span className="text-surface-500 dark:text-surface-400">{t('tasks.deadline')}</span>
                 <span className={clsx('font-medium', isOverdue ? 'text-red-500' : 'text-surface-900 dark:text-surface-100')}>
@@ -900,6 +884,98 @@ export default function TaskDetailPage() {
           </div>
         </div>
       </Modal>
+    </div>
+  )
+}
+
+/** Multi-assignee блок в карточке деталей задачи.
+ *  Показывает всех исполнителей с их статусом (✓ done или ◯ in progress).
+ *  Если текущий пользователь — один из исполнителей и ещё не отметил —
+ *  показывает кнопку «Я сделал свою часть». */
+function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId?: string }) {
+  const qc = useQueryClient()
+  const assignees: Array<{ userId: string; isDone: boolean; doneAt?: string; user: any }> =
+    Array.isArray(task?.assignees) && task.assignees.length > 0
+      ? task.assignees
+      : (task?.assigneeId
+          ? [{ userId: task.assigneeId, isDone: false, user: task.assignee || { id: task.assigneeId, name: '—' } }]
+          : [])
+
+  const me = currentUserId ? assignees.find(a => a.userId === currentUserId) : null
+  const doneCount = assignees.filter(a => a.isDone).length
+  const allDone = assignees.length > 0 && doneCount === assignees.length
+
+  const markDoneMut = useMutation({
+    mutationFn: () => tasksApi.markMyPartDone(task.id),
+    onSuccess: () => {
+      invalidateAfterTaskChange(qc, task.projectId)
+      qc.invalidateQueries({ queryKey: ['task', task.id] })
+      toast.success('✓ Ваша часть отмечена готовой')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось отметить'),
+  })
+
+  if (assignees.length === 0) {
+    return (
+      <div className="flex justify-between text-sm">
+        <span className="text-surface-500 dark:text-surface-400">Исполнители</span>
+        <span className="text-surface-400">—</span>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-surface-500 dark:text-surface-400 text-sm flex items-center gap-1">
+          <Users size={13} /> Исполнители ({doneCount}/{assignees.length})
+        </span>
+        {allDone && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-medium">
+            все готовы ✓
+          </span>
+        )}
+      </div>
+      <ul className="space-y-1">
+        {assignees.map(a => (
+          <li key={a.userId} className="flex items-center gap-2 text-sm">
+            <span className={clsx(
+              'w-4 h-4 rounded-full flex items-center justify-center shrink-0',
+              a.isDone ? 'bg-emerald-500 text-white' : 'bg-surface-200 dark:bg-surface-700',
+            )}>
+              {a.isDone && <Check size={10} strokeWidth={3} />}
+            </span>
+            <Avatar name={a.user?.name} size={20} />
+            <span className={clsx(
+              'flex-1 truncate',
+              a.isDone ? 'text-surface-500 line-through' : 'text-surface-900 dark:text-surface-100',
+            )}>
+              {a.user?.name || '—'}
+              {a.userId === currentUserId && <span className="text-[11px] text-primary-500 ml-1">(вы)</span>}
+            </span>
+            {a.isDone && a.doneAt && (
+              <span className="text-[10px] text-surface-400">
+                {new Date(a.doneAt).toLocaleDateString('ru-RU')}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {me && !me.isDone && (
+        <button
+          onClick={() => markDoneMut.mutate()}
+          disabled={markDoneMut.isPending}
+          className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium disabled:opacity-50"
+        >
+          <CheckCircle size={14} /> {markDoneMut.isPending ? 'Сохраняю...' : 'Я сделал свою часть'}
+        </button>
+      )}
+      {me && me.isDone && (
+        <div className="mt-2 text-[11px] text-emerald-600 dark:text-emerald-400 text-center">
+          ✓ Ваша часть готова. Ждём остальных.
+        </div>
+      )}
     </div>
   )
 }

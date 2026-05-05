@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Task, TaskStatus, TaskPriority } from './task.entity';
+import { TaskAssignee } from './task-assignee.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -23,6 +24,7 @@ const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.MARKE
 export class TasksService {
   constructor(
     @InjectRepository(Task) private repo: Repository<Task>,
+    @InjectRepository(TaskAssignee) private assigneesRepo: Repository<TaskAssignee>,
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(DailyReport) private reportRepo: Repository<DailyReport>,
     private notificationsService: NotificationsService,
@@ -55,7 +57,159 @@ export class TasksService {
     }
   }
 
-  findAll(filters: {
+  // ─── Multi-assignee helpers ────────────────────────────────────────
+
+  /** Загружает assignees для одной/нескольких задач (с user-объектами). */
+  private async loadAssignees(taskIds: string[]): Promise<Map<string, any[]>> {
+    if (taskIds.length === 0) return new Map();
+    const rows = await this.assigneesRepo.find({
+      where: { taskId: In(taskIds) },
+      relations: ['user'],
+      order: { createdAt: 'ASC' },
+    });
+    const map = new Map<string, any[]>();
+    for (const id of taskIds) map.set(id, []);
+    for (const r of rows) {
+      const arr = map.get(r.taskId) || [];
+      arr.push({
+        userId: r.userId,
+        isDone: r.isDone,
+        doneAt: r.doneAt,
+        note: r.note,
+        user: r.user ? { id: r.user.id, name: r.user.name, email: r.user.email, avatar: r.user.avatar } : null,
+      });
+      map.set(r.taskId, arr);
+    }
+    return map;
+  }
+
+  /** Синхронизирует список исполнителей с переданным userIds.
+   *  Старые записи для users которых нет в списке — удаляет.
+   *  Новых добавляет с isDone=false. Существующих оставляет как есть. */
+  private async syncAssignees(taskId: string, userIds: string[]): Promise<void> {
+    const cleanIds = Array.from(new Set((userIds || []).filter(Boolean)));
+    const existing = await this.assigneesRepo.find({ where: { taskId } });
+    const existingIds = new Set(existing.map(r => r.userId));
+    const newSet = new Set(cleanIds);
+
+    // Удалить тех кто исчез
+    const toRemove = existing.filter(r => !newSet.has(r.userId));
+    if (toRemove.length > 0) {
+      await this.assigneesRepo.remove(toRemove);
+    }
+    // Добавить новых (которых ещё нет)
+    const toAdd = cleanIds
+      .filter(id => !existingIds.has(id))
+      .map(userId => this.assigneesRepo.create({ taskId, userId, isDone: false }));
+    if (toAdd.length > 0) {
+      await this.assigneesRepo.save(toAdd);
+    }
+  }
+
+  /** Извлекает массив assigneeIds из dto (поддерживает legacy assigneeId). */
+  private extractAssigneeIds(dto: any): string[] | undefined {
+    if (Array.isArray(dto?.assigneeIds)) return dto.assigneeIds;
+    if (dto?.assigneeId) return [dto.assigneeId];
+    return undefined;
+  }
+
+  /** Исполнитель отмечает свою часть как сделанную.
+   *  Если все assignees готовы — задача автоматически переходит в REVIEW
+   *  (или сразу в DONE для SMM, у них особый флоу). */
+  async markMyPartDone(
+    taskId: string,
+    user: { id: string; role: string; name?: string },
+    note?: string,
+  ): Promise<{ task: Task; allDone: boolean }> {
+    const task = await this.findOne(taskId);
+    const row = await this.assigneesRepo.findOne({ where: { taskId, userId: user.id } });
+    if (!row) {
+      throw new ForbiddenException('Вы не являетесь исполнителем этой задачи');
+    }
+    if (row.isDone) {
+      // Уже отмечено — идемпотентно вернём текущее состояние
+      return { task, allDone: false };
+    }
+    row.isDone = true;
+    row.doneAt = new Date();
+    if (note) row.note = note;
+    await this.assigneesRepo.save(row);
+
+    const all = await this.assigneesRepo.find({ where: { taskId } });
+    const allDone = all.length > 0 && all.every(r => r.isDone);
+
+    // Уведомление PM что один из исполнителей сделал свою часть
+    if (task.createdById && task.createdById !== user.id) {
+      this.notificationsService.create({
+        userId: task.createdById,
+        type: NotificationType.STATUS_CHANGE,
+        title: '✓ Исполнитель завершил свою часть',
+        message: `${user.name || 'Исполнитель'} завершил свою часть в задаче "${task.title}" (${all.filter(r => r.isDone).length}/${all.length})`,
+        link: `/tasks/${taskId}`,
+      }).catch(() => {});
+    }
+
+    // Авто-переход в REVIEW когда все готовы (только для in-progress статусов)
+    const inProgressLike: TaskStatus[] = [
+      TaskStatus.NEW, TaskStatus.IN_PROGRESS, TaskStatus.ACCEPTED,
+      TaskStatus.RETURNED, TaskStatus.ON_REWORK,
+    ];
+    if (allDone && inProgressLike.includes(task.status)) {
+      // SMM-специалисты могут сразу в DONE; остальные — в REVIEW для PM
+      const isSmm = user.role === UserRole.SMM_SPECIALIST;
+      const newStatus = isSmm ? TaskStatus.DONE : TaskStatus.REVIEW;
+      await this.repo.update(taskId, { status: newStatus });
+
+      await this.activityLog.log({
+        userId: user.id,
+        userName: user.name,
+        action: ActivityAction.TASK_STATUS,
+        entity: 'task',
+        entityId: taskId,
+        entityName: task.title,
+        details: { from: task.status, to: newStatus, reason: 'all_assignees_done' },
+      }).catch(() => {});
+
+      // Авто-отчёт если DONE
+      if (newStatus === TaskStatus.DONE) {
+        await this.autoReportFromTask({ ...task, status: newStatus } as Task);
+      }
+
+      // Уведомить PM что задача готова к проверке
+      if (task.createdById) {
+        this.notificationsService.create({
+          userId: task.createdById,
+          type: NotificationType.REVIEW_NEEDED,
+          title: '🎯 Задача готова к проверке',
+          message: `Все исполнители завершили задачу "${task.title}". Теперь нужна ваша проверка.`,
+          link: `/tasks/${taskId}`,
+        }).catch(() => {});
+      }
+    }
+
+    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    const fresh = await this.findOne(taskId);
+    return { task: fresh, allDone };
+  }
+
+  /** Получить список assignees задачи (публично, для одной задачи). */
+  async getAssignees(taskId: string) {
+    await this.findOne(taskId);
+    const rows = await this.assigneesRepo.find({
+      where: { taskId },
+      relations: ['user'],
+      order: { createdAt: 'ASC' },
+    });
+    return rows.map(r => ({
+      userId: r.userId,
+      isDone: r.isDone,
+      doneAt: r.doneAt,
+      note: r.note,
+      user: r.user ? { id: r.user.id, name: r.user.name, email: r.user.email, avatar: r.user.avatar } : null,
+    }));
+  }
+
+  async findAll(filters: {
     projectId?: string;
     assigneeId?: string;
     status?: TaskStatus;
@@ -69,13 +223,28 @@ export class TasksService {
       .leftJoinAndSelect('t.project', 'project');
 
     if (filters.projectId) qb.andWhere('t.projectId = :projectId', { projectId: filters.projectId });
-    if (filters.assigneeId) qb.andWhere('t.assigneeId = :assigneeId', { assigneeId: filters.assigneeId });
+    // Поддержка multi-assignee: фильтр по assigneeId покрывает и legacy
+    // assigneeId на самой задаче, и членство в task_assignees.
+    if (filters.assigneeId) {
+      qb.andWhere(
+        `(t.assigneeId = :assigneeId OR EXISTS (
+          SELECT 1 FROM task_assignees ta
+          WHERE ta."taskId" = t.id AND ta."userId" = :assigneeId
+        ))`,
+        { assigneeId: filters.assigneeId },
+      );
+    }
     if (filters.status) qb.andWhere('t.status = :status', { status: filters.status });
     if (filters.priority) qb.andWhere('t.priority = :priority', { priority: filters.priority });
     if (filters.search) qb.andWhere('t.title ILIKE :search', { search: `%${filters.search}%` });
     if (filters.deadlineBefore) qb.andWhere('t.deadline <= :deadline', { deadline: filters.deadlineBefore });
 
-    return qb.orderBy('t.createdAt', 'DESC').getMany();
+    const tasks = await qb.orderBy('t.createdAt', 'DESC').getMany();
+    if (tasks.length > 0) {
+      const map = await this.loadAssignees(tasks.map(t => t.id));
+      for (const t of tasks) (t as any).assignees = map.get(t.id) || [];
+    }
+    return tasks;
   }
 
   async findOne(id: string) {
@@ -84,6 +253,8 @@ export class TasksService {
       relations: ['assignee', 'createdBy', 'project', 'comments', 'comments.author', 'timeLogs', 'files'],
     });
     if (!task) throw new NotFoundException('Task not found');
+    const map = await this.loadAssignees([id]);
+    (task as any).assignees = map.get(id) || [];
     return task;
   }
 
@@ -92,47 +263,61 @@ export class TasksService {
     const isPM = userRole && PM_ROLES.includes(userRole as UserRole);
     if (!isPM) {
       dto.assigneeId = userId;
+      // Multi-assignee тоже ограничиваем — только сам себе
+      (dto as any).assigneeIds = [userId];
+    }
+
+    // Multi-assignee: вычисляем итоговый список + основного исполнителя
+    const incomingAssigneeIds = this.extractAssigneeIds(dto);
+    if (incomingAssigneeIds && incomingAssigneeIds.length > 0) {
+      // assigneeId (legacy) ставим первым из списка для совместимости
+      dto.assigneeId = incomingAssigneeIds[0];
     }
 
     const task = this.repo.create({ ...dto, createdById: userId });
     const saved = await this.repo.save(task);
 
+    // Синхронизация многих исполнителей в task_assignees
+    if (incomingAssigneeIds && incomingAssigneeIds.length > 0) {
+      await this.syncAssignees(saved.id, incomingAssigneeIds);
+    }
+
     const creator = await this.userRepo.findOne({ where: { id: userId } });
 
-    if (dto.assigneeId && dto.assigneeId !== userId) {
-      await this.notificationsService.create({
-        userId: dto.assigneeId,
-        type: NotificationType.NEW_TASK,
-        title: 'Новая задача',
-        message: `Вам назначена задача: "${saved.title}"`,
-        link: `/tasks/${saved.id}`,
-      });
-
-      // Email + Telegram notification
-      const assignee = await this.userRepo.findOne({ where: { id: dto.assigneeId } });
-      if (assignee?.email) {
-        const full = await this.findOne(saved.id);
-        const deadline = saved.deadline ? new Date(saved.deadline).toLocaleDateString('ru-RU') : undefined;
-        await this.mailService.sendTaskAssigned(
-          assignee.email,
-          assignee.name,
-          saved.title,
-          saved.id,
-          full.project?.name,
-          deadline,
-          saved.priority,
-          saved.description || undefined,
-        );
-        const priorityLabels: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный', critical: 'Критический' };
-        await this.telegramService.sendToUser(
-          dto.assigneeId,
-          `✅ <b>Вам назначена задача</b>\n\n` +
-          `📋 ${saved.title}` +
-          (full.project?.name ? `\n📁 ${full.project.name}` : '') +
-          (saved.priority ? `\n🔥 Приоритет: ${priorityLabels[saved.priority] || saved.priority}` : '') +
-          (deadline ? `\n📅 Дедлайн: ${deadline}` : '') +
-          `\n\n👉 ${this.telegramService.appUrl}/tasks/${saved.id}`,
-        );
+    // Уведомления всем исполнителям (а не только первому)
+    const notifyIds = incomingAssigneeIds && incomingAssigneeIds.length > 0
+      ? incomingAssigneeIds.filter(id => id !== userId)
+      : (dto.assigneeId && dto.assigneeId !== userId ? [dto.assigneeId] : []);
+    for (const aid of notifyIds) {
+      try {
+        await this.notificationsService.create({
+          userId: aid,
+          type: NotificationType.NEW_TASK,
+          title: 'Новая задача',
+          message: `Вам назначена задача: "${saved.title}"${notifyIds.length > 1 ? ` (с другими ${notifyIds.length - 1} исп.)` : ''}`,
+          link: `/tasks/${saved.id}`,
+        });
+        const assignee = await this.userRepo.findOne({ where: { id: aid } });
+        if (assignee?.email) {
+          const full = await this.findOne(saved.id);
+          const deadline = saved.deadline ? new Date(saved.deadline).toLocaleDateString('ru-RU') : undefined;
+          await this.mailService.sendTaskAssigned(
+            assignee.email, assignee.name, saved.title, saved.id,
+            full.project?.name, deadline, saved.priority, saved.description || undefined,
+          );
+          const priorityLabels: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный', critical: 'Критический' };
+          await this.telegramService.sendToUser(
+            aid,
+            `✅ <b>Вам назначена задача</b>\n\n` +
+            `📋 ${saved.title}` +
+            (full.project?.name ? `\n📁 ${full.project.name}` : '') +
+            (saved.priority ? `\n🔥 Приоритет: ${priorityLabels[saved.priority] || saved.priority}` : '') +
+            (deadline ? `\n📅 Дедлайн: ${deadline}` : '') +
+            `\n\n👉 ${this.telegramService.appUrl}/tasks/${saved.id}`,
+          );
+        }
+      } catch (e: any) {
+        console.warn('multi-assignee notify failed for', aid, e?.message);
       }
     }
 
@@ -177,7 +362,24 @@ export class TasksService {
 
     const oldStatus = task.status;
     const oldAssigneeId = task.assigneeId;
-    await this.repo.update(id, dto);
+
+    // Multi-assignee sync: если массив пришёл — синхронизируем + ставим
+    // assigneeId первым из списка для обратной совместимости.
+    const incomingAssigneeIds = this.extractAssigneeIds(dto);
+    if (Array.isArray((dto as any).assigneeIds)) {
+      // Для PATCH update передавали именно массив (а не legacy assigneeId)
+      if (incomingAssigneeIds && incomingAssigneeIds.length > 0) {
+        dto.assigneeId = incomingAssigneeIds[0];
+      } else {
+        dto.assigneeId = null as any;
+      }
+    }
+    // Чистим assigneeIds из dto перед update — это не колонка
+    const { assigneeIds: _aIds, ...patchForRepo } = dto as any;
+    await this.repo.update(id, patchForRepo);
+    if (Array.isArray((dto as any).assigneeIds)) {
+      await this.syncAssignees(id, incomingAssigneeIds || []);
+    }
 
     // Notify on status change
     if (dto.status && dto.status !== oldStatus) {

@@ -1,7 +1,9 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from '@/i18n'
 import { useAuthStore } from '@/store/auth.store'
+import { Check } from 'lucide-react'
+import clsx from 'clsx'
 
 interface TaskFormProps {
   onSubmit: (data: any) => void
@@ -25,6 +27,14 @@ export default function TaskForm({
   const { register, handleSubmit, reset, control, formState: { errors } } = useForm()
   const { t } = useTranslation()
   const authUser = useAuthStore(s => s.user)
+  // Multi-assignee: список выбранных user-id (исполнителей задачи).
+  // Для admin'а — управляется чекбоксами; для не-admin'а — всегда [currentUserId].
+  const [selectedAssignees, setSelectedAssignees] = useState<string[]>([])
+  const toggleAssignee = (uid: string) => {
+    setSelectedAssignees(prev =>
+      prev.includes(uid) ? prev.filter(x => x !== uid) : [...prev, uid],
+    )
+  }
 
   // Watch the selected projectId so we can filter assignees by project members
   const selectedProjectId = useWatch({ control, name: 'projectId' }) || fixedProjectId
@@ -63,6 +73,13 @@ export default function TaskForm({
         qualityScore: initial.qualityScore ?? '',
         acceptedOnFirstTry: !!initial.acceptedOnFirstTry,
       })
+      // Multi-assignee: берём из initial.assignees, fallback к одиночному
+      // assigneeId для старых задач/совместимости.
+      const fromArr: string[] = Array.isArray(initial.assignees)
+        ? initial.assignees.map((a: any) => a.userId).filter(Boolean)
+        : []
+      const fromSingle = initial.assigneeId ? [initial.assigneeId] : []
+      setSelectedAssignees(fromArr.length > 0 ? fromArr : fromSingle)
     } else {
       reset({
         title: '',
@@ -78,15 +95,27 @@ export default function TaskForm({
         qualityScore: '',
         acceptedOnFirstTry: false,
       })
+      setSelectedAssignees(isAdmin ? [] : (currentUserId ? [currentUserId] : []))
     }
   }, [initial, reset, fixedProjectId, initialDeadline, isAdmin, currentUserId])
 
   const submit = (data: any) => {
+    // Multi-assignee: для admin-а используем чекбокс-список selectedAssignees;
+    // для остальных — только сам исполнитель = currentUserId.
+    const finalIds = isAdmin
+      ? selectedAssignees
+      : (currentUserId ? [currentUserId] : [])
+    if (isAdmin && finalIds.length === 0) {
+      alert('Выберите хотя бы одного исполнителя')
+      return
+    }
     onSubmit({
       title: data.title,
       description: data.description || undefined,
       projectId: fixedProjectId || data.projectId,
-      assigneeId: data.assigneeId || currentUserId,
+      // Старое поле для совместимости + новый массив
+      assigneeId: finalIds[0],
+      assigneeIds: finalIds,
       priority: data.priority,
       deadline: data.deadline,
       targetCount: data.targetCount ? Number(data.targetCount) : undefined,
@@ -135,17 +164,50 @@ export default function TaskForm({
             <input type="hidden" {...register('assigneeId')} value={currentUserId || ''} />
           </div>
         ) : employees && (
-          <div>
-            <label className="label">{t('tasks.assignee')} *</label>
-            <select {...register('assigneeId', { required: true })} className="input" disabled={!selectedProjectId}>
-              <option value="">
-                {!selectedProjectId ? 'Сначала выберите проект' : (filteredEmployees.length ? t('common.selectOption') : 'Нет участников в проекте')}
-              </option>
-              {filteredEmployees.map((e: any) => <option key={e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>)}
-            </select>
-            {errors.assigneeId && <p className="text-xs text-red-500 mt-1">{t('tasks.assignee')} обязательно</p>}
-            {selectedProjectId && filteredEmployees.length === 0 && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Сначала добавьте сотрудника как участника проекта</p>
+          <div className="sm:col-span-2">
+            <label className="label">
+              Исполнители <span className="text-red-500">*</span>
+              <span className="text-[11px] text-surface-400 ml-1">
+                (можно выбрать нескольких — задача завершится когда все отметят свою часть)
+              </span>
+            </label>
+            {!selectedProjectId ? (
+              <div className="input bg-surface-50 dark:bg-surface-800 cursor-not-allowed text-surface-400 text-sm">
+                Сначала выберите проект
+              </div>
+            ) : filteredEmployees.length === 0 ? (
+              <p className="text-xs text-amber-600 dark:text-amber-400">Сначала добавьте сотрудника как участника проекта</p>
+            ) : (
+              <div className="rounded-lg border border-surface-200 dark:border-surface-700 max-h-44 overflow-y-auto divide-y divide-surface-100 dark:divide-surface-700">
+                {filteredEmployees.map((e: any) => {
+                  const uid = e.userId || e.id
+                  const isSel = selectedAssignees.includes(uid)
+                  return (
+                    <div
+                      key={e.id}
+                      onClick={() => toggleAssignee(uid)}
+                      className={clsx(
+                        'flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors',
+                        isSel ? 'bg-primary-50 dark:bg-primary-900/20' : 'hover:bg-surface-50 dark:hover:bg-surface-800/50',
+                      )}
+                    >
+                      <span className={clsx(
+                        'w-4 h-4 rounded border-2 flex items-center justify-center shrink-0',
+                        isSel ? 'bg-primary-600 border-primary-600' : 'border-surface-300 dark:border-surface-500',
+                      )}>
+                        {isSel && <Check size={10} className="text-white" strokeWidth={3} />}
+                      </span>
+                      <span className="text-sm flex-1 truncate">{e.fullName || e.name}</span>
+                      {e.position && <span className="text-xs text-surface-400 truncate">— {e.position}</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {selectedAssignees.length > 0 && (
+              <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-1">
+                Выбрано: {selectedAssignees.length}
+              </p>
             )}
           </div>
         )}

@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsNumber, IsUUID, IsBoolean, Min, Max, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsDateString, IsNumber, IsUUID, IsBoolean, IsArray, Min, Max, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { TaskPriority, TaskStatus } from '../task.entity';
 import { PartialType } from '@nestjs/mapped-types';
@@ -8,6 +8,9 @@ export class CreateTaskDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() description?: string;
   @ApiProperty() @IsUUID() projectId: string;
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() assigneeId?: string;
+  /** Multi-assignee — список UUID. Поле необязательное; если задано —
+   *  заменяет старое assigneeId (assigneeId в БД будет = первому из списка). */
+  @ApiProperty({ required: false, type: [String] }) @IsOptional() @IsArray() assigneeIds?: string[];
   @ApiProperty({ enum: TaskPriority, required: false }) @IsOptional() @IsEnum(TaskPriority) priority?: TaskPriority;
   @ApiProperty({ enum: TaskStatus, required: false }) @IsOptional() @IsEnum(TaskStatus) status?: TaskStatus;
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() startDate?: string;

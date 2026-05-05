@@ -83,6 +83,16 @@ export class TasksController {
     return this.service.update(id, dto, req.user);
   }
 
+  @Get(':id/assignees')
+  getAssignees(@Param('id') id: string) {
+    return this.service.getAssignees(id);
+  }
+
+  @Post(':id/my-part-done')
+  markMyPartDone(@Param('id') id: string, @Body('note') note: string | undefined, @Request() req) {
+    return this.service.markMyPartDone(id, req.user, note);
+  }
+
   @Post(':id/approve')
   @Roles(ADMIN, FOUNDER, CO_FOUNDER, PROJECT_MANAGER)
   approve(@Param('id') id: string, @Request() req) {

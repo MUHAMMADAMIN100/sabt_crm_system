@@ -61,6 +61,10 @@ export const tasksApi = {
   returnTask: (id: string, reason: string) => api.post(`/tasks/${id}/return`, { reason }).then(r => r.data),
   bulk: (ids: string[], action: 'status' | 'delete' | 'assign', value?: string) =>
     api.post('/tasks/bulk', { ids, action, value }).then(r => r.data),
+  // Multi-assignee: получить состав исполнителей и пометить свою часть готовой
+  assignees: (id: string) => api.get(`/tasks/${id}/assignees`).then(r => r.data),
+  markMyPartDone: (id: string, note?: string) =>
+    api.post(`/tasks/${id}/my-part-done`, { note }).then(r => r.data),
 }
 
 // ─── Task Checklists ──────────────────────────────────────
