@@ -2,8 +2,24 @@ import { useEffect, useMemo, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from '@/i18n'
 import { useAuthStore } from '@/store/auth.store'
-import { Check } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import clsx from 'clsx'
+
+/** Группировка исполнителей по специализации (роли). Каждая группа —
+ *  свой блок с заголовком, чтобы PM видел список структурированно
+ *  (1 SMM, 1 дизайнер, и т.д.). Порядок задаёт визуальный приоритет.
+ *  Имя группы показывается в форме как «🎨 Дизайнеры». */
+const ASSIGNEE_GROUPS: Array<{ id: string; label: string; roles: string[] }> = [
+  { id: 'design',     label: '🎨 Дизайнеры',           roles: ['designer'] },
+  { id: 'smm',        label: '📱 SMM',                  roles: ['smm_specialist', 'head_smm'] },
+  { id: 'targeting',  label: '🎯 Таргетологи',          roles: ['targetologist'] },
+  { id: 'marketing',  label: '📣 Маркетологи',          roles: ['marketer'] },
+  { id: 'dev',        label: '💻 Разработчики',         roles: ['developer'] },
+  { id: 'sales',      label: '💰 Менеджеры по продажам',roles: ['sales_manager'] },
+  { id: 'pm',         label: '👔 Менеджеры проектов',   roles: ['project_manager'] },
+  { id: 'leadership', label: '👑 Руководство',          roles: ['admin', 'founder', 'co_founder'] },
+]
+const OTHER_GROUP = { id: 'other', label: '👤 Прочие сотрудники' }
 
 interface TaskFormProps {
   onSubmit: (data: any) => void
@@ -178,31 +194,11 @@ export default function TaskForm({
             ) : filteredEmployees.length === 0 ? (
               <p className="text-xs text-amber-600 dark:text-amber-400">Сначала добавьте сотрудника как участника проекта</p>
             ) : (
-              <div className="rounded-lg border border-surface-200 dark:border-surface-700 max-h-44 overflow-y-auto divide-y divide-surface-100 dark:divide-surface-700">
-                {filteredEmployees.map((e: any) => {
-                  const uid = e.userId || e.id
-                  const isSel = selectedAssignees.includes(uid)
-                  return (
-                    <div
-                      key={e.id}
-                      onClick={() => toggleAssignee(uid)}
-                      className={clsx(
-                        'flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors',
-                        isSel ? 'bg-primary-50 dark:bg-primary-900/20' : 'hover:bg-surface-50 dark:hover:bg-surface-800/50',
-                      )}
-                    >
-                      <span className={clsx(
-                        'w-4 h-4 rounded border-2 flex items-center justify-center shrink-0',
-                        isSel ? 'bg-primary-600 border-primary-600' : 'border-surface-300 dark:border-surface-500',
-                      )}>
-                        {isSel && <Check size={10} className="text-white" strokeWidth={3} />}
-                      </span>
-                      <span className="text-sm flex-1 truncate">{e.fullName || e.name}</span>
-                      {e.position && <span className="text-xs text-surface-400 truncate">— {e.position}</span>}
-                    </div>
-                  )
-                })}
-              </div>
+              <AssigneeGroupedList
+                employees={filteredEmployees}
+                selected={selectedAssignees}
+                onToggle={toggleAssignee}
+              />
             )}
             {selectedAssignees.length > 0 && (
               <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-1">
@@ -290,5 +286,106 @@ export default function TaskForm({
         </button>
       </div>
     </form>
+  )
+}
+
+/** Сгруппированный по специализации список исполнителей.
+ *  Каждая группа сворачиваемая, заголовок показывает общий счётчик и
+ *  сколько уже выбрано из этой группы. */
+function AssigneeGroupedList({ employees, selected, onToggle }: {
+  employees: any[]
+  selected: string[]
+  onToggle: (uid: string) => void
+}) {
+  // Группируем по user.role; если role не покрыт — кладём в OTHER
+  const grouped = useMemo(() => {
+    const buckets: Record<string, any[]> = {}
+    for (const g of ASSIGNEE_GROUPS) buckets[g.id] = []
+    buckets[OTHER_GROUP.id] = []
+    const knownRoles = new Set(ASSIGNEE_GROUPS.flatMap(g => g.roles))
+    for (const e of employees) {
+      const role = e.user?.role || e.role || ''
+      const group = ASSIGNEE_GROUPS.find(g => g.roles.includes(role))
+      if (group) buckets[group.id].push(e)
+      else if (!knownRoles.has(role)) buckets[OTHER_GROUP.id].push(e)
+      else buckets[OTHER_GROUP.id].push(e)
+    }
+    return buckets
+  }, [employees])
+
+  // По умолчанию все группы развёрнуты
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const toggleGroup = (id: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const allGroups = [...ASSIGNEE_GROUPS, OTHER_GROUP]
+  const visibleGroups = allGroups.filter(g => (grouped[g.id]?.length ?? 0) > 0)
+
+  if (visibleGroups.length === 0) {
+    return <p className="text-xs text-surface-400 dark:text-surface-500">Нет доступных сотрудников</p>
+  }
+
+  return (
+    <div className="rounded-lg border border-surface-200 dark:border-surface-700 max-h-72 overflow-y-auto divide-y divide-surface-100 dark:divide-surface-700">
+      {visibleGroups.map(g => {
+        const list = grouped[g.id]
+        const isCollapsed = collapsed.has(g.id)
+        const selectedInGroup = list.filter((e: any) => selected.includes(e.userId || e.id)).length
+        return (
+          <div key={g.id}>
+            <button
+              type="button"
+              onClick={() => toggleGroup(g.id)}
+              className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 bg-surface-50 dark:bg-surface-800/40 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <ChevronDown size={12} className={clsx('transition-transform', isCollapsed && '-rotate-90')} />
+                {g.label}
+                <span className="text-[10px] text-surface-400 normal-case font-normal">
+                  · {list.length}
+                </span>
+              </span>
+              {selectedInGroup > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 normal-case font-medium">
+                  выбрано {selectedInGroup}
+                </span>
+              )}
+            </button>
+            {!isCollapsed && (
+              <ul className="divide-y divide-surface-100 dark:divide-surface-700">
+                {list.map((e: any) => {
+                  const uid = e.userId || e.id
+                  const isSel = selected.includes(uid)
+                  return (
+                    <li
+                      key={e.id}
+                      onClick={() => onToggle(uid)}
+                      className={clsx(
+                        'flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors',
+                        isSel ? 'bg-primary-50 dark:bg-primary-900/20' : 'hover:bg-surface-50 dark:hover:bg-surface-800/50',
+                      )}
+                    >
+                      <span className={clsx(
+                        'w-4 h-4 rounded border-2 flex items-center justify-center shrink-0',
+                        isSel ? 'bg-primary-600 border-primary-600' : 'border-surface-300 dark:border-surface-500',
+                      )}>
+                        {isSel && <Check size={10} className="text-white" strokeWidth={3} />}
+                      </span>
+                      <span className="text-sm flex-1 truncate">{e.fullName || e.name}</span>
+                      {e.position && <span className="text-xs text-surface-400 truncate">— {e.position}</span>}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }
