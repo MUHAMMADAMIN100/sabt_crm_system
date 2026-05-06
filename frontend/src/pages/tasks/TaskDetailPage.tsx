@@ -888,10 +888,14 @@ export default function TaskDetailPage() {
   )
 }
 
-/** Multi-assignee блок в карточке деталей задачи.
- *  Показывает всех исполнителей с их статусом (✓ done или ◯ in progress).
- *  Если текущий пользователь — один из исполнителей и ещё не отметил —
- *  показывает кнопку «Я сделал свою часть». */
+/** Multi-assignee блок в виде вертикального таймлайна.
+ *  Каждый исполнитель = карточка-этап. Справа — линия статусов:
+ *    ✓ зелёный — этап завершён (имя зачёркнуто, карточка приглушена)
+ *    ◉ синий пульсирующий — текущий «фокус» (первый невыполненный)
+ *    ◯ пустой — будущий этап
+ *  Сверху — заголовок «Сейчас задача у: <имя>» + прогресс-бар.
+ *  Кнопка «Я сделал свою часть» показывается на карточке текущего
+ *  пользователя, если он назначен и ещё не отметил. */
 function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId?: string }) {
   const qc = useQueryClient()
   const assignees: Array<{ userId: string; isDone: boolean; doneAt?: string; user: any }> =
@@ -901,9 +905,13 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
           ? [{ userId: task.assigneeId, isDone: false, user: task.assignee || { id: task.assigneeId, name: '—' } }]
           : [])
 
-  const me = currentUserId ? assignees.find(a => a.userId === currentUserId) : null
+  const total = assignees.length
   const doneCount = assignees.filter(a => a.isDone).length
-  const allDone = assignees.length > 0 && doneCount === assignees.length
+  const allDone = total > 0 && doneCount === total
+  const currentIdx = assignees.findIndex(a => !a.isDone) // индекс «фокуса»
+  const currentAssignee = currentIdx >= 0 ? assignees[currentIdx] : null
+  const me = currentUserId ? assignees.find(a => a.userId === currentUserId) : null
+  const percent = total > 0 ? Math.round((doneCount / total) * 100) : 0
 
   const markDoneMut = useMutation({
     mutationFn: () => tasksApi.markMyPartDone(task.id),
@@ -915,7 +923,7 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось отметить'),
   })
 
-  if (assignees.length === 0) {
+  if (total === 0) {
     return (
       <div className="flex justify-between text-sm">
         <span className="text-surface-500 dark:text-surface-400">Исполнители</span>
@@ -925,54 +933,118 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-surface-500 dark:text-surface-400 text-sm flex items-center gap-1">
-          <Users size={13} /> Исполнители ({doneCount}/{assignees.length})
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-surface-500 dark:text-surface-400 text-xs flex items-center gap-1">
+            <Users size={12} /> Прогресс задачи
+          </div>
+          <div className="font-semibold text-sm mt-0.5 text-surface-900 dark:text-surface-100">
+            {allDone
+              ? '🎯 Все исполнители завершили — задача на проверке'
+              : currentAssignee
+                ? <>Сейчас у: <span className="text-primary-600 dark:text-primary-400">{currentAssignee.user?.name || '—'}</span>{currentAssignee.userId === currentUserId && <span className="text-[11px] text-primary-500"> (вы)</span>}</>
+                : '—'}
+          </div>
+        </div>
+        <span className={clsx(
+          'text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0',
+          allDone
+            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+            : 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-300',
+        )}>
+          {doneCount}/{total}
         </span>
-        {allDone && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-medium">
-            все готовы ✓
-          </span>
-        )}
       </div>
-      <ul className="space-y-1">
-        {assignees.map(a => (
-          <li key={a.userId} className="flex items-center gap-2 text-sm">
-            <span className={clsx(
-              'w-4 h-4 rounded-full flex items-center justify-center shrink-0',
-              a.isDone ? 'bg-emerald-500 text-white' : 'bg-surface-200 dark:bg-surface-700',
-            )}>
-              {a.isDone && <Check size={10} strokeWidth={3} />}
-            </span>
-            <Avatar name={a.user?.name} size={20} />
-            <span className={clsx(
-              'flex-1 truncate',
-              a.isDone ? 'text-surface-500 line-through' : 'text-surface-900 dark:text-surface-100',
-            )}>
-              {a.user?.name || '—'}
-              {a.userId === currentUserId && <span className="text-[11px] text-primary-500 ml-1">(вы)</span>}
-            </span>
-            {a.isDone && a.doneAt && (
-              <span className="text-[10px] text-surface-400">
-                {new Date(a.doneAt).toLocaleDateString('ru-RU')}
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
 
-      {me && !me.isDone && (
-        <button
-          onClick={() => markDoneMut.mutate()}
-          disabled={markDoneMut.isPending}
-          className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium disabled:opacity-50"
-        >
-          <CheckCircle size={14} /> {markDoneMut.isPending ? 'Сохраняю...' : 'Я сделал свою часть'}
-        </button>
-      )}
-      {me && me.isDone && (
-        <div className="mt-2 text-[11px] text-emerald-600 dark:text-emerald-400 text-center">
+      {/* Progress bar */}
+      <div className="h-1.5 rounded-full bg-surface-100 dark:bg-surface-700 overflow-hidden">
+        <div
+          className={clsx('h-full transition-all duration-300', allDone ? 'bg-emerald-500' : 'bg-primary-500')}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+
+      {/* Timeline */}
+      <div className="relative pt-1">
+        {/* вертикальная линия */}
+        <div className="absolute right-3 top-3 bottom-3 w-px bg-surface-200 dark:bg-surface-700" />
+
+        <div className="space-y-2">
+          {assignees.map((a, idx) => {
+            const isCurrent = !a.isDone && idx === currentIdx
+            const isMe = a.userId === currentUserId
+            return (
+              <div key={a.userId} className="relative pr-9">
+                {/* card */}
+                <div
+                  className={clsx(
+                    'rounded-xl px-3 py-2.5 border transition-colors',
+                    a.isDone
+                      ? 'bg-surface-50 dark:bg-surface-800/40 border-surface-100 dark:border-surface-700'
+                      : isCurrent
+                        ? 'bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800'
+                        : 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-700',
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <Avatar name={a.user?.name} size={28} />
+                    <div className="flex-1 min-w-0">
+                      <div className={clsx(
+                        'text-sm font-medium truncate',
+                        a.isDone
+                          ? 'text-surface-400 dark:text-surface-500 line-through'
+                          : 'text-surface-900 dark:text-surface-100',
+                      )}>
+                        {a.user?.name || '—'}
+                        {isMe && <span className="text-[11px] text-primary-500 ml-1 no-underline">(вы)</span>}
+                      </div>
+                      <div className="text-[11px] text-surface-500 dark:text-surface-400">
+                        {a.isDone && a.doneAt
+                          ? `Сделано ${new Date(a.doneAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+                          : isCurrent
+                            ? '🔵 В работе сейчас'
+                            : 'Ожидает своей очереди'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Кнопка «Я сделал свою часть» — только на своей текущей карточке */}
+                  {isMe && !a.isDone && (
+                    <button
+                      onClick={() => markDoneMut.mutate()}
+                      disabled={markDoneMut.isPending}
+                      className="mt-2 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium disabled:opacity-50"
+                    >
+                      <CheckCircle size={13} />
+                      {markDoneMut.isPending ? 'Сохраняю...' : 'Я сделал свою часть'}
+                    </button>
+                  )}
+                </div>
+
+                {/* status circle on the line */}
+                <span
+                  className={clsx(
+                    'absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center ring-4',
+                    a.isDone
+                      ? 'bg-emerald-500 text-white ring-white dark:ring-surface-900'
+                      : isCurrent
+                        ? 'bg-primary-500 text-white ring-white dark:ring-surface-900 animate-pulse'
+                        : 'bg-surface-200 dark:bg-surface-700 ring-white dark:ring-surface-900',
+                  )}
+                  title={a.isDone ? 'Готово' : isCurrent ? 'В работе' : 'Ожидает'}
+                >
+                  {a.isDone && <Check size={11} strokeWidth={3} />}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {me && me.isDone && !allDone && (
+        <div className="text-[11px] text-emerald-600 dark:text-emerald-400 text-center pt-1">
           ✓ Ваша часть готова. Ждём остальных.
         </div>
       )}
