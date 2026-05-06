@@ -5,15 +5,21 @@ import {
 import { Task } from './task.entity';
 import { User } from '../users/user.entity';
 
-/** Многие-ко-многим Task ↔ User со собственным состоянием.
- *  Каждый исполнитель отдельно отмечает свою часть готовой.
- *  Когда все isDone=true → задача автоматически переходит в REVIEW. */
+/** Sequential workflow исполнителей: задача проходит через шаги по
+ *  очереди, в порядке возрастания position. Один и тот же сотрудник
+ *  может быть на разных шагах (например, SMM пишет промпт на 1-м шаге
+ *  и публикует на 3-м).
+ *  PK: (taskId, position) — позволяет дубликаты userId. */
 @Entity('task_assignees')
 export class TaskAssignee {
   @PrimaryColumn('uuid')
   taskId: string;
 
-  @PrimaryColumn('uuid')
+  /** Порядковый номер шага (0-based). Шаги идут по возрастанию. */
+  @PrimaryColumn({ type: 'int' })
+  position: number;
+
+  @Column('uuid')
   userId: string;
 
   @ManyToOne(() => Task, { onDelete: 'CASCADE' })

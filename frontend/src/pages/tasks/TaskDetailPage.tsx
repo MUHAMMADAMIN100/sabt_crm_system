@@ -1010,8 +1010,9 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
                     </div>
                   </div>
 
-                  {/* Кнопка «Я сделал свою часть» — только на своей текущей карточке */}
-                  {isMe && !a.isDone && (
+                  {/* Кнопка «Я сделал свою часть» — ТОЛЬКО на текущем шаге.
+                      Если я на нескольких шагах, кнопка только на активном. */}
+                  {isMe && !a.isDone && isCurrent && (
                     <button
                       onClick={() => markDoneMut.mutate()}
                       disabled={markDoneMut.isPending}
@@ -1020,6 +1021,11 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
                       <CheckCircle size={13} />
                       {markDoneMut.isPending ? 'Сохраняю...' : 'Я сделал свою часть'}
                     </button>
+                  )}
+                  {isMe && !a.isDone && !isCurrent && (
+                    <div className="mt-2 text-[11px] text-amber-600 dark:text-amber-400 text-center">
+                      ⏳ Ждите своей очереди
+                    </div>
                   )}
                 </div>
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from '@/i18n'
 import { useAuthStore } from '@/store/auth.store'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, ArrowUp, ArrowDown, X as XIcon, Plus } from 'lucide-react'
 import clsx from 'clsx'
 
 /** Группировка исполнителей по специализации (роли). Каждая группа —
@@ -201,9 +201,11 @@ export default function TaskForm({
               />
             )}
             {selectedAssignees.length > 0 && (
-              <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-1">
-                Выбрано: {selectedAssignees.length}
-              </p>
+              <AssigneeQueueEditor
+                queue={selectedAssignees}
+                employees={employees || []}
+                setQueue={setSelectedAssignees}
+              />
             )}
           </div>
         )}
@@ -286,6 +288,95 @@ export default function TaskForm({
         </button>
       </div>
     </form>
+  )
+}
+
+/** Очередь шагов workflow — sequential список выбранных исполнителей.
+ *  Каждый шаг: номер, имя, кнопки ↑ ↓ (поменять порядок), + (повторить
+ *  этого человека на ещё одном шаге в конце), × (удалить шаг).
+ *  Дубликаты разрешены: один сотрудник может быть на нескольких шагах. */
+function AssigneeQueueEditor({ queue, employees, setQueue }: {
+  queue: string[]
+  employees: any[]
+  setQueue: (next: string[]) => void
+}) {
+  const nameOf = (uid: string) => {
+    const e = employees.find((x: any) => (x.userId || x.id) === uid)
+    return e?.fullName || e?.name || '—'
+  }
+  const positionOf = (uid: string) => {
+    const e = employees.find((x: any) => (x.userId || x.id) === uid)
+    return e?.position || ''
+  }
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= queue.length) return
+    const next = queue.slice()
+    const [item] = next.splice(from, 1)
+    next.splice(to, 0, item)
+    setQueue(next)
+  }
+  const remove = (idx: number) => {
+    const next = queue.slice()
+    next.splice(idx, 1)
+    setQueue(next)
+  }
+  const duplicate = (uid: string) => {
+    setQueue([...queue, uid])
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-primary-200 dark:border-primary-900/50 bg-primary-50/30 dark:bg-primary-900/10 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-primary-700 dark:text-primary-400 flex items-center gap-1">
+          📋 Очередь шагов ({queue.length})
+        </span>
+        <span className="text-[11px] text-surface-500 dark:text-surface-400">
+          Задача пойдёт по этому порядку
+        </span>
+      </div>
+      <ol className="space-y-1.5">
+        {queue.map((uid, idx) => (
+          <li
+            key={`${uid}-${idx}`}
+            className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700"
+          >
+            <span className="w-5 h-5 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+              {idx + 1}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate">{nameOf(uid)}</div>
+              {positionOf(uid) && (
+                <div className="text-[10px] text-surface-400 truncate">{positionOf(uid)}</div>
+              )}
+            </div>
+            <button type="button" onClick={() => move(idx, idx - 1)} disabled={idx === 0}
+              className="p-1 rounded hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Выше">
+              <ArrowUp size={13} />
+            </button>
+            <button type="button" onClick={() => move(idx, idx + 1)} disabled={idx === queue.length - 1}
+              className="p-1 rounded hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Ниже">
+              <ArrowDown size={13} />
+            </button>
+            <button type="button" onClick={() => duplicate(uid)}
+              className="p-1 rounded hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
+              title="Повторить (добавить ещё одним шагом в конце)">
+              <Plus size={13} />
+            </button>
+            <button type="button" onClick={() => remove(idx)}
+              className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"
+              title="Убрать шаг">
+              <XIcon size={13} />
+            </button>
+          </li>
+        ))}
+      </ol>
+      <p className="text-[10px] text-surface-500 dark:text-surface-400 leading-snug">
+        Один и тот же сотрудник может быть на нескольких шагах. Например: SMM пишет промпт →
+        Дизайнер делает макет → SMM публикует. Кнопка <Plus className="inline" size={9}/> — повторить.
+      </p>
+    </div>
   )
 }
 

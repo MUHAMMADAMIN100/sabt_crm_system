@@ -59,19 +59,21 @@ export class TasksService {
 
   // ─── Multi-assignee helpers ────────────────────────────────────────
 
-  /** Загружает assignees для одной/нескольких задач (с user-объектами). */
+  /** Загружает assignees для одной/нескольких задач (с user-объектами).
+   *  Сортируем по position — это важный sequential порядок workflow. */
   private async loadAssignees(taskIds: string[]): Promise<Map<string, any[]>> {
     if (taskIds.length === 0) return new Map();
     const rows = await this.assigneesRepo.find({
       where: { taskId: In(taskIds) },
       relations: ['user'],
-      order: { createdAt: 'ASC' },
+      order: { taskId: 'ASC', position: 'ASC' },
     });
     const map = new Map<string, any[]>();
     for (const id of taskIds) map.set(id, []);
     for (const r of rows) {
       const arr = map.get(r.taskId) || [];
       arr.push({
+        position: r.position,
         userId: r.userId,
         isDone: r.isDone,
         doneAt: r.doneAt,
@@ -83,27 +85,42 @@ export class TasksService {
     return map;
   }
 
-  /** Синхронизирует список исполнителей с переданным userIds.
-   *  Старые записи для users которых нет в списке — удаляет.
-   *  Новых добавляет с isDone=false. Существующих оставляет как есть. */
+  /** Синхронизирует список исполнителей в виде упорядоченной цепочки.
+   *  userIds — массив, порядок которого = порядок шагов workflow.
+   *  Один user может встречаться несколько раз (на разных шагах).
+   *
+   *  Если задача ещё «свежая» (никто не отметил готовность) — полная
+   *  замена. Если есть прогресс — менять очередь нельзя (упадёт 400),
+   *  чтобы не сломать историю. */
   private async syncAssignees(taskId: string, userIds: string[]): Promise<void> {
-    const cleanIds = Array.from(new Set((userIds || []).filter(Boolean)));
+    const ordered = (userIds || []).filter(Boolean);
     const existing = await this.assigneesRepo.find({ where: { taskId } });
-    const existingIds = new Set(existing.map(r => r.userId));
-    const newSet = new Set(cleanIds);
+    const hasProgress = existing.some(r => r.isDone);
 
-    // Удалить тех кто исчез
-    const toRemove = existing.filter(r => !newSet.has(r.userId));
-    if (toRemove.length > 0) {
-      await this.assigneesRepo.remove(toRemove);
+    // Если кто-то уже сдал — реordering запрещён. Молча игнорируем,
+    // если новый список совпадает с существующим (по userId+order),
+    // иначе бросаем 400.
+    if (hasProgress) {
+      const existingOrdered = [...existing].sort((a, b) => a.position - b.position).map(r => r.userId);
+      const same = existingOrdered.length === ordered.length
+        && existingOrdered.every((u, i) => u === ordered[i]);
+      if (!same) {
+        throw new BadRequestException(
+          'Нельзя менять очередь исполнителей — кто-то уже отметил готовность',
+        );
+      }
+      return; // ничего не меняем
     }
-    // Добавить новых (которых ещё нет)
-    const toAdd = cleanIds
-      .filter(id => !existingIds.has(id))
-      .map(userId => this.assigneesRepo.create({ taskId, userId, isDone: false }));
-    if (toAdd.length > 0) {
-      await this.assigneesRepo.save(toAdd);
+
+    // Чистая задача — полностью заменяем.
+    if (existing.length > 0) {
+      await this.assigneesRepo.remove(existing);
     }
+    if (ordered.length === 0) return;
+    const fresh = ordered.map((userId, idx) => this.assigneesRepo.create({
+      taskId, userId, position: idx, isDone: false,
+    }));
+    await this.assigneesRepo.save(fresh);
   }
 
   /** Извлекает массив assigneeIds из dto (поддерживает legacy assigneeId). */
@@ -113,49 +130,93 @@ export class TasksService {
     return undefined;
   }
 
-  /** Исполнитель отмечает свою часть как сделанную.
-   *  Если все assignees готовы — задача автоматически переходит в REVIEW
-   *  (или сразу в DONE для SMM, у них особый флоу). */
+  /** Sequential workflow: только текущий по очереди исполнитель (первый
+   *  с isDone=false) может отметить «свою часть готовой». Остальные ждут.
+   *  Когда последний шаг отмечен → задача автоматически в REVIEW (или DONE
+   *  для SMM-специалиста). При смене этапа — уведомление следующему. */
   async markMyPartDone(
     taskId: string,
     user: { id: string; role: string; name?: string },
     note?: string,
   ): Promise<{ task: Task; allDone: boolean }> {
     const task = await this.findOne(taskId);
-    const row = await this.assigneesRepo.findOne({ where: { taskId, userId: user.id } });
-    if (!row) {
-      throw new ForbiddenException('Вы не являетесь исполнителем этой задачи');
+    const all = await this.assigneesRepo.find({
+      where: { taskId },
+      order: { position: 'ASC' },
+    });
+    if (all.length === 0) {
+      throw new ForbiddenException('У задачи нет исполнителей');
     }
-    if (row.isDone) {
-      // Уже отмечено — идемпотентно вернём текущее состояние
-      return { task, allDone: false };
+
+    // Текущий шаг — первый невыполненный по position
+    const current = all.find(r => !r.isDone);
+    if (!current) {
+      // Все уже готовы — идемпотентно
+      return { task, allDone: true };
     }
-    row.isDone = true;
-    row.doneAt = new Date();
-    if (note) row.note = note;
-    await this.assigneesRepo.save(row);
+    if (current.userId !== user.id) {
+      throw new ForbiddenException('Сейчас задача не у вас. Дождитесь своей очереди.');
+    }
 
-    const all = await this.assigneesRepo.find({ where: { taskId } });
-    const allDone = all.length > 0 && all.every(r => r.isDone);
+    // Отмечаем текущий шаг
+    current.isDone = true;
+    current.doneAt = new Date();
+    if (note) current.note = note;
+    await this.assigneesRepo.save(current);
 
-    // Уведомление PM что один из исполнителей сделал свою часть
+    // Перезагружаем после save
+    const updated = await this.assigneesRepo.find({
+      where: { taskId },
+      relations: ['user'],
+      order: { position: 'ASC' },
+    });
+    const allDone = updated.every(r => r.isDone);
+    const next = updated.find(r => !r.isDone);
+
+    // Уведомление PM — короткое о прогрессе
+    const doneNum = updated.filter(r => r.isDone).length;
     if (task.createdById && task.createdById !== user.id) {
       this.notificationsService.create({
         userId: task.createdById,
         type: NotificationType.STATUS_CHANGE,
-        title: '✓ Исполнитель завершил свою часть',
-        message: `${user.name || 'Исполнитель'} завершил свою часть в задаче "${task.title}" (${all.filter(r => r.isDone).length}/${all.length})`,
+        title: `✓ Шаг ${doneNum}/${updated.length} завершён`,
+        message: `${user.name || 'Исполнитель'} завершил свой шаг в задаче "${task.title}"`,
         link: `/tasks/${taskId}`,
       }).catch(() => {});
     }
 
-    // Авто-переход в REVIEW когда все готовы (только для in-progress статусов)
+    // Передача следующему — отдельное уведомление + email + telegram
+    if (next && next.userId !== user.id) {
+      const nextUser = next.user;
+      this.notificationsService.create({
+        userId: next.userId,
+        type: NotificationType.NEW_TASK,
+        title: '➡️ Вам передали задачу',
+        message: `${user.name || 'Предыдущий исполнитель'} завершил свой шаг — теперь ваша очередь в задаче "${task.title}"`,
+        link: `/tasks/${taskId}`,
+      }).catch(() => {});
+      if (nextUser?.email) {
+        const deadline = task.deadline ? new Date(task.deadline).toLocaleDateString('ru-RU') : undefined;
+        this.mailService.sendTaskAssigned(
+          nextUser.email, nextUser.name, task.title, taskId,
+          task.project?.name, deadline, task.priority, task.description || undefined,
+        ).catch(() => {});
+      }
+      this.telegramService.sendToUser(
+        next.userId,
+        `➡️ <b>Вам передали задачу</b>\n\n` +
+        `📋 ${task.title}\n` +
+        `👤 Предыдущий шаг сделал: ${user.name || 'Исполнитель'}\n` +
+        `\n👉 ${this.telegramService.appUrl}/tasks/${taskId}`,
+      ).catch(() => {});
+    }
+
+    // Авто-переход в REVIEW когда все готовы
     const inProgressLike: TaskStatus[] = [
       TaskStatus.NEW, TaskStatus.IN_PROGRESS, TaskStatus.ACCEPTED,
       TaskStatus.RETURNED, TaskStatus.ON_REWORK,
     ];
     if (allDone && inProgressLike.includes(task.status)) {
-      // SMM-специалисты могут сразу в DONE; остальные — в REVIEW для PM
       const isSmm = user.role === UserRole.SMM_SPECIALIST;
       const newStatus = isSmm ? TaskStatus.DONE : TaskStatus.REVIEW;
       await this.repo.update(taskId, { status: newStatus });
@@ -170,18 +231,15 @@ export class TasksService {
         details: { from: task.status, to: newStatus, reason: 'all_assignees_done' },
       }).catch(() => {});
 
-      // Авто-отчёт если DONE
       if (newStatus === TaskStatus.DONE) {
         await this.autoReportFromTask({ ...task, status: newStatus } as Task);
       }
-
-      // Уведомить PM что задача готова к проверке
       if (task.createdById) {
         this.notificationsService.create({
           userId: task.createdById,
           type: NotificationType.REVIEW_NEEDED,
           title: '🎯 Задача готова к проверке',
-          message: `Все исполнители завершили задачу "${task.title}". Теперь нужна ваша проверка.`,
+          message: `Все этапы завершены в задаче "${task.title}". Нужна ваша проверка.`,
           link: `/tasks/${taskId}`,
         }).catch(() => {});
       }
@@ -198,9 +256,10 @@ export class TasksService {
     const rows = await this.assigneesRepo.find({
       where: { taskId },
       relations: ['user'],
-      order: { createdAt: 'ASC' },
+      order: { position: 'ASC' },
     });
     return rows.map(r => ({
+      position: r.position,
       userId: r.userId,
       isDone: r.isDone,
       doneAt: r.doneAt,
@@ -284,17 +343,22 @@ export class TasksService {
 
     const creator = await this.userRepo.findOne({ where: { id: userId } });
 
-    // Уведомления всем исполнителям (а не только первому)
-    const notifyIds = incomingAssigneeIds && incomingAssigneeIds.length > 0
-      ? incomingAssigneeIds.filter(id => id !== userId)
-      : (dto.assigneeId && dto.assigneeId !== userId ? [dto.assigneeId] : []);
+    // Sequential workflow: уведомляем ТОЛЬКО первого исполнителя в цепочке
+    // (он начинает работу). Следующие узнают когда задача дойдёт до них —
+    // через markMyPartDone сделает уведомление «➡️ Вам передали задачу».
+    // Если incomingAssigneeIds — берём первый. Иначе fallback к dto.assigneeId.
+    const firstAssigneeId = incomingAssigneeIds && incomingAssigneeIds.length > 0
+      ? incomingAssigneeIds[0]
+      : dto.assigneeId;
+    const notifyIds = (firstAssigneeId && firstAssigneeId !== userId) ? [firstAssigneeId] : [];
+    const totalSteps = incomingAssigneeIds?.length || (dto.assigneeId ? 1 : 0);
     for (const aid of notifyIds) {
       try {
         await this.notificationsService.create({
           userId: aid,
           type: NotificationType.NEW_TASK,
           title: 'Новая задача',
-          message: `Вам назначена задача: "${saved.title}"${notifyIds.length > 1 ? ` (с другими ${notifyIds.length - 1} исп.)` : ''}`,
+          message: `Вам назначена задача: "${saved.title}"${totalSteps > 1 ? ` (этап 1 из ${totalSteps})` : ''}`,
           link: `/tasks/${saved.id}`,
         });
         const assignee = await this.userRepo.findOne({ where: { id: aid } });
