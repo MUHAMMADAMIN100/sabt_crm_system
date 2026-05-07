@@ -22,7 +22,7 @@ const ALL_STATUSES = [
   { value: 'cancelled', label: 'Отменена' },
 ]
 
-const PM_ROLES = ['admin', 'founder', 'co_founder', 'project_manager']
+const PM_ROLES = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm']
 
 interface Props {
   taskId: string | null

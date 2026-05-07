@@ -78,7 +78,11 @@ export default function ProjectDetailPage() {
   const qc = useQueryClient()
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
+  // head_smm — это менеджер SMM-проектов, должен иметь те же права что
+  // и project_manager (создавать задачи, редактировать, управлять составом).
+  // Бэкенд отдельно проверит что head_smm управляет именно своим SMM-проектом
+  // (project.managerId === user.id) и вернёт 403 для чужих.
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(user?.role || '')
   const canManagePayment = user?.role === 'founder' || user?.role === 'co_founder'
   const canSeePayment = ['admin', 'founder', 'co_founder', 'sales_manager'].includes(user?.role || '')
   const canRequestPayment = ['admin', 'founder', 'co_founder', 'sales_manager'].includes(user?.role || '')
