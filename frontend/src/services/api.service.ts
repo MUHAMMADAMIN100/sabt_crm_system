@@ -7,6 +7,13 @@ export const authApi = {
   sessions: (days = 7) => api.get('/auth/sessions', { params: { days } }).then(r => r.data),
 }
 
+// helper для multipart/form-data загрузки аватара
+const avatarFormData = (file: File) => {
+  const fd = new FormData()
+  fd.append('avatar', file)
+  return fd
+}
+
 // ─── Users ───────────────────────────────────────────────
 export const usersApi = {
   list: (role?: string) => api.get('/users', { params: { role } }).then(r => r.data),
@@ -18,6 +25,15 @@ export const usersApi = {
   resetPassword: (id: string, newPassword?: string) => api.patch(`/users/${id}/reset-password`, { newPassword }).then(r => r.data),
   remove: (id: string) => api.delete(`/users/${id}`).then(r => r.data),
   cleanupOrphans: () => api.post('/users/cleanup-orphans').then(r => r.data),
+  // Аватары — multipart/form-data загрузка картинки
+  uploadMyAvatar: (file: File) =>
+    api.patch('/users/me/avatar', avatarFormData(file), {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data),
+  uploadAvatarFor: (userId: string, file: File) =>
+    api.patch(`/users/${userId}/avatar`, avatarFormData(file), {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data),
 }
 
 // ─── Employees ───────────────────────────────────────────

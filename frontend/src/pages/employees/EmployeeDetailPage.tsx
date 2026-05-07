@@ -1,7 +1,8 @@
 import { useState, lazy, Suspense } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { employeesApi, tasksApi, storiesApi } from '@/services/api.service'
+import { employeesApi, tasksApi, storiesApi, usersApi } from '@/services/api.service'
+import { useRef } from 'react'
 
 const StoryCalendar = lazy(() => import('@/components/stories/StoryCalendar'))
 import { useAuthStore } from '@/store/auth.store'
@@ -25,6 +26,27 @@ export default function EmployeeDetailPage() {
   const canView = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
   const isAdminOrFounder = user?.role === 'founder' || user?.role === 'co_founder'
   const canEditSalary = user?.role === 'founder' || user?.role === 'co_founder'
+  // admin/founder/co_founder могут менять аватар сотрудника
+  const canEditAvatar = ['admin', 'founder', 'co_founder'].includes(user?.role || '')
+  const avatarFileRef = useRef<HTMLInputElement>(null)
+  const uploadAvatarMut = useMutation({
+    mutationFn: ({ userId, file }: { userId: string; file: File }) => usersApi.uploadAvatarFor(userId, file),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employee', id] })
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['users'] })
+      toast.success('Аватар обновлён')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка загрузки'),
+  })
+  const handleAvatarPick = (e: React.ChangeEvent<HTMLInputElement>, userId: string | undefined) => {
+    const file = e.target.files?.[0]
+    if (!file || !userId) return
+    if (!file.type.startsWith('image/')) { toast.error('Выберите файл-изображение'); return }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Файл слишком большой (макс. 5 МБ)'); return }
+    uploadAvatarMut.mutate({ userId, file })
+    if (avatarFileRef.current) avatarFileRef.current.value = ''
+  }
 
   const [editingSalary, setEditingSalary] = useState(false)
   const [salaryInput, setSalaryInput] = useState('')
@@ -176,7 +198,37 @@ export default function EmployeeDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Profile card */}
         <div className="card text-center">
-          <div className="flex justify-center mb-3"><Avatar name={emp.fullName} src={emp.avatar} size={80} /></div>
+          <div className="flex justify-center mb-3">
+            {canEditAvatar ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => avatarFileRef.current?.click()}
+                  className="relative group rounded-full"
+                  title="Сменить аватар сотрудника"
+                >
+                  <Avatar name={emp.fullName} src={emp.avatar} size={80} />
+                  <span className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    <Camera size={22} className="text-white" />
+                  </span>
+                  {uploadAvatarMut.isPending && (
+                    <span className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center">
+                      <span className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    </span>
+                  )}
+                </button>
+                <input
+                  ref={avatarFileRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={e => handleAvatarPick(e, emp.userId)}
+                  className="hidden"
+                />
+              </>
+            ) : (
+              <Avatar name={emp.fullName} src={emp.avatar} size={80} />
+            )}
+          </div>
           <div className="flex items-center justify-center gap-2">
             <h2 className="font-bold text-xl text-surface-900 dark:text-surface-100">{emp.fullName}</h2>
             {emp.isSubAdmin && <ShieldCheck size={18} className="text-primary-500" />}

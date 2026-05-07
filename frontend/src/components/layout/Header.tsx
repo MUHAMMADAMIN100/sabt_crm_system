@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Menu, Bell, Search, LogOut, User, ChevronDown, Globe, Moon, Sun, X } from 'lucide-react'
+import { Menu, Bell, Search, LogOut, User, ChevronDown, Globe, Moon, Sun, X, Check } from 'lucide-react'
 import { useAuthStore } from '@/store/auth.store'
 import { useThemeStore } from '@/store/theme.store'
 import { useTranslation } from '@/i18n'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { notificationsApi, tasksApi, projectsApi, employeesApi } from '@/services/api.service'
 import { getUserPositionLabel } from '@/lib/permissions'
+import { formatDistanceToNow } from 'date-fns'
+import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
 
 interface HeaderProps { onMenuClick: () => void }
@@ -18,12 +20,15 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const navigate = useNavigate()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [langMenuOpen, setLangMenuOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const langRef = useRef<HTMLDivElement>(null)
+  const notifRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLDivElement>(null)
+  const qc = useQueryClient()
   const { theme, toggleTheme } = useThemeStore()
   const { t, locale, setLocale } = useTranslation()
 
@@ -42,7 +47,6 @@ export default function Header({ onMenuClick }: HeaderProps) {
     queryKey: ['notifications'],
     queryFn: () => notificationsApi.list(),
     refetchInterval: 30000,
-    enabled: isFounderRole,
   })
   const founderUnreadCount = useMemo(() => {
     if (!isFounderRole || !allNotifications) return 0
@@ -61,10 +65,33 @@ export default function Header({ onMenuClick }: HeaderProps) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setUserMenuOpen(false)
       if (langRef.current && !langRef.current.contains(e.target as Node)) setLangMenuOpen(false)
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSearchOpen(false)
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  // Mark-read mutation
+  const markReadMut = useMutation({
+    mutationFn: (id: string) => notificationsApi.markRead(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['notifications'] })
+      qc.invalidateQueries({ queryKey: ['unread-count'] })
+    },
+  })
+  const markAllReadMut = useMutation({
+    mutationFn: () => notificationsApi.markAllRead(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['notifications'] })
+      qc.invalidateQueries({ queryKey: ['unread-count'] })
+    },
+  })
+
+  const handleNotificationClick = (n: any) => {
+    if (!n.isRead) markReadMut.mutate(n.id)
+    setNotifOpen(false)
+    if (n.link) navigate(n.link)
+  }
 
   // Global search results
   const q = searchQuery.toLowerCase().trim()
@@ -180,15 +207,79 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
       {/* Right corner — user menu with integrated controls */}
       <div className="flex items-center gap-1 ml-auto">
-        {/* Notifications */}
-        <button onClick={() => navigate('/notifications')} className="relative p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
-          <Bell size={18} />
-          {badgeCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium">
-              {badgeCount > 99 ? '99+' : badgeCount}
-            </span>
+        {/* Notifications dropdown */}
+        <div className="relative" ref={notifRef}>
+          <button onClick={() => setNotifOpen(o => !o)} className="relative p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
+            <Bell size={18} />
+            {badgeCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium">
+                {badgeCount > 99 ? '99+' : badgeCount}
+              </span>
+            )}
+          </button>
+          {notifOpen && (
+            <div className="absolute right-0 top-full mt-1 w-[340px] sm:w-[380px] max-w-[calc(100vw-1rem)] bg-white dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 z-50 animate-fade-in flex flex-col max-h-[70vh]">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-surface-100 dark:border-surface-700 shrink-0">
+                <h3 className="font-semibold text-sm text-surface-900 dark:text-surface-100">Уведомления</h3>
+                {(allNotifications ?? []).some((n: any) => !n.isRead) && (
+                  <button onClick={() => markAllReadMut.mutate()} className="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                    <Check size={11} /> Прочитать все
+                  </button>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {(allNotifications ?? []).length === 0 ? (
+                  <p className="text-sm text-surface-400 dark:text-surface-500 p-6 text-center">Нет уведомлений</p>
+                ) : (
+                  <ul className="divide-y divide-surface-50 dark:divide-surface-700">
+                    {(allNotifications ?? []).slice(0, 15).map((n: any) => (
+                      <li
+                        key={n.id}
+                        onClick={() => handleNotificationClick(n)}
+                        className={clsx(
+                          'px-4 py-3 cursor-pointer transition-colors hover:bg-surface-50 dark:hover:bg-surface-700/50',
+                          !n.isRead && 'bg-primary-50/50 dark:bg-primary-900/10',
+                        )}
+                      >
+                        <div className="flex items-start gap-2">
+                          {!n.isRead && (
+                            <span className="w-2 h-2 rounded-full bg-primary-500 mt-1.5 shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className={clsx(
+                              'text-sm leading-snug',
+                              !n.isRead
+                                ? 'font-medium text-surface-900 dark:text-surface-100'
+                                : 'text-surface-700 dark:text-surface-300',
+                            )}>
+                              {n.title}
+                            </p>
+                            {n.message && (
+                              <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5 line-clamp-2">
+                                {n.message}
+                              </p>
+                            )}
+                            <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-1">
+                              {n.createdAt ? formatDistanceToNow(new Date(n.createdAt), { addSuffix: true, locale: ru }) : ''}
+                            </p>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <button
+                onClick={() => { setNotifOpen(false); navigate('/notifications') }}
+                className="px-4 py-3 border-t border-surface-100 dark:border-surface-700 text-sm text-primary-600 dark:text-primary-400 hover:bg-surface-50 dark:hover:bg-surface-700/50 text-center font-medium shrink-0"
+              >
+                Все уведомления →
+              </button>
+            </div>
           )}
-        </button>
+        </div>
 
         {/* Theme toggle */}
         <button onClick={toggleTheme} className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300"

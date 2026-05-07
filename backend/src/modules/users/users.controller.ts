@@ -89,4 +89,19 @@ export class UsersController {
   updateAvatar(@Request() req, @UploadedFile() file: Express.Multer.File) {
     return this.usersService.updateAvatar(req.user.id, file.filename);
   }
+
+  /** Админ/основатель/сооснователь меняет аватар любого сотрудника. */
+  @Patch(':id/avatar')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @UseInterceptors(
+    FileInterceptor('avatar', {
+      storage: diskStorage({
+        destination: './uploads/avatars',
+        filename: (req, file, cb) => cb(null, `${uuidv4()}${extname(file.originalname)}`),
+      }),
+    }),
+  )
+  updateAvatarFor(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    return this.usersService.updateAvatar(id, file.filename);
+  }
 }

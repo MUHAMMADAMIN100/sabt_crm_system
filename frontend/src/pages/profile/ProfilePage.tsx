@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useEffect, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth.store'
-import { authApi, projectsApi } from '@/services/api.service'
+import { authApi, projectsApi, usersApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
 import { Avatar, ProgressBar, StatusBadge } from '@/components/ui'
-import { User, Mail, Briefcase, Key, Clock, FolderKanban, CalendarDays } from 'lucide-react'
+import { User, Mail, Briefcase, Key, Clock, FolderKanban, CalendarDays, Camera } from 'lucide-react'
 import { getUserPositionLabel } from '@/lib/permissions'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
@@ -17,6 +17,34 @@ export default function ProfilePage() {
   const [changingPass, setChangingPass] = useState(false)
   const { register, handleSubmit, reset } = useForm()
   const { t } = useTranslation()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const qc = useQueryClient()
+
+  const uploadAvatarMut = useMutation({
+    mutationFn: (file: File) => usersApi.uploadMyAvatar(file),
+    onSuccess: () => {
+      fetchMe()
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['users'] })
+      toast.success('Аватар обновлён')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка загрузки'),
+  })
+
+  const handleAvatarPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Выберите файл-изображение')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Файл слишком большой (макс. 5 МБ)')
+      return
+    }
+    uploadAvatarMut.mutate(file)
+    if (fileRef.current) fileRef.current.value = ''
+  }
 
   // Refresh user profile (incl. role) on mount — admin may have changed it
   useEffect(() => { fetchMe() }, [fetchMe])
@@ -64,7 +92,29 @@ export default function ProfilePage() {
       {/* Profile Card */}
       <div className="card">
         <div className="flex items-center gap-4 mb-6">
-          <Avatar name={user?.name} src={user?.avatar} size={64} />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="relative group rounded-full"
+            title="Сменить аватар"
+          >
+            <Avatar name={user?.name} src={user?.avatar} size={64} />
+            <span className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+              <Camera size={20} className="text-white" />
+            </span>
+            {uploadAvatarMut.isPending && (
+              <span className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center">
+                <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              </span>
+            )}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            onChange={handleAvatarPick}
+            className="hidden"
+          />
           <div>
             <h2 className="text-xl font-bold text-surface-900 dark:text-surface-100">{user?.name}</h2>
             <div className="flex items-center gap-2 mt-1">

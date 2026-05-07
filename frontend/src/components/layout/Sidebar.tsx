@@ -29,7 +29,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
     { to: '/analytics',     icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },
     { to: '/archive',       icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
-    { to: '/notifications', icon: Bell,            label: t('nav.notifications'), permission: 'notifications.view' },
+    // Уведомления убраны из сайдбара — теперь только через колокольчик в Header
     { to: '/employees',     icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
     { to: '/clients',       icon: Contact,         label: 'База клиентов',     permission: 'clients.view' },
     { to: '/tariffs',       icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
