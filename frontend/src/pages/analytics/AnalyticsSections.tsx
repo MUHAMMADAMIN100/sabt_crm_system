@@ -238,6 +238,7 @@ export function FinanceAnalyticsSection() {
             <tr>
               <th className="text-left px-3 py-2">Проект</th>
               <th className="text-right px-3 py-2">Контракт</th>
+              <th className="text-right px-3 py-2">Скидка</th>
               <th className="text-right px-3 py-2">Оплачено</th>
               <th className="text-right px-3 py-2">К оплате</th>
               <th className="text-right px-3 py-2">Себестоимость</th>
@@ -250,6 +251,9 @@ export function FinanceAnalyticsSection() {
               <tr key={p.id} className="border-t border-gray-200 dark:border-gray-700">
                 <td className="px-3 py-2"><Link to={`/projects/${p.id}`} className="hover:text-purple-600">{p.name}</Link></td>
                 <td className="px-3 py-2 text-right text-xs">{fmtMoney(p.totalContractValue)}</td>
+                <td className="px-3 py-2 text-right text-xs text-amber-600 dark:text-amber-400">
+                  {Number(p.discount) > 0 ? `−${fmtMoney(p.discount)}` : '—'}
+                </td>
                 <td className="px-3 py-2 text-right text-xs">{fmtMoney(p.paidAmount)}</td>
                 <td className="px-3 py-2 text-right text-xs">{fmtMoney(p.outstandingAmount)}</td>
                 <td className="px-3 py-2 text-right text-xs">{fmtMoney(p.internalCostEstimate)}</td>
@@ -325,7 +329,8 @@ export function TariffAnalyticsSection() {
   for (const p of list) {
     if (p.tariffId && counts[p.tariffId]) {
       counts[p.tariffId].projects++
-      counts[p.tariffId].revenue += Number(p.monthlyFee || 0)
+      // Выручка с учётом скидки по проекту
+      counts[p.tariffId].revenue += Math.max(0, Number(p.monthlyFee || 0) - Number(p.discount || 0))
     }
   }
 

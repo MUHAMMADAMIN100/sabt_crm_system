@@ -278,12 +278,12 @@ export default function ProjectsPage() {
           canCreateProject && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
         } />
       ) : (
-        <div key={page} className="animate-fade-in grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div key={page} className="animate-fade-in grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 items-stretch">
           {pagedProjects.map((p: any) => (
             <div
               key={p.id}
               onClick={() => navigate(`/projects/${p.id}`)}
-              className="card group hover:shadow-md transition-shadow cursor-pointer relative"
+              className="card group hover:shadow-md transition-shadow cursor-pointer relative h-full flex flex-col"
             >
               {/* Ad status dot — SMM projects only */}
               {p.projectType === 'SMM' && (
@@ -297,68 +297,76 @@ export default function ProjectsPage() {
                   )}
                 />
               )}
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: p.color || '#eff2ff' }}>
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: p.color || '#eff2ff' }}>
                     <FolderKanban size={18} style={{ color: p.color ? '#fff' : '#6B4FCF' }} />
                   </div>
-                  <div>
-                    <span className="font-semibold text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{p.name}</span>
-                    <div className="flex items-center gap-1 mt-0.5">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-surface-900 dark:text-surface-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 text-sm truncate" title={p.name}>{p.name}</h3>
+                    <div className="flex items-center gap-1 mt-1 flex-wrap">
                       <StatusBadge status={p.status} />
                       {p.projectType && (
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setProjectType(p.projectType) }}
                           title={`Показать только "${p.projectType}"`}
-                          className="text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/50 px-1.5 py-0.5 rounded-full transition-colors"
+                          className="text-[10px] bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/50 px-1.5 py-0.5 rounded-full transition-colors"
                         >{p.projectType}</button>
-                      )}
-                      {(p as any).tariffNameSnapshot && (
-                        <span
-                          title={`Тариф: ${(p as any).tariffNameSnapshot}`}
-                          className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1.5 py-0.5 rounded-full inline-flex items-center gap-1"
-                        >🏷 {(p as any).tariffNameSnapshot}</span>
-                      )}
-                      {(p as any).teamNameSnapshot && (
-                        <span
-                          title={`Команда: ${(p as any).teamNameSnapshot}`}
-                          className="text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 px-1.5 py-0.5 rounded-full inline-flex items-center gap-1"
-                        >👥 {(p as any).teamNameSnapshot}</span>
-                      )}
-                      {p.projectType === 'SMM' && !(p as any).tariffId && (
-                        <span
-                          title="SMM-проект без тарифа"
-                          className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full"
-                        >⚠ без тарифа</span>
                       )}
                     </div>
                   </div>
                 </div>
                 {isManagerPlus && (
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={(e) => { e.stopPropagation(); setEditProject(p) }} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500 dark:text-surface-400"><Edit size={14} /></button>
+                  <div className="flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={(e) => { e.stopPropagation(); setEditProject(p) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded text-surface-500 dark:text-surface-400" title="Редактировать"><Edit size={13} /></button>
                     {canCreateProject && (
                       <>
-                        <button onClick={(e) => { e.stopPropagation(); archiveMut.mutate(p.id) }} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500 dark:text-surface-400"><Archive size={14} /></button>
-                        <button onClick={(e) => { e.stopPropagation(); setDeleteId(p.id) }} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500 dark:text-red-400"><Trash2 size={14} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); archiveMut.mutate(p.id) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded text-surface-500 dark:text-surface-400" title="Архив"><Archive size={13} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); setDeleteId(p.id) }} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500 dark:text-red-400" title="Удалить"><Trash2 size={13} /></button>
                       </>
                     )}
                   </div>
                 )}
               </div>
 
+              {/* Метки: тариф / команда / без тарифа — в отдельной строке */}
+              {((p as any).tariffNameSnapshot || (p as any).teamNameSnapshot || (p.projectType === 'SMM' && !(p as any).tariffId)) && (
+                <div className="flex items-center gap-1 mb-3 flex-wrap">
+                  {(p as any).tariffNameSnapshot && (
+                    <span title={`Тариф: ${(p as any).tariffNameSnapshot}`}
+                      className="text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1.5 py-0.5 rounded-full max-w-[120px] truncate">
+                      🏷 {(p as any).tariffNameSnapshot}
+                    </span>
+                  )}
+                  {(p as any).teamNameSnapshot && (
+                    <span title={`Команда: ${(p as any).teamNameSnapshot}`}
+                      className="text-[10px] bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 px-1.5 py-0.5 rounded-full max-w-[120px] truncate">
+                      👥 {(p as any).teamNameSnapshot}
+                    </span>
+                  )}
+                  {p.projectType === 'SMM' && !(p as any).tariffId && (
+                    <span title="SMM-проект без тарифа"
+                      className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
+                      ⚠ без тарифа
+                    </span>
+                  )}
+                </div>
+              )}
+
               {p.description && <p className="text-xs text-surface-500 dark:text-surface-400 mb-3 line-clamp-2">{p.description}</p>}
 
-              <div className="mb-3">
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-surface-500 dark:text-surface-400">{t('projects.progress')}</span>
-                  <span className="font-medium text-surface-700 dark:text-surface-300">{p.progress}%</span>
+              {/* Footer прибит к низу через mt-auto чтобы все карточки были одинаковой высоты */}
+              <div className="mt-auto">
+                <div className="mb-2">
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-surface-500 dark:text-surface-400">{t('projects.progress')}</span>
+                    <span className="font-medium text-surface-700 dark:text-surface-300">{p.progress}%</span>
+                  </div>
+                  <ProgressBar value={p.progress} />
                 </div>
-                <ProgressBar value={p.progress} />
-              </div>
 
-              <div className="flex items-center justify-between text-xs text-surface-500 dark:text-surface-400">
+                <div className="flex items-center justify-between text-xs text-surface-500 dark:text-surface-400">
                 <div className="flex items-center gap-1">
                   <Users size={12} />
                   <span>{p.members?.length || 0} {t('projects.members')}</span>
@@ -382,6 +390,7 @@ export default function ProjectsPage() {
                   )}
                 </div>
               )}
+              </div>
             </div>
           ))}
         </div>
@@ -420,6 +429,9 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const formUser = useAuthStore(s => s.user)
   const isFormHeadSMM = formUser?.role === 'head_smm'
   const canCreateProject = ['admin', 'founder', 'co_founder', 'head_smm'].includes(formUser?.role || '')
+  // Финансовые поля и цены тарифа видят только основатель/сооснователь.
+  // PM, head_smm и admin — управляют проектом, но цены/деньги не видят.
+  const canSeeFinance = ['founder', 'co_founder'].includes(formUser?.role || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
@@ -477,6 +489,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           tariffId: (initial as any).tariffId || '',
           teamId: (initial as any).teamId || '',
           showAllMembers: false,
+          discount: (initial as any).discount ?? '',
         })
         if (initial.smmData) setSmmAnswers(initial.smmData)
         setSelectedMembers(initial.members?.map((m: any) => m.id) || [])
@@ -487,6 +500,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           tariffId: '',
           teamId: '',
           showAllMembers: false,
+          discount: '',
         })
         setSmmAnswers({})
         setShowSmmForm(false)
@@ -543,6 +557,10 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     // Team — пустая строка означает "отвязать"
     if ('teamId' in data) {
       formattedData.teamId = data.teamId || null
+    }
+    // Скидка — отправляем только если поле непустое (на стороне finance role)
+    if (canSeeFinance && data.discount !== undefined && data.discount !== '') {
+      formattedData.discount = Number(data.discount) || 0
     }
     onSubmit(formattedData)
   }
@@ -642,18 +660,47 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             )}
           </div>
 
-          {/* SMM-тариф (только для SMM-проектов) */}
+          {/* SMM-тариф (только для SMM-проектов).
+              Цена показывается только основателю/сооснователю. */}
           {projectType === 'SMM' && (
             <div className="sm:col-span-2">
               <label className="label">SMM-тариф</label>
               <select {...register('tariffId')} className="input">
                 <option value="">— Без тарифа —</option>
-                {(tariffs || []).map((t: any) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} — {Number(t.monthlyPrice).toLocaleString('ru-RU')} сомони/мес
-                  </option>
-                ))}
+                {(tariffs || []).map((t: any) => {
+                  // Краткое описание deliverables для НЕ-финансовых ролей
+                  const parts: string[] = []
+                  if (t.storiesPerMonth > 0) parts.push(`${t.storiesPerMonth} stories`)
+                  if (t.reelsPerMonth > 0) parts.push(`${t.reelsPerMonth} reels`)
+                  if (t.postsPerMonth > 0) parts.push(`${t.postsPerMonth} posts`)
+                  if (t.designsPerMonth > 0) parts.push(`${t.designsPerMonth} дизайнов`)
+                  const deliverables = parts.length > 0 ? ` — ${parts.join(', ')}` : ''
+                  return (
+                    <option key={t.id} value={t.id}>
+                      {canSeeFinance
+                        ? `${t.name} — ${Number(t.monthlyPrice).toLocaleString('ru-RU')} сомони/мес`
+                        : `${t.name}${deliverables}`}
+                    </option>
+                  )
+                })}
               </select>
+              {/* Скидка — только для основателя/сооснователя */}
+              {canSeeFinance && tariffId && (
+                <div className="mt-3">
+                  <label className="label text-xs">Скидка (сомони)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    {...register('discount')}
+                    className="input"
+                    placeholder="0"
+                  />
+                  <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-1">
+                    Вычитается из стоимости тарифа при расчёте выручки и маржи в аналитике
+                  </p>
+                </div>
+              )}
               {tariffId && !initial && (
                 <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
                   ✨ После создания проекта будет автоматически сгенерирован контент-план из тарифа

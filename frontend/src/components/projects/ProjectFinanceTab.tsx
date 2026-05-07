@@ -55,6 +55,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
       paidAmount: Number(project.paidAmount ?? 0),
       internalCostEstimate: Number(project.internalCostEstimate ?? 0),
       tariffLimitOveruseCost: Number(project.tariffLimitOveruseCost ?? 0),
+      discount: Number((project as any).discount ?? 0),
       paymentStatus: project.paymentStatus || 'pending',
       nextPaymentDate: project.nextPaymentDate
         ? new Date(project.nextPaymentDate).toISOString().split('T')[0]
@@ -63,13 +64,15 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
     },
   })
 
-  // Live preview of derived fields while editing
+  // Live preview of derived fields while editing (с учётом скидки)
   const total = Number(watch('totalContractValue') || 0)
   const paid = Number(watch('paidAmount') || 0)
   const internalCost = Number(watch('internalCostEstimate') || 0)
-  const previewOutstanding = Math.max(0, total - paid)
-  const previewMargin = total - internalCost
-  const previewMarginPct = total > 0 ? Math.round((previewMargin / total) * 100) : 0
+  const discount = Number(watch('discount') || 0)
+  const effectiveTotal = Math.max(0, total - discount)
+  const previewOutstanding = Math.max(0, effectiveTotal - paid)
+  const previewMargin = effectiveTotal - internalCost
+  const previewMarginPct = effectiveTotal > 0 ? Math.round((previewMargin / effectiveTotal) * 100) : 0
 
   useEffect(() => {
     reset({
@@ -77,6 +80,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
       paidAmount: Number(project.paidAmount ?? 0),
       internalCostEstimate: Number(project.internalCostEstimate ?? 0),
       tariffLimitOveruseCost: Number(project.tariffLimitOveruseCost ?? 0),
+      discount: Number((project as any).discount ?? 0),
       paymentStatus: project.paymentStatus || 'pending',
       nextPaymentDate: project.nextPaymentDate
         ? new Date(project.nextPaymentDate).toISOString().split('T')[0]
@@ -103,6 +107,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
       paidAmount: Number(data.paidAmount) || null,
       internalCostEstimate: Number(data.internalCostEstimate) || null,
       tariffLimitOveruseCost: Number(data.tariffLimitOveruseCost) || null,
+      discount: Number(data.discount) || 0,
       paymentStatus: data.paymentStatus,
       nextPaymentDate: data.nextPaymentDate || null,
       monthlyFee: Number(data.monthlyFee) || null,
@@ -135,6 +140,11 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <FinanceCard label="Контракт (всего)" value={fmt(project.totalContractValue)} accent="text-purple-600" />
+          <FinanceCard
+            label="Скидка"
+            value={Number((project as any).discount ?? 0) > 0 ? `−${fmt((project as any).discount)}` : '—'}
+            accent={Number((project as any).discount ?? 0) > 0 ? 'text-amber-600' : 'text-gray-500'}
+          />
           <FinanceCard label="Оплачено" value={fmt(project.paidAmount)} accent="text-emerald-600" />
           <FinanceCard label="К оплате" value={fmt(project.outstandingAmount)} accent={outstanding > 0 ? 'text-red-600' : 'text-gray-500'} />
           <FinanceCard label="Себестоимость" value={fmt(project.internalCostEstimate)} accent="text-amber-600" />
@@ -210,13 +220,16 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
         <Field label="Оплачено" hint="Сколько клиент уже заплатил">
           <input type="number" step="0.01" {...register('paidAmount')} className="input" />
         </Field>
-        <Field label="К оплате (авто)" hint={`= ${fmt(total)} − ${fmt(paid)}`}>
+        <Field label="Скидка" hint="Вычитается из контракта при расчёте к оплате и маржи">
+          <input type="number" step="0.01" min="0" {...register('discount')} className="input" />
+        </Field>
+        <Field label="К оплате (авто)" hint={`= ${fmt(effectiveTotal)} − ${fmt(paid)} (с учётом скидки ${fmt(discount)})`}>
           <input value={fmt(previewOutstanding)} disabled className="input bg-gray-50 dark:bg-gray-800 cursor-not-allowed" />
         </Field>
         <Field label="Себестоимость" hint="Внутренние расходы агентства">
           <input type="number" step="0.01" {...register('internalCostEstimate')} className="input" />
         </Field>
-        <Field label="Маржа (авто)" hint={`= контракт − себестоимость · ${previewMarginPct}%`}>
+        <Field label="Маржа (авто)" hint={`= (контракт − скидка) − себестоимость · ${previewMarginPct}%`}>
           <input value={fmt(previewMargin)} disabled className="input bg-gray-50 dark:bg-gray-800 cursor-not-allowed" />
         </Field>
         <Field label="Перерасход тарифа (сомони)" hint="Авто-пересчёт по факту published > limit. Можно перебить вручную.">

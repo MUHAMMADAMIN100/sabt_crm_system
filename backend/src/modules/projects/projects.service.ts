@@ -133,6 +133,8 @@ export class ProjectsService {
     'internalCostEstimate',
     'marginEstimate',
     'tariffLimitOveruseCost',
+    'discount',
+    'monthlyFee',
     // paidAmount гвардится отдельно ниже (исторически был раньше)
   ] as const;
 
@@ -155,12 +157,17 @@ export class ProjectsService {
     const internalCost = Number(
       target.internalCostEstimate ?? existing.internalCostEstimate ?? 0,
     );
+    const discount = Number(target.discount ?? existing.discount ?? 0);
+    // Эффективная сумма контракта после скидки — основа для margin/outstanding
+    const effectiveTotal = Math.max(0, total - discount);
 
     if (!explicit.has('outstandingAmount') && total > 0) {
-      target.outstandingAmount = Math.max(0, total - paid);
+      // К оплате считаем от суммы со скидкой
+      target.outstandingAmount = Math.max(0, effectiveTotal - paid);
     }
     if (!explicit.has('marginEstimate') && total > 0) {
-      target.marginEstimate = total - internalCost;
+      // Маржа = (контракт − скидка) − себестоимость
+      target.marginEstimate = effectiveTotal - internalCost;
     }
 
     // Перерасход тарифа: считаем только если есть тариф и проект SMM.
@@ -357,15 +364,32 @@ export class ProjectsService {
     }
   }
 
-  /** Remove actual money-paid field (paidAmount) from project(s) for users
-   *  who shouldn't see it. Founder + sales_manager need to see paid amount
-   *  to manage collections; everyone else gets it stripped.
-   *  Budget, salesManager stay visible for regular managers too. */
+  /** Удаляет финансовые поля из проекта/списка для тех ролей которые
+   *  не должны их видеть. Полный доступ — только founder/co_founder.
+   *  Sales_manager видит paidAmount/budget/outstanding (нужно для оплат
+   *  и работы с клиентами), но НЕ видит маржу/себестоимость/тариф-цену.
+   *  Все остальные (admin, PM, head_smm и т.д.) — финансы скрыты. */
   stripFinance<T extends Project | Project[]>(data: T, role?: string): T {
-    if (role === 'founder' || role === 'co_founder' || role === 'sales_manager') return data;
+    const isFinance = role === 'founder' || role === 'co_founder';
+    if (isFinance) return data;
+    const isSales = role === 'sales_manager';
     const strip = (p: any) => {
       if (!p) return p;
-      delete p.paidAmount;
+      // Поля связанные с маржой/прибыльностью — только finance role видит
+      delete p.internalCostEstimate;
+      delete p.marginEstimate;
+      delete p.tariffLimitOveruseCost;
+      delete p.tariffPriceSnapshot;
+      delete p.monthlyFee;
+      delete p.discount;
+      // Эти поля sales_manager оставляем для работы с клиентами,
+      // остальным скрываем
+      if (!isSales) {
+        delete p.paidAmount;
+        delete p.budget;
+        delete p.totalContractValue;
+        delete p.outstandingAmount;
+      }
       return p;
     };
     return Array.isArray(data) ? (data.map(strip) as T) : (strip(data) as T);
@@ -696,7 +720,7 @@ export class ProjectsService {
     for (const f of this.FINANCE_FIELDS) {
       if (f in dto) explicitOnUpdate.add(f)
     }
-    if ('paidAmount' in dto || 'totalContractValue' in dto || 'internalCostEstimate' in dto || 'tariffId' in dto) {
+    if ('paidAmount' in dto || 'totalContractValue' in dto || 'internalCostEstimate' in dto || 'tariffId' in dto || 'discount' in dto) {
       await this.recomputeFinancials(project, project, explicitOnUpdate)
     }
 

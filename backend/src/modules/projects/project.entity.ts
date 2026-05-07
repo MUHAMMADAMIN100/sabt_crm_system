@@ -165,6 +165,11 @@ export class Project {
   @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
   tariffLimitOveruseCost: number;
 
+  /** Скидка в сомони (вычитается из monthlyFee/totalContractValue
+   *  при расчёте выручки и маржи). 0 — нет скидки. */
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
+  discount: number;
+
   // ─── Teams (Wave: разделение по командам) ───────────────────────────
   /** К какой команде привязан проект. ON DELETE SET NULL — при удалении
    *  команды проект остаётся со snapshot имени. */
