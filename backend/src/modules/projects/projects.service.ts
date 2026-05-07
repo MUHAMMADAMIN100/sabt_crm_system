@@ -134,6 +134,7 @@ export class ProjectsService {
     'marginEstimate',
     'tariffLimitOveruseCost',
     'discount',
+    'discountType',
     'monthlyFee',
     // paidAmount гвардится отдельно ниже (исторически был раньше)
   ] as const;
@@ -157,7 +158,12 @@ export class ProjectsService {
     const internalCost = Number(
       target.internalCostEstimate ?? existing.internalCostEstimate ?? 0,
     );
-    const discount = Number(target.discount ?? existing.discount ?? 0);
+    const discountValue = Number(target.discount ?? existing.discount ?? 0);
+    const discountType = (target.discountType ?? existing.discountType ?? 'fixed') as string;
+    // В фиксированной скидке вычитаем сумму, в процентной — долю от подытога
+    const discount = discountType === 'percent'
+      ? (total * Math.min(100, Math.max(0, discountValue))) / 100
+      : discountValue;
     // Эффективная сумма контракта после скидки — основа для margin/outstanding
     const effectiveTotal = Math.max(0, total - discount);
 
@@ -382,6 +388,7 @@ export class ProjectsService {
       delete p.tariffPriceSnapshot;
       delete p.monthlyFee;
       delete p.discount;
+      delete p.discountType;
       // Эти поля sales_manager оставляем для работы с клиентами,
       // остальным скрываем
       if (!isSales) {
@@ -720,7 +727,7 @@ export class ProjectsService {
     for (const f of this.FINANCE_FIELDS) {
       if (f in dto) explicitOnUpdate.add(f)
     }
-    if ('paidAmount' in dto || 'totalContractValue' in dto || 'internalCostEstimate' in dto || 'tariffId' in dto || 'discount' in dto) {
+    if ('paidAmount' in dto || 'totalContractValue' in dto || 'internalCostEstimate' in dto || 'tariffId' in dto || 'discount' in dto || 'discountType' in dto) {
       await this.recomputeFinancials(project, project, explicitOnUpdate)
     }
 

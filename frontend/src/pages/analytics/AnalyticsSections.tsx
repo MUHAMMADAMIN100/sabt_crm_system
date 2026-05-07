@@ -252,7 +252,11 @@ export function FinanceAnalyticsSection() {
                 <td className="px-3 py-2"><Link to={`/projects/${p.id}`} className="hover:text-purple-600">{p.name}</Link></td>
                 <td className="px-3 py-2 text-right text-xs">{fmtMoney(p.totalContractValue)}</td>
                 <td className="px-3 py-2 text-right text-xs text-amber-600 dark:text-amber-400">
-                  {Number(p.discount) > 0 ? `−${fmtMoney(p.discount)}` : '—'}
+                  {Number(p.discount) > 0
+                    ? (p.discountType === 'percent'
+                        ? `−${Number(p.discount).toLocaleString('ru-RU')}%`
+                        : `−${fmtMoney(p.discount)}`)
+                    : '—'}
                 </td>
                 <td className="px-3 py-2 text-right text-xs">{fmtMoney(p.paidAmount)}</td>
                 <td className="px-3 py-2 text-right text-xs">{fmtMoney(p.outstandingAmount)}</td>
@@ -329,8 +333,13 @@ export function TariffAnalyticsSection() {
   for (const p of list) {
     if (p.tariffId && counts[p.tariffId]) {
       counts[p.tariffId].projects++
-      // Выручка с учётом скидки по проекту
-      counts[p.tariffId].revenue += Math.max(0, Number(p.monthlyFee || 0) - Number(p.discount || 0))
+      // Выручка с учётом скидки (фиксированная или процентная) по проекту
+      const fee = Number(p.monthlyFee || 0)
+      const discountValue = Number(p.discount || 0)
+      const projectDiscount = p.discountType === 'percent'
+        ? (fee * Math.min(100, Math.max(0, discountValue))) / 100
+        : discountValue
+      counts[p.tariffId].revenue += Math.max(0, fee - projectDiscount)
     }
   }
 

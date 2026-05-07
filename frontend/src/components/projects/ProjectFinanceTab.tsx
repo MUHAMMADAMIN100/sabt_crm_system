@@ -23,6 +23,8 @@ interface FinanceProject {
   billingType: string | null
   tariffNameSnapshot: string | null
   tariffPriceSnapshot: number | string | null
+  discount?: number | string | null
+  discountType?: 'fixed' | 'percent' | null
 }
 
 const PAYMENT_STATUS_LABEL: Record<string, { label: string; color: string }> = {
@@ -56,6 +58,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
       internalCostEstimate: Number(project.internalCostEstimate ?? 0),
       tariffLimitOveruseCost: Number(project.tariffLimitOveruseCost ?? 0),
       discount: Number((project as any).discount ?? 0),
+      discountType: ((project as any).discountType as string) || 'fixed',
       paymentStatus: project.paymentStatus || 'pending',
       nextPaymentDate: project.nextPaymentDate
         ? new Date(project.nextPaymentDate).toISOString().split('T')[0]
@@ -68,8 +71,12 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
   const total = Number(watch('totalContractValue') || 0)
   const paid = Number(watch('paidAmount') || 0)
   const internalCost = Number(watch('internalCostEstimate') || 0)
-  const discount = Number(watch('discount') || 0)
-  const effectiveTotal = Math.max(0, total - discount)
+  const discountValue = Number(watch('discount') || 0)
+  const discountType = (watch('discountType') as string) || 'fixed'
+  const computedDiscount = discountType === 'percent'
+    ? (total * Math.min(100, Math.max(0, discountValue))) / 100
+    : Math.max(0, discountValue)
+  const effectiveTotal = Math.max(0, total - computedDiscount)
   const previewOutstanding = Math.max(0, effectiveTotal - paid)
   const previewMargin = effectiveTotal - internalCost
   const previewMarginPct = effectiveTotal > 0 ? Math.round((previewMargin / effectiveTotal) * 100) : 0
@@ -81,6 +88,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
       internalCostEstimate: Number(project.internalCostEstimate ?? 0),
       tariffLimitOveruseCost: Number(project.tariffLimitOveruseCost ?? 0),
       discount: Number((project as any).discount ?? 0),
+      discountType: ((project as any).discountType as string) || 'fixed',
       paymentStatus: project.paymentStatus || 'pending',
       nextPaymentDate: project.nextPaymentDate
         ? new Date(project.nextPaymentDate).toISOString().split('T')[0]
@@ -108,6 +116,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
       internalCostEstimate: Number(data.internalCostEstimate) || null,
       tariffLimitOveruseCost: Number(data.tariffLimitOveruseCost) || null,
       discount: Number(data.discount) || 0,
+      discountType: data.discountType === 'percent' ? 'percent' : 'fixed',
       paymentStatus: data.paymentStatus,
       nextPaymentDate: data.nextPaymentDate || null,
       monthlyFee: Number(data.monthlyFee) || null,
@@ -140,11 +149,29 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <FinanceCard label="Контракт (всего)" value={fmt(project.totalContractValue)} accent="text-purple-600" />
-          <FinanceCard
-            label="Скидка"
-            value={Number((project as any).discount ?? 0) > 0 ? `−${fmt((project as any).discount)}` : '—'}
-            accent={Number((project as any).discount ?? 0) > 0 ? 'text-amber-600' : 'text-gray-500'}
-          />
+          {(() => {
+            const dVal = Number((project as any).discount ?? 0)
+            const dType = (project as any).discountType as string
+            const isPct = dType === 'percent'
+            const displayValue = dVal > 0
+              ? (isPct
+                  ? `−${dVal.toLocaleString('ru-RU')}%`
+                  : `−${fmt(dVal)}`)
+              : '—'
+            const sub = dVal > 0
+              ? (isPct
+                  ? `≈ ${fmt((Number(project.totalContractValue ?? 0) * dVal) / 100)}`
+                  : 'Фиксированная')
+              : undefined
+            return (
+              <FinanceCard
+                label="Скидка"
+                value={displayValue}
+                sub={sub}
+                accent={dVal > 0 ? 'text-amber-600' : 'text-gray-500'}
+              />
+            )
+          })()}
           <FinanceCard label="Оплачено" value={fmt(project.paidAmount)} accent="text-emerald-600" />
           <FinanceCard label="К оплате" value={fmt(project.outstandingAmount)} accent={outstanding > 0 ? 'text-red-600' : 'text-gray-500'} />
           <FinanceCard label="Себестоимость" value={fmt(project.internalCostEstimate)} accent="text-amber-600" />
@@ -220,10 +247,28 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
         <Field label="Оплачено" hint="Сколько клиент уже заплатил">
           <input type="number" step="0.01" {...register('paidAmount')} className="input" />
         </Field>
-        <Field label="Скидка" hint="Вычитается из контракта при расчёте к оплате и маржи">
-          <input type="number" step="0.01" min="0" {...register('discount')} className="input" />
+        <Field label="Скидка (тип)" hint="Фиксированная сумма или процент от контракта">
+          <select {...register('discountType')} className="input">
+            <option value="fixed">Фиксированная</option>
+            <option value="percent">Процентная</option>
+          </select>
         </Field>
-        <Field label="К оплате (авто)" hint={`= ${fmt(effectiveTotal)} − ${fmt(paid)} (с учётом скидки ${fmt(discount)})`}>
+        <Field label="Значение скидки" hint={discountType === 'percent' ? 'Процент от подытога (0–100)' : 'Сумма в сомони'}>
+          <div className="relative">
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max={discountType === 'percent' ? '100' : undefined}
+              {...register('discount')}
+              className="input pr-12"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-500 pointer-events-none">
+              {discountType === 'percent' ? '%' : 'TJS'}
+            </span>
+          </div>
+        </Field>
+        <Field label="К оплате (авто)" hint={`= ${fmt(effectiveTotal)} − ${fmt(paid)} (скидка: ${fmt(computedDiscount)})`}>
           <input value={fmt(previewOutstanding)} disabled className="input bg-gray-50 dark:bg-gray-800 cursor-not-allowed" />
         </Field>
         <Field label="Себестоимость" hint="Внутренние расходы агентства">

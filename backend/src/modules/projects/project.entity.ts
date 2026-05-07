@@ -35,6 +35,15 @@ export enum ProjectPaymentStatus {
   FROZEN          = 'frozen',
 }
 
+/** Тип скидки.
+ *  - fixed   — конкретная сумма в TJS (вычитается напрямую)
+ *  - percent — процент от подытога (0..100)
+ */
+export enum ProjectDiscountType {
+  FIXED   = 'fixed',
+  PERCENT = 'percent',
+}
+
 @Entity('projects')
 export class Project {
   @PrimaryGeneratedColumn('uuid')
@@ -165,10 +174,14 @@ export class Project {
   @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
   tariffLimitOveruseCost: number;
 
-  /** Скидка в сомони (вычитается из monthlyFee/totalContractValue
-   *  при расчёте выручки и маржи). 0 — нет скидки. */
+  /** Значение скидки. Если discountType=fixed — это сумма в TJS;
+   *  если percent — это процент (0..100). 0 — нет скидки. */
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   discount: number;
+
+  /** Тип скидки: фиксированная сумма или процент. */
+  @Column({ type: 'enum', enum: ProjectDiscountType, default: ProjectDiscountType.FIXED })
+  discountType: ProjectDiscountType;
 
   // ─── Teams (Wave: разделение по командам) ───────────────────────────
   /** К какой команде привязан проект. ON DELETE SET NULL — при удалении

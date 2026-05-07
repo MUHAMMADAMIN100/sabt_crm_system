@@ -442,6 +442,8 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const tariffId = watch('tariffId')
   const teamId = watch('teamId')
   const showAllMembers = watch('showAllMembers') as unknown as boolean
+  const discountValue = Number(watch('discount') || 0)
+  const discountType = (watch('discountType') as string) || 'fixed'
 
   // Load active tariffs only when project is SMM (avoid unnecessary requests for other types)
   const { data: tariffs } = useQuery({
@@ -490,6 +492,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           teamId: (initial as any).teamId || '',
           showAllMembers: false,
           discount: (initial as any).discount ?? '',
+          discountType: (initial as any).discountType ?? 'fixed',
         })
         if (initial.smmData) setSmmAnswers(initial.smmData)
         setSelectedMembers(initial.members?.map((m: any) => m.id) || [])
@@ -501,6 +504,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           teamId: '',
           showAllMembers: false,
           discount: '',
+          discountType: 'fixed',
         })
         setSmmAnswers({})
         setShowSmmForm(false)
@@ -561,6 +565,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     // Скидка — отправляем только если поле непустое (на стороне finance role)
     if (canSeeFinance && data.discount !== undefined && data.discount !== '') {
       formattedData.discount = Number(data.discount) || 0
+      formattedData.discountType = data.discountType === 'percent' ? 'percent' : 'fixed'
     }
     onSubmit(formattedData)
   }
@@ -684,23 +689,74 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                   )
                 })}
               </select>
-              {/* Скидка — только для основателя/сооснователя */}
-              {canSeeFinance && tariffId && (
-                <div className="mt-3">
-                  <label className="label text-xs">Скидка (сомони)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    {...register('discount')}
-                    className="input"
-                    placeholder="0"
-                  />
-                  <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-1">
-                    Вычитается из стоимости тарифа при расчёте выручки и маржи в аналитике
-                  </p>
-                </div>
-              )}
+              {/* Скидка — только для основателя/сооснователя.
+                  Тип (фиксированная/процентная) + значение + предварительный расчёт. */}
+              {canSeeFinance && tariffId && (() => {
+                const selectedTariff = (tariffs || []).find((tt: any) => tt.id === tariffId)
+                const subtotal = Number(selectedTariff?.monthlyPrice || 0)
+                const computedDiscount = discountType === 'percent'
+                  ? (subtotal * Math.min(100, Math.max(0, discountValue))) / 100
+                  : Math.max(0, discountValue)
+                const finalTotal = Math.max(0, subtotal - computedDiscount)
+                return (
+                  <div className="mt-3 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="label text-xs">Скидка</label>
+                        <select {...register('discountType')} className="input">
+                          <option value="fixed">Фиксированная</option>
+                          <option value="percent">Процентная</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label text-xs">Значение скидки</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max={discountType === 'percent' ? '100' : undefined}
+                            {...register('discount')}
+                            className="input pr-12"
+                            placeholder="0"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-surface-500 dark:text-surface-400 pointer-events-none">
+                            {discountType === 'percent' ? '%' : 'TJS'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Предварительный расчёт */}
+                    {subtotal > 0 && (
+                      <div className="rounded-xl border border-primary-200 dark:border-primary-800 bg-primary-50/50 dark:bg-primary-900/10 p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-primary-600 dark:text-primary-400 text-sm">ⓘ</span>
+                          <span className="font-semibold text-primary-700 dark:text-primary-300 text-xs">Предварительный расчёт</span>
+                        </div>
+                        <div className="space-y-1 text-xs text-surface-700 dark:text-surface-300">
+                          <div className="flex justify-between">
+                            <span>Подытог:</span>
+                            <span className="font-semibold">{subtotal.toLocaleString('ru-RU')} TJS</span>
+                          </div>
+                          {computedDiscount > 0 && (
+                            <div className="flex justify-between text-amber-600 dark:text-amber-400">
+                              <span>Скидка{discountType === 'percent' ? ` (${discountValue}%)` : ''}:</span>
+                              <span className="font-semibold">−{computedDiscount.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} TJS</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-emerald-600 dark:text-emerald-400 pt-1 border-t border-primary-200/50 dark:border-primary-800/50">
+                            <span className="font-semibold">Итого со скидкой:</span>
+                            <span className="font-bold">{finalTotal.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} TJS</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <p className="text-[11px] text-surface-500 dark:text-surface-400">
+                      Скидка применяется к стоимости тарифа в аналитике (выручка, маржа, остаток к оплате).
+                    </p>
+                  </div>
+                )
+              })()}
               {tariffId && !initial && (
                 <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
                   ✨ После создания проекта будет автоматически сгенерирован контент-план из тарифа
