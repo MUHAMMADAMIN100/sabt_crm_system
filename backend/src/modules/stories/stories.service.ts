@@ -87,7 +87,9 @@ export class StoriesService {
     for (const project of projects) {
       if (!project.manager || !project.members?.length) continue;
 
-      // План на день для этого проекта
+      // План на день для этого проекта (на проект, не на каждого участника).
+      // Сторис — это командная работа: достаточно, чтобы любой участник
+      // отметил план дня — день считается выполненным.
       const target = Number((project.smmData as any)?.storiesPerDay) || 3;
 
       // Истории за сегодня по проекту → суммируем по сотрудникам
@@ -101,41 +103,50 @@ export class StoriesService {
         id: m.id,
         name: m.name,
         count: countByUser[m.id] || 0,
-        done: (countByUser[m.id] || 0) >= target,
-        partial: (countByUser[m.id] || 0) > 0 && (countByUser[m.id] || 0) < target,
-        missed: (countByUser[m.id] || 0) === 0,
       }));
 
-      const doneCount = memberStats.filter(s => s.done).length;
-      const partialCount = memberStats.filter(s => s.partial).length;
-      const missedCount = memberStats.filter(s => s.missed).length;
+      // Факт = суммарно опубликовано всеми участниками
       const totalActual = memberStats.reduce((s, m) => s + m.count, 0);
-      const totalExpected = target * project.members.length;
-      const pct = totalExpected > 0 ? Math.round((totalActual / totalExpected) * 100) : 0;
+      const pct = target > 0 ? Math.min(100, Math.round((totalActual / target) * 100)) : 0;
 
-      // Skip silent days when EVERYONE met the target — no need to ping PM.
-      if (missedCount === 0 && partialCount === 0) continue;
+      // Статус дня:
+      //  - выполнено   — суммарно >= плана (хоть кто-то один справился — день закрыт)
+      //  - частично    — что-то опубликовано, но меньше плана
+      //  - не отмечено — никто не отметил
+      const dayStatus: 'done' | 'partial' | 'missed' =
+        totalActual >= target ? 'done' :
+        totalActual > 0 ? 'partial' : 'missed';
 
-      // Build per-member lines (cap to first 25 to stay within TG 4096 char limit)
-      const sortedStats = [...memberStats].sort((a, b) => a.count - b.count);
-      const visible = sortedStats.slice(0, 25);
-      const overflow = sortedStats.length - visible.length;
-      const memberLines = visible.map(s => {
-        const icon = s.done ? '✅' : s.partial ? '🟡' : '❌';
-        return `${icon} <b>${s.name}</b> — ${s.count}/${target}`;
-      }).join('\n');
-      const overflowLine = overflow > 0 ? `\n…и ещё ${overflow} участников` : '';
+      // Если команда выполнила план — PM не дёргаем. Уведомляем только
+      // когда что-то пошло не так (частично или нулевой день).
+      if (dayStatus === 'done') continue;
+
+      // Контрибьюторы — кто реально публиковал что-то сегодня.
+      const contributors = memberStats
+        .filter(s => s.count > 0)
+        .sort((a, b) => b.count - a.count);
+      const visible = contributors.slice(0, 25);
+      const overflow = contributors.length - visible.length;
+      const contributorLines = visible.map(s => `✅ <b>${s.name}</b> — ${s.count}`).join('\n');
+      const overflowLine = overflow > 0 ? `\n…и ещё ${overflow}` : '';
+
+      const statusLine =
+        dayStatus === 'partial'
+          ? '🟡 <b>Статус:</b> частично выполнено'
+          : '❌ <b>Статус:</b> никто не отметил';
+
+      const contributorsBlock = contributors.length > 0
+        ? `\n\n<b>Опубликовали:</b>\n${contributorLines}${overflowLine}`
+        : `\n\nНикто из команды (${project.members.length} чел.) не отмечал сторис сегодня.`;
 
       const tgMsg =
         `📊 <b>Сводка по сторис — ${project.name}</b>\n\n` +
         `📅 Дата: ${today}\n` +
-        `🎯 План: <b>${target}</b> сторис/день · ${project.members.length} участников\n` +
-        `📈 Факт: <b>${totalActual}/${totalExpected}</b> (${pct}%)\n\n` +
-        `✅ Полностью: ${doneCount}\n` +
-        `🟡 Частично: ${partialCount}\n` +
-        `❌ Не делали: ${missedCount}\n\n` +
-        `<b>По участникам:</b>\n${memberLines}${overflowLine}\n\n` +
-        `👉 ${this.telegramService.appUrl}/projects/${project.id}`;
+        `🎯 План: <b>${target}</b> сторис/день на проект · команда из ${project.members.length} чел.\n` +
+        `📈 Факт: <b>${totalActual}/${target}</b> (${pct}%)\n\n` +
+        statusLine +
+        contributorsBlock +
+        `\n\n👉 ${this.telegramService.appUrl}/projects/${project.id}`;
 
       try {
         await this.telegramService.sendToUser(project.managerId, tgMsg);
@@ -148,15 +159,17 @@ export class StoriesService {
           userId: project.managerId,
           type: NotificationType.DEADLINE_APPROACHING,
           title: `📊 Сторис: ${project.name} — ${pct}%`,
-          message: `${totalActual}/${totalExpected} сторис · ✅${doneCount} 🟡${partialCount} ❌${missedCount}`,
+          message: dayStatus === 'partial'
+            ? `${totalActual}/${target} сторис · 🟡 частично`
+            : `0/${target} сторис · ❌ никто не отметил`,
           link: `/projects/${project.id}`,
-          data: { projectId: project.id, target, totalActual, totalExpected, doneCount, partialCount, missedCount },
+          data: { projectId: project.id, target, totalActual, dayStatus, contributors: contributors.length },
         });
       } catch (e) {
         this.logger.warn(`Failed to create notification: ${e.message}`);
       }
 
-      this.logger.log(`Stories summary sent for ${project.name}: ${pct}% (${totalActual}/${totalExpected})`);
+      this.logger.log(`Stories summary sent for ${project.name}: ${pct}% (${totalActual}/${target}, ${dayStatus})`);
     }
   }
 }
