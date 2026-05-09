@@ -60,9 +60,9 @@ export class ContentPlanService {
    *  Минимальная синхронизация: title/description/assignee/dates. Без
    *  уведомлений и activity-log — это служебная авто-задача от плана. */
   private async syncTaskForItem(item: ContentPlanItem, createdById?: string): Promise<string | null> {
-    // Создаём задачу только если есть и assignee, и какая-то дата —
-    // иначе она бесполезна (пустая задача без сроков и исполнителя).
-    if (!item.assigneeId || (!item.publishDate && !item.preparationDeadline)) {
+    // Достаточно одной из дат — assignee может быть пустым (PM назначит
+    // позже на канбане). Без даты задача бесполезна для календаря.
+    if (!item.publishDate && !item.preparationDeadline) {
       return item.taskId || null;
     }
     const payload = this.buildTaskPayload(item, createdById);
@@ -112,7 +112,35 @@ export class ContentPlanService {
 
     qb.orderBy('c.publishDate', 'ASC', 'NULLS LAST')
       .addOrderBy('c.createdAt', 'DESC');
-    return qb.getMany();
+    const items = await qb.getMany();
+
+    // Lazy backfill: при открытии плана конкретного проекта проверяем,
+    // что у каждого элемента с датой есть связанная задача. Если нет —
+    // создаём задачу-плэйсхолдер. Это гарантирует что элементы, созданные
+    // до миграции taskId или сгенерированные авто-генерацией из тарифа
+    // без assignee, появятся в канбане задач и в календаре проекта.
+    // Делаем синхронно (await), чтобы при следующем переходе на /tasks
+    // или /calendar данные уже были на месте — без необходимости F5.
+    if (f.projectId) {
+      const orphans = items.filter(it =>
+        !it.taskId && (it.publishDate || it.preparationDeadline),
+      );
+      if (orphans.length > 0) {
+        await Promise.all(orphans.map(async (it) => {
+          try {
+            const taskId = await this.syncTaskForItem(it);
+            if (taskId && taskId !== it.taskId) {
+              await this.repo.update(it.id, { taskId });
+              it.taskId = taskId;
+            }
+          } catch (e) {
+            this.logger.warn(`Backfill task for item ${it.id} failed: ${(e as Error).message}`);
+          }
+        }));
+      }
+    }
+
+    return items;
   }
 
   async findOne(id: string) {
