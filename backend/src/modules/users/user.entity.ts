@@ -14,6 +14,10 @@ export enum UserRole {
   ADMIN           = 'admin',
   FOUNDER         = 'founder',
   CO_FOUNDER      = 'co_founder',
+  /** Руководитель СММ — на ступень выше head_smm и project_manager.
+   *  Полный доступ ко ВСЕМ SMM-проектам (создание/редактирование/удаление,
+   *  задачи, участники), но БЕЗ доступа к финансам. */
+  SMM_DIRECTOR    = 'smm_director',
   PROJECT_MANAGER = 'project_manager',
   HEAD_SMM        = 'head_smm',
   SMM_SPECIALIST  = 'smm_specialist',

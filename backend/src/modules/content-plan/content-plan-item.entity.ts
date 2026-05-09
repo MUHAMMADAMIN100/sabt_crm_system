@@ -105,6 +105,12 @@ export class ContentPlanItem {
   @Column({ type: 'text', nullable: true })
   comments: string;
 
+  /** ID связанной автоматически созданной задачи. Создаётся при сохранении
+   *  элемента контент-плана с указанным assignee и publishDate. Позволяет
+   *  при апдейте/удалении плана синхронизировать задачу. */
+  @Column({ type: 'uuid', nullable: true })
+  taskId: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

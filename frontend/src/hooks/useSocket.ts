@@ -33,6 +33,25 @@ export function useSocket(token: string | null) {
       } catch {}
     })
 
+    // Мгновенный logout при блокировке учётки администратором.
+    // Бэкенд эмитит auth:blocked адресно через notifyUser(userId, ...).
+    socket.on('auth:blocked', (payload: any) => {
+      const reason = payload?.reason ? ` Причина: ${payload.reason}` : ''
+      toast.error(`Ваш аккаунт заблокирован администратором.${reason}`, {
+        duration: 6000,
+        icon: '🔒',
+      })
+      // Чистим токен и перебрасываем на /login. logout() сам обнулит store.
+      ;(async () => {
+        try { await useAuthStore.getState().logout() } catch {}
+        // Защита: если logout не довёл — точно вычистить и редирект.
+        try { localStorage.removeItem('token') } catch {}
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
+      })()
+    })
+
     socket.on('notification', (notif: any) => {
       qc.invalidateQueries({ queryKey: ['notifications'] })
       qc.invalidateQueries({ queryKey: ['notifications-count'] })

@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards,
+  Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Request,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ContentPlanService } from './content-plan.service';
@@ -14,6 +14,7 @@ const EDIT_ROLES = [
   UserRole.ADMIN,
   UserRole.FOUNDER,
   UserRole.CO_FOUNDER,
+  UserRole.SMM_DIRECTOR,
   UserRole.PROJECT_MANAGER,
   UserRole.HEAD_SMM,
   UserRole.SMM_SPECIALIST,
@@ -51,15 +52,17 @@ export class ContentPlanController {
 
   @Post()
   @Roles(...EDIT_ROLES)
-  create(@Body() dto: any) { return this.service.create(dto); }
+  create(@Body() dto: any, @Request() req) {
+    return this.service.create(dto, req.user?.id);
+  }
 
   @Patch(':id')
   @Roles(...EDIT_ROLES)
-  update(@Param('id') id: string, @Body() dto: any) {
-    return this.service.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: any, @Request() req) {
+    return this.service.update(id, dto, req.user?.id);
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM)
   remove(@Param('id') id: string) { return this.service.remove(id); }
 }

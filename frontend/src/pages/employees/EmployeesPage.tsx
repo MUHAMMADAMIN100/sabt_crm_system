@@ -51,6 +51,7 @@ export default function EmployeesPage() {
     'Основатель',
     'Сооснователь',
     'Администратор',
+    'Руководитель SMM',
     'Проект-менеджер',
     'Главный SMM специалист',
     'SMM специалист',
@@ -550,14 +551,18 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
     // Map position label → role enum value
     const positionToRoleMap: Record<string, string> = {
       'SMM специалист': 'smm_specialist',
+      'Главный SMM специалист': 'head_smm',
+      'Руководитель SMM': 'smm_director',
       'Дизайнер': 'designer',
       'Таргетолог': 'targetologist',
       'Менеджер по продажам': 'sales_manager',
       'Проект-менеджер': 'project_manager',
+      'Маркетолог': 'marketer',
       'Разработчик': 'developer',
       'Сотрудник': 'employee',
       'Основатель': 'founder',
       'Сооснователь': 'co_founder',
+      'Администратор': 'admin',
     }
     const role = positionToRoleMap[data.position]
     try {
@@ -591,6 +596,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
             <select {...register('position', { required: 'Выберите должность' })} className={`input ${errors.position ? 'border-red-400' : ''}`}>
               <option value="">Выберите должность</option>
               {[
+                'Руководитель SMM',
                 'Главный SMM специалист',
                 'SMM специалист',
                 'Дизайнер',

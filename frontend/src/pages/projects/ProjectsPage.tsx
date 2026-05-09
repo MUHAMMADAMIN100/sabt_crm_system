@@ -45,10 +45,10 @@ export default function ProjectsPage() {
   const [editProject, setEditProject] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
-  const isHeadSMM = user?.role === 'head_smm'
-  // admin/founder/co-founder + head_smm (SMM only) can create projects
-  const canCreateProject = ['admin', 'founder', 'co_founder', 'head_smm'].includes(user?.role || '')
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
+  const isHeadSMM = user?.role === 'head_smm' || user?.role === 'smm_director'
+  // admin/founder/co-founder + smm_director/head_smm (SMM only) can create projects
+  const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm'].includes(user?.role || '')
   const qc = useQueryClient()
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -427,10 +427,10 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm()
   const { t } = useTranslation()
   const formUser = useAuthStore(s => s.user)
-  const isFormHeadSMM = formUser?.role === 'head_smm'
-  const canCreateProject = ['admin', 'founder', 'co_founder', 'head_smm'].includes(formUser?.role || '')
+  const isFormHeadSMM = formUser?.role === 'head_smm' || formUser?.role === 'smm_director'
+  const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm'].includes(formUser?.role || '')
   // Финансовые поля и цены тарифа видят только основатель/сооснователь.
-  // PM, head_smm и admin — управляют проектом, но цены/деньги не видят.
+  // smm_director, PM, head_smm и admin — управляют проектом, но цены/деньги не видят.
   const canSeeFinance = ['founder', 'co_founder'].includes(formUser?.role || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)

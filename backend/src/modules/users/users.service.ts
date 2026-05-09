@@ -5,6 +5,7 @@ import { User, UserRole } from './user.entity';
 import { Employee, EmployeeStatus } from '../employees/employee.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
+import { AppGateway } from '../gateway/app.gateway';
 
 @Injectable()
 export class UsersService {
@@ -12,6 +13,7 @@ export class UsersService {
     @InjectRepository(User) private repo: Repository<User>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     private activityLog: ActivityLogService,
+    private gateway: AppGateway,
   ) {}
 
   findAll(role?: UserRole) {
@@ -186,6 +188,20 @@ export class UsersService {
       entityName: user.name,
       details: { blocked: true, reason },
     });
+
+    // Мгновенно сообщаем заблокированному клиенту через WebSocket — фронт
+    // слушает 'auth:blocked' и сразу выкидывает пользователя из системы,
+    // не дожидаясь ручного refresh страницы.
+    try {
+      this.gateway.notifyUser(id, 'auth:blocked', {
+        reason: reason || null,
+        blockedByName: blockedBy.name || null,
+        blockedByRole: blockedBy.role,
+        blockedAt: user.blockedAt,
+      });
+    } catch (e) {
+      // socket-фейл не должен ломать саму операцию блокировки
+    }
 
     return this.findOne(id);
   }

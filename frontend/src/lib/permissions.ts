@@ -10,6 +10,7 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   founder: 'Основатель',
   co_founder: 'Сооснователь',
+  smm_director: 'Руководитель SMM',
   project_manager: 'Проект-менеджер',
   head_smm: 'Главный SMM специалист',
   smm_specialist: 'SMM специалист',
@@ -144,6 +145,21 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
     'ai.chat', 'tariffs.manage', 'risks.view',
+  ],
+  // Руководитель SMM — на уровень выше head_smm и project_manager. Полный
+  // доступ ко ВСЕМ SMM-проектам (создание/удаление/архив/смена менеджера),
+  // но без финансов.
+  smm_director: [
+    'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
+    'projects.archive', 'projects.members.manage', 'projects.manager.change',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
+    'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',
+    'employees.view', 'analytics.view',
+    'reports.view', 'reports.create',
+    'calendar.view', 'calendar.create', 'archive.view',
+    'files.view', 'files.upload', 'files.delete.any',
+    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'ai.chat', 'tariffs.manage', 'risks.view', 'teams.manage',
   ],
   smm_specialist: [
     'dashboard', 'projects.view',

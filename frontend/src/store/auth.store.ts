@@ -6,6 +6,7 @@ export type UserRole =
   | 'admin'
   | 'founder'
   | 'co_founder'
+  | 'smm_director'
   | 'project_manager'
   | 'head_smm'
   | 'smm_specialist'
@@ -116,8 +117,8 @@ export function useIsFounder() {
 }
 
 export function useIsPM() {
-  // head_smm — главный SMM, тоже менеджер своих SMM-проектов
-  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(s.user?.role || ''))
+  // smm_director / head_smm / project_manager — все менеджерские роли
+  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(s.user?.role || ''))
 }
 
 export function useIsWorker() {
@@ -125,5 +126,5 @@ export function useIsWorker() {
 }
 
 export function useCanManageTasks() {
-  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(s.user?.role || ''))
 }

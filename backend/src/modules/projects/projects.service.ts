@@ -441,6 +441,10 @@ export class ProjectsService {
           ))`,
           { userId },
         );
+      } else if (role === 'smm_director') {
+        // Руководитель SMM видит ВСЕ SMM-проекты компании (как founder, но
+        // только в SMM-сегменте). Не-SMM проекты ему не показываем.
+        qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
       } else if (!['admin', 'founder', 'co_founder', 'sales_manager'].includes(role)) {
         // All other roles see only projects they are members of
         qb.andWhere(
@@ -491,7 +495,7 @@ export class ProjectsService {
     return requestUserRole ? this.stripFinance(project, requestUserRole) : project;
   }
 
-  /** Guard: head_smm can only be manager of SMM projects. */
+  /** Guard: head_smm and smm_director can only be assigned to SMM projects. */
   private async validateManagerAssignment(managerId: string | undefined, projectType: string | undefined) {
     if (!managerId) return;
     const mgr = await this.userRepo.findOne({ where: { id: managerId } });
@@ -501,12 +505,20 @@ export class ProjectsService {
         'Главный SMM специалист может быть менеджером только SMM-проектов',
       );
     }
+    if (mgr.role === UserRole.SMM_DIRECTOR && projectType !== 'SMM') {
+      throw new ForbiddenException(
+        'Руководитель SMM может быть менеджером только SMM-проектов',
+      );
+    }
   }
 
   async create(dto: CreateProjectDto, userId: string, userRole?: string) {
-    // head_smm can only create SMM projects
+    // head_smm and smm_director can only create SMM projects
     if (userRole === UserRole.HEAD_SMM && dto.projectType !== 'SMM') {
       throw new ForbiddenException('Главный SMM специалист может создавать только SMM-проекты');
+    }
+    if (userRole === UserRole.SMM_DIRECTOR && dto.projectType !== 'SMM') {
+      throw new ForbiddenException('Руководитель SMM может создавать только SMM-проекты');
     }
     await this.validateManagerAssignment(dto.managerId, dto.projectType);
     const project = this.repo.create({
@@ -613,7 +625,10 @@ export class ProjectsService {
 
   async update(id: string, dto: UpdateProjectDto, user: { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
+    // smm_director может редактировать ЛЮБОЙ SMM-проект (его область целиком).
+    const isSmmDirectorOnSmm = user.role === 'smm_director' && project.projectType === 'SMM';
     const canEdit = ['admin', 'founder', 'co_founder'].includes(user.role) ||
+      isSmmDirectorOnSmm ||
       ((user.role === 'project_manager' || user.role === 'head_smm') && project.managerId === user.id);
     if (!canEdit) {
       throw new ForbiddenException('Not allowed');

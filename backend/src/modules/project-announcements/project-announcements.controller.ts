@@ -21,7 +21,7 @@ export class ProjectAnnouncementsController {
   }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM)
   create(
     @Param('projectId') projectId: string,
     @Body() dto: { title: string; description?: string; priority?: AnnouncementPriority },
@@ -31,7 +31,7 @@ export class ProjectAnnouncementsController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM)
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }
