@@ -14,6 +14,7 @@ import clsx from 'clsx'
 const TYPE_COLORS: Record<string, string> = {
   project_start: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50',
   project_end:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50',
+  task:          'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-900/50',
 }
 
 export default function CalendarPage() {
@@ -52,11 +53,12 @@ export default function CalendarPage() {
     onError: () => toast.error(t('common.error')),
   })
 
-  // ВАЖНО: оставляем только события проекта (старт / конец).
-  // Задачи скрываем — они есть на /tasks и в канбане проекта,
-  // календарь — про проектный таймлайн, не про микро-задачи.
+  // Показываем старт/завершение проектов + задачи (включая авто-задачи
+  // из контент-плана: "История: ...", "Reel: ...", "Пост: ..."). Задачи
+  // окрашиваются фиолетовым, чтобы визуально отличаться от проектных
+  // вех. Если хочется только проектные — есть фильтр по проекту сверху.
   const projectEvents = (events || []).filter((e: any) =>
-    e.type === 'project_start' || e.type === 'project_end',
+    e.type === 'project_start' || e.type === 'project_end' || e.type === 'task',
   )
 
   const eventsForDay = (day: Date) =>
@@ -266,6 +268,9 @@ export default function CalendarPage() {
         </span>
         <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50">
           Конец проекта
+        </span>
+        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-900/50">
+          Задача / контент-план
         </span>
       </div>
 

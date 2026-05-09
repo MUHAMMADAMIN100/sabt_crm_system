@@ -8,6 +8,7 @@ import {
   ContentItemType,
 } from './content-plan-item.entity';
 import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
+import { AppGateway } from '../gateway/app.gateway';
 
 export interface ContentPlanFilters {
   projectId?: string;
@@ -37,7 +38,18 @@ export class ContentPlanService {
   constructor(
     @InjectRepository(ContentPlanItem) private repo: Repository<ContentPlanItem>,
     @InjectRepository(Task) private taskRepo: Repository<Task>,
+    private gateway: AppGateway,
   ) {}
+
+  /** Сообщить фронту что задачи проекта изменились — он перезагрузит
+   *  канбан и календарь без F5 (useSocket подписан на tasks:changed). */
+  private emitTasksChanged(projectId?: string) {
+    try {
+      this.gateway.broadcast('tasks:changed', projectId ? { projectId } : {});
+    } catch (e) {
+      this.logger.warn(`Failed to broadcast tasks:changed: ${(e as Error).message}`);
+    }
+  }
 
   /** Собирает payload задачи из элемента контент-плана. */
   private buildTaskPayload(item: ContentPlanItem, createdById?: string): Partial<Task> {
@@ -137,6 +149,8 @@ export class ContentPlanService {
             this.logger.warn(`Backfill task for item ${it.id} failed: ${(e as Error).message}`);
           }
         }));
+        // Уведомляем фронт чтобы канбан/календарь перерисовались сразу.
+        this.emitTasksChanged(f.projectId);
       }
     }
 
@@ -161,6 +175,7 @@ export class ContentPlanService {
       saved.taskId = taskId;
       await this.repo.update(saved.id, { taskId });
     }
+    if (taskId) this.emitTasksChanged(saved.projectId);
     return saved;
   }
 
@@ -171,17 +186,20 @@ export class ContentPlanService {
     const saved = await this.repo.save(entities);
     // Параллельно создаём задачи. Игнорируем ошибки отдельных элементов —
     // план уже сохранён, задачи это вторичный артефакт.
+    let createdAny = false;
     await Promise.all(saved.map(async (s) => {
       try {
         const taskId = await this.syncTaskForItem(s, createdById);
         if (taskId && taskId !== s.taskId) {
           s.taskId = taskId;
           await this.repo.update(s.id, { taskId });
+          createdAny = true;
         }
       } catch (e) {
         this.logger.warn(`Failed to auto-create task for plan item ${s.id}: ${(e as Error).message}`);
       }
     }));
+    if (createdAny) this.emitTasksChanged(saved[0]?.projectId);
     return saved;
   }
 
@@ -200,6 +218,7 @@ export class ContentPlanService {
     } catch (e) {
       this.logger.warn(`Failed to sync task for plan item ${id}: ${(e as Error).message}`);
     }
+    this.emitTasksChanged(after.projectId);
     return after;
   }
 
@@ -208,6 +227,7 @@ export class ContentPlanService {
     // Удаляем связанную задачу (если ещё жива).
     await this.removeTaskForItem(item);
     await this.repo.remove(item);
+    if (item.taskId) this.emitTasksChanged(item.projectId);
     return { message: 'Content plan item deleted' };
   }
 
