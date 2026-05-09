@@ -37,8 +37,8 @@ export default function TasksPage() {
   const PAGE_SIZE = 10
   const user = useAuthStore(s => s.user)
   const navigate = useNavigate()
-  const isHeadSMM = user?.role === 'head_smm'
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(user?.role || '')
+  const isHeadSMM = user?.role === 'head_smm' || user?.role === 'smm_director'
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
   // Story widget visible to everyone except admin/founder (they have analytics).
   // PM sees it too because they may be a member of other projects where they
   // need to publish stories themselves.

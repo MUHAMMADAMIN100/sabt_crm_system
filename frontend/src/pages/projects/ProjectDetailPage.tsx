@@ -82,7 +82,7 @@ export default function ProjectDetailPage() {
   // и project_manager (создавать задачи, редактировать, управлять составом).
   // Бэкенд отдельно проверит что head_smm управляет именно своим SMM-проектом
   // (project.managerId === user.id) и вернёт 403 для чужих.
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(user?.role || '')
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
   const canManagePayment = user?.role === 'founder' || user?.role === 'co_founder'
   const canSeePayment = ['admin', 'founder', 'co_founder', 'sales_manager'].includes(user?.role || '')
   const canRequestPayment = ['admin', 'founder', 'co_founder', 'sales_manager'].includes(user?.role || '')

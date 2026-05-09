@@ -79,7 +79,7 @@ export default function ProjectsPage() {
 
   // Список PM-ов: только сотрудники с менеджерскими ролями
   const pmList = (employees ?? []).filter((e: any) =>
-    ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(e.user?.role),
+    ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(e.user?.role),
   )
 
   // Reset page when filters change

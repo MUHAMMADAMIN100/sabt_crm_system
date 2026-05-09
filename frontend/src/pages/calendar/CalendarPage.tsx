@@ -24,8 +24,8 @@ export default function CalendarPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
-  const isHeadSMM = user?.role === 'head_smm'
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'project_manager', 'head_smm'].includes(user?.role || '')
+  const isHeadSMM = user?.role === 'head_smm' || user?.role === 'smm_director'
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
   const canCreate = !!user
 
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
