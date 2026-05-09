@@ -33,6 +33,10 @@ const fmtMoney = (v: number | string | null | undefined) =>
 export default function TariffsPage() {
   const role = useAuthStore(s => s.user?.role)
   const canEdit = hasPermission(role as any, 'tariffs.manage')
+  // Цены тарифов видят и могут редактировать ТОЛЬКО founder/co_founder.
+  // Остальные (admin, smm_director, head_smm и т.д.) видят состав тарифа,
+  // но саму цену не показываем.
+  const canSeeFinance = role === 'founder' || role === 'co_founder'
 
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
@@ -154,6 +158,7 @@ export default function TariffsPage() {
               key={t.id}
               tariff={t}
               canEdit={canEdit}
+              canSeeFinance={canSeeFinance}
               onEdit={() => setEditTariff(t)}
               onClone={() => cloneMut.mutate(t.id)}
               onToggle={() => toggleMut.mutate(t.id)}
@@ -166,6 +171,7 @@ export default function TariffsPage() {
       {showCreate && (
         <Modal open onClose={() => setShowCreate(false)} title="Новый тариф" size="lg">
           <TariffForm
+            canSeeFinance={canSeeFinance}
             loading={createMut.isPending}
             onCancel={() => setShowCreate(false)}
             onSubmit={data => createMut.mutate(data)}
@@ -177,6 +183,7 @@ export default function TariffsPage() {
         <Modal open onClose={() => setEditTariff(null)} title={`Редактировать: ${editTariff.name}`} size="lg">
           <TariffForm
             initial={editTariff}
+            canSeeFinance={canSeeFinance}
             loading={updateMut.isPending}
             onCancel={() => setEditTariff(null)}
             onSubmit={data => updateMut.mutate({ id: editTariff.id, data })}
@@ -196,9 +203,10 @@ export default function TariffsPage() {
   )
 }
 
-function TariffCard({ tariff, canEdit, onEdit, onClone, onToggle, onDelete }: {
+function TariffCard({ tariff, canEdit, canSeeFinance, onEdit, onClone, onToggle, onDelete }: {
   tariff: Tariff
   canEdit: boolean
+  canSeeFinance: boolean
   onEdit: () => void
   onClone: () => void
   onToggle: () => void
@@ -228,9 +236,15 @@ function TariffCard({ tariff, canEdit, onEdit, onClone, onToggle, onDelete }: {
         </span>
       </div>
 
-      <div className="text-2xl font-bold text-purple-600 mb-4">
-        {fmtMoney(tariff.monthlyPrice)} <span className="text-xs font-normal text-gray-500">/ мес</span>
-      </div>
+      {canSeeFinance ? (
+        <div className="text-2xl font-bold text-purple-600 mb-4">
+          {fmtMoney(tariff.monthlyPrice)} <span className="text-xs font-normal text-gray-500">/ мес</span>
+        </div>
+      ) : (
+        <div className="text-xs text-gray-400 dark:text-gray-500 italic mb-4">
+          Цена доступна основателю и сооснователю
+        </div>
+      )}
 
       <ul className="space-y-1 text-sm mb-4">
         {tariff.storiesPerMonth > 0 && <li>📱 Stories: <b>{tariff.storiesPerMonth}</b></li>}
@@ -264,8 +278,9 @@ function TariffCard({ tariff, canEdit, onEdit, onClone, onToggle, onDelete }: {
   )
 }
 
-function TariffForm({ initial, onSubmit, onCancel, loading }: {
+function TariffForm({ initial, canSeeFinance, onSubmit, onCancel, loading }: {
   initial?: Partial<Tariff>
+  canSeeFinance: boolean
   onSubmit: (data: any) => void
   onCancel: () => void
   loading: boolean
@@ -292,7 +307,9 @@ function TariffForm({ initial, onSubmit, onCancel, loading }: {
     <form
       onSubmit={handleSubmit(data => onSubmit({
         ...data,
-        monthlyPrice: Number(data.monthlyPrice) || 0,
+        // Цену отправляем только если у пользователя фин-доступ.
+        // Бэкенд тоже игнорирует это поле для прочих ролей — двойная защита.
+        ...(canSeeFinance ? { monthlyPrice: Number(data.monthlyPrice) || 0 } : {}),
         storiesPerMonth: Number(data.storiesPerMonth) || 0,
         reelsPerMonth: Number(data.reelsPerMonth) || 0,
         postsPerMonth: Number(data.postsPerMonth) || 0,
@@ -320,9 +337,15 @@ function TariffForm({ initial, onSubmit, onCancel, loading }: {
       </FormField>
 
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Цена / мес (сомони)" required>
-          <input type="number" step="0.01" {...register('monthlyPrice')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" />
-        </FormField>
+        {canSeeFinance ? (
+          <FormField label="Цена / мес (сомони)" required>
+            <input type="number" step="0.01" {...register('monthlyPrice')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" />
+          </FormField>
+        ) : (
+          <div className="text-xs text-gray-500 italic flex items-center">
+            🔒 Цена настраивается основателем
+          </div>
+        )}
         <FormField label="Длительность (дней)">
           <input type="number" {...register('durationDays')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" />
         </FormField>

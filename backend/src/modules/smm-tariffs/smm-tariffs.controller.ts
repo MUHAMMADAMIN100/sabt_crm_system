@@ -14,43 +14,48 @@ import { UserRole } from '../users/user.entity';
 export class SmmTariffsController {
   constructor(private service: SmmTariffsService) {}
 
-  /** Список тарифов — видит любой авторизованный (нужно для дропдауна в проекте). */
+  /** Список тарифов — видит любой авторизованный (нужно для дропдауна в проекте).
+   *  Цены (monthlyPrice) показываются ТОЛЬКО founder/co_founder; для остальных
+   *  ролей сервис вырезает поле в stripPrice(). */
   @Get()
   findAll(
+    @Request() req,
     @Query('search') search?: string,
     @Query('isActive') isActive?: string,
   ) {
     const filters: { search?: string; isActive?: boolean } = { search };
     if (isActive === 'true') filters.isActive = true;
     if (isActive === 'false') filters.isActive = false;
-    return this.service.findAll(filters);
+    return this.service.findAll(filters, req.user?.role);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) { return this.service.findOne(id); }
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.service.findOne(id, req.user?.role);
+  }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
   create(@Body() dto: any, @Request() req) {
-    return this.service.create(dto, req.user.id);
+    return this.service.create(dto, req.user.id, req.user.role);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.HEAD_SMM)
-  update(@Param('id') id: string, @Body() dto: any) {
-    return this.service.update(id, dto);
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
+  update(@Param('id') id: string, @Body() dto: any, @Request() req) {
+    return this.service.update(id, dto, req.user.role);
   }
 
   @Patch(':id/toggle-active')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.HEAD_SMM)
-  toggleActive(@Param('id') id: string) {
-    return this.service.toggleActive(id);
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
+  toggleActive(@Param('id') id: string, @Request() req) {
+    return this.service.toggleActive(id, req.user.role);
   }
 
   @Post(':id/clone')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
   clone(@Param('id') id: string, @Request() req) {
-    return this.service.clone(id, req.user.id);
+    return this.service.clone(id, req.user.id, req.user.role);
   }
 
   @Delete(':id')

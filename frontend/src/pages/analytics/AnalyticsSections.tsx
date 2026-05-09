@@ -8,6 +8,7 @@ import {
 import {
   riskApi, smmTariffsApi, projectsApi, analyticsApi, employeesApi,
 } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 
 type Level = 'green' | 'yellow' | 'red'
 
@@ -319,6 +320,11 @@ export function RiskAnalyticsSection() {
 // 6. TARIFF ANALYTICS — распределение проектов по тарифам
 // ═══════════════════════════════════════════════════════════════════
 export function TariffAnalyticsSection() {
+  const role = useAuthStore(s => s.user?.role)
+  // Цены и выручку по тарифу видят ТОЛЬКО founder/co_founder.
+  // Остальные могут смотреть распределение проектов по тарифам — это
+  // чисто организационная информация, не финансовая.
+  const canSeeFinance = role === 'founder' || role === 'co_founder'
   const { data: tariffs, isLoading } = useQuery({ queryKey: ['smm-tariffs'], queryFn: () => smmTariffsApi.list() })
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
 
@@ -377,18 +383,18 @@ export function TariffAnalyticsSection() {
               <thead className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500">
                 <tr>
                   <th className="text-left px-3 py-2">Тариф</th>
-                  <th className="text-right px-3 py-2">Цена</th>
+                  {canSeeFinance && <th className="text-right px-3 py-2">Цена</th>}
                   <th className="text-right px-3 py-2">Проектов</th>
-                  <th className="text-right px-3 py-2">Выручка/мес</th>
+                  {canSeeFinance && <th className="text-right px-3 py-2">Выручка/мес</th>}
                 </tr>
               </thead>
               <tbody>
                 {rows.map(r => (
                   <tr key={r.tariffId} className="border-t border-gray-200 dark:border-gray-700">
                     <td className="px-3 py-2 font-medium">{r.name}</td>
-                    <td className="px-3 py-2 text-right text-xs">{fmtMoney(r.price)}</td>
+                    {canSeeFinance && <td className="px-3 py-2 text-right text-xs">{fmtMoney(r.price)}</td>}
                     <td className="px-3 py-2 text-right">{r.projects}</td>
-                    <td className="px-3 py-2 text-right text-xs font-medium">{fmtMoney(r.revenue)}</td>
+                    {canSeeFinance && <td className="px-3 py-2 text-right text-xs font-medium">{fmtMoney(r.revenue)}</td>}
                   </tr>
                 ))}
               </tbody>
