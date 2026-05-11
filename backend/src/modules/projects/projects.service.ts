@@ -372,13 +372,16 @@ export class ProjectsService {
 
   /** Удаляет финансовые поля из проекта/списка для тех ролей которые
    *  не должны их видеть. Полный доступ — только founder/co_founder.
-   *  Sales_manager видит paidAmount/budget/outstanding (нужно для оплат
-   *  и работы с клиентами), но НЕ видит маржу/себестоимость/тариф-цену.
-   *  Все остальные (admin, PM, head_smm и т.д.) — финансы скрыты. */
+   *  Sales_manager видит paidAmount/budget/outstanding (для работы с
+   *  клиентами), но НЕ видит маржу/себестоимость/тариф-цену.
+   *  Project_manager / head_smm / smm_director видят ТОЛЬКО budget
+   *  (планирование объёма работ), всё остальное финансовое — скрыто.
+   *  Прочие роли — финансы полностью скрыты. */
   stripFinance<T extends Project | Project[]>(data: T, role?: string): T {
     const isFinance = role === 'founder' || role === 'co_founder';
     if (isFinance) return data;
     const isSales = role === 'sales_manager';
+    const isProjectManager = role === 'project_manager' || role === 'head_smm' || role === 'smm_director';
     const strip = (p: any) => {
       if (!p) return p;
       // Поля связанные с маржой/прибыльностью — только finance role видит
@@ -389,13 +392,16 @@ export class ProjectsService {
       delete p.monthlyFee;
       delete p.discount;
       delete p.discountType;
-      // Эти поля sales_manager оставляем для работы с клиентами,
-      // остальным скрываем
+      // paidAmount/totalContractValue/outstandingAmount — только sales+finance
       if (!isSales) {
         delete p.paidAmount;
-        delete p.budget;
         delete p.totalContractValue;
         delete p.outstandingAmount;
+      }
+      // budget — sales + менеджеры проекта (PM/head_smm/smm_director),
+      // прочим скрываем
+      if (!isSales && !isProjectManager) {
+        delete p.budget;
       }
       return p;
     };
