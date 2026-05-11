@@ -288,11 +288,17 @@ export function FormField({ label, error, children, required }: {
 }
 
 // ── Avatar ────────────────────────────────────────────────────────────
+const AVATAR_BASE = import.meta.env.VITE_API_URL || ''
 export function Avatar({ name, src, size = 32 }: { name?: string; src?: string; size?: number }) {
   if (src) {
+    // Бэкенд хранит только filename аватара (uuid.ext). Фронт может быть
+    // на другом домене (Vercel) чем backend (Railway) — поэтому строим
+    // полный URL через VITE_API_URL. Если src уже полный http(s) — берём
+    // как есть.
+    const url = src.startsWith('http') ? src : `${AVATAR_BASE}/uploads/avatars/${src}`
     return (
       <img
-        src={src.startsWith('http') ? src : `/uploads/avatars/${src}`}
+        src={url}
         alt={name}
         title={name}
         loading="lazy"
