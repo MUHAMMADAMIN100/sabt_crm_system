@@ -636,7 +636,23 @@ export class ProjectsService {
     const canEdit = ['admin', 'founder', 'co_founder'].includes(user.role) ||
       isSmmDirectorOnSmm ||
       ((user.role === 'project_manager' || user.role === 'head_smm') && project.managerId === user.id);
-    if (!canEdit) {
+
+    // Sales_manager имеет ограниченный доступ к редактированию — только
+    // финансово-клиентские поля (бюджет, статус оплаты, дата платежа,
+    // данные клиента). Это нужно чтобы менеджер по продажам мог фиксировать
+    // переговоренный бюджет и обновлять контакты клиента без обращения
+    // к PM/основателю.
+    const isSales = user.role === 'sales_manager';
+    const SALES_ALLOWED_FIELDS = new Set(['budget', 'clientInfo', 'paymentStatus', 'nextPaymentDate']);
+    if (isSales) {
+      const dirty = Object.keys(dto).filter(k => (dto as any)[k] !== undefined);
+      const forbidden = dirty.filter(k => !SALES_ALLOWED_FIELDS.has(k));
+      if (forbidden.length > 0) {
+        throw new ForbiddenException(
+          `Менеджер по продажам может изменять только: бюджет, статус оплаты, дата платежа, данные клиента. Запрещено: ${forbidden.join(', ')}`,
+        );
+      }
+    } else if (!canEdit) {
       throw new ForbiddenException('Not allowed');
     }
 

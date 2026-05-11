@@ -86,6 +86,9 @@ export default function ProjectDetailPage() {
   const canManagePayment = user?.role === 'founder' || user?.role === 'co_founder'
   const canSeePayment = ['admin', 'founder', 'co_founder', 'sales_manager'].includes(user?.role || '')
   const canRequestPayment = ['admin', 'founder', 'co_founder', 'sales_manager'].includes(user?.role || '')
+  // Бюджет — может редактировать sales_manager (его прерогатива), а также
+  // менеджеры проекта (PM, head_smm, smm_director) и top-tier (founder/co_founder/admin).
+  const canEditBudget = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm', 'sales_manager'].includes(user?.role || '')
 
   // Detect desktop (lg and up) — mobile/tablet use select instead of drag
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)
@@ -98,6 +101,8 @@ export default function ProjectDetailPage() {
 
   const [editingPayment, setEditingPayment] = useState(false)
   const [paymentValue, setPaymentValue] = useState('')
+  const [editingBudget, setEditingBudget] = useState(false)
+  const [budgetValue, setBudgetValue] = useState('')
   const [showRequestPayment, setShowRequestPayment] = useState(false)
   const [requestMessage, setRequestMessage] = useState('')
 
@@ -353,6 +358,15 @@ export default function ProjectDetailPage() {
     )
   }
 
+  const handleSaveBudget = () => {
+    const amount = Number(budgetValue)
+    if (isNaN(amount) || amount < 0) { toast.error('Введите корректный бюджет'); return }
+    updateProject.mutate(
+      { budget: amount },
+      { onSuccess: () => setEditingBudget(false) },
+    )
+  }
+
   const handleSaveClient = () => {
     updateProject.mutate({ clientInfo: clientForm })
   }
@@ -529,8 +543,10 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      {/* Payment block — visible to sales manager, admin, founder */}
-      {canSeePayment && (project.budget > 0 || project.paidAmount > 0) && (
+      {/* Payment block — visible to sales manager, admin, founder.
+          Также показываем если пользователь может править бюджет — иначе
+          у sales_manager не было бы доступа задать первоначальную сумму. */}
+      {(canSeePayment || canEditBudget) && (project.budget > 0 || project.paidAmount > 0 || canEditBudget) && (
         <div className="card flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <DollarSign size={16} className="text-emerald-500" />
@@ -539,7 +555,33 @@ export default function ProjectDetailPage() {
           <div className="flex flex-wrap items-center gap-4 flex-1">
             <div className="text-center">
               <p className="text-xs text-surface-400 dark:text-surface-500">Бюджет</p>
-              <p className="text-sm font-bold text-surface-800 dark:text-surface-200">{(project.budget || 0).toLocaleString('ru-RU')} сомони</p>
+              {editingBudget && canEditBudget ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={budgetValue}
+                    onChange={e => setBudgetValue(e.target.value)}
+                    className="input py-0.5 px-2 text-sm w-32"
+                    min={0}
+                    autoFocus
+                  />
+                  <button onClick={handleSaveBudget} className="p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded" title="Сохранить"><Check size={14} /></button>
+                  <button onClick={() => setEditingBudget(false)} className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded" title="Отмена"><X size={14} /></button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 justify-center">
+                  <p className="text-sm font-bold text-surface-800 dark:text-surface-200">{(project.budget || 0).toLocaleString('ru-RU')} сомони</p>
+                  {canEditBudget && (
+                    <button
+                      onClick={() => { setBudgetValue(String(project.budget || 0)); setEditingBudget(true) }}
+                      className="p-0.5 text-surface-400 hover:text-primary-600"
+                      title="Изменить бюджет"
+                    >
+                      <Edit size={12} />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <div className="text-center">
               <p className="text-xs text-surface-400 dark:text-surface-500">Оплачено</p>
