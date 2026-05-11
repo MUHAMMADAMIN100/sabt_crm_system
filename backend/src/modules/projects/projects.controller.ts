@@ -51,11 +51,15 @@ export class ProjectsController {
 
   @Patch(':id/archive')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
-  archive(@Param('id') id: string) { return this.service.archive(id); }
+  archive(@Param('id') id: string, @Request() req) {
+    return this.service.archive(id, req.user);
+  }
 
   @Patch(':id/restore')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
-  restore(@Param('id') id: string) { return this.service.restore(id); }
+  restore(@Param('id') id: string, @Request() req) {
+    return this.service.restore(id, req.user);
+  }
 
   @Delete(':id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)

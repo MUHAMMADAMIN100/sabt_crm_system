@@ -80,8 +80,13 @@ export class UsersService {
     return this.findOne(id);
   }
 
-  async remove(id: string, actorRole?: string) {
+  async remove(id: string, actorRole?: string, actorId?: string) {
     const user = await this.findOne(id);
+    // Защита от самоудаления — admin/founder не должен случайно стереть
+    // собственный аккаунт и потерять доступ к системе.
+    if (actorId && user.id === actorId) {
+      throw new ForbiddenException('Нельзя удалить самого себя');
+    }
     this.assertCanManage(user, actorRole);
     // Delete linked employee record first (FK references user)
     const employee = await this.employeeRepo.findOne({ where: { userId: id } });
@@ -90,8 +95,13 @@ export class UsersService {
     return { message: 'User deleted' };
   }
 
-  async toggleActive(id: string, actorRole?: string) {
+  async toggleActive(id: string, actorRole?: string, actorId?: string) {
     const user = await this.findOne(id);
+    // Защита от само-деактивации — иначе admin может выключить себя
+    // и потерять доступ.
+    if (actorId && user.id === actorId) {
+      throw new ForbiddenException('Нельзя деактивировать самого себя');
+    }
     this.assertCanManage(user, actorRole);
     user.isActive = !user.isActive;
     await this.repo.save(user);

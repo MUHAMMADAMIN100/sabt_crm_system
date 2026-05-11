@@ -962,8 +962,12 @@ export class ProjectsService {
     return this.findOne(id);
   }
 
-  async archive(id: string) {
+  async archive(id: string, user?: { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
+    // smm_director может архивировать ТОЛЬКО SMM-проекты (его область).
+    if (user?.role === 'smm_director' && project.projectType !== 'SMM') {
+      throw new ForbiddenException('Руководитель SMM может архивировать только SMM-проекты');
+    }
     await this.repo.update(id, { isArchived: true, status: ProjectStatus.ARCHIVED });
     await this.activityLog.log({
       action: ActivityAction.PROJECT_ARCHIVE,
@@ -975,9 +979,16 @@ export class ProjectsService {
     return this.findOne(id);
   }
 
-  async restore(id: string) {
+  async restore(id: string, user?: { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
-    await this.repo.update(id, { isArchived: false, status: ProjectStatus.COMPLETED });
+    if (user?.role === 'smm_director' && project.projectType !== 'SMM') {
+      throw new ForbiddenException('Руководитель SMM может восстанавливать только SMM-проекты');
+    }
+    // При восстановлении НЕ форсируем COMPLETED — возвращаем в IN_PROGRESS
+    // как safe default. Если был completed до архива — пользователь может
+    // вручную пометить заново. Раньше форсилось COMPLETED, что теряло
+    // информацию о реальном состоянии проекта.
+    await this.repo.update(id, { isArchived: false, status: ProjectStatus.IN_PROGRESS });
     await this.activityLog.log({
       action: ActivityAction.PROJECT_RESTORE,
       entity: 'project',
@@ -991,11 +1002,19 @@ export class ProjectsService {
   async remove(id: string, user?: { id: string; role: string; name?: string }) {
     const p = await this.findOne(id);
 
-    // Only admin and founder can delete projects. PM / head_smm manage
-    // their projects but cannot remove them — deletion is an irreversible
-    // operation that wipes tasks, files and activity, reserved for top roles.
-    if (user && !['admin', 'founder', 'co_founder'].includes(user.role)) {
-      throw new ForbiddenException('Удалять проекты могут только администратор, основатель и сооснователь');
+    // Доступ к удалению: founder/co_founder/admin — без ограничений;
+    // smm_director — только SMM-проекты. PM/head_smm/прочие — нельзя.
+    if (user) {
+      const role = user.role;
+      const isTopAdmin = ['admin', 'founder', 'co_founder'].includes(role);
+      const isSmmDirOnSmm = role === 'smm_director' && p.projectType === 'SMM';
+      if (!isTopAdmin && !isSmmDirOnSmm) {
+        throw new ForbiddenException(
+          role === 'smm_director'
+            ? 'Руководитель SMM может удалять только SMM-проекты'
+            : 'Удалять проекты могут только администратор, основатель, сооснователь и руководитель SMM (для SMM-проектов)',
+        );
+      }
     }
 
     await this.activityLog.log({
@@ -1080,9 +1099,11 @@ export class ProjectsService {
       throw new ForbiddenException('У проекта не указан email клиента. Добавьте его во вкладке "О клиенте".');
     }
 
-    const budget = Number(project.budget || 0);
+    // Используем totalContractValue (Wave 13 — каноническое поле договора),
+    // budget оставлен только для совместимости со старыми проектами без TCV.
+    const totalAmount = Number(project.totalContractValue || project.budget || 0);
     const paid = Number(project.paidAmount || 0);
-    const remaining = Math.max(0, budget - paid);
+    const remaining = Math.max(0, totalAmount - paid);
 
     if (remaining <= 0) {
       throw new ForbiddenException('По этому проекту нет задолженности');
@@ -1092,7 +1113,7 @@ export class ProjectsService {
       clientEmail,
       clientName,
       project.name,
-      budget,
+      totalAmount,
       paid,
       remaining,
       actor.name || 'Менеджер по продажам',

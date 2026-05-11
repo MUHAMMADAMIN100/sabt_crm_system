@@ -91,6 +91,9 @@ export class StoriesService {
       // Сторис — это командная работа: достаточно, чтобы любой участник
       // отметил план дня — день считается выполненным.
       const target = Number((project.smmData as any)?.storiesPerDay) || 3;
+      // Если проект явно настроен без stories (target=0) — пропускаем
+      // его в cron, чтобы не слать бессмысленные "0/0" уведомления.
+      if (target <= 0) continue;
 
       // Истории за сегодня по проекту → суммируем по сотрудникам
       const todayLogs = await this.repo.find({ where: { projectId: project.id, date: today } });

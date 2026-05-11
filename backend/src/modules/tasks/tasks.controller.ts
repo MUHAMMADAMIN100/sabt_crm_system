@@ -8,7 +8,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
 // PM_ROLES convenience list for decorator
-const { ADMIN, FOUNDER, CO_FOUNDER, PROJECT_MANAGER } = UserRole;
+const { ADMIN, FOUNDER, CO_FOUNDER, PROJECT_MANAGER, HEAD_SMM, SMM_DIRECTOR } = UserRole;
 import { TaskStatus, TaskPriority } from './task.entity';
 
 @ApiTags('Tasks')
@@ -62,7 +62,7 @@ export class TasksController {
   }
 
   @Get('overdue')
-  @Roles(ADMIN, FOUNDER, CO_FOUNDER, PROJECT_MANAGER)
+  @Roles(ADMIN, FOUNDER, CO_FOUNDER, SMM_DIRECTOR, PROJECT_MANAGER, HEAD_SMM)
   getOverdue() { return this.service.getOverdueTasks(); }
 
   @Get('stats')
@@ -94,19 +94,19 @@ export class TasksController {
   }
 
   @Post(':id/approve')
-  @Roles(ADMIN, FOUNDER, CO_FOUNDER, PROJECT_MANAGER)
+  @Roles(ADMIN, FOUNDER, CO_FOUNDER, SMM_DIRECTOR, PROJECT_MANAGER, HEAD_SMM)
   approve(@Param('id') id: string, @Request() req) {
     return this.service.approveTask(id, req.user);
   }
 
   @Post(':id/return')
-  @Roles(ADMIN, FOUNDER, CO_FOUNDER, PROJECT_MANAGER)
+  @Roles(ADMIN, FOUNDER, CO_FOUNDER, SMM_DIRECTOR, PROJECT_MANAGER, HEAD_SMM)
   returnTask(@Param('id') id: string, @Body('reason') reason: string, @Request() req) {
     return this.service.returnTask(id, req.user, reason || 'Требует доработки');
   }
 
   @Post('bulk')
-  @Roles(ADMIN, FOUNDER, CO_FOUNDER, PROJECT_MANAGER)
+  @Roles(ADMIN, FOUNDER, CO_FOUNDER, SMM_DIRECTOR, PROJECT_MANAGER, HEAD_SMM)
   bulk(
     @Body('ids') ids: string[],
     @Body('action') action: 'status' | 'delete' | 'assign',

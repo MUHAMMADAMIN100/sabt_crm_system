@@ -27,7 +27,10 @@ export default function CalendarPage() {
   const user = useAuthStore(s => s.user)
   const isHeadSMM = user?.role === 'head_smm' || user?.role === 'smm_director'
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
-  const canCreate = !!user
+  // Создавать задачи кликом по дню могут только менеджерские роли.
+  // Раньше canCreate=!!user пускал любого сотрудника, что приводило к
+  // ошибкам при создании (no project/assignee выбраны автоматом).
+  const canCreate = isManagerPlus
 
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')

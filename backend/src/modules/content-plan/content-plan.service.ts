@@ -72,10 +72,17 @@ export class ContentPlanService {
    *  Минимальная синхронизация: title/description/assignee/dates. Без
    *  уведомлений и activity-log — это служебная авто-задача от плана. */
   private async syncTaskForItem(item: ContentPlanItem, createdById?: string): Promise<string | null> {
-    // Достаточно одной из дат — assignee может быть пустым (PM назначит
-    // позже на канбане). Без даты задача бесполезна для календаря.
-    if (!item.publishDate && !item.preparationDeadline) {
-      return item.taskId || null;
+    const hasTopic = !!(item.topic && item.topic.trim());
+    const hasDate = !!(item.publishDate || item.preparationDeadline);
+    // Без topic ИЛИ без даты задача бесполезна. Если ранее существовала
+    // связанная задача (item.taskId) и теперь стало "не задача" — удаляем
+    // её, чтобы не оставлять сирот с устаревшими данными в канбане/календаре.
+    if (!hasTopic || !hasDate) {
+      if (item.taskId) {
+        await this.removeTaskForItem(item);
+        return null;
+      }
+      return null;
     }
     const payload = this.buildTaskPayload(item, createdById);
     if (item.taskId) {
@@ -209,11 +216,13 @@ export class ContentPlanService {
     await this.repo.update(id, patch);
     const after = await this.findOne(id);
     // Синхронизируем связанную задачу — title/assignee/dates могли измениться.
+    // syncTaskForItem может вернуть null (если задача была удалена из-за
+    // удаления дат или очистки topic) — тогда обнуляем taskId в БД.
     try {
       const taskId = await this.syncTaskForItem(after, updatedById);
-      if (taskId && taskId !== after.taskId) {
-        after.taskId = taskId;
-        await this.repo.update(after.id, { taskId });
+      if (taskId !== after.taskId) {
+        after.taskId = taskId as any;
+        await this.repo.update(after.id, { taskId: taskId as any });
       }
     } catch (e) {
       this.logger.warn(`Failed to sync task for plan item ${id}: ${(e as Error).message}`);

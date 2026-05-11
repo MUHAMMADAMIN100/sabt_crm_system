@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
@@ -29,6 +29,23 @@ export class AuthService {
   async register(dto: RegisterDto) {
     const exists = await this.userRepo.findOne({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email already in use');
+
+    // SECURITY: запрещаем self-register на привилегированные роли.
+    // ADMIN, SMM_DIRECTOR, PROJECT_MANAGER, HEAD_SMM, SALES_MANAGER —
+    // назначаются администратором/основателем через /users, а не
+    // выдаются открытой формой регистрации.
+    const PRIVILEGED_ROLES_BLOCKED_FROM_REGISTER = [
+      UserRole.ADMIN,
+      UserRole.SMM_DIRECTOR,
+      UserRole.PROJECT_MANAGER,
+      UserRole.HEAD_SMM,
+      UserRole.SALES_MANAGER,
+    ];
+    if (dto.role && PRIVILEGED_ROLES_BLOCKED_FROM_REGISTER.includes(dto.role)) {
+      throw new ForbiddenException(
+        'Эта роль назначается администратором. Зарегистрируйтесь как сотрудник, затем дождитесь назначения роли.',
+      );
+    }
 
     // Enforce single founder per system (::text cast avoids enum resolution errors)
     if (dto.role === UserRole.FOUNDER) {
