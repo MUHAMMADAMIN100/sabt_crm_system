@@ -244,6 +244,14 @@ export class UsersService {
     const user = await this.findOne(id);
     await this.repo.update(id, { avatar });
 
+    // У Employee своя колонка avatar — синхронизируем, иначе на странице
+    // сотрудников и в карточках задач (где avatar тянется из employee)
+    // останутся инициалы вместо загруженной картинки.
+    const employee = await this.employeeRepo.findOne({ where: { userId: id } });
+    if (employee) {
+      await this.employeeRepo.update(employee.id, { avatar });
+    }
+
     await this.activityLog.log({
       userId: id,
       userName: user.name,
@@ -252,6 +260,11 @@ export class UsersService {
       entityId: id,
       entityName: user.name,
     });
+
+    // Broadcast чтобы списки сотрудников и проектов обновились без F5.
+    try {
+      this.gateway.broadcast('employees:changed', {});
+    } catch {}
 
     return this.findOne(id);
   }

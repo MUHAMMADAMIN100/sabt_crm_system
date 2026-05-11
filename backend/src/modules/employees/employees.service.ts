@@ -53,12 +53,19 @@ export class EmployeesService {
     if (status) where.status = status;
     if (search) where.fullName = ILike(`%${search}%`);
     const list = await this.repo.find({ where, order: { createdAt: 'DESC' }, relations: ['user'] });
+    // Legacy data: employee.avatar мог не синхронизироваться с user.avatar
+    // (старые загрузки до фикса). Coalesce: если у employee нет картинки —
+    // подставляем из связанного user.
+    for (const emp of list) {
+      if (!emp.avatar && emp.user?.avatar) emp.avatar = emp.user.avatar;
+    }
     return this.stripSalary(list, requestUserRole);
   }
 
   async findOne(id: string, requestUserRole?: string) {
     const emp = await this.repo.findOne({ where: { id }, relations: ['user'] });
     if (!emp) throw new NotFoundException('Employee not found');
+    if (!emp.avatar && emp.user?.avatar) emp.avatar = emp.user.avatar;
     return requestUserRole ? this.stripSalary(emp, requestUserRole) : emp;
   }
 
