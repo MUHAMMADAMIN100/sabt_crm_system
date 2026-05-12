@@ -56,14 +56,27 @@ export default function CalendarPage() {
     onError: () => toast.error(t('common.error')),
   })
 
-  // Календарь founder/co_founder показывает ТОЛЬКО собственные задачи
-  // (где основатель — исполнитель или создатель). Никаких командных
-  // историй/reels/проектных вех — это шум, у основателя свой фокус.
-  // Остальные роли видят полный микс (старт/конец проектов + все задачи
-  // с дедлайнами, попадающие в их область).
+  // Personal view: пользователь видит на календаре ТОЛЬКО свои задачи
+  // (где он исполнитель или создатель). Без старт/конец проектов и
+  // без чужих задач команды. Применяется к:
+  //  - founder/co_founder — у них свой фокус, не нужен микс команды;
+  //  - executor-ролям (developer, designer, smm_specialist, marketer,
+  //    targetologist, employee, sales_manager) — у них вообще нет
+  //    причин видеть чужие активности.
+  // Остаются с полным миксом (старт/конец проектов + все задачи команды):
+  // admin, project_manager, head_smm, smm_director — это их работа,
+  // следить за активностью команды.
+  const PERSONAL_VIEW_ROLES = [
+    'founder', 'co_founder',
+    'developer', 'designer', 'smm_specialist',
+    'marketer', 'targetologist', 'employee', 'sales_manager',
+  ]
+  const isPersonalView = PERSONAL_VIEW_ROLES.includes(user?.role || '')
+  // Founder/co_founder получают специальную quick-task форму при клике
+  // на день календаря (4 поля, direct task without project).
   const isFounderView = user?.role === 'founder' || user?.role === 'co_founder'
   const projectEvents = (events || []).filter((e: any) => {
-    if (isFounderView) {
+    if (isPersonalView) {
       if (e.type !== 'task') return false
       return e.assigneeId === user?.id || e.createdById === user?.id
     }
