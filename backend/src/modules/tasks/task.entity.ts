@@ -50,12 +50,20 @@ export class Task {
   @Column({ type: 'text', nullable: true })
   description: string;
 
-  @ManyToOne(() => Project, project => project.tasks, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Project, project => project.tasks, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn()
   project: Project;
 
-  @Column()
+  /** Может быть NULL для прямых задач от основателя/сооснователя —
+   *  их быстрая форма "добавить задачу" из календаря не запрашивает проект. */
+  @Column({ nullable: true })
   projectId: string;
+
+  /** Флаг что задача создана через быструю форму "от основателя". Поднимает
+   *  приоритет уведомления (email + telegram + in-app со специальным
+   *  текстом) и позволяет фильтровать direct-задачи в дашборде. */
+  @Column({ default: false })
+  fromFounder: boolean;
 
   @ManyToOne(() => User, user => user.tasks, { nullable: true, eager: true })
   @JoinColumn()

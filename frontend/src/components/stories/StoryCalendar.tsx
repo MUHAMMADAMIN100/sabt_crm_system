@@ -104,8 +104,14 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
   const activeProjects = useMemo(() => {
     // Завершённые проекты тоже остаются в календаре — нужно для истории
     // и аналитики. Скрываем только архивные.
-    const base = projects?.filter((p: any) => !p.isArchived) || []
-    // Admin all view sees all projects
+    // Истории — это SMM-инструмент. Не-SMM проекты (веб-сайты, CRM,
+    // дизайн) не имеют storiesPerDay плана — их в списке быть не должно,
+    // иначе фронт показывает их с "0/3" и красными точками что вводит
+    // founder в заблуждение.
+    const base = (projects || []).filter((p: any) =>
+      !p.isArchived && p.projectType === 'SMM',
+    )
+    // Admin all view sees all SMM projects
     if (adminAll) return base
     // Viewing a specific employee — show only projects they belong to
     if (employeeId) {

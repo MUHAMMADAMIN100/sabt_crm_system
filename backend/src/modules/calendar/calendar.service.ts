@@ -47,6 +47,11 @@ export class CalendarService {
       priority: t.priority,
       projectName: t.project?.name,
       assigneeName: t.assignee?.name,
+      // Нужны на фронте для фильтра «мои задачи» у founder/co_founder
+      // и для других персональных view.
+      assigneeId: t.assigneeId,
+      createdById: t.createdById,
+      fromFounder: (t as any).fromFounder ?? false,
       link: `/tasks/${t.id}`,
     }));
 

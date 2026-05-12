@@ -352,29 +352,43 @@ export class TasksService {
       : dto.assigneeId;
     const notifyIds = (firstAssigneeId && firstAssigneeId !== userId) ? [firstAssigneeId] : [];
     const totalSteps = incomingAssigneeIds?.length || (dto.assigneeId ? 1 : 0);
+    const isFromFounder = !!dto.fromFounder;
     for (const aid of notifyIds) {
       try {
         await this.notificationsService.create({
           userId: aid,
           type: NotificationType.NEW_TASK,
-          title: 'Новая задача',
-          message: `Вам назначена задача: "${saved.title}"${totalSteps > 1 ? ` (этап 1 из ${totalSteps})` : ''}`,
+          title: isFromFounder ? '👑 Задача от основателя' : 'Новая задача',
+          message: isFromFounder
+            ? `${creator?.name || 'Основатель'} назначил вам прямую задачу: "${saved.title}"`
+            : `Вам назначена задача: "${saved.title}"${totalSteps > 1 ? ` (этап 1 из ${totalSteps})` : ''}`,
           link: `/tasks/${saved.id}`,
         });
         const assignee = await this.userRepo.findOne({ where: { id: aid } });
         if (assignee?.email) {
           const full = await this.findOne(saved.id);
           const deadline = saved.deadline ? new Date(saved.deadline).toLocaleDateString('ru-RU') : undefined;
+          // Заголовок письма для прямых задач от основателя — подчёркиваем
+          // в имени проекта и в названии самой задачи (mailService шаблон
+          // не меняем, чтобы не плодить параметры).
+          const titleForMail = isFromFounder
+            ? `👑 От основателя (${creator?.name || ''}): ${saved.title}`
+            : saved.title;
           await this.mailService.sendTaskAssigned(
-            assignee.email, assignee.name, saved.title, saved.id,
-            full.project?.name, deadline, saved.priority, saved.description || undefined,
+            assignee.email, assignee.name, titleForMail, saved.id,
+            isFromFounder ? 'Прямая задача от основателя' : full.project?.name,
+            deadline, saved.priority, saved.description || undefined,
           );
           const priorityLabels: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный', critical: 'Критический' };
           await this.telegramService.sendToUser(
             aid,
-            `✅ <b>Вам назначена задача</b>\n\n` +
+            (isFromFounder
+              ? `👑 <b>Задача от основателя</b>\n\n`
+              : `✅ <b>Вам назначена задача</b>\n\n`) +
             `📋 ${saved.title}` +
-            (full.project?.name ? `\n📁 ${full.project.name}` : '') +
+            (isFromFounder
+              ? `\n👤 От: ${creator?.name || 'Основатель'}`
+              : (full.project?.name ? `\n📁 ${full.project.name}` : '')) +
             (saved.priority ? `\n🔥 Приоритет: ${priorityLabels[saved.priority] || saved.priority}` : '') +
             (deadline ? `\n📅 Дедлайн: ${deadline}` : '') +
             `\n\n👉 ${this.telegramService.appUrl}/tasks/${saved.id}`,
@@ -395,7 +409,11 @@ export class TasksService {
       details: { projectId: dto.projectId, priority: dto.priority, assigneeId: dto.assigneeId },
     });
 
-    await this.projectsService.updateProgress(dto.projectId);
+    // Прямые задачи от основателя могут не иметь проекта — updateProgress
+    // только если projectId задан.
+    if (dto.projectId) {
+      await this.projectsService.updateProgress(dto.projectId);
+    }
     this.gateway.broadcast('tasks:changed', { projectId: dto.projectId });
     return this.findOne(saved.id);
   }

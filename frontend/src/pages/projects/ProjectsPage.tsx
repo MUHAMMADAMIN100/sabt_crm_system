@@ -981,14 +981,14 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
               </p>
             )}
           </div>
-          <div>
+          <div className="sm:col-span-2">
             <label className="label">{t('projects.color')} *</label>
             <input type="color" {...register('color')} className="input h-10 p-1 cursor-pointer" />
           </div>
-          <div>
-            <label className="label">{t('projects.budget')}</label>
-            <input type="number" {...register('budget', { min: 0 })} className="input" placeholder="0" min={0} />
-          </div>
+          {/* Поле бюджета убрано из формы создания/редактирования —
+              бюджет правится inline-карандашом на странице проекта.
+              Это даёт более чистый UX (одно место для финансов) и
+              исключает дубль значения в двух местах. */}
         </div>
 
         <div className="flex gap-2 justify-end pt-2">

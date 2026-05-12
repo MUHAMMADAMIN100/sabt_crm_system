@@ -1125,10 +1125,9 @@ export default function ProjectDetailPage() {
                 <option value="on_hold">На паузе</option>
               </select>
             </div>
-            <div>
-              <label className="label mb-1">Бюджет (сомони)</label>
-              <input type="number" value={projectForm.budget || ''} onChange={e => setProjectForm((f: any) => ({ ...f, budget: e.target.value }))} className="input w-full" placeholder="0" />
-            </div>
+            {/* Поле бюджета удалено из формы редактирования по UX-запросу:
+                редактируется только inline-карандашом на странице проекта,
+                чтобы не дублировать значение в двух местах. */}
           </div>
 
           {/* SMM-specific fields */}

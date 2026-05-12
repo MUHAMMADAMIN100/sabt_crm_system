@@ -56,13 +56,19 @@ export default function CalendarPage() {
     onError: () => toast.error(t('common.error')),
   })
 
-  // Показываем старт/завершение проектов + задачи (включая авто-задачи
-  // из контент-плана: "История: ...", "Reel: ...", "Пост: ..."). Задачи
-  // окрашиваются фиолетовым, чтобы визуально отличаться от проектных
-  // вех. Если хочется только проектные — есть фильтр по проекту сверху.
-  const projectEvents = (events || []).filter((e: any) =>
-    e.type === 'project_start' || e.type === 'project_end' || e.type === 'task',
-  )
+  // Календарь founder/co_founder показывает ТОЛЬКО собственные задачи
+  // (где основатель — исполнитель или создатель). Никаких командных
+  // историй/reels/проектных вех — это шум, у основателя свой фокус.
+  // Остальные роли видят полный микс (старт/конец проектов + все задачи
+  // с дедлайнами, попадающие в их область).
+  const isFounderView = user?.role === 'founder' || user?.role === 'co_founder'
+  const projectEvents = (events || []).filter((e: any) => {
+    if (isFounderView) {
+      if (e.type !== 'task') return false
+      return e.assigneeId === user?.id || e.createdById === user?.id
+    }
+    return e.type === 'project_start' || e.type === 'project_end' || e.type === 'task'
+  })
 
   const eventsForDay = (day: Date) =>
     projectEvents.filter((e: any) => isSameDay(new Date(e.date), day))
@@ -282,24 +288,139 @@ export default function CalendarPage() {
         <Modal
           open={showTaskForm}
           onClose={() => setShowTaskForm(false)}
-          title={`${t('calendar.addTask')}${selectedDay ? ' — ' + format(selectedDay, 'dd.MM.yyyy') : ''}`}
+          title={`${isFounderView ? 'Задача от основателя' : t('calendar.addTask')}${selectedDay ? ' — ' + format(selectedDay, 'dd.MM.yyyy') : ''}`}
           size="lg"
         >
-          <TaskForm
-            onSubmit={data => createTask.mutate({
-              ...data,
-              startDate: selectedDay ? format(selectedDay, 'yyyy-MM-dd') : undefined,
-            })}
-            onClose={() => setShowTaskForm(false)}
-            projects={projects || []}
-            employees={employees || []}
-            loading={createTask.isPending}
-            initialDeadline={selectedDay ? format(selectedDay, 'yyyy-MM-dd') : undefined}
-            isAdmin={isManagerPlus}
-            currentUserId={user?.id}
-          />
+          {isFounderView ? (
+            <FounderQuickTaskForm
+              employees={employees || []}
+              loading={createTask.isPending}
+              onClose={() => setShowTaskForm(false)}
+              onSubmit={data => createTask.mutate({
+                ...data,
+                // Дедлайн = день клика в календаре; время в полдень чтобы
+                // не было путаницы с тайм-зонами при отображении.
+                deadline: selectedDay
+                  ? `${format(selectedDay, 'yyyy-MM-dd')}T12:00:00.000Z`
+                  : undefined,
+                fromFounder: true,
+                // projectId не передаём — задача direct from founder.
+              })}
+            />
+          ) : (
+            <TaskForm
+              onSubmit={data => createTask.mutate({
+                ...data,
+                startDate: selectedDay ? format(selectedDay, 'yyyy-MM-dd') : undefined,
+              })}
+              onClose={() => setShowTaskForm(false)}
+              projects={projects || []}
+              employees={employees || []}
+              loading={createTask.isPending}
+              initialDeadline={selectedDay ? format(selectedDay, 'yyyy-MM-dd') : undefined}
+              isAdmin={isManagerPlus}
+              currentUserId={user?.id}
+            />
+          )}
         </Modal>
       )}
     </div>
+  )
+}
+
+/** Минимальная форма «Задача от основателя».
+ *  4 поля: title / description / assignee / priority.
+ *  Дедлайн = выбранный день в календаре, проект не задаётся
+ *  (direct task), исполнитель получает усиленное уведомление. */
+function FounderQuickTaskForm({
+  employees, loading, onClose, onSubmit,
+}: {
+  employees: any[]
+  loading: boolean
+  onClose: () => void
+  onSubmit: (data: any) => void
+}) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [assigneeId, setAssigneeId] = useState('')
+  const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!title.trim()) { toast.error('Укажите название задачи'); return }
+    if (!assigneeId) { toast.error('Выберите исполнителя'); return }
+    onSubmit({
+      title: title.trim(),
+      description: description.trim() || undefined,
+      assigneeId,
+      assigneeIds: [assigneeId],
+      priority,
+    })
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="label">Название задачи *</label>
+        <input
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          className="input"
+          placeholder="Что нужно сделать?"
+          autoFocus
+        />
+      </div>
+      <div>
+        <label className="label">Описание</label>
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          className="input min-h-[80px] resize-y"
+          placeholder="Детали, контекст (необязательно)"
+        />
+      </div>
+      <div>
+        <label className="label">Исполнитель *</label>
+        <select
+          value={assigneeId}
+          onChange={e => setAssigneeId(e.target.value)}
+          className="input"
+        >
+          <option value="">— Выберите сотрудника —</option>
+          {employees
+            .filter((emp: any) => emp.user?.id)
+            .map((emp: any) => (
+              <option key={emp.user.id} value={emp.user.id}>
+                {emp.fullName}{emp.position ? ` · ${emp.position}` : ''}
+              </option>
+            ))}
+        </select>
+      </div>
+      <div>
+        <label className="label">Приоритет *</label>
+        <select
+          value={priority}
+          onChange={e => setPriority(e.target.value as any)}
+          className="input"
+        >
+          <option value="low">Низкий</option>
+          <option value="medium">Средний</option>
+          <option value="high">Высокий</option>
+          <option value="critical">Критический</option>
+        </select>
+      </div>
+      <div className="text-xs text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 rounded-lg p-3">
+        👑 Сотрудник получит уведомление о прямой задаче от вас — на email,
+        в Telegram и внутри сайта.
+      </div>
+      <div className="flex gap-2 justify-end pt-2">
+        <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">
+          Отмена
+        </button>
+        <button type="submit" disabled={loading} className="btn-primary min-w-[140px] justify-center">
+          {loading ? 'Отправляю...' : 'Отправить задачу'}
+        </button>
+      </div>
+    </form>
   )
 }

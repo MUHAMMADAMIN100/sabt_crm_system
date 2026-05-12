@@ -364,7 +364,10 @@ export default function FounderDashboard() {
         </div>
       </div>
 
-      {/* Employee efficiency table */}
+      {/* Employee efficiency table — скрыто для founder/co_founder по запросу:
+          на их dashboard секция считалась лишним шумом. Видна другим
+          менеджерским ролям. */}
+      {false && (
       <CollapsibleSection
         id="efficiency"
         title={<h2 className="section-title flex items-center gap-2"><CheckSquare size={16} /> Эффективность сотрудников</h2>}
@@ -403,6 +406,7 @@ export default function FounderDashboard() {
           </table>
         </div>
       </CollapsibleSection>
+      )}
 
       {/* Story calendar — admin view (all employees) */}
       <CollapsibleSection
