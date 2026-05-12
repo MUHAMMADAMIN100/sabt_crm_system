@@ -65,6 +65,17 @@ export class Task {
   @Column({ default: false })
   fromFounder: boolean;
 
+  /** Технические детали для задач разработки: ссылка на репозиторий,
+   *  имя ветки, URL pull request, live preview/staging URL. JSON чтобы
+   *  не плодить 4 колонки и легко расширять (например testUrl, dbName). */
+  @Column({ type: 'jsonb', nullable: true })
+  techMeta: {
+    repoUrl?: string;
+    branch?: string;
+    prUrl?: string;
+    liveUrl?: string;
+  };
+
   @ManyToOne(() => User, user => user.tasks, { nullable: true, eager: true })
   @JoinColumn()
   assignee: User;

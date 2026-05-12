@@ -30,6 +30,16 @@ export class CreateTaskDto {
   @ApiProperty({ required: false }) @IsOptional() @IsBoolean() acceptedOnFirstTry?: boolean;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() actualCompletionHours?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() deliveryType?: string;
+
+  // ─── Технические детали для dev-задач ───────────────────────────────
+  /** JSON со ссылками: { repoUrl, branch, prUrl, liveUrl } — отображается
+   *  блоком "🔧 Технические детали" на странице задачи. */
+  @ApiProperty({ required: false }) @IsOptional() techMeta?: {
+    repoUrl?: string;
+    branch?: string;
+    prUrl?: string;
+    liveUrl?: string;
+  };
 }
 
 export class UpdateTaskDto extends PartialType(CreateTaskDto) {}

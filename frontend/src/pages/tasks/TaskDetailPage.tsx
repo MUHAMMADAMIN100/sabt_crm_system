@@ -10,13 +10,14 @@ import {
   ArrowLeft, Send, Edit2, Trash2, Paperclip, Upload,
   CheckCircle, RotateCcw, LinkIcon, MessageSquare, AlertTriangle,
   Plus, Square, CheckSquare, Users, Check,
+  Github, GitBranch, GitPullRequest, ExternalLink, Copy, Clock,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-const PM_ROLES = ['admin', 'founder', 'co_founder', 'project_manager']
+const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm']
 const WORKER_ROLES = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager', 'developer', 'employee']
 
 const STATUS_FLOW: Record<string, string[]> = {
@@ -791,8 +792,25 @@ export default function TaskDetailPage() {
                 <span className="text-surface-500 dark:text-surface-400">Создана</span>
                 <span className="text-surface-700 dark:text-surface-300">{format(new Date(task.createdAt), 'dd.MM.yyyy')}</span>
               </div>
+              {/* Time tracking — показываем визуальный прогресс часов если
+                  у задачи задан estimatedHours. Полезно разработчикам и
+                  PM-у видеть фактическое vs планируемое время. */}
+              {Number(task.estimatedHours) > 0 && (
+                <TimeTrackingBlock estimated={Number(task.estimatedHours) || 0} logged={Number(task.loggedHours) || 0} />
+              )}
             </div>
           </div>
+
+          {/* 🔧 Технические детали — карточка для dev-задач (репозиторий,
+              ветка, PR, live preview URL). Появляется если хотя бы одно
+              поле заполнено ИЛИ пользователь может править (PM/assignee/
+              creator) — тогда есть кнопка добавить. */}
+          <TechMetaBlock
+            task={task}
+            canEdit={canEditChecklist(task)}
+            onSave={(meta) => updateTask.mutate({ techMeta: meta })}
+            saving={updateTask.isPending}
+          />
         </div>
       </div>
 
@@ -896,6 +914,246 @@ export default function TaskDetailPage() {
  *  Сверху — заголовок «Сейчас задача у: <имя>» + прогресс-бар.
  *  Кнопка «Я сделал свою часть» показывается на карточке текущего
  *  пользователя, если он назначен и ещё не отметил. */
+
+/** Time tracking — прогресс часов «Затрачено / Запланировано». */
+function TimeTrackingBlock({ estimated, logged }: { estimated: number; logged: number }) {
+  const pct = estimated > 0 ? Math.min(200, Math.round((logged / estimated) * 100)) : 0
+  const color = pct > 100 ? 'bg-red-500' : pct > 80 ? 'bg-amber-500' : 'bg-emerald-500'
+  return (
+    <div className="pt-2 border-t border-surface-100 dark:border-surface-700/50">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-surface-500 dark:text-surface-400 flex items-center gap-1">
+          <Clock size={12} /> Затрачено
+        </span>
+        <span className={clsx('font-medium', pct > 100 ? 'text-red-500' : 'text-surface-700 dark:text-surface-300')}>
+          {logged.toFixed(1)} / {estimated.toFixed(1)} ч.
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-surface-100 dark:bg-surface-700 overflow-hidden">
+        <div className={clsx('h-full transition-all', color)} style={{ width: `${Math.min(100, pct)}%` }} />
+      </div>
+      {pct > 100 && (
+        <p className="text-[10px] text-red-500 mt-1">Перерасход: {(logged - estimated).toFixed(1)} ч.</p>
+      )}
+    </div>
+  )
+}
+
+/** Технические детали для dev-задач: репозиторий, ветка, PR, live preview.
+ *  Просмотр + inline-редактор. Поля с copy-buttons и external-link иконками. */
+function TechMetaBlock({
+  task, canEdit, onSave, saving,
+}: {
+  task: any
+  canEdit: boolean
+  onSave: (meta: any) => void
+  saving: boolean
+}) {
+  const meta = (task?.techMeta || {}) as { repoUrl?: string; branch?: string; prUrl?: string; liveUrl?: string }
+  const hasAny = !!(meta.repoUrl || meta.branch || meta.prUrl || meta.liveUrl)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<typeof meta>(meta)
+
+  const copy = (text: string) => {
+    if (!text) return
+    navigator.clipboard.writeText(text).then(
+      () => toast.success('Скопировано'),
+      () => toast.error('Не удалось скопировать'),
+    )
+  }
+
+  // Если нет данных и нет права редактирования — карточка не нужна.
+  if (!hasAny && !canEdit) return null
+
+  if (editing && canEdit) {
+    return (
+      <div className="card space-y-3">
+        <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300 flex items-center gap-2">
+          🔧 Технические детали
+        </h3>
+        <div className="space-y-2">
+          <div>
+            <label className="text-[11px] text-surface-500 dark:text-surface-400 flex items-center gap-1 mb-1"><Github size={11} /> Репозиторий</label>
+            <input
+              value={draft.repoUrl || ''}
+              onChange={e => setDraft(d => ({ ...d, repoUrl: e.target.value }))}
+              className="input py-1.5 text-sm"
+              placeholder="https://github.com/org/repo"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-surface-500 dark:text-surface-400 flex items-center gap-1 mb-1"><GitBranch size={11} /> Ветка</label>
+            <input
+              value={draft.branch || ''}
+              onChange={e => setDraft(d => ({ ...d, branch: e.target.value }))}
+              className="input py-1.5 text-sm"
+              placeholder="feature/task-name"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-surface-500 dark:text-surface-400 flex items-center gap-1 mb-1"><GitPullRequest size={11} /> Pull Request</label>
+            <input
+              value={draft.prUrl || ''}
+              onChange={e => setDraft(d => ({ ...d, prUrl: e.target.value }))}
+              className="input py-1.5 text-sm"
+              placeholder="https://github.com/org/repo/pull/123"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-surface-500 dark:text-surface-400 flex items-center gap-1 mb-1"><ExternalLink size={11} /> Live / Preview URL</label>
+            <input
+              value={draft.liveUrl || ''}
+              onChange={e => setDraft(d => ({ ...d, liveUrl: e.target.value }))}
+              className="input py-1.5 text-sm"
+              placeholder="https://staging.example.com"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => { setDraft(meta); setEditing(false) }}
+            disabled={saving}
+            className="px-3 py-1.5 text-xs rounded-lg border border-surface-200 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/30"
+          >Отмена</button>
+          <button
+            type="button"
+            onClick={() => {
+              // Нормализуем: пустые поля → undefined, чтобы не хранить шум.
+              const clean: any = {}
+              if (draft.repoUrl?.trim()) clean.repoUrl = draft.repoUrl.trim()
+              if (draft.branch?.trim())  clean.branch  = draft.branch.trim()
+              if (draft.prUrl?.trim())   clean.prUrl   = draft.prUrl.trim()
+              if (draft.liveUrl?.trim()) clean.liveUrl = draft.liveUrl.trim()
+              onSave(Object.keys(clean).length === 0 ? null : clean)
+              setEditing(false)
+            }}
+            disabled={saving}
+            className="px-3 py-1.5 text-xs rounded-lg bg-primary-600 hover:bg-primary-700 text-white disabled:opacity-50"
+          >Сохранить</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="card space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300 flex items-center gap-2">
+          🔧 Технические детали
+        </h3>
+        {canEdit && (
+          <button
+            onClick={() => { setDraft(meta); setEditing(true) }}
+            className="p-1 text-surface-400 hover:text-primary-600 dark:hover:text-primary-400"
+            title="Изменить"
+          >
+            <Edit2 size={13} />
+          </button>
+        )}
+      </div>
+      {hasAny ? (
+        <div className="space-y-1.5 text-sm">
+          {meta.repoUrl && (
+            <TechRow
+              icon={<Github size={13} />}
+              label="Репозиторий"
+              value={meta.repoUrl}
+              isUrl
+              onCopy={() => copy(meta.repoUrl!)}
+            />
+          )}
+          {meta.branch && (
+            <TechRow
+              icon={<GitBranch size={13} />}
+              label="Ветка"
+              value={meta.branch}
+              onCopy={() => copy(meta.branch!)}
+              mono
+            />
+          )}
+          {meta.prUrl && (
+            <TechRow
+              icon={<GitPullRequest size={13} />}
+              label="PR"
+              value={meta.prUrl}
+              isUrl
+              onCopy={() => copy(meta.prUrl!)}
+            />
+          )}
+          {meta.liveUrl && (
+            <TechRow
+              icon={<ExternalLink size={13} />}
+              label="Live / Preview"
+              value={meta.liveUrl}
+              isUrl
+              onCopy={() => copy(meta.liveUrl!)}
+            />
+          )}
+        </div>
+      ) : (
+        <button
+          onClick={() => { setDraft({}); setEditing(true) }}
+          className="w-full py-2 text-xs text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg flex items-center justify-center gap-1"
+        >
+          <Plus size={12} /> Добавить ссылки
+        </button>
+      )}
+    </div>
+  )
+}
+
+function TechRow({
+  icon, label, value, isUrl, mono, onCopy,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  isUrl?: boolean
+  mono?: boolean
+  onCopy: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2 group">
+      <span className="text-surface-400 dark:text-surface-500 shrink-0">{icon}</span>
+      <span className="text-[11px] text-surface-500 dark:text-surface-400 shrink-0">{label}:</span>
+      <span className="flex-1 min-w-0">
+        {isUrl ? (
+          <a
+            href={value}
+            target="_blank"
+            rel="noreferrer"
+            className={clsx(
+              'text-primary-600 dark:text-primary-400 hover:underline truncate block',
+              mono && 'font-mono text-xs',
+            )}
+            title={value}
+          >
+            {value}
+          </a>
+        ) : (
+          <span
+            className={clsx(
+              'text-surface-700 dark:text-surface-300 truncate block',
+              mono && 'font-mono text-xs',
+            )}
+            title={value}
+          >
+            {value}
+          </span>
+        )}
+      </span>
+      <button
+        onClick={onCopy}
+        className="p-1 text-surface-300 dark:text-surface-600 hover:text-primary-600 dark:hover:text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+        title="Скопировать"
+      >
+        <Copy size={11} />
+      </button>
+    </div>
+  )
+}
+
 function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId?: string }) {
   const qc = useQueryClient()
   const assignees: Array<{ userId: string; isDone: boolean; doneAt?: string; user: any }> =
