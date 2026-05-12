@@ -32,14 +32,40 @@ export class CreateTaskDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() deliveryType?: string;
 
   // ─── Технические детали для dev-задач ───────────────────────────────
-  /** JSON со ссылками: { repoUrl, branch, prUrl, liveUrl } — отображается
-   *  блоком "🔧 Технические детали" на странице задачи. */
+  /** JSON со ссылками: repoUrl, branch, prUrl, liveUrl, stagingUrl,
+   *  localDevPort, sentryUrl, ciStatusUrl. Отображается блоком
+   *  "🔧 Технические детали" на странице задачи. */
   @ApiProperty({ required: false }) @IsOptional() techMeta?: {
     repoUrl?: string;
     branch?: string;
     prUrl?: string;
     liveUrl?: string;
+    stagingUrl?: string;
+    localDevPort?: string;
+    sentryUrl?: string;
+    ciStatusUrl?: string;
   };
+
+  /** Definition of Done — структурированный чеклист критериев приёмки. */
+  @ApiProperty({ required: false }) @IsOptional() acceptanceCriteria?: Array<{
+    id: string;
+    text: string;
+    done: boolean;
+    doneBy?: string;
+    doneAt?: string;
+  }>;
+
+  /** Story points: 1/2/3/5/8/13 (Fibonacci). 0 или null = не оценено. */
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() storyPoints?: number;
+
+  /** Tech tags: frontend/backend/bug/feature/refactor/optimization/tech-debt/urgent. */
+  @ApiProperty({ required: false, type: [String] }) @IsOptional() @IsArray() tags?: string[];
+
+  /** ID задач которые блокируются текущей. */
+  @ApiProperty({ required: false, type: [String] }) @IsOptional() @IsArray() blocksTaskIds?: string[];
+
+  /** ID задач которые блокируют текущую. */
+  @ApiProperty({ required: false, type: [String] }) @IsOptional() @IsArray() blockedByTaskIds?: string[];
 }
 
 export class UpdateTaskDto extends PartialType(CreateTaskDto) {}

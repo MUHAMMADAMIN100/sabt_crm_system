@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tasksApi, commentsApi, filesApi, taskResultsApi, taskChecklistApi } from '@/services/api.service'
@@ -6,6 +6,7 @@ import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar, Modal, ConfirmDialog } from '@/components/ui'
+import MiniMarkdown from '@/components/ui/MiniMarkdown'
 import {
   ArrowLeft, Send, Edit2, Trash2, Paperclip, Upload,
   CheckCircle, RotateCcw, LinkIcon, MessageSquare, AlertTriangle,
@@ -19,6 +20,46 @@ import clsx from 'clsx'
 
 const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm']
 const WORKER_ROLES = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager', 'developer', 'employee']
+
+/** Доступные tech tags + их цвета. Можно вводить и свои — fallback цвет
+ *  применяется в render'е. */
+const AVAILABLE_TAGS = [
+  'frontend', 'backend', 'fullstack', 'mobile', 'devops',
+  'bug', 'feature', 'refactor', 'optimization', 'tech-debt',
+  'urgent', 'blocked', 'research', 'docs',
+]
+const TAG_COLORS: Record<string, string> = {
+  frontend:     'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-900/50',
+  backend:      'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/50',
+  fullstack:    'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-900/50',
+  mobile:       'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900/50',
+  devops:       'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600',
+  bug:          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50',
+  feature:      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50',
+  refactor:     'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/50',
+  optimization: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400 border-cyan-200 dark:border-cyan-900/50',
+  'tech-debt':  'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border-orange-200 dark:border-orange-900/50',
+  urgent:       'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 border-rose-200 dark:border-rose-900/50',
+  blocked:      'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600',
+  research:     'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400 border-pink-200 dark:border-pink-900/50',
+  docs:         'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400 border-teal-200 dark:border-teal-900/50',
+}
+
+/** Превращает заголовок задачи в slug для имени Git-ветки.
+ *  "Разработать сайт" → "razrabotat-sayt". Транслит + дефисы. */
+function slugifyForBranch(title: string): string {
+  const map: Record<string, string> = {
+    а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh',
+    з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o',
+    п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts',
+    ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+  }
+  return title.toLowerCase()
+    .split('').map(c => map[c] ?? c).join('')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50)
+}
 
 const STATUS_FLOW: Record<string, string[]> = {
   new:         ['in_progress'],
@@ -63,6 +104,61 @@ export default function TaskDetailPage() {
     queryFn: () => tasksApi.get(id!),
     retry: false,
   })
+
+  // Клавиатурные шорткаты для разработчиков. Срабатывают только когда
+  // фокус НЕ в input/textarea (иначе мешали бы вводу). ? показывает help.
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false)
+  useEffect(() => {
+    if (!task) return
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      switch (e.key.toLowerCase()) {
+        case '?':
+        case '/':
+          if (e.shiftKey || e.key === '/') {
+            e.preventDefault()
+            setShowShortcutHelp(v => !v)
+          }
+          break
+        case 'c': {
+          // C — копировать ветку
+          const branch = task?.techMeta?.branch
+          if (branch) {
+            navigator.clipboard.writeText(branch).then(
+              () => toast.success(`Скопировано: ${branch}`),
+              () => toast.error('Не удалось скопировать'),
+            )
+          }
+          break
+        }
+        case 'o': {
+          // O — открыть PR
+          const prUrl = task?.techMeta?.prUrl
+          if (prUrl) window.open(prUrl, '_blank', 'noopener,noreferrer')
+          break
+        }
+        case 'g': {
+          // G — открыть репозиторий
+          const repoUrl = task?.techMeta?.repoUrl
+          if (repoUrl) window.open(repoUrl, '_blank', 'noopener,noreferrer')
+          break
+        }
+        case 'l': {
+          // L — открыть live/staging
+          const url = task?.techMeta?.stagingUrl || task?.techMeta?.liveUrl
+          if (url) window.open(url, '_blank', 'noopener,noreferrer')
+          break
+        }
+        case 'escape':
+          setShowShortcutHelp(false)
+          break
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [task])
 
   const { data: files } = useQuery({
     queryKey: ['task-files', id],
@@ -492,7 +588,30 @@ export default function TaskDetailPage() {
           {task.description && (
             <div className="card">
               <h3 className="font-semibold mb-2 text-surface-700 dark:text-surface-300 text-sm">{t('tasks.description')}</h3>
-              <p className="text-surface-700 dark:text-surface-300 text-sm whitespace-pre-wrap">{task.description}</p>
+              <MiniMarkdown
+                text={task.description}
+                className="text-surface-700 dark:text-surface-300"
+              />
+            </div>
+          )}
+
+          {/* Tech tags — категоризация задачи (frontend/backend/bug/etc.) */}
+          {Array.isArray(task.tags) && task.tags.length > 0 && (
+            <div className="card">
+              <h3 className="font-semibold mb-2 text-surface-700 dark:text-surface-300 text-sm">Теги</h3>
+              <div className="flex flex-wrap gap-1.5">
+                {task.tags.map((tag: string) => (
+                  <span
+                    key={tag}
+                    className={clsx(
+                      'text-[11px] font-medium px-2 py-0.5 rounded-full border',
+                      TAG_COLORS[tag] || 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-300 border-surface-200 dark:border-surface-600',
+                    )}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
 
@@ -801,18 +920,65 @@ export default function TaskDetailPage() {
             </div>
           </div>
 
+          {/* ✅ Acceptance Criteria — Definition of Done для dev-задач.
+              PM пишет критерии, dev отмечает выполнение. Видно прогресс
+              и кто/когда что закрыл. */}
+          <AcceptanceCriteriaBlock
+            task={task}
+            canEdit={canEditChecklist(task)}
+            currentUserId={user?.id}
+            onSave={(criteria) => updateTask.mutate({ acceptanceCriteria: criteria })}
+            saving={updateTask.isPending}
+          />
+
           {/* 🔧 Технические детали — карточка для dev-задач (репозиторий,
-              ветка, PR, live preview URL). Появляется если хотя бы одно
-              поле заполнено ИЛИ пользователь может править (PM/assignee/
-              creator) — тогда есть кнопка добавить. */}
+              ветка, PR, live preview, staging, sentry, CI). Появляется
+              если хотя бы одно поле заполнено ИЛИ пользователь может
+              править — тогда есть кнопка добавить. */}
           <TechMetaBlock
             task={task}
             canEdit={canEditChecklist(task)}
             onSave={(meta) => updateTask.mutate({ techMeta: meta })}
             saving={updateTask.isPending}
           />
+
+          {/* 🏷 Story points + tags редактор — небольшая карточка с двумя
+              быстрыми редактируемыми полями для dev-метрик. */}
+          <DevMetaBlock
+            task={task}
+            canEdit={canEditChecklist(task)}
+            onSave={(patch) => updateTask.mutate(patch)}
+            saving={updateTask.isPending}
+          />
+
+          {/* 🔗 Related tasks — задачи которые блокирует / блокируется. */}
+          <RelatedTasksBlock task={task} />
         </div>
       </div>
+
+      {/* Modal: keyboard shortcuts help (опен по ?) */}
+      <Modal open={showShortcutHelp} onClose={() => setShowShortcutHelp(false)} title="⌨ Клавиатурные сокращения" size="sm">
+        <div className="space-y-2 text-sm">
+          {[
+            { key: 'C', desc: 'Скопировать имя ветки' },
+            { key: 'O', desc: 'Открыть Pull Request' },
+            { key: 'G', desc: 'Открыть репозиторий' },
+            { key: 'L', desc: 'Открыть staging / live URL' },
+            { key: '?', desc: 'Показать / скрыть это окно' },
+            { key: 'Esc', desc: 'Закрыть это окно' },
+          ].map(s => (
+            <div key={s.key} className="flex items-center justify-between gap-3">
+              <span className="text-surface-600 dark:text-surface-300">{s.desc}</span>
+              <kbd className="px-2 py-0.5 text-xs font-mono bg-surface-100 dark:bg-surface-700 rounded border border-surface-200 dark:border-surface-600">
+                {s.key}
+              </kbd>
+            </div>
+          ))}
+          <p className="text-[11px] text-surface-400 dark:text-surface-500 pt-2 border-t border-surface-100 dark:border-surface-700">
+            Шорткаты не срабатывают пока курсор в поле ввода.
+          </p>
+        </div>
+      </Modal>
 
       {/* Modal: Load result */}
       <Modal open={showResultModal} onClose={() => setShowResultModal(false)} title="Загрузить результат" size="sm">
@@ -941,6 +1107,17 @@ function TimeTrackingBlock({ estimated, logged }: { estimated: number; logged: n
 
 /** Технические детали для dev-задач: репозиторий, ветка, PR, live preview.
  *  Просмотр + inline-редактор. Поля с copy-buttons и external-link иконками. */
+interface TechMeta {
+  repoUrl?: string
+  branch?: string
+  prUrl?: string
+  liveUrl?: string
+  stagingUrl?: string
+  localDevPort?: string
+  sentryUrl?: string
+  ciStatusUrl?: string
+}
+
 function TechMetaBlock({
   task, canEdit, onSave, saving,
 }: {
@@ -949,10 +1126,11 @@ function TechMetaBlock({
   onSave: (meta: any) => void
   saving: boolean
 }) {
-  const meta = (task?.techMeta || {}) as { repoUrl?: string; branch?: string; prUrl?: string; liveUrl?: string }
-  const hasAny = !!(meta.repoUrl || meta.branch || meta.prUrl || meta.liveUrl)
+  const meta = (task?.techMeta || {}) as TechMeta
+  const hasAny = !!(meta.repoUrl || meta.branch || meta.prUrl || meta.liveUrl ||
+    meta.stagingUrl || meta.localDevPort || meta.sentryUrl || meta.ciStatusUrl)
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState<typeof meta>(meta)
+  const [draft, setDraft] = useState<TechMeta>(meta)
 
   const copy = (text: string) => {
     if (!text) return
@@ -982,11 +1160,25 @@ function TechMetaBlock({
             />
           </div>
           <div>
-            <label className="text-[11px] text-surface-500 dark:text-surface-400 flex items-center gap-1 mb-1"><GitBranch size={11} /> Ветка</label>
+            <label className="text-[11px] text-surface-500 dark:text-surface-400 flex items-center gap-1 mb-1">
+              <GitBranch size={11} /> Ветка
+              <button
+                type="button"
+                onClick={() => {
+                  // Авто-генерация имени ветки из тайтла задачи + короткий ID.
+                  const shortId = (task?.id || '').slice(0, 8)
+                  const slug = slugifyForBranch(task?.title || 'task')
+                  const prefix = task?.tags?.includes('bug') ? 'fix' : 'feature'
+                  const branch = `${prefix}/${shortId}-${slug}`
+                  setDraft(d => ({ ...d, branch }))
+                }}
+                className="ml-1 text-[10px] text-primary-600 dark:text-primary-400 hover:underline"
+              >авто</button>
+            </label>
             <input
               value={draft.branch || ''}
               onChange={e => setDraft(d => ({ ...d, branch: e.target.value }))}
-              className="input py-1.5 text-sm"
+              className="input py-1.5 text-sm font-mono"
               placeholder="feature/task-name"
             />
           </div>
@@ -1000,12 +1192,50 @@ function TechMetaBlock({
             />
           </div>
           <div>
-            <label className="text-[11px] text-surface-500 dark:text-surface-400 flex items-center gap-1 mb-1"><ExternalLink size={11} /> Live / Preview URL</label>
+            <label className="text-[11px] text-surface-500 dark:text-surface-400 flex items-center gap-1 mb-1"><ExternalLink size={11} /> Production URL</label>
             <input
               value={draft.liveUrl || ''}
               onChange={e => setDraft(d => ({ ...d, liveUrl: e.target.value }))}
               className="input py-1.5 text-sm"
+              placeholder="https://example.com"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-surface-500 dark:text-surface-400 flex items-center gap-1 mb-1"><ExternalLink size={11} /> Staging / Preview URL</label>
+            <input
+              value={draft.stagingUrl || ''}
+              onChange={e => setDraft(d => ({ ...d, stagingUrl: e.target.value }))}
+              className="input py-1.5 text-sm"
               placeholder="https://staging.example.com"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[11px] text-surface-500 dark:text-surface-400 mb-1 block">Local dev port</label>
+              <input
+                value={draft.localDevPort || ''}
+                onChange={e => setDraft(d => ({ ...d, localDevPort: e.target.value }))}
+                className="input py-1.5 text-sm font-mono"
+                placeholder="3000"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-surface-500 dark:text-surface-400 mb-1 block">Sentry URL</label>
+              <input
+                value={draft.sentryUrl || ''}
+                onChange={e => setDraft(d => ({ ...d, sentryUrl: e.target.value }))}
+                className="input py-1.5 text-sm"
+                placeholder="https://sentry.io/..."
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] text-surface-500 dark:text-surface-400 mb-1 block">CI status badge URL</label>
+            <input
+              value={draft.ciStatusUrl || ''}
+              onChange={e => setDraft(d => ({ ...d, ciStatusUrl: e.target.value }))}
+              className="input py-1.5 text-sm"
+              placeholder="https://github.com/.../actions/workflows/.../badge.svg"
             />
           </div>
         </div>
@@ -1021,10 +1251,14 @@ function TechMetaBlock({
             onClick={() => {
               // Нормализуем: пустые поля → undefined, чтобы не хранить шум.
               const clean: any = {}
-              if (draft.repoUrl?.trim()) clean.repoUrl = draft.repoUrl.trim()
-              if (draft.branch?.trim())  clean.branch  = draft.branch.trim()
-              if (draft.prUrl?.trim())   clean.prUrl   = draft.prUrl.trim()
-              if (draft.liveUrl?.trim()) clean.liveUrl = draft.liveUrl.trim()
+              if (draft.repoUrl?.trim())      clean.repoUrl      = draft.repoUrl.trim()
+              if (draft.branch?.trim())       clean.branch       = draft.branch.trim()
+              if (draft.prUrl?.trim())        clean.prUrl        = draft.prUrl.trim()
+              if (draft.liveUrl?.trim())      clean.liveUrl      = draft.liveUrl.trim()
+              if (draft.stagingUrl?.trim())   clean.stagingUrl   = draft.stagingUrl.trim()
+              if (draft.localDevPort?.trim()) clean.localDevPort = draft.localDevPort.trim()
+              if (draft.sentryUrl?.trim())    clean.sentryUrl    = draft.sentryUrl.trim()
+              if (draft.ciStatusUrl?.trim())  clean.ciStatusUrl  = draft.ciStatusUrl.trim()
               onSave(Object.keys(clean).length === 0 ? null : clean)
               setEditing(false)
             }}
@@ -1084,11 +1318,49 @@ function TechMetaBlock({
           {meta.liveUrl && (
             <TechRow
               icon={<ExternalLink size={13} />}
-              label="Live / Preview"
+              label="Production"
               value={meta.liveUrl}
               isUrl
               onCopy={() => copy(meta.liveUrl!)}
             />
+          )}
+          {meta.stagingUrl && (
+            <TechRow
+              icon={<ExternalLink size={13} />}
+              label="Staging"
+              value={meta.stagingUrl}
+              isUrl
+              onCopy={() => copy(meta.stagingUrl!)}
+            />
+          )}
+          {meta.localDevPort && (
+            <TechRow
+              icon={<ExternalLink size={13} />}
+              label="Local"
+              value={`localhost:${meta.localDevPort}`}
+              isUrl={false}
+              onCopy={() => copy(`localhost:${meta.localDevPort}`)}
+              mono
+            />
+          )}
+          {meta.sentryUrl && (
+            <TechRow
+              icon={<AlertTriangle size={13} />}
+              label="Sentry"
+              value={meta.sentryUrl}
+              isUrl
+              onCopy={() => copy(meta.sentryUrl!)}
+            />
+          )}
+          {meta.ciStatusUrl && (
+            <div className="pt-1">
+              <img
+                src={meta.ciStatusUrl}
+                alt="CI status"
+                className="h-5 inline-block"
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+              />
+            </div>
           )}
         </div>
       ) : (
@@ -1150,6 +1422,309 @@ function TechRow({
       >
         <Copy size={11} />
       </button>
+    </div>
+  )
+}
+
+/** Acceptance Criteria — структурированный Definition of Done.
+ *  PM создаёт критерии, dev (или PM) отмечает выполнение.
+ *  Прогресс показывается баром, видно кто и когда закрыл каждый пункт. */
+function AcceptanceCriteriaBlock({
+  task, canEdit, currentUserId, onSave, saving,
+}: {
+  task: any
+  canEdit: boolean
+  currentUserId?: string
+  onSave: (criteria: any) => void
+  saving: boolean
+}) {
+  const criteria: Array<{ id: string; text: string; done: boolean; doneBy?: string; doneAt?: string }> =
+    Array.isArray(task?.acceptanceCriteria) ? task.acceptanceCriteria : []
+  const [adding, setAdding] = useState(false)
+  const [newText, setNewText] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+
+  const doneCount = criteria.filter(c => c.done).length
+  const total = criteria.length
+  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0
+
+  const add = () => {
+    if (!newText.trim()) return
+    const next = [
+      ...criteria,
+      { id: crypto.randomUUID(), text: newText.trim(), done: false },
+    ]
+    onSave(next)
+    setNewText('')
+    setAdding(false)
+  }
+  const toggle = (id: string) => {
+    const next = criteria.map(c => c.id === id
+      ? { ...c, done: !c.done,
+          doneBy: !c.done ? currentUserId : undefined,
+          doneAt: !c.done ? new Date().toISOString() : undefined }
+      : c,
+    )
+    onSave(next)
+  }
+  const remove = (id: string) => onSave(criteria.filter(c => c.id !== id))
+  const saveEdit = (id: string) => {
+    if (!editText.trim()) { setEditingId(null); return }
+    onSave(criteria.map(c => c.id === id ? { ...c, text: editText.trim() } : c))
+    setEditingId(null)
+  }
+
+  if (total === 0 && !canEdit) return null
+
+  return (
+    <div className="card space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300 flex items-center gap-2">
+          ✅ Критерии приёмки {total > 0 && <span className="text-xs font-normal text-surface-400">{doneCount}/{total}</span>}
+        </h3>
+        {canEdit && !adding && (
+          <button
+            onClick={() => setAdding(true)}
+            className="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
+          ><Plus size={12} /> Добавить</button>
+        )}
+      </div>
+      {total > 0 && (
+        <div className="h-1.5 rounded-full bg-surface-100 dark:bg-surface-700 overflow-hidden">
+          <div
+            className={clsx('h-full transition-all', pct === 100 ? 'bg-emerald-500' : 'bg-primary-500')}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+      <div className="space-y-1.5">
+        {criteria.map(c => (
+          <div key={c.id} className="flex items-start gap-2 group">
+            <button
+              onClick={() => canEdit && toggle(c.id)}
+              disabled={!canEdit || saving}
+              className={clsx(
+                'mt-0.5 shrink-0',
+                canEdit ? 'cursor-pointer' : 'cursor-not-allowed opacity-70',
+              )}
+            >
+              {c.done
+                ? <CheckSquare size={15} className="text-emerald-500" />
+                : <Square size={15} className="text-surface-400" />}
+            </button>
+            {editingId === c.id ? (
+              <div className="flex-1 flex gap-1">
+                <input
+                  value={editText}
+                  onChange={e => setEditText(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveEdit(c.id)
+                    if (e.key === 'Escape') setEditingId(null)
+                  }}
+                  autoFocus
+                  className="input py-0.5 px-2 text-sm flex-1"
+                />
+                <button onClick={() => saveEdit(c.id)} className="p-0.5 text-emerald-600"><Check size={13} /></button>
+              </div>
+            ) : (
+              <>
+                <span className={clsx(
+                  'flex-1 text-sm',
+                  c.done && 'line-through text-surface-400',
+                )}>{c.text}</span>
+                {canEdit && (
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5 shrink-0">
+                    <button
+                      onClick={() => { setEditingId(c.id); setEditText(c.text) }}
+                      className="p-0.5 text-surface-400 hover:text-primary-600"
+                      title="Изменить"
+                    ><Edit2 size={11} /></button>
+                    <button
+                      onClick={() => remove(c.id)}
+                      className="p-0.5 text-surface-400 hover:text-red-500"
+                      title="Удалить"
+                    ><Trash2 size={11} /></button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+      {adding && canEdit && (
+        <div className="flex gap-1 pt-1">
+          <input
+            value={newText}
+            onChange={e => setNewText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') add()
+              if (e.key === 'Escape') { setAdding(false); setNewText('') }
+            }}
+            autoFocus
+            placeholder="Например: тесты покрывают edge-cases"
+            className="input py-1 px-2 text-sm flex-1"
+          />
+          <button onClick={add} className="px-2 py-1 text-xs rounded-lg bg-primary-600 hover:bg-primary-700 text-white">
+            <Check size={13} />
+          </button>
+          <button onClick={() => { setAdding(false); setNewText('') }} className="px-2 py-1 text-xs rounded-lg border border-surface-200 dark:border-surface-700">
+            ✕
+          </button>
+        </div>
+      )}
+      {total === 0 && !adding && canEdit && (
+        <p className="text-xs text-surface-400 dark:text-surface-500 italic">
+          Опишите критерии готовности — задача считается закрытой когда все ✓
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Story points + tech tags редактор. Маленькая карточка с двумя
+ *  быстрыми селекторами для dev-метрик. */
+function DevMetaBlock({
+  task, canEdit, onSave, saving,
+}: {
+  task: any
+  canEdit: boolean
+  onSave: (patch: any) => void
+  saving: boolean
+}) {
+  const points: number | null = typeof task?.storyPoints === 'number' ? task.storyPoints : null
+  const tags: string[] = Array.isArray(task?.tags) ? task.tags : []
+  const [editingTags, setEditingTags] = useState(false)
+
+  const togglePoints = (p: number) => {
+    if (saving) return
+    onSave({ storyPoints: points === p ? null : p })
+  }
+  const toggleTag = (t: string) => {
+    if (saving) return
+    const next = tags.includes(t) ? tags.filter(x => x !== t) : [...tags, t]
+    onSave({ tags: next })
+  }
+
+  // Карточка не показывается обычным просмотрщикам если ничего не задано.
+  if (!canEdit && points === null && tags.length === 0) return null
+
+  return (
+    <div className="card space-y-3">
+      <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300">📊 Оценка и теги</h3>
+      <div>
+        <div className="text-[11px] text-surface-500 dark:text-surface-400 mb-1.5">Story points (Fibonacci)</div>
+        {canEdit ? (
+          <div className="flex flex-wrap gap-1">
+            {[1, 2, 3, 5, 8, 13].map(p => (
+              <button
+                key={p}
+                onClick={() => togglePoints(p)}
+                disabled={saving}
+                className={clsx(
+                  'w-8 h-8 rounded-lg text-xs font-semibold transition-colors',
+                  points === p
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+                )}
+              >{p}</button>
+            ))}
+          </div>
+        ) : (
+          <span className="text-sm font-semibold text-primary-600 dark:text-primary-400">
+            {points ?? '—'}
+          </span>
+        )}
+      </div>
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[11px] text-surface-500 dark:text-surface-400">Теги</span>
+          {canEdit && (
+            <button
+              onClick={() => setEditingTags(v => !v)}
+              className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline"
+            >{editingTags ? 'Готово' : 'Изменить'}</button>
+          )}
+        </div>
+        {editingTags && canEdit ? (
+          <div className="flex flex-wrap gap-1">
+            {AVAILABLE_TAGS.map(t => {
+              const active = tags.includes(t)
+              return (
+                <button
+                  key={t}
+                  onClick={() => toggleTag(t)}
+                  disabled={saving}
+                  className={clsx(
+                    'text-[11px] px-2 py-0.5 rounded-full border transition-colors',
+                    active
+                      ? TAG_COLORS[t] || 'bg-primary-100 text-primary-700 border-primary-200'
+                      : 'bg-transparent border-surface-200 dark:border-surface-600 text-surface-500 dark:text-surface-400 hover:border-primary-300',
+                  )}
+                >{t}</button>
+              )
+            })}
+          </div>
+        ) : (
+          tags.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {tags.map(t => (
+                <span
+                  key={t}
+                  className={clsx(
+                    'text-[11px] px-2 py-0.5 rounded-full border',
+                    TAG_COLORS[t] || 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-300 border-surface-200 dark:border-surface-600',
+                  )}
+                >{t}</span>
+              ))}
+            </div>
+          ) : (
+            <span className="text-xs text-surface-400 italic">Не выбрано</span>
+          )
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Связанные задачи: blocks (эта блокирует) / blockedBy (блокируется этими).
+ *  Просто отображаем ссылки на задачи, реальный редактор пока в общую
+ *  форму update не вынесен — добавление через API напрямую. */
+function RelatedTasksBlock({ task }: { task: any }) {
+  const blocks: string[] = Array.isArray(task?.blocksTaskIds) ? task.blocksTaskIds : []
+  const blockedBy: string[] = Array.isArray(task?.blockedByTaskIds) ? task.blockedByTaskIds : []
+  if (blocks.length === 0 && blockedBy.length === 0) return null
+  return (
+    <div className="card space-y-2">
+      <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300">🔗 Связанные задачи</h3>
+      {blockedBy.length > 0 && (
+        <div>
+          <div className="text-[11px] text-surface-500 dark:text-surface-400 mb-1">⏸ Блокируется</div>
+          <ul className="space-y-1">
+            {blockedBy.map(id => (
+              <li key={id}>
+                <Link to={`/tasks/${id}`} className="text-xs text-primary-600 dark:text-primary-400 hover:underline font-mono">
+                  #{id.slice(0, 8)}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {blocks.length > 0 && (
+        <div>
+          <div className="text-[11px] text-surface-500 dark:text-surface-400 mb-1">▶ Блокирует</div>
+          <ul className="space-y-1">
+            {blocks.map(id => (
+              <li key={id}>
+                <Link to={`/tasks/${id}`} className="text-xs text-primary-600 dark:text-primary-400 hover:underline font-mono">
+                  #{id.slice(0, 8)}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

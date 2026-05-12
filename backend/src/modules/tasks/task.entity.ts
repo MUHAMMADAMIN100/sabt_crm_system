@@ -65,16 +65,49 @@ export class Task {
   @Column({ default: false })
   fromFounder: boolean;
 
-  /** Технические детали для задач разработки: ссылка на репозиторий,
-   *  имя ветки, URL pull request, live preview/staging URL. JSON чтобы
-   *  не плодить 4 колонки и легко расширять (например testUrl, dbName). */
+  /** Технические детали для задач разработки. JSON чтобы не плодить
+   *  колонки и легко расширять — теперь включает все нужные dev-ссылки. */
   @Column({ type: 'jsonb', nullable: true })
   techMeta: {
     repoUrl?: string;
     branch?: string;
     prUrl?: string;
-    liveUrl?: string;
+    liveUrl?: string;       // production URL
+    stagingUrl?: string;    // staging/preview deploy
+    localDevPort?: string;  // port для локального запуска
+    sentryUrl?: string;     // Sentry/error tracker URL
+    ciStatusUrl?: string;   // badge URL для CI (например GitHub Actions)
   };
+
+  /** Критерии приёмки (Definition of Done). PM пишет — dev отмечает
+   *  выполнение. Задачу нельзя закрыть пока не все критерии выполнены. */
+  @Column({ type: 'jsonb', nullable: true })
+  acceptanceCriteria: Array<{
+    id: string;
+    text: string;
+    done: boolean;
+    doneBy?: string;
+    doneAt?: string;
+  }>;
+
+  /** Story points для оценки сложности задачи (1/2/3/5/8/13 Fibonacci
+   *  или 0 = не оценено). Альтернатива estimatedHours для размытых задач. */
+  @Column({ type: 'int', nullable: true })
+  storyPoints: number;
+
+  /** Технические теги: frontend, backend, bug, feature, refactor,
+   *  optimization, tech-debt, urgent. Хранится как массив строк. */
+  @Column({ type: 'text', array: true, nullable: true })
+  tags: string[];
+
+  /** ID задач которые блокируются этой (текущая блокирует те).
+   *  Хранится массивом UUID для простоты, без отдельной join-таблицы. */
+  @Column({ type: 'uuid', array: true, nullable: true })
+  blocksTaskIds: string[];
+
+  /** ID задач которые блокируют эту (текущая ждёт их завершения). */
+  @Column({ type: 'uuid', array: true, nullable: true })
+  blockedByTaskIds: string[];
 
   @ManyToOne(() => User, user => user.tasks, { nullable: true, eager: true })
   @JoinColumn()
