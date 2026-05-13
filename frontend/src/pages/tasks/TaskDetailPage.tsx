@@ -1598,8 +1598,8 @@ function AcceptanceCriteriaBlock({
   )
 }
 
-/** Story points + tech tags редактор. Маленькая карточка с двумя
- *  быстрыми селекторами для dev-метрик. */
+/** Tech tags редактор. Story points убраны по запросу пользователя —
+ *  scrum-оценка не используется в реальном workflow агентства. */
 function DevMetaBlock({
   task, canEdit, onSave, saving,
 }: {
@@ -1608,97 +1608,65 @@ function DevMetaBlock({
   onSave: (patch: any) => void
   saving: boolean
 }) {
-  const points: number | null = typeof task?.storyPoints === 'number' ? task.storyPoints : null
   const tags: string[] = Array.isArray(task?.tags) ? task.tags : []
   const [editingTags, setEditingTags] = useState(false)
 
-  const togglePoints = (p: number) => {
-    if (saving) return
-    onSave({ storyPoints: points === p ? null : p })
-  }
   const toggleTag = (t: string) => {
     if (saving) return
     const next = tags.includes(t) ? tags.filter(x => x !== t) : [...tags, t]
     onSave({ tags: next })
   }
 
-  // Карточка не показывается обычным просмотрщикам если ничего не задано.
-  if (!canEdit && points === null && tags.length === 0) return null
+  // Карточка не показывается обычным просмотрщикам если тегов нет.
+  if (!canEdit && tags.length === 0) return null
 
   return (
-    <div className="notion-section space-y-3">
-      <h3 className="notion-section-title">📊 Оценка и теги</h3>
-      <div>
-        <div className="text-[11px] text-surface-500 dark:text-surface-400 mb-1.5">Story points (Fibonacci)</div>
-        {canEdit ? (
-          <div className="flex flex-wrap gap-1">
-            {[1, 2, 3, 5, 8, 13].map(p => (
+    <div className="notion-section space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="notion-section-title">🏷 Теги</h3>
+        {canEdit && (
+          <button
+            onClick={() => setEditingTags(v => !v)}
+            className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline"
+          >{editingTags ? 'Готово' : 'Изменить'}</button>
+        )}
+      </div>
+      {editingTags && canEdit ? (
+        <div className="flex flex-wrap gap-1">
+          {AVAILABLE_TAGS.map(t => {
+            const active = tags.includes(t)
+            return (
               <button
-                key={p}
-                onClick={() => togglePoints(p)}
+                key={t}
+                onClick={() => toggleTag(t)}
                 disabled={saving}
                 className={clsx(
-                  'w-8 h-8 rounded-lg text-xs font-semibold transition-colors',
-                  points === p
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+                  'text-[11px] px-2 py-0.5 rounded-full border transition-colors',
+                  active
+                    ? TAG_COLORS[t] || 'bg-primary-100 text-primary-700 border-primary-200'
+                    : 'bg-transparent border-surface-200 dark:border-surface-600 text-surface-500 dark:text-surface-400 hover:border-primary-300',
                 )}
-              >{p}</button>
+              >{t}</button>
+            )
+          })}
+        </div>
+      ) : (
+        tags.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {tags.map(t => (
+              <span
+                key={t}
+                className={clsx(
+                  'text-[11px] px-2 py-0.5 rounded-full border',
+                  TAG_COLORS[t] || DEFAULT_TAG_COLOR,
+                )}
+              >{t}</span>
             ))}
           </div>
         ) : (
-          <span className="text-sm font-semibold text-primary-600 dark:text-primary-400">
-            {points ?? '—'}
-          </span>
-        )}
-      </div>
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[11px] text-surface-500 dark:text-surface-400">Теги</span>
-          {canEdit && (
-            <button
-              onClick={() => setEditingTags(v => !v)}
-              className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline"
-            >{editingTags ? 'Готово' : 'Изменить'}</button>
-          )}
-        </div>
-        {editingTags && canEdit ? (
-          <div className="flex flex-wrap gap-1">
-            {AVAILABLE_TAGS.map(t => {
-              const active = tags.includes(t)
-              return (
-                <button
-                  key={t}
-                  onClick={() => toggleTag(t)}
-                  disabled={saving}
-                  className={clsx(
-                    'text-[11px] px-2 py-0.5 rounded-full border transition-colors',
-                    active
-                      ? TAG_COLORS[t] || 'bg-primary-100 text-primary-700 border-primary-200'
-                      : 'bg-transparent border-surface-200 dark:border-surface-600 text-surface-500 dark:text-surface-400 hover:border-primary-300',
-                  )}
-                >{t}</button>
-              )
-            })}
-          </div>
-        ) : (
-          tags.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {tags.map(t => (
-                <span
-                  key={t}
-                  className={clsx(
-                    'text-[11px] px-2 py-0.5 rounded-full border',
-                    TAG_COLORS[t] || DEFAULT_TAG_COLOR,
-                  )}
-                >{t}</span>
-              ))}
-            </div>
-          ) : (
-            <span className="text-xs text-surface-400 italic">Не выбрано</span>
-          )
-        )}
-      </div>
+          <span className="text-xs text-surface-400 italic">Не выбрано</span>
+        )
+      )}
     </div>
   )
 }
