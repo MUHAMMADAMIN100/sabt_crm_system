@@ -28,22 +28,35 @@ const AVAILABLE_TAGS = [
   'bug', 'feature', 'refactor', 'optimization', 'tech-debt',
   'urgent', 'blocked', 'research', 'docs',
 ]
+// Светофорная палитра тегов: 🟢 положительные (feature/docs/research/scope),
+// 🟡 нейтральные / в процессе (refactor/optimization/frontend/backend/...),
+// 🔴 проблемные / срочные (bug/urgent/blocked/tech-debt).
+const GREEN_TAG  = 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50'
+const AMBER_TAG  = 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/50'
+const RED_TAG    = 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50'
+const SLATE_TAG  = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600'
+
 const TAG_COLORS: Record<string, string> = {
-  frontend:     'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-900/50',
-  backend:      'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/50',
-  fullstack:    'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-900/50',
-  mobile:       'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900/50',
-  devops:       'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600',
-  bug:          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50',
-  feature:      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50',
-  refactor:     'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/50',
-  optimization: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400 border-cyan-200 dark:border-cyan-900/50',
-  'tech-debt':  'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border-orange-200 dark:border-orange-900/50',
-  urgent:       'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 border-rose-200 dark:border-rose-900/50',
-  blocked:      'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600',
-  research:     'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400 border-pink-200 dark:border-pink-900/50',
-  docs:         'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400 border-teal-200 dark:border-teal-900/50',
+  // 🟢 фичи и позитив
+  feature:      GREEN_TAG,
+  docs:         GREEN_TAG,
+  research:     GREEN_TAG,
+  // 🟡 техническая работа в процессе
+  frontend:     AMBER_TAG,
+  backend:      AMBER_TAG,
+  fullstack:    AMBER_TAG,
+  mobile:       AMBER_TAG,
+  devops:       AMBER_TAG,
+  refactor:     AMBER_TAG,
+  optimization: AMBER_TAG,
+  // 🔴 проблемы и срочное
+  bug:          RED_TAG,
+  urgent:       RED_TAG,
+  blocked:      RED_TAG,
+  'tech-debt':  RED_TAG,
 }
+// Fallback для пользовательских тегов — нейтральный серый
+const DEFAULT_TAG_COLOR = SLATE_TAG
 
 /** Превращает заголовок задачи в slug для имени Git-ветки.
  *  "Разработать сайт" → "razrabotat-sayt". Транслит + дефисы. */
@@ -605,7 +618,7 @@ export default function TaskDetailPage() {
                     key={tag}
                     className={clsx(
                       'text-[11px] font-medium px-2 py-0.5 rounded-full border',
-                      TAG_COLORS[tag] || 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-300 border-surface-200 dark:border-surface-600',
+                      TAG_COLORS[tag] || DEFAULT_TAG_COLOR,
                     )}
                   >
                     {tag}
@@ -811,10 +824,17 @@ export default function TaskDetailPage() {
                       </div>
                     ) : (
                       <div className="bg-surface-50 dark:bg-surface-700/50 rounded-xl p-3 group relative">
-                        <p className="text-sm text-surface-700 dark:text-surface-300">{c.message}</p>
+                        {c.message && c.message.trim() ? (
+                          <MiniMarkdown
+                            text={c.message}
+                            className="text-surface-700 dark:text-surface-300"
+                          />
+                        ) : (
+                          <p className="text-xs italic text-surface-400 dark:text-surface-500">(пустое сообщение)</p>
+                        )}
                         {(c.authorId === user?.id || user?.role === 'admin') && (
                           <div className="absolute top-2 right-2 hidden group-hover:flex gap-1">
-                            <button onClick={() => { setEditingComment(c.id); setEditText(c.message) }} className="p-1 hover:bg-surface-200 dark:hover:bg-surface-600 rounded-lg text-surface-500">
+                            <button onClick={() => { setEditingComment(c.id); setEditText(c.message || '') }} className="p-1 hover:bg-surface-200 dark:hover:bg-surface-600 rounded-lg text-surface-500">
                               <Edit2 size={12} />
                             </button>
                             <button onClick={() => deleteComment.mutate(c.id)} className="p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-lg text-red-500">
@@ -868,91 +888,87 @@ export default function TaskDetailPage() {
           )}
         </div>
 
-        {/* Sidebar info */}
-        <div className="space-y-4">
-          {/* Status control (PM only when not in done/cancelled) */}
+        {/* Sidebar info — Notion-style property panel */}
+        <div className="space-y-3">
+          {/* Status control (PM only when not in done/cancelled) — Notion-style */}
           {isPM && !['done', 'cancelled'].includes(task.status) && (
-            <div className="card">
-              <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300 mb-2">Статус задачи</h3>
-              <select
-                value={task.status}
-                onChange={e => updateTask.mutate({ status: e.target.value })}
-                className="input w-full"
-              >
-                {['new','in_progress','review','returned','done','cancelled'].map(s => (
-                  <option key={s} value={s}>
-                    {({ new: 'Новая', in_progress: 'В работе', review: 'На проверке', returned: 'Возвращено', done: 'Готово', cancelled: 'Отменена' } as any)[s]}
-                  </option>
-                ))}
-              </select>
+            <div className="notion-panel">
+              <div className="notion-section">
+                <h3 className="notion-section-title">Статус задачи</h3>
+                <select
+                  value={task.status}
+                  onChange={e => updateTask.mutate({ status: e.target.value })}
+                  className="input w-full text-sm"
+                >
+                  {['new','in_progress','review','returned','done','cancelled'].map(s => (
+                    <option key={s} value={s}>
+                      {({ new: 'Новая', in_progress: 'В работе', review: 'На проверке', returned: 'Возвращено', done: 'Готово', cancelled: 'Отменена' } as any)[s]}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           )}
 
-          <div className="card space-y-3">
-            <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300">Детали</h3>
-            <div className="space-y-2 text-sm">
-              {/* Multi-assignee: компактный список + индикатор готовности */}
+          {/* Единая Notion-style property panel — все блоки sidebar'а
+              внутри одной мягкой панели с тонкими разделителями. */}
+          <div className="notion-panel">
+            {/* Section: Детали */}
+            <div className="notion-section">
               <MultiAssigneesBlock task={task} currentUserId={user?.id} />
-              <div className="flex justify-between">
-                <span className="text-surface-500 dark:text-surface-400">{t('tasks.deadline')}</span>
-                <span className={clsx('font-medium', isOverdue ? 'text-red-500' : 'text-surface-900 dark:text-surface-100')}>
-                  {task.deadline ? format(new Date(task.deadline), 'dd.MM.yyyy') : '—'}
+              <div className="notion-prop-row">
+                <span className="notion-prop-label">📅 Дедлайн</span>
+                <span className={clsx('notion-prop-value', isOverdue && 'text-red-500 font-medium')}>
+                  {task.deadline ? format(new Date(task.deadline), 'dd MMM yyyy', { locale: ru }) : '—'}
                 </span>
               </div>
               {isDone && task.reviewedAt && (
-                <div className="flex justify-between">
-                  <span className="text-surface-500 dark:text-surface-400">Подтверждено</span>
-                  <span className="text-green-600 dark:text-green-400 font-medium">
-                    {format(new Date(task.reviewedAt), 'dd.MM.yyyy')}
+                <div className="notion-prop-row">
+                  <span className="notion-prop-label">✓ Подтверждено</span>
+                  <span className="notion-prop-value text-green-600 dark:text-green-400">
+                    {format(new Date(task.reviewedAt), 'dd MMM yyyy', { locale: ru })}
                   </span>
                 </div>
               )}
-              <div className="flex justify-between">
-                <span className="text-surface-500 dark:text-surface-400">Создана</span>
-                <span className="text-surface-700 dark:text-surface-300">{format(new Date(task.createdAt), 'dd.MM.yyyy')}</span>
+              <div className="notion-prop-row">
+                <span className="notion-prop-label">🕐 Создана</span>
+                <span className="notion-prop-value">{format(new Date(task.createdAt), 'dd MMM yyyy', { locale: ru })}</span>
               </div>
-              {/* Time tracking — показываем визуальный прогресс часов если
-                  у задачи задан estimatedHours. Полезно разработчикам и
-                  PM-у видеть фактическое vs планируемое время. */}
               {Number(task.estimatedHours) > 0 && (
-                <TimeTrackingBlock estimated={Number(task.estimatedHours) || 0} logged={Number(task.loggedHours) || 0} />
+                <div className="pt-1">
+                  <TimeTrackingBlock estimated={Number(task.estimatedHours) || 0} logged={Number(task.loggedHours) || 0} />
+                </div>
               )}
             </div>
+
+            {/* Section: Acceptance Criteria — inline без card-обертки */}
+            <AcceptanceCriteriaBlock
+              task={task}
+              canEdit={canEditChecklist(task)}
+              currentUserId={user?.id}
+              onSave={(criteria) => updateTask.mutate({ acceptanceCriteria: criteria })}
+              saving={updateTask.isPending}
+            />
+
+            {/* Section: Tech details */}
+            <TechMetaBlock
+              task={task}
+              canEdit={canEditChecklist(task)}
+              onSave={(meta) => updateTask.mutate({ techMeta: meta })}
+              saving={updateTask.isPending}
+            />
+
+            {/* Section: Story points + tags */}
+            <DevMetaBlock
+              task={task}
+              canEdit={canEditChecklist(task)}
+              onSave={(patch) => updateTask.mutate(patch)}
+              saving={updateTask.isPending}
+            />
+
+            {/* Section: Related tasks (только если есть данные) */}
+            <RelatedTasksBlock task={task} />
           </div>
-
-          {/* ✅ Acceptance Criteria — Definition of Done для dev-задач.
-              PM пишет критерии, dev отмечает выполнение. Видно прогресс
-              и кто/когда что закрыл. */}
-          <AcceptanceCriteriaBlock
-            task={task}
-            canEdit={canEditChecklist(task)}
-            currentUserId={user?.id}
-            onSave={(criteria) => updateTask.mutate({ acceptanceCriteria: criteria })}
-            saving={updateTask.isPending}
-          />
-
-          {/* 🔧 Технические детали — карточка для dev-задач (репозиторий,
-              ветка, PR, live preview, staging, sentry, CI). Появляется
-              если хотя бы одно поле заполнено ИЛИ пользователь может
-              править — тогда есть кнопка добавить. */}
-          <TechMetaBlock
-            task={task}
-            canEdit={canEditChecklist(task)}
-            onSave={(meta) => updateTask.mutate({ techMeta: meta })}
-            saving={updateTask.isPending}
-          />
-
-          {/* 🏷 Story points + tags редактор — небольшая карточка с двумя
-              быстрыми редактируемыми полями для dev-метрик. */}
-          <DevMetaBlock
-            task={task}
-            canEdit={canEditChecklist(task)}
-            onSave={(patch) => updateTask.mutate(patch)}
-            saving={updateTask.isPending}
-          />
-
-          {/* 🔗 Related tasks — задачи которые блокирует / блокируется. */}
-          <RelatedTasksBlock task={task} />
         </div>
       </div>
 
@@ -1145,8 +1161,8 @@ function TechMetaBlock({
 
   if (editing && canEdit) {
     return (
-      <div className="card space-y-3">
-        <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300 flex items-center gap-2">
+      <div className="notion-section space-y-3">
+        <h3 className="notion-section-title">
           🔧 Технические детали
         </h3>
         <div className="space-y-2">
@@ -1271,9 +1287,9 @@ function TechMetaBlock({
   }
 
   return (
-    <div className="card space-y-2">
+    <div className="notion-section">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300 flex items-center gap-2">
+        <h3 className="notion-section-title">
           🔧 Технические детали
         </h3>
         {canEdit && (
@@ -1478,10 +1494,10 @@ function AcceptanceCriteriaBlock({
   if (total === 0 && !canEdit) return null
 
   return (
-    <div className="card space-y-2">
+    <div className="notion-section">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300 flex items-center gap-2">
-          ✅ Критерии приёмки {total > 0 && <span className="text-xs font-normal text-surface-400">{doneCount}/{total}</span>}
+        <h3 className="notion-section-title">
+          ✅ Критерии приёмки {total > 0 && <span className="normal-case tracking-normal font-normal text-surface-400">{doneCount}/{total}</span>}
         </h3>
         {canEdit && !adding && (
           <button
@@ -1610,8 +1626,8 @@ function DevMetaBlock({
   if (!canEdit && points === null && tags.length === 0) return null
 
   return (
-    <div className="card space-y-3">
-      <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300">📊 Оценка и теги</h3>
+    <div className="notion-section space-y-3">
+      <h3 className="notion-section-title">📊 Оценка и теги</h3>
       <div>
         <div className="text-[11px] text-surface-500 dark:text-surface-400 mb-1.5">Story points (Fibonacci)</div>
         {canEdit ? (
@@ -1673,7 +1689,7 @@ function DevMetaBlock({
                   key={t}
                   className={clsx(
                     'text-[11px] px-2 py-0.5 rounded-full border',
-                    TAG_COLORS[t] || 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-300 border-surface-200 dark:border-surface-600',
+                    TAG_COLORS[t] || DEFAULT_TAG_COLOR,
                   )}
                 >{t}</span>
               ))}
@@ -1695,8 +1711,8 @@ function RelatedTasksBlock({ task }: { task: any }) {
   const blockedBy: string[] = Array.isArray(task?.blockedByTaskIds) ? task.blockedByTaskIds : []
   if (blocks.length === 0 && blockedBy.length === 0) return null
   return (
-    <div className="card space-y-2">
-      <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-300">🔗 Связанные задачи</h3>
+    <div className="notion-section space-y-2">
+      <h3 className="notion-section-title">🔗 Связанные задачи</h3>
       {blockedBy.length > 0 && (
         <div>
           <div className="text-[11px] text-surface-500 dark:text-surface-400 mb-1">⏸ Блокируется</div>

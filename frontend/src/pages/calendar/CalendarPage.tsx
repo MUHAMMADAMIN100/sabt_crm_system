@@ -11,10 +11,11 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
+// Светофорная палитра: 🟢 старт = успех, 🔴 финиш = закрытие/риск, 🟡 задача = в работе.
 const TYPE_COLORS: Record<string, string> = {
   project_start: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50',
   project_end:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50',
-  task:          'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-900/50',
+  task:          'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/50',
 }
 
 export default function CalendarPage() {
@@ -282,16 +283,16 @@ export default function CalendarPage() {
         })}
       </div>
 
-      {/* ─── Legend (compact) ─────────────────────────────────────── */}
+      {/* ─── Status (compact) ─────────────────────────────────────── */}
       <div className="card p-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span className="text-xs font-semibold text-surface-700 dark:text-surface-200">Легенда:</span>
+        <span className="text-xs font-semibold text-surface-700 dark:text-surface-200">Статус:</span>
         <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50">
           Старт проекта
         </span>
         <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50">
           Конец проекта
         </span>
-        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-900/50">
+        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/50">
           Задача / контент-план
         </span>
       </div>

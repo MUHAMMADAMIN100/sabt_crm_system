@@ -342,40 +342,130 @@ aside {
   font-size: 0.7rem;
 }
 
-/* ====================== STATUS & PRIORITY COLORS ====================== */
-.status-new        { @apply bg-slate-100 text-slate-700; }
-.status-in_progress { @apply bg-blue-100 text-blue-700; }
-.status-review     { @apply bg-amber-100 text-amber-700; }
-.status-returned   { @apply bg-orange-100 text-orange-700; }
+/* ====================== STATUS & PRIORITY — TRAFFIC LIGHT ======================
+ * Унифицированная светофорная палитра по всему проекту:
+ *   🟢 ЗЕЛЁНЫЙ — успех / выполнено / активно
+ *   🟡 ЖЁЛТЫЙ — в работе / на проверке / внимание
+ *   🔴 КРАСНЫЙ — критично / отменено / возвращено / просрочено
+ *   ⚪ СЕРЫЙ  — нейтральные состояния (новая, планируется, архив)
+ */
+
+/* 🟢 ЗЕЛЁНЫЙ — успех */
 .status-done       { @apply bg-green-100 text-green-700; }
-.status-cancelled  { @apply bg-red-100 text-red-700; }
-.status-planning   { @apply bg-purple-100 text-purple-700; }
 .status-completed  { @apply bg-green-100 text-green-700; }
-.status-archived   { @apply bg-gray-100 text-gray-600; }
-.status-on_hold    { @apply bg-orange-100 text-orange-700; }
-.status-returned   { @apply bg-orange-100 text-orange-800; }
+.status-active     { @apply bg-green-100 text-green-700; }
+.status-approved   { @apply bg-green-100 text-green-700; }
+.status-published  { @apply bg-green-100 text-green-700; }
+.status-accepted   { @apply bg-green-100 text-green-700; }
 
-.dark .status-new        { @apply bg-slate-800 text-slate-300; }
-.dark .status-in_progress { @apply bg-blue-900/30 text-blue-400; }
-.dark .status-review     { @apply bg-amber-900/30 text-amber-400; }
-.dark .status-returned   { @apply bg-orange-900/30 text-orange-400; }
+/* 🟡 ЖЁЛТЫЙ — в работе / внимание */
+.status-in_progress      { @apply bg-amber-100 text-amber-700; }
+.status-review           { @apply bg-amber-100 text-amber-700; }
+.status-on_pm_review     { @apply bg-amber-100 text-amber-700; }
+.status-on_review        { @apply bg-amber-100 text-amber-700; }
+.status-on_client_approval { @apply bg-amber-100 text-amber-700; }
+.status-on_hold          { @apply bg-amber-100 text-amber-700; }
+.status-preparing        { @apply bg-amber-100 text-amber-700; }
+.status-in_production    { @apply bg-amber-100 text-amber-700; }
+.status-on_approval      { @apply bg-amber-100 text-amber-700; }
+
+/* 🔴 КРАСНЫЙ — критично */
+.status-cancelled  { @apply bg-red-100 text-red-700; }
+.status-returned   { @apply bg-red-100 text-red-700; }
+.status-on_rework  { @apply bg-red-100 text-red-700; }
+.status-rejected   { @apply bg-red-100 text-red-700; }
+.status-overdue    { @apply bg-red-100 text-red-700; }
+.status-blocked    { @apply bg-red-100 text-red-700; }
+.status-frozen     { @apply bg-red-100 text-red-700; }
+.status-inactive   { @apply bg-red-100 text-red-700; }
+
+/* ⚪ СЕРЫЙ — нейтрально */
+.status-new        { @apply bg-slate-100 text-slate-700; }
+.status-planning   { @apply bg-slate-100 text-slate-700; }
+.status-planned    { @apply bg-slate-100 text-slate-700; }
+.status-archived   { @apply bg-slate-100 text-slate-600; }
+.status-pending    { @apply bg-slate-100 text-slate-700; }
+.status-rescheduled { @apply bg-slate-100 text-slate-700; }
+
+/* Dark mode — 🟢 ЗЕЛЁНЫЙ */
 .dark .status-done       { @apply bg-green-900/30 text-green-400; }
-.dark .status-cancelled  { @apply bg-red-900/30 text-red-400; }
-.dark .status-planning   { @apply bg-purple-900/30 text-purple-400; }
 .dark .status-completed  { @apply bg-green-900/30 text-green-400; }
-.dark .status-archived   { @apply bg-gray-800 text-gray-400; }
-.dark .status-on_hold    { @apply bg-orange-900/30 text-orange-400; }
-.dark .status-returned   { @apply bg-orange-900/40 text-orange-300; }
+.dark .status-active     { @apply bg-green-900/30 text-green-400; }
+.dark .status-approved   { @apply bg-green-900/30 text-green-400; }
+.dark .status-published  { @apply bg-green-900/30 text-green-400; }
+.dark .status-accepted   { @apply bg-green-900/30 text-green-400; }
 
-.priority-low      { @apply bg-slate-100 text-slate-600; }
-.priority-medium   { @apply bg-blue-100 text-blue-600; }
-.priority-high     { @apply bg-orange-100 text-orange-700; }
-.priority-critical { @apply bg-red-100 text-red-700; }
+/* Dark mode — 🟡 ЖЁЛТЫЙ */
+.dark .status-in_progress      { @apply bg-amber-900/30 text-amber-400; }
+.dark .status-review           { @apply bg-amber-900/30 text-amber-400; }
+.dark .status-on_pm_review     { @apply bg-amber-900/30 text-amber-400; }
+.dark .status-on_review        { @apply bg-amber-900/30 text-amber-400; }
+.dark .status-on_client_approval { @apply bg-amber-900/30 text-amber-400; }
+.dark .status-on_hold          { @apply bg-amber-900/30 text-amber-400; }
+.dark .status-preparing        { @apply bg-amber-900/30 text-amber-400; }
+.dark .status-in_production    { @apply bg-amber-900/30 text-amber-400; }
+.dark .status-on_approval      { @apply bg-amber-900/30 text-amber-400; }
 
-.dark .priority-low      { @apply bg-slate-800 text-slate-400; }
-.dark .priority-medium   { @apply bg-blue-900/30 text-blue-400; }
-.dark .priority-high     { @apply bg-orange-900/30 text-orange-400; }
-.dark .priority-critical { @apply bg-red-900/30 text-red-400; }
+/* Dark mode — 🔴 КРАСНЫЙ */
+.dark .status-cancelled  { @apply bg-red-900/30 text-red-400; }
+.dark .status-returned   { @apply bg-red-900/30 text-red-400; }
+.dark .status-on_rework  { @apply bg-red-900/30 text-red-400; }
+.dark .status-rejected   { @apply bg-red-900/30 text-red-400; }
+.dark .status-overdue    { @apply bg-red-900/30 text-red-400; }
+.dark .status-blocked    { @apply bg-red-900/30 text-red-400; }
+.dark .status-frozen     { @apply bg-red-900/30 text-red-400; }
+.dark .status-inactive   { @apply bg-red-900/30 text-red-400; }
+
+/* Dark mode — ⚪ СЕРЫЙ */
+.dark .status-new        { @apply bg-slate-800 text-slate-300; }
+.dark .status-planning   { @apply bg-slate-800 text-slate-300; }
+.dark .status-planned    { @apply bg-slate-800 text-slate-300; }
+.dark .status-archived   { @apply bg-slate-800 text-slate-400; }
+.dark .status-pending    { @apply bg-slate-800 text-slate-300; }
+.dark .status-rescheduled { @apply bg-slate-800 text-slate-300; }
+
+/* Priorities — светофор: low=🟢, medium=🟡, high=🔴, critical=🔴 (bolder) */
+.priority-low      { @apply bg-green-100 text-green-700; }
+.priority-medium   { @apply bg-amber-100 text-amber-700; }
+.priority-high     { @apply bg-red-100 text-red-700; }
+.priority-critical { @apply bg-red-200 text-red-800 font-bold; }
+
+.dark .priority-low      { @apply bg-green-900/30 text-green-400; }
+.dark .priority-medium   { @apply bg-amber-900/30 text-amber-400; }
+.dark .priority-high     { @apply bg-red-900/30 text-red-400; }
+.dark .priority-critical { @apply bg-red-800/40 text-red-300; }
+
+/* ====================== NOTION-STYLE PROPERTY PANEL ======================
+ * Облегчённые секции в стиле Notion для правой боковой панели задачи.
+ * Прозрачные фоны, тонкие разделители, плотный layout без жирных карточек.
+ */
+.notion-section {
+  @apply py-3 space-y-2;
+  border-top: 1px solid theme('colors.surface.100');
+}
+.dark .notion-section {
+  border-top-color: rgba(255, 255, 255, 0.05);
+}
+.notion-section:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.notion-section-title {
+  @apply text-[11px] font-medium text-surface-400 dark:text-surface-500 uppercase tracking-wide flex items-center gap-1.5;
+}
+.notion-prop-row {
+  @apply flex items-start gap-3 py-1 text-sm;
+}
+.notion-prop-label {
+  @apply text-surface-400 dark:text-surface-500 text-xs min-w-[90px] flex items-center gap-1.5 shrink-0 mt-0.5;
+}
+.notion-prop-value {
+  @apply text-surface-800 dark:text-surface-200 text-sm flex-1 break-words;
+}
+/* Контейнер всей правой колонки — без card-shadow, без border-box */
+.notion-panel {
+  @apply bg-white dark:bg-surface-800 rounded-2xl px-4 py-2 border border-surface-100 dark:border-surface-700/60;
+}
 
 /* ====================== DRAG & DROP ====================== */
 .drag-over { @apply bg-primary-50 border-primary-300 border-2 border-dashed; }

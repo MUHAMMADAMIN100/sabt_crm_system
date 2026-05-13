@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Comment } from './comment.entity';
@@ -32,13 +32,20 @@ export class CommentsService {
   }
 
   async create(taskId: string, message: string, userId: string) {
+    // Валидация: пустые комментарии не сохраняем — иначе на UI
+    // получаем пустую серую плашку без текста.
+    const cleanMessage = (message || '').trim();
+    if (!cleanMessage) {
+      throw new BadRequestException('Комментарий не может быть пустым');
+    }
+
     // Load task with assignee, project, and author info
     const task = await this.taskRepo.findOne({
       where: { id: taskId },
       relations: ['assignee', 'project'],
     });
 
-    const comment = this.repo.create({ taskId, message, authorId: userId });
+    const comment = this.repo.create({ taskId, message: cleanMessage, authorId: userId });
     const saved = await this.repo.save(comment);
 
     if (task?.assigneeId && task.assigneeId !== userId) {
@@ -91,10 +98,14 @@ export class CommentsService {
   }
 
   async update(id: string, message: string, userId: string) {
+    const cleanMessage = (message || '').trim();
+    if (!cleanMessage) {
+      throw new BadRequestException('Комментарий не может быть пустым');
+    }
     const comment = await this.repo.findOne({ where: { id }, relations: ['author'] });
     if (!comment) throw new NotFoundException('Comment not found');
     if (comment.authorId !== userId) throw new ForbiddenException('Not your comment');
-    comment.message = message;
+    comment.message = cleanMessage;
     comment.isEdited = true;
     const saved = await this.repo.save(comment);
 
