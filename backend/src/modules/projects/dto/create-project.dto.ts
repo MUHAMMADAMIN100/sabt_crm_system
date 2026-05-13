@@ -39,6 +39,16 @@ export class CreateProjectDto {
 
   // ─── Team (разделение по командам) ──────────────────────────────────
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() teamId?: string;
+
+  // ─── Транши оплаты: массив платежей с датами ─────────────────────────
+  /** Список первичных платежей по проекту (первый/второй/третий транш с датой).
+   *  При CREATE — создаются как ProjectPayment записи и суммируются в paidAmount.
+   *  При UPDATE — каждый элемент с id уже существует (только новые
+   *  без id создаются как новые записи). */
+  @ApiProperty({ required: false, type: 'array' })
+  @IsOptional()
+  @IsArray()
+  initialPayments?: Array<{ id?: string; amount: number; paidAt: string; note?: string }>;
 }
 
 export class UpdateProjectDto extends PartialType(CreateProjectDto) {}

@@ -20,11 +20,16 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   }
 
   const role = user?.role
+  // Founder/Co-founder работают через дашборд и календарь, не через список задач —
+  // он засоряет навигацию. Прямые задачи они отправляют через быструю форму календаря.
+  const isTopExec = role === 'founder' || role === 'co_founder'
 
   const navItems: { to: string; icon: any; label: string; permission: Permission; exact?: boolean }[] = [
     { to: '/',              icon: LayoutDashboard, label: t('nav.dashboard'),  permission: 'dashboard',         exact: true },
     { to: '/projects',      icon: FolderKanban,    label: t('nav.projects'),   permission: 'projects.view' },
-    { to: '/tasks',         icon: CheckSquare,     label: t('nav.tasks'),      permission: 'tasks.view' },
+    ...(isTopExec ? [] : [
+      { to: '/tasks',       icon: CheckSquare,     label: t('nav.tasks'),      permission: 'tasks.view' as Permission },
+    ]),
     { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
     { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
     { to: '/analytics',     icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },

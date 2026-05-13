@@ -275,6 +275,10 @@ export class TasksService {
     priority?: TaskPriority;
     search?: string;
     deadlineBefore?: string;
+    /** Фильтр по scope: 'personal' | 'business' | 'general'. */
+    scope?: 'personal' | 'business' | 'general';
+    /** ID текущего пользователя — нужен для скрытия чужих PERSONAL-задач. */
+    viewerId?: string;
   }) {
     const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
@@ -297,6 +301,20 @@ export class TasksService {
     if (filters.priority) qb.andWhere('t.priority = :priority', { priority: filters.priority });
     if (filters.search) qb.andWhere('t.title ILIKE :search', { search: `%${filters.search}%` });
     if (filters.deadlineBefore) qb.andWhere('t.deadline <= :deadline', { deadline: filters.deadlineBefore });
+
+    // Фильтр по scope: явный фильтр от клиента.
+    if (filters.scope) {
+      qb.andWhere('t.scope = :scope', { scope: filters.scope });
+    }
+
+    // Скрываем чужие PERSONAL-задачи: даже founder/admin не видит личные
+    // заметки других людей. Личная задача — приватная по определению.
+    if (filters.viewerId) {
+      qb.andWhere(
+        `(t.scope <> 'personal' OR t."createdById" = :viewerId)`,
+        { viewerId: filters.viewerId },
+      );
+    }
 
     const tasks = await qb.orderBy('t.createdAt', 'DESC').getMany();
     if (tasks.length > 0) {
@@ -326,6 +344,16 @@ export class TasksService {
       (dto as any).assigneeIds = [userId];
     }
 
+    // PERSONAL-задачи всегда принадлежат только создателю — игнорируем любых
+    // других assignees, проект и fromFounder. Это приватная заметка.
+    const isPersonal = (dto as any).scope === 'personal';
+    if (isPersonal) {
+      dto.assigneeId = userId;
+      (dto as any).assigneeIds = [userId];
+      dto.projectId = undefined;
+      dto.fromFounder = false;
+    }
+
     // Multi-assignee: вычисляем итоговый список + основного исполнителя
     const incomingAssigneeIds = this.extractAssigneeIds(dto);
     if (incomingAssigneeIds && incomingAssigneeIds.length > 0) {
@@ -350,7 +378,10 @@ export class TasksService {
     const firstAssigneeId = incomingAssigneeIds && incomingAssigneeIds.length > 0
       ? incomingAssigneeIds[0]
       : dto.assigneeId;
-    const notifyIds = (firstAssigneeId && firstAssigneeId !== userId) ? [firstAssigneeId] : [];
+    // PERSONAL-задачи никому не шлют уведомления (это личная заметка создателя).
+    const notifyIds = (!isPersonal && firstAssigneeId && firstAssigneeId !== userId)
+      ? [firstAssigneeId]
+      : [];
     const totalSteps = incomingAssigneeIds?.length || (dto.assigneeId ? 1 : 0);
     const isFromFounder = !!dto.fromFounder;
     for (const aid of notifyIds) {

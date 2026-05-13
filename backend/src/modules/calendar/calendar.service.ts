@@ -11,7 +11,14 @@ export class CalendarService {
     @InjectRepository(Project) private projectRepo: Repository<Project>,
   ) {}
 
-  async getEvents(from: string, to: string, employeeId?: string, projectId?: string) {
+  async getEvents(
+    from: string,
+    to: string,
+    employeeId?: string,
+    projectId?: string,
+    scope?: 'personal' | 'business' | 'general',
+    viewerId?: string,
+  ) {
     if (from && to && new Date(from) > new Date(to)) {
       throw new BadRequestException('from date must be before to date');
     }
@@ -28,18 +35,35 @@ export class CalendarService {
     if (employeeId) taskQb.andWhere('t.assigneeId = :employeeId', { employeeId });
     if (projectId) taskQb.andWhere('t.projectId = :projectId', { projectId });
 
+    // Явный фильтр по scope (из UI: Личные / Бизнес / Общие)
+    if (scope) {
+      taskQb.andWhere('t.scope = :scope', { scope });
+    }
+    // Личные задачи приватны: всегда скрываем чужие PERSONAL.
+    if (viewerId) {
+      taskQb.andWhere(
+        `(t.scope <> 'personal' OR t."createdById" = :viewerId)`,
+        { viewerId },
+      );
+    }
+
     const projectQb = this.projectRepo
       .createQueryBuilder('p')
       .where('(p.startDate BETWEEN :from AND :to OR p.endDate BETWEEN :from AND :to)', { from, to })
       .andWhere('p.isArchived = false');
 
     if (projectId) projectQb.andWhere('p.id = :projectId', { projectId });
+    // Если фильтр по scope активен — не показываем старты/концы проектов
+    // (они не относятся к scope задачи).
+    const hideProjectEvents = !!scope;
 
     const [tasks, projects] = await Promise.all([taskQb.getMany(), projectQb.getMany()]);
 
     const taskEvents = tasks.map(t => ({
       id: `task-${t.id}`,
+      taskId: t.id, // для drag-and-drop и быстрого редактирования из модалки
       title: t.title,
+      description: t.description,
       date: t.deadline,
       startDate: t.startDate || new Date(t.createdAt).toISOString().split('T')[0],
       type: 'task',
@@ -52,10 +76,11 @@ export class CalendarService {
       assigneeId: t.assigneeId,
       createdById: t.createdById,
       fromFounder: (t as any).fromFounder ?? false,
+      scope: (t as any).scope ?? 'business',
       link: `/tasks/${t.id}`,
     }));
 
-    const projectStartEvents = projects
+    const projectStartEvents = hideProjectEvents ? [] : projects
       .filter(p => p.startDate)
       .map(p => ({
         id: `project-start-${p.id}`,
@@ -66,7 +91,7 @@ export class CalendarService {
         link: `/projects/${p.id}`,
       }));
 
-    const projectEndEvents = projects
+    const projectEndEvents = hideProjectEvents ? [] : projects
       .filter(p => p.endDate)
       .map(p => ({
         id: `project-end-${p.id}`,

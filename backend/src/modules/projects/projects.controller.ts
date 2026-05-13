@@ -67,6 +67,12 @@ export class ProjectsController {
     return this.service.remove(id, req.user);
   }
 
+  @Get(':id/payments')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER, UserRole.PROJECT_MANAGER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
+  listPayments(@Param('id') id: string) {
+    return this.service.listPayments(id);
+  }
+
   @Post(':id/send-payment-request')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER)
   sendPaymentRequest(

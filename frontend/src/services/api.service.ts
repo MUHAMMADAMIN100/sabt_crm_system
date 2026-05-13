@@ -57,6 +57,7 @@ export const projectsApi = {
   archive: (id: string) => api.patch(`/projects/${id}/archive`).then(r => r.data),
   sendPaymentRequest: (id: string, message?: string) =>
     api.post(`/projects/${id}/send-payment-request`, { message }).then(r => r.data),
+  payments: (id: string) => api.get(`/projects/${id}/payments`).then(r => r.data),
   restore: (id: string) => api.patch(`/projects/${id}/restore`).then(r => r.data),
   remove: (id: string) => api.delete(`/projects/${id}`).then(r => r.data),
   stats: () => api.get('/projects/stats').then(r => r.data),

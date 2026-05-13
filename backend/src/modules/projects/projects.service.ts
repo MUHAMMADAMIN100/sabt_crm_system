@@ -57,6 +57,21 @@ export class ProjectsService {
     if (target.billingType == null) target.billingType = ProjectBillingType.MONTHLY;
   }
 
+  // ─── Payments: список платежей проекта (для финансового таба и формы) ──
+  async listPayments(projectId: string) {
+    const rows = await this.paymentRepo.find({
+      where: { projectId },
+      order: { paidAt: 'ASC' },
+    });
+    return rows.map(r => ({
+      id: r.id,
+      amount: Number(r.amount),
+      paidAt: r.paidAt,
+      note: r.note,
+      createdAt: r.createdAt,
+    }));
+  }
+
   // ─── Wave 7: Launch Setup checklist ──────────────────────────────────
 
   /** Собирает сигналы из БД для расчёта состояния чеклиста. */
@@ -559,6 +574,35 @@ export class ProjectsService {
 
     const saved = await this.repo.save(project);
 
+    // Транши оплаты: создаём ProjectPayment записи и суммируем в paidAmount.
+    // Доступно только для founder/co_founder — иначе пропускаем массив целиком.
+    if (Array.isArray((dto as any).initialPayments) && (dto as any).initialPayments.length > 0
+        && ['founder', 'co_founder'].includes(userRole as string)) {
+      const items = (dto as any).initialPayments as Array<{ amount: number; paidAt: string; note?: string }>;
+      let totalDelta = 0;
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const amount = Number(it.amount || 0);
+        if (!amount || amount <= 0 || !it.paidAt) continue;
+        await this.paymentRepo.save(this.paymentRepo.create({
+          projectId: saved.id,
+          amount,
+          paidAt: new Date(it.paidAt),
+          recordedById: userId,
+          note: it.note?.trim() || `Транш ${i + 1}`,
+        }));
+        totalDelta += amount;
+      }
+      if (totalDelta > 0) {
+        saved.paidAmount = Number(saved.paidAmount || 0) + totalDelta;
+        await this.recomputeFinancials(saved, saved, new Set());
+        await this.repo.update(saved.id, {
+          paidAmount: saved.paidAmount,
+          outstandingAmount: saved.outstandingAmount,
+        });
+      }
+    }
+
     // Авто-генерация контент-плана для SMM-проекта с тарифом.
     // Best-effort — ошибка не должна валить создание проекта.
     await this.generateContentPlanFromTariff(saved);
@@ -787,6 +831,37 @@ export class ProjectsService {
         recordedById: user.id,
         note: paymentDelta > 0 ? 'Оплата получена' : 'Корректировка',
       }));
+    }
+
+    // Транши оплаты при UPDATE: добавляем только НОВЫЕ платежи (без id).
+    // Существующие платежи редактируются через отдельный финансовый таб
+    // и здесь не трогаются. Доступно только founder/co_founder.
+    if (Array.isArray((dto as any).initialPayments)
+        && ['founder', 'co_founder'].includes(user.role)) {
+      const items = (dto as any).initialPayments as Array<{ id?: string; amount: number; paidAt: string; note?: string }>;
+      const newOnes = items.filter(it => !it.id && Number(it.amount) > 0 && it.paidAt);
+      let totalNew = 0;
+      for (const it of newOnes) {
+        const amount = Number(it.amount);
+        await this.paymentRepo.save(this.paymentRepo.create({
+          projectId: saved.id,
+          amount,
+          paidAt: new Date(it.paidAt),
+          recordedById: user.id,
+          note: it.note?.trim() || `Транш`,
+        }));
+        totalNew += amount;
+      }
+      if (totalNew > 0) {
+        const newPaid = Number(saved.paidAmount || 0) + totalNew;
+        saved.paidAmount = newPaid;
+        // Пересчитываем outstanding/margin с учётом новых платежей.
+        await this.recomputeFinancials(saved, saved, new Set());
+        await this.repo.update(saved.id, {
+          paidAmount: newPaid,
+          outstandingAmount: saved.outstandingAmount,
+        });
+      }
     }
 
     await this.activityLog.log({

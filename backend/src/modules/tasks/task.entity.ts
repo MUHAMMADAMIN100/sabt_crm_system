@@ -39,6 +39,21 @@ export enum TaskStatus {
   RESCHEDULED        = 'rescheduled',
 }
 
+/** Скоуп задачи — категория видимости.
+ *  - PERSONAL — личная заметка/задача создателя. Видна ТОЛЬКО ему, никому
+ *    не отправляются уведомления, не показывается в чужих списках/календарях.
+ *  - BUSINESS — бизнес-задача (для команды/проекта). Поведение по умолчанию.
+ *  - GENERAL — общая задача (может видеть вся компания при подходящих ролях).
+ *
+ *  Используется в основном основателем/сооснователем для быстрых задач из
+ *  календаря. Для обычных задач из проектов поле автоматически = BUSINESS.
+ */
+export enum TaskScope {
+  PERSONAL = 'personal',
+  BUSINESS = 'business',
+  GENERAL  = 'general',
+}
+
 @Entity('tasks')
 export class Task {
   @PrimaryGeneratedColumn('uuid')
@@ -64,6 +79,11 @@ export class Task {
    *  текстом) и позволяет фильтровать direct-задачи в дашборде. */
   @Column({ default: false })
   fromFounder: boolean;
+
+  /** Скоуп задачи (личная / бизнес / общая). См. enum TaskScope.
+   *  Личные задачи видны ТОЛЬКО создателю — это его приватные заметки. */
+  @Column({ type: 'enum', enum: TaskScope, default: TaskScope.BUSINESS })
+  scope: TaskScope;
 
   /** Технические детали для задач разработки. JSON чтобы не плодить
    *  колонки и легко расширять — теперь включает все нужные dev-ссылки. */

@@ -5,7 +5,7 @@ import { projectsApi, employeesApi, smmTariffsApi, riskApi, teamsApi } from '@/s
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar, Pagination } from '@/components/ui'
-import { Plus, Search, FolderKanban, Archive, Trash2, Edit, Users, ChevronDown, X, Check } from 'lucide-react'
+import { Plus, Search, FolderKanban, Archive, Trash2, Edit, Users, ChevronDown, X, Check, Banknote, Calendar as CalIcon } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
@@ -148,7 +148,14 @@ export default function ProjectsPage() {
       qc.setQueryData(['projects'], context?.previous)
       toast.error(t('common.error'))
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); toast.success(t('projects.updated')) },
+    onSuccess: (_, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['projects'] });
+      // После сохранения проекта могли добавиться новые платежи —
+      // инвалидируем кеш платежей чтобы форма при повторном открытии
+      // подгрузила свежий список.
+      qc.invalidateQueries({ queryKey: ['project-payments', vars?.id] });
+      toast.success(t('projects.updated'))
+    },
   })
 
   const archiveMut = useMutation({
@@ -437,6 +444,12 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
   const [memberDropOpen, setMemberDropOpen] = useState(false)
   const [memberSearch, setMemberSearch] = useState('')
+  // Транши оплаты проекта: массив элементов { id?, amount, paidAt, note }.
+  // Элементы с id — уже существующие платежи (read-only, можно только удалить
+  // из массива чтобы не отправить повторно; реальное удаление делается в
+  // финансовом табе проекта). Без id — новые, будут созданы при сохранении.
+  type Tranche = { id?: string; amount: string; paidAt: string; note: string }
+  const [tranches, setTranches] = useState<Tranche[]>([])
   const dropRef = useRef<HTMLDivElement>(null)
   const projectType = watch('projectType')
   const tariffId = watch('tariffId')
@@ -457,6 +470,27 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     queryKey: ['teams'],
     queryFn: () => teamsApi.list(),
   })
+
+  // Загружаем существующие платежи проекта (только при редактировании)
+  const { data: existingPayments } = useQuery({
+    queryKey: ['project-payments', initial?.id],
+    queryFn: () => projectsApi.payments(initial!.id),
+    enabled: !!initial?.id && canSeeFinance,
+  })
+
+  // Когда платежи загрузились или сменилось редактируемое — заполняем массив.
+  useEffect(() => {
+    if (open && canSeeFinance && initial?.id && Array.isArray(existingPayments)) {
+      setTranches(existingPayments.map((p: any) => ({
+        id: p.id,
+        amount: String(p.amount ?? ''),
+        paidAt: p.paidAt ? new Date(p.paidAt).toISOString().split('T')[0] : '',
+        note: p.note || '',
+      })))
+    } else if (open && !initial) {
+      setTranches([])
+    }
+  }, [open, initial?.id, existingPayments, canSeeFinance])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -509,6 +543,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
         setSmmAnswers({})
         setShowSmmForm(false)
         setSelectedMembers([])
+        setTranches([])
       }
       setMemberDropOpen(false)
       setMemberSearch('')
@@ -535,7 +570,8 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
       startDate: data.startDate || undefined,
       endDate: data.endDate || undefined,
       status: data.status,
-      color: data.color,
+      // color больше не редактируется через форму — берём из initial если есть
+      color: initial?.color || undefined,
       budget: data.budget ? Number(data.budget) : undefined,
       projectType: data.projectType || undefined,
       managerId: data.managerId || undefined,
@@ -567,7 +603,31 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
       formattedData.discount = Number(data.discount) || 0
       formattedData.discountType = data.discountType === 'percent' ? 'percent' : 'fixed'
     }
+    // Транши оплаты — только для founder/co_founder. Отправляем все, бэк
+    // различит существующие (по id) от новых (без id).
+    if (canSeeFinance && tranches.length > 0) {
+      formattedData.initialPayments = tranches
+        .filter(t => Number(t.amount) > 0 && t.paidAt)
+        .map(t => ({
+          id: t.id,
+          amount: Number(t.amount),
+          paidAt: t.paidAt,
+          note: t.note?.trim() || undefined,
+        }))
+    }
     onSubmit(formattedData)
+  }
+
+  // Helpers для секции траншей
+  const addTranche = () => setTranches(prev => [
+    ...prev,
+    { amount: '', paidAt: new Date().toISOString().split('T')[0], note: '' },
+  ])
+  const updateTranche = (idx: number, patch: Partial<{ amount: string; paidAt: string; note: string }>) => {
+    setTranches(prev => prev.map((t, i) => i === idx ? { ...t, ...patch } : t))
+  }
+  const removeTranche = (idx: number) => {
+    setTranches(prev => prev.filter((_, i) => i !== idx))
   }
 
   const STATUS_OPTIONS = ['planning', 'in_progress', 'completed', 'on_hold']
@@ -981,14 +1041,119 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
               </p>
             )}
           </div>
-          <div className="sm:col-span-2">
-            <label className="label">{t('projects.color')} *</label>
-            <input type="color" {...register('color')} className="input h-10 p-1 cursor-pointer" />
-          </div>
+          {/* Поле "Цвет" убрано из формы — оно не несло смысловой нагрузки,
+              перегружало форму и сбивало пользователей. Дефолтный цвет
+              проекта проставляется на бэке. */}
           {/* Поле бюджета убрано из формы создания/редактирования —
-              бюджет правится inline-карандашом на странице проекта.
-              Это даёт более чистый UX (одно место для финансов) и
-              исключает дубль значения в двух местах. */}
+              бюджет правится inline-карандашом на странице проекта. */}
+
+          {/* Транши оплаты — только для founder/co_founder.
+              Каждый транш = сумма + дата + комментарий. Сумма из существующих
+              траншей суммируется в paidAmount проекта. */}
+          {canSeeFinance && (
+            <div className="sm:col-span-2 border border-emerald-300/60 dark:border-emerald-800/60 rounded-xl p-4 bg-emerald-50/50 dark:bg-emerald-900/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Banknote size={16} className="text-emerald-600 dark:text-emerald-400" />
+                  <h3 className="font-semibold text-emerald-700 dark:text-emerald-300 text-sm">
+                    Платежи (транши)
+                  </h3>
+                  {tranches.length > 0 && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                      · {tranches.length} {tranches.length === 1 ? 'платёж' : 'платежа'}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={addTranche}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                >
+                  <Plus size={13} /> Добавить
+                </button>
+              </div>
+
+              {tranches.length === 0 ? (
+                <p className="text-xs text-surface-500 dark:text-surface-400">
+                  Нет платежей. Нажмите «Добавить», чтобы внести первый транш с датой.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {tranches.map((tr, idx) => (
+                    <div
+                      key={tr.id || `new-${idx}`}
+                      className="grid grid-cols-12 gap-2 items-start p-2 rounded-lg bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700"
+                    >
+                      <div className="col-span-12 sm:col-span-4">
+                        <label className="text-[10px] uppercase font-semibold text-surface-500 dark:text-surface-400">
+                          Транш #{idx + 1} (сомони)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={tr.amount}
+                          onChange={e => updateTranche(idx, { amount: e.target.value })}
+                          disabled={!!tr.id}
+                          placeholder="0"
+                          className={clsx('input text-sm', tr.id && 'bg-surface-50 dark:bg-surface-700 cursor-not-allowed')}
+                        />
+                      </div>
+                      <div className="col-span-12 sm:col-span-3">
+                        <label className="text-[10px] uppercase font-semibold text-surface-500 dark:text-surface-400">
+                          <CalIcon size={10} className="inline mr-0.5" />
+                          Дата
+                        </label>
+                        <input
+                          type="date"
+                          value={tr.paidAt}
+                          onChange={e => updateTranche(idx, { paidAt: e.target.value })}
+                          disabled={!!tr.id}
+                          className={clsx('input text-sm', tr.id && 'bg-surface-50 dark:bg-surface-700 cursor-not-allowed')}
+                        />
+                      </div>
+                      <div className="col-span-10 sm:col-span-4">
+                        <label className="text-[10px] uppercase font-semibold text-surface-500 dark:text-surface-400">
+                          Комментарий
+                        </label>
+                        <input
+                          type="text"
+                          value={tr.note}
+                          onChange={e => updateTranche(idx, { note: e.target.value })}
+                          disabled={!!tr.id}
+                          placeholder="Аванс, окончательный расчёт..."
+                          className={clsx('input text-sm', tr.id && 'bg-surface-50 dark:bg-surface-700 cursor-not-allowed')}
+                        />
+                      </div>
+                      <div className="col-span-2 sm:col-span-1 flex items-end justify-end">
+                        <button
+                          type="button"
+                          onClick={() => removeTranche(idx)}
+                          className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          title={tr.id ? 'Скрыть из формы (не удалит платёж из БД)' : 'Удалить'}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      {tr.id && (
+                        <div className="col-span-12 text-[10px] text-surface-400 dark:text-surface-500 italic">
+                          Это уже сохранённый платёж — он не редактируется в форме. Для изменений используйте финансовый раздел проекта.
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Итог */}
+                  <div className="flex items-center justify-between px-2 pt-2 border-t border-emerald-200/60 dark:border-emerald-800/60">
+                    <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Итого:</span>
+                    <span className="text-sm font-bold text-emerald-700 dark:text-emerald-300">
+                      {tranches.reduce((sum, t) => sum + (Number(t.amount) || 0), 0).toLocaleString('ru-RU')} TJS
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2 justify-end pt-2">

@@ -1,6 +1,6 @@
 import { IsString, IsOptional, IsEnum, IsDateString, IsNumber, IsUUID, IsBoolean, IsArray, Min, Max, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { TaskPriority, TaskStatus } from '../task.entity';
+import { TaskPriority, TaskStatus, TaskScope } from '../task.entity';
 import { PartialType } from '@nestjs/mapped-types';
 
 export class CreateTaskDto {
@@ -10,6 +10,10 @@ export class CreateTaskDto {
   /** Если true — задача прямая от основателя, шлёт усиленное уведомление
    *  исполнителю и помечается специальным баджем в UI. */
   @ApiProperty({ required: false }) @IsOptional() @IsBoolean() fromFounder?: boolean;
+  /** Скоуп задачи: personal (только создатель видит), business (default),
+   *  general (видит вся компания). Используется основателем для разделения
+   *  личных заметок от рабочих задач. */
+  @ApiProperty({ enum: TaskScope, required: false }) @IsOptional() @IsEnum(TaskScope) scope?: TaskScope;
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() assigneeId?: string;
   /** Multi-assignee — список UUID. Поле необязательное; если задано —
    *  заменяет старое assigneeId (assigneeId в БД будет = первому из списка). */

@@ -26,8 +26,13 @@ export class TasksController {
     @Query('priority') priority?: TaskPriority,
     @Query('search') search?: string,
     @Query('deadlineBefore') deadlineBefore?: string,
+    @Query('scope') scope?: 'personal' | 'business' | 'general',
+    @Request() req?,
   ) {
-    return this.service.findAll({ projectId, assigneeId, status, priority, search, deadlineBefore });
+    return this.service.findAll({
+      projectId, assigneeId, status, priority, search, deadlineBefore, scope,
+      viewerId: req?.user?.id,
+    });
   }
 
   @Get('export/csv')
