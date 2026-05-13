@@ -368,19 +368,22 @@ export default function TaskDetailPage() {
     },
   })
 
-  const addComment = useMutation<any, any, void>({
-    mutationFn: () => commentsApi.create(id!, comment),
-    onMutate: async () => {
-      const msg = comment
+  // Принимает текст через variables — иначе race с setComment('') в onMutate
+  // приводил к отправке пустой строки на бэкенд после первого клика.
+  const addComment = useMutation<any, any, string>({
+    mutationFn: (msg: string) => commentsApi.create(id!, msg),
+    onMutate: async (msg: string) => {
       setComment('')
       await qc.cancelQueries({ queryKey: ['task', id] })
       const previous = qc.getQueryData(['task', id])
       const tempComment = { id: `temp-${Date.now()}`, message: msg, authorId: user?.id, author: { name: user?.name }, createdAt: new Date().toISOString() }
       qc.setQueryData(['task', id], (old: any) => old ? { ...old, comments: [...(old.comments || []), tempComment] } : old)
-      return { previous }
+      return { previous, msg }
     },
     onError: (e: any, _v: any, context: any) => {
       qc.setQueryData(['task', id], context?.previous)
+      // Восстанавливаем текст комментария в инпут — пользователь не теряет ввод.
+      if (context?.msg) setComment(context.msg)
       toast.error(e?.response?.data?.message || 'Не удалось добавить комментарий')
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['task', id] }),
@@ -853,11 +856,23 @@ export default function TaskDetailPage() {
                   <input
                     value={comment}
                     onChange={e => setComment(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && comment.trim() && addComment.mutate()}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        const text = comment.trim()
+                        if (text) addComment.mutate(text)
+                      }
+                    }}
                     placeholder="Комментарий..."
                     className="input flex-1 text-sm"
                   />
-                  <button onClick={() => comment.trim() && addComment.mutate()} disabled={!comment.trim()} className="btn-primary">
+                  <button
+                    onClick={() => {
+                      const text = comment.trim()
+                      if (text) addComment.mutate(text)
+                    }}
+                    disabled={!comment.trim() || addComment.isPending}
+                    className="btn-primary"
+                  >
                     <Send size={15} />
                   </button>
                 </div>
