@@ -575,9 +575,11 @@ export class ProjectsService {
     const saved = await this.repo.save(project);
 
     // Транши оплаты: создаём ProjectPayment записи и суммируем в paidAmount.
-    // Доступно только для founder/co_founder — иначе пропускаем массив целиком.
+    // Доступно всем ролям, которые могут создавать/редактировать проект:
+    // admin, founder, co_founder, smm_director, head_smm, project_manager.
     if (Array.isArray((dto as any).initialPayments) && (dto as any).initialPayments.length > 0
-        && ['founder', 'co_founder'].includes(userRole as string)) {
+        && ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm', 'project_manager']
+            .includes(userRole as string)) {
       const items = (dto as any).initialPayments as Array<{ amount: number; paidAt: string; note?: string }>;
       let totalDelta = 0;
       for (let i = 0; i < items.length; i++) {
@@ -835,9 +837,10 @@ export class ProjectsService {
 
     // Транши оплаты при UPDATE: добавляем только НОВЫЕ платежи (без id).
     // Существующие платежи редактируются через отдельный финансовый таб
-    // и здесь не трогаются. Доступно только founder/co_founder.
+    // и здесь не трогаются. Доступно ролям с правом редактирования проекта.
     if (Array.isArray((dto as any).initialPayments)
-        && ['founder', 'co_founder'].includes(user.role)) {
+        && ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm', 'project_manager']
+            .includes(user.role)) {
       const items = (dto as any).initialPayments as Array<{ id?: string; amount: number; paidAt: string; note?: string }>;
       const newOnes = items.filter(it => !it.id && Number(it.amount) > 0 && it.paidAt);
       let totalNew = 0;

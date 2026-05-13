@@ -439,6 +439,11 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   // Финансовые поля и цены тарифа видят только основатель/сооснователь.
   // smm_director, PM, head_smm и admin — управляют проектом, но цены/деньги не видят.
   const canSeeFinance = ['founder', 'co_founder'].includes(formUser?.role || '')
+  // Платежи (транши) — может управлять любой кто имеет доступ к форме проекта:
+  // Admin, Founder, Co-founder, SMM Director, Head SMM, Project Manager.
+  // Они вносят оплаты от клиента — финансовая информация по проекту, не зарплаты.
+  const canManagePayments = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm', 'project_manager']
+    .includes(formUser?.role || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
@@ -475,12 +480,12 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const { data: existingPayments } = useQuery({
     queryKey: ['project-payments', initial?.id],
     queryFn: () => projectsApi.payments(initial!.id),
-    enabled: !!initial?.id && canSeeFinance,
+    enabled: !!initial?.id && canManagePayments,
   })
 
   // Когда платежи загрузились или сменилось редактируемое — заполняем массив.
   useEffect(() => {
-    if (open && canSeeFinance && initial?.id && Array.isArray(existingPayments)) {
+    if (open && canManagePayments && initial?.id && Array.isArray(existingPayments)) {
       setTranches(existingPayments.map((p: any) => ({
         id: p.id,
         amount: String(p.amount ?? ''),
@@ -490,7 +495,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     } else if (open && !initial) {
       setTranches([])
     }
-  }, [open, initial?.id, existingPayments, canSeeFinance])
+  }, [open, initial?.id, existingPayments, canManagePayments])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -603,9 +608,9 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
       formattedData.discount = Number(data.discount) || 0
       formattedData.discountType = data.discountType === 'percent' ? 'percent' : 'fixed'
     }
-    // Транши оплаты — только для founder/co_founder. Отправляем все, бэк
-    // различит существующие (по id) от новых (без id).
-    if (canSeeFinance && tranches.length > 0) {
+    // Транши оплаты — для всех ролей с правом редактирования проекта.
+    // Бэк различит существующие (по id) от новых (без id).
+    if (canManagePayments && tranches.length > 0) {
       formattedData.initialPayments = tranches
         .filter(t => Number(t.amount) > 0 && t.paidAt)
         .map(t => ({
@@ -1047,10 +1052,11 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           {/* Поле бюджета убрано из формы создания/редактирования —
               бюджет правится inline-карандашом на странице проекта. */}
 
-          {/* Транши оплаты — только для founder/co_founder.
-              Каждый транш = сумма + дата + комментарий. Сумма из существующих
-              траншей суммируется в paidAmount проекта. */}
-          {canSeeFinance && (
+          {/* Транши оплаты — для всех ролей с правом редактирования проекта:
+              Admin, Founder, Co-founder, SMM Director, Head SMM, PM.
+              Каждый транш = сумма + дата + комментарий. Сумма суммируется
+              в paidAmount проекта. */}
+          {canManagePayments && (
             <div className="sm:col-span-2 border border-emerald-300/60 dark:border-emerald-800/60 rounded-xl p-4 bg-emerald-50/50 dark:bg-emerald-900/10 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
