@@ -855,27 +855,32 @@ function TaskDetailDrawer({
 
   return (
     <>
-      {/* Overlay — кликом закрываем */}
+      {/* Overlay — сильный блюр + затемнение чтобы остальное размылось
+          и фокус оставался на drawer'е. */}
       <div
         onClick={onClose}
         className={clsx(
-          'fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity duration-200',
+          'fixed inset-0 z-40 bg-black/60 transition-opacity duration-300',
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none',
         )}
+        style={{ WebkitBackdropFilter: 'blur(10px)', backdropFilter: 'blur(10px)' }}
       />
-      {/* Drawer справа — выезжает с правой стороны */}
+      {/* Drawer справа — flex column для корректной работы footer'а
+          на узких лаптопах. Ширина адаптивная по breakpoint'ам. */}
       <aside
         role="dialog"
         aria-modal="true"
         className={clsx(
-          'fixed top-0 right-0 z-50 h-full w-full sm:w-[420px] bg-white dark:bg-surface-900 shadow-2xl border-l border-surface-200 dark:border-surface-700',
+          'fixed top-0 right-0 z-50 h-full bg-white dark:bg-surface-900 shadow-2xl border-l border-surface-200 dark:border-surface-700',
+          'w-full sm:w-[440px] lg:w-[520px] xl:w-[600px]',
+          'flex flex-col',
           'transform transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
           isOpen ? 'translate-x-0' : 'translate-x-full',
         )}
       >
-        {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-surface-100 dark:border-surface-700 bg-white dark:bg-surface-900">
-          <div className="flex items-center gap-2 min-w-0">
+        {/* Header — фиксирован сверху естественным flex'ом */}
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-surface-100 dark:border-surface-700 bg-white dark:bg-surface-900">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
             <span className={clsx(
               'inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap',
               SCOPE_COLORS[event.scope] || 'bg-surface-100 text-surface-600',
@@ -890,15 +895,15 @@ function TaskDetailDrawer({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+            className="p-1 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors shrink-0"
             aria-label="Закрыть"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-5 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 130px)' }}>
+        {/* Body — растягивается и скроллится; footer не перекрывает контент */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-0">
           <h2 className="text-lg font-bold text-surface-900 dark:text-surface-100">{event.title}</h2>
 
           {event.description && (
@@ -942,8 +947,8 @@ function TaskDetailDrawer({
           </div>
         </div>
 
-        {/* Footer actions */}
-        <div className="absolute bottom-0 left-0 right-0 px-5 py-3 border-t border-surface-100 dark:border-surface-700 bg-white dark:bg-surface-900 flex gap-2">
+        {/* Footer actions — естественный flex bottom без absolute */}
+        <div className="shrink-0 px-5 py-3 border-t border-surface-100 dark:border-surface-700 bg-white dark:bg-surface-900 flex gap-2">
           {event.taskId && (
             <a
               href={`/tasks/${event.taskId}`}

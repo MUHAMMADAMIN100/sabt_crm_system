@@ -83,14 +83,13 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
-      {/* Backdrop */}
+      {/* Backdrop — усиленный блюр и затемнение чтобы фокус был на модалке */}
       <div
         className={clsx(
-          'absolute inset-0 bg-black/40 transition-opacity duration-200',
-          '-webkit-backdrop-filter: blur(4px)',
+          'absolute inset-0 bg-black/60 transition-opacity duration-300',
           visible ? 'opacity-100' : 'opacity-0',
         )}
-        style={{ WebkitBackdropFilter: 'blur(4px)', backdropFilter: 'blur(4px)' }}
+        style={{ WebkitBackdropFilter: 'blur(10px)', backdropFilter: 'blur(10px)' }}
         onClick={onClose}
       />
       {/* Panel */}
