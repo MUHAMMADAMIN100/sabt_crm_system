@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { calendarApi, projectsApi, tasksApi, employeesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
@@ -40,6 +40,9 @@ export default function CalendarPage() {
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('')
   // Side modal для просмотра деталей задачи при клике на event.
   const [detailEventId, setDetailEventId] = useState<string | null>(null)
+  // Edit-режим для founder: клик по своей задаче в календаре открывает
+  // ту же FounderQuickTaskForm в режиме редактирования.
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -70,6 +73,26 @@ export default function CalendarPage() {
       toast.success(t('tasks.created'))
     },
     onError: () => toast.error(t('common.error')),
+  })
+
+  // Полная задача для prefill edit-формы (нужны assignees + scope).
+  const { data: editingTaskFull } = useQuery({
+    queryKey: ['task', editingTaskId],
+    queryFn: () => tasksApi.get(editingTaskId!),
+    enabled: !!editingTaskId,
+  })
+
+  // Сохранение из edit-формы founder
+  const editTaskMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => tasksApi.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['calendar'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['task', editingTaskId] })
+      setEditingTaskId(null)
+      toast.success('Изменения сохранены')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || t('common.error')),
   })
 
   // Drag-and-drop: при сбросе задачи на другой день — обновляем deadline.
@@ -308,10 +331,19 @@ export default function CalendarPage() {
                         onDragEnd={handleDragEnd}
                         onClick={ev => {
                           ev.stopPropagation()
-                          // task → side modal с деталями. Старты/концы — прежняя
-                          // навигация на страницу проекта.
-                          if (e.type === 'task') setDetailEventId(e.id)
-                          else if (e.link) window.location.href = e.link
+                          // task: для founder его собственные задачи открываются
+                          // в edit-режиме той же quick-формы. Чужие задачи или
+                          // не-founder — старый side drawer с деталями.
+                          if (e.type === 'task') {
+                            const isOwnTask = e.taskId && (e.createdById === user?.id || e.assigneeId === user?.id)
+                            if (isFounderView && isOwnTask) {
+                              setEditingTaskId(e.taskId)
+                            } else {
+                              setDetailEventId(e.id)
+                            }
+                          } else if (e.link) {
+                            window.location.href = e.link
+                          }
                         }}
                         title={e.title}
                         className={clsx(
@@ -382,8 +414,13 @@ export default function CalendarPage() {
                           type="button"
                           onClick={ev => {
                             ev.stopPropagation()
-                            if (e.type === 'task') setDetailEventId(e.id)
-                            else if (e.link) window.location.href = e.link
+                            if (e.type === 'task') {
+                              const isOwnTask = e.taskId && (e.createdById === user?.id || e.assigneeId === user?.id)
+                              if (isFounderView && isOwnTask) setEditingTaskId(e.taskId)
+                              else setDetailEventId(e.id)
+                            } else if (e.link) {
+                              window.location.href = e.link
+                            }
                           }}
                           className={clsx(
                             'text-left text-xs px-2 py-1 rounded border truncate font-medium',
@@ -471,6 +508,50 @@ export default function CalendarPage() {
         </Modal>
       )}
 
+      {/* Edit-модалка для founder при клике на свою задачу */}
+      {isFounderView && editingTaskId && (
+        <Modal
+          open={!!editingTaskId}
+          onClose={() => setEditingTaskId(null)}
+          title={`Редактировать задачу${editingTaskFull?.deadline ? ' — ' + format(new Date(editingTaskFull.deadline), 'dd.MM.yyyy') : ''}`}
+          size="lg"
+        >
+          {!editingTaskFull ? (
+            <div className="py-8 text-center text-sm text-surface-400">Загрузка...</div>
+          ) : (
+            <FounderQuickTaskForm
+              employees={employees || []}
+              loading={editTaskMut.isPending}
+              onClose={() => setEditingTaskId(null)}
+              initial={{
+                id: editingTaskFull.id,
+                title: editingTaskFull.title,
+                description: editingTaskFull.description || undefined,
+                scope: (editingTaskFull.scope || 'business') as any,
+                priority: editingTaskFull.priority || 'medium',
+                assigneeIds: Array.isArray(editingTaskFull.assignees) && editingTaskFull.assignees.length > 0
+                  ? editingTaskFull.assignees.map((a: any) => a.userId || a.user?.id).filter(Boolean)
+                  : (editingTaskFull.assigneeId ? [editingTaskFull.assigneeId] : []),
+              }}
+              onSubmit={data => editTaskMut.mutate({
+                id: editingTaskFull.id,
+                data: {
+                  // Не шлём scope — он иммутабельный (backend и так
+                  // игнорирует изменение, но не плодим payload).
+                  title: data.title,
+                  description: data.description,
+                  priority: data.priority,
+                  ...(data.scope === 'business' && {
+                    assigneeIds: data.assigneeIds,
+                    assigneeId: data.assigneeId,
+                  }),
+                },
+              })}
+            />
+          )}
+        </Modal>
+      )}
+
       {/* Side drawer с деталями задачи */}
       <TaskDetailDrawer
         event={detailEvent}
@@ -493,62 +574,100 @@ export default function CalendarPage() {
   )
 }
 
-/** Минимальная форма «Задача от основателя».
- *  Добавлен селектор Личная / Бизнес / Общая в начале. Когда выбрано
- *  «Личная» — поля «Исполнитель» и подсказка про уведомление скрыты,
- *  потому что задача никуда не отправляется. */
+/** Форма «Задача от основателя» — поддерживает 3 scope и режим редактирования.
+ *
+ *  - personal: только для founder, никаких уведомлений
+ *  - business: выбор НЕСКОЛЬКИХ исполнителей через чипы, каждому 3-канальное
+ *    уведомление от backend (in-app + email + telegram)
+ *  - general: assignees не выбираются, backend разошлёт всем активным
+ *    сотрудникам по трём каналам
+ *
+ *  В edit-режиме (initial задан) scope зафиксирован — менять нельзя
+ *  (иначе ретроспективно разошлёт уведомления).
+ */
 function FounderQuickTaskForm({
-  employees, loading, onClose, onSubmit,
+  employees, loading, onClose, onSubmit, initial,
 }: {
   employees: any[]
   loading: boolean
   onClose: () => void
   onSubmit: (data: any) => void
+  initial?: {
+    id: string
+    title?: string
+    description?: string
+    scope?: 'personal' | 'business' | 'general'
+    priority?: 'low' | 'medium' | 'high' | 'critical'
+    assigneeIds?: string[]
+  }
 }) {
-  const [scope, setScope] = useState<'personal' | 'business' | 'general'>('business')
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [assigneeId, setAssigneeId] = useState('')
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium')
+  const isEdit = !!initial
+  const [scope, setScope] = useState<'personal' | 'business' | 'general'>(initial?.scope || 'business')
+  const [title, setTitle] = useState(initial?.title || '')
+  const [description, setDescription] = useState(initial?.description || '')
+  const [selectedIds, setSelectedIds] = useState<string[]>(initial?.assigneeIds || [])
+  const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical'>(initial?.priority || 'medium')
+  const [search, setSearch] = useState('')
+
+  const eligibleEmployees = useMemo(
+    () => (employees || []).filter((emp: any) => emp.user?.id),
+    [employees],
+  )
+  const filteredEmployees = useMemo(() => {
+    if (!search.trim()) return eligibleEmployees
+    const q = search.trim().toLowerCase()
+    return eligibleEmployees.filter((emp: any) =>
+      (emp.fullName || '').toLowerCase().includes(q) ||
+      (emp.position || '').toLowerCase().includes(q),
+    )
+  }, [eligibleEmployees, search])
+
+  const toggleAssignee = (uid: string) => {
+    setSelectedIds(prev => prev.includes(uid) ? prev.filter(x => x !== uid) : [...prev, uid])
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) { toast.error('Укажите название задачи'); return }
-    if (scope !== 'personal' && !assigneeId) {
-      toast.error('Выберите исполнителя')
+    if (scope === 'business' && selectedIds.length === 0) {
+      toast.error('Выберите хотя бы одного исполнителя')
       return
     }
     onSubmit({
       scope,
       title: title.trim(),
       description: description.trim() || undefined,
-      // Для личной — без исполнителя (backend сам выставит создателя).
-      assigneeId: scope === 'personal' ? undefined : assigneeId,
-      assigneeIds: scope === 'personal' ? undefined : [assigneeId],
       priority,
+      // personal — без исполнителей (backend сам выставит создателя).
+      // general — без исполнителей (backend разошлёт всем).
+      // business — массив выбранных.
+      assigneeId: scope === 'business' && selectedIds[0] ? selectedIds[0] : undefined,
+      assigneeIds: scope === 'business' ? selectedIds : undefined,
     })
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Селектор типа задачи — segmented control в верху формы */}
+      {/* Селектор типа задачи. В edit-режиме disabled (scope иммутабельный). */}
       <div>
         <label className="label">Тип задачи *</label>
         <div className="grid grid-cols-3 gap-2">
           {[
             { v: 'personal' as const, icon: <Lock size={14} />,      label: 'Личная',      hint: 'Только для меня' },
-            { v: 'business' as const, icon: <Briefcase size={14} />, label: 'Для бизнеса', hint: 'Исполнитель в команде' },
-            { v: 'general'  as const, icon: <Globe size={14} />,     label: 'Общая',       hint: 'Видит вся команда' },
+            { v: 'business' as const, icon: <Briefcase size={14} />, label: 'Для бизнеса', hint: 'Выбранным сотрудникам' },
+            { v: 'general'  as const, icon: <Globe size={14} />,     label: 'Общая',       hint: 'Для всей команды' },
           ].map(opt => (
             <button
               key={opt.v}
               type="button"
-              onClick={() => setScope(opt.v)}
+              onClick={() => !isEdit && setScope(opt.v)}
+              disabled={isEdit && opt.v !== scope}
               className={clsx(
                 'flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all',
                 scope === opt.v
                   ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
                   : 'border-surface-200 dark:border-surface-700 hover:border-surface-300 dark:hover:border-surface-600 text-surface-600 dark:text-surface-400',
+                isEdit && opt.v !== scope && 'opacity-30 cursor-not-allowed',
               )}
             >
               {opt.icon}
@@ -557,6 +676,9 @@ function FounderQuickTaskForm({
             </button>
           ))}
         </div>
+        {isEdit && (
+          <p className="text-[11px] text-surface-400 mt-1">Тип задачи нельзя изменить после создания.</p>
+        )}
       </div>
 
       <div>
@@ -578,25 +700,82 @@ function FounderQuickTaskForm({
           placeholder="Детали, контекст (необязательно)"
         />
       </div>
-      {scope !== 'personal' && (
+
+      {/* Multi-select исполнителей — только для business */}
+      {scope === 'business' && (
         <div>
-          <label className="label">Исполнитель *</label>
-          <select
-            value={assigneeId}
-            onChange={e => setAssigneeId(e.target.value)}
-            className="input"
-          >
-            <option value="">— Выберите сотрудника —</option>
-            {employees
-              .filter((emp: any) => emp.user?.id)
-              .map((emp: any) => (
-                <option key={emp.user.id} value={emp.user.id}>
-                  {emp.fullName}{emp.position ? ` · ${emp.position}` : ''}
-                </option>
-              ))}
-          </select>
+          <label className="label">Исполнители * <span className="text-[11px] text-surface-400 font-normal">— получат in-app, email, Telegram</span></label>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Поиск по имени или должности..."
+            className="input mb-2"
+          />
+          {/* Чипы выбранных */}
+          {selectedIds.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {selectedIds.map(uid => {
+                const emp = eligibleEmployees.find((e: any) => e.user?.id === uid)
+                return (
+                  <span
+                    key={uid}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-xs"
+                  >
+                    {emp?.fullName || uid.slice(0, 8)}
+                    <button
+                      type="button"
+                      onClick={() => toggleAssignee(uid)}
+                      className="hover:text-red-500"
+                    >×</button>
+                  </span>
+                )
+              })}
+            </div>
+          )}
+          {/* Список сотрудников с чекбоксами */}
+          <div className="max-h-48 overflow-y-auto border border-surface-200 dark:border-surface-700 rounded-xl divide-y divide-surface-100 dark:divide-surface-700">
+            {filteredEmployees.length === 0 ? (
+              <div className="p-3 text-xs text-surface-400 text-center">Никого не найдено</div>
+            ) : filteredEmployees.map((emp: any) => {
+              const checked = selectedIds.includes(emp.user.id)
+              return (
+                <label
+                  key={emp.user.id}
+                  className={clsx(
+                    'flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors',
+                    checked ? 'bg-primary-50 dark:bg-primary-900/20' : 'hover:bg-surface-50 dark:hover:bg-surface-700/30',
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleAssignee(emp.user.id)}
+                    className="rounded"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate">{emp.fullName}</div>
+                    {emp.position && (
+                      <div className="text-[11px] text-surface-400 truncate">{emp.position}</div>
+                    )}
+                  </div>
+                </label>
+              )
+            })}
+          </div>
         </div>
       )}
+
+      {/* Подсказка для general */}
+      {scope === 'general' && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 p-3">
+          <p className="text-xs text-amber-800 dark:text-amber-300">
+            🌐 <strong>Общая задача:</strong> уведомление получат <strong>все активные сотрудники</strong> компании
+            по 3 каналам: in-app, email и Telegram. Задача будет видна всем в их календаре.
+          </p>
+        </div>
+      )}
+
       <div>
         <label className="label">Приоритет *</label>
         <select
@@ -610,15 +789,17 @@ function FounderQuickTaskForm({
           <option value="critical">Критический</option>
         </select>
       </div>
-      {/* Подсказка про уведомление убрана по требованию. Личная не шлёт
-          ничего никому; деловая/общая — отправляются автоматически
-          на email/Telegram/in-app, и это очевидно из ролевой логики. */}
+
       <div className="flex gap-2 justify-end pt-2">
         <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">
           Отмена
         </button>
         <button type="submit" disabled={loading} className="btn-primary min-w-[140px] justify-center">
-          {loading ? 'Сохраняю...' : (scope === 'personal' ? 'Сохранить заметку' : 'Отправить задачу')}
+          {loading
+            ? (isEdit ? 'Сохраняю...' : 'Создаю...')
+            : isEdit
+              ? 'Сохранить изменения'
+              : scope === 'personal' ? 'Сохранить заметку' : scope === 'general' ? 'Разослать всей команде' : 'Отправить задачу'}
         </button>
       </div>
     </form>

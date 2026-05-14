@@ -344,14 +344,26 @@ export class TasksService {
       (dto as any).assigneeIds = [userId];
     }
 
-    // PERSONAL-задачи всегда принадлежат только создателю — игнорируем любых
-    // других assignees, проект и fromFounder. Это приватная заметка.
-    const isPersonal = (dto as any).scope === 'personal';
+    const scope = (dto as any).scope as 'personal' | 'business' | 'general' | undefined;
+    const isPersonal = scope === 'personal';
+    const isGeneral = scope === 'general';
+    const isFromFounder = !!dto.fromFounder;
+
+    // PERSONAL — всегда принадлежит только создателю, никаких уведомлений.
     if (isPersonal) {
       dto.assigneeId = userId;
       (dto as any).assigneeIds = [userId];
       dto.projectId = undefined;
       dto.fromFounder = false;
+    }
+
+    // GENERAL от founder — общая задача для всей компании, без специфического
+    // assignee. Видна всем через scope-фильтр в findAll. Уведомления — каждому
+    // активному сотруднику параллельно по 3 каналам.
+    if (isGeneral && isFromFounder) {
+      dto.assigneeId = undefined as any;
+      (dto as any).assigneeIds = undefined;
+      dto.projectId = undefined;
     }
 
     // Multi-assignee: вычисляем итоговый список + основного исполнителя
@@ -371,62 +383,82 @@ export class TasksService {
 
     const creator = await this.userRepo.findOne({ where: { id: userId } });
 
-    // Sequential workflow: уведомляем ТОЛЬКО первого исполнителя в цепочке
-    // (он начинает работу). Следующие узнают когда задача дойдёт до них —
-    // через markMyPartDone сделает уведомление «➡️ Вам передали задачу».
-    // Если incomingAssigneeIds — берём первый. Иначе fallback к dto.assigneeId.
-    const firstAssigneeId = incomingAssigneeIds && incomingAssigneeIds.length > 0
-      ? incomingAssigneeIds[0]
-      : dto.assigneeId;
-    // PERSONAL-задачи никому не шлют уведомления (это личная заметка создателя).
-    const notifyIds = (!isPersonal && firstAssigneeId && firstAssigneeId !== userId)
-      ? [firstAssigneeId]
-      : [];
+    // ─── Определяем кому слать уведомления ────────────────────────────
+    // PERSONAL — никому. GENERAL+fromFounder — всем активным сотрудникам
+    // параллельно. BUSINESS+fromFounder с multi-assignee — всем выбранным
+    // параллельно (не sequential, founder отдаёт распоряжение каждому
+    // независимо). Остальное — классический sequential (только первый).
+    let notifyIds: string[] = [];
+    if (isPersonal) {
+      notifyIds = [];
+    } else if (isGeneral && isFromFounder) {
+      const allUsers = await this.userRepo.find({
+        where: { isActive: true, isBlocked: false },
+      });
+      notifyIds = allUsers.map(u => u.id).filter(id => id !== userId);
+    } else if (isFromFounder && incomingAssigneeIds && incomingAssigneeIds.length > 0) {
+      // Founder + business: уведомляем ВСЕХ выбранных (не sequential).
+      notifyIds = incomingAssigneeIds.filter(id => id !== userId);
+    } else {
+      // Обычный sequential — только первый исполнитель
+      const firstAssigneeId = incomingAssigneeIds && incomingAssigneeIds.length > 0
+        ? incomingAssigneeIds[0]
+        : dto.assigneeId;
+      notifyIds = (firstAssigneeId && firstAssigneeId !== userId) ? [firstAssigneeId] : [];
+    }
     const totalSteps = incomingAssigneeIds?.length || (dto.assigneeId ? 1 : 0);
-    const isFromFounder = !!dto.fromFounder;
     for (const aid of notifyIds) {
       try {
         await this.notificationsService.create({
           userId: aid,
           type: NotificationType.NEW_TASK,
-          title: isFromFounder ? '👑 Задача от основателя' : 'Новая задача',
-          message: isFromFounder
-            ? `${creator?.name || 'Основатель'} назначил вам прямую задачу: "${saved.title}"`
-            : `Вам назначена задача: "${saved.title}"${totalSteps > 1 ? ` (этап 1 из ${totalSteps})` : ''}`,
+          title: isGeneral && isFromFounder
+            ? '👑 Общая задача от основателя'
+            : isFromFounder ? '👑 Задача от основателя' : 'Новая задача',
+          message: isGeneral && isFromFounder
+            ? `${creator?.name || 'Основатель'} поставил задачу всей команде: "${saved.title}"`
+            : isFromFounder
+              ? `${creator?.name || 'Основатель'} назначил вам прямую задачу: "${saved.title}"`
+              : `Вам назначена задача: "${saved.title}"${totalSteps > 1 ? ` (этап 1 из ${totalSteps})` : ''}`,
           link: `/tasks/${saved.id}`,
         });
         const assignee = await this.userRepo.findOne({ where: { id: aid } });
         if (assignee?.email) {
           const full = await this.findOne(saved.id);
           const deadline = saved.deadline ? new Date(saved.deadline).toLocaleDateString('ru-RU') : undefined;
-          // Заголовок письма для прямых задач от основателя — подчёркиваем
-          // в имени проекта и в названии самой задачи (mailService шаблон
-          // не меняем, чтобы не плодить параметры).
-          const titleForMail = isFromFounder
-            ? `👑 От основателя (${creator?.name || ''}): ${saved.title}`
-            : saved.title;
+          const titleForMail = isGeneral && isFromFounder
+            ? `👑 Общая задача от основателя (${creator?.name || ''}): ${saved.title}`
+            : isFromFounder
+              ? `👑 От основателя (${creator?.name || ''}): ${saved.title}`
+              : saved.title;
           await this.mailService.sendTaskAssigned(
             assignee.email, assignee.name, titleForMail, saved.id,
-            isFromFounder ? 'Прямая задача от основателя' : full.project?.name,
+            isGeneral && isFromFounder
+              ? 'Общая задача от основателя — для всей команды'
+              : isFromFounder ? 'Прямая задача от основателя' : full.project?.name,
             deadline, saved.priority, saved.description || undefined,
           );
           const priorityLabels: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный', critical: 'Критический' };
           await this.telegramService.sendToUser(
             aid,
-            (isFromFounder
-              ? `👑 <b>Задача от основателя</b>\n\n`
-              : `✅ <b>Вам назначена задача</b>\n\n`) +
+            (isGeneral && isFromFounder
+              ? `👑 <b>Общая задача от основателя</b>\n\n`
+              : isFromFounder
+                ? `👑 <b>Задача от основателя</b>\n\n`
+                : `✅ <b>Вам назначена задача</b>\n\n`) +
             `📋 ${saved.title}` +
-            (isFromFounder
-              ? `\n👤 От: ${creator?.name || 'Основатель'}`
-              : (full.project?.name ? `\n📁 ${full.project.name}` : '')) +
+            (isGeneral && isFromFounder
+              ? `\n👥 Для всей команды`
+              : isFromFounder
+                ? `\n👤 От: ${creator?.name || 'Основатель'}`
+                : (full.project?.name ? `\n📁 ${full.project.name}` : '')) +
             (saved.priority ? `\n🔥 Приоритет: ${priorityLabels[saved.priority] || saved.priority}` : '') +
             (deadline ? `\n📅 Дедлайн: ${deadline}` : '') +
             `\n\n👉 ${this.telegramService.appUrl}/tasks/${saved.id}`,
           );
         }
       } catch (e: any) {
-        console.warn('multi-assignee notify failed for', aid, e?.message);
+        console.warn('notify failed for', aid, e?.message);
       }
     }
 
@@ -455,6 +487,13 @@ export class TasksService {
     // Workers can only update their own tasks
     if (WORKER_ROLES.includes(user.role as UserRole) && task.assigneeId !== user.id) {
       throw new ForbiddenException('Not allowed');
+    }
+
+    // SCOPE нельзя менять после создания: личное → общее ретроспективно
+    // разослало бы уведомления всем, что неприемлемо. Просто игнорируем
+    // попытку (без 403, чтобы UI не падал на repost).
+    if ((dto as any).scope && (dto as any).scope !== task.scope) {
+      delete (dto as any).scope;
     }
 
     // SMM specialists have full status control over their own tasks
