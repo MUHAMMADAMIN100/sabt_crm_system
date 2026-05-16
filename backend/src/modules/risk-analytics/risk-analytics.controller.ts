@@ -12,6 +12,7 @@ const VIEW_ROLES = [
   UserRole.ADMIN,
   UserRole.FOUNDER,
   UserRole.CO_FOUNDER,
+  UserRole.SMM_DIRECTOR,
   UserRole.PROJECT_MANAGER,
   UserRole.HEAD_SMM,
 ];

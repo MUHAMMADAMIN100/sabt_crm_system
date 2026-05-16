@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Project, ProjectPaymentStatus } from '../projects/project.entity';
 import { Task, TaskStatus } from '../tasks/task.entity';
 import { ContentPlanItem, ContentItemType, ContentPlanStatus } from '../content-plan/content-plan-item.entity';
@@ -347,19 +347,158 @@ export class RiskAnalyticsService {
   // 3. RISK SCORING — PROJECTS
   // ─────────────────────────────────────────────────────────────────────
 
-  /** Список рисков по всем активным проектам. */
+  /** Список рисков по всем активным проектам.
+   *  ОПТИМИЗИРОВАНО: вместо N+1 (computeProjectRisk на каждый проект,
+   *  плюс getEmployeeWorkload в цикле) — батчевая загрузка всех данных
+   *  за ~5 запросов и расчёт в памяти. ~200 запросов → ~5. */
   async getProjectRisks(): Promise<ProjectRisk[]> {
     const projects = await this.projectRepo.find({
       where: { isArchived: false },
       relations: ['manager'],
     });
-    const out: ProjectRisk[] = [];
-    for (const p of projects) {
-      out.push(await this.computeProjectRisk(p));
+    if (projects.length === 0) return [];
+    const projectIds = projects.map(p => p.id);
+
+    // ─── Батч 1: все задачи всех проектов одним запросом ─────────────
+    const allTasks = await this.taskRepo.find({ where: { projectId: In(projectIds) } });
+    const tasksByProject = new Map<string, Task[]>();
+    for (const t of allTasks) {
+      if (!t.projectId) continue;
+      const arr = tasksByProject.get(t.projectId) || [];
+      arr.push(t);
+      tasksByProject.set(t.projectId, arr);
     }
-    // Сортируем: красные → жёлтые → зелёные
+
+    // ─── Батч 2: участники всех проектов одним запросом ──────────────
+    const memberRows: Array<{ projectsId: string; usersId: string }> =
+      await this.projectRepo.manager.query(
+        `SELECT "projectsId", "usersId" FROM project_members WHERE "projectsId" = ANY($1::uuid[])`,
+        [projectIds],
+      );
+    const membersByProject = new Map<string, string[]>();
+    for (const r of memberRows) {
+      const arr = membersByProject.get(r.projectsId) || [];
+      arr.push(r.usersId);
+      membersByProject.set(r.projectsId, arr);
+    }
+
+    // ─── Батч 3: агрегаты контент-плана по проекту+типу ──────────────
+    const cpiRows: Array<{ projectId: string; contentType: string; planned: string; actual: string; total: string }> =
+      await this.cpiRepo.createQueryBuilder('c')
+        .select('c.projectId', 'projectId')
+        .addSelect('c.contentType', 'contentType')
+        .addSelect(`SUM(CASE WHEN c.status != 'cancelled' THEN 1 ELSE 0 END)`, 'planned')
+        .addSelect(`SUM(CASE WHEN c.status = 'published' THEN 1 ELSE 0 END)`, 'actual')
+        .addSelect('COUNT(*)', 'total')
+        .where('c.projectId IN (:...ids)', { ids: projectIds })
+        .groupBy('c.projectId').addGroupBy('c.contentType')
+        .getRawMany();
+    const cpiByProject = new Map<string, Array<{ contentType: string; planned: number; actual: number }>>();
+    const cpiCountByProject = new Map<string, number>();
+    for (const r of cpiRows) {
+      const arr = cpiByProject.get(r.projectId) || [];
+      arr.push({ contentType: r.contentType, planned: Number(r.planned), actual: Number(r.actual) });
+      cpiByProject.set(r.projectId, arr);
+      cpiCountByProject.set(r.projectId, (cpiCountByProject.get(r.projectId) || 0) + Number(r.total));
+    }
+
+    // ─── Батч 4: все тарифы одним запросом ───────────────────────────
+    const tariffs = await this.tariffRepo.find();
+    const tariffMap = new Map(tariffs.map(t => [t.id, t]));
+
+    // ─── Батч 5: нагрузка сотрудников — ОДИН раз (не в цикле!) ────────
+    const workloads = await this.getEmployeeWorkload();
+    const overloadedUserIds = new Set(
+      workloads.filter(w => w.overload === 'red').map(w => w.userId),
+    );
+
+    // Расчёт в памяти — ноль дополнительных запросов
+    const out = projects.map(p => this.computeProjectRiskSync(
+      p,
+      tasksByProject.get(p.id) || [],
+      membersByProject.get(p.id) || [],
+      cpiByProject.get(p.id) || [],
+      cpiCountByProject.get(p.id) || 0,
+      p.tariffId ? tariffMap.get(p.tariffId) || null : null,
+      overloadedUserIds,
+    ));
     out.sort((a, b) => b.score - a.score);
     return out;
+  }
+
+  /** Синхронный расчёт риска проекта из уже загруженных данных. */
+  private computeProjectRiskSync(
+    project: Project,
+    tasks: Task[],
+    memberIds: string[],
+    cpiAgg: Array<{ contentType: string; planned: number; actual: number }>,
+    cpiCount: number,
+    tariff: SmmTariff | null,
+    overloadedUserIds: Set<string>,
+  ): ProjectRisk {
+    const factors: RiskFactor[] = [];
+
+    // Факт. 1 — просрочка оплаты
+    const isPaymentOverdue =
+      project.paymentStatus === ProjectPaymentStatus.OVERDUE ||
+      (project.nextPaymentDate && new Date(project.nextPaymentDate) < new Date() &&
+       project.paymentStatus !== ProjectPaymentStatus.PAID);
+    factors.push({ key: 'payment_overdue', label: 'Просрочка оплаты', triggered: !!isPaymentOverdue, weight: 2 });
+
+    // Факт. 2 — много правок
+    const tasksWithRework = tasks.filter(t => (t.reworkCount ?? 0) > 0);
+    const avgRework = tasks.length > 0
+      ? tasksWithRework.reduce((s, t) => s + (t.reworkCount ?? 0), 0) / tasks.length
+      : 0;
+    factors.push({
+      key: 'many_revisions', label: 'Много правок',
+      triggered: avgRework > 2, weight: 1, detail: `avg rework=${avgRework.toFixed(1)}`,
+    });
+
+    // Факт. 3 — нет активности за неделю
+    const cutoff7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recentTasks = tasks.filter(t => t.updatedAt && new Date(t.updatedAt) > cutoff7d);
+    factors.push({
+      key: 'no_activity_7d', label: 'Нет активности за неделю',
+      triggered: recentTasks.length === 0 && tasks.length > 0, weight: 1,
+    });
+
+    // Факт. 4 — нет новых задач за неделю
+    const recentlyCreated = tasks.filter(t => t.createdAt && new Date(t.createdAt) > cutoff7d);
+    factors.push({
+      key: 'no_week_tasks', label: 'На неделю нет новых задач',
+      triggered: recentlyCreated.length === 0, weight: 1,
+    });
+
+    // Факт. 5 — превышение лимита тарифа (расчёт из cpiAgg)
+    let tariffOveruse = false;
+    if (tariff && project.projectType === 'SMM') {
+      for (const row of cpiAgg) {
+        const limitField = TARIFF_LIMIT_BY_TYPE[row.contentType as ContentItemType];
+        const limit = limitField ? Number((tariff as any)[limitField]) : null;
+        if (limit != null && row.actual - limit > 0) { tariffOveruse = true; break; }
+      }
+    }
+    factors.push({ key: 'tariff_overuse', label: 'Превышение лимита тарифа', triggered: tariffOveruse, weight: 2 });
+
+    // Факт. 6 — перегружена команда
+    const teamOverloaded = memberIds.some(id => overloadedUserIds.has(id));
+    factors.push({ key: 'team_overload', label: 'Перегружена команда', triggered: teamOverloaded, weight: 1 });
+
+    // Факт. 7 — нет контент-плана для SMM-проекта с тарифом
+    const noContentPlan = project.projectType === 'SMM' && !!project.tariffId && cpiCount === 0;
+    factors.push({ key: 'no_content_plan', label: 'Нет контент-плана', triggered: noContentPlan, weight: 1 });
+
+    const score = factors.reduce((s, f) => s + (f.triggered ? f.weight : 0), 0);
+    const level: RiskLevel = score >= 5 ? 'red' : score >= 3 ? 'yellow' : 'green';
+
+    return {
+      projectId: project.id,
+      projectName: project.name,
+      managerId: project.managerId ?? null,
+      managerName: project.manager?.name ?? null,
+      level, score, factors,
+    };
   }
 
   /** Детальный риск-скор одного проекта (сразу с факторами и пояснениями). */
@@ -484,14 +623,26 @@ export class RiskAnalyticsService {
   // 4. RISK SCORING — EMPLOYEES
   // ─────────────────────────────────────────────────────────────────────
 
+  /** ОПТИМИЗИРОВАНО: вместо N+1 (taskRepo.find на каждого юзера) —
+   *  один запрос всех задач + группировка по assigneeId в памяти. */
   async getEmployeeRisks(): Promise<EmployeeRisk[]> {
     const users = await this.userRepo.find({
       where: { isActive: true, isBlocked: false },
     });
-    const out: EmployeeRisk[] = [];
-    for (const u of users) {
-      out.push(await this.computeEmployeeRisk(u));
+    if (users.length === 0) return [];
+    const userIds = users.map(u => u.id);
+
+    // Один запрос — все задачи всех сотрудников.
+    const allTasks = await this.taskRepo.find({ where: { assigneeId: In(userIds) } });
+    const tasksByUser = new Map<string, Task[]>();
+    for (const t of allTasks) {
+      if (!t.assigneeId) continue;
+      const arr = tasksByUser.get(t.assigneeId) || [];
+      arr.push(t);
+      tasksByUser.set(t.assigneeId, arr);
     }
+
+    const out = users.map(u => this.computeEmployeeRiskSync(u, tasksByUser.get(u.id) || []));
     out.sort((a, b) => b.score - a.score);
     return out;
   }
@@ -499,15 +650,16 @@ export class RiskAnalyticsService {
   async getEmployeeRiskDetail(userId: string): Promise<EmployeeRisk> {
     const u = await this.userRepo.findOne({ where: { id: userId } });
     if (!u) throw new NotFoundException('User not found');
-    return this.computeEmployeeRisk(u);
+    const tasks = await this.taskRepo.find({ where: { assigneeId: u.id } });
+    return this.computeEmployeeRiskSync(u, tasks);
   }
 
-  private async computeEmployeeRisk(user: User): Promise<EmployeeRisk> {
+  /** Синхронный расчёт риска сотрудника из уже загруженных задач. */
+  private computeEmployeeRiskSync(user: User, tasks: Task[]): EmployeeRisk {
     const factors: RiskFactor[] = [];
     const cutoff14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
     const cutoff30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-    const tasks = await this.taskRepo.find({ where: { assigneeId: user.id } });
     const finished = tasks.filter(t => (FINISHED_TASK_STATUSES as string[]).includes(t.status));
 
     // Факт. 1 — низкая активность (0 завершено за 14 дней)
