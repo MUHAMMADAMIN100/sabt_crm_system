@@ -3,9 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
-import { Plus, Edit, Trash2, Users, UserCog, Search, X, Check } from 'lucide-react'
+import { Plus, Edit, Trash2, Users, UserCog, Search, X, Check, Crown, Network } from 'lucide-react'
 import { teamsApi, employeesApi } from '@/services/api.service'
-import { Modal, FormField, ConfirmDialog, EmptyState, PageLoader } from '@/components/ui'
+import { Modal, FormField, ConfirmDialog, EmptyState, PageLoader, Avatar } from '@/components/ui'
 
 interface Team {
   id: string
@@ -26,6 +26,7 @@ export default function TeamsPage() {
   const [editTeam, setEditTeam] = useState<Team | null>(null)
   const [deleteTeam, setDeleteTeam] = useState<Team | null>(null)
   const [membersTeam, setMembersTeam] = useState<Team | null>(null)
+  const [detailTeam, setDetailTeam] = useState<Team | null>(null)
   const [showInactive, setShowInactive] = useState(false)
 
   const { data: teams, isLoading } = useQuery<Team[]>({
@@ -81,10 +82,15 @@ export default function TeamsPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {(teams ?? []).map(t => (
-            <div key={t.id} className={clsx(
-              'rounded-xl border p-4 bg-white dark:bg-gray-900 shadow-sm',
-              t.isActive ? 'border-gray-200 dark:border-gray-700' : 'border-gray-200 dark:border-gray-800 opacity-60',
-            )}>
+            <div
+              key={t.id}
+              onClick={() => setDetailTeam(t)}
+              className={clsx(
+                'rounded-xl border p-4 bg-white dark:bg-gray-900 shadow-sm cursor-pointer transition-all',
+                'hover:shadow-md hover:border-purple-300 dark:hover:border-purple-700',
+                t.isActive ? 'border-gray-200 dark:border-gray-700' : 'border-gray-200 dark:border-gray-800 opacity-60',
+              )}
+            >
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6B4FCF' }} />
@@ -104,11 +110,11 @@ export default function TeamsPage() {
                   <Users size={12} /> {t.memberCount ?? 0} {membersWord(t.memberCount ?? 0)}
                 </span>
                 {t.lead && (
-                  <span>👑 {t.lead.name}</span>
+                  <span className="inline-flex items-center gap-1"><Crown size={11} className="text-amber-500" /> {t.lead.name}</span>
                 )}
               </div>
 
-              <div className="flex items-center gap-1 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-1 pt-3 border-t border-gray-100 dark:border-gray-800" onClick={e => e.stopPropagation()}>
                 <button onClick={() => setMembersTeam(t)} className="px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-xs flex-1 text-left">
                   👥 Состав
                 </button>
@@ -122,6 +128,11 @@ export default function TeamsPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* ─── Org-схема: пирамида структуры команд ───────────────────── */}
+      {(teams ?? []).length > 0 && (
+        <OrgChart teams={teams ?? []} employees={employees ?? []} />
       )}
 
       {showCreate && (
@@ -153,6 +164,18 @@ export default function TeamsPage() {
             team={membersTeam}
             allEmployees={employees ?? []}
             onClose={() => setMembersTeam(null)}
+          />
+        </Modal>
+      )}
+
+      {detailTeam && (
+        <Modal open onClose={() => setDetailTeam(null)} title={detailTeam.name} size="lg">
+          <TeamDetail
+            team={detailTeam}
+            allEmployees={employees ?? []}
+            onEdit={() => { setEditTeam(detailTeam); setDetailTeam(null) }}
+            onMembers={() => { setMembersTeam(detailTeam); setDetailTeam(null) }}
+            onDelete={() => { setDeleteTeam(detailTeam); setDetailTeam(null) }}
           />
         </Modal>
       )}
@@ -367,6 +390,194 @@ function MembersManager({ team, allEmployees, onClose }: {
           {saveMut.isPending ? 'Сохранение...' : 'Сохранить состав'}
         </button>
       </div>
+    </div>
+  )
+}
+
+// ─── Детальная карточка команды ───────────────────────────────────────
+function TeamDetail({ team, allEmployees, onEdit, onMembers, onDelete }: {
+  team: Team
+  allEmployees: any[]
+  onEdit: () => void
+  onMembers: () => void
+  onDelete: () => void
+}) {
+  // Состав берём из сотрудников у которых teamId === team.id (так не
+  // нужен отдельный запрос — данные уже загружены на странице).
+  const members = useMemo(
+    () => allEmployees.filter((e: any) => e.teamId === team.id),
+    [allEmployees, team.id],
+  )
+  const leadId = team.leadId
+  const lead = members.find((e: any) => (e.userId || e.id) === leadId)
+    || allEmployees.find((e: any) => (e.userId || e.id) === leadId)
+
+  return (
+    <div className="space-y-5">
+      {/* Шапка с цветом и описанием */}
+      <div className="flex items-start gap-3">
+        <span className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center" style={{ backgroundColor: team.color || '#6B4FCF' }}>
+          <Users size={20} className="text-white" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-semibold text-lg">{team.name}</h3>
+          {team.description
+            ? <p className="text-sm text-gray-500 mt-0.5">{team.description}</p>
+            : <p className="text-sm text-gray-400 italic mt-0.5">Описание не задано</p>}
+        </div>
+        <span className={clsx(
+          'text-xs px-2 py-1 rounded-full shrink-0',
+          team.isActive
+            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+            : 'bg-gray-100 text-gray-500 dark:bg-gray-800',
+        )}>
+          {team.isActive ? 'Активна' : 'Выключена'}
+        </span>
+      </div>
+
+      {/* Метрики */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-3">
+          <p className="text-xs text-gray-500">Участников</p>
+          <p className="text-xl font-bold text-purple-600">{members.length}</p>
+        </div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-3">
+          <p className="text-xs text-gray-500">Лидер</p>
+          <p className="text-sm font-semibold mt-1 flex items-center gap-1">
+            {lead
+              ? <><Crown size={13} className="text-amber-500" /> {lead.fullName || lead.name}</>
+              : <span className="text-gray-400">не назначен</span>}
+          </p>
+        </div>
+      </div>
+
+      {/* Лидер + состав */}
+      <div>
+        <h4 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+          <Users size={14} /> Состав команды
+        </h4>
+        {members.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">В команде пока нет участников</p>
+        ) : (
+          <div className="space-y-1.5 max-h-[40vh] overflow-y-auto">
+            {/* Сначала лидер, затем остальные */}
+            {[...members].sort((a: any, b: any) => {
+              const aLead = (a.userId || a.id) === leadId ? -1 : 0
+              const bLead = (b.userId || b.id) === leadId ? -1 : 0
+              return aLead - bLead
+            }).map((e: any) => {
+              const isLead = (e.userId || e.id) === leadId
+              return (
+                <div key={e.userId || e.id} className="flex items-center gap-2.5 p-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+                  <Avatar name={e.fullName || e.name} src={e.avatar} size={32} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate flex items-center gap-1">
+                      {e.fullName || e.name}
+                      {isLead && <Crown size={12} className="text-amber-500 shrink-0" />}
+                    </p>
+                    {e.position && <p className="text-xs text-gray-400 truncate">{e.position}</p>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Действия — полное управление */}
+      <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
+        <button onClick={onDelete} className="px-3 py-2 rounded-lg text-sm border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
+          <Trash2 size={14} className="inline mr-1" /> Удалить
+        </button>
+        <button onClick={onMembers} className="px-3 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
+          👥 Изменить состав
+        </button>
+        <button onClick={onEdit} className="px-3 py-2 rounded-lg text-sm bg-purple-600 hover:bg-purple-700 text-white">
+          <Edit size={14} className="inline mr-1" /> Редактировать
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Org-схема: пирамида структуры компании ───────────────────────────
+function OrgChart({ teams, employees }: { teams: Team[]; employees: any[] }) {
+  // Верхушка пирамиды — руководство (founder / co_founder).
+  const leadership = useMemo(
+    () => employees.filter((e: any) =>
+      ['founder', 'co_founder'].includes(e.user?.role || e.role || ''),
+    ),
+    [employees],
+  )
+  // Активные команды с участниками.
+  const activeTeams = teams.filter(t => t.isActive)
+
+  return (
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
+      <h2 className="text-base font-semibold flex items-center gap-2 mb-5">
+        <Network size={18} className="text-purple-500" /> Структура компании
+      </h2>
+
+      {/* Уровень 1 — руководство */}
+      {leadership.length > 0 && (
+        <div className="flex flex-col items-center">
+          <div className="flex flex-wrap justify-center gap-3">
+            {leadership.map((e: any) => (
+              <div key={e.userId || e.id} className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl bg-gradient-to-b from-amber-100 to-amber-50 dark:from-amber-900/30 dark:to-amber-900/10 border border-amber-200 dark:border-amber-800">
+                <Crown size={16} className="text-amber-500" />
+                <p className="text-sm font-semibold">{e.fullName || e.name}</p>
+                <p className="text-[11px] text-gray-500">{e.position || 'Руководство'}</p>
+              </div>
+            ))}
+          </div>
+          {/* Соединительная линия вниз */}
+          <div className="w-px h-6 bg-gray-300 dark:bg-gray-600" />
+        </div>
+      )}
+
+      {/* Уровень 2+3 — команды (лидер → участники) */}
+      {activeTeams.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center italic">Нет активных команд</p>
+      ) : (
+        <div className="flex flex-wrap justify-center gap-6">
+          {activeTeams.map(team => {
+            const members = employees.filter((e: any) => e.teamId === team.id)
+            const lead = members.find((e: any) => (e.userId || e.id) === team.leadId)
+            const rest = members.filter((e: any) => (e.userId || e.id) !== team.leadId)
+            return (
+              <div key={team.id} className="flex flex-col items-center min-w-[160px]">
+                {/* Лидер команды */}
+                <div
+                  className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl border-2 text-center"
+                  style={{ borderColor: team.color || '#6B4FCF' }}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: team.color || '#6B4FCF' }} />
+                  <p className="text-sm font-bold">{team.name}</p>
+                  {lead
+                    ? <p className="text-[11px] text-gray-500 flex items-center gap-1"><Crown size={10} className="text-amber-500" /> {lead.fullName || lead.name}</p>
+                    : <p className="text-[11px] text-gray-400 italic">без лидера</p>}
+                </div>
+                {/* Линия к участникам */}
+                {rest.length > 0 && <div className="w-px h-5 bg-gray-300 dark:bg-gray-600" />}
+                {/* Участники */}
+                {rest.length > 0 && (
+                  <div className="flex flex-col gap-1.5 items-stretch">
+                    {rest.map((e: any) => (
+                      <div key={e.userId || e.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-700">
+                        <Avatar name={e.fullName || e.name} src={e.avatar} size={22} />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium truncate">{e.fullName || e.name}</p>
+                          {e.position && <p className="text-[10px] text-gray-400 truncate">{e.position}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

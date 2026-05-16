@@ -10,10 +10,16 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 0,                  // always refetch on mount — guarantees fresh data
-      gcTime: 5 * 60 * 1000,          // 5 min cache
-      refetchOnWindowFocus: true,     // refetch when user returns to tab
-      refetchOnMount: true,
+      // staleTime 60s — данные считаются свежими минуту, поэтому при
+      // переходах между страницами нет повторных сетевых запросов
+      // (раньше было 0 → каждый mount = новый запрос → задержки).
+      // Real-time актуальность обеспечивает WebSocket: useSocket точечно
+      // инвалидирует нужные queryKey при изменениях на сервере.
+      staleTime: 60 * 1000,
+      gcTime: 10 * 60 * 1000,         // 10 мин держим в кеше
+      refetchOnWindowFocus: false,    // не дёргать сеть при каждом alt-tab
+      refetchOnMount: true,           // но при первом монтировании — берём из кеша если свежо
+      refetchOnReconnect: true,
     },
   },
 })

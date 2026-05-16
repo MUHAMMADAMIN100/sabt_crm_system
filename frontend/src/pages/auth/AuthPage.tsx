@@ -161,22 +161,11 @@ export default function AuthPage() {
         </div>
 
         <div className="bg-white dark:bg-surface-800 rounded-3xl shadow-modal border border-surface-100 dark:border-surface-700 p-8">
-          {/* Tabs */}
-          <div className="flex gap-1 bg-surface-100 dark:bg-surface-700 rounded-xl p-1 mb-6">
-            {(['login', 'register'] as const).map(m => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => switchMode(m)}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-250 ${
-                  mode === m
-                    ? 'bg-white dark:bg-surface-600 shadow-sm text-surface-900 dark:text-surface-100'
-                    : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300'
-                }`}
-              >
-                {m === 'login' ? t('auth.login') : 'Регистрация'}
-              </button>
-            ))}
+          {/* Только вход. Регистрация убрана — новых сотрудников добавляет
+              администратор / основатель / сооснователь через раздел
+              «Сотрудники». */}
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">{t('auth.login')}</h2>
           </div>
 
           {/* Blocked alert */}

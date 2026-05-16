@@ -233,24 +233,25 @@ export function generateSingleProjectReport(data: any) {
   const period = data.period as 'week' | 'month'
   const subtitle = `${project.name} · ${periodLabel(period)} · ${formatDate(data.from)} — ${formatDate(data.to)}`
 
+  // Клиентский отчёт — только то что интересно клиенту: объём контента,
+  // выполнено задач, прогресс. Внутренняя кухня (менеджер, исполнители,
+  // приоритеты, созданные задачи) — убрана.
   const content: any[] = [
     ...buildHeader('Отчёт по проекту', subtitle),
     buildKpiRow([
       { label: 'Историй', value: fmt(project.period.stories), color: PINK },
-      { label: 'Задач создано', value: String(project.period.tasksCreated), color: WARN },
       { label: 'Задач выполнено', value: String(project.period.tasksDone), color: ACCENT },
       { label: 'Прогресс', value: `${project.progress}%`, color: PRIMARY },
     ]),
 
-    // Project info
+    // Project info — без менеджера и числа участников (внутренняя инфа)
     {
       table: {
         widths: ['*'],
         body: [[{
           stack: [
             { text: 'Информация о проекте', bold: true, fontSize: 10, color: TEXT, margin: [0, 0, 0, 6] },
-            { text: `Тип: ${project.type}    Менеджер: ${project.managerName}    Участников: ${project.membersCount}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 3] },
-            { text: `Старт: ${project.startDate || '—'}    Дедлайн: ${project.endDate}    Реклам: ${project.period.ads}`, fontSize: 9, color: MUTED },
+            { text: `Тип: ${project.type}    Старт: ${project.startDate || '—'}    Дедлайн: ${project.endDate}`, fontSize: 9, color: MUTED },
           ],
           fillColor: SURFACE,
           margin: [10, 8, 10, 8],
@@ -267,30 +268,18 @@ export function generateSingleProjectReport(data: any) {
     content.push({ text: project.description, fontSize: 9, color: MUTED, margin: [0, 0, 0, 10] })
   }
 
+  // Выполненные задачи — только название + дата (без исполнителя и приоритета)
   if (project.tasksDoneInPeriodList?.length > 0) {
     content.push(buildSectionTitle(`Выполненные задачи за период (${project.tasksDoneInPeriodList.length})`))
     content.push(buildTable({
-      headers: ['#', 'Задача', 'Исполнитель', 'Приоритет', 'Дата'],
+      headers: ['#', 'Задача', 'Дата'],
       rows: project.tasksDoneInPeriodList.map((t: any, i: number) => [
-        i + 1, t.title, t.assignee, t.priority, t.reviewedAt,
+        i + 1, t.title, t.reviewedAt,
       ]),
       headerColor: ACCENT,
-      widths: [25, '*', 80, 60, 60],
-      alignments: { 0: 'center', 3: 'center', 4: 'center' },
-      cellColors: { 4: MUTED },
-    }))
-  }
-
-  if (project.tasksCreatedInPeriodList?.length > 0) {
-    content.push(buildSectionTitle(`Созданные задачи за период (${project.tasksCreatedInPeriodList.length})`))
-    content.push(buildTable({
-      headers: ['#', 'Задача', 'Исполнитель', 'Статус', 'Приоритет'],
-      rows: project.tasksCreatedInPeriodList.map((t: any, i: number) => [
-        i + 1, t.title, t.assignee, t.status, t.priority,
-      ]),
-      headerColor: WARN,
-      widths: [25, '*', 80, 60, 60],
-      alignments: { 0: 'center', 3: 'center', 4: 'center' },
+      widths: [25, '*', 80],
+      alignments: { 0: 'center', 2: 'center' },
+      cellColors: { 2: MUTED },
     }))
   }
 

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { reportsApi, projectsApi, tasksApi, analyticsApi, employeesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { PageLoader, EmptyState, Modal, Avatar } from '@/components/ui'
+import { PageLoader, EmptyState, Modal, Avatar, Pagination } from '@/components/ui'
 import { Plus, FileText, Trash2, Download, FileBarChart, Users, FolderKanban, Search, ExternalLink } from 'lucide-react'
 import api from '@/lib/api'
 import { useForm } from 'react-hook-form'
@@ -23,6 +23,8 @@ export default function ReportsPage() {
   const [showProjectsModal, setShowProjectsModal] = useState(false)
   const [showEmployeesModal, setShowEmployeesModal] = useState(false)
   const [reportSearch, setReportSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const REPORTS_PER_PAGE = 10
 
   const { data: allProjectsList } = useQuery({
     queryKey: ['projects'],
@@ -66,8 +68,11 @@ export default function ReportsPage() {
     }
   }
 
+  // В отчёты/экспорт попадают ТОЛЬКО SMM-проекты — отчёты клиентские,
+  // веб/разработка-проекты сюда не нужны.
   const filteredModalProjects = (allProjectsList || []).filter((p: any) =>
-    !reportSearch || p.name.toLowerCase().includes(reportSearch.toLowerCase()),
+    p.projectType === 'SMM' &&
+    (!reportSearch || p.name.toLowerCase().includes(reportSearch.toLowerCase())),
   )
   const filteredModalEmployees = (allEmployeesList || []).filter((e: any) =>
     !reportSearch || (e.fullName || '').toLowerCase().includes(reportSearch.toLowerCase()),
@@ -129,7 +134,13 @@ export default function ReportsPage() {
   // head_smm sees only reports from SMM projects
   const filteredReports = isHeadSMM
     ? (reports || []).filter((r: any) => r.project?.projectType === 'SMM' || !r.project)
-    : reports
+    : (reports || [])
+  // Пагинация: по 10 отчётов на страницу.
+  const totalReports = filteredReports.length
+  const pagedReports = filteredReports.slice(
+    (page - 1) * REPORTS_PER_PAGE,
+    page * REPORTS_PER_PAGE,
+  )
 
   return (
     <div className="space-y-5">
@@ -230,7 +241,7 @@ export default function ReportsPage() {
         } />
       ) : (
         <div className="space-y-3">
-          {filteredReports.map((r: any) => (
+          {pagedReports.map((r: any) => (
             <div key={r.id} className="card flex items-start gap-4">
               <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
                 <FileText size={18} className="text-primary-600 dark:text-primary-400" />
@@ -266,6 +277,12 @@ export default function ReportsPage() {
               )}
             </div>
           ))}
+          <Pagination
+            page={page}
+            total={totalReports}
+            pageSize={REPORTS_PER_PAGE}
+            onChange={setPage}
+          />
         </div>
       )}
 

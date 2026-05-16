@@ -27,6 +27,18 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
+    // Открытая регистрация ОТКЛЮЧЕНА. Новых сотрудников добавляет
+    // администратор / основатель / сооснователь через раздел
+    // «Сотрудники». Единственное исключение — bootstrap самого первого
+    // основателя: пока в системе нет ни одного founder, register
+    // доступен чтобы создать первого владельца.
+    const founderAlreadyExists = await this.founderExists();
+    if (founderAlreadyExists) {
+      throw new ForbiddenException(
+        'Регистрация закрыта. Обратитесь к администратору для создания учётной записи.',
+      );
+    }
+
     const exists = await this.userRepo.findOne({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email already in use');
 

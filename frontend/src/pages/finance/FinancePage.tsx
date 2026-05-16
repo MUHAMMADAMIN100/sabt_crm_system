@@ -11,7 +11,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
   CartesianGrid, PieChart, Pie, Cell,
 } from 'recharts'
-import { financeApi } from '@/services/api.service'
+import { financeApi, projectsApi } from '@/services/api.service'
 import { Modal, FormField, ConfirmDialog, EmptyState, PageLoader } from '@/components/ui'
 
 // ─── Constants ───────────────────────────────────────────────────────
@@ -126,6 +126,12 @@ export default function FinancePage() {
       to: periodRange.to || undefined,
     }),
     enabled: view === 'overview',
+  })
+
+  // Проекты — для выпадающего списка в форме транзакции.
+  const { data: financeProjects } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => projectsApi.list(),
   })
 
   // Метрики (фильтр по выбранному счёту)
@@ -264,6 +270,7 @@ export default function FinancePage() {
             initial={editTx}
             defaultType={defaultType}
             defaultAccount={account === 'all' ? undefined : account}
+            projects={financeProjects || []}
             loading={createMut.isPending || updateMut.isPending}
             onCancel={() => { setShowForm(false); setEditTx(null) }}
             onSubmit={(data) => {
@@ -495,7 +502,7 @@ function TransactionsSection({
 }
 
 // ─── Form ───────────────────────────────────────────────────────────
-function TxForm({ initial, defaultType, defaultAccount, onSubmit, onCancel, loading }: any) {
+function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit, onCancel, loading }: any) {
   const [type, setType] = useState<'income' | 'expense'>(initial?.type ?? defaultType ?? 'income')
   const todayIso = new Date().toISOString().slice(0, 10)
   const { register, handleSubmit, formState: { errors } } = useForm({
@@ -567,7 +574,12 @@ function TxForm({ initial, defaultType, defaultAccount, onSubmit, onCancel, load
           <input {...register('counterparty')} className="input" placeholder="Имя клиента/поставщика" />
         </FormField>
         <FormField label="Проект">
-          <input {...register('project')} className="input" placeholder="Название проекта" />
+          <select {...register('project')} className="input">
+            <option value="">— Не выбран —</option>
+            {projects.map((p: any) => (
+              <option key={p.id} value={p.name}>{p.name}</option>
+            ))}
+          </select>
         </FormField>
         <FormField label="Способ оплаты">
           <select {...register('paymentMethod')} className="input">

@@ -93,7 +93,9 @@ export default function TaskDetailPage() {
   const [comment, setComment] = useState('')
   const [editingComment, setEditingComment] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
-  const [activeTab, setActiveTab] = useState<'comments' | 'files' | 'results' | 'checklist'>('results')
+  const [activeTab, setActiveTab] = useState<'comments' | 'files' | 'results' | 'checklist'>(
+    ['founder', 'co_founder', 'developer'].includes(user?.role || '') ? 'comments' : 'results',
+  )
   const [returnReason, setReturnReason] = useState('')
   const [showReturnModal, setShowReturnModal] = useState(false)
   const [showResultModal, setShowResultModal] = useState(false)
@@ -107,6 +109,11 @@ export default function TaskDetailPage() {
   const role = user?.role || 'employee'
   const isPM = PM_ROLES.includes(role)
   const isWorker = WORKER_ROLES.includes(role)
+  // Упрощённый вид задачи: для основателя, сооснователя и разработчиков
+  // показываем только заголовок + описание + комментарии. Без вкладок
+  // результатов/чек-листа/файлов, без action-блоков и без правого
+  // сайдбара (критерии/тех.детали/теги/прогресс).
+  const simplifiedView = ['founder', 'co_founder', 'developer'].includes(role)
 
   // Computed later once task is loaded — assignee + creator may also edit checklist
   const canEditChecklist = (task: any) => isPM ||
@@ -524,7 +531,7 @@ export default function TaskDetailPage() {
       )}
 
       {/* PM actions: approve / return */}
-      {isPM && isOnReview && (
+      {!simplifiedView && isPM && isOnReview && (
         <div className="card border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10">
           <p className="text-sm font-semibold text-amber-700 dark:text-amber-400 mb-3">
             Задача ожидает проверки
@@ -553,7 +560,7 @@ export default function TaskDetailPage() {
       )}
 
       {/* Worker actions: upload result + submit review */}
-      {isWorker && ['in_progress', 'returned'].includes(task.status) && (
+      {!simplifiedView && isWorker && ['in_progress', 'returned'].includes(task.status) && (
         <div className="card bg-primary-50 dark:bg-primary-900/10 border-primary-200 dark:border-primary-800">
           <p className="text-sm font-semibold text-primary-700 dark:text-primary-400 mb-3">
             {hasResult ? `Результатов загружено: ${resultCount}` : 'Загрузите результат работы'}
@@ -598,9 +605,9 @@ export default function TaskDetailPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={clsx('grid gap-6', simplifiedView ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-3')}>
         {/* Main */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className={clsx('space-y-4', !simplifiedView && 'lg:col-span-2')}>
           {task.description && (
             <div className="card">
               <h3 className="font-semibold mb-2 text-surface-700 dark:text-surface-300 text-sm">{t('tasks.description')}</h3>
@@ -612,7 +619,7 @@ export default function TaskDetailPage() {
           )}
 
           {/* Tech tags — категоризация задачи (frontend/backend/bug/etc.) */}
-          {Array.isArray(task.tags) && task.tags.length > 0 && (
+          {!simplifiedView && Array.isArray(task.tags) && task.tags.length > 0 && (
             <div className="card">
               <h3 className="font-semibold mb-2 text-surface-700 dark:text-surface-300 text-sm">Теги</h3>
               <div className="flex flex-wrap gap-1.5">
@@ -632,7 +639,7 @@ export default function TaskDetailPage() {
           )}
 
           {/* X/Y Progress */}
-          {task.totalCount > 0 && (
+          {!simplifiedView && task.totalCount > 0 && (
             <div className="card">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold text-surface-700 dark:text-surface-300">Прогресс</h3>
@@ -662,9 +669,12 @@ export default function TaskDetailPage() {
             </div>
           )}
 
-          {/* Tabs */}
+          {/* Tabs — в упрощённом виде только «Комментарии» */}
           <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 flex-wrap">
-            {(['results', 'checklist', 'comments', 'files'] as const).map((tab) => (
+            {(simplifiedView
+              ? (['comments'] as const)
+              : (['results', 'checklist', 'comments', 'files'] as const)
+            ).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -903,7 +913,9 @@ export default function TaskDetailPage() {
           )}
         </div>
 
-        {/* Sidebar info — Notion-style property panel */}
+        {/* Sidebar info — Notion-style property panel.
+            Полностью скрыт в упрощённом виде (founder/co_founder/developer). */}
+        {!simplifiedView && (
         <div className="space-y-3">
           {/* Status control (PM only when not in done/cancelled) — Notion-style */}
           {isPM && !['done', 'cancelled'].includes(task.status) && (
@@ -985,6 +997,7 @@ export default function TaskDetailPage() {
             <RelatedTasksBlock task={task} />
           </div>
         </div>
+        )}
       </div>
 
       {/* Modal: keyboard shortcuts help (опен по ?) */}
