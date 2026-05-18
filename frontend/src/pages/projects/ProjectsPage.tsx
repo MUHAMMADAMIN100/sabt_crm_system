@@ -47,9 +47,11 @@ export default function ProjectsPage() {
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
   const isHeadSMM = user?.role === 'head_smm' || user?.role === 'smm_director'
-  // МП по продажам видит только проекты своего направления — фильтр по типу
-  // ему не нужен (сервер всё равно ограничивает выдачу).
-  const isSalesManagerRole = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
+  // Роли, привязанные к одному типу проектов (SMM-руководство/специалисты,
+  // МП по продажам), видят проекты только своего типа — фильтр по типу им
+  // не нужен и не показывается.
+  const isSingleTypeRole = ['smm_director', 'head_smm', 'sales_manager_smm', 'sales_manager_dev']
+    .includes(user?.role || '')
   // admin/founder/co-founder + smm_director/head_smm (SMM only) can create projects
   const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm'].includes(user?.role || '')
   const qc = useQueryClient()
@@ -225,7 +227,7 @@ export default function ProjectsPage() {
             ))}
           </div>
         </div>
-        {!isSalesManagerRole && (
+        {!isSingleTypeRole && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Тип:</span>
             {PROJECT_TYPE_FILTERS.map(pt => (

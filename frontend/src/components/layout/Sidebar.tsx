@@ -44,7 +44,12 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/ai',            icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]
 
-  const filtered = navItems.filter(item => hasPermission(role, item.permission))
+  // Вкладку «Команды» скрываем у руководителя SMM и главного SMM-специалиста.
+  const hideTeamsRoles = ['smm_director', 'head_smm']
+  const filtered = navItems.filter(item => {
+    if (item.to === '/teams' && hideTeamsRoles.includes(role || '')) return false
+    return hasPermission(role, item.permission)
+  })
 
   return (
     <aside
