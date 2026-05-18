@@ -9,7 +9,7 @@ import { UserRole } from '../users/user.entity';
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER, UserRole.SALES_MANAGER)
+@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
 @Controller('analytics')
 @UseInterceptors(CacheInterceptor)
 export class AnalyticsController {
@@ -106,7 +106,7 @@ export class AnalyticsController {
   getAvgCompletionTime() { return this.service.getAvgCompletionTime(); }
 
   @Get('sales')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN, UserRole.SALES_MANAGER)
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   getSalesStats() { return this.service.getSalesStats(); }
 
   @Get('payroll')

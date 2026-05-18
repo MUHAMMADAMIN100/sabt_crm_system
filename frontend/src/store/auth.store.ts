@@ -11,7 +11,8 @@ export type UserRole =
   | 'head_smm'
   | 'smm_specialist'
   | 'designer'
-  | 'sales_manager'
+  | 'sales_manager_smm'
+  | 'sales_manager_dev'
   | 'marketer'
   | 'targetologist'
   | 'developer'
@@ -122,7 +123,7 @@ export function useIsPM() {
 }
 
 export function useIsWorker() {
-  return useAuthStore(s => ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager', 'developer', 'employee'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'employee'].includes(s.user?.role || ''))
 }
 
 export function useCanManageTasks() {

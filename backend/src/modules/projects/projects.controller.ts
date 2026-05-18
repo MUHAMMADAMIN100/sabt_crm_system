@@ -44,7 +44,7 @@ export class ProjectsController {
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM, UserRole.SALES_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto, @Request() req) {
     return this.service.update(id, dto, req.user);
   }
@@ -68,13 +68,13 @@ export class ProjectsController {
   }
 
   @Get(':id/payments')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER, UserRole.PROJECT_MANAGER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.PROJECT_MANAGER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
   listPayments(@Param('id') id: string) {
     return this.service.listPayments(id);
   }
 
   @Post(':id/send-payment-request')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   sendPaymentRequest(
     @Param('id') id: string,
     @Body() body: { message?: string },

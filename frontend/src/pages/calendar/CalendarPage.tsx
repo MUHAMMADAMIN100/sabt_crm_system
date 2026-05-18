@@ -143,7 +143,7 @@ export default function CalendarPage() {
   const PERSONAL_VIEW_ROLES = [
     'founder', 'co_founder',
     'developer', 'designer', 'smm_specialist',
-    'marketer', 'targetologist', 'employee', 'sales_manager',
+    'marketer', 'targetologist', 'employee', 'sales_manager_smm', 'sales_manager_dev',
   ]
   const isPersonalView = PERSONAL_VIEW_ROLES.includes(user?.role || '')
 
@@ -510,11 +510,10 @@ export default function CalendarPage() {
               employees={employees || []}
               loading={createTask.isPending}
               onClose={() => setShowTaskForm(false)}
+              initialDeadline={selectedDay ? format(selectedDay, 'yyyy-MM-dd') : undefined}
               onSubmit={data => createTask.mutate({
                 ...data,
-                deadline: selectedDay
-                  ? `${format(selectedDay, 'yyyy-MM-dd')}T12:00:00.000Z`
-                  : undefined,
+                // deadline (дата+время) приходит из формы.
                 // fromFounder ставим только для бизнес/общих задач — личная
                 // никуда не отправляется и баджа основателя не имеет.
                 fromFounder: data.scope !== 'personal',
@@ -553,6 +552,7 @@ export default function CalendarPage() {
               employees={employees || []}
               loading={editTaskMut.isPending || deleteTaskMut.isPending}
               onClose={() => setEditingTaskId(null)}
+              initialDeadline={editingTaskFull.deadline || undefined}
               onDelete={() => {
                 if (confirm('Удалить задачу?')) deleteTaskMut.mutate(editingTaskFull.id)
               }}
@@ -578,6 +578,8 @@ export default function CalendarPage() {
                   // scope теперь редактируемый — отправляем всегда.
                   scope: data.scope,
                   acceptanceCriteria: data.acceptanceCriteria,
+                  // Дедлайн (дата + время) из формы.
+                  deadline: data.deadline,
                   // Исполнители — только для business; для personal/general
                   // отправляем пустой массив чтобы backend очистил.
                   assigneeIds: data.scope === 'business' ? (data.assigneeIds || []) : [],
@@ -623,7 +625,7 @@ export default function CalendarPage() {
  *  (иначе ретроспективно разошлёт уведомления).
  */
 function FounderQuickTaskForm({
-  employees, loading, onClose, onSubmit, onDelete, initial,
+  employees, loading, onClose, onSubmit, onDelete, initial, initialDeadline,
 }: {
   employees: any[]
   loading: boolean
@@ -639,6 +641,9 @@ function FounderQuickTaskForm({
     assigneeIds?: string[]
     subtasks?: Array<{ id: string; text: string; done: boolean; assigneeId?: string }>
   }
+  // Дедлайн для префилла: полный ISO (режим правки) либо дата YYYY-MM-DD
+  // выбранного дня календаря (режим создания).
+  initialDeadline?: string
 }) {
   const isEdit = !!initial
   const [scope, setScope] = useState<'personal' | 'business' | 'general'>(initial?.scope || 'business')
@@ -655,6 +660,20 @@ function FounderQuickTaskForm({
   )
   const [newSubtask, setNewSubtask] = useState('')
   const [newSubtaskAssignee, setNewSubtaskAssignee] = useState('')
+  // Дата + время дедлайна. Из initialDeadline: полный ISO → дата+время,
+  // короткая дата (YYYY-MM-DD) → дата + время по умолчанию 12:00.
+  const initDeadline = useMemo(() => {
+    if (!initialDeadline) return { date: '', time: '12:00' }
+    if (initialDeadline.includes('T')) {
+      const dt = new Date(initialDeadline)
+      if (!isNaN(dt.getTime())) {
+        return { date: format(dt, 'yyyy-MM-dd'), time: format(dt, 'HH:mm') }
+      }
+    }
+    return { date: initialDeadline.slice(0, 10), time: '12:00' }
+  }, [initialDeadline])
+  const [deadlineDate, setDeadlineDate] = useState(initDeadline.date)
+  const [deadlineTime, setDeadlineTime] = useState(initDeadline.time)
 
   const eligibleEmployees = useMemo(
     () => (employees || []).filter((emp: any) => emp.user?.id),
@@ -708,6 +727,11 @@ function FounderQuickTaskForm({
       assigneeIds: scope === 'business' ? selectedIds : undefined,
       // Подзадачи сохраняем в acceptanceCriteria задачи.
       acceptanceCriteria: subtasks,
+      // Дедлайн: дата + время. Собираем в локальном времени и переводим
+      // в ISO, чтобы часы корректно отображались (часовой пояс Душанбе).
+      deadline: deadlineDate
+        ? new Date(`${deadlineDate}T${deadlineTime || '12:00'}`).toISOString()
+        : undefined,
     })
   }
 
@@ -900,6 +924,28 @@ function FounderQuickTaskForm({
           <button type="button" onClick={addSubtask} className="btn-secondary px-3 shrink-0">
             <Plus size={15} />
           </button>
+        </div>
+      </div>
+
+      {/* Дедлайн — дата и время (часы) */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="label">Дата дедлайна</label>
+          <input
+            type="date"
+            value={deadlineDate}
+            onChange={e => setDeadlineDate(e.target.value)}
+            className="input"
+          />
+        </div>
+        <div>
+          <label className="label">Время</label>
+          <input
+            type="time"
+            value={deadlineTime}
+            onChange={e => setDeadlineTime(e.target.value)}
+            className="input"
+          />
         </div>
       </div>
 

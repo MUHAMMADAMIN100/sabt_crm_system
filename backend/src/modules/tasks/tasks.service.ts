@@ -18,7 +18,7 @@ import { TaskResultsService } from '../task-results/task-results.service';
 import { DailyReport } from '../reports/daily-report.entity';
 
 const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM];
-const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.MARKETER, UserRole.TARGETOLOGIST, UserRole.SALES_MANAGER, UserRole.EMPLOYEE];
+const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.MARKETER, UserRole.TARGETOLOGIST, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.EMPLOYEE];
 
 @Injectable()
 export class TasksService {
@@ -92,7 +92,11 @@ export class TasksService {
    *  Если задача ещё «свежая» (никто не отметил готовность) — полная
    *  замена. Если есть прогресс — менять очередь нельзя (упадёт 400),
    *  чтобы не сломать историю. */
-  private async syncAssignees(taskId: string, userIds: string[]): Promise<void> {
+  private async syncAssignees(
+    taskId: string,
+    userIds: string[],
+    force = false,
+  ): Promise<void> {
     const ordered = (userIds || []).filter(Boolean);
     const existing = await this.assigneesRepo.find({ where: { taskId } });
     const hasProgress = existing.some(r => r.isDone);
@@ -100,7 +104,9 @@ export class TasksService {
     // Если кто-то уже сдал — реordering запрещён. Молча игнорируем,
     // если новый список совпадает с существующим (по userId+order),
     // иначе бросаем 400.
-    if (hasProgress) {
+    // force=true — основатель меняет ТИП задачи (scope): защиту очереди
+    // обходим, исполнителей очищаем/заменяем принудительно.
+    if (hasProgress && !force) {
       const existingOrdered = [...existing].sort((a, b) => a.position - b.position).map(r => r.userId);
       const same = existingOrdered.length === ordered.length
         && existingOrdered.every((u, i) => u === ordered[i]);
@@ -498,6 +504,10 @@ export class TasksService {
         delete (dto as any).scope;
       }
     }
+    // Смена типа задачи основателем — разрешаем принудительно очистить
+    // исполнителей (иначе защита очереди syncAssignees бросит 400).
+    const scopeChanged =
+      !!(dto as any).scope && (dto as any).scope !== task.scope;
 
     // SMM specialists have full status control over their own tasks
     const isSmmSpecialist = user.role === UserRole.SMM_SPECIALIST;
@@ -533,7 +543,7 @@ export class TasksService {
     const { assigneeIds: _aIds, ...patchForRepo } = dto as any;
     await this.repo.update(id, patchForRepo);
     if (Array.isArray((dto as any).assigneeIds)) {
-      await this.syncAssignees(id, incomingAssigneeIds || []);
+      await this.syncAssignees(id, incomingAssigneeIds || [], scopeChanged);
     }
 
     // Notify on status change

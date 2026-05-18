@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Project, ProjectPaymentStatus, ProjectStatus } from '../projects/project.entity';
 import { Task, TaskStatus } from '../tasks/task.entity';
 import { ContentPlanItem } from '../content-plan/content-plan-item.entity';
@@ -172,7 +172,11 @@ export class RiskAlertsService {
       .getMany();
 
     const salesManagers = await this.userRepo.find({
-      where: { role: UserRole.SALES_MANAGER, isActive: true, isBlocked: false },
+      where: {
+        role: In([UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV]),
+        isActive: true,
+        isBlocked: false,
+      },
     });
     const admins = await this.getTopAdmins();
 

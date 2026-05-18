@@ -43,7 +43,7 @@ export class AuthService {
     if (exists) throw new ConflictException('Email already in use');
 
     // SECURITY: запрещаем self-register на привилегированные роли.
-    // ADMIN, SMM_DIRECTOR, PROJECT_MANAGER, HEAD_SMM, SALES_MANAGER —
+    // ADMIN, SMM_DIRECTOR, PROJECT_MANAGER, HEAD_SMM, менеджеры продаж —
     // назначаются администратором/основателем через /users, а не
     // выдаются открытой формой регистрации.
     const PRIVILEGED_ROLES_BLOCKED_FROM_REGISTER = [
@@ -51,7 +51,8 @@ export class AuthService {
       UserRole.SMM_DIRECTOR,
       UserRole.PROJECT_MANAGER,
       UserRole.HEAD_SMM,
-      UserRole.SALES_MANAGER,
+      UserRole.SALES_MANAGER_SMM,
+      UserRole.SALES_MANAGER_DEV,
     ];
     if (dto.role && PRIVILEGED_ROLES_BLOCKED_FROM_REGISTER.includes(dto.role)) {
       throw new ForbiddenException(

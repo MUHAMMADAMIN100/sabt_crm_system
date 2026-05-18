@@ -84,11 +84,11 @@ export default function ProjectDetailPage() {
   // (project.managerId === user.id) и вернёт 403 для чужих.
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
   const canManagePayment = user?.role === 'founder' || user?.role === 'co_founder'
-  const canSeePayment = ['admin', 'founder', 'co_founder', 'sales_manager'].includes(user?.role || '')
-  const canRequestPayment = ['admin', 'founder', 'co_founder', 'sales_manager'].includes(user?.role || '')
+  const canSeePayment = ['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
+  const canRequestPayment = ['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
   // Бюджет — может редактировать sales_manager (его прерогатива), а также
   // менеджеры проекта (PM, head_smm, smm_director) и top-tier (founder/co_founder/admin).
-  const canEditBudget = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm', 'sales_manager'].includes(user?.role || '')
+  const canEditBudget = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
 
   // Detect desktop (lg and up) — mobile/tablet use select instead of drag
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)

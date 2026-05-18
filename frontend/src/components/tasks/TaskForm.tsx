@@ -15,7 +15,7 @@ const ASSIGNEE_GROUPS: Array<{ id: string; label: string; roles: string[] }> = [
   { id: 'targeting',  label: '🎯 Таргетологи',          roles: ['targetologist'] },
   { id: 'marketing',  label: '📣 Маркетологи',          roles: ['marketer'] },
   { id: 'dev',        label: '💻 Разработчики',         roles: ['developer'] },
-  { id: 'sales',      label: '💰 Менеджеры по продажам',roles: ['sales_manager'] },
+  { id: 'sales',      label: '💰 Менеджеры по продажам',roles: ['sales_manager_smm', 'sales_manager_dev'] },
   { id: 'pm',         label: '👔 Менеджеры проектов',   roles: ['project_manager'] },
   { id: 'leadership', label: '👑 Руководство',          roles: ['admin', 'founder', 'co_founder'] },
 ]

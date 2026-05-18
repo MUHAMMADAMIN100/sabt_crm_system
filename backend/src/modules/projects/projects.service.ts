@@ -395,7 +395,7 @@ export class ProjectsService {
   stripFinance<T extends Project | Project[]>(data: T, role?: string): T {
     const isFinance = role === 'founder' || role === 'co_founder';
     if (isFinance) return data;
-    const isSales = role === 'sales_manager';
+    const isSales = role === 'sales_manager_smm' || role === 'sales_manager_dev';
     const isProjectManager = role === 'project_manager' || role === 'head_smm' || role === 'smm_director';
     const strip = (p: any) => {
       if (!p) return p;
@@ -466,7 +466,7 @@ export class ProjectsService {
         // Руководитель SMM видит ВСЕ SMM-проекты компании (как founder, но
         // только в SMM-сегменте). Не-SMM проекты ему не показываем.
         qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
-      } else if (!['admin', 'founder', 'co_founder', 'sales_manager'].includes(role)) {
+      } else if (!['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(role)) {
         // All other roles see only projects they are members of
         qb.andWhere(
           `p.id IN (
@@ -688,7 +688,7 @@ export class ProjectsService {
     // данные клиента). Это нужно чтобы менеджер по продажам мог фиксировать
     // переговоренный бюджет и обновлять контакты клиента без обращения
     // к PM/основателю.
-    const isSales = user.role === 'sales_manager';
+    const isSales = user.role === 'sales_manager_smm' || user.role === 'sales_manager_dev';
     const SALES_ALLOWED_FIELDS = new Set(['budget', 'clientInfo', 'paymentStatus', 'nextPaymentDate']);
     if (isSales) {
       const dirty = Object.keys(dto).filter(k => (dto as any)[k] !== undefined);

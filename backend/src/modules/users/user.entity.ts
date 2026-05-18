@@ -22,7 +22,10 @@ export enum UserRole {
   HEAD_SMM        = 'head_smm',
   SMM_SPECIALIST  = 'smm_specialist',
   DESIGNER        = 'designer',
-  SALES_MANAGER   = 'sales_manager',
+  /** Менеджер продаж по SMM-направлению. */
+  SALES_MANAGER_SMM = 'sales_manager_smm',
+  /** Менеджер продаж по направлению разработки. */
+  SALES_MANAGER_DEV = 'sales_manager_dev',
   MARKETER        = 'marketer',
   TARGETOLOGIST   = 'targetologist',
   DEVELOPER       = 'developer',
