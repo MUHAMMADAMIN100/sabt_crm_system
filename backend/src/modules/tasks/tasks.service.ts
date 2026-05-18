@@ -489,12 +489,9 @@ export class TasksService {
       throw new ForbiddenException('Not allowed');
     }
 
-    // SCOPE нельзя менять после создания: личное → общее ретроспективно
-    // разослало бы уведомления всем, что неприемлемо. Просто игнорируем
-    // попытку (без 403, чтобы UI не падал на repost).
-    if ((dto as any).scope && (dto as any).scope !== task.scope) {
-      delete (dto as any).scope;
-    }
+    // SCOPE можно менять (основатель редактирует тип задачи). Смена
+    // scope НЕ рассылает ретроспективных уведомлений — это осознанное
+    // решение: уведомления уходят только при создании/назначении.
 
     // SMM specialists have full status control over their own tasks
     const isSmmSpecialist = user.role === UserRole.SMM_SPECIALIST;

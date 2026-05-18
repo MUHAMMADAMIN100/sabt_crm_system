@@ -7,7 +7,7 @@ import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday, isSameMonth, subDays, addDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Plus, X, User, Calendar as CalIcon, Flag, FolderKanban, Edit, Trash2, Lock, Briefcase, Globe } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, X, User, Calendar as CalIcon, Flag, FolderKanban, Edit, Trash2, Lock, Briefcase, Globe, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -91,6 +91,18 @@ export default function CalendarPage() {
       qc.invalidateQueries({ queryKey: ['task', editingTaskId] })
       setEditingTaskId(null)
       toast.success('Изменения сохранены')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || t('common.error')),
+  })
+
+  // Удаление задачи из edit-формы founder
+  const deleteTaskMut = useMutation({
+    mutationFn: (id: string) => tasksApi.remove(id, 'Удалено основателем из календаря'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['calendar'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      setEditingTaskId(null)
+      toast.success('Задача удалена')
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || t('common.error')),
   })
@@ -347,14 +359,26 @@ export default function CalendarPage() {
                         }}
                         title={e.title}
                         className={clsx(
-                          'block w-full text-left text-[11px] px-1.5 py-0.5 rounded border truncate font-medium transition-opacity',
+                          'flex items-center gap-1 w-full text-left text-[11px] px-1.5 py-0.5 rounded border font-medium transition-opacity',
                           colorClass,
                           isDraggable && 'cursor-grab active:cursor-grabbing',
                           draggingEventId === e.id && 'opacity-40',
                         )}
                       >
-                        {e.scope === 'personal' && <Lock className="inline mr-0.5" size={9} />}
-                        {e.title}
+                        {e.scope === 'personal' && <Lock className="shrink-0" size={9} />}
+                        <span className="truncate flex-1 min-w-0">{e.title}</span>
+                        {e.type === 'task' && typeof e.progress === 'number' && (
+                          <span className={clsx(
+                            'shrink-0 text-[9px] font-bold px-1 rounded',
+                            e.progress >= 100
+                              ? 'bg-green-500/20 text-green-700 dark:text-green-300'
+                              : e.progress > 0
+                                ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                                : 'bg-surface-400/20 text-surface-500 dark:text-surface-400',
+                          )}>
+                            {e.progress}%
+                          </span>
+                        )}
                       </button>
                     )
                   })}
@@ -521,8 +545,11 @@ export default function CalendarPage() {
           ) : (
             <FounderQuickTaskForm
               employees={employees || []}
-              loading={editTaskMut.isPending}
+              loading={editTaskMut.isPending || deleteTaskMut.isPending}
               onClose={() => setEditingTaskId(null)}
+              onDelete={() => {
+                if (confirm('Удалить задачу?')) deleteTaskMut.mutate(editingTaskFull.id)
+              }}
               initial={{
                 id: editingTaskFull.id,
                 title: editingTaskFull.title,
@@ -532,19 +559,23 @@ export default function CalendarPage() {
                 assigneeIds: Array.isArray(editingTaskFull.assignees) && editingTaskFull.assignees.length > 0
                   ? editingTaskFull.assignees.map((a: any) => a.userId || a.user?.id).filter(Boolean)
                   : (editingTaskFull.assigneeId ? [editingTaskFull.assigneeId] : []),
+                subtasks: Array.isArray(editingTaskFull.acceptanceCriteria)
+                  ? editingTaskFull.acceptanceCriteria
+                  : [],
               }}
               onSubmit={data => editTaskMut.mutate({
                 id: editingTaskFull.id,
                 data: {
-                  // Не шлём scope — он иммутабельный (backend и так
-                  // игнорирует изменение, но не плодим payload).
                   title: data.title,
                   description: data.description,
                   priority: data.priority,
-                  ...(data.scope === 'business' && {
-                    assigneeIds: data.assigneeIds,
-                    assigneeId: data.assigneeId,
-                  }),
+                  // scope теперь редактируемый — отправляем всегда.
+                  scope: data.scope,
+                  acceptanceCriteria: data.acceptanceCriteria,
+                  // Исполнители — только для business; для personal/general
+                  // отправляем пустой массив чтобы backend очистил.
+                  assigneeIds: data.scope === 'business' ? (data.assigneeIds || []) : [],
+                  assigneeId: data.scope === 'business' ? data.assigneeId : null,
                 },
               })}
             />
@@ -586,12 +617,13 @@ export default function CalendarPage() {
  *  (иначе ретроспективно разошлёт уведомления).
  */
 function FounderQuickTaskForm({
-  employees, loading, onClose, onSubmit, initial,
+  employees, loading, onClose, onSubmit, onDelete, initial,
 }: {
   employees: any[]
   loading: boolean
   onClose: () => void
   onSubmit: (data: any) => void
+  onDelete?: () => void
   initial?: {
     id: string
     title?: string
@@ -599,6 +631,7 @@ function FounderQuickTaskForm({
     scope?: 'personal' | 'business' | 'general'
     priority?: 'low' | 'medium' | 'high' | 'critical'
     assigneeIds?: string[]
+    subtasks?: Array<{ id: string; text: string; done: boolean }>
   }
 }) {
   const isEdit = !!initial
@@ -608,6 +641,13 @@ function FounderQuickTaskForm({
   const [selectedIds, setSelectedIds] = useState<string[]>(initial?.assigneeIds || [])
   const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical'>(initial?.priority || 'medium')
   const [search, setSearch] = useState('')
+  // Дропдаун исполнителей — закрыт по умолчанию, открывается по клику.
+  const [pickerOpen, setPickerOpen] = useState(false)
+  // Подзадачи — список пунктов внутри задачи.
+  const [subtasks, setSubtasks] = useState<Array<{ id: string; text: string; done: boolean }>>(
+    initial?.subtasks || [],
+  )
+  const [newSubtask, setNewSubtask] = useState('')
 
   const eligibleEmployees = useMemo(
     () => (employees || []).filter((emp: any) => emp.user?.id),
@@ -626,6 +666,14 @@ function FounderQuickTaskForm({
     setSelectedIds(prev => prev.includes(uid) ? prev.filter(x => x !== uid) : [...prev, uid])
   }
 
+  const addSubtask = () => {
+    const text = newSubtask.trim()
+    if (!text) return
+    setSubtasks(prev => [...prev, { id: crypto.randomUUID(), text, done: false }])
+    setNewSubtask('')
+  }
+  const removeSubtask = (id: string) => setSubtasks(prev => prev.filter(s => s.id !== id))
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) { toast.error('Укажите название задачи'); return }
@@ -643,12 +691,14 @@ function FounderQuickTaskForm({
       // business — массив выбранных.
       assigneeId: scope === 'business' && selectedIds[0] ? selectedIds[0] : undefined,
       assigneeIds: scope === 'business' ? selectedIds : undefined,
+      // Подзадачи сохраняем в acceptanceCriteria задачи.
+      acceptanceCriteria: subtasks,
     })
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Селектор типа задачи. В edit-режиме disabled (scope иммутабельный). */}
+      {/* Селектор типа задачи — редактируемый и при создании, и при правке. */}
       <div>
         <label className="label">Тип задачи *</label>
         <div className="grid grid-cols-3 gap-2">
@@ -660,14 +710,12 @@ function FounderQuickTaskForm({
             <button
               key={opt.v}
               type="button"
-              onClick={() => !isEdit && setScope(opt.v)}
-              disabled={isEdit && opt.v !== scope}
+              onClick={() => setScope(opt.v)}
               className={clsx(
                 'flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all',
                 scope === opt.v
                   ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
                   : 'border-surface-200 dark:border-surface-700 hover:border-surface-300 dark:hover:border-surface-600 text-surface-600 dark:text-surface-400',
-                isEdit && opt.v !== scope && 'opacity-30 cursor-not-allowed',
               )}
             >
               {opt.icon}
@@ -676,9 +724,6 @@ function FounderQuickTaskForm({
             </button>
           ))}
         </div>
-        {isEdit && (
-          <p className="text-[11px] text-surface-400 mt-1">Тип задачи нельзя изменить после создания.</p>
-        )}
       </div>
 
       <div>
@@ -701,17 +746,10 @@ function FounderQuickTaskForm({
         />
       </div>
 
-      {/* Multi-select исполнителей — только для business */}
+      {/* Multi-select исполнителей — дропдаун (только business) */}
       {scope === 'business' && (
         <div>
           <label className="label">Исполнители * <span className="text-[11px] text-surface-400 font-normal">— получат in-app, email, Telegram</span></label>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Поиск по имени или должности..."
-            className="input mb-2"
-          />
           {/* Чипы выбранных */}
           {selectedIds.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2">
@@ -723,46 +761,64 @@ function FounderQuickTaskForm({
                     className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-xs"
                   >
                     {emp?.fullName || uid.slice(0, 8)}
-                    <button
-                      type="button"
-                      onClick={() => toggleAssignee(uid)}
-                      className="hover:text-red-500"
-                    >×</button>
+                    <button type="button" onClick={() => toggleAssignee(uid)} className="hover:text-red-500">×</button>
                   </span>
                 )
               })}
             </div>
           )}
-          {/* Список сотрудников с чекбоксами */}
-          <div className="max-h-48 overflow-y-auto border border-surface-200 dark:border-surface-700 rounded-xl divide-y divide-surface-100 dark:divide-surface-700">
-            {filteredEmployees.length === 0 ? (
-              <div className="p-3 text-xs text-surface-400 text-center">Никого не найдено</div>
-            ) : filteredEmployees.map((emp: any) => {
-              const checked = selectedIds.includes(emp.user.id)
-              return (
-                <label
-                  key={emp.user.id}
-                  className={clsx(
-                    'flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors',
-                    checked ? 'bg-primary-50 dark:bg-primary-900/20' : 'hover:bg-surface-50 dark:hover:bg-surface-700/30',
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleAssignee(emp.user.id)}
-                    className="rounded"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{emp.fullName}</div>
-                    {emp.position && (
-                      <div className="text-[11px] text-surface-400 truncate">{emp.position}</div>
-                    )}
-                  </div>
-                </label>
-              )
-            })}
-          </div>
+          {/* Кнопка-селект: клик открывает список */}
+          <button
+            type="button"
+            onClick={() => setPickerOpen(o => !o)}
+            className="input flex items-center justify-between w-full text-left"
+          >
+            <span className={selectedIds.length ? '' : 'text-surface-400'}>
+              {selectedIds.length
+                ? `Выбрано: ${selectedIds.length}`
+                : 'Выберите исполнителей'}
+            </span>
+            <ChevronDown size={16} className={clsx('transition-transform', pickerOpen && 'rotate-180')} />
+          </button>
+          {pickerOpen && (
+            <div className="mt-2 border border-surface-200 dark:border-surface-700 rounded-xl overflow-hidden">
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Поиск по имени или должности..."
+                className="input border-0 border-b border-surface-100 dark:border-surface-700 rounded-none"
+                autoFocus
+              />
+              <div className="max-h-48 overflow-y-auto divide-y divide-surface-100 dark:divide-surface-700">
+                {filteredEmployees.length === 0 ? (
+                  <div className="p-3 text-xs text-surface-400 text-center">Никого не найдено</div>
+                ) : filteredEmployees.map((emp: any) => {
+                  const checked = selectedIds.includes(emp.user.id)
+                  return (
+                    <label
+                      key={emp.user.id}
+                      className={clsx(
+                        'flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors',
+                        checked ? 'bg-primary-50 dark:bg-primary-900/20' : 'hover:bg-surface-50 dark:hover:bg-surface-700/30',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleAssignee(emp.user.id)}
+                        className="rounded"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate">{emp.fullName}</div>
+                        {emp.position && <div className="text-[11px] text-surface-400 truncate">{emp.position}</div>}
+                      </div>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -775,6 +831,39 @@ function FounderQuickTaskForm({
           </p>
         </div>
       )}
+
+      {/* Подзадачи */}
+      <div>
+        <label className="label">Подзадачи</label>
+        {subtasks.length > 0 && (
+          <div className="space-y-1.5 mb-2">
+            {subtasks.map((s, idx) => (
+              <div key={s.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-50 dark:bg-surface-700/40">
+                <span className="text-xs text-surface-400 w-5 shrink-0">{idx + 1}.</span>
+                <span className="text-sm flex-1 min-w-0 truncate">{s.text}</span>
+                <button
+                  type="button"
+                  onClick={() => removeSubtask(s.id)}
+                  className="text-surface-400 hover:text-red-500 shrink-0"
+                ><X size={13} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newSubtask}
+            onChange={e => setNewSubtask(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSubtask() } }}
+            placeholder="Добавить подзадачу..."
+            className="input flex-1"
+          />
+          <button type="button" onClick={addSubtask} className="btn-secondary px-3 shrink-0">
+            <Plus size={15} />
+          </button>
+        </div>
+      </div>
 
       <div>
         <label className="label">Приоритет *</label>
@@ -791,6 +880,16 @@ function FounderQuickTaskForm({
       </div>
 
       <div className="flex gap-2 justify-end pt-2">
+        {isEdit && onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={loading}
+            className="btn-secondary text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 mr-auto"
+          >
+            <Trash2 size={15} /> Удалить
+          </button>
+        )}
         <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">
           Отмена
         </button>

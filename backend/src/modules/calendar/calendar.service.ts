@@ -4,6 +4,35 @@ import { Repository } from 'typeorm';
 import { Task } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
 
+/** Прогресс задачи в % для отображения на карточке календаря.
+ *  Приоритет: 1) доля выполненных подзадач (acceptanceCriteria),
+ *  2) если подзадач нет — оценка по статусу. */
+function computeTaskProgress(t: Task): number {
+  const ac = (t as any).acceptanceCriteria;
+  if (Array.isArray(ac) && ac.length > 0) {
+    const done = ac.filter((c: any) => c?.done).length;
+    return Math.round((done / ac.length) * 100);
+  }
+  switch (t.status) {
+    case 'done':
+    case 'approved':
+    case 'published':
+      return 100;
+    case 'review':
+    case 'on_pm_review':
+    case 'on_client_approval':
+      return 60;
+    case 'in_progress':
+    case 'accepted':
+      return 30;
+    case 'returned':
+    case 'on_rework':
+      return 20;
+    default:
+      return 0; // new / cancelled / rescheduled
+  }
+}
+
 @Injectable()
 export class CalendarService {
   constructor(
@@ -77,6 +106,10 @@ export class CalendarService {
       createdById: t.createdById,
       fromFounder: (t as any).fromFounder ?? false,
       scope: (t as any).scope ?? 'business',
+      // Прогресс задачи в % — по подзадачам (acceptanceCriteria) если
+      // они есть, иначе оценка по статусу. Показывается на карточке
+      // задачи в календаре.
+      progress: computeTaskProgress(t),
       link: `/tasks/${t.id}`,
     }));
 

@@ -11,7 +11,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
   CartesianGrid, PieChart, Pie, Cell,
 } from 'recharts'
-import { financeApi, projectsApi } from '@/services/api.service'
+import { financeApi, projectsApi, employeesApi } from '@/services/api.service'
 import { Modal, FormField, ConfirmDialog, EmptyState, PageLoader } from '@/components/ui'
 
 // ─── Constants ───────────────────────────────────────────────────────
@@ -71,6 +71,8 @@ export default function FinancePage() {
 
   const [showForm, setShowForm] = useState(false)
   const [editTx, setEditTx] = useState<any>(null)
+  // Предзаполнение формы транзакции (для кнопок Штраф/Аванс/Платёж).
+  const [txPrefill, setTxPrefill] = useState<any>(null)
   const [deleteTx, setDeleteTx] = useState<any>(null)
   const [defaultType, setDefaultType] = useState<'income' | 'expense'>('income')
 
@@ -128,10 +130,16 @@ export default function FinancePage() {
     enabled: view === 'overview',
   })
 
-  // Проекты — для выпадающего списка в форме транзакции.
+  // Проекты — для выпадающего списка в форме транзакции и блока «Проекты».
   const { data: financeProjects } = useQuery({
     queryKey: ['projects'],
     queryFn: () => projectsApi.list(),
+  })
+
+  // Сотрудники — для блока «Сотрудники» в обзоре финансов.
+  const { data: financeEmployees } = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => employeesApi.list(),
   })
 
   // Метрики (фильтр по выбранному счёту)
@@ -244,8 +252,11 @@ export default function FinancePage() {
         <OverviewSection
           monthly={monthly ?? []}
           byCategory={byCategory ?? []}
-          onCreate={(type) => { setDefaultType(type); setEditTx(null); setShowForm(true) }}
+          employees={financeEmployees ?? []}
+          projects={financeProjects ?? []}
+          onCreate={(type) => { setDefaultType(type); setEditTx(null); setTxPrefill(null); setShowForm(true) }}
           onGoTransactions={() => setView('transactions')}
+          onQuickTx={(prefill) => { setEditTx(null); setTxPrefill(prefill); setDefaultType(prefill.type || 'expense'); setShowForm(true) }}
         />
       ) : (
         <TransactionsSection
@@ -265,14 +276,14 @@ export default function FinancePage() {
       )}
 
       {showForm && (
-        <Modal open onClose={() => { setShowForm(false); setEditTx(null) }} title={editTx ? 'Редактировать транзакцию' : 'Новая транзакция'} size="lg">
+        <Modal open onClose={() => { setShowForm(false); setEditTx(null); setTxPrefill(null) }} title={editTx ? 'Редактировать транзакцию' : 'Новая транзакция'} size="lg">
           <TxForm
-            initial={editTx}
+            initial={editTx || txPrefill}
             defaultType={defaultType}
             defaultAccount={account === 'all' ? undefined : account}
             projects={financeProjects || []}
             loading={createMut.isPending || updateMut.isPending}
-            onCancel={() => { setShowForm(false); setEditTx(null) }}
+            onCancel={() => { setShowForm(false); setEditTx(null); setTxPrefill(null) }}
             onSubmit={(data) => {
               if (editTx) updateMut.mutate({ id: editTx.id, data })
               else createMut.mutate(data)
@@ -304,11 +315,15 @@ function Tile({ label, value, accent }: { label: string; value: any; accent?: st
 }
 
 // ─── Overview ────────────────────────────────────────────────────────
-function OverviewSection({ monthly, byCategory, onCreate, onGoTransactions }: any) {
+function OverviewSection({ monthly, byCategory, employees, projects, onCreate, onGoTransactions, onQuickTx }: any) {
   const chartData = (monthly ?? []).map((m: any) => {
     const [_, mm] = m.month.split('-')
     return { name: MONTH_LABELS[parseInt(mm, 10) - 1] ?? m.month, Доход: m.income, Расход: m.expense }
   })
+
+  const fmtMoney = (v: any) => Number(v || 0).toLocaleString('ru-RU')
+  const activeEmployees = (employees ?? []).filter((e: any) => e.status !== 'inactive')
+  const activeProjects = (projects ?? []).filter((p: any) => !p.isArchived)
 
   return (
     <div className="space-y-5">
@@ -322,6 +337,81 @@ function OverviewSection({ monthly, byCategory, onCreate, onGoTransactions }: an
         <button onClick={onGoTransactions} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm hover:bg-gray-50 dark:hover:bg-gray-800">
           <ListOrdered size={14} /> К транзакциям
         </button>
+      </div>
+
+      {/* Два блока: Сотрудники и Проекты */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Сотрудники: ФИО / должность / ЗП + штраф/аванс */}
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+          <h3 className="text-sm font-medium mb-3">👥 Сотрудники</h3>
+          {activeEmployees.length === 0 ? (
+            <div className="text-center py-6 text-sm text-gray-500">Нет сотрудников</div>
+          ) : (
+            <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
+              {activeEmployees.map((e: any) => (
+                <div key={e.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{e.fullName}</p>
+                    <p className="text-[11px] text-gray-400 truncate">
+                      {e.position || '—'}{e.salary ? ` · ЗП ${fmtMoney(e.salary)} сом.` : ''}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onQuickTx({
+                      type: 'expense', category: 'salary',
+                      counterparty: e.fullName,
+                      description: `Штраф — ${e.fullName}`,
+                    })}
+                    className="px-2 py-1 rounded-md text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 shrink-0"
+                  >Штраф</button>
+                  <button
+                    onClick={() => onQuickTx({
+                      type: 'expense', category: 'salary',
+                      counterparty: e.fullName,
+                      description: `Аванс — ${e.fullName}`,
+                    })}
+                    className="px-2 py-1 rounded-md text-[11px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-200 shrink-0"
+                  >Аванс</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Проекты: название / дата контракта / сумма тарифа + платёж */}
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+          <h3 className="text-sm font-medium mb-3">📁 Проекты</h3>
+          {activeProjects.length === 0 ? (
+            <div className="text-center py-6 text-sm text-gray-500">Нет активных проектов</div>
+          ) : (
+            <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
+              {activeProjects.map((p: any) => {
+                const contractDate = p.startDate || p.createdAt
+                const tariffSum = p.tariffPriceSnapshot || p.monthlyFee || p.totalContractValue
+                return (
+                  <div key={p.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{p.name}</p>
+                      <p className="text-[11px] text-gray-400 truncate">
+                        {contractDate ? new Date(contractDate).toLocaleDateString('ru-RU') : '—'}
+                        {tariffSum ? ` · Тариф ${fmtMoney(tariffSum)} сом.` : ''}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => onQuickTx({
+                        type: 'income', category: 'project',
+                        project: p.name,
+                        description: `Оплата по проекту — ${p.name}`,
+                        amount: tariffSum || undefined,
+                      })}
+                      className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 hover:bg-emerald-200 shrink-0"
+                    >Платёж</button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -504,6 +594,8 @@ function TransactionsSection({
 // ─── Form ───────────────────────────────────────────────────────────
 function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit, onCancel, loading }: any) {
   const [type, setType] = useState<'income' | 'expense'>(initial?.type ?? defaultType ?? 'income')
+  // Счёт — отдельным state'ом, чтобы отрисовать кнопками-сегментами наверху.
+  const [account, setAccount] = useState<string>(initial?.account ?? defaultAccount ?? 'alif')
   const todayIso = new Date().toISOString().slice(0, 10)
   const { register, handleSubmit, formState: { errors } } = useForm({
     defaultValues: {
@@ -525,7 +617,9 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
       onSubmit={handleSubmit((data: any) => onSubmit({
         ...data,
         type,
-        amount: Number(data.amount),
+        account,
+        // Сумма всегда положительная — знак определяет тип (доход/расход).
+        amount: Math.abs(Number(data.amount)) || 0,
         paymentMethod: data.paymentMethod || null,
         counterparty: data.counterparty || null,
         project: data.project || null,
@@ -533,6 +627,7 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
       }))}
       className="space-y-4 max-h-[75vh] overflow-y-auto pr-1"
     >
+      {/* Доход / Расход */}
       <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
         <button type="button" onClick={() => setType('income')}
           className={clsx('px-4 py-1.5 text-sm inline-flex items-center gap-1', type === 'income' ? 'bg-emerald-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800')}>
@@ -544,19 +639,41 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
         </button>
       </div>
 
+      {/* Счёт — кнопки-сегменты наверху формы */}
+      <div>
+        <label className="text-xs font-medium text-gray-700 dark:text-gray-300 block mb-1.5">Счёт *</label>
+        <div className="flex flex-wrap gap-2">
+          {ACCOUNTS.filter(a => a.id !== 'all').map(a => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => setAccount(a.id)}
+              className={clsx(
+                'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
+                account === a.id
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-purple-300',
+              )}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormField label="Сумма (сомони)" required error={errors.amount?.message as string}>
-          <input type="number" step="0.01" min="0.01"
-            {...register('amount', { required: 'Введите сумму', validate: (v: any) => Number(v) > 0 || 'Сумма > 0' })}
+          <input
+            type="number" step="0.01" min="0.01"
+            onKeyDown={e => { if (e.key === '-' || e.key === 'e') e.preventDefault() }}
+            {...register('amount', {
+              required: 'Введите сумму',
+              validate: (v: any) => Math.abs(Number(v)) > 0 || 'Сумма > 0',
+            })}
             className="input" />
         </FormField>
         <FormField label="Дата" required>
           <input type="date" {...register('date', { required: true })} className="input" />
-        </FormField>
-        <FormField label="Счёт" required>
-          <select {...register('account', { required: true })} className="input">
-            {ACCOUNTS.filter(a => a.id !== 'all').map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
-          </select>
         </FormField>
         <FormField label="Категория" required>
           <select {...register('category', { required: true })} className="input">
