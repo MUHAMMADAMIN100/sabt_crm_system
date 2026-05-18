@@ -281,6 +281,9 @@ export function canAccessRoute(role: UserRole | undefined, route: string): boole
 
   // Always allowed routes
   if (['/profile', '/notifications', '/'].includes(route)) return true
+  // Онбординг — только менеджеры по продажам.
+  if (route === '/onboarding') return role === 'sales_manager_smm' || role === 'sales_manager_dev'
+
   // Detail pages — allow if user can view the parent
   if (route.startsWith('/projects/')) return hasPermission(role, 'projects.view')
   if (route.startsWith('/tasks/')) return hasPermission(role, 'tasks.view')

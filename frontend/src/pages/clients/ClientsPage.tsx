@@ -1,12 +1,21 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, PageLoader, ConfirmDialog, Pagination } from '@/components/ui'
 import { Plus, Search, Edit, Trash2 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { format, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+
+/** Подписи этапов онбординга — для бейджа в списке клиентов. */
+const ONBOARDING_STAGE_LABELS: Record<string, string> = {
+  meeting: 'Встреча',
+  kp_creation: 'Создание КП',
+  implementation: 'Реализация',
+  contract: 'Договор',
+}
 
 const STATUS_OPTIONS: { value: string; label: string; color: string }[] = [
   { value: 'new',         label: 'Новый',              color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
@@ -46,7 +55,10 @@ export default function ClientsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
-  const PAGE_SIZE = 5
+  // У менеджеров по продажам — по 10 клиентов на странице, у остальных — 5.
+  const role = useAuthStore(s => s.user?.role)
+  const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
+  const PAGE_SIZE = isSalesManager ? 10 : 5
 
   const { data: leads, isLoading } = useQuery({
     queryKey: ['clients', search, status, interest, sphere],
@@ -300,6 +312,11 @@ export default function ClientsPage() {
                               : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
                           )}>
                             {l.direction === 'smm' ? 'СММ' : 'Разработка'}
+                          </span>
+                        )}
+                        {l.onboardingStage && (
+                          <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                            {ONBOARDING_STAGE_LABELS[l.onboardingStage] || l.onboardingStage}
                           </span>
                         )}
                       </div>

@@ -26,6 +26,14 @@ export enum ClientLeadDirection {
   DEVELOPMENT = 'development',  // Разработка
 }
 
+/** Этап онбординга клиента — колонки канбан-доски «Онбординг». */
+export enum ClientLeadOnboardingStage {
+  MEETING        = 'meeting',         // Встреча
+  KP_CREATION    = 'kp_creation',     // Создание КП
+  IMPLEMENTATION = 'implementation',  // Реализация
+  CONTRACT       = 'contract',        // Договор
+}
+
 @Entity('client_leads')
 export class ClientLead {
   @PrimaryGeneratedColumn('uuid')
@@ -75,6 +83,11 @@ export class ClientLead {
    *  сегменту менеджера-создателя. Старые лиды могут быть null. */
   @Column({ type: 'enum', enum: ClientLeadDirection, nullable: true })
   direction: ClientLeadDirection;
+
+  /** Этап онбординга — позиция клиента на канбан-доске «Онбординг».
+   *  null — клиент не на доске онбординга. */
+  @Column({ type: 'enum', enum: ClientLeadOnboardingStage, nullable: true })
+  onboardingStage: ClientLeadOnboardingStage;
 
   @Column({ type: 'date', nullable: true })
   lastContactAt: Date;

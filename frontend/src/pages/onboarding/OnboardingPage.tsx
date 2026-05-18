@@ -1,0 +1,218 @@
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { clientsApi } from '@/services/api.service'
+import { Modal, EmptyState, PageLoader } from '@/components/ui'
+import { Plus } from 'lucide-react'
+import toast from 'react-hot-toast'
+import clsx from 'clsx'
+
+/** Колонки канбан-доски онбординга. Список расширяемый — при добавлении
+ *  нового этапа достаточно дописать сюда и в enum ClientLeadOnboardingStage. */
+const STAGES = [
+  { key: 'meeting',        label: 'Встреча',     accent: 'border-t-sky-500' },
+  { key: 'kp_creation',    label: 'Создание КП', accent: 'border-t-amber-500' },
+  { key: 'implementation', label: 'Реализация',  accent: 'border-t-violet-500' },
+  { key: 'contract',       label: 'Договор',     accent: 'border-t-emerald-500' },
+] as const
+
+type StageKey = typeof STAGES[number]['key']
+
+export default function OnboardingPage() {
+  const qc = useQueryClient()
+  const [showAdd, setShowAdd] = useState(false)
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [dragOverStage, setDragOverStage] = useState<StageKey | null>(null)
+
+  const { data: clients, isLoading } = useQuery({
+    queryKey: ['clients'],
+    queryFn: () => clientsApi.list(),
+  })
+
+  // Перетаскивание карточки — смена этапа онбординга.
+  const moveMut = useMutation({
+    mutationFn: ({ id, stage }: { id: string; stage: StageKey }) =>
+      clientsApi.update(id, { onboardingStage: stage }),
+    onMutate: async ({ id, stage }) => {
+      await qc.cancelQueries({ queryKey: ['clients'] })
+      const prev = qc.getQueryData(['clients'])
+      qc.setQueryData(['clients'], (old: any) =>
+        Array.isArray(old)
+          ? old.map((c: any) => (c.id === id ? { ...c, onboardingStage: stage } : c))
+          : old,
+      )
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => {
+      qc.setQueryData(['clients'], ctx?.prev)
+      toast.error('Не удалось переместить клиента')
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['clients'] }),
+  })
+
+  // Новый клиент — попадает на доску в этап «Встреча» и в Базу клиентов.
+  const createMut = useMutation({
+    mutationFn: (data: any) => clientsApi.create({ ...data, onboardingStage: 'meeting' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+      setShowAdd(false)
+      toast.success('Клиент добавлен на онбординг')
+    },
+    onError: () => toast.error('Не удалось добавить клиента'),
+  })
+
+  if (isLoading) return <PageLoader />
+
+  const onboardingClients = (clients || []).filter((c: any) => c.onboardingStage)
+
+  const handleDrop = (stage: StageKey) => {
+    setDragOverStage(null)
+    if (draggedId) {
+      const c = onboardingClients.find((x: any) => x.id === draggedId)
+      if (c && c.onboardingStage !== stage) moveMut.mutate({ id: draggedId, stage })
+    }
+    setDraggedId(null)
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="page-title">Онбординг</h1>
+          <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
+            Клиенты на этапе онбординга. Перетащите карточку, чтобы сменить этап.
+          </p>
+        </div>
+        <button onClick={() => setShowAdd(true)} className="btn-primary">
+          <Plus size={16} /> Добавить клиента
+        </button>
+      </div>
+
+      <div className="flex gap-4 overflow-x-auto pb-3 lg:grid lg:grid-cols-4 lg:overflow-x-visible">
+        {STAGES.map(stage => {
+          const items = onboardingClients.filter((c: any) => c.onboardingStage === stage.key)
+          return (
+            <div
+              key={stage.key}
+              onDragOver={e => { e.preventDefault(); setDragOverStage(stage.key) }}
+              onDragLeave={() => setDragOverStage(s => (s === stage.key ? null : s))}
+              onDrop={() => handleDrop(stage.key)}
+              className={clsx(
+                'min-w-[260px] lg:min-w-0 rounded-2xl border-t-4 bg-surface-50 dark:bg-surface-800/50 p-3 transition-colors',
+                stage.accent,
+                dragOverStage === stage.key && 'ring-2 ring-primary-400',
+              )}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-sm text-surface-800 dark:text-surface-200">{stage.label}</h3>
+                <span className="text-xs text-surface-400 bg-surface-200 dark:bg-surface-700 rounded-full px-2 py-0.5">
+                  {items.length}
+                </span>
+              </div>
+              <div className="space-y-2 min-h-[80px]">
+                {items.map((c: any) => (
+                  <div
+                    key={c.id}
+                    draggable
+                    onDragStart={() => setDraggedId(c.id)}
+                    onDragEnd={() => setDraggedId(null)}
+                    className="bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 cursor-grab active:cursor-grabbing hover:shadow-sm transition-shadow"
+                  >
+                    <p className="font-medium text-sm text-surface-900 dark:text-surface-100">{c.name}</p>
+                    {c.sphere && <p className="text-[11px] text-surface-400 mt-0.5">{c.sphere}</p>}
+                    {c.contactPerson && (
+                      <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">👤 {c.contactPerson}</p>
+                    )}
+                    {c.dealPotential ? (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
+                        {Number(c.dealPotential).toLocaleString('ru-RU')} смн
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+                {items.length === 0 && (
+                  <p className="text-xs text-surface-300 dark:text-surface-600 text-center py-4">
+                    Перетащите сюда
+                  </p>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {onboardingClients.length === 0 && (
+        <EmptyState
+          title="Нет клиентов на онбординге"
+          description="Добавьте первого клиента кнопкой «Добавить клиента»."
+        />
+      )}
+
+      {showAdd && (
+        <Modal open onClose={() => setShowAdd(false)} title="Новый клиент на онбординге" size="md">
+          <OnboardingClientForm
+            loading={createMut.isPending}
+            onClose={() => setShowAdd(false)}
+            onSubmit={d => createMut.mutate(d)}
+          />
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+function OnboardingClientForm({
+  onSubmit, onClose, loading,
+}: {
+  onSubmit: (d: any) => void
+  onClose: () => void
+  loading: boolean
+}) {
+  const [name, setName] = useState('')
+  const [sphere, setSphere] = useState('')
+  const [contactPerson, setContactPerson] = useState('')
+  const [contactInfo, setContactInfo] = useState('')
+  const [dealPotential, setDealPotential] = useState('')
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) { toast.error('Укажите название клиента'); return }
+    onSubmit({
+      name: name.trim(),
+      sphere: sphere.trim() || undefined,
+      contactPerson: contactPerson.trim() || undefined,
+      contactInfo: contactInfo.trim() || undefined,
+      dealPotential: dealPotential ? Number(dealPotential) : undefined,
+    })
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div>
+        <label className="label">Название клиента *</label>
+        <input value={name} onChange={e => setName(e.target.value)} className="input" placeholder="ООО Ромашка, @blogger" autoFocus />
+      </div>
+      <div>
+        <label className="label">Сфера</label>
+        <input value={sphere} onChange={e => setSphere(e.target.value)} className="input" placeholder="Ресторан, Клиника, Блогер..." />
+      </div>
+      <div>
+        <label className="label">Контактное лицо</label>
+        <input value={contactPerson} onChange={e => setContactPerson(e.target.value)} className="input" placeholder="Иван Иванов — директор" />
+      </div>
+      <div>
+        <label className="label">Контакты</label>
+        <textarea value={contactInfo} onChange={e => setContactInfo(e.target.value)} rows={2} className="input resize-none" placeholder="+992 900 00 00 00, @instagram, email@domain.com" />
+      </div>
+      <div>
+        <label className="label">Потенциал сделки (смн)</label>
+        <input type="number" min={0} step="0.01" value={dealPotential} onChange={e => setDealPotential(e.target.value)} className="input" placeholder="10000" />
+      </div>
+      <div className="flex gap-2 justify-end pt-2">
+        <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">Отмена</button>
+        <button type="submit" disabled={loading} className="btn-primary min-w-[120px] justify-center">
+          {loading ? 'Добавляю...' : 'Добавить'}
+        </button>
+      </div>
+    </form>
+  )
+}

@@ -5,7 +5,7 @@ import { hasPermission, getUserPositionLabel, type Permission } from '@/lib/perm
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Bell, Archive, HardDrive,
-  X, ChevronRight, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserCog,
+  X, ChevronRight, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserCog, UserPlus,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -37,6 +37,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     // Уведомления убраны из сайдбара — теперь только через колокольчик в Header
     { to: '/employees',     icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
     { to: '/clients',       icon: Contact,         label: 'База клиентов',     permission: 'clients.view' },
+    { to: '/onboarding',    icon: UserPlus,        label: 'Онбординг',         permission: 'clients.view' },
     { to: '/tariffs',       icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/risks',         icon: ShieldAlert,     label: 'Риски',             permission: 'risks.view' },
     { to: '/finance',       icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
@@ -46,8 +47,11 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
   // Вкладку «Команды» скрываем у руководителя SMM и главного SMM-специалиста.
   const hideTeamsRoles = ['smm_director', 'head_smm']
+  // Вкладка «Онбординг» — только для менеджеров по продажам.
+  const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
   const filtered = navItems.filter(item => {
     if (item.to === '/teams' && hideTeamsRoles.includes(role || '')) return false
+    if (item.to === '/onboarding' && !isSalesManager) return false
     return hasPermission(role, item.permission)
   })
 
