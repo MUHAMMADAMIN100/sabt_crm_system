@@ -367,7 +367,8 @@ export default function CalendarPage() {
                       >
                         {e.scope === 'personal' && <Lock className="shrink-0" size={9} />}
                         <span className="truncate flex-1 min-w-0">{e.title}</span>
-                        {e.type === 'task' && typeof e.progress === 'number' && (
+                        {/* Прогресс % — только для основателя/сооснователя. */}
+                        {isFounderView && e.type === 'task' && typeof e.progress === 'number' && (
                           <span className={clsx(
                             'shrink-0 text-[9px] font-bold px-1 rounded',
                             e.progress >= 100

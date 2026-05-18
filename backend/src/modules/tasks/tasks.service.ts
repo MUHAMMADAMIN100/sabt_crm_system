@@ -489,9 +489,15 @@ export class TasksService {
       throw new ForbiddenException('Not allowed');
     }
 
-    // SCOPE можно менять (основатель редактирует тип задачи). Смена
-    // scope НЕ рассылает ретроспективных уведомлений — это осознанное
-    // решение: уведомления уходят только при создании/назначении.
+    // SCOPE менять может ТОЛЬКО основатель/сооснователь (это их фича
+    // редактирования типа задачи). Для остальных ролей попытка смены
+    // scope тихо игнорируется — поле убирается из dto, без 403.
+    // Смена scope НЕ рассылает ретроспективных уведомлений.
+    if ((dto as any).scope && (dto as any).scope !== task.scope) {
+      if (user.role !== 'founder' && user.role !== 'co_founder') {
+        delete (dto as any).scope;
+      }
+    }
 
     // SMM specialists have full status control over their own tasks
     const isSmmSpecialist = user.role === UserRole.SMM_SPECIALIST;
