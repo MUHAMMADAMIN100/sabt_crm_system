@@ -89,6 +89,11 @@ export default function CalendarPage() {
       qc.invalidateQueries({ queryKey: ['calendar'] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
       qc.invalidateQueries({ queryKey: ['task', editingTaskId] })
+      // Принудительный refetch — карточка в календаре должна сразу
+      // перекраситься в цвет нового типа задачи (scope), а не ждать
+      // следующего визита. invalidate помечает stale, refetch тянет
+      // данные немедленно.
+      qc.refetchQueries({ queryKey: ['calendar'], type: 'active' })
       setEditingTaskId(null)
       toast.success('Изменения сохранены')
     },
@@ -632,7 +637,7 @@ function FounderQuickTaskForm({
     scope?: 'personal' | 'business' | 'general'
     priority?: 'low' | 'medium' | 'high' | 'critical'
     assigneeIds?: string[]
-    subtasks?: Array<{ id: string; text: string; done: boolean }>
+    subtasks?: Array<{ id: string; text: string; done: boolean; assigneeId?: string }>
   }
 }) {
   const isEdit = !!initial
@@ -644,11 +649,12 @@ function FounderQuickTaskForm({
   const [search, setSearch] = useState('')
   // Дропдаун исполнителей — закрыт по умолчанию, открывается по клику.
   const [pickerOpen, setPickerOpen] = useState(false)
-  // Подзадачи — список пунктов внутри задачи.
-  const [subtasks, setSubtasks] = useState<Array<{ id: string; text: string; done: boolean }>>(
+  // Подзадачи — список пунктов внутри задачи, у каждой свой исполнитель.
+  const [subtasks, setSubtasks] = useState<Array<{ id: string; text: string; done: boolean; assigneeId?: string }>>(
     initial?.subtasks || [],
   )
   const [newSubtask, setNewSubtask] = useState('')
+  const [newSubtaskAssignee, setNewSubtaskAssignee] = useState('')
 
   const eligibleEmployees = useMemo(
     () => (employees || []).filter((emp: any) => emp.user?.id),
@@ -670,10 +676,18 @@ function FounderQuickTaskForm({
   const addSubtask = () => {
     const text = newSubtask.trim()
     if (!text) return
-    setSubtasks(prev => [...prev, { id: crypto.randomUUID(), text, done: false }])
+    setSubtasks(prev => [...prev, {
+      id: crypto.randomUUID(), text, done: false,
+      assigneeId: newSubtaskAssignee || undefined,
+    }])
     setNewSubtask('')
+    setNewSubtaskAssignee('')
   }
   const removeSubtask = (id: string) => setSubtasks(prev => prev.filter(s => s.id !== id))
+  const setSubtaskAssignee = (id: string, assigneeId: string) =>
+    setSubtasks(prev => prev.map(s => s.id === id ? { ...s, assigneeId: assigneeId || undefined } : s))
+  const empName = (uid?: string) =>
+    uid ? (eligibleEmployees.find((e: any) => e.user?.id === uid)?.fullName || '') : ''
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -833,7 +847,7 @@ function FounderQuickTaskForm({
         </div>
       )}
 
-      {/* Подзадачи */}
+      {/* Подзадачи — у каждой свой исполнитель */}
       <div>
         <label className="label">Подзадачи</label>
         {subtasks.length > 0 && (
@@ -842,6 +856,18 @@ function FounderQuickTaskForm({
               <div key={s.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-50 dark:bg-surface-700/40">
                 <span className="text-xs text-surface-400 w-5 shrink-0">{idx + 1}.</span>
                 <span className="text-sm flex-1 min-w-0 truncate">{s.text}</span>
+                {/* Исполнитель подзадачи */}
+                <select
+                  value={s.assigneeId || ''}
+                  onChange={e => setSubtaskAssignee(s.id, e.target.value)}
+                  className="text-xs bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded px-1.5 py-1 max-w-[140px] shrink-0"
+                  title={s.assigneeId ? `Исполнитель: ${empName(s.assigneeId)}` : 'Без исполнителя'}
+                >
+                  <option value="">— исполнитель —</option>
+                  {eligibleEmployees.map((emp: any) => (
+                    <option key={emp.user.id} value={emp.user.id}>{emp.fullName}</option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   onClick={() => removeSubtask(s.id)}
@@ -851,15 +877,26 @@ function FounderQuickTaskForm({
             ))}
           </div>
         )}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <input
             type="text"
             value={newSubtask}
             onChange={e => setNewSubtask(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSubtask() } }}
             placeholder="Добавить подзадачу..."
-            className="input flex-1"
+            className="input flex-1 min-w-[160px]"
           />
+          <select
+            value={newSubtaskAssignee}
+            onChange={e => setNewSubtaskAssignee(e.target.value)}
+            className="input w-auto shrink-0"
+            title="Исполнитель новой подзадачи"
+          >
+            <option value="">— исполнитель —</option>
+            {eligibleEmployees.map((emp: any) => (
+              <option key={emp.user.id} value={emp.user.id}>{emp.fullName}</option>
+            ))}
+          </select>
           <button type="button" onClick={addSubtask} className="btn-secondary px-3 shrink-0">
             <Plus size={15} />
           </button>

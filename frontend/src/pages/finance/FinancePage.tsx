@@ -361,6 +361,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
                       type: 'expense', category: 'salary',
                       counterparty: e.fullName,
                       description: `Штраф — ${e.fullName}`,
+                      employee: e,
                     })}
                     className="px-2 py-1 rounded-md text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 shrink-0"
                   >Штраф</button>
@@ -369,6 +370,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
                       type: 'expense', category: 'salary',
                       counterparty: e.fullName,
                       description: `Аванс — ${e.fullName}`,
+                      employee: e,
                     })}
                     className="px-2 py-1 rounded-md text-[11px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-200 shrink-0"
                   >Аванс</button>
@@ -591,11 +593,32 @@ function TransactionsSection({
   )
 }
 
+/** Стаж работы из даты приёма: "2 года 3 мес" / "5 мес" / "—". */
+function workDuration(hireDate?: string | Date | null): string {
+  if (!hireDate) return '—'
+  const start = new Date(hireDate)
+  if (isNaN(start.getTime())) return '—'
+  const now = new Date()
+  let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth())
+  if (now.getDate() < start.getDate()) months--
+  if (months < 0) months = 0
+  const years = Math.floor(months / 12)
+  const rem = months % 12
+  const yWord = (n: number) => n === 1 ? 'год' : (n >= 2 && n <= 4 ? 'года' : 'лет')
+  const parts: string[] = []
+  if (years > 0) parts.push(`${years} ${yWord(years)}`)
+  if (rem > 0 || years === 0) parts.push(`${rem} мес`)
+  return parts.join(' ')
+}
+
 // ─── Form ───────────────────────────────────────────────────────────
 function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit, onCancel, loading }: any) {
   const [type, setType] = useState<'income' | 'expense'>(initial?.type ?? defaultType ?? 'income')
   // Счёт — отдельным state'ом, чтобы отрисовать кнопками-сегментами наверху.
   const [account, setAccount] = useState<string>(initial?.account ?? defaultAccount ?? 'alif')
+  // Транзакция по сотруднику (Штраф/Аванс) — упрощённый вид формы.
+  const emp = initial?.employee
+  const isEmployeeTx = !!emp
   const todayIso = new Date().toISOString().slice(0, 10)
   const { register, handleSubmit, formState: { errors } } = useForm({
     defaultValues: {
@@ -639,27 +662,49 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
         </button>
       </div>
 
-      {/* Счёт — кнопки-сегменты наверху формы */}
-      <div>
-        <label className="text-xs font-medium text-gray-700 dark:text-gray-300 block mb-1.5">Счёт *</label>
-        <div className="flex flex-wrap gap-2">
-          {ACCOUNTS.filter(a => a.id !== 'all').map(a => (
-            <button
-              key={a.id}
-              type="button"
-              onClick={() => setAccount(a.id)}
-              className={clsx(
-                'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
-                account === a.id
-                  ? 'bg-purple-600 text-white border-purple-600'
-                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-purple-300',
-              )}
-            >
-              {a.label}
-            </button>
-          ))}
+      {/* Счёт — кнопки-сегменты наверху. Скрыт для транзакций по сотруднику. */}
+      {!isEmployeeTx && (
+        <div>
+          <label className="text-xs font-medium text-gray-700 dark:text-gray-300 block mb-1.5">Счёт *</label>
+          <div className="flex flex-wrap gap-2">
+            {ACCOUNTS.filter(a => a.id !== 'all').map(a => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => setAccount(a.id)}
+                className={clsx(
+                  'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
+                  account === a.id
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-purple-300',
+                )}
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Карточка сотрудника — для транзакций Штраф/Аванс */}
+      {isEmployeeTx && (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 space-y-1.5">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">ФИО</span>
+            <span className="font-semibold">{emp.fullName}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Зарплата</span>
+            <span className="font-medium">
+              {emp.salary ? `${Number(emp.salary).toLocaleString('ru-RU')} сом.` : '—'}
+            </span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Длительность работы</span>
+            <span className="font-medium">{workDuration(emp.hireDate)}</span>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormField label="Сумма (сомони)" required error={errors.amount?.message as string}>
@@ -686,32 +731,36 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
         <input {...register('description', { required: 'Описание обязательно' })} className="input" />
       </FormField>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormField label="Клиент / Контрагент">
-          <input {...register('counterparty')} className="input" placeholder="Имя клиента/поставщика" />
-        </FormField>
-        <FormField label="Проект">
-          <select {...register('project')} className="input">
-            <option value="">— Не выбран —</option>
-            {projects.map((p: any) => (
-              <option key={p.id} value={p.name}>{p.name}</option>
-            ))}
-          </select>
-        </FormField>
-        <FormField label="Способ оплаты">
-          <select {...register('paymentMethod')} className="input">
-            <option value="">— Не указан —</option>
-            {PAYMENT_METHODS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-          </select>
-        </FormField>
-        <FormField label="Статус" required>
-          <select {...register('status', { required: true })} className="input">
-            {Object.entries(STATUS_INFO).map(([id, info]) => (
-              <option key={id} value={id}>{info.label}</option>
-            ))}
-          </select>
-        </FormField>
-      </div>
+      {/* Клиент/Проект/Способ оплаты/Статус — скрыты для транзакций
+          по сотруднику (Штраф/Аванс): там это не нужно. */}
+      {!isEmployeeTx && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <FormField label="Клиент / Контрагент">
+            <input {...register('counterparty')} className="input" placeholder="Имя клиента/поставщика" />
+          </FormField>
+          <FormField label="Проект">
+            <select {...register('project')} className="input">
+              <option value="">— Не выбран —</option>
+              {projects.map((p: any) => (
+                <option key={p.id} value={p.name}>{p.name}</option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Способ оплаты">
+            <select {...register('paymentMethod')} className="input">
+              <option value="">— Не указан —</option>
+              {PAYMENT_METHODS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Статус" required>
+            <select {...register('status', { required: true })} className="input">
+              {Object.entries(STATUS_INFO).map(([id, info]) => (
+                <option key={id} value={id}>{info.label}</option>
+              ))}
+            </select>
+          </FormField>
+        </div>
+      )}
 
       <FormField label="Комментарий">
         <textarea {...register('comment')} rows={2} className="input resize-none" placeholder="Произвольная заметка" />
