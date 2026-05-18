@@ -20,6 +20,12 @@ export enum ClientLeadInterest {
   HOT  = 'hot',      // Горячий
 }
 
+/** Направление лида — определяет, какой менеджер продаж его ведёт. */
+export enum ClientLeadDirection {
+  SMM         = 'smm',          // СММ
+  DEVELOPMENT = 'development',  // Разработка
+}
+
 @Entity('client_leads')
 export class ClientLead {
   @PrimaryGeneratedColumn('uuid')
@@ -64,6 +70,11 @@ export class ClientLead {
 
   @Column({ type: 'enum', enum: ClientLeadInterest, nullable: true })
   interest: ClientLeadInterest;
+
+  /** Направление лида (СММ / Разработка). Проставляется автоматически по
+   *  сегменту менеджера-создателя. Старые лиды могут быть null. */
+  @Column({ type: 'enum', enum: ClientLeadDirection, nullable: true })
+  direction: ClientLeadDirection;
 
   @Column({ type: 'date', nullable: true })
   lastContactAt: Date;

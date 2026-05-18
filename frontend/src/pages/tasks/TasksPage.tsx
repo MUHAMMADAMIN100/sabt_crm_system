@@ -39,6 +39,9 @@ export default function TasksPage() {
   const navigate = useNavigate()
   const isHeadSMM = user?.role === 'head_smm' || user?.role === 'smm_director'
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
+  // МП по продажам: видят задачи своего направления и могут создавать
+  // задачи в доступных им проектах (сервер фильтрует /tasks и /projects).
+  const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
   // Story widget visible to everyone except admin/founder (they have analytics).
   // PM sees it too because they may be a member of other projects where they
   // need to publish stories themselves.
@@ -72,7 +75,7 @@ export default function TasksPage() {
   }
   const PRIORITIES = ['low', 'medium', 'high', 'critical']
 
-  const { data: allTasks, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => isManagerPlus ? tasksApi.list() : tasksApi.my(), refetchInterval: 30000 })
+  const { data: allTasks, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => (isManagerPlus || isSalesManager) ? tasksApi.list() : tasksApi.my(), refetchInterval: 30000 })
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
 
@@ -80,10 +83,11 @@ export default function TasksPage() {
   const availableProjects = useMemo(() => {
     const all = projects || []
     if (isHeadSMM) return all.filter((p: any) => p.projectType === 'SMM')
-    if (isManagerPlus) return all
+    // МП — сервер уже вернул только проекты их направления.
+    if (isManagerPlus || isSalesManager) return all
     return all.filter((p: any) => p.members?.some((m: any) => m.id === user?.id))
   },
-    [projects, isManagerPlus, user?.id]
+    [projects, isManagerPlus, isSalesManager, isHeadSMM, user?.id]
   )
 
   // Map userId -> fullName for displaying correct full names on tasks
@@ -102,8 +106,8 @@ export default function TasksPage() {
     const matchesPriority = priorities.length === 0 || priorities.includes(t.priority)
     const matchesProject = !projectId || t.projectId === projectId
     const matchesAssignee = !assigneeUserId || t.assigneeId === assigneeUserId
-    // Employee sees only own tasks
-    const matchesEmployee = isManagerPlus || t.assigneeId === user?.id
+    // Employee sees only own tasks; МП — задачи своего направления (отфильтровано сервером)
+    const matchesEmployee = isManagerPlus || isSalesManager || t.assigneeId === user?.id
     // Wave 16 фильтры
     const matchesReviewer = !filterReviewer || t.reviewerId === filterReviewer
     const matchesReturn = !filterReturnReason ||
@@ -298,10 +302,7 @@ export default function TasksPage() {
             <span className="text-xs font-medium text-surface-500 dark:text-surface-400">{t('tasks.project')}</span>
             <select value={projectId} onChange={e => setProjectId(e.target.value)} className="input w-48">
               <option value="">{t('common.allProjects')}</option>
-              {(isManagerPlus
-                ? projects
-                : projects?.filter((p: any) => p.members?.some((m: any) => m.id === user?.id))
-              )?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {availableProjects?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
           {isManagerPlus && (
@@ -562,7 +563,7 @@ export default function TasksPage() {
             projects={availableProjects} employees={employees || []}
             loading={createMut.isPending || updateMut.isPending}
             initial={editingTask}
-            isAdmin={isManagerPlus} currentUserId={user?.id}
+            isAdmin={isManagerPlus || isSalesManager} currentUserId={user?.id}
           />
         </Modal>
       )}

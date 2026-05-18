@@ -32,6 +32,7 @@ export class TasksController {
     return this.service.findAll({
       projectId, assigneeId, status, priority, search, deadlineBefore, scope,
       viewerId: req?.user?.id,
+      viewerRole: req?.user?.role,
     });
   }
 
@@ -41,8 +42,13 @@ export class TasksController {
     @Query('assigneeId') assigneeId: string,
     @Query('status') status: TaskStatus,
     @Res() res: Response,
+    @Request() req?,
   ) {
-    const tasks = await this.service.findAll({ projectId, assigneeId, status });
+    const tasks = await this.service.findAll({
+      projectId, assigneeId, status,
+      viewerId: req?.user?.id,
+      viewerRole: req?.user?.role,
+    });
     const header = 'ID,Title,Status,Priority,Project,Assignee,Deadline,LoggedHours\n';
     const rows = tasks.map(t =>
       [

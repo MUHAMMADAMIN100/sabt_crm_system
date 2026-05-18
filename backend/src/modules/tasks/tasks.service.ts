@@ -16,6 +16,7 @@ import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
 import { TaskResultsService } from '../task-results/task-results.service';
 import { DailyReport } from '../reports/daily-report.entity';
+import { getSalesSegment, isSalesManager } from '../../common/sales-segment';
 
 const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM];
 const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.MARKETER, UserRole.TARGETOLOGIST, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.EMPLOYEE];
@@ -285,6 +286,8 @@ export class TasksService {
     scope?: 'personal' | 'business' | 'general';
     /** ID текущего пользователя — нужен для скрытия чужих PERSONAL-задач. */
     viewerId?: string;
+    /** Роль текущего пользователя — нужна для сегментации МП по продажам. */
+    viewerRole?: string;
   }) {
     const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
@@ -322,6 +325,25 @@ export class TasksService {
       );
     }
 
+    // Сегментация менеджеров продаж: МП видит только задачи проектов
+    // своего направления. Задачи без проекта видны, если они созданы им,
+    // назначены ему или это общие задачи (scope='general').
+    const salesSegment = getSalesSegment(filters.viewerRole);
+    if (salesSegment) {
+      qb.andWhere(
+        `(project.projectType = :salesProjType
+          OR (t.projectId IS NULL AND (
+            t."createdById" = :salesViewerId
+            OR t.assigneeId = :salesViewerId
+            OR t.scope = 'general'
+          )))`,
+        {
+          salesProjType: salesSegment.projectType,
+          salesViewerId: filters.viewerId ?? null,
+        },
+      );
+    }
+
     const tasks = await qb.orderBy('t.createdAt', 'DESC').getMany();
     if (tasks.length > 0) {
       const map = await this.loadAssignees(tasks.map(t => t.id));
@@ -344,10 +366,19 @@ export class TasksService {
   async create(dto: CreateTaskDto, userId: string, userRole?: string) {
     // Workers (non-PM) can only create tasks assigned to themselves
     const isPM = userRole && PM_ROLES.includes(userRole as UserRole);
-    if (!isPM) {
+    // МП по продажам тоже могут назначать задачи на других сотрудников
+    // (фича календаря «как у основателя»).
+    const canAssignOthers = isPM || isSalesManager(userRole);
+    if (!canAssignOthers) {
       dto.assigneeId = userId;
       // Multi-assignee тоже ограничиваем — только сам себе
       (dto as any).assigneeIds = [userId];
+    }
+
+    // МП по продажам может прикреплять задачу только к проекту своего
+    // направления — findOne бросит 403, если проект чужого сегмента.
+    if (dto.projectId && isSalesManager(userRole)) {
+      await this.projectsService.findOne(dto.projectId, userRole);
     }
 
     const scope = (dto as any).scope as 'personal' | 'business' | 'general' | undefined;
@@ -490,8 +521,13 @@ export class TasksService {
   async update(id: string, dto: UpdateTaskDto, user: { id: string; role: string; name?: string }) {
     const task = await this.findOne(id);
 
-    // Workers can only update their own tasks
-    if (WORKER_ROLES.includes(user.role as UserRole) && task.assigneeId !== user.id) {
+    // Workers can only update tasks assigned to them OR created by them
+    // (МП по продажам создаёт задачи в календаре — должен их редактировать).
+    if (
+      WORKER_ROLES.includes(user.role as UserRole) &&
+      task.assigneeId !== user.id &&
+      task.createdById !== user.id
+    ) {
       throw new ForbiddenException('Not allowed');
     }
 
@@ -500,7 +536,11 @@ export class TasksService {
     // scope тихо игнорируется — поле убирается из dto, без 403.
     // Смена scope НЕ рассылает ретроспективных уведомлений.
     if ((dto as any).scope && (dto as any).scope !== task.scope) {
-      if (user.role !== 'founder' && user.role !== 'co_founder') {
+      const canChangeScope =
+        user.role === 'founder' ||
+        user.role === 'co_founder' ||
+        isSalesManager(user.role);
+      if (!canChangeScope) {
         delete (dto as any).scope;
       }
     }
@@ -508,6 +548,16 @@ export class TasksService {
     // исполнителей (иначе защита очереди syncAssignees бросит 400).
     const scopeChanged =
       !!(dto as any).scope && (dto as any).scope !== task.scope;
+
+    // МП по продажам может переносить задачу только в проект своего
+    // направления — findOne бросит 403, если проект чужого сегмента.
+    if (
+      (dto as any).projectId &&
+      isSalesManager(user.role) &&
+      (dto as any).projectId !== task.projectId
+    ) {
+      await this.projectsService.findOne((dto as any).projectId, user.role);
+    }
 
     // SMM specialists have full status control over their own tasks
     const isSmmSpecialist = user.role === UserRole.SMM_SPECIALIST;

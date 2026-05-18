@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike } from 'typeorm';
-import { ClientLead, ClientLeadStatus, ClientLeadInterest } from './client-lead.entity';
+import { ForbiddenException } from '@nestjs/common';
+import { ClientLead, ClientLeadStatus, ClientLeadInterest, ClientLeadDirection } from './client-lead.entity';
 
 export interface ListFilters {
   search?: string;
@@ -10,6 +11,8 @@ export interface ListFilters {
   sphere?: string;
   ownerId?: string;
   source?: string;
+  /** Направление МП — лиды чужого направления скрываются. */
+  direction?: ClientLeadDirection;
 }
 
 @Injectable()
@@ -32,13 +35,21 @@ export class ClientsService {
     if (f.sphere) qb.andWhere('c.sphere = :sp', { sp: f.sphere });
     if (f.ownerId) qb.andWhere('c.ownerId = :oid', { oid: f.ownerId });
     if (f.source) qb.andWhere('c.leadSource = :src', { src: f.source });
+    // Направление: лиды своего направления + старые лиды без направления.
+    if (f.direction) {
+      qb.andWhere('(c.direction = :dir OR c.direction IS NULL)', { dir: f.direction });
+    }
     qb.orderBy('c.updatedAt', 'DESC');
     return qb.getMany();
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, requesterDirection?: ClientLeadDirection) {
     const lead = await this.repo.findOne({ where: { id }, relations: ['owner'] });
     if (!lead) throw new NotFoundException('Client lead not found');
+    // Лид чужого направления открывать нельзя (старые лиды без направления — можно).
+    if (requesterDirection && lead.direction && lead.direction !== requesterDirection) {
+      throw new ForbiddenException('Лид не относится к вашему направлению');
+    }
     return lead;
   }
 
@@ -60,30 +71,36 @@ export class ClientsService {
   }
 
   /** Aggregated counters for the Clients page header */
-  async stats() {
-    const statusRows = await this.repo
+  async stats(direction?: ClientLeadDirection) {
+    // Условие направления: свои лиды + старые без направления.
+    const dirSql = '(c.direction = :dir OR c.direction IS NULL)';
+
+    const statusQb = this.repo
       .createQueryBuilder('c')
       .select('c.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .groupBy('c.status')
-      .getRawMany();
+      .groupBy('c.status');
+    if (direction) statusQb.where(dirSql, { dir: direction });
+    const statusRows = await statusQb.getRawMany();
     const byStatus: Record<string, number> = {};
     for (const r of statusRows) byStatus[r.status] = Number(r.count);
 
-    const interestRows = await this.repo
+    const interestQb = this.repo
       .createQueryBuilder('c')
       .select('COALESCE(c.interest, \'none\')', 'interest')
       .addSelect('COUNT(*)', 'count')
-      .groupBy('c.interest')
-      .getRawMany();
+      .groupBy('c.interest');
+    if (direction) interestQb.where(dirSql, { dir: direction });
+    const interestRows = await interestQb.getRawMany();
     const byInterest: Record<string, number> = {};
     for (const r of interestRows) byInterest[r.interest] = Number(r.count);
 
-    const totalPotentialRow = await this.repo
+    const potentialQb = this.repo
       .createQueryBuilder('c')
       .select('COALESCE(SUM(c.dealPotential), 0)', 'total')
-      .where('c.status NOT IN (:...bad)', { bad: ['lost'] })
-      .getRawOne();
+      .where('c.status NOT IN (:...bad)', { bad: ['lost'] });
+    if (direction) potentialQb.andWhere(dirSql, { dir: direction });
+    const totalPotentialRow = await potentialQb.getRawOne();
 
     return {
       byStatus,

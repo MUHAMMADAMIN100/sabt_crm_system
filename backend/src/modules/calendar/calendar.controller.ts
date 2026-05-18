@@ -19,6 +19,6 @@ export class CalendarController {
     @Query('scope') scope?: 'personal' | 'business' | 'general',
     @Request() req?,
   ) {
-    return this.service.getEvents(from, to, employeeId, projectId, scope, req?.user?.id);
+    return this.service.getEvents(from, to, employeeId, projectId, scope, req?.user?.id, req?.user?.role);
   }
 }

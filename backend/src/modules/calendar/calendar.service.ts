@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
+import { getSalesSegment } from '../../common/sales-segment';
 
 /** Прогресс задачи в % для отображения на карточке календаря.
  *  Приоритет: 1) доля выполненных подзадач (acceptanceCriteria),
@@ -47,6 +48,7 @@ export class CalendarService {
     projectId?: string,
     scope?: 'personal' | 'business' | 'general',
     viewerId?: string,
+    viewerRole?: string,
   ) {
     if (from && to && new Date(from) > new Date(to)) {
       throw new BadRequestException('from date must be before to date');
@@ -76,12 +78,34 @@ export class CalendarService {
       );
     }
 
+    // Сегментация менеджеров продаж: МП видит только задачи проектов
+    // своего направления. Задачи без проекта видны, если они созданы им,
+    // назначены ему или это общие задачи (scope='general').
+    const salesSegment = getSalesSegment(viewerRole);
+    if (salesSegment) {
+      taskQb.andWhere(
+        `(project.projectType = :salesProjType
+          OR (t.projectId IS NULL AND (
+            t."createdById" = :salesViewerId
+            OR t.assigneeId = :salesViewerId
+            OR t.scope = 'general'
+          )))`,
+        { salesProjType: salesSegment.projectType, salesViewerId: viewerId ?? null },
+      );
+    }
+
     const projectQb = this.projectRepo
       .createQueryBuilder('p')
       .where('(p.startDate BETWEEN :from AND :to OR p.endDate BETWEEN :from AND :to)', { from, to })
       .andWhere('p.isArchived = false');
 
     if (projectId) projectQb.andWhere('p.id = :projectId', { projectId });
+    // МП по продажам — старты/концы только проектов своего направления.
+    if (salesSegment) {
+      projectQb.andWhere('p.projectType = :salesProjType', {
+        salesProjType: salesSegment.projectType,
+      });
+    }
     // Если фильтр по scope активен — не показываем старты/концы проектов
     // (они не относятся к scope задачи).
     const hideProjectEvents = !!scope;

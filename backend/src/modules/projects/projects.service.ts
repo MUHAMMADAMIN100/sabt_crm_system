@@ -18,6 +18,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { MailService } from '../mail/mail.service';
+import { getSalesSegment } from '../../common/sales-segment';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
@@ -466,7 +467,13 @@ export class ProjectsService {
         // Руководитель SMM видит ВСЕ SMM-проекты компании (как founder, но
         // только в SMM-сегменте). Не-SMM проекты ему не показываем.
         qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
-      } else if (!['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(role)) {
+      } else if (getSalesSegment(role)) {
+        // Менеджер продаж видит только проекты своего направления:
+        // sales_manager_smm → SMM, sales_manager_dev → «Web сайт».
+        qb.andWhere('p.projectType = :salesType', {
+          salesType: getSalesSegment(role)!.projectType,
+        });
+      } else if (!['admin', 'founder', 'co_founder'].includes(role)) {
         // All other roles see only projects they are members of
         qb.andWhere(
           `p.id IN (
@@ -476,7 +483,7 @@ export class ProjectsService {
           { userId },
         );
       }
-      // admin, founder & sales_manager see all — no extra filter
+      // admin, founder & co_founder see all — no extra filter
     }
 
     if (status) qb.andWhere('p.status = :status', { status });
@@ -513,6 +520,26 @@ export class ProjectsService {
       relations: ['manager', 'members', 'tasks', 'tasks.assignee', 'files'],
     });
     if (!project) throw new NotFoundException('Project not found');
+    // Менеджер продаж не может открыть проект чужого направления.
+    const segment = getSalesSegment(requestUserRole);
+    if (segment && project.projectType !== segment.projectType) {
+      throw new ForbiddenException('Проект не относится к вашему направлению');
+    }
+    // Задачи-«Истории» из контент-плана не показываем в списке задач проекта —
+    // они ведутся во вкладке «Контент-план». Скрываем для всех ролей.
+    if (Array.isArray(project.tasks) && project.tasks.length > 0) {
+      const storyRows = await this.repo.manager.query(
+        `SELECT "taskId" FROM content_plan_items
+         WHERE "projectId" = $1 AND "contentType" = 'story' AND "taskId" IS NOT NULL`,
+        [id],
+      );
+      const storyTaskIds = new Set(
+        (storyRows as Array<{ taskId: string }>).map(r => r.taskId),
+      );
+      if (storyTaskIds.size > 0) {
+        project.tasks = project.tasks.filter(t => !storyTaskIds.has(t.id));
+      }
+    }
     return requestUserRole ? this.stripFinance(project, requestUserRole) : project;
   }
 

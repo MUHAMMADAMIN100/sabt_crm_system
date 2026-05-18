@@ -47,9 +47,11 @@ export default function CalendarPage() {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
-  const isFounderView = user?.role === 'founder' || user?.role === 'co_founder'
-  // Создавать задачи кликом по дню могут только менеджерские роли.
-  const canCreate = isManagerPlus
+  // МП по продажам получают календарь как у основателя, но без типа «Общая».
+  const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
+  const isFounderView = user?.role === 'founder' || user?.role === 'co_founder' || isSalesManager
+  // Создавать задачи кликом по дню могут менеджерские роли и МП по продажам.
+  const canCreate = isManagerPlus || isFounderView
 
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')
@@ -61,8 +63,8 @@ export default function CalendarPage() {
       ...(scopeFilter && { scope: scopeFilter }),
     }),
   })
-  const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list(), enabled: isManagerPlus })
-  const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list(), enabled: isManagerPlus })
+  const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list(), enabled: isManagerPlus || isFounderView })
+  const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list(), enabled: isManagerPlus || isFounderView })
 
   const createTask = useMutation({
     mutationFn: tasksApi.create,
@@ -270,7 +272,7 @@ export default function CalendarPage() {
           { value: 'personal' as ScopeFilter, label: 'Личные',     icon: <Lock size={11} /> },
           { value: 'business' as ScopeFilter, label: 'Для бизнеса', icon: <Briefcase size={11} /> },
           { value: 'general'  as ScopeFilter, label: 'Общие',      icon: <Globe size={11} /> },
-        ].map(opt => (
+        ].filter(opt => !isSalesManager || opt.value !== 'general').map(opt => (
           <button
             key={opt.value || 'all'}
             onClick={() => setScopeFilter(opt.value)}
@@ -502,7 +504,7 @@ export default function CalendarPage() {
         <Modal
           open={showTaskForm}
           onClose={() => setShowTaskForm(false)}
-          title={`${isFounderView ? 'Задача от основателя' : t('calendar.addTask')}${selectedDay ? ' — ' + format(selectedDay, 'dd.MM.yyyy') : ''}`}
+          title={`${isSalesManager ? 'Новая задача' : isFounderView ? 'Задача от основателя' : t('calendar.addTask')}${selectedDay ? ' — ' + format(selectedDay, 'dd.MM.yyyy') : ''}`}
           size="lg"
         >
           {isFounderView ? (
@@ -511,12 +513,14 @@ export default function CalendarPage() {
               loading={createTask.isPending}
               onClose={() => setShowTaskForm(false)}
               initialDeadline={selectedDay ? format(selectedDay, 'yyyy-MM-dd') : undefined}
+              allowGeneral={!isSalesManager}
+              projects={isSalesManager ? (projects || []) : undefined}
               onSubmit={data => createTask.mutate({
                 ...data,
                 // deadline (дата+время) приходит из формы.
-                // fromFounder ставим только для бизнес/общих задач — личная
-                // никуда не отправляется и баджа основателя не имеет.
-                fromFounder: data.scope !== 'personal',
+                // fromFounder — только для бизнес/общих задач основателя;
+                // у МП по продажам задачи не помечаются «от основателя».
+                fromFounder: !isSalesManager && data.scope !== 'personal',
               })}
             />
           ) : (
@@ -553,6 +557,8 @@ export default function CalendarPage() {
               loading={editTaskMut.isPending || deleteTaskMut.isPending}
               onClose={() => setEditingTaskId(null)}
               initialDeadline={editingTaskFull.deadline || undefined}
+              allowGeneral={!isSalesManager}
+              projects={isSalesManager ? (projects || []) : undefined}
               onDelete={() => {
                 if (confirm('Удалить задачу?')) deleteTaskMut.mutate(editingTaskFull.id)
               }}
@@ -568,6 +574,7 @@ export default function CalendarPage() {
                 subtasks: Array.isArray(editingTaskFull.acceptanceCriteria)
                   ? editingTaskFull.acceptanceCriteria
                   : [],
+                projectId: editingTaskFull.projectId || undefined,
               }}
               onSubmit={data => editTaskMut.mutate({
                 id: editingTaskFull.id,
@@ -584,6 +591,11 @@ export default function CalendarPage() {
                   // отправляем пустой массив чтобы backend очистил.
                   assigneeIds: data.scope === 'business' ? (data.assigneeIds || []) : [],
                   assigneeId: data.scope === 'business' ? data.assigneeId : null,
+                  // Проект — только в форме МП (у основателя поля нет —
+                  // тогда projectId не трогаем). Для не-бизнес задач отвязываем.
+                  projectId: !isSalesManager
+                    ? undefined
+                    : (data.scope === 'business' ? (data.projectId || null) : null),
                 },
               })}
             />
@@ -626,6 +638,7 @@ export default function CalendarPage() {
  */
 function FounderQuickTaskForm({
   employees, loading, onClose, onSubmit, onDelete, initial, initialDeadline,
+  allowGeneral = true, projects,
 }: {
   employees: any[]
   loading: boolean
@@ -640,13 +653,22 @@ function FounderQuickTaskForm({
     priority?: 'low' | 'medium' | 'high' | 'critical'
     assigneeIds?: string[]
     subtasks?: Array<{ id: string; text: string; done: boolean; assigneeId?: string }>
+    projectId?: string
   }
   // Дедлайн для префилла: полный ISO (режим правки) либо дата YYYY-MM-DD
   // выбранного дня календаря (режим создания).
   initialDeadline?: string
+  // Доступен ли тип «Общая». У МП по продажам — только личная/бизнес.
+  allowGeneral?: boolean
+  // Список доступных проектов. Если передан — в форме появляется выбор
+  // проекта (для бизнес-задач). Не передаётся форме основателя.
+  projects?: any[]
 }) {
   const isEdit = !!initial
-  const [scope, setScope] = useState<'personal' | 'business' | 'general'>(initial?.scope || 'business')
+  const initialScope = initial?.scope || 'business'
+  const [scope, setScope] = useState<'personal' | 'business' | 'general'>(
+    !allowGeneral && initialScope === 'general' ? 'business' : initialScope,
+  )
   const [title, setTitle] = useState(initial?.title || '')
   const [description, setDescription] = useState(initial?.description || '')
   const [selectedIds, setSelectedIds] = useState<string[]>(initial?.assigneeIds || [])
@@ -660,6 +682,8 @@ function FounderQuickTaskForm({
   )
   const [newSubtask, setNewSubtask] = useState('')
   const [newSubtaskAssignee, setNewSubtaskAssignee] = useState('')
+  // Проект задачи (для бизнес-задач). Список приходит пропом projects.
+  const [projectId, setProjectId] = useState<string>(initial?.projectId || '')
   // Дата + время дедлайна. Из initialDeadline: полный ISO → дата+время,
   // короткая дата (YYYY-MM-DD) → дата + время по умолчанию 12:00.
   const initDeadline = useMemo(() => {
@@ -725,6 +749,8 @@ function FounderQuickTaskForm({
       // business — массив выбранных.
       assigneeId: scope === 'business' && selectedIds[0] ? selectedIds[0] : undefined,
       assigneeIds: scope === 'business' ? selectedIds : undefined,
+      // Проект — только у бизнес-задач (личная задача проекта не имеет).
+      projectId: scope === 'business' ? (projectId || undefined) : undefined,
       // Подзадачи сохраняем в acceptanceCriteria задачи.
       acceptanceCriteria: subtasks,
       // Дедлайн: дата + время. Собираем в локальном времени и переводим
@@ -740,12 +766,12 @@ function FounderQuickTaskForm({
       {/* Селектор типа задачи — редактируемый и при создании, и при правке. */}
       <div>
         <label className="label">Тип задачи *</label>
-        <div className="grid grid-cols-3 gap-2">
+        <div className={clsx('grid gap-2', allowGeneral ? 'grid-cols-3' : 'grid-cols-2')}>
           {[
             { v: 'personal' as const, icon: <Lock size={14} />,      label: 'Личная',      hint: 'Только для меня' },
             { v: 'business' as const, icon: <Briefcase size={14} />, label: 'Для бизнеса', hint: 'Выбранным сотрудникам' },
             { v: 'general'  as const, icon: <Globe size={14} />,     label: 'Общая',       hint: 'Для всей команды' },
-          ].map(opt => (
+          ].filter(opt => allowGeneral || opt.v !== 'general').map(opt => (
             <button
               key={opt.v}
               type="button"
@@ -784,6 +810,23 @@ function FounderQuickTaskForm({
           placeholder="Детали, контекст (необязательно)"
         />
       </div>
+
+      {/* Проект задачи — только для бизнес-задач и если список передан */}
+      {scope === 'business' && projects && projects.length > 0 && (
+        <div>
+          <label className="label">Проект <span className="text-[11px] text-surface-400 font-normal">— необязательно</span></label>
+          <select
+            value={projectId}
+            onChange={e => setProjectId(e.target.value)}
+            className="input"
+          >
+            <option value="">— Без проекта —</option>
+            {projects.map((p: any) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Multi-select исполнителей — дропдаун (только business) */}
       {scope === 'business' && (

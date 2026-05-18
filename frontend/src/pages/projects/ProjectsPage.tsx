@@ -47,6 +47,9 @@ export default function ProjectsPage() {
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
   const isHeadSMM = user?.role === 'head_smm' || user?.role === 'smm_director'
+  // МП по продажам видит только проекты своего направления — фильтр по типу
+  // ему не нужен (сервер всё равно ограничивает выдачу).
+  const isSalesManagerRole = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
   // admin/founder/co-founder + smm_director/head_smm (SMM only) can create projects
   const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm'].includes(user?.role || '')
   const qc = useQueryClient()
@@ -222,21 +225,23 @@ export default function ProjectsPage() {
             ))}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Тип:</span>
-          {PROJECT_TYPE_FILTERS.map(pt => (
-            <button
-              key={pt.value}
-              onClick={() => setProjectType(pt.value)}
-              className={clsx(
-                'px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                projectType === pt.value
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
-              )}
-            >{pt.label}</button>
-          ))}
-        </div>
+        {!isSalesManagerRole && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Тип:</span>
+            {PROJECT_TYPE_FILTERS.map(pt => (
+              <button
+                key={pt.value}
+                onClick={() => setProjectType(pt.value)}
+                className={clsx(
+                  'px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                  projectType === pt.value
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+                )}
+              >{pt.label}</button>
+            ))}
+          </div>
+        )}
 
         {/* Wave 16: расширенные фильтры (TZ п.13) */}
         <div className="flex flex-wrap items-center gap-2">

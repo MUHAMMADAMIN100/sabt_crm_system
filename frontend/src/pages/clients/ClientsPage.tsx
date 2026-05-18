@@ -290,7 +290,19 @@ export default function ClientsPage() {
                       {(page - 1) * PAGE_SIZE + idx + 1}
                     </td>
                     <td className="px-4 py-3 align-top">
-                      <div className="font-medium text-surface-900 dark:text-surface-100">{l.name}</div>
+                      <div className="font-medium text-surface-900 dark:text-surface-100 flex items-center gap-1.5">
+                        {l.name}
+                        {l.direction && (
+                          <span className={clsx(
+                            'inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-medium',
+                            l.direction === 'smm'
+                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                          )}>
+                            {l.direction === 'smm' ? 'СММ' : 'Разработка'}
+                          </span>
+                        )}
+                      </div>
                       {l.sphere && <div className="text-[11px] text-surface-400 dark:text-surface-500 mt-0.5">{l.sphere}</div>}
                       {l.problem && <div className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5 italic truncate max-w-[200px]">{l.problem}</div>}
                       {/* mobile: contact inline */}
