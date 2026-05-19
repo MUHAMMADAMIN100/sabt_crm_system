@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { analyticsApi } from '@/services/api.service'
+import { analyticsApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, ProgressBar, CollapsibleSection } from '@/components/ui'
 import { Calendar, CheckCircle2, Mail } from 'lucide-react'
 import { format } from 'date-fns'
+import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
 const TYPE_FILTERS = [
@@ -18,6 +19,48 @@ const TYPE_FILTERS = [
 
 const fmt = (n: number) => n.toLocaleString('ru-RU')
 
+/** Ячейка бюджета с инлайн-редактированием: клик → поле ввода,
+ *  сохранение по Enter или потере фокуса, отмена по Esc. */
+function BudgetCell({ value, onSave }: { value: number; onSave: (b: number) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  const start = () => { setDraft(String(value ?? 0)); setEditing(true) }
+  const commit = () => {
+    setEditing(false)
+    const n = Number(draft)
+    if (!isNaN(n) && n >= 0 && n !== Number(value ?? 0)) onSave(n)
+  }
+
+  if (editing) {
+    return (
+      <input
+        type="number"
+        min={0}
+        value={draft}
+        autoFocus
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); commit() }
+          if (e.key === 'Escape') setEditing(false)
+        }}
+        className="w-24 px-1.5 py-0.5 text-right text-sm rounded border border-primary-400 bg-white dark:bg-surface-800 tabular-nums"
+      />
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={start}
+      title="Нажмите, чтобы изменить бюджет"
+      className="px-1.5 py-0.5 rounded hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:text-primary-600 dark:hover:text-primary-400 tabular-nums transition-colors"
+    >
+      {fmt(value || 0)}
+    </button>
+  )
+}
+
 export default function SalesDashboard() {
   const [filter, setFilter] = useState('')
   const role = useAuthStore(s => s.user?.role)
@@ -27,9 +70,44 @@ export default function SalesDashboard() {
     : role === 'sales_manager_smm' ? 'SMM'
     : null
 
+  const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['sales-stats'],
     queryFn: analyticsApi.sales,
+  })
+
+  // Инлайн-редактирование бюджета прямо в таблице. После сохранения
+  // обновляем панель, список проектов, аналитику и карточку проекта.
+  const budgetMut = useMutation({
+    mutationFn: ({ id, budget }: { id: string; budget: number }) =>
+      projectsApi.update(id, { budget }),
+    onMutate: async ({ id, budget }) => {
+      await qc.cancelQueries({ queryKey: ['sales-stats'] })
+      const prev = qc.getQueryData(['sales-stats'])
+      qc.setQueryData(['sales-stats'], (old: any) => {
+        if (!old?.projects) return old
+        return {
+          ...old,
+          projects: old.projects.map((p: any) =>
+            p.id === id
+              ? { ...p, budget, remaining: Math.max(0, budget - Number(p.paidAmount || 0)) }
+              : p,
+          ),
+        }
+      })
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => {
+      qc.setQueryData(['sales-stats'], ctx?.prev)
+      toast.error('Не удалось обновить бюджет')
+    },
+    onSuccess: () => {
+      toast.success('Бюджет обновлён')
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
+      qc.invalidateQueries({ queryKey: ['project'] })
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['sales-stats'] }),
   })
 
   const projects = useMemo(() => {
@@ -110,7 +188,10 @@ export default function SalesDashboard() {
                     )}
                   </td>
                   <td className="py-2 pr-3 text-right font-medium text-surface-800 dark:text-surface-200 tabular-nums whitespace-nowrap">
-                    {fmt(p.budget)}
+                    <BudgetCell
+                      value={Number(p.budget || 0)}
+                      onSave={(budget) => budgetMut.mutate({ id: p.id, budget })}
+                    />
                   </td>
                   <td className="py-2 pr-3 text-right font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums whitespace-nowrap">
                     {fmt(p.paidAmount)}
