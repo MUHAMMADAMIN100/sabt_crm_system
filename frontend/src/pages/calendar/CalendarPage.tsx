@@ -5,7 +5,7 @@ import { useAuthStore } from '@/store/auth.store'
 import { Modal } from '@/components/ui'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday, isSameMonth, subDays, addDays } from 'date-fns'
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday, isSameMonth, subDays, addDays, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, ChevronDown, Plus, X, User, Calendar as CalIcon, Flag, FolderKanban, Edit, Trash2, Lock, Briefcase, Globe, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -43,6 +43,12 @@ export default function CalendarPage() {
   // Edit-режим для founder: клик по своей задаче в календаре открывает
   // ту же FounderQuickTaskForm в режиме редактирования.
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  // Режим календаря: месяц или неделя (с часовой сеткой).
+  const [calView, setCalView] = useState<'month' | 'week'>('month')
+  // День, для которого открыт модал «все задачи дня» (клик по «+N ещё»).
+  const [dayModalDate, setDayModalDate] = useState<Date | null>(null)
+  // Час выбранного слота в недельном виде — для префилла времени задачи.
+  const [selectedSlotHour, setSelectedSlotHour] = useState<number | null>(null)
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -53,8 +59,15 @@ export default function CalendarPage() {
   // Создавать задачи кликом по дню могут менеджерские роли и МП по продажам.
   const canCreate = isManagerPlus || isFounderView
 
-  const from = format(startOfMonth(current), 'yyyy-MM-dd')
-  const to = format(endOfMonth(current), 'yyyy-MM-dd')
+  // Диапазон загрузки событий зависит от режима: месяц или неделя.
+  const periodStart = calView === 'week'
+    ? startOfWeek(current, { weekStartsOn: 1 })
+    : startOfMonth(current)
+  const periodEnd = calView === 'week'
+    ? endOfWeek(current, { weekStartsOn: 1 })
+    : endOfMonth(current)
+  const from = format(periodStart, 'yyyy-MM-dd')
+  const to = format(periodEnd, 'yyyy-MM-dd')
 
   const { data: events } = useQuery({
     queryKey: ['calendar', from, to, scopeFilter],
@@ -179,7 +192,27 @@ export default function CalendarPage() {
   const handleDayClick = (day: Date) => {
     if (!canCreate) return
     setSelectedDay(day)
+    setSelectedSlotHour(null)
     setShowTaskForm(true)
+  }
+
+  // Клик по часовому слоту в недельном виде — создаём задачу на это время.
+  const handleSlotClick = (day: Date, hour: number) => {
+    if (!canCreate) return
+    setSelectedDay(day)
+    setSelectedSlotHour(hour)
+    setShowTaskForm(true)
+  }
+
+  // Открытие события: своя задача founder'а → edit-форма, иначе → drawer.
+  const openEvent = (e: any) => {
+    if (e.type === 'task') {
+      const isOwnTask = e.taskId && (e.createdById === user?.id || e.assigneeId === user?.id)
+      if (isFounderView && isOwnTask) setEditingTaskId(e.taskId)
+      else setDetailEventId(e.id)
+    } else if (e.link) {
+      window.location.href = e.link
+    }
   }
 
   // Drag handlers — переносим задачу на другой день при drop.
@@ -231,25 +264,54 @@ export default function CalendarPage() {
     ? projectEvents.find((e: any) => e.id === detailEventId) || null
     : null
 
+  // Дедлайн для формы создания: дата выбранного дня + час слота (если задан
+  // через недельный вид). FounderQuickTaskForm разберёт дату и время.
+  const createInitialDeadline = selectedDay
+    ? (selectedSlotHour != null
+        ? `${format(selectedDay, 'yyyy-MM-dd')}T${String(selectedSlotHour).padStart(2, '0')}:00`
+        : format(selectedDay, 'yyyy-MM-dd'))
+    : undefined
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="page-title">{t('calendar.title')}</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Переключатель режима: Месяц / Неделя */}
+          <div className="flex gap-1 bg-surface-100 dark:bg-surface-700 p-1 rounded-full">
+            {([['month', 'Месяц'], ['week', 'Неделя']] as const).map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => setCalView(v)}
+                className={clsx(
+                  'px-3 py-1 text-xs font-semibold rounded-full transition-colors',
+                  calView === v
+                    ? 'bg-primary-600 text-white'
+                    : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200',
+                )}
+              >{label}</button>
+            ))}
+          </div>
           <button
-            onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() - 1))}
+            onClick={() => setCurrent(d => calView === 'week'
+              ? subWeeks(d, 1)
+              : new Date(d.getFullYear(), d.getMonth() - 1))}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
-            aria-label="Предыдущий месяц"
+            aria-label="Назад"
           >
             <ChevronLeft size={16} />
           </button>
           <span className="text-sm font-semibold min-w-[140px] text-center capitalize text-surface-900 dark:text-surface-100">
-            {format(current, 'LLLL yyyy', { locale: ru })} г.
+            {calView === 'week'
+              ? `${format(periodStart, 'd MMM', { locale: ru })} – ${format(periodEnd, 'd MMM', { locale: ru })}`
+              : `${format(current, 'LLLL yyyy', { locale: ru })} г.`}
           </span>
           <button
-            onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() + 1))}
+            onClick={() => setCurrent(d => calView === 'week'
+              ? addWeeks(d, 1)
+              : new Date(d.getFullYear(), d.getMonth() + 1))}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
-            aria-label="Следующий месяц"
+            aria-label="Вперёд"
           >
             <ChevronRight size={16} />
           </button>
@@ -288,6 +350,16 @@ export default function CalendarPage() {
         ))}
       </div>
 
+      {calView === 'week' ? (
+        <WeekView
+          weekStart={periodStart}
+          events={projectEvents}
+          canCreate={canCreate}
+          onSlotClick={handleSlotClick}
+          onEventClick={openEvent}
+        />
+      ) : (
+      <>
       {/* ─── DESKTOP: grid 7 columns (sm and up) ─────────────────── */}
       <div className="hidden sm:block">
         <div className="grid grid-cols-7 mb-2 px-1">
@@ -348,22 +420,7 @@ export default function CalendarPage() {
                         draggable={isDraggable}
                         onDragStart={(ev) => handleDragStart(ev, e)}
                         onDragEnd={handleDragEnd}
-                        onClick={ev => {
-                          ev.stopPropagation()
-                          // task: для founder его собственные задачи открываются
-                          // в edit-режиме той же quick-формы. Чужие задачи или
-                          // не-founder — старый side drawer с деталями.
-                          if (e.type === 'task') {
-                            const isOwnTask = e.taskId && (e.createdById === user?.id || e.assigneeId === user?.id)
-                            if (isFounderView && isOwnTask) {
-                              setEditingTaskId(e.taskId)
-                            } else {
-                              setDetailEventId(e.id)
-                            }
-                          } else if (e.link) {
-                            window.location.href = e.link
-                          }
-                        }}
+                        onClick={ev => { ev.stopPropagation(); openEvent(e) }}
                         title={e.title}
                         className={clsx(
                           'flex items-center gap-1 w-full text-left text-[11px] px-1.5 py-0.5 rounded border font-medium transition-opacity',
@@ -391,9 +448,13 @@ export default function CalendarPage() {
                     )
                   })}
                   {dayEvents.length > 3 && (
-                    <div className="text-[10px] text-surface-400 dark:text-surface-500 px-1">
+                    <button
+                      type="button"
+                      onClick={ev => { ev.stopPropagation(); setDayModalDate(day) }}
+                      className="text-[10px] font-medium text-primary-600 dark:text-primary-400 hover:underline px-1 text-left w-full"
+                    >
                       +{dayEvents.length - 3} ещё
-                    </div>
+                    </button>
                   )}
                 </div>
               </div>
@@ -444,16 +505,7 @@ export default function CalendarPage() {
                         <button
                           key={e.id}
                           type="button"
-                          onClick={ev => {
-                            ev.stopPropagation()
-                            if (e.type === 'task') {
-                              const isOwnTask = e.taskId && (e.createdById === user?.id || e.assigneeId === user?.id)
-                              if (isFounderView && isOwnTask) setEditingTaskId(e.taskId)
-                              else setDetailEventId(e.id)
-                            } else if (e.link) {
-                              window.location.href = e.link
-                            }
-                          }}
+                          onClick={ev => { ev.stopPropagation(); openEvent(e) }}
                           className={clsx(
                             'text-left text-xs px-2 py-1 rounded border truncate font-medium',
                             colorClass,
@@ -471,6 +523,9 @@ export default function CalendarPage() {
           )
         })}
       </div>
+
+      </>
+      )}
 
       {/* ─── Status legend (compact) ─────────────────────────────── */}
       <div className="card p-3 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -512,7 +567,7 @@ export default function CalendarPage() {
               employees={employees || []}
               loading={createTask.isPending}
               onClose={() => setShowTaskForm(false)}
-              initialDeadline={selectedDay ? format(selectedDay, 'yyyy-MM-dd') : undefined}
+              initialDeadline={createInitialDeadline}
               allowGeneral={!isSalesManager}
               projects={isSalesManager ? (projects || []) : undefined}
               onSubmit={data => createTask.mutate({
@@ -550,7 +605,21 @@ export default function CalendarPage() {
           size="lg"
         >
           {!editingTaskFull ? (
-            <div className="py-8 text-center text-sm text-surface-400">Загрузка...</div>
+            <div className="space-y-4 py-1 animate-pulse">
+              <div className="h-5 w-28 rounded bg-surface-100 dark:bg-surface-700" />
+              <div className="grid grid-cols-3 gap-2">
+                <div className="h-16 rounded-xl bg-surface-100 dark:bg-surface-700" />
+                <div className="h-16 rounded-xl bg-surface-100 dark:bg-surface-700" />
+                <div className="h-16 rounded-xl bg-surface-100 dark:bg-surface-700" />
+              </div>
+              <div className="h-9 rounded-xl bg-surface-100 dark:bg-surface-700" />
+              <div className="h-20 rounded-xl bg-surface-100 dark:bg-surface-700" />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="h-9 rounded-xl bg-surface-100 dark:bg-surface-700" />
+                <div className="h-9 rounded-xl bg-surface-100 dark:bg-surface-700" />
+              </div>
+              <div className="h-9 rounded-xl bg-surface-100 dark:bg-surface-700" />
+            </div>
           ) : (
             <FounderQuickTaskForm
               employees={employees || []}
@@ -621,6 +690,144 @@ export default function CalendarPage() {
           }
         }}
       />
+
+      {/* Модал «все задачи дня» — открывается по клику на «+N ещё». */}
+      {dayModalDate && (
+        <Modal
+          open
+          onClose={() => setDayModalDate(null)}
+          title={`Задачи на ${format(dayModalDate, 'd MMMM', { locale: ru })}`}
+          size="md"
+        >
+          <div className="space-y-1.5">
+            {eventsForDay(dayModalDate).map((e: any) => {
+              const colorClass = e.type === 'task' && e.scope
+                ? SCOPE_COLORS[e.scope] || TYPE_COLORS.task
+                : (TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => { setDayModalDate(null); openEvent(e) }}
+                  className={clsx(
+                    'flex items-center gap-2 w-full text-left text-sm px-3 py-2 rounded-lg border font-medium',
+                    colorClass,
+                  )}
+                >
+                  {e.scope === 'personal' && <Lock size={12} className="shrink-0" />}
+                  <span className="flex-1 min-w-0 truncate">{e.title}</span>
+                  {e.type === 'task' && typeof e.progress === 'number' && (
+                    <span className="shrink-0 text-[10px] font-bold">{e.progress}%</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+// ─── Недельный вид с часовой сеткой ──────────────────────────────────
+/** Видимый диапазон часов недельного вида. События вне диапазона
+ *  «прижимаются» к крайнему часу, чтобы не теряться. */
+const WEEK_HOURS = Array.from({ length: 14 }, (_, i) => i + 8) // 8:00..21:00
+const WK_MIN = 8
+const WK_MAX = 21
+
+function WeekView({
+  weekStart, events, canCreate, onSlotClick, onEventClick,
+}: {
+  weekStart: Date
+  events: any[]
+  canCreate: boolean
+  onSlotClick: (day: Date, hour: number) => void
+  onEventClick: (e: any) => void
+}) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+  const slotHour = (e: any) => {
+    const h = new Date(e.date).getHours()
+    return Math.min(WK_MAX, Math.max(WK_MIN, h))
+  }
+  const cols = { gridTemplateColumns: '52px repeat(7, minmax(0, 1fr))' }
+
+  return (
+    <div className="card p-0 overflow-x-auto">
+      <div className="min-w-[680px]">
+        {/* Заголовок — дни недели */}
+        <div className="grid border-b border-surface-100 dark:border-surface-700" style={cols}>
+          <div />
+          {days.map(d => {
+            const today = isToday(d)
+            return (
+              <div
+                key={d.toISOString()}
+                className={clsx(
+                  'text-center py-2 border-l border-surface-100 dark:border-surface-700',
+                  today && 'bg-primary-50 dark:bg-primary-900/20',
+                )}
+              >
+                <div className="text-[11px] text-surface-400 dark:text-surface-500 uppercase">
+                  {format(d, 'EEE', { locale: ru })}
+                </div>
+                <div className={clsx(
+                  'text-sm font-semibold',
+                  today ? 'text-primary-600 dark:text-primary-400' : 'text-surface-700 dark:text-surface-200',
+                )}>{format(d, 'd')}</div>
+              </div>
+            )
+          })}
+        </div>
+        {/* Часовые строки */}
+        {WEEK_HOURS.map(h => (
+          <div
+            key={h}
+            className="grid border-b border-surface-50 dark:border-surface-800"
+            style={cols}
+          >
+            <div className="text-[11px] text-surface-400 dark:text-surface-500 text-right pr-2 py-1 select-none">
+              {h}:00
+            </div>
+            {days.map(d => {
+              const cellEvents = events.filter(
+                (e: any) => isSameDay(new Date(e.date), d) && slotHour(e) === h,
+              )
+              return (
+                <div
+                  key={d.toISOString()}
+                  onClick={() => canCreate && onSlotClick(d, h)}
+                  className={clsx(
+                    'border-l border-surface-100 dark:border-surface-700 min-h-[44px] p-1 space-y-1',
+                    canCreate && 'cursor-pointer hover:bg-primary-50/40 dark:hover:bg-primary-900/10',
+                  )}
+                >
+                  {cellEvents.map((e: any) => {
+                    const colorClass = e.type === 'task' && e.scope
+                      ? SCOPE_COLORS[e.scope] || TYPE_COLORS.task
+                      : (TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')
+                    return (
+                      <button
+                        key={e.id}
+                        type="button"
+                        onClick={ev => { ev.stopPropagation(); onEventClick(e) }}
+                        title={e.title}
+                        className={clsx(
+                          'flex items-center gap-1 w-full text-left text-[11px] px-1.5 py-0.5 rounded border font-medium',
+                          colorClass,
+                        )}
+                      >
+                        {e.scope === 'personal' && <Lock size={9} className="shrink-0" />}
+                        <span className="truncate flex-1 min-w-0">{e.title}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
