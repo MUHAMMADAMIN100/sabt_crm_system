@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { analyticsApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, ProgressBar, CollapsibleSection } from '@/components/ui'
-import { Calendar, CheckCircle2, Mail } from 'lucide-react'
+import { Calendar, CheckCircle2, Mail, Pencil } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -20,7 +20,9 @@ const TYPE_FILTERS = [
 const fmt = (n: number) => n.toLocaleString('ru-RU')
 
 /** Ячейка бюджета с инлайн-редактированием: клик → поле ввода,
- *  сохранение по Enter или потере фокуса, отмена по Esc. */
+ *  сохранение по Enter или потере фокуса, отмена по Esc.
+ *  Контейнер фиксированной ширины — таблица не «прыгает» при входе
+ *  в режим редактирования. */
 function BudgetCell({ value, onSave }: { value: number; onSave: (b: number) => void }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -32,32 +34,36 @@ function BudgetCell({ value, onSave }: { value: number; onSave: (b: number) => v
     if (!isNaN(n) && n >= 0 && n !== Number(value ?? 0)) onSave(n)
   }
 
-  if (editing) {
-    return (
-      <input
-        type="number"
-        min={0}
-        value={draft}
-        autoFocus
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => {
-          if (e.key === 'Enter') { e.preventDefault(); commit() }
-          if (e.key === 'Escape') setEditing(false)
-        }}
-        className="w-24 px-1.5 py-0.5 text-right text-sm rounded border border-primary-400 bg-white dark:bg-surface-800 tabular-nums"
-      />
-    )
-  }
   return (
-    <button
-      type="button"
-      onClick={start}
-      title="Нажмите, чтобы изменить бюджет"
-      className="px-1.5 py-0.5 rounded hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:text-primary-600 dark:hover:text-primary-400 tabular-nums transition-colors"
-    >
-      {fmt(value || 0)}
-    </button>
+    <span className="inline-block w-28 align-middle">
+      {editing ? (
+        <input
+          type="number"
+          min={0}
+          value={draft}
+          autoFocus
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); commit() }
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          className="w-full px-1.5 py-0.5 text-right text-sm rounded border border-primary-400 bg-white dark:bg-surface-800 tabular-nums"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={start}
+          title="Нажмите, чтобы изменить бюджет"
+          className="group/budget w-full inline-flex items-center justify-end gap-1 px-1.5 py-0.5 rounded hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
+        >
+          <Pencil size={11} className="text-surface-400 group-hover/budget:text-primary-600 dark:group-hover/budget:text-primary-400 shrink-0" />
+          <span className="tabular-nums underline decoration-dotted decoration-surface-300 dark:decoration-surface-600 underline-offset-2 group-hover/budget:text-primary-600 dark:group-hover/budget:text-primary-400">
+            {fmt(value || 0)}
+          </span>
+        </button>
+      )}
+    </span>
   )
 }
 
