@@ -375,8 +375,14 @@ export default function ClientsPage() {
           onClose={() => { setShowCreate(false); setEditLead(null) }}
           onSubmit={(data: any) => {
             if (editLead) updateMut.mutate({ id: editLead.id, data })
-            else createMut.mutate(data)
+            // Клиент, добавленный через Базу клиентов, сразу попадает в Онбординг.
+            else createMut.mutate({ ...data, onboardingStage: 'meeting' })
           }}
+          onAddToOnboarding={
+            editLead && !editLead.onboardingStage
+              ? () => updateMut.mutate({ id: editLead.id, data: { onboardingStage: 'meeting' } })
+              : undefined
+          }
           loading={createMut.isPending || updateMut.isPending}
         />
       )}
@@ -393,7 +399,7 @@ export default function ClientsPage() {
   )
 }
 
-function ClientForm({ initial, onClose, onSubmit, loading }: any) {
+function ClientForm({ initial, onClose, onSubmit, loading, onAddToOnboarding }: any) {
   const { register, handleSubmit, watch } = useForm({ defaultValues: {
     name: initial?.name || '',
     sphere: initial?.sphere || '',
@@ -508,7 +514,17 @@ function ClientForm({ initial, onClose, onSubmit, loading }: any) {
           )}
         </div>
 
-        <div className="flex gap-2 justify-end pt-2">
+        <div className="flex flex-wrap gap-2 justify-end pt-2">
+          {onAddToOnboarding && (
+            <button
+              type="button"
+              onClick={onAddToOnboarding}
+              disabled={loading}
+              className="btn-secondary text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 mr-auto"
+            >
+              + Добавить в онбординг
+            </button>
+          )}
           <button type="button" onClick={onClose} className="btn-secondary">Отмена</button>
           <button type="submit" disabled={loading} className="btn-primary">
             {loading ? 'Сохранение...' : (initial ? 'Сохранить' : 'Добавить')}

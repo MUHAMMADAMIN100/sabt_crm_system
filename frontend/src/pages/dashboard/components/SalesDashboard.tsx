@@ -2,14 +2,10 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, StatusBadge, ProgressBar, CollapsibleSection } from '@/components/ui'
-import {
-  DollarSign, Briefcase, TrendingDown, Clock, Calendar,
-  AlertTriangle, CheckCircle2, Mail, TrendingUp,
-} from 'lucide-react'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts'
+import { Calendar, CheckCircle2, Mail } from 'lucide-react'
+import { format } from 'date-fns'
 import clsx from 'clsx'
 
 const TYPE_FILTERS = [
@@ -20,12 +16,16 @@ const TYPE_FILTERS = [
   { value: 'paid', label: '✅ Оплачено' },
 ]
 
-const PIE_COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#0ea5e9']
-
 const fmt = (n: number) => n.toLocaleString('ru-RU')
 
 export default function SalesDashboard() {
   const [filter, setFilter] = useState('')
+  const role = useAuthStore(s => s.user?.role)
+  // Сегмент МП: СММ → SMM-проекты, разработка → «Web сайт».
+  const segmentType =
+    role === 'sales_manager_dev' ? 'Web сайт'
+    : role === 'sales_manager_smm' ? 'SMM'
+    : null
 
   const { data, isLoading } = useQuery({
     queryKey: ['sales-stats'],
@@ -33,161 +33,31 @@ export default function SalesDashboard() {
   })
 
   const projects = useMemo(() => {
-    const list = (data?.projects || []) as any[]
+    let list = (data?.projects || []) as any[]
+    // Каждый МП видит только проекты своего направления.
+    if (segmentType) list = list.filter(p => p.projectType === segmentType)
     if (filter === 'overdue') return list.filter(p => p.isOverdue)
     if (filter === 'upcoming') return list.filter(p => p.isUpcoming)
     if (filter === 'outstanding') return list.filter(p => p.remaining > 0)
     if (filter === 'paid') return list.filter(p => p.budget > 0 && p.remaining === 0)
     return list
-  }, [data, filter])
+  }, [data, filter, segmentType])
 
   if (isLoading) return <PageLoader />
 
-  const totalBudget = Number(data?.totalBudget || 0)
-  const totalPaid = Number(data?.totalPaid || 0)
-  const totalOutstanding = Number(data?.totalOutstanding || 0)
-  const collectionRate = totalBudget > 0 ? Math.round((totalPaid / totalBudget) * 100) : 0
-  const overdueAmount = Number(data?.overdueOutstanding || 0)
-  const upcomingAmount = Number(data?.upcomingDeadlineOutstanding || 0)
-
-  const monthlyChart = (data?.monthlyRevenue || []).map((m: any) => ({
-    month: format(parseISO(`${m.month}-01`), 'LLL', { locale: ru }),
-    total: m.total,
-  }))
-
-  const byType = (data?.byType || []) as Array<{ type: string; count: number; budget: number; paid: number; outstanding: number }>
+  const totalCount = segmentType
+    ? ((data?.projects || []) as any[]).filter(p => p.projectType === segmentType).length
+    : (data?.projectCount || 0)
 
   return (
     <div className="space-y-6">
-      {/* Top KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="card flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-            <Briefcase size={20} className="text-blue-600 dark:text-blue-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] sm:text-xs text-surface-500 dark:text-surface-400 leading-tight">Бюджет всех проектов</p>
-            <p className="text-lg sm:text-xl font-bold text-surface-900 dark:text-surface-100 leading-tight">
-              {fmt(totalBudget)} <span className="text-xs font-normal">сомони</span>
-            </p>
-            <p className="text-[10px] text-surface-400 leading-tight">{data?.projectCount} проектов</p>
-          </div>
-        </div>
-        <div className="card flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
-            <DollarSign size={20} className="text-emerald-600 dark:text-emerald-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] sm:text-xs text-surface-500 dark:text-surface-400 leading-tight">Получено всего</p>
-            <p className="text-lg sm:text-xl font-bold text-emerald-700 dark:text-emerald-400 leading-tight">
-              {fmt(totalPaid)} <span className="text-xs font-normal">сомони</span>
-            </p>
-            <p className="text-[10px] text-surface-400 leading-tight">{collectionRate}% собираемость</p>
-          </div>
-        </div>
-        <div className="card flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
-            <Clock size={20} className="text-amber-600 dark:text-amber-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] sm:text-xs text-surface-500 dark:text-surface-400 leading-tight">К оплате</p>
-            <p className="text-lg sm:text-xl font-bold text-amber-700 dark:text-amber-400 leading-tight">
-              {fmt(totalOutstanding)} <span className="text-xs font-normal">сомони</span>
-            </p>
-            <p className="text-[10px] text-surface-400 leading-tight">{data?.outstandingCount} проектов</p>
-          </div>
-        </div>
-        <div className="card flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
-            <TrendingDown size={20} className="text-red-600 dark:text-red-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] sm:text-xs text-surface-500 dark:text-surface-400 leading-tight">Просроченная оплата</p>
-            <p className="text-lg sm:text-xl font-bold text-red-600 dark:text-red-400 leading-tight">
-              {fmt(overdueAmount)} <span className="text-xs font-normal">сомони</span>
-            </p>
-            <p className="text-[10px] text-surface-400 leading-tight">после дедлайна</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Second row: collection progress bar + upcoming + charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="card lg:col-span-2">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="section-title flex items-center gap-2"><TrendingUp size={16} className="text-emerald-500" /> Поступления по месяцам</h3>
-            <span className="text-xs text-surface-400">последние 6 месяцев</span>
-          </div>
-          {monthlyChart.length === 0 ? (
-            <p className="text-sm text-surface-400 py-10 text-center">Пока платежей нет</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={monthlyChart}>
-                <defs>
-                  <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.4}/>
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v >= 1000 ? `${Math.round(v/1000)}к` : v} />
-                <Tooltip formatter={(v: any) => [`${fmt(Number(v))} сомони`, 'Получено']} />
-                <Area type="monotone" dataKey="total" stroke="#10b981" strokeWidth={2} fill="url(#salesGrad)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        <div className="card">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle size={16} className="text-amber-500" />
-            <h3 className="section-title">Скоро дедлайн</h3>
-          </div>
-          <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mb-1">{fmt(upcomingAmount)}</p>
-          <p className="text-xs text-surface-500 dark:text-surface-400 mb-3">
-            сомони к получению в ближайшие 14 дней
-          </p>
-          <div className="pt-3 border-t border-surface-100 dark:border-surface-700 space-y-2">
-            <div className="flex justify-between text-xs">
-              <span className="text-surface-500">Полностью оплачено</span>
-              <span className="font-semibold text-emerald-600 dark:text-emerald-400">{data?.fullyPaidCount || 0} проектов</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-surface-500">Частично оплачено</span>
-              <span className="font-semibold text-amber-600 dark:text-amber-400">
-                {(data?.outstandingCount || 0) - (projects.filter((p: any) => p.paidAmount === 0 && p.budget > 0).length)} проектов
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* By project type */}
-      {byType.length > 0 && (
-        <CollapsibleSection
-          id="sales-by-type"
-          title={<h3 className="section-title flex items-center gap-2"><Briefcase size={16} /> По типам проектов</h3>}
-        >
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={byType}>
-              <XAxis dataKey="type" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v >= 1000 ? `${Math.round(v/1000)}к` : v} />
-              <Tooltip formatter={(v: any) => `${fmt(Number(v))} сомони`} />
-              <Bar dataKey="budget" name="Бюджет" radius={[6, 6, 0, 0]}>
-                {byType.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </CollapsibleSection>
-      )}
-
       {/* Projects table */}
       <CollapsibleSection
         id="sales-projects"
         title={
           <div className="flex items-center justify-between w-full">
             <h3 className="section-title">Все проекты</h3>
-            <span className="text-xs text-surface-400">{projects.length} из {data?.projectCount || 0}</span>
+            <span className="text-xs text-surface-400">{projects.length} из {totalCount}</span>
           </div>
         }
       >

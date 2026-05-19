@@ -22,6 +22,8 @@ export default function AnalyticsPage() {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const isHeadSMM = user?.role === 'head_smm'
+  // МП по продажам не видят вкладку Founder в аналитике.
+  const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
   const [expandedEmp, setExpandedEmp] = useState<string | null>(null)
   const [expandedWorkload, setExpandedWorkload] = useState<string | null>(null)
   // Wave 19: расщепление /analytics на 6 секций (TZ п.13)
@@ -83,7 +85,9 @@ export default function AnalyticsPage() {
 
       {/* Wave 19: section tabs */}
       <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
-        {(['all', 'founder', 'team', 'smm', 'finance', 'risk', 'tariff'] as const).map(s => (
+        {(['all', 'founder', 'team', 'smm', 'finance', 'risk', 'tariff'] as const)
+          .filter(s => !isSalesManager || s !== 'founder')
+          .map(s => (
           <button key={s} onClick={() => setSection(s)}
             className={clsx('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
               section === s ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400'

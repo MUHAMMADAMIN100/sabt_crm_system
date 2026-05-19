@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
-import { Modal, EmptyState, PageLoader } from '@/components/ui'
-import { Plus } from 'lucide-react'
+import { Modal, EmptyState, PageLoader, ConfirmDialog } from '@/components/ui'
+import { Plus, Edit, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -17,9 +17,16 @@ const STAGES = [
 
 type StageKey = typeof STAGES[number]['key']
 
+const STAGE_LABEL: Record<string, string> = Object.fromEntries(
+  STAGES.map(s => [s.key, s.label]),
+)
+
 export default function OnboardingPage() {
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const [editMode, setEditMode] = useState(false)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverStage, setDragOverStage] = useState<StageKey | null>(null)
 
@@ -60,9 +67,31 @@ export default function OnboardingPage() {
     onError: () => toast.error('Не удалось добавить клиента'),
   })
 
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => clientsApi.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+      setEditMode(false)
+      toast.success('Изменения сохранены')
+    },
+    onError: () => toast.error('Не удалось сохранить'),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => clientsApi.remove(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+      setDeleteId(null)
+      setDetailId(null)
+      toast.success('Клиент удалён')
+    },
+    onError: () => toast.error('Не удалось удалить'),
+  })
+
   if (isLoading) return <PageLoader />
 
   const onboardingClients = (clients || []).filter((c: any) => c.onboardingStage)
+  const detailClient = onboardingClients.find((c: any) => c.id === detailId) || null
 
   const handleDrop = (stage: StageKey) => {
     setDragOverStage(null)
@@ -115,7 +144,8 @@ export default function OnboardingPage() {
                     draggable
                     onDragStart={() => setDraggedId(c.id)}
                     onDragEnd={() => setDraggedId(null)}
-                    className="bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 cursor-grab active:cursor-grabbing hover:shadow-sm transition-shadow"
+                    onClick={() => { setDetailId(c.id); setEditMode(false) }}
+                    className="bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 cursor-pointer hover:shadow-md hover:border-primary-300 dark:hover:border-primary-700 transition-all"
                   >
                     <p className="font-medium text-sm text-surface-900 dark:text-surface-100">{c.name}</p>
                     {c.sphere && <p className="text-[11px] text-surface-400 mt-0.5">{c.sphere}</p>}
@@ -147,6 +177,7 @@ export default function OnboardingPage() {
         />
       )}
 
+      {/* Добавление клиента */}
       {showAdd && (
         <Modal open onClose={() => setShowAdd(false)} title="Новый клиент на онбординге" size="md">
           <OnboardingClientForm
@@ -156,22 +187,108 @@ export default function OnboardingPage() {
           />
         </Modal>
       )}
+
+      {/* Карточка клиента — просмотр / редактирование */}
+      {detailClient && (
+        <Modal
+          open
+          onClose={() => { setDetailId(null); setEditMode(false) }}
+          title={editMode ? 'Редактировать клиента' : detailClient.name}
+          size="md"
+        >
+          {editMode ? (
+            <OnboardingClientForm
+              initial={detailClient}
+              loading={updateMut.isPending}
+              onClose={() => setEditMode(false)}
+              onSubmit={d => updateMut.mutate({ id: detailClient.id, data: d })}
+            />
+          ) : (
+            <ClientDetailView
+              client={detailClient}
+              onEdit={() => setEditMode(true)}
+              onDelete={() => setDeleteId(detailClient.id)}
+            />
+          )}
+        </Modal>
+      )}
+
+      <ConfirmDialog
+        open={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={() => deleteId && deleteMut.mutate(deleteId)}
+        title="Удалить клиента?"
+        message="Клиент будет удалён из онбординга и из базы клиентов безвозвратно."
+        danger
+      />
+    </div>
+  )
+}
+
+/** Просмотр всех данных клиента + кнопки редактирования и удаления. */
+function ClientDetailView({
+  client, onEdit, onDelete,
+}: {
+  client: any
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const rows: Array<[string, string]> = []
+  if (client.onboardingStage) rows.push(['Этап онбординга', STAGE_LABEL[client.onboardingStage] || client.onboardingStage])
+  if (client.sphere) rows.push(['Сфера', client.sphere])
+  if (client.problem) rows.push(['Задача / услуга', client.problem])
+  if (client.contactPerson) rows.push(['Контактное лицо', client.contactPerson])
+  if (client.contactInfo) rows.push(['Контакты', client.contactInfo])
+  if (client.address) rows.push(['Адрес', client.address])
+  if (client.dealPotential) rows.push(['Потенциал сделки', `${Number(client.dealPotential).toLocaleString('ru-RU')} смн`])
+  if (client.leadSource) rows.push(['Источник', client.leadSource])
+  if (client.channel) rows.push(['Канал', client.channel])
+  if (client.nextStep) rows.push(['Следующий шаг', client.nextStep])
+
+  return (
+    <div className="space-y-4">
+      <div className="divide-y divide-surface-100 dark:divide-surface-700">
+        {rows.length === 0 ? (
+          <p className="text-sm text-surface-400 py-2">Дополнительных данных нет.</p>
+        ) : rows.map(([label, value]) => (
+          <div key={label} className="flex gap-3 py-2">
+            <span className="text-xs text-surface-400 dark:text-surface-500 w-36 shrink-0">{label}</span>
+            <span className="text-sm text-surface-800 dark:text-surface-200 whitespace-pre-line break-words">{value}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 justify-end pt-2 border-t border-surface-100 dark:border-surface-700">
+        <button
+          type="button"
+          onClick={onDelete}
+          className="btn-secondary text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 mr-auto"
+        >
+          <Trash2 size={15} /> Удалить
+        </button>
+        <button type="button" onClick={onEdit} className="btn-primary">
+          <Edit size={15} /> Редактировать
+        </button>
+      </div>
     </div>
   )
 }
 
 function OnboardingClientForm({
-  onSubmit, onClose, loading,
+  onSubmit, onClose, loading, initial,
 }: {
   onSubmit: (d: any) => void
   onClose: () => void
   loading: boolean
+  initial?: any
 }) {
-  const [name, setName] = useState('')
-  const [sphere, setSphere] = useState('')
-  const [contactPerson, setContactPerson] = useState('')
-  const [contactInfo, setContactInfo] = useState('')
-  const [dealPotential, setDealPotential] = useState('')
+  const [name, setName] = useState(initial?.name || '')
+  const [sphere, setSphere] = useState(initial?.sphere || '')
+  const [contactPerson, setContactPerson] = useState(initial?.contactPerson || '')
+  const [contactInfo, setContactInfo] = useState(initial?.contactInfo || '')
+  const [problem, setProblem] = useState(initial?.problem || '')
+  const [dealPotential, setDealPotential] = useState(
+    initial?.dealPotential != null ? String(initial.dealPotential) : '',
+  )
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -181,7 +298,8 @@ function OnboardingClientForm({
       sphere: sphere.trim() || undefined,
       contactPerson: contactPerson.trim() || undefined,
       contactInfo: contactInfo.trim() || undefined,
-      dealPotential: dealPotential ? Number(dealPotential) : undefined,
+      problem: problem.trim() || undefined,
+      dealPotential: dealPotential ? Number(dealPotential) : null,
     })
   }
 
@@ -194,6 +312,10 @@ function OnboardingClientForm({
       <div>
         <label className="label">Сфера</label>
         <input value={sphere} onChange={e => setSphere(e.target.value)} className="input" placeholder="Ресторан, Клиника, Блогер..." />
+      </div>
+      <div>
+        <label className="label">Задача / услуга</label>
+        <textarea value={problem} onChange={e => setProblem(e.target.value)} rows={2} className="input resize-none" placeholder="Разработка сайта, SMM-продвижение..." />
       </div>
       <div>
         <label className="label">Контактное лицо</label>
@@ -210,7 +332,7 @@ function OnboardingClientForm({
       <div className="flex gap-2 justify-end pt-2">
         <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">Отмена</button>
         <button type="submit" disabled={loading} className="btn-primary min-w-[120px] justify-center">
-          {loading ? 'Добавляю...' : 'Добавить'}
+          {loading ? 'Сохраняю...' : (initial ? 'Сохранить' : 'Добавить')}
         </button>
       </div>
     </form>

@@ -7,7 +7,8 @@ import { useTranslation } from '@/i18n'
 import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar, Pagination } from '@/components/ui'
 import { Plus, Search, FolderKanban, Archive, Trash2, Edit, Users, ChevronDown, X, Check, Banknote, Calendar as CalIcon } from 'lucide-react'
 import { useForm } from 'react-hook-form'
-import { format } from 'date-fns'
+import { format, formatDistanceToNow } from 'date-fns'
+import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import SMM_QUESTIONS from '@/config/smm-questions'
@@ -52,8 +53,11 @@ export default function ProjectsPage() {
   // не нужен и не показывается.
   const isSingleTypeRole = ['smm_director', 'head_smm', 'sales_manager_smm', 'sales_manager_dev']
     .includes(user?.role || '')
+  // У МП по продажам на карточке показываем доп. инфо: активность и оплату.
+  const isSalesManagerView = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
   // admin/founder/co-founder + smm_director/head_smm (SMM only) can create projects
-  const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm'].includes(user?.role || '')
+  // МП по продажам управляют проектами своего направления (создание/правка/архив/удаление).
+  const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
   const qc = useQueryClient()
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -329,9 +333,14 @@ export default function ProjectsPage() {
                         >{p.projectType}</button>
                       )}
                     </div>
+                    {isSalesManagerView && (p as any).lastActivityAt && (
+                      <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-1">
+                        🕓 Активность: {formatDistanceToNow(new Date((p as any).lastActivityAt), { addSuffix: true, locale: ru })}
+                      </p>
+                    )}
                   </div>
                 </div>
-                {isManagerPlus && (
+                {(isManagerPlus || canCreateProject) && (
                   <div className="flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={(e) => { e.stopPropagation(); setEditProject(p) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded text-surface-500 dark:text-surface-400" title="Редактировать"><Edit size={13} /></button>
                     {canCreateProject && (
@@ -390,6 +399,16 @@ export default function ProjectsPage() {
                 )}
               </div>
 
+              {isSalesManagerView && p.nextPaymentDate && (
+                <div className="flex items-center gap-1 mt-2 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                  <Banknote size={12} />
+                  <span>
+                    Следующая оплата: {format(new Date(p.nextPaymentDate), 'dd.MM.yyyy')}
+                    {p.monthlyFee ? ` — ${Number(p.monthlyFee).toLocaleString('ru-RU')} смн` : ''}
+                  </span>
+                </div>
+              )}
+
               {p.members?.length > 0 && (
                 <div className="flex -space-x-2 mt-3">
                   {p.members.slice(0, 5).map((m: any) => (
@@ -442,7 +461,13 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const { t } = useTranslation()
   const formUser = useAuthStore(s => s.user)
   const isFormHeadSMM = formUser?.role === 'head_smm' || formUser?.role === 'smm_director'
-  const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm'].includes(formUser?.role || '')
+  const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm', 'sales_manager_smm', 'sales_manager_dev'].includes(formUser?.role || '')
+  // Тип проекта, зафиксированный для роли: SMM-роли и МП по СММ → «SMM»,
+  // МП по разработке → «Web сайт». Для них селект типа скрыт.
+  const forcedProjectType =
+    isFormHeadSMM || formUser?.role === 'sales_manager_smm' ? 'SMM'
+    : formUser?.role === 'sales_manager_dev' ? 'Web сайт'
+    : null
   // Финансовые поля и цены тарифа видят только основатель/сооснователь.
   // smm_director, PM, head_smm и admin — управляют проектом, но цены/деньги не видят.
   const canSeeFinance = ['founder', 'co_founder'].includes(formUser?.role || '')
@@ -545,7 +570,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
       } else {
         reset({
           name: '', description: '', startDate: '', endDate: '',
-          status: 'planning', color: '#6B4FCF', budget: '', projectType: isFormHeadSMM ? 'SMM' : '', managerId: '', salesManagerId: '',
+          status: 'planning', color: '#6B4FCF', budget: '', projectType: forcedProjectType || '', managerId: '', salesManagerId: '',
           tariffId: '',
           teamId: '',
           showAllMembers: false,
@@ -662,10 +687,10 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           {/* Project type */}
           <div className="sm:col-span-2">
             <label className="label">Тип проекта *</label>
-            {isFormHeadSMM ? (
+            {forcedProjectType ? (
               <>
-                <input type="hidden" {...register('projectType')} value="SMM" />
-                <div className="input bg-surface-50 dark:bg-surface-700 cursor-not-allowed">SMM</div>
+                <input type="hidden" {...register('projectType')} value={forcedProjectType} />
+                <div className="input bg-surface-50 dark:bg-surface-700 cursor-not-allowed">{forcedProjectType}</div>
               </>
             ) : (
               <select {...register('projectType', { required: true })} className="input">

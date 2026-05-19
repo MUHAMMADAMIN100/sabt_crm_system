@@ -12,6 +12,23 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 const FounderDashboard = lazy(() => import('./components/FounderDashboard'))
 const PMDashboard = lazy(() => import('./components/PMDashboard'))
+
+/** Комплименты и мотивация для менеджеров продаж — показываются вместо
+ *  имени на их панели, случайная фраза при каждом входе. */
+const SALES_GREETINGS = [
+  'Ты сегодня в ударе! 🔥',
+  'Каждый звонок — шаг к новой сделке 💪',
+  'Лучший продажник — это ты 🌟',
+  'Сегодня отличный день для крупной сделки 🚀',
+  'Твоя энергия закрывает сделки ⚡',
+  'Верь в себя — клиенты это чувствуют 😊',
+  'Маленький шаг сегодня — большой результат завтра 📈',
+  'Ты умеешь находить подход к каждому клиенту 🤝',
+  'Продажи любят настойчивых — это про тебя 🎯',
+  'Сделай этот день продуктивным! ✨',
+  'Твой профессионализм впечатляет 👏',
+  'Новый день — новые возможности 🌅',
+]
 const SMMDashboard = lazy(() => import('./components/SMMDashboard'))
 const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
 
@@ -140,6 +157,11 @@ export default function DashboardPage() {
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(role)
   const isAdmin = ['admin', 'founder', 'co_founder'].includes(role)
   const { t } = useTranslation()
+  // Случайный комплимент для МП — выбирается один раз за вход на панель.
+  const salesGreeting = useMemo(
+    () => SALES_GREETINGS[Math.floor(Math.random() * SALES_GREETINGS.length)],
+    [],
+  )
 
   // Role-specific dashboards
   if (isFounderView) {
@@ -178,7 +200,7 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="page-title">Привет, {user?.name?.split(' ')[0] || ''} 👋</h1>
+          <h1 className="page-title">{salesGreeting}</h1>
           <p className="text-surface-500 dark:text-surface-400 mt-0.5">
             Менеджер по продажам · {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
           </p>

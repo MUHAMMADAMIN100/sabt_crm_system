@@ -405,14 +405,15 @@ export class ProjectsService {
       delete p.marginEstimate;
       delete p.tariffLimitOveruseCost;
       delete p.tariffPriceSnapshot;
-      delete p.monthlyFee;
       delete p.discount;
       delete p.discountType;
-      // paidAmount/totalContractValue/outstandingAmount — только sales+finance
+      // paidAmount/totalContractValue/outstandingAmount/monthlyFee —
+      // только sales + finance (МП нужна сумма следующей оплаты).
       if (!isSales) {
         delete p.paidAmount;
         delete p.totalContractValue;
         delete p.outstandingAmount;
+        delete p.monthlyFee;
       }
       // budget — sales + менеджеры проекта (PM/head_smm/smm_director),
       // прочим скрываем
@@ -511,6 +512,28 @@ export class ProjectsService {
       }
     }
 
+    // Время последней активности проекта = максимум из updatedAt проекта
+    // и updatedAt связанных задач. Показывается на карточке проекта.
+    const projIds = projects.map(p => p.id);
+    if (projIds.length > 0) {
+      const taskRows = await this.repo.manager.query(
+        `SELECT "projectId", MAX("updatedAt") AS last FROM tasks
+         WHERE "projectId" = ANY($1::uuid[]) GROUP BY "projectId"`,
+        [projIds],
+      );
+      const taskLastMap: Record<string, string> = Object.fromEntries(
+        (taskRows as Array<{ projectId: string; last: string }>).map(r => [r.projectId, r.last]),
+      );
+      for (const p of projects) {
+        const times = [p.updatedAt, taskLastMap[p.id]]
+          .filter(Boolean)
+          .map(d => new Date(d as any).getTime());
+        (p as any).lastActivityAt = times.length
+          ? new Date(Math.max(...times)).toISOString()
+          : null;
+      }
+    }
+
     return this.stripFinance(projects, requestUser?.role);
   }
 
@@ -567,6 +590,13 @@ export class ProjectsService {
     }
     if (userRole === UserRole.SMM_DIRECTOR && dto.projectType !== 'SMM') {
       throw new ForbiddenException('Руководитель SMM может создавать только SMM-проекты');
+    }
+    // Менеджер продаж может создавать проекты только своего направления.
+    const createSegment = getSalesSegment(userRole);
+    if (createSegment && dto.projectType !== createSegment.projectType) {
+      throw new ForbiddenException(
+        `Вы можете создавать только проекты типа «${createSegment.projectType}»`,
+      );
     }
     await this.validateManagerAssignment(dto.managerId, dto.projectType);
     const project = this.repo.create({
@@ -706,26 +736,14 @@ export class ProjectsService {
     const project = await this.findOne(id);
     // smm_director может редактировать ЛЮБОЙ SMM-проект (его область целиком).
     const isSmmDirectorOnSmm = user.role === 'smm_director' && project.projectType === 'SMM';
+    // Менеджер продаж управляет проектами своего направления полностью.
+    const editSegment = getSalesSegment(user.role);
+    const isSalesOnOwnSegment = !!editSegment && project.projectType === editSegment.projectType;
     const canEdit = ['admin', 'founder', 'co_founder'].includes(user.role) ||
       isSmmDirectorOnSmm ||
+      isSalesOnOwnSegment ||
       ((user.role === 'project_manager' || user.role === 'head_smm') && project.managerId === user.id);
-
-    // Sales_manager имеет ограниченный доступ к редактированию — только
-    // финансово-клиентские поля (бюджет, статус оплаты, дата платежа,
-    // данные клиента). Это нужно чтобы менеджер по продажам мог фиксировать
-    // переговоренный бюджет и обновлять контакты клиента без обращения
-    // к PM/основателю.
-    const isSales = user.role === 'sales_manager_smm' || user.role === 'sales_manager_dev';
-    const SALES_ALLOWED_FIELDS = new Set(['budget', 'clientInfo', 'paymentStatus', 'nextPaymentDate']);
-    if (isSales) {
-      const dirty = Object.keys(dto).filter(k => (dto as any)[k] !== undefined);
-      const forbidden = dirty.filter(k => !SALES_ALLOWED_FIELDS.has(k));
-      if (forbidden.length > 0) {
-        throw new ForbiddenException(
-          `Менеджер по продажам может изменять только: бюджет, статус оплаты, дата платежа, данные клиента. Запрещено: ${forbidden.join(', ')}`,
-        );
-      }
-    } else if (!canEdit) {
+    if (!canEdit) {
       throw new ForbiddenException('Not allowed');
     }
 
@@ -1095,6 +1113,10 @@ export class ProjectsService {
     if (user?.role === 'smm_director' && project.projectType !== 'SMM') {
       throw new ForbiddenException('Руководитель SMM может архивировать только SMM-проекты');
     }
+    const archiveSegment = getSalesSegment(user?.role);
+    if (archiveSegment && project.projectType !== archiveSegment.projectType) {
+      throw new ForbiddenException('Вы можете архивировать только проекты своего направления');
+    }
     await this.repo.update(id, { isArchived: true, status: ProjectStatus.ARCHIVED });
     await this.activityLog.log({
       action: ActivityAction.PROJECT_ARCHIVE,
@@ -1110,6 +1132,10 @@ export class ProjectsService {
     const project = await this.findOne(id);
     if (user?.role === 'smm_director' && project.projectType !== 'SMM') {
       throw new ForbiddenException('Руководитель SMM может восстанавливать только SMM-проекты');
+    }
+    const restoreSegment = getSalesSegment(user?.role);
+    if (restoreSegment && project.projectType !== restoreSegment.projectType) {
+      throw new ForbiddenException('Вы можете восстанавливать только проекты своего направления');
     }
     // При восстановлении НЕ форсируем COMPLETED — возвращаем в IN_PROGRESS
     // как safe default. Если был completed до архива — пользователь может
@@ -1135,11 +1161,15 @@ export class ProjectsService {
       const role = user.role;
       const isTopAdmin = ['admin', 'founder', 'co_founder'].includes(role);
       const isSmmDirOnSmm = role === 'smm_director' && p.projectType === 'SMM';
-      if (!isTopAdmin && !isSmmDirOnSmm) {
+      const removeSegment = getSalesSegment(role);
+      const isSalesOnOwnSegment = !!removeSegment && p.projectType === removeSegment.projectType;
+      if (!isTopAdmin && !isSmmDirOnSmm && !isSalesOnOwnSegment) {
         throw new ForbiddenException(
           role === 'smm_director'
             ? 'Руководитель SMM может удалять только SMM-проекты'
-            : 'Удалять проекты могут только администратор, основатель, сооснователь и руководитель SMM (для SMM-проектов)',
+            : removeSegment
+              ? 'Вы можете удалять только проекты своего направления'
+              : 'Удалять проекты могут только администратор, основатель, сооснователь и руководитель SMM (для SMM-проектов)',
         );
       }
     }
