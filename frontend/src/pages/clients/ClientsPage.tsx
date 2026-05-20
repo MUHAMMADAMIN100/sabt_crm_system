@@ -97,6 +97,9 @@ export default function ClientsPage() {
         old.map(l => l.id === ctx?.tempLead.id ? server : l),
       )
       qc.invalidateQueries({ queryKey: ['clients-stats'] })
+      // Инвалидируем ВСЕ кеши клиентов (любые фильтры) — чтобы Онбординг,
+      // открытый в соседней вкладке, увидел изменение без обновления.
+      qc.invalidateQueries({ queryKey: ['clients'] })
       toast.success('Клиент добавлен')
     },
   })
@@ -118,6 +121,9 @@ export default function ClientsPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clients-stats'] })
+      // Любое изменение клиента (статус, стадия, контакты) должно
+      // отразиться и в Онбординге — инвалидируем общий префикс.
+      qc.invalidateQueries({ queryKey: ['clients'] })
       toast.success('Сохранено')
     },
   })
@@ -129,6 +135,11 @@ export default function ClientsPage() {
       await qc.cancelQueries({ queryKey: ['clients'] })
       const previous = qc.getQueryData(queryKey)
       qc.setQueryData(queryKey, (old: any[] = []) => old.filter(l => l.id !== id))
+      // Оптимистично убираем из ВСЕХ закешированных списков клиентов
+      // (с любыми фильтрами + ['clients'] на Онбординге).
+      qc.setQueriesData({ queryKey: ['clients'] }, (old: any) =>
+        Array.isArray(old) ? old.filter((l: any) => l.id !== id) : old,
+      )
       return { previous }
     },
     onError: (_e, _vars, ctx) => {
@@ -137,6 +148,8 @@ export default function ClientsPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clients-stats'] })
+      // Гарантируем что Онбординг подхватит удаление без F5.
+      qc.invalidateQueries({ queryKey: ['clients'] })
       toast.success('Удалено')
     },
   })

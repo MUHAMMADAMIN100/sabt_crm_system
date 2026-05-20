@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, PageLoader, ConfirmDialog } from '@/components/ui'
-import { Plus, Edit, Trash2 } from 'lucide-react'
+import { Plus, Edit, Trash2, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -92,13 +92,62 @@ export default function OnboardingPage() {
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => clientsApi.remove(id),
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['clients'] })
+      // Оптимистично убираем из всех кешей клиентов (Онбординг + База).
+      const snapshots = qc.getQueriesData({ queryKey: ['clients'] })
+      qc.setQueriesData({ queryKey: ['clients'] }, (old: any) =>
+        Array.isArray(old) ? old.filter((l: any) => l.id !== id) : old,
+      )
+      return { snapshots }
+    },
+    onError: (_e, _id, ctx) => {
+      // Откат если бэк отказал.
+      if (ctx?.snapshots) {
+        for (const [key, data] of ctx.snapshots as any[]) {
+          qc.setQueryData(key, data)
+        }
+      }
+      toast.error('Не удалось удалить')
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clients'] })
+      qc.invalidateQueries({ queryKey: ['clients-stats'] })
       setDeleteId(null)
       setDetailId(null)
       toast.success('Клиент удалён')
     },
-    onError: () => toast.error('Не удалось удалить'),
+  })
+
+  // «Убрать с доски» — оставляет клиента в Базе клиентов, но снимает
+  // onboardingStage чтобы карточка пропала из канбана.
+  const removeFromBoardMut = useMutation({
+    mutationFn: (id: string) => clientsApi.update(id, { onboardingStage: null }),
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['clients'] })
+      // Оптимистично обнуляем stage во всех кешах.
+      const snapshots = qc.getQueriesData({ queryKey: ['clients'] })
+      qc.setQueriesData({ queryKey: ['clients'] }, (old: any) =>
+        Array.isArray(old)
+          ? old.map((l: any) => l.id === id ? { ...l, onboardingStage: null } : l)
+          : old,
+      )
+      return { snapshots }
+    },
+    onError: (_e, _id, ctx) => {
+      if (ctx?.snapshots) {
+        for (const [key, data] of ctx.snapshots as any[]) {
+          qc.setQueryData(key, data)
+        }
+      }
+      toast.error('Не удалось убрать с доски')
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+      qc.invalidateQueries({ queryKey: ['clients-stats'] })
+      setDetailId(null)
+      toast.success('Убрано с онбординга. Клиент остался в Базе клиентов')
+    },
   })
 
   if (isLoading) return <PageLoader />
@@ -225,6 +274,8 @@ export default function OnboardingPage() {
               client={detailClient}
               onEdit={() => setEditMode(true)}
               onDelete={() => setDeleteId(detailClient.id)}
+              onRemoveFromBoard={() => removeFromBoardMut.mutate(detailClient.id)}
+              removeLoading={removeFromBoardMut.isPending}
             />
           )}
         </Modal>
@@ -242,13 +293,15 @@ export default function OnboardingPage() {
   )
 }
 
-/** Просмотр всех данных клиента + кнопки редактирования и удаления. */
+/** Просмотр всех данных клиента + кнопки редактирования / убрать с доски / удалить. */
 function ClientDetailView({
-  client, onEdit, onDelete,
+  client, onEdit, onDelete, onRemoveFromBoard, removeLoading,
 }: {
   client: any
   onEdit: () => void
   onDelete: () => void
+  onRemoveFromBoard: () => void
+  removeLoading?: boolean
 }) {
   const rows: Array<[string, string]> = []
   if (client.onboardingStage) rows.push(['Этап онбординга', STAGE_LABEL[client.onboardingStage] || client.onboardingStage])
@@ -278,13 +331,22 @@ function ClientDetailView({
           </div>
         ))}
       </div>
-      <div className="flex gap-2 justify-end pt-2 border-t border-surface-100 dark:border-surface-700">
+      <div className="flex flex-wrap gap-2 justify-end pt-2 border-t border-surface-100 dark:border-surface-700">
         <button
           type="button"
           onClick={onDelete}
           className="btn-secondary text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 mr-auto"
         >
           <Trash2 size={15} /> Удалить
+        </button>
+        <button
+          type="button"
+          onClick={onRemoveFromBoard}
+          disabled={removeLoading}
+          title="Убрать карточку с доски Онбординга. Клиент останется в Базе клиентов."
+          className="btn-secondary text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+        >
+          <EyeOff size={15} /> {removeLoading ? 'Убираю...' : 'Убрать'}
         </button>
         <button type="button" onClick={onEdit} className="btn-primary">
           <Edit size={15} /> Редактировать
