@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { aiApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 import { Send, Bot, User, Loader2, Sparkles, Trash2, Cpu } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -20,9 +21,14 @@ interface AiModelOption {
 }
 
 export default function AiChatPage() {
+  // История чата привязана к id пользователя — у каждого свой независимый
+  // диалог с ИИ, чужие переписки между сессиями не утекают.
+  const userId = useAuthStore(s => s.user?.id)
+  const chatKey = userId ? `ai-chat-history:${userId}` : null
   const [messages, setMessages] = useState<Message[]>(() => {
+    if (!chatKey) return []
     try {
-      const saved = localStorage.getItem('ai-chat-history')
+      const saved = localStorage.getItem(chatKey)
       return saved ? JSON.parse(saved) : []
     } catch { return [] }
   })
@@ -54,9 +60,24 @@ export default function AiChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // При смене пользователя — подгружаем его собственную историю.
   useEffect(() => {
-    localStorage.setItem('ai-chat-history', JSON.stringify(messages.slice(-50)))
-  }, [messages])
+    if (!chatKey) { setMessages([]); return }
+    try {
+      const saved = localStorage.getItem(chatKey)
+      setMessages(saved ? JSON.parse(saved) : [])
+    } catch { setMessages([]) }
+  }, [chatKey])
+
+  useEffect(() => {
+    if (!chatKey) return
+    localStorage.setItem(chatKey, JSON.stringify(messages.slice(-50)))
+  }, [messages, chatKey])
+
+  // Чистим старый общий ключ — если в браузере осталась чужая история.
+  useEffect(() => {
+    localStorage.removeItem('ai-chat-history')
+  }, [])
 
   const sendMessage = async () => {
     const text = input.trim()
@@ -93,7 +114,7 @@ export default function AiChatPage() {
 
   const clearChat = () => {
     setMessages([])
-    localStorage.removeItem('ai-chat-history')
+    if (chatKey) localStorage.removeItem(chatKey)
   }
 
   // Simple markdown rendering

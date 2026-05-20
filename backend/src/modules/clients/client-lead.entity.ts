@@ -28,6 +28,7 @@ export enum ClientLeadDirection {
 
 /** Этап онбординга клиента — колонки канбан-доски «Онбординг». */
 export enum ClientLeadOnboardingStage {
+  NEGOTIATION    = 'negotiation',     // Переговор (используется МП по разработке)
   MEETING        = 'meeting',         // Встреча
   KP_CREATION    = 'kp_creation',     // Создание КП
   IMPLEMENTATION = 'implementation',  // Реализация

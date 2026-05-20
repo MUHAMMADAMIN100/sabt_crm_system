@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { calendarApi, projectsApi, tasksApi, employeesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
@@ -16,6 +17,7 @@ const TYPE_COLORS: Record<string, string> = {
   project_start: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50',
   project_end:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50',
   task:          'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/50',
+  client_meeting:'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/50',
 }
 
 // Scope чипы для задач — нужны для визуальной идентификации в календаре.
@@ -164,10 +166,12 @@ export default function CalendarPage() {
 
   const projectEvents = (events || []).filter((e: any) => {
     if (isPersonalView) {
+      // МП по продажам — встречи с клиентами из онбординга всегда показываем.
+      if (e.type === 'client_meeting') return true
       if (e.type !== 'task') return false
       return e.assigneeId === user?.id || e.createdById === user?.id
     }
-    return e.type === 'project_start' || e.type === 'project_end' || e.type === 'task'
+    return e.type === 'project_start' || e.type === 'project_end' || e.type === 'task' || e.type === 'client_meeting'
   })
 
   const eventsForDay = (day: Date) =>
@@ -204,9 +208,15 @@ export default function CalendarPage() {
     setShowTaskForm(true)
   }
 
-  // Открытие события: своя задача founder'а → edit-форма, иначе → drawer.
+  const navigate = useNavigate()
+  // Открытие события: МП по СММ — переход на подробную страницу задачи;
+  // своя задача founder'а → edit-форма; иначе → side drawer.
   const openEvent = (e: any) => {
     if (e.type === 'task') {
+      if (user?.role === 'sales_manager_smm' && e.taskId) {
+        navigate(`/tasks/${e.taskId}`)
+        return
+      }
       const isOwnTask = e.taskId && (e.createdById === user?.id || e.assigneeId === user?.id)
       if (isFounderView && isOwnTask) setEditingTaskId(e.taskId)
       else setDetailEventId(e.id)
@@ -1130,18 +1140,20 @@ function FounderQuickTaskForm({
               <div key={s.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-50 dark:bg-surface-700/40">
                 <span className="text-xs text-surface-400 w-5 shrink-0">{idx + 1}.</span>
                 <span className="text-sm flex-1 min-w-0 truncate">{s.text}</span>
-                {/* Исполнитель подзадачи */}
-                <select
-                  value={s.assigneeId || ''}
-                  onChange={e => setSubtaskAssignee(s.id, e.target.value)}
-                  className="text-xs bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded px-1.5 py-1 max-w-[140px] shrink-0"
-                  title={s.assigneeId ? `Исполнитель: ${empName(s.assigneeId)}` : 'Без исполнителя'}
-                >
-                  <option value="">— исполнитель —</option>
-                  {eligibleEmployees.map((emp: any) => (
-                    <option key={emp.user.id} value={emp.user.id}>{emp.fullName}</option>
-                  ))}
-                </select>
+                {/* Исполнитель подзадачи — не показываем для личных задач. */}
+                {scope !== 'personal' && (
+                  <select
+                    value={s.assigneeId || ''}
+                    onChange={e => setSubtaskAssignee(s.id, e.target.value)}
+                    className="text-xs bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded px-1.5 py-1 max-w-[140px] shrink-0"
+                    title={s.assigneeId ? `Исполнитель: ${empName(s.assigneeId)}` : 'Без исполнителя'}
+                  >
+                    <option value="">— исполнитель —</option>
+                    {eligibleEmployees.map((emp: any) => (
+                      <option key={emp.user.id} value={emp.user.id}>{emp.fullName}</option>
+                    ))}
+                  </select>
+                )}
                 <button
                   type="button"
                   onClick={() => removeSubtask(s.id)}
@@ -1160,17 +1172,19 @@ function FounderQuickTaskForm({
             placeholder="Добавить подзадачу..."
             className="input flex-1 min-w-[160px]"
           />
-          <select
-            value={newSubtaskAssignee}
-            onChange={e => setNewSubtaskAssignee(e.target.value)}
-            className="input w-auto shrink-0"
-            title="Исполнитель новой подзадачи"
-          >
-            <option value="">— исполнитель —</option>
-            {eligibleEmployees.map((emp: any) => (
-              <option key={emp.user.id} value={emp.user.id}>{emp.fullName}</option>
-            ))}
-          </select>
+          {scope !== 'personal' && (
+            <select
+              value={newSubtaskAssignee}
+              onChange={e => setNewSubtaskAssignee(e.target.value)}
+              className="input w-auto shrink-0"
+              title="Исполнитель новой подзадачи"
+            >
+              <option value="">— исполнитель —</option>
+              {eligibleEmployees.map((emp: any) => (
+                <option key={emp.user.id} value={emp.user.id}>{emp.fullName}</option>
+              ))}
+            </select>
+          )}
           <button type="button" onClick={addSubtask} className="btn-secondary px-3 shrink-0">
             <Plus size={15} />
           </button>

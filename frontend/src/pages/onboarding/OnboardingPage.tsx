@@ -1,28 +1,38 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, PageLoader, ConfirmDialog } from '@/components/ui'
 import { Plus, Edit, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-/** Колонки канбан-доски онбординга. Список расширяемый — при добавлении
- *  нового этапа достаточно дописать сюда и в enum ClientLeadOnboardingStage. */
-const STAGES = [
-  { key: 'meeting',        label: 'Встреча',     accent: 'border-t-sky-500' },
-  { key: 'kp_creation',    label: 'Создание КП', accent: 'border-t-amber-500' },
-  { key: 'implementation', label: 'Реализация',  accent: 'border-t-violet-500' },
-  { key: 'contract',       label: 'Договор',     accent: 'border-t-emerald-500' },
-] as const
+/** Все возможные этапы онбординга. Какие именно показывать и в каком
+ *  порядке — зависит от роли менеджера (см. STAGES_BY_ROLE ниже). */
+const ALL_STAGES = {
+  negotiation:    { label: 'Переговор',    accent: 'border-t-rose-500' },
+  meeting:        { label: 'Встреча',      accent: 'border-t-sky-500' },
+  kp_creation:    { label: 'КП',           accent: 'border-t-amber-500' },
+  contract:       { label: 'Договор',      accent: 'border-t-emerald-500' },
+  implementation: { label: 'Реализация',   accent: 'border-t-violet-500' },
+} as const
 
-type StageKey = typeof STAGES[number]['key']
+type StageKey = keyof typeof ALL_STAGES
+
+// МП по СММ — 4 этапа (без переговоров, договор в конце).
+const STAGES_SMM: StageKey[] = ['meeting', 'kp_creation', 'implementation', 'contract']
+// МП по разработке — 5 этапов: переговор → встреча → КП → договор → реализация.
+const STAGES_DEV: StageKey[] = ['negotiation', 'meeting', 'kp_creation', 'contract', 'implementation']
 
 const STAGE_LABEL: Record<string, string> = Object.fromEntries(
-  STAGES.map(s => [s.key, s.label]),
+  Object.entries(ALL_STAGES).map(([k, v]) => [k, v.label]),
 )
 
 export default function OnboardingPage() {
   const qc = useQueryClient()
+  const role = useAuthStore(s => s.user?.role)
+  // У МП по разработке свой набор этапов (5 шагов с «Переговор»).
+  const stageKeys: StageKey[] = role === 'sales_manager_dev' ? STAGES_DEV : STAGES_SMM
   const [showAdd, setShowAdd] = useState(false)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
@@ -56,9 +66,10 @@ export default function OnboardingPage() {
     onSettled: () => qc.invalidateQueries({ queryKey: ['clients'] }),
   })
 
-  // Новый клиент — попадает на доску в этап «Встреча» и в Базу клиентов.
+  // Новый клиент — попадает на доску в первый этап роли (Встреча у СММ,
+  // Переговор у разработки) и в Базу клиентов.
   const createMut = useMutation({
-    mutationFn: (data: any) => clientsApi.create({ ...data, onboardingStage: 'meeting' }),
+    mutationFn: (data: any) => clientsApi.create({ ...data, onboardingStage: stageKeys[0] }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clients'] })
       setShowAdd(false)
@@ -116,19 +127,23 @@ export default function OnboardingPage() {
         </button>
       </div>
 
-      <div className="flex gap-4 overflow-x-auto pb-3 lg:grid lg:grid-cols-4 lg:overflow-x-visible">
-        {STAGES.map(stage => {
-          const items = onboardingClients.filter((c: any) => c.onboardingStage === stage.key)
+      <div className={clsx(
+        'flex gap-4 overflow-x-auto pb-3 lg:grid lg:overflow-x-visible',
+        stageKeys.length === 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4',
+      )}>
+        {stageKeys.map(key => {
+          const stage = ALL_STAGES[key]
+          const items = onboardingClients.filter((c: any) => c.onboardingStage === key)
           return (
             <div
-              key={stage.key}
-              onDragOver={e => { e.preventDefault(); setDragOverStage(stage.key) }}
-              onDragLeave={() => setDragOverStage(s => (s === stage.key ? null : s))}
-              onDrop={() => handleDrop(stage.key)}
+              key={key}
+              onDragOver={e => { e.preventDefault(); setDragOverStage(key) }}
+              onDragLeave={() => setDragOverStage(s => (s === key ? null : s))}
+              onDrop={() => handleDrop(key)}
               className={clsx(
                 'min-w-[260px] lg:min-w-0 rounded-2xl border-t-4 bg-surface-50 dark:bg-surface-800/50 p-3 transition-colors',
                 stage.accent,
-                dragOverStage === stage.key && 'ring-2 ring-primary-400',
+                dragOverStage === key && 'ring-2 ring-primary-400',
               )}
             >
               <div className="flex items-center justify-between mb-3">

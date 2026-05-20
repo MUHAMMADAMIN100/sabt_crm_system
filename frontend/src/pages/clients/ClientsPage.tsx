@@ -11,10 +11,11 @@ import clsx from 'clsx'
 
 /** Подписи этапов онбординга — для бейджа в списке клиентов. */
 const ONBOARDING_STAGE_LABELS: Record<string, string> = {
+  negotiation: 'Переговор',
   meeting: 'Встреча',
   kp_creation: 'Создание КП',
-  implementation: 'Реализация',
   contract: 'Договор',
+  implementation: 'Реализация',
 }
 
 const STATUS_OPTIONS: { value: string; label: string; color: string }[] = [
@@ -375,12 +376,26 @@ export default function ClientsPage() {
           onClose={() => { setShowCreate(false); setEditLead(null) }}
           onSubmit={(data: any) => {
             if (editLead) updateMut.mutate({ id: editLead.id, data })
-            // Клиент, добавленный через Базу клиентов, сразу попадает в Онбординг.
-            else createMut.mutate({ ...data, onboardingStage: 'meeting' })
+            // МП по СММ — клиент сразу попадает в Онбординг (этап «Встреча»).
+            // МП по разработке — без явного клика онбординг не ставим.
+            else if (isSalesManager && role === 'sales_manager_dev') {
+              createMut.mutate(data)
+            } else {
+              createMut.mutate({ ...data, onboardingStage: 'meeting' })
+            }
           }}
+          onSubmitWithOnboarding={
+            // Кнопка «+ Добавить в онбординг» в форме создания у МП по разработке.
+            !editLead && role === 'sales_manager_dev'
+              ? (data: any) => createMut.mutate({ ...data, onboardingStage: 'negotiation' })
+              : undefined
+          }
           onAddToOnboarding={
             editLead && !editLead.onboardingStage
-              ? () => updateMut.mutate({ id: editLead.id, data: { onboardingStage: 'meeting' } })
+              ? () => updateMut.mutate({
+                  id: editLead.id,
+                  data: { onboardingStage: role === 'sales_manager_dev' ? 'negotiation' : 'meeting' },
+                })
               : undefined
           }
           loading={createMut.isPending || updateMut.isPending}
@@ -399,7 +414,7 @@ export default function ClientsPage() {
   )
 }
 
-function ClientForm({ initial, onClose, onSubmit, loading, onAddToOnboarding }: any) {
+function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loading, onAddToOnboarding }: any) {
   const { register, handleSubmit, watch } = useForm({ defaultValues: {
     name: initial?.name || '',
     sphere: initial?.sphere || '',
@@ -420,15 +435,15 @@ function ClientForm({ initial, onClose, onSubmit, loading, onAddToOnboarding }: 
 
   const currentStatus = watch('status')
 
-  const submit = (data: any) => {
-    onSubmit({
-      ...data,
-      dealPotential: data.dealPotential ? Number(data.dealPotential) : null,
-      interest: data.interest || null,
-      lastContactAt: data.lastContactAt || null,
-      nextContactAt: data.nextContactAt || null,
-    })
-  }
+  const normalize = (data: any) => ({
+    ...data,
+    dealPotential: data.dealPotential ? Number(data.dealPotential) : null,
+    interest: data.interest || null,
+    lastContactAt: data.lastContactAt || null,
+    nextContactAt: data.nextContactAt || null,
+  })
+  const submit = (data: any) => onSubmit(normalize(data))
+  const submitWithOnb = (data: any) => onSubmitWithOnboarding(normalize(data))
 
   return (
     <Modal open onClose={onClose} title={initial ? 'Редактировать клиента' : 'Новый клиент'} size="xl">
@@ -515,10 +530,23 @@ function ClientForm({ initial, onClose, onSubmit, loading, onAddToOnboarding }: 
         </div>
 
         <div className="flex flex-wrap gap-2 justify-end pt-2">
+          {/* В режиме редактирования — кнопка добавления существующего лида в онбординг. */}
           {onAddToOnboarding && (
             <button
               type="button"
               onClick={onAddToOnboarding}
+              disabled={loading}
+              className="btn-secondary text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 mr-auto"
+            >
+              + Добавить в онбординг
+            </button>
+          )}
+          {/* В режиме создания (МП по разработке) — отдельная кнопка
+              «Создать и добавить в онбординг». */}
+          {!initial && onSubmitWithOnboarding && (
+            <button
+              type="button"
+              onClick={handleSubmit(submitWithOnb)}
               disabled={loading}
               className="btn-secondary text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 mr-auto"
             >

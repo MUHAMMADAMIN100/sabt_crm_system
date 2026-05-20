@@ -17,7 +17,84 @@ const TYPE_FILTERS = [
   { value: 'paid', label: '✅ Оплачено' },
 ]
 
+const PROJECT_STATUS_OPTIONS = [
+  { value: 'planning',    label: 'Планируется' },
+  { value: 'in_progress', label: 'В работе' },
+  { value: 'completed',   label: 'Завершён' },
+  { value: 'on_hold',     label: 'На паузе' },
+  { value: 'archived',    label: 'Архив' },
+]
+
 const fmt = (n: number) => n.toLocaleString('ru-RU')
+
+/** Универсальная ячейка инлайн-редактирования: text / date / select.
+ *  Клик → поле ввода; Enter / blur — сохранение; Esc — отмена.
+ *  Контейнер фиксированной ширины, чтобы таблица не «прыгала». */
+function InlineEditCell({
+  value, onSave, mode, options, width = 'w-32', formatter,
+}: {
+  value: string | null | undefined
+  onSave: (v: string) => void
+  mode: 'text' | 'date' | 'select'
+  options?: { value: string; label: string }[]
+  width?: string
+  formatter?: (v: string | null | undefined) => string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  const start = () => { setDraft(value ?? ''); setEditing(true) }
+  const commit = () => {
+    setEditing(false)
+    if ((draft || '') !== (value ?? '')) onSave(draft)
+  }
+
+  if (editing) {
+    if (mode === 'select') {
+      return (
+        <select
+          autoFocus
+          value={draft}
+          onChange={e => { setDraft(e.target.value); onSave(e.target.value); setEditing(false) }}
+          onBlur={() => setEditing(false)}
+          onKeyDown={e => { if (e.key === 'Escape') setEditing(false) }}
+          className={clsx('px-1.5 py-0.5 text-sm rounded border border-primary-400 bg-white dark:bg-surface-800', width)}
+        >
+          {options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      )
+    }
+    return (
+      <input
+        autoFocus
+        type={mode === 'date' ? 'date' : 'text'}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); commit() }
+          if (e.key === 'Escape') setEditing(false)
+        }}
+        className={clsx('px-1.5 py-0.5 text-sm rounded border border-primary-400 bg-white dark:bg-surface-800', width)}
+      />
+    )
+  }
+
+  const displayText = formatter ? formatter(value) : (value || '—')
+  return (
+    <button
+      type="button"
+      onClick={start}
+      title="Нажмите, чтобы изменить"
+      className={clsx('group/cell inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors text-left', width)}
+    >
+      <Pencil size={10} className="text-surface-400 group-hover/cell:text-primary-600 dark:group-hover/cell:text-primary-400 shrink-0" />
+      <span className="truncate underline decoration-dotted decoration-surface-300 dark:decoration-surface-600 underline-offset-2 group-hover/cell:text-primary-600 dark:group-hover/cell:text-primary-400">
+        {displayText}
+      </span>
+    </button>
+  )
+}
 
 /** Ячейка бюджета с инлайн-редактированием: клик → поле ввода,
  *  сохранение по Enter или потере фокуса, отмена по Esc.
@@ -82,39 +159,48 @@ export default function SalesDashboard() {
     queryFn: analyticsApi.sales,
   })
 
-  // Инлайн-редактирование бюджета прямо в таблице. После сохранения
-  // обновляем панель, список проектов, аналитику и карточку проекта.
-  const budgetMut = useMutation({
-    mutationFn: ({ id, budget }: { id: string; budget: number }) =>
-      projectsApi.update(id, { budget }),
-    onMutate: async ({ id, budget }) => {
+  // Только МП по СММ может править все колонки таблицы (name/endDate/status).
+  // У остальных (МП по разработке) — только бюджет.
+  const isSmmSales = role === 'sales_manager_smm'
+
+  // Универсальная мутация: апдейт любого поля проекта из инлайн-ячейки.
+  // После сохранения инвалидирует панель, список проектов, аналитику и карточку.
+  const updateProjectMut = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Record<string, any> }) =>
+      projectsApi.update(id, patch),
+    onMutate: async ({ id, patch }) => {
       await qc.cancelQueries({ queryKey: ['sales-stats'] })
       const prev = qc.getQueryData(['sales-stats'])
       qc.setQueryData(['sales-stats'], (old: any) => {
         if (!old?.projects) return old
         return {
           ...old,
-          projects: old.projects.map((p: any) =>
-            p.id === id
-              ? { ...p, budget, remaining: Math.max(0, budget - Number(p.paidAmount || 0)) }
-              : p,
-          ),
+          projects: old.projects.map((p: any) => {
+            if (p.id !== id) return p
+            const next: any = { ...p, ...patch }
+            if ('budget' in patch) {
+              next.remaining = Math.max(0, Number(patch.budget || 0) - Number(p.paidAmount || 0))
+            }
+            return next
+          }),
         }
       })
       return { prev }
     },
     onError: (_e, _v, ctx) => {
       qc.setQueryData(['sales-stats'], ctx?.prev)
-      toast.error('Не удалось обновить бюджет')
+      toast.error('Не удалось сохранить')
     },
     onSuccess: () => {
-      toast.success('Бюджет обновлён')
+      toast.success('Изменения сохранены')
       qc.invalidateQueries({ queryKey: ['projects'] })
       qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
       qc.invalidateQueries({ queryKey: ['project'] })
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ['sales-stats'] }),
   })
+
+  const patch = (id: string, p: Record<string, any>) => updateProjectMut.mutate({ id, patch: p })
 
   const projects = useMemo(() => {
     let list = (data?.projects || []) as any[]
@@ -179,9 +265,18 @@ export default function SalesDashboard() {
               {projects.map((p: any) => (
                 <tr key={p.id} className="hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors">
                   <td className="py-2 pr-3">
-                    <Link to={`/projects/${p.id}`} className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400">
-                      {p.name}
-                    </Link>
+                    {isSmmSales ? (
+                      <InlineEditCell
+                        mode="text"
+                        value={p.name}
+                        onSave={(v) => patch(p.id, { name: v })}
+                        width="w-44"
+                      />
+                    ) : (
+                      <Link to={`/projects/${p.id}`} className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400">
+                        {p.name}
+                      </Link>
+                    )}
                     {p.clientInfo?.email && (
                       <p className="text-[10px] text-surface-400 flex items-center gap-1 mt-0.5">
                         <Mail size={10} /> {p.clientInfo.email}
@@ -196,7 +291,7 @@ export default function SalesDashboard() {
                   <td className="py-2 pr-3 text-right font-medium text-surface-800 dark:text-surface-200 tabular-nums whitespace-nowrap">
                     <BudgetCell
                       value={Number(p.budget || 0)}
-                      onSave={(budget) => budgetMut.mutate({ id: p.id, budget })}
+                      onSave={(budget) => patch(p.id, { budget })}
                     />
                   </td>
                   <td className="py-2 pr-3 text-right font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums whitespace-nowrap">
@@ -213,7 +308,15 @@ export default function SalesDashboard() {
                     {fmt(p.remaining)}
                   </td>
                   <td className="py-2 pr-3 whitespace-nowrap">
-                    {p.endDate ? (
+                    {isSmmSales ? (
+                      <InlineEditCell
+                        mode="date"
+                        value={p.endDate ? String(p.endDate).slice(0, 10) : ''}
+                        onSave={(v) => patch(p.id, { endDate: v || null })}
+                        formatter={(v) => v ? format(new Date(v), 'dd.MM.yy') : '—'}
+                        width="w-28"
+                      />
+                    ) : p.endDate ? (
                       <span className={clsx(
                         'text-xs',
                         p.isOverdue ? 'text-red-500 font-semibold' : p.isUpcoming ? 'text-amber-600 dark:text-amber-400' : 'text-surface-500 dark:text-surface-400',
@@ -226,7 +329,16 @@ export default function SalesDashboard() {
                     )}
                   </td>
                   <td className="py-2 whitespace-nowrap">
-                    {p.budget > 0 && p.remaining === 0 ? (
+                    {isSmmSales ? (
+                      <InlineEditCell
+                        mode="select"
+                        value={p.status}
+                        options={PROJECT_STATUS_OPTIONS}
+                        onSave={(v) => patch(p.id, { status: v })}
+                        formatter={(v) => PROJECT_STATUS_OPTIONS.find(o => o.value === v)?.label || v}
+                        width="w-32"
+                      />
+                    ) : p.budget > 0 && p.remaining === 0 ? (
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                         <CheckCircle2 size={12} /> Оплачено
                       </span>

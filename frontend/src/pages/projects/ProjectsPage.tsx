@@ -30,16 +30,32 @@ const PROJECT_TYPE_FILTERS = [
   { value: 'SMM', label: 'SMM' },
 ]
 
+/** Сохраняем фильтры страницы «Проекты» между переходами через sessionStorage,
+ *  чтобы они не сбрасывались при возврате с карточки проекта. */
+function useStoredState<T>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const raw = sessionStorage.getItem(key)
+      if (raw === null) return initial
+      return JSON.parse(raw) as T
+    } catch { return initial }
+  })
+  useEffect(() => {
+    try { sessionStorage.setItem(key, JSON.stringify(value)) } catch { /* ignore quota */ }
+  }, [key, value])
+  return [value, setValue] as const
+}
+
 export default function ProjectsPage() {
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('')
-  const [projectType, setProjectType] = useState('')
+  const [search, setSearch] = useStoredState<string>('proj_search', '')
+  const [status, setStatus] = useStoredState<string>('proj_status', '')
+  const [projectType, setProjectType] = useStoredState<string>('proj_type', '')
   // Wave 16: дополнительные фильтры из ТЗ п.13
-  const [filterTariff, setFilterTariff] = useState('')        // tariffId или ''
-  const [filterPm, setFilterPm] = useState('')                // managerId или ''
-  const [filterRisk, setFilterRisk] = useState('')            // 'red'|'yellow'|'green'|''
-  const [filterPayment, setFilterPayment] = useState('')      // paymentStatus или ''
-  const [filterOveruse, setFilterOveruse] = useState(false)   // только с перерасходом
+  const [filterTariff, setFilterTariff] = useStoredState<string>('proj_tariff', '')
+  const [filterPm, setFilterPm] = useStoredState<string>('proj_pm', '')
+  const [filterRisk, setFilterRisk] = useStoredState<string>('proj_risk', '')
+  const [filterPayment, setFilterPayment] = useStoredState<string>('proj_payment', '')
+  const [filterOveruse, setFilterOveruse] = useStoredState<boolean>('proj_overuse', false)
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 12
   const [showCreate, setShowCreate] = useState(false)
