@@ -286,7 +286,7 @@ export default function ClientsPage() {
         />
       ) : (
         <>
-        <div className="card p-0 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="card p-0 overflow-x-auto animate-fade-in stagger-rows" style={{ WebkitOverflowScrolling: 'touch' }}>
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-surface-100 dark:border-surface-700 text-left">

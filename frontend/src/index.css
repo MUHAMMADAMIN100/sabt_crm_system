@@ -64,28 +64,47 @@
 @layer components {
   .card {
     @apply bg-white rounded-2xl shadow-card border border-surface-100 p-4 sm:p-5;
-    @apply transition-shadow duration-200;
+    @apply transition-all duration-200 ease-out;
   }
   .dark .card { @apply bg-surface-800 border-surface-700; }
   .card-interactive {
-    @apply card cursor-pointer hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200;
+    @apply card cursor-pointer transition-all duration-200 ease-out;
+    will-change: transform, box-shadow;
+  }
+  .card-interactive:hover {
+    @apply shadow-card-hover;
+    transform: translateY(-2px);
+  }
+  .card-interactive:active {
+    transform: translateY(0) scale(0.995);
   }
 
-  .btn { @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed select-none min-h-[40px] sm:min-h-0; }
-  .btn-primary { @apply btn bg-primary-600 text-white hover:bg-primary-700 active:scale-95 hover:shadow-md; }
-  .btn-secondary { @apply btn bg-surface-100 text-surface-800 hover:bg-surface-200 active:scale-95; }
+  .btn { @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-medium text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed select-none min-h-[40px] sm:min-h-0;
+    transition: background-color 150ms ease, color 150ms ease, box-shadow 200ms ease, transform 120ms ease;
+  }
+  .btn:hover:not(:disabled) { transform: translateY(-1px); }
+  .btn:active:not(:disabled) { transform: translateY(0) scale(0.97); }
+  .btn-primary { @apply btn bg-primary-600 text-white hover:bg-primary-700 hover:shadow-md; }
+  .btn-secondary { @apply btn bg-surface-100 text-surface-800 hover:bg-surface-200; }
   .dark .btn-secondary { @apply bg-surface-700 text-surface-100 hover:bg-surface-600; }
-  .btn-danger { @apply btn bg-red-50 text-red-600 hover:bg-red-100 active:scale-95; }
+  .btn-danger { @apply btn bg-red-50 text-red-600 hover:bg-red-100; }
   .dark .btn-danger { @apply bg-red-900/20 text-red-400 hover:bg-red-900/30; }
-  .btn-ghost { @apply btn text-surface-600 hover:bg-surface-100 active:scale-95; }
+  .btn-ghost { @apply btn text-surface-600 hover:bg-surface-100; }
   .dark .btn-ghost { @apply text-surface-300 hover:bg-surface-700; }
 
   .input {
     @apply w-full px-3 py-2 bg-white border border-surface-200 rounded-xl text-sm;
     @apply focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
-    @apply transition-all duration-150;
+    transition:
+      border-color 150ms ease,
+      box-shadow 200ms ease,
+      background-color 150ms ease,
+      transform 120ms ease;
   }
+  .input:focus { transform: translateY(-1px); }
+  .input:hover:not(:focus):not(:disabled) { @apply border-surface-300; }
   .dark .input { @apply bg-surface-800 border-surface-700 text-surface-100; }
+  .dark .input:hover:not(:focus):not(:disabled) { @apply border-surface-500; }
 
   /* Native date / datetime inputs render smaller text + weird heights on mobile
    * Safari/Chrome by default. Force matching size with other .input fields. */
@@ -110,13 +129,27 @@
   .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
 
   .sidebar-link {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium;
-    @apply transition-all duration-150 text-surface-600;
-    @apply hover:bg-surface-100 hover:text-surface-900 hover:translate-x-0.5;
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium relative;
+    @apply transition-all duration-200 text-surface-600;
+    @apply hover:bg-surface-100 hover:text-surface-900;
+    will-change: transform, background-color;
   }
+  .sidebar-link:hover { transform: translateX(2px); }
   .dark .sidebar-link { @apply text-surface-300 hover:bg-surface-700 hover:text-surface-100; }
   .sidebar-link.active {
     @apply bg-primary-50 text-primary-700 shadow-sm;
+  }
+  /* Левый акцентный вертикальный бар у активного пункта — плавно появляется */
+  .sidebar-link.active::before {
+    content: '';
+    position: absolute;
+    left: -3px;
+    top: 25%;
+    bottom: 25%;
+    width: 3px;
+    border-radius: 0 4px 4px 0;
+    background: theme('colors.primary.500');
+    animation: slideInLeft 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
   .dark .sidebar-link.active { @apply bg-primary-900/30 text-primary-400; }
 
@@ -247,8 +280,14 @@ aside {
 @keyframes fadeIn    { from { opacity: 0; transform: translateY(8px); }  to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeUp    { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes slideIn   { from { transform: translateX(-100%); }            to { transform: translateX(0); } }
-@keyframes slideInLeft { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes slideInLeft  { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes slideInRight { from { opacity: 0; transform: translateX(20px); }  to { opacity: 1; transform: translateX(0); } }
+@keyframes slideDown    { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideUp      { from { opacity: 0; transform: translateY(12px); }  to { opacity: 1; transform: translateY(0); } }
 @keyframes scaleIn   { from { opacity: 0; transform: scale(0.94) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes popIn        { 0% { opacity: 0; transform: scale(0.85); } 60% { transform: scale(1.04); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes drawerInRight{ from { transform: translateX(100%); }       to { transform: translateX(0); } }
+@keyframes drawerInLeft { from { transform: translateX(-100%); }      to { transform: translateX(0); } }
 @keyframes spin      { to { transform: rotate(360deg); } }
 @keyframes shimmer   { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 @keyframes bounceDot { 0%, 80%, 100% { transform: translateY(0); opacity: 0.5; } 40% { transform: translateY(-10px); opacity: 1; } }
@@ -256,6 +295,13 @@ aside {
 @keyframes countUp   { from { opacity: 0; transform: translateY(8px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes bounceSoft { 0% { opacity: 0; transform: scale(0.7); } 60% { transform: scale(1.1); } 100% { opacity: 1; transform: scale(1); } }
 @keyframes notificationPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(107,79,207,0.4); } 50% { box-shadow: 0 0 0 6px rgba(107,79,207,0); } }
+@keyframes wiggle    { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
+@keyframes shake     { 10%, 90% { transform: translateX(-1px); } 20%, 80% { transform: translateX(2px); } 30%, 50%, 70% { transform: translateX(-4px); } 40%, 60% { transform: translateX(4px); } }
+@keyframes glowPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(107,79,207,0); } 50% { box-shadow: 0 0 0 4px rgba(107,79,207,0.18); } }
+@keyframes pulseDot  { 0%, 100% { opacity: 0.4; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1); } }
+@keyframes float     { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes backdropIn { from { opacity: 0; backdrop-filter: blur(0); } to { opacity: 1; backdrop-filter: blur(8px); } }
+.animate-backdrop-in { animation: backdropIn 0.25s ease-out both; }
 @keyframes gradientShift {
   0%   { background-position: 0% 50%; }
   50%  { background-position: 100% 50%; }
@@ -267,17 +313,126 @@ aside {
   100% { stroke-dashoffset: 80; transform: rotate(360deg); }
 }
 
-.animate-fade-in      { animation: fadeIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-fade-up      { animation: fadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-scale-in     { animation: scaleIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-slide-in     { animation: slideIn 0.25s ease-out; }
+.animate-fade-in       { animation: fadeIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-fade-up       { animation: fadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-scale-in      { animation: scaleIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-pop-in        { animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.animate-slide-in      { animation: slideIn 0.25s ease-out; }
 .animate-slide-in-left { animation: slideInLeft 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-page-in      { animation: pageIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-count-up     { animation: countUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-bounce-soft  { animation: bounceSoft 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-shimmer      { animation: shimmer 1.8s ease-in-out infinite; }
-.animate-bounce-dot   { animation: bounceDot 1.2s ease-in-out infinite; }
-.animate-notification { animation: notificationPulse 2s ease-in-out infinite; }
+.animate-slide-in-right{ animation: slideInRight 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-slide-down    { animation: slideDown 0.25s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-slide-up      { animation: slideUp 0.25s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-drawer-right  { animation: drawerInRight 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-drawer-left   { animation: drawerInLeft 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-page-in       { animation: pageIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-count-up      { animation: countUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-bounce-soft   { animation: bounceSoft 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-shimmer       { animation: shimmer 1.8s ease-in-out infinite; }
+.animate-bounce-dot    { animation: bounceDot 1.2s ease-in-out infinite; }
+.animate-notification  { animation: notificationPulse 2s ease-in-out infinite; }
+.animate-wiggle        { animation: wiggle 0.4s ease-in-out; }
+.animate-shake         { animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.animate-glow-pulse    { animation: glowPulse 1.8s ease-in-out infinite; }
+.animate-pulse-dot     { animation: pulseDot 1.4s ease-in-out infinite; }
+.animate-float         { animation: float 3s ease-in-out infinite; }
+
+/* ====================== HOVER UTILITIES ====================== */
+/* Универсальные классы для интерактивных карточек и кнопок. */
+.hover-lift {
+  @apply transition-transform duration-200 ease-out;
+  will-change: transform;
+}
+.hover-lift:hover { transform: translateY(-2px); }
+.hover-lift:active { transform: translateY(0); }
+
+.hover-grow {
+  @apply transition-transform duration-150 ease-out;
+}
+.hover-grow:hover { transform: scale(1.04); }
+.hover-grow:active { transform: scale(0.98); }
+
+.hover-glow {
+  @apply transition-shadow duration-200;
+}
+.hover-glow:hover { box-shadow: 0 0 0 3px rgba(107, 79, 207, 0.15); }
+
+/* Smooth lift+shadow для интерактивных карточек */
+.card-hoverable {
+  @apply transition-all duration-200 ease-out;
+}
+.card-hoverable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.12);
+}
+.dark .card-hoverable:hover {
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+}
+
+/* ====================== STAGGER (universal up to 16 items) ====================== */
+.stagger-grid > * {
+  animation: fadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stagger-grid > *:nth-child(1)  { animation-delay: 0ms; }
+.stagger-grid > *:nth-child(2)  { animation-delay: 40ms; }
+.stagger-grid > *:nth-child(3)  { animation-delay: 80ms; }
+.stagger-grid > *:nth-child(4)  { animation-delay: 120ms; }
+.stagger-grid > *:nth-child(5)  { animation-delay: 160ms; }
+.stagger-grid > *:nth-child(6)  { animation-delay: 200ms; }
+.stagger-grid > *:nth-child(7)  { animation-delay: 240ms; }
+.stagger-grid > *:nth-child(8)  { animation-delay: 280ms; }
+.stagger-grid > *:nth-child(9)  { animation-delay: 320ms; }
+.stagger-grid > *:nth-child(10) { animation-delay: 360ms; }
+.stagger-grid > *:nth-child(11) { animation-delay: 400ms; }
+.stagger-grid > *:nth-child(12) { animation-delay: 440ms; }
+.stagger-grid > *:nth-child(n+13) { animation-delay: 480ms; }
+
+/* Stagger по колонкам канбана */
+.stagger-kanban > * {
+  animation: scaleIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stagger-kanban > *:nth-child(1) { animation-delay: 50ms; }
+.stagger-kanban > *:nth-child(2) { animation-delay: 100ms; }
+.stagger-kanban > *:nth-child(3) { animation-delay: 150ms; }
+.stagger-kanban > *:nth-child(4) { animation-delay: 200ms; }
+.stagger-kanban > *:nth-child(5) { animation-delay: 250ms; }
+
+/* ====================== TAB CONTENT TRANSITION ====================== */
+.tab-content-enter {
+  animation: tabContentEnter 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes tabContentEnter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ====================== ACCORDION / COLLAPSIBLE ====================== */
+.collapse-content {
+  overflow: hidden;
+  animation: collapseDown 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes collapseDown {
+  from { opacity: 0; max-height: 0; transform: translateY(-4px); }
+  to   { opacity: 1; max-height: 2000px; transform: translateY(0); }
+}
+
+/* ====================== PROGRESS BAR shimmer overlay ====================== */
+.progress-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.progress-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.4s ease-in-out infinite;
+}
 
 /* Delay helpers */
 .delay-75  { animation-delay: 75ms; }
@@ -511,6 +666,18 @@ aside {
 /* iOS rubber-band scroll fix */
 .overflow-y-auto {
   -webkit-overflow-scrolling: touch;
+}
+
+/* ====================== REDUCED MOTION ======================
+ * Уважение системных предпочтений: люди с настройкой «уменьшить анимацию»
+ * получают только мгновенные переходы без скольжения/масштабирования. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ====================== MOBILE RESPONSIVE ====================== */

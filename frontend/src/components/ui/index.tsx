@@ -31,12 +31,18 @@ export function CollapsibleSection({ id, title, children, defaultOpen = true, cl
     <div className={clsx('card', className)}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-2 -mx-1 px-1 py-1 hover:bg-surface-50 dark:hover:bg-surface-700/30 rounded-lg transition-colors text-left"
+        className="w-full flex items-center justify-between gap-2 -mx-1 px-1 py-1 hover:bg-surface-50 dark:hover:bg-surface-700/30 rounded-lg transition-colors text-left group"
       >
         <div className="flex-1 min-w-0">{title}</div>
-        {open ? <ChevronUp size={16} className="text-surface-400 shrink-0" /> : <ChevronDown size={16} className="text-surface-400 shrink-0" />}
+        <ChevronDown
+          size={16}
+          className={clsx(
+            'text-surface-400 shrink-0 transition-transform duration-300 ease-out',
+            open ? 'rotate-0' : '-rotate-90',
+          )}
+        />
       </button>
-      {open && <div className="mt-3">{children}</div>}
+      {open && <div className="mt-3 collapse-content">{children}</div>}
     </div>
   )
 }
@@ -83,28 +89,38 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
-      {/* Backdrop — усиленный блюр и затемнение чтобы фокус был на модалке */}
+      {/* Backdrop — затемнение + blur, мягкий fade */}
       <div
         className={clsx(
-          'absolute inset-0 bg-black/60 transition-opacity duration-300',
+          'absolute inset-0 bg-black/60 transition-opacity duration-300 ease-out',
           visible ? 'opacity-100' : 'opacity-0',
         )}
-        style={{ WebkitBackdropFilter: 'blur(10px)', backdropFilter: 'blur(10px)' }}
+        style={{
+          WebkitBackdropFilter: visible ? 'blur(10px)' : 'blur(0px)',
+          backdropFilter: visible ? 'blur(10px)' : 'blur(0px)',
+          transition: 'opacity 300ms ease-out, backdrop-filter 300ms ease-out, -webkit-backdrop-filter 300ms ease-out',
+        }}
         onClick={onClose}
       />
-      {/* Panel */}
+      {/* Panel — лёгкий «пружинистый» вход через cubic-bezier с пере-стрелом */}
       <div
         className={clsx(
           'relative bg-white dark:bg-surface-800 shadow-modal w-full',
           'rounded-t-2xl sm:rounded-2xl',
           'max-h-[90vh] sm:max-h-[85vh] flex flex-col',
-          'transition-all duration-300 ease-out',
+          'transition-all duration-300',
           sizes[size],
           visible
             ? 'opacity-100 scale-100 translate-y-0'
             : 'opacity-0 sm:scale-95 translate-y-8 sm:translate-y-5',
         )}
-        style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
+        style={{
+          // Cubic-bezier с лёгким overshoot (0.34, 1.56, 0.64, 1) — модалка
+          // словно «вылетает» к финалу. На выходе обычный ease-out.
+          transitionTimingFunction: visible
+            ? 'cubic-bezier(0.34, 1.56, 0.64, 1)'
+            : 'cubic-bezier(0.22, 1, 0.36, 1)',
+        }}
       >
         {title && (
           <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-100 dark:border-surface-700 shrink-0">
@@ -394,10 +410,10 @@ export function Pagination({ page, total, pageSize, onChange }: {
             key={p}
             onClick={() => onChange(p)}
             className={clsx(
-              'w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-colors',
+              'w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-all duration-200',
               p === page
-                ? 'bg-primary-600 text-white shadow-sm'
-                : 'text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700',
+                ? 'bg-primary-600 text-white shadow-sm scale-105'
+                : 'text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 hover:scale-105 active:scale-95',
             )}
           >{p}</button>
         )
@@ -413,11 +429,26 @@ export function Pagination({ page, total, pageSize, onChange }: {
 // ── Progress bar ──────────────────────────────────────────────────────
 export function ProgressBar({ value, className }: { value: number; className?: string }) {
   const clamped = Math.min(100, Math.max(0, value))
+  // Анимируем рост от 0 → value при mount, чтобы каждый прогресс «вырастал»
+  // плавно. Используем небольшой эффект задержки + shimmer-блик для оживления.
+  const [animated, setAnimated] = useState(0)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setAnimated(clamped))
+    return () => cancelAnimationFrame(id)
+  }, [clamped])
   return (
     <div className={clsx('w-full bg-surface-100 dark:bg-surface-700 rounded-full h-2 overflow-hidden', className)}>
       <div
-        className="bg-primary-600 h-2 rounded-full transition-all duration-700 ease-out"
-        style={{ width: `${clamped}%` }}
+        className={clsx(
+          'h-2 rounded-full transition-all ease-out',
+          // Активный (>0%) — добавляем shimmer-блик
+          clamped > 0 && 'progress-shimmer',
+        )}
+        style={{
+          width: `${animated}%`,
+          transitionDuration: '900ms',
+          background: 'linear-gradient(90deg, rgb(107, 79, 207), rgb(139, 92, 246))',
+        }}
       />
     </div>
   )

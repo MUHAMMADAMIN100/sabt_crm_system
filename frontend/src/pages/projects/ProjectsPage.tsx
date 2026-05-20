@@ -312,12 +312,12 @@ export default function ProjectsPage() {
           canCreateProject && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
         } />
       ) : (
-        <div key={page} className="animate-fade-in grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 items-stretch">
+        <div key={page} className="animate-fade-in stagger-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 items-stretch">
           {pagedProjects.map((p: any) => (
             <div
               key={p.id}
               onClick={() => navigate(`/projects/${p.id}`)}
-              className="card group hover:shadow-md transition-shadow cursor-pointer relative h-full flex flex-col"
+              className="card card-hoverable group cursor-pointer relative h-full flex flex-col"
             >
               {/* Ad status dot — SMM projects only */}
               {p.projectType === 'SMM' && (

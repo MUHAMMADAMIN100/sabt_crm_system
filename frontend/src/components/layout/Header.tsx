@@ -209,16 +209,26 @@ export default function Header({ onMenuClick }: HeaderProps) {
       <div className="flex items-center gap-1 ml-auto">
         {/* Notifications dropdown */}
         <div className="relative" ref={notifRef}>
-          <button onClick={() => setNotifOpen(o => !o)} className="relative p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
+          <button onClick={() => setNotifOpen(o => !o)} className={clsx(
+            'relative p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300',
+            // Когда есть непрочитанные — мягкое покачивание колокольчика 1 раз при появлении
+            badgeCount > 0 && 'animate-wiggle',
+          )}>
             <Bell size={18} />
             {badgeCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium">
+              <span
+                key={badgeCount}
+                className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium animate-pop-in shadow-sm ring-2 ring-white dark:ring-surface-900"
+              >
                 {badgeCount > 99 ? '99+' : badgeCount}
               </span>
             )}
+            {badgeCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full animate-notification pointer-events-none" />
+            )}
           </button>
           {notifOpen && (
-            <div className="absolute right-0 top-full mt-1 w-[340px] sm:w-[380px] max-w-[calc(100vw-1rem)] bg-white dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 z-50 animate-fade-in flex flex-col max-h-[70vh]">
+            <div className="absolute right-0 top-full mt-1 w-[340px] sm:w-[380px] max-w-[calc(100vw-1rem)] bg-white dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 z-50 animate-slide-down flex flex-col max-h-[70vh] origin-top-right">
               <div className="flex items-center justify-between px-4 py-3 border-b border-surface-100 dark:border-surface-700 shrink-0">
                 <h3 className="font-semibold text-sm text-surface-900 dark:text-surface-100">Уведомления</h3>
                 {(allNotifications ?? []).some((n: any) => !n.isRead) && (
@@ -232,7 +242,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 {(allNotifications ?? []).length === 0 ? (
                   <p className="text-sm text-surface-400 dark:text-surface-500 p-6 text-center">Нет уведомлений</p>
                 ) : (
-                  <ul className="divide-y divide-surface-50 dark:divide-surface-700">
+                  <ul className="divide-y divide-surface-50 dark:divide-surface-700 stagger-list">
                     {(allNotifications ?? []).slice(0, 15).map((n: any) => (
                       <li
                         key={n.id}

@@ -468,7 +468,7 @@ export default function TasksPage() {
           <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
         } />
       ) : view === 'list' ? (
-        <div key={page} className="animate-fade-in card p-0 overflow-hidden">
+        <div key={page} className="animate-fade-in stagger-rows card p-0 overflow-hidden">
           <table className="w-full">
             <thead>
               <tr className="border-b border-surface-100 dark:border-surface-700">
@@ -569,9 +569,9 @@ export default function TasksPage() {
           </table>
         </div>
       ) : (
-        <div key={page} className="animate-fade-in grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div key={page} className="animate-fade-in stagger-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {pagedTasks.map((task: any) => (
-            <div key={task.id} className="card hover:shadow-md transition-shadow">
+            <div key={task.id} className="card card-hoverable">
               <div className="flex items-start justify-between mb-2">
                 <Link to={`/tasks/${task.id}`} className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm flex-1 pr-2">{task.title}</Link>
                 <div className="flex gap-0.5 shrink-0">

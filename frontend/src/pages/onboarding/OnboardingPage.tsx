@@ -179,7 +179,7 @@ export default function OnboardingPage() {
       </div>
 
       <div className={clsx(
-        'flex gap-4 overflow-x-auto pb-3 lg:grid lg:overflow-x-visible',
+        'flex gap-4 overflow-x-auto pb-3 lg:grid lg:overflow-x-visible stagger-kanban',
         stageKeys.length === 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4',
       )}>
         {stageKeys.map(key => {
@@ -211,7 +211,12 @@ export default function OnboardingPage() {
                     onDragStart={() => setDraggedId(c.id)}
                     onDragEnd={() => setDraggedId(null)}
                     onClick={() => { setDetailId(c.id); setEditMode(false) }}
-                    className="bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 cursor-pointer hover:shadow-md hover:border-primary-300 dark:hover:border-primary-700 transition-all"
+                    className={clsx(
+                      'bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 cursor-pointer transition-all duration-200 ease-out animate-fade-in',
+                      'hover:shadow-md hover:border-primary-300 dark:hover:border-primary-700 hover:-translate-y-0.5',
+                      'active:scale-[0.98]',
+                      draggedId === c.id && 'opacity-50 scale-95 rotate-2',
+                    )}
                   >
                     <p className="font-medium text-sm text-surface-900 dark:text-surface-100">{c.name}</p>
                     {c.sphere && <p className="text-[11px] text-surface-400 mt-0.5">{c.sphere}</p>}
