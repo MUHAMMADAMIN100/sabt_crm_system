@@ -159,9 +159,10 @@ export default function SalesDashboard() {
     queryFn: analyticsApi.sales,
   })
 
-  // Только МП по СММ может править все колонки таблицы (name/endDate/status).
-  // У остальных (МП по разработке) — только бюджет.
-  const isSmmSales = role === 'sales_manager_smm'
+  // МП по продажам (СММ И разработка) могут править все колонки таблицы:
+  // name / paidAmount / endDate / status. Так оба направления одинаково
+  // владеют операционкой по своим проектам.
+  const isSmmSales = role === 'sales_manager_smm' || role === 'sales_manager_dev'
 
   // Универсальная мутация: апдейт любого поля проекта из инлайн-ячейки.
   // После сохранения инвалидирует панель, список проектов, аналитику и карточку.

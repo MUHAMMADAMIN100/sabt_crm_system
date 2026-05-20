@@ -740,12 +740,30 @@ export class TasksService {
     return { message: 'Task deleted' };
   }
 
-  getMyTasks(userId: string) {
-    return this.repo.find({
-      where: { assigneeId: userId },
-      relations: ['project', 'createdBy'],
-      order: { deadline: 'ASC' },
-    });
+  /** «Мои задачи» для сотрудника:
+   *   - задачи где он assigneeId (legacy single-assignee)
+   *   - задачи где он в task_assignees (multi-assignee workflow)
+   *   - его личные заметки из календаря (scope=personal, createdById=я)
+   *  Сортировка по дедлайну (NULL в конце). */
+  async getMyTasks(userId: string) {
+    const qb = this.repo.createQueryBuilder('t')
+      .leftJoinAndSelect('t.assignee', 'assignee')
+      .leftJoinAndSelect('t.createdBy', 'createdBy')
+      .leftJoinAndSelect('t.project', 'project')
+      .where(
+        `(t."assigneeId" = :uid
+          OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta."taskId" = t.id AND ta."userId" = :uid)
+          OR (t.scope = 'personal' AND t."createdById" = :uid))`,
+        { uid: userId },
+      )
+      .orderBy('t.deadline', 'ASC', 'NULLS LAST');
+
+    const tasks = await qb.getMany();
+    if (tasks.length > 0) {
+      const map = await this.loadAssignees(tasks.map(t => t.id));
+      for (const t of tasks) (t as any).assignees = map.get(t.id) || [];
+    }
+    return tasks;
   }
 
   getOverdueTasks() {

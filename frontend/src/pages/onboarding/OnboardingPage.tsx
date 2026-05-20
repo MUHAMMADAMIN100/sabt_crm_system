@@ -19,10 +19,12 @@ const ALL_STAGES = {
 
 type StageKey = keyof typeof ALL_STAGES
 
-// МП по СММ — 4 этапа (без переговоров, договор в конце).
-const STAGES_SMM: StageKey[] = ['meeting', 'kp_creation', 'implementation', 'contract']
-// МП по разработке — 5 этапов: переговор → встреча → КП → договор → реализация.
-const STAGES_DEV: StageKey[] = ['negotiation', 'meeting', 'kp_creation', 'contract', 'implementation']
+// Унифицированный 5-этапный пайплайн онбординга — одинаковый для всех МП
+// (и СММ, и разработка). Раньше у СММ было 4 этапа без «Переговор», но
+// продажникам с двух направлений нужна одна логика воронки.
+const STAGES_ALL: StageKey[] = ['negotiation', 'meeting', 'kp_creation', 'contract', 'implementation']
+const STAGES_SMM: StageKey[] = STAGES_ALL
+const STAGES_DEV: StageKey[] = STAGES_ALL
 
 const STAGE_LABEL: Record<string, string> = Object.fromEntries(
   Object.entries(ALL_STAGES).map(([k, v]) => [k, v.label]),
@@ -259,6 +261,10 @@ function ClientDetailView({
   if (client.leadSource) rows.push(['Источник', client.leadSource])
   if (client.channel) rows.push(['Канал', client.channel])
   if (client.nextStep) rows.push(['Следующий шаг', client.nextStep])
+  if (client.nextContactAt) {
+    const d = new Date(client.nextContactAt)
+    rows.push(['📅 Дата встречи', d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' })])
+  }
 
   return (
     <div className="space-y-4">
@@ -304,6 +310,11 @@ function OnboardingClientForm({
   const [dealPotential, setDealPotential] = useState(
     initial?.dealPotential != null ? String(initial.dealPotential) : '',
   )
+  // Дата следующей встречи. Бэкенд при сохранении автоматически создаст
+  // личную задачу для МП — она появится в его календаре и во вкладке Задачи.
+  const [nextContactAt, setNextContactAt] = useState(
+    initial?.nextContactAt ? String(initial.nextContactAt).slice(0, 10) : '',
+  )
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -315,6 +326,8 @@ function OnboardingClientForm({
       contactInfo: contactInfo.trim() || undefined,
       problem: problem.trim() || undefined,
       dealPotential: dealPotential ? Number(dealPotential) : null,
+      // Пустая строка → null, чтобы бэк удалил привязанную задачу-встречу.
+      nextContactAt: nextContactAt || null,
     })
   }
 
@@ -343,6 +356,20 @@ function OnboardingClientForm({
       <div>
         <label className="label">Потенциал сделки (смн)</label>
         <input type="number" min={0} step="0.01" value={dealPotential} onChange={e => setDealPotential(e.target.value)} className="input" placeholder="10000" />
+      </div>
+      <div>
+        <label className="label">📅 Дата встречи / следующего контакта</label>
+        <input
+          type="date"
+          value={nextContactAt}
+          onChange={e => setNextContactAt(e.target.value)}
+          className="input"
+        />
+        <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-1">
+          {nextContactAt
+            ? 'Появится у вас в Календаре (📌 личная задача) и в Задачах под фильтром «Мои».'
+            : 'Пусто — встреча не будет создана. Если уже была — удалится.'}
+        </p>
       </div>
       <div className="flex gap-2 justify-end pt-2">
         <button type="button" onClick={onClose} disabled={loading} className="btn-secondary">Отмена</button>

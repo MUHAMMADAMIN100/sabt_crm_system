@@ -112,6 +112,13 @@ export class ClientLead {
   @Column({ nullable: true })
   ownerId: string;
 
+  /** ID авто-сгенерированной личной задачи-встречи в tasks.
+   *  При установке nextContactAt создаётся task (scope=personal) с дедлайном
+   *  на эту дату — она отображается в календаре и в Задачах под фильтром «Мои».
+   *  При обнулении nextContactAt — задача удаляется. */
+  @Column({ type: 'uuid', nullable: true })
+  meetingTaskId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

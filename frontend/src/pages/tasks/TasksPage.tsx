@@ -16,12 +16,21 @@ import TaskForm from '@/components/tasks/TaskForm'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
+// Фильтр-сегмент «Мои задачи / Общие»:
+//  - all   — все задачи (как раньше)
+//  - mine  — задачи где я в исполнителях/мульти-исполнителях ИЛИ личные
+//            заметки, созданные мной через календарь
+//  - common — задачи, которые не направлены лично мне и не моя личная заметка
+//            (бизнес-задачи команды, общие задачи всей компании и т.п.)
+type TaskScopeFilter = 'all' | 'mine' | 'common'
+
 export default function TasksPage() {
   const [search, setSearch] = useState('')
   const [statuses, setStatuses] = useState<string[]>([])
   const [priorities, setPriorities] = useState<string[]>([])
   const [projectId, setProjectId] = useState('')
   const [assigneeUserId, setAssigneeUserId] = useState('')
+  const [scopeFilter, setScopeFilter] = useState<TaskScopeFilter>('all')
   const [view, setView] = useState<'list' | 'grid'>('list')
   const [showCreate, setShowCreate] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
@@ -99,7 +108,17 @@ export default function TasksPage() {
   }, [employees])
 
   // Reset page when filters change
-  useEffect(() => { setPage(1) }, [search, statuses, priorities, projectId, assigneeUserId, filterReviewer, filterReturnReason, filterReworkMin, filterDeliveryType])
+  useEffect(() => { setPage(1) }, [search, statuses, priorities, projectId, assigneeUserId, scopeFilter, filterReviewer, filterReturnReason, filterReworkMin, filterDeliveryType])
+
+  // Хелпер: задача «моя» если я в её assignees (включая multi-assignee)
+  // или это моя личная заметка (scope=personal, createdById=я).
+  const isTaskMine = (t: any): boolean => {
+    if (!user?.id) return false
+    if (t.assigneeId === user.id) return true
+    if (Array.isArray(t.assignees) && t.assignees.some((a: any) => a.userId === user.id)) return true
+    if (t.scope === 'personal' && t.createdById === user.id) return true
+    return false
+  }
 
   const tasks = allTasks?.filter((t: any) => {
     const matchesSearch = !search || t.title?.toLowerCase().includes(search.toLowerCase()) || t.description?.toLowerCase().includes(search.toLowerCase())
@@ -116,8 +135,13 @@ export default function TasksPage() {
     const minRework = filterReworkMin === '' ? null : Number(filterReworkMin)
     const matchesRework = minRework == null || (t.reworkCount ?? 0) >= minRework
     const matchesDelivery = !filterDeliveryType || t.deliveryType === filterDeliveryType
+    // Сегмент «Мои / Общие»
+    const matchesScope =
+      scopeFilter === 'all' ? true :
+      scopeFilter === 'mine' ? isTaskMine(t) :
+      /* common */ !isTaskMine(t) && t.scope !== 'personal'
     return matchesSearch && matchesStatus && matchesPriority && matchesProject && matchesAssignee && matchesEmployee
-      && matchesReviewer && matchesReturn && matchesRework && matchesDelivery
+      && matchesReviewer && matchesReturn && matchesRework && matchesDelivery && matchesScope
   }) || []
 
   const pagedTasks = tasks.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -260,6 +284,37 @@ export default function TasksPage() {
             <Plus size={16} /> <span className="hidden sm:inline">{t('tasks.task')}</span>
           </button>
         </div>
+      </div>
+
+      {/* Сегмент «Все / Мои задачи / Общие» — быстрый фильтр поверх остальных.
+          «Мои» = задачи, где я в исполнителях ИЛИ моя личная заметка (scope=personal).
+          «Общие» = задачи команды, которые не направлены лично мне. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {[
+          { value: 'all'    as TaskScopeFilter, label: 'Все',         icon: '' },
+          { value: 'mine'   as TaskScopeFilter, label: 'Мои задачи',  icon: '👤' },
+          { value: 'common' as TaskScopeFilter, label: 'Общие',       icon: '👥' },
+        ].map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => setScopeFilter(opt.value)}
+            className={clsx(
+              'inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors',
+              scopeFilter === opt.value
+                ? 'bg-primary-600 text-white'
+                : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+            )}
+          >
+            {opt.icon && <span>{opt.icon}</span>}{opt.label}
+          </button>
+        ))}
+        {scopeFilter !== 'all' && (
+          <span className="text-[11px] text-surface-400 dark:text-surface-500 ml-1">
+            {scopeFilter === 'mine'
+              ? 'Задачи, направленные вам, и ваши личные заметки из календаря'
+              : 'Задачи команды, не направленные лично вам'}
+          </span>
+        )}
       </div>
 
       <div className="relative">

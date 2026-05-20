@@ -51,14 +51,17 @@ export class ClientsController {
   @Post()
   create(@Body() dto: any, @Request() req) {
     // Направление лида задаётся автоматически по сегменту менеджера-создателя.
+    // meetingTaskId выставляется только сервером — игнорируем то, что прислал фронт.
     const direction = leadDirectionFor(req.user?.role);
-    return this.service.create({ ...dto, direction: direction ?? dto.direction }, req.user.id);
+    const { meetingTaskId: _t, ...rest } = dto || {};
+    return this.service.create({ ...rest, direction: direction ?? rest.direction }, req.user.id);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: any) {
     // Направление лида менять через update нельзя — оно фиксируется при создании.
-    const { direction: _ignored, ...rest } = dto || {};
+    // meetingTaskId — внутреннее поле, выставляется сервером.
+    const { direction: _ignored, meetingTaskId: _t, ...rest } = dto || {};
     return this.service.update(id, rest);
   }
 

@@ -110,22 +110,11 @@ export class CalendarService {
     // (они не относятся к scope задачи).
     const hideProjectEvents = !!scope;
 
-    // Клиенты на онбординге для менеджера продаж — показываем как события
-    // календаря «Клиент: <имя>» по nextContactAt. Это позволяет МП видеть
-    // запланированные встречи прямо в календаре.
-    let clientMeetings: Array<{ id: string; name: string; nextContactAt: string; onboardingStage: string | null }> = [];
-    if (salesSegment && viewerId) {
-      clientMeetings = await this.taskRepo.manager.query(
-        `SELECT id, name, "nextContactAt", "onboardingStage"
-         FROM client_leads
-         WHERE "ownerId" = $1
-           AND "onboardingStage" IS NOT NULL
-           AND "nextContactAt" IS NOT NULL
-           AND "nextContactAt" >= $2
-           AND "nextContactAt" <= $3`,
-        [viewerId, from, to],
-      );
-    }
+    // Раньше тут было отдельное выборка client_leads → события 'client_meeting'.
+    // Сейчас встречи отображаются как обычные ЛИЧНЫЕ задачи (scope='personal'),
+    // которые автоматически создаются ClientsService при установке nextContactAt.
+    // Это убирает дубль (один и тот же ивент дважды) и заодно даёт встречам
+    // место и во вкладке «Задачи» под фильтром «Мои».
 
     const [tasks, projects] = await Promise.all([taskQb.getMany(), projectQb.getMany()]);
 
@@ -176,20 +165,10 @@ export class CalendarService {
         link: `/projects/${p.id}`,
       }));
 
-    const clientMeetingEvents = clientMeetings.map(c => ({
-      id: `client-${c.id}`,
-      title: `Клиент: ${c.name}`,
-      date: c.nextContactAt,
-      type: 'client_meeting',
-      onboardingStage: c.onboardingStage,
-      link: `/onboarding`,
-    }));
-
     return [
       ...taskEvents,
       ...projectStartEvents,
       ...projectEndEvents,
-      ...clientMeetingEvents,
     ].sort(
       (a, b) => new Date(a.date as unknown as string).getTime() - new Date(b.date as unknown as string).getTime(),
     );

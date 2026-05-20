@@ -766,9 +766,10 @@ export class ProjectsService {
     // project-management concerns — admin/PM can edit.
     // If a non-founder submits paidAmount unchanged (form re-submit), silently
     // drop it instead of erroring. Reject only real changes.
-    // paidAmount раньше мог менять только founder/co_founder. Теперь МП по СММ
-    // тоже может фиксировать оплату по своим проектам — это часть их работы.
-    const canEditPaid = ['founder', 'co_founder', 'sales_manager_smm'].includes(user.role);
+    // paidAmount раньше мог менять только founder/co_founder. Теперь оба МП
+    // по продажам (СММ и разработка) могут фиксировать оплату по своим
+    // проектам — это часть их работы, чтобы вести воронку до победного.
+    const canEditPaid = ['founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user.role);
     if ('paidAmount' in dto && !canEditPaid) {
       const sameValue = Number(dto.paidAmount ?? 0) === Number(project.paidAmount ?? 0);
       if (!sameValue) {
@@ -800,9 +801,11 @@ export class ProjectsService {
     const nextType = 'projectType' in dto ? dto.projectType : project.projectType;
     await this.validateManagerAssignment(nextManagerId as string | undefined, nextType as string | undefined);
 
-    // Track paidAmount change as a Payment record (delta-based)
+    // Track paidAmount change as a Payment record (delta-based).
+    // Все роли которые могут менять оплату — записываем их изменения как
+    // ProjectPayment delta для истории/аудита.
     let paymentDelta: number | null = null;
-    if ('paidAmount' in dto && ['founder', 'co_founder'].includes(user.role)) {
+    if ('paidAmount' in dto && canEditPaid) {
       const oldPaid = Number(project.paidAmount ?? 0);
       const newPaid = Number(dto.paidAmount ?? 0);
       if (newPaid !== oldPaid) {
