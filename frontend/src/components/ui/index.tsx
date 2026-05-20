@@ -305,7 +305,17 @@ export function FormField({ label, error, children, required }: {
 // ── Avatar ────────────────────────────────────────────────────────────
 const AVATAR_BASE = import.meta.env.VITE_API_URL || ''
 export function Avatar({ name, src, size = 32 }: { name?: string; src?: string; size?: number }) {
-  if (src) {
+  // Если src указан и ещё не упал с onError — пытаемся показать картинку.
+  // Если src отсутствует или картинка не загрузилась — показываем инициалы.
+  const [failed, setFailed] = useState(false)
+  // Сбрасываем флаг ошибки, если src сменился (например, юзер загрузил новый аватар).
+  useEffect(() => { setFailed(false) }, [src])
+
+  const initials = name
+    ? name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('')
+    : '?'
+
+  if (src && !failed) {
     // Бэкенд хранит только filename аватара (uuid.ext). Фронт может быть
     // на другом домене (Vercel) чем backend (Railway) — поэтому строим
     // полный URL через VITE_API_URL. Если src уже полный http(s) — берём
@@ -319,13 +329,13 @@ export function Avatar({ name, src, size = 32 }: { name?: string; src?: string; 
         loading="lazy"
         decoding="async"
         style={{ width: size, height: size }}
-        className="rounded-full object-cover cursor-default"
+        className="rounded-full object-cover cursor-default shrink-0"
+        // Если картинка 404 / битая — переключаемся на инициалы вместо пустого квадрата.
+        onError={() => setFailed(true)}
       />
     )
   }
-  const initials = name
-    ? name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('')
-    : '?'
+
   return (
     <div
       title={name}

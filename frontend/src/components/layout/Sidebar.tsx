@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { hasPermission, getUserPositionLabel, type Permission } from '@/lib/permissions'
+import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Bell, Archive, HardDrive,
@@ -166,11 +167,12 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               )
             }
           >
-            <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0 text-primary-700 dark:text-primary-400 font-semibold text-sm transition-transform duration-150 group-hover:scale-105">
-              {user.avatar
-                ? <img src={`/uploads/avatars/${user.avatar}`} alt="" className="w-8 h-8 rounded-full object-cover" />
-                : user.name[0].toUpperCase()
-              }
+            <div className="shrink-0 transition-transform duration-150 group-hover:scale-105">
+              {/* Используем общий компонент Avatar — он строит полный URL через
+                  VITE_API_URL (фронт на Vercel, бэк на Railway — разные домены).
+                  Раньше тут был жёстко прописан относительный путь "/uploads/avatars/…",
+                  и в проде картинка отдавала 404, оставляя пустой кружок. */}
+              <Avatar name={user.name} src={user.avatar} size={32} />
             </div>
             <div className={clsx(
               'flex-1 min-w-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden',
