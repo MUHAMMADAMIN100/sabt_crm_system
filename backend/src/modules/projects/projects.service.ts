@@ -766,10 +766,13 @@ export class ProjectsService {
     // project-management concerns — admin/PM can edit.
     // If a non-founder submits paidAmount unchanged (form re-submit), silently
     // drop it instead of erroring. Reject only real changes.
-    if ('paidAmount' in dto && !['founder', 'co_founder'].includes(user.role)) {
+    // paidAmount раньше мог менять только founder/co_founder. Теперь МП по СММ
+    // тоже может фиксировать оплату по своим проектам — это часть их работы.
+    const canEditPaid = ['founder', 'co_founder', 'sales_manager_smm'].includes(user.role);
+    if ('paidAmount' in dto && !canEditPaid) {
       const sameValue = Number(dto.paidAmount ?? 0) === Number(project.paidAmount ?? 0);
       if (!sameValue) {
-        throw new ForbiddenException('Только основатель или сооснователь может изменять сумму оплаты');
+        throw new ForbiddenException('У вас нет прав изменять сумму оплаты');
       }
       delete (dto as any).paidAmount;
     }

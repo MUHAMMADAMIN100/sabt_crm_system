@@ -178,8 +178,12 @@ export default function SalesDashboard() {
           projects: old.projects.map((p: any) => {
             if (p.id !== id) return p
             const next: any = { ...p, ...patch }
-            if ('budget' in patch) {
-              next.remaining = Math.max(0, Number(patch.budget || 0) - Number(p.paidAmount || 0))
+            // Пересчитываем остаток, если изменился бюджет или оплата.
+            if ('budget' in patch || 'paidAmount' in patch) {
+              const budget = Number(next.budget || 0)
+              const paid = Number(next.paidAmount || 0)
+              next.remaining = Math.max(0, budget - paid)
+              next.paidPct = budget > 0 ? Math.round((paid / budget) * 100) : 0
             }
             return next
           }),
@@ -295,7 +299,14 @@ export default function SalesDashboard() {
                     />
                   </td>
                   <td className="py-2 pr-3 text-right font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums whitespace-nowrap">
-                    {fmt(p.paidAmount)}
+                    {isSmmSales ? (
+                      <BudgetCell
+                        value={Number(p.paidAmount || 0)}
+                        onSave={(paidAmount) => patch(p.id, { paidAmount })}
+                      />
+                    ) : (
+                      fmt(p.paidAmount)
+                    )}
                   </td>
                   <td className={clsx(
                     'py-2 pr-3 text-right font-bold tabular-nums whitespace-nowrap',
