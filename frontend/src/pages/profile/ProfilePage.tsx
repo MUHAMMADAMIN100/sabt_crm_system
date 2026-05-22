@@ -85,6 +85,18 @@ export default function ProfilePage() {
     return sum + ms / 3600000
   }, 0)
 
+  /** Длительность сессии в человекочитаемом виде:
+   *  < 1 мин → «< 1 мин», < 1 часа → «45 мин», без минут → «2 ч»,
+   *  иначе → «2 ч 15 мин». */
+  const formatDuration = (hours: number): string => {
+    const totalMin = Math.round(hours * 60)
+    if (totalMin < 1) return '< 1 мин'
+    if (totalMin < 60) return `${totalMin} мин`
+    const h = Math.floor(totalMin / 60)
+    const m = totalMin % 60
+    return m === 0 ? `${h} ч` : `${h} ч ${m} мин`
+  }
+
   return (
     <div className="space-y-5 max-w-2xl">
       <h1 className="page-title">{t('profile.title')}</h1>
@@ -163,7 +175,7 @@ export default function ProfilePage() {
           <CalendarDays size={16} className="text-primary-600 dark:text-primary-400 shrink-0" />
           <div className="flex-1">
             <p className="text-xs text-primary-600 dark:text-primary-400">Сегодня</p>
-            <p className="text-lg font-bold text-primary-700 dark:text-primary-300 tabular-nums">{todayHours.toFixed(1)} ч</p>
+            <p className="text-lg font-bold text-primary-700 dark:text-primary-300 tabular-nums">{formatDuration(todayHours)}</p>
           </div>
         </div>
 
@@ -177,7 +189,7 @@ export default function ProfilePage() {
                   {s.logoutAt ? `→ ${format(new Date(s.logoutAt), 'HH:mm')}` : '— в сети'}
                 </span>
                 <span className="font-medium text-surface-700 dark:text-surface-300 tabular-nums">
-                  {s.logoutAt ? `${Number(s.durationHours).toFixed(1)} ч` : '...'}
+                  {s.logoutAt ? formatDuration(Number(s.durationHours)) : '...'}
                 </span>
               </div>
             ))}

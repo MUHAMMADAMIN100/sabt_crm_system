@@ -1,9 +1,47 @@
-import { lazy, Suspense } from 'react'
+import React, { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import Layout from '@/components/layout/Layout'
 import { PageLoader } from '@/components/ui'
 import { canAccessRoute } from '@/lib/permissions'
+
+/** Граница ошибок для lazy-чанков. После деплоя браузер с устаревшим
+ *  index.html пытается подгрузить chunk, которого уже нет, и React-роутер
+ *  молча рендерит пустоту. Перехватываем ChunkLoadError и автоматически
+ *  перезагружаем страницу — пользователь получает свежий index.html и
+ *  правильные ссылки на чанки. */
+class ChunkErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+  componentDidCatch(error: Error) {
+    const msg = String(error?.message || error?.name || '')
+    const isChunkError = error?.name === 'ChunkLoadError'
+      || /Loading chunk \S+ failed/i.test(msg)
+      || /Failed to fetch dynamically imported module/i.test(msg)
+      || /Importing a module script failed/i.test(msg)
+    if (isChunkError && typeof window !== 'undefined') {
+      // Reload один раз: при бесконечной петле sessionStorage-флаг остановит.
+      if (!sessionStorage.getItem('__chunkReloaded')) {
+        sessionStorage.setItem('__chunkReloaded', '1')
+        window.location.reload()
+      }
+    }
+  }
+  componentDidMount() {
+    // Если страница ожила после reload — снимаем флаг, чтобы не блокировать
+    // следующий легитимный reload.
+    sessionStorage.removeItem('__chunkReloaded')
+  }
+  render() {
+    if (this.state.error) return <PageLoader />
+    return this.props.children
+  }
+}
 
 const AuthPage          = lazy(() => import('@/pages/auth/AuthPage'))
 const DashboardPage     = lazy(() => import('@/pages/dashboard/DashboardPage'))
@@ -49,6 +87,7 @@ export default function App() {
   const token = useAuthStore(s => s.token)
 
   return (
+    <ChunkErrorBoundary>
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/auth" element={token ? <Navigate to="/" replace /> : <AuthPage />} />
@@ -78,5 +117,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
+    </ChunkErrorBoundary>
   )
 }

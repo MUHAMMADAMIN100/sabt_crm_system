@@ -73,6 +73,15 @@ export class AuthController {
     return this.authService.logout(req.user.id);
   }
 
+  @Post('heartbeat')
+  @SkipThrottle()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async heartbeat(@Request() req) {
+    await this.authService.heartbeat(req.user.id);
+    return { ok: true };
+  }
+
   @Get('sessions')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

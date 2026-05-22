@@ -4,7 +4,46 @@ import Sidebar from './Sidebar'
 import Header from './Header'
 import { useAuthStore } from '@/store/auth.store'
 import { useSocket } from '@/hooks/useSocket'
+import { authApi } from '@/services/api.service'
 import clsx from 'clsx'
+
+/** Каждые 60 сек шлём heartbeat — backend обновляет lastSeenAt текущей
+ *  открытой сессии, чтобы при следующем входе её длительность была
+ *  посчитана до момента реального ухода пользователя, а не до бесконечности. */
+function useSessionHeartbeat(token: string | null) {
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    const tick = () => {
+      if (cancelled || document.hidden) return
+      authApi.heartbeat().catch(() => { /* heartbeat best-effort */ })
+    }
+    tick() // сразу же отметить «жив» при монтировании
+    const id = window.setInterval(tick, 60_000)
+
+    // При закрытии вкладки — последний beacon, чтобы lastSeenAt был
+    // максимально близок к реальному уходу.
+    const sendBeacon = () => {
+      try {
+        const url = `${(import.meta as any).env.VITE_API_URL || ''}/auth/heartbeat`
+        const blob = new Blob([JSON.stringify({})], { type: 'application/json' })
+        // Authorization-заголовок к sendBeacon прицепить нельзя; fallback на
+        // обычный fetch с keepalive — куки/токен пойдут через axios-interceptor.
+        if (!navigator.sendBeacon(url, blob)) {
+          authApi.heartbeat().catch(() => {})
+        }
+      } catch { /* ignore */ }
+    }
+    window.addEventListener('beforeunload', sendBeacon)
+    window.addEventListener('pagehide', sendBeacon)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+      window.removeEventListener('beforeunload', sendBeacon)
+      window.removeEventListener('pagehide', sendBeacon)
+    }
+  }, [token])
+}
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 993)
@@ -14,6 +53,7 @@ export default function Layout() {
 
   useEffect(() => { fetchMe() }, [])
   useSocket(token)
+  useSessionHeartbeat(token)
 
   // Auto-close sidebar on mobile/tablet navigation
   useEffect(() => {

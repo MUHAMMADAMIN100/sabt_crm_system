@@ -159,9 +159,27 @@ export class AuthService {
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: effectiveRole });
     const sanitized = this.sanitize(user);
 
+    // Закрываем все «висящие» сессии пользователя (если в прошлый раз он
+    // не вышел явно). logoutAt = lastSeenAt (реальное время последней
+    // активности по heartbeat), либо loginAt если heartbeat'ов не было.
+    const open = await this.sessionRepo.find({ where: { userId: user.id, logoutAt: IsNull() } });
+    for (const s of open) {
+      const end = s.lastSeenAt ? new Date(s.lastSeenAt) : new Date(s.loginAt);
+      s.logoutAt = end;
+      const ms = Math.max(0, end.getTime() - new Date(s.loginAt).getTime());
+      s.durationHours = parseFloat((ms / 3600000).toFixed(4));
+    }
+    if (open.length > 0) await this.sessionRepo.save(open);
+
     // Start work session
-    const today = new Date().toISOString().split('T')[0];
-    const session = this.sessionRepo.create({ userId: user.id, loginAt: new Date(), date: today });
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const session = this.sessionRepo.create({
+      userId: user.id,
+      loginAt: now,
+      lastSeenAt: now,
+      date: today,
+    });
     await this.sessionRepo.save(session);
 
     await this.activityLog.log({
@@ -186,15 +204,30 @@ export class AuthService {
     };
   }
 
+  /** Heartbeat от активной вкладки — обновляет lastSeenAt текущей
+   *  открытой сессии. Если открытой сессии нет (редкий race), молча игнорируем. */
+  async heartbeat(userId: string): Promise<void> {
+    const session = await this.sessionRepo.findOne({
+      where: { userId, logoutAt: IsNull() },
+      order: { loginAt: 'DESC' },
+    });
+    if (session) {
+      session.lastSeenAt = new Date();
+      await this.sessionRepo.save(session);
+    }
+  }
+
   async logout(userId: string) {
     const session = await this.sessionRepo.findOne({
       where: { userId, logoutAt: IsNull() },
       order: { loginAt: 'DESC' },
     });
     if (session) {
-      session.logoutAt = new Date();
-      const ms = session.logoutAt.getTime() - new Date(session.loginAt).getTime();
-      session.durationHours = parseFloat((ms / 3600000).toFixed(2));
+      const now = new Date();
+      session.logoutAt = now;
+      session.lastSeenAt = now;
+      const ms = now.getTime() - new Date(session.loginAt).getTime();
+      session.durationHours = parseFloat((ms / 3600000).toFixed(4));
       await this.sessionRepo.save(session);
     }
 
