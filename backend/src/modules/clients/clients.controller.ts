@@ -17,7 +17,7 @@ function leadDirectionFor(role?: string): ClientLeadDirection | undefined {
 @ApiTags('Client Leads')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
 @Controller('clients')
 export class ClientsController {
   constructor(private service: ClientsService) {}

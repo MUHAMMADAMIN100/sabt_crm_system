@@ -56,10 +56,12 @@ export default function ClientsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
-  // У менеджеров по продажам — по 10 клиентов на странице, у остальных — 5.
+  // У МП по продажам и у основателя/сооснователя — по 10 клиентов на странице,
+  // у остальных ролей — 5.
   const role = useAuthStore(s => s.user?.role)
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
-  const PAGE_SIZE = isSalesManager ? 10 : 5
+  const isTopExec = role === 'founder' || role === 'co_founder' || role === 'admin'
+  const PAGE_SIZE = (isSalesManager || isTopExec) ? 10 : 5
 
   const { data: leads, isLoading } = useQuery({
     queryKey: ['clients', search, status, interest, sphere],

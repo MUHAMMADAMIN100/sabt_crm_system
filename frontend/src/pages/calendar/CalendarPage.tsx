@@ -129,6 +129,27 @@ export default function CalendarPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || t('common.error')),
   })
 
+  // Подтверждение задачи на проверке — основатель/со-основатель видит её в
+  // календаре и может одобрить прямо из drawer-а или из edit-модалки.
+  const approveTaskMut = useMutation({
+    mutationFn: (id: string) => tasksApi.approve(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['calendar'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['task', editingTaskId] })
+      setEditingTaskId(null)
+      setDetailEventId(null)
+      toast.success('Задача подтверждена')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || t('common.error')),
+  })
+
+  /** Статусы, при которых задача ждёт подтверждения основателем. */
+  const isApprovableStatus = (status?: string) =>
+    !!status && ['review', 'on_pm_review', 'on_client_approval'].includes(status)
+  /** Может ли текущий пользователь подтверждать задачи. */
+  const canApprove = ['founder', 'co_founder', 'admin'].includes(user?.role || '')
+
   // Drag-and-drop: при сбросе задачи на другой день — обновляем deadline.
   const updateTask = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => tasksApi.update(id, data),
@@ -633,8 +654,41 @@ export default function CalendarPage() {
           ) : (
             <>
             {editingTaskFull.createdAt && (
-              <div className="text-[11px] text-surface-400 dark:text-surface-500 -mt-2 mb-3">
+              <div className="text-[11px] text-surface-400 dark:text-surface-500 -mt-2 mb-2">
                 🕐 Создана: {format(new Date(editingTaskFull.createdAt), 'dd.MM.yyyy HH:mm', { locale: ru })}
+              </div>
+            )}
+            {/* Большой статус-баннер + кнопка подтверждения для основателя. */}
+            {editingTaskFull.status && (
+              <div className={clsx(
+                'rounded-xl px-3 py-2 flex items-center gap-3 mb-3 text-sm',
+                ['done', 'approved', 'published'].includes(editingTaskFull.status)
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                  : isApprovableStatus(editingTaskFull.status)
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    : 'bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-200',
+              )}>
+                <span className="font-semibold">
+                  {['done', 'approved', 'published'].includes(editingTaskFull.status) && '✅ '}
+                  {isApprovableStatus(editingTaskFull.status) && '⏳ '}
+                  Статус: {{
+                    new: 'Новая', in_progress: 'В работе', review: 'На ревью',
+                    returned: 'Возвращена', done: 'Выполнена', cancelled: 'Отменена',
+                    accepted: 'Принята', on_pm_review: 'На проверке PM', on_rework: 'На доработке',
+                    on_client_approval: 'У клиента', approved: 'Утверждено', published: 'Опубликовано',
+                    rescheduled: 'Перенесена',
+                  }[editingTaskFull.status as string] || editingTaskFull.status}
+                </span>
+                {canApprove && isApprovableStatus(editingTaskFull.status) && (
+                  <button
+                    type="button"
+                    onClick={() => approveTaskMut.mutate(editingTaskFull.id)}
+                    disabled={approveTaskMut.isPending}
+                    className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-60"
+                  >
+                    {approveTaskMut.isPending ? 'Подтверждение…' : '✅ Подтвердить'}
+                  </button>
+                )}
               </div>
             )}
             <FounderQuickTaskForm
@@ -706,6 +760,12 @@ export default function CalendarPage() {
             toast.error(t('common.error'))
           }
         }}
+        onApprove={
+          canApprove && detailEvent?.taskId && isApprovableStatus(detailEvent.status)
+            ? () => approveTaskMut.mutate(detailEvent.taskId)
+            : undefined
+        }
+        approving={approveTaskMut.isPending}
       />
 
       {/* Модал «все задачи дня» — открывается по клику на «+N ещё». */}
@@ -1263,14 +1323,35 @@ function FounderQuickTaskForm({
 /** Side drawer справа с подробной информацией о задаче.
  *  Появляется с анимированным скольжением. ESC и клик по overlay закрывают.
  *  Заменяет переход на `/tasks/:id` для быстрого просмотра. */
+/** Цвет статуса задачи для крупного баннера в drawer-е. */
+const STATUS_BANNER_COLORS: Record<string, string> = {
+  new:                'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+  accepted:           'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  in_progress:        'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  review:             'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  on_pm_review:       'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  on_client_approval: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  done:               'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  approved:           'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  published:          'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  returned:           'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  on_rework:          'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  cancelled:          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  rescheduled:        'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+}
+
 function TaskDetailDrawer({
   event,
   onClose,
   onDelete,
+  onApprove,
+  approving,
 }: {
   event: any | null
   onClose: () => void
   onDelete: () => void
+  onApprove?: () => void
+  approving?: boolean
 }) {
   const isOpen = !!event
   const previousActive = useRef<HTMLElement | null>(null)
@@ -1358,6 +1439,29 @@ function TaskDetailDrawer({
 
         {/* Body — растягивается и скроллится; footer не перекрывает контент */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-0">
+          {/* Большой статус-баннер: с одного взгляда видно, в каком состоянии задача. */}
+          {event.type === 'task' && event.status && (
+            <div className={clsx(
+              'rounded-xl px-4 py-3 flex items-center gap-3',
+              STATUS_BANNER_COLORS[event.status] || 'bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-200',
+            )}>
+              <span className="text-sm font-semibold">
+                {['done', 'approved', 'published'].includes(event.status) && '✅ '}
+                {['review', 'on_pm_review', 'on_client_approval'].includes(event.status) && '⏳ '}
+                {statusLabels[event.status] || event.status}
+              </span>
+              {onApprove && (
+                <button
+                  onClick={onApprove}
+                  disabled={approving}
+                  className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-60"
+                >
+                  {approving ? 'Подтверждение…' : '✅ Подтвердить выполнение'}
+                </button>
+              )}
+            </div>
+          )}
+
           <h2 className="text-lg font-bold text-surface-900 dark:text-surface-100">{event.title}</h2>
 
           {event.description && (
