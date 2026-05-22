@@ -747,6 +747,11 @@ export default function ProjectDetailPage() {
                       {task.deadline && (
                         <p className={`text-xs mt-1 ${new Date(task.deadline) < new Date() && !['done','cancelled'].includes(task.status) ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>{format(new Date(task.deadline), 'dd.MM')}</p>
                       )}
+                      {task.createdAt && (
+                        <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5">
+                          🕐 {format(new Date(task.createdAt), 'dd.MM.yyyy HH:mm')}
+                        </p>
+                      )}
                       {/* Mobile/tablet: select instead of drag */}
                       {!isDesktop && canChangeStatus && (
                         <select

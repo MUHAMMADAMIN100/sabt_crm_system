@@ -529,6 +529,11 @@ export default function TasksPage() {
                           📁 {task.project.name}
                         </div>
                       )}
+                      {task.createdAt && (
+                        <div className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5">
+                          🕐 {format(new Date(task.createdAt), 'dd.MM.yyyy HH:mm')}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell"><span className="text-sm text-surface-500 dark:text-surface-400">{task.project?.name || '—'}</span></td>
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
@@ -585,6 +590,11 @@ export default function TasksPage() {
                 </div>
               </div>
               {task.description && <p className="text-xs text-surface-500 dark:text-surface-400 mb-3 line-clamp-2">{task.description}</p>}
+              {task.createdAt && (
+                <p className="text-[10px] text-surface-400 dark:text-surface-500 mb-2">
+                  🕐 Создана: {format(new Date(task.createdAt), 'dd.MM.yyyy HH:mm')}
+                </p>
+              )}
               <div className="flex items-center justify-between">
                 <StatusBadge status={task.status} />
                 <div className="flex items-center gap-2">

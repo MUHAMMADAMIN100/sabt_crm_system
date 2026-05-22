@@ -631,6 +631,12 @@ export default function CalendarPage() {
               <div className="h-9 rounded-xl bg-surface-100 dark:bg-surface-700" />
             </div>
           ) : (
+            <>
+            {editingTaskFull.createdAt && (
+              <div className="text-[11px] text-surface-400 dark:text-surface-500 -mt-2 mb-3">
+                🕐 Создана: {format(new Date(editingTaskFull.createdAt), 'dd.MM.yyyy HH:mm', { locale: ru })}
+              </div>
+            )}
             <FounderQuickTaskForm
               employees={employees || []}
               loading={editTaskMut.isPending || deleteTaskMut.isPending}
@@ -678,6 +684,7 @@ export default function CalendarPage() {
                 },
               })}
             />
+            </>
           )}
         </Modal>
       )}
@@ -1378,6 +1385,13 @@ function TaskDetailDrawer({
               <DetailRow icon={<CalIcon size={14} />} label="Дедлайн">
                 <span className="text-sm text-surface-700 dark:text-surface-300">
                   {format(new Date(event.date), 'd MMMM yyyy, HH:mm', { locale: ru })}
+                </span>
+              </DetailRow>
+            )}
+            {event.createdAt && (
+              <DetailRow icon={<CalIcon size={14} />} label="Создана">
+                <span className="text-sm text-surface-700 dark:text-surface-300">
+                  {format(new Date(event.createdAt), 'd MMMM yyyy, HH:mm', { locale: ru })}
                 </span>
               </DetailRow>
             )}

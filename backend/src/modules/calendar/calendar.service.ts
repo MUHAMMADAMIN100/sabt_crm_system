@@ -140,6 +140,7 @@ export class CalendarService {
       // они есть, иначе оценка по статусу. Показывается на карточке
       // задачи в календаре.
       progress: computeTaskProgress(t),
+      createdAt: t.createdAt,
       link: `/tasks/${t.id}`,
     }));
 

@@ -514,6 +514,9 @@ export default function TaskDetailPage() {
               </span>
             )}
           </div>
+          <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-1">
+            🕐 Создана: {format(new Date(task.createdAt), 'dd.MM.yyyy HH:mm', { locale: ru })}
+          </p>
         </div>
       </div>
 
@@ -793,7 +796,7 @@ export default function TaskDetailPage() {
               )}
               <div className="notion-prop-row">
                 <span className="notion-prop-label">🕐 Создана</span>
-                <span className="notion-prop-value">{format(new Date(task.createdAt), 'dd MMM yyyy', { locale: ru })}</span>
+                <span className="notion-prop-value">{format(new Date(task.createdAt), 'dd MMM yyyy, HH:mm', { locale: ru })}</span>
               </div>
               {Number(task.estimatedHours) > 0 && (
                 <div className="pt-1">
