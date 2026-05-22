@@ -669,158 +669,15 @@ export default function TaskDetailPage() {
             </div>
           )}
 
-          {/* Tabs — в упрощённом виде только «Комментарии» */}
-          <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 flex-wrap">
-            {(simplifiedView
-              ? (['comments'] as const)
-              : (['results', 'checklist', 'comments', 'files'] as const)
-            ).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={clsx(
-                  'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
-                  activeTab === tab
-                    ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400'
-                    : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300'
-                )}
-              >
-                {tab === 'results' && `Результаты (${results?.length || 0})`}
-                {tab === 'checklist' && `Чек-лист (${checklist?.filter((i: any) => i.isDone).length || 0}/${checklist?.length || 0})`}
-                {tab === 'comments' && `Комментарии (${task.comments?.length || 0})`}
-                {tab === 'files' && t('files.title')}
-              </button>
-            ))}
+          {/* Только «Комментарии» — остальные вкладки убраны для всех ролей. */}
+          <div className="flex items-center gap-2 border-b border-surface-100 dark:border-surface-700 pb-2">
+            <h3 className="text-sm font-semibold text-surface-700 dark:text-surface-200">
+              Комментарии ({task.comments?.length || 0})
+            </h3>
           </div>
 
-          {/* Results tab */}
-          {activeTab === 'results' && (
-            <div className="space-y-3">
-              {!results?.length ? (
-                <div className="text-center py-8 text-surface-400 dark:text-surface-500">
-                  <MessageSquare size={32} className="mx-auto mb-2 opacity-40" />
-                  <p className="text-sm">Результатов пока нет</p>
-                  {isWorker && ['in_progress', 'returned'].includes(task.status) && (
-                    <button onClick={() => setShowResultModal(true)} className="mt-3 btn-primary text-sm">
-                      Загрузить результат
-                    </button>
-                  )}
-                </div>
-              ) : (
-                results.map((r: any) => (
-                  <div key={r.id} className="flex gap-3 p-3 rounded-xl bg-surface-50 dark:bg-surface-700/50 group">
-                    <Avatar name={r.submittedBy?.name} src={r.submittedBy?.avatar} size={32} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-sm font-medium text-surface-900 dark:text-surface-100">{r.submittedBy?.name}</span>
-                        <span className="text-xs text-surface-400">{format(new Date(r.createdAt), 'dd.MM HH:mm', { locale: ru })}</span>
-                        <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full font-medium', {
-                          'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': r.type === 'link',
-                          'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400': r.type === 'media',
-                          'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300': r.type === 'comment',
-                        })}>
-                          {r.type === 'link' ? 'Ссылка' : r.type === 'media' ? 'Медиа' : 'Комментарий'}
-                        </span>
-                      </div>
-                      {r.type === 'link' ? (
-                        <a href={r.content} target="_blank" rel="noreferrer"
-                          className="text-sm text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1 break-all">
-                          <LinkIcon size={12} className="shrink-0" /> {r.content}
-                        </a>
-                      ) : (
-                        <p className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-wrap">{r.content}</p>
-                      )}
-                    </div>
-                    {isPM && (
-                      <button
-                        onClick={() => setDeleteResultId(r.id)}
-                        className="hidden group-hover:flex p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400 shrink-0 self-start"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-
-          {/* Checklist tab */}
-          {activeTab === 'checklist' && (
-            <div className="space-y-2">
-              {checklist?.map((item: any) => (
-                <div key={item.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-700/30 group">
-                  <button
-                    onClick={() => toggleCheckItem.mutate(item.id)}
-                    className={clsx('shrink-0 transition-colors', item.isDone ? 'text-green-500' : 'text-surface-300 dark:text-surface-600 hover:text-primary-500')}
-                  >
-                    {item.isDone ? <CheckSquare size={18} /> : <Square size={18} />}
-                  </button>
-                  {editingCheckItem === item.id ? (
-                    <div className="flex gap-2 flex-1">
-                      <input
-                        autoFocus
-                        value={editCheckText}
-                        onChange={e => setEditCheckText(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && editCheckText.trim()) editCheckItemMut.mutate({ itemId: item.id, text: editCheckText })
-                          if (e.key === 'Escape') setEditingCheckItem(null)
-                        }}
-                        className="input flex-1 text-sm py-1"
-                      />
-                      <button onClick={() => editCheckText.trim() && editCheckItemMut.mutate({ itemId: item.id, text: editCheckText })} className="btn-primary text-xs px-2 py-1">✓</button>
-                      <button onClick={() => setEditingCheckItem(null)} className="btn-secondary text-xs px-2 py-1">✕</button>
-                    </div>
-                  ) : (
-                    <span className={clsx('flex-1 text-sm', item.isDone ? 'line-through text-surface-400 dark:text-surface-500' : 'text-surface-800 dark:text-surface-200')}>
-                      {item.text}
-                    </span>
-                  )}
-                  {canEditChecklist(task) && editingCheckItem !== item.id && (
-                    <div className="flex sm:hidden sm:group-hover:flex items-center gap-1">
-                      <button
-                        onClick={() => { setEditingCheckItem(item.id); setEditCheckText(item.text) }}
-                        className="p-1 text-surface-400 hover:text-primary-500 transition-colors"
-                      >
-                        <Edit2 size={12} />
-                      </button>
-                      <button
-                        onClick={() => removeCheckItem.mutate(item.id)}
-                        className="p-1 text-surface-400 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {!checklist?.length && (
-                <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-4">Чек-лист пуст</p>
-              )}
-              {canEditChecklist(task) && !isDone && (
-                <div className="flex gap-2 pt-2">
-                  <input
-                    value={newCheckItem}
-                    onChange={e => setNewCheckItem(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && newCheckItem.trim() && addCheckItem.mutate(newCheckItem)}
-                    placeholder="Добавить пункт..."
-                    className="input flex-1 text-sm"
-                  />
-                  <button
-                    onClick={() => newCheckItem.trim() && addCheckItem.mutate(newCheckItem)}
-                    disabled={!newCheckItem.trim() || addCheckItem.isPending}
-                    className="btn-primary flex items-center gap-1"
-                  >
-                    <Plus size={15} />
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Comments tab */}
-          {activeTab === 'comments' && (
-            <div className="space-y-3">
+          {/* Только комментарии */}
+          <div className="space-y-3">
               {task.comments?.map((c: any) => (
                 <div key={c.id} className="flex gap-3">
                   <Avatar name={c.author?.name} src={c.author?.avatar} size={32} />
@@ -888,29 +745,6 @@ export default function TaskDetailPage() {
                 </div>
               </div>
             </div>
-          )}
-
-          {/* Files tab */}
-          {activeTab === 'files' && (
-            <div className="space-y-3">
-              <label className="btn-secondary cursor-pointer">
-                <Upload size={15} /> {t('files.upload')}
-                <input type="file" className="hidden" onChange={uploadFile} />
-              </label>
-              <div className="space-y-2">
-                {files?.map((f: any) => (
-                  <a key={f.id} href={`${import.meta.env.VITE_API_URL || ''}${f.path}`} target="_blank" rel="noreferrer" download={f.originalName}
-                    className="flex items-center gap-3 p-3 bg-surface-50 dark:bg-surface-700/50 rounded-xl hover:bg-surface-100 dark:hover:bg-surface-700"
-                  >
-                    <Paperclip size={15} className="text-primary-600 dark:text-primary-400 shrink-0" />
-                    <span className="text-sm text-surface-700 dark:text-surface-300 flex-1 truncate">{f.originalName}</span>
-                    <span className="text-xs text-surface-400 dark:text-surface-500">{(f.size / 1024).toFixed(1)} KB</span>
-                  </a>
-                ))}
-                {!files?.length && <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-4">{t('files.noFiles')}</p>}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Sidebar info — Notion-style property panel.
