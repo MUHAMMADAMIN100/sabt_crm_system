@@ -709,7 +709,7 @@ export default function TaskDetailPage() {
               ) : (
                 results.map((r: any) => (
                   <div key={r.id} className="flex gap-3 p-3 rounded-xl bg-surface-50 dark:bg-surface-700/50 group">
-                    <Avatar name={r.submittedBy?.name} size={32} />
+                    <Avatar name={r.submittedBy?.name} src={r.submittedBy?.avatar} size={32} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="text-sm font-medium text-surface-900 dark:text-surface-100">{r.submittedBy?.name}</span>
@@ -823,7 +823,7 @@ export default function TaskDetailPage() {
             <div className="space-y-3">
               {task.comments?.map((c: any) => (
                 <div key={c.id} className="flex gap-3">
-                  <Avatar name={c.author?.name} size={32} />
+                  <Avatar name={c.author?.name} src={c.author?.avatar} size={32} />
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-medium text-sm text-surface-900 dark:text-surface-100">{c.author?.name}</span>
@@ -861,7 +861,7 @@ export default function TaskDetailPage() {
                 </div>
               ))}
               <div className="flex gap-3">
-                <Avatar name={user?.name} size={32} />
+                <Avatar name={user?.name} src={user?.avatar} size={32} />
                 <div className="flex-1 flex gap-2">
                   <input
                     value={comment}
@@ -1834,7 +1834,7 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <Avatar name={a.user?.name} size={28} />
+                    <Avatar name={a.user?.name} src={a.user?.avatar} size={28} />
                     <div className="flex-1 min-w-0">
                       <div className={clsx(
                         'text-sm font-medium truncate',

@@ -249,7 +249,7 @@ export default function ReportsPage() {
               <div className="flex-1 min-w-0">
                 {isManagerPlus && r.employee && (
                   <div className="flex items-center gap-2 mb-2">
-                    <Avatar name={r.employee.name} size={28} />
+                    <Avatar name={r.employee.name} src={r.employee.avatar} size={28} />
                     <div>
                       <p className="font-semibold text-sm text-surface-900 dark:text-surface-100">{r.employee.name}</p>
                       {r.project && <p className="text-xs font-medium text-primary-600 dark:text-primary-400">{r.project.name}</p>}

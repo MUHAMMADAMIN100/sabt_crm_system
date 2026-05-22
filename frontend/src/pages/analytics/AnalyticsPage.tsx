@@ -365,7 +365,7 @@ export default function AnalyticsPage() {
                   <button onClick={() => setExpandedEmp(isExpanded ? null : e.id)}
                     className="w-full flex items-center gap-3 p-3 hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors text-left">
                     {isExpanded ? <ChevronDown size={14} className="text-surface-400 shrink-0" /> : <ChevronRight size={14} className="text-surface-400 shrink-0" />}
-                    <Avatar name={e.name} size={32} />
+                    <Avatar name={e.name} src={e.avatar} size={32} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{e.name}</p>
                       <div className="flex items-center gap-3 mt-0.5">

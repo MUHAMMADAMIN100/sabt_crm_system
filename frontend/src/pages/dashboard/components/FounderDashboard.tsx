@@ -389,7 +389,7 @@ export default function FounderDashboard() {
                   <tr key={e.id} className="hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors cursor-pointer">
                     <td className="py-2">
                       <Link to={empLink} className="flex items-center gap-2">
-                        <Avatar name={e.name} size={24} />
+                        <Avatar name={e.name} src={e.avatar} size={24} />
                         <div>
                           <p className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400">{e.name}</p>
                           <p className="text-[10px] text-surface-400">{e.position}</p>

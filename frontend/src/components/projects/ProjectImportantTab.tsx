@@ -95,7 +95,7 @@ export default function ProjectImportantTab({ projectId }: Props) {
                   <div className="flex items-center gap-3 mt-3 text-xs text-surface-400 dark:text-surface-500">
                     {a.createdBy && (
                       <div className="flex items-center gap-1.5">
-                        <Avatar name={a.createdBy.name} size={18} />
+                        <Avatar name={a.createdBy.name} src={a.createdBy.avatar} size={18} />
                         <span>{a.createdBy.name}</span>
                       </div>
                     )}

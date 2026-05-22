@@ -330,7 +330,7 @@ export default function EmployeesPage() {
                 <tr key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className="border-b border-surface-50 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/50 cursor-pointer">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <Avatar name={emp.fullName} size={32} />
+                      <Avatar name={emp.fullName} src={emp.user?.avatar || emp.avatar} size={32} />
                       <div>
                         <span className="text-sm font-medium text-surface-900 dark:text-surface-100">{emp.fullName}</span>
                         {emp.isSubAdmin && <ShieldCheck size={12} className="inline ml-1 text-primary-500" />}

@@ -590,7 +590,7 @@ export default function TasksPage() {
                 <div className="flex items-center gap-2">
                   {task.assignee && (
                     <>
-                      <Avatar name={empNameMap[task.assigneeId] || task.assignee.name} size={22} />
+                      <Avatar name={empNameMap[task.assigneeId] || task.assignee.name} src={task.assignee.avatar} size={22} />
                       <span className="text-xs text-surface-500 dark:text-surface-400 font-medium">{(empNameMap[task.assigneeId] || task.assignee.name)?.split(' ').map((w:string)=>w[0]).join('').slice(0,2).toUpperCase()}</span>
                     </>
                   )}
@@ -653,7 +653,7 @@ function AssigneesStack({ task, currentUserId }: { task: any; currentUserId?: st
     return (
       <div className="flex items-center gap-2">
         <div className="relative">
-          <Avatar name={a.user?.name} size={22} />
+          <Avatar name={a.user?.name} src={a.user?.avatar} size={22} />
           {a.isDone && (
             <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-surface-800" />
           )}
@@ -673,7 +673,7 @@ function AssigneesStack({ task, currentUserId }: { task: any; currentUserId?: st
       <div className="flex -space-x-1.5">
         {list.slice(0, 3).map(a => (
           <div key={a.userId} className="relative">
-            <Avatar name={a.user?.name} size={22} />
+            <Avatar name={a.user?.name} src={a.user?.avatar} size={22} />
             {a.isDone && (
               <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-surface-800" />
             )}

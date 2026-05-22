@@ -737,7 +737,7 @@ export default function ProjectDetailPage() {
                         <PriorityBadge priority={task.priority} />
                         {task.assignee && (
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <Avatar name={task.assignee.name} size={22} />
+                            <Avatar name={task.assignee.name} src={task.assignee.avatar} size={22} />
                             <span className="text-[11px] text-surface-500 dark:text-surface-400 truncate max-w-[90px]">
                               {task.assigneeId === user?.id ? 'Вы' : shortenName(task.assignee.name)}
                             </span>
