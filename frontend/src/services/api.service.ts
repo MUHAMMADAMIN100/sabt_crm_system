@@ -196,6 +196,7 @@ export const clientsApi = {
   list: (params?: { search?: string; status?: string; interest?: string; sphere?: string; ownerId?: string; source?: string }) =>
     api.get('/clients', { params }).then(r => r.data),
   stats: () => api.get('/clients/stats').then(r => r.data),
+  kpi: () => api.get('/clients/kpi').then(r => r.data),
   get: (id: string) => api.get(`/clients/${id}`).then(r => r.data),
   create: (data: any) => api.post('/clients', data).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/clients/${id}`, data).then(r => r.data),

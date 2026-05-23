@@ -27,6 +27,11 @@ export class ClientsController {
     return this.service.stats(leadDirectionFor(req.user?.role));
   }
 
+  @Get('kpi')
+  getKpi(@Request() req) {
+    return this.service.kpi(req.user.id, leadDirectionFor(req.user?.role));
+  }
+
   @Get()
   findAll(
     @Request() req,

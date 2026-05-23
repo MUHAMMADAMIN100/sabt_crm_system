@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { Cron, CronExpression } from '@nestjs/schedule'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository, Between, LessThan, Not, In } from 'typeorm'
-import { Task, TaskStatus } from '../tasks/task.entity'
+import { Task, TaskStatus, TaskPriority, TaskScope } from '../tasks/task.entity'
 import { Employee } from '../employees/employee.entity'
 import { Project, ProjectStatus } from '../projects/project.entity'
 import { User, UserRole } from '../users/user.entity'
@@ -430,6 +430,91 @@ export class DeadlineScheduler implements OnModuleInit {
     }
 
     this.logger.log(`Sent ${sent} payment reminders`)
+  }
+
+  // ── 6. Next-payment-date reminder for sales managers (daily at 9am) ──────
+  /**
+   * Каждое утро ищет проекты, у которых nextPaymentDate == сегодня (Душанбе),
+   * и отправляет МП трёхканальное напоминание (in-app + Telegram). Параллельно
+   * создаёт личную задачу в Календаре менеджера на 10:00, чтобы дата
+   * визуально появилась в его рабочем графике.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  async notifyNextPaymentDate() {
+    this.logger.log('Checking projects with nextPaymentDate = today...')
+
+    const now = new Date()
+    const dushanbeNow = new Date(now.getTime() + 5 * 60 * 60 * 1000)
+    const y = dushanbeNow.getUTCFullYear()
+    const m = dushanbeNow.getUTCMonth()
+    const d = dushanbeNow.getUTCDate()
+    const dayStart = new Date(Date.UTC(y, m, d, 0, 0, 0) - 5 * 60 * 60 * 1000)
+    const dayEnd = new Date(Date.UTC(y, m, d, 23, 59, 59, 999) - 5 * 60 * 60 * 1000)
+
+    const projects = await this.projectRepo.find({
+      where: {
+        nextPaymentDate: Between(dayStart, dayEnd) as any,
+        isArchived: false,
+      },
+      relations: ['salesManager'],
+    })
+
+    let sent = 0
+    for (const project of projects) {
+      if (!project.salesManagerId) continue
+      const budget = Number(project.budget) || 0
+      const paid = Number(project.paidAmount) || 0
+      const remaining = Math.max(0, budget - paid)
+      const projectUrl = `/projects/${project.id}`
+
+      await this.notificationsService.create({
+        userId: project.salesManagerId,
+        type: NotificationType.PAYMENT_REMINDER,
+        title: '💸 Сегодня следующая оплата',
+        message: `Проект "${project.name}" — сегодня запланирована оплата. Остаток: ${remaining.toLocaleString('ru')} сомони.`,
+        link: projectUrl,
+        data: { projectId: project.id, nextPaymentDate: project.nextPaymentDate },
+      })
+
+      await this.telegramService.sendToUser(
+        project.salesManagerId,
+        `💸 <b>Сегодня запланирована оплата</b>\n\n` +
+        `Проект: <b>${project.name}</b>\n` +
+        `Остаток: <b>${remaining.toLocaleString('ru')} сомони</b>\n\n` +
+        `Свяжитесь с клиентом и закройте платёж.\n\n` +
+        `👉 ${this.telegramService.appUrl}${projectUrl}`,
+      )
+
+      // Личная задача в Календарь МП на 10:00 текущего дня.
+      // Идемпотентно: проверяем что такой задачи ещё нет (по title + assignee + day).
+      const deadline = new Date(dayStart)
+      deadline.setUTCHours(10 - 5, 0, 0, 0) // 10:00 Душанбе == 05:00 UTC
+      const title = `💸 Оплата по проекту: ${project.name}`
+      const existing = await this.taskRepo.findOne({
+        where: {
+          title,
+          assigneeId: project.salesManagerId,
+          deadline: Between(dayStart, dayEnd) as any,
+        },
+      })
+      if (!existing) {
+        const task = this.taskRepo.create({
+          title,
+          description: `Сегодня запланирована оплата по проекту «${project.name}». Остаток: ${remaining.toLocaleString('ru')} сомони.`,
+          deadline,
+          priority: TaskPriority.HIGH,
+          status: TaskStatus.NEW,
+          scope: TaskScope.PERSONAL,
+          createdById: project.salesManagerId,
+          assigneeId: project.salesManagerId,
+        })
+        await this.taskRepo.save(task)
+      }
+
+      sent++
+    }
+
+    this.logger.log(`Sent ${sent} next-payment-date reminders`)
   }
 
   // ── 7. Daily 18:00 Dushanbe — remind PMs about uncompleted tasks ─────────

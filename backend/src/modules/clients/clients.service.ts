@@ -86,6 +86,68 @@ export class ClientsService {
     return { message: 'Lead deleted' };
   }
 
+  /**
+   * KPI менеджера продаж — план/факт за текущий календарный месяц.
+   * Считается из того, что МП реально делает в CRM:
+   *  - база новых компаний → лиды, созданные менеджером в этом месяце
+   *  - холодные звонки → лиды с call/телефонным каналом, активные в этом месяце
+   *  - персонализированные письма → лиды с email-каналом или contactEmail,
+   *    у которых обновлялся lastContactAt в этом месяце
+   *  - встречи / созвоны → лиды с nextContactAt в ближайшие 14 дней
+   */
+  async kpi(ownerId: string, direction?: ClientLeadDirection) {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    monthStart.setHours(0, 0, 0, 0);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    monthEnd.setHours(23, 59, 59, 999);
+    const horizon = new Date(now);
+    horizon.setDate(horizon.getDate() + 14);
+
+    const base = () => {
+      const qb = this.repo.createQueryBuilder('c').where('c.ownerId = :oid', { oid: ownerId });
+      if (direction) qb.andWhere('(c.direction = :dir OR c.direction IS NULL)', { dir: direction });
+      return qb;
+    };
+
+    const newCompanies = await base()
+      .andWhere('c.createdAt BETWEEN :from AND :to', { from: monthStart, to: monthEnd })
+      .getCount();
+
+    const coldCalls = await base()
+      .andWhere(`LOWER(COALESCE(c.channel, '')) IN ('call', 'phone', 'whatsapp', 'telegram')`)
+      .andWhere('c.updatedAt BETWEEN :from AND :to', { from: monthStart, to: monthEnd })
+      .getCount();
+
+    const personalEmails = await base()
+      .andWhere(`(LOWER(COALESCE(c.channel, '')) = 'email' OR COALESCE(c.contactEmail, '') <> '')`)
+      .andWhere('c.lastContactAt BETWEEN :from AND :to', { from: monthStart, to: monthEnd })
+      .getCount();
+
+    const meetings = await base()
+      .andWhere('c.nextContactAt BETWEEN :now AND :horizon', { now, horizon })
+      .getCount();
+
+    const items = [
+      { key: 'new_companies',   label: 'Новые компании в базе', target: 30, value: newCompanies },
+      { key: 'cold_calls',      label: 'Холодные звонки',       target: 10, value: coldCalls },
+      { key: 'personal_emails', label: 'Персональные письма',   target: 10, value: personalEmails },
+      { key: 'meetings',        label: 'Встречи / созвоны',     target: 2,  value: meetings },
+    ].map(i => ({
+      ...i,
+      percent: i.target > 0 ? Math.min(100, Math.round((i.value / i.target) * 100)) : 0,
+      done: i.value >= i.target,
+    }));
+
+    const overall = Math.round(items.reduce((acc, i) => acc + (i.value / i.target) * 100, 0) / items.length);
+    return {
+      periodFrom: monthStart.toISOString(),
+      periodTo: monthEnd.toISOString(),
+      overallPercent: Math.min(100, Math.max(0, overall)),
+      items,
+    };
+  }
+
   /** Aggregated counters for the Clients page header */
   async stats(direction?: ClientLeadDirection) {
     // Условие направления: свои лиды + старые без направления.

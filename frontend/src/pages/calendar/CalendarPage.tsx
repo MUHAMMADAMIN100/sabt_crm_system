@@ -388,6 +388,13 @@ export default function CalendarPage() {
           canCreate={canCreate}
           onSlotClick={handleSlotClick}
           onEventClick={openEvent}
+          onMoveEvent={(evt, day, hour) => {
+            if (!evt.taskId) return
+            const oldDate = new Date(evt.date)
+            const newDeadline = new Date(day)
+            newDeadline.setHours(hour, oldDate.getMinutes() || 0, 0, 0)
+            updateTask.mutate({ id: evt.taskId, data: { deadline: newDeadline.toISOString() } })
+          }}
         />
       ) : (
       <>
@@ -814,27 +821,67 @@ const WK_MIN = 8
 const WK_MAX = 21
 
 function WeekView({
-  weekStart, events, canCreate, onSlotClick, onEventClick,
+  weekStart, events, canCreate, onSlotClick, onEventClick, onMoveEvent,
 }: {
   weekStart: Date
   events: any[]
   canCreate: boolean
   onSlotClick: (day: Date, hour: number) => void
   onEventClick: (e: any) => void
+  /** Перетаскивание задачи в конкретный день+час. Меняет полную дату дедлайна. */
+  onMoveEvent?: (event: any, day: Date, hour: number) => void
 }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
   const slotHour = (e: any) => {
     const h = new Date(e.date).getHours()
     return Math.min(WK_MAX, Math.max(WK_MIN, h))
   }
-  const cols = { gridTemplateColumns: '52px repeat(7, minmax(0, 1fr))' }
+  const cols = { gridTemplateColumns: '60px repeat(7, minmax(0, 1fr))' }
+
+  // События «весь день» (без времени или в полночь) — выносим в шапку,
+  // чтобы не съедали часовой слот.
+  const allDay = events.filter(e => {
+    const d = new Date(e.date)
+    return d.getHours() === 0 && d.getMinutes() === 0
+  })
+  const timed = events.filter(e => {
+    const d = new Date(e.date)
+    return !(d.getHours() === 0 && d.getMinutes() === 0)
+  })
+
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [hoverKey, setHoverKey] = useState<string | null>(null)
+
+  const onDragStart = (ev: React.DragEvent, e: any) => {
+    if (!onMoveEvent || e.type !== 'task' || !e.taskId) { ev.preventDefault(); return }
+    setDraggingId(e.id)
+    ev.dataTransfer.effectAllowed = 'move'
+    ev.dataTransfer.setData('text/plain', e.id)
+  }
+  const onDragOverCell = (ev: React.DragEvent, key: string) => {
+    if (!draggingId) return
+    ev.preventDefault()
+    ev.dataTransfer.dropEffect = 'move'
+    setHoverKey(key)
+  }
+  const onDropCell = (ev: React.DragEvent, day: Date, hour: number) => {
+    ev.preventDefault()
+    setHoverKey(null)
+    const id = ev.dataTransfer.getData('text/plain') || draggingId
+    setDraggingId(null)
+    if (!id) return
+    const e = events.find((x: any) => x.id === id)
+    if (e && onMoveEvent) onMoveEvent(e, day, hour)
+  }
 
   return (
     <div className="card p-0 overflow-x-auto">
-      <div className="min-w-[680px]">
-        {/* Заголовок — дни недели */}
-        <div className="grid border-b border-surface-100 dark:border-surface-700" style={cols}>
-          <div />
+      <div className="min-w-[720px]">
+        {/* Заголовок — день недели + число (как в референсе) */}
+        <div className="grid border-b border-surface-200 dark:border-surface-700 sticky top-0 z-10 bg-white dark:bg-surface-900" style={cols}>
+          <div className="text-[10px] text-surface-400 dark:text-surface-500 px-2 py-2 uppercase tracking-wide flex items-end justify-end">
+            GMT+5
+          </div>
           {days.map(d => {
             const today = isToday(d)
             return (
@@ -845,17 +892,55 @@ function WeekView({
                   today && 'bg-primary-50 dark:bg-primary-900/20',
                 )}
               >
-                <div className="text-[11px] text-surface-400 dark:text-surface-500 uppercase">
+                <div className="text-[10px] text-surface-400 dark:text-surface-500 uppercase tracking-wide">
                   {format(d, 'EEE', { locale: ru })}
                 </div>
                 <div className={clsx(
-                  'text-sm font-semibold',
+                  'text-base font-semibold tabular-nums',
                   today ? 'text-primary-600 dark:text-primary-400' : 'text-surface-700 dark:text-surface-200',
                 )}>{format(d, 'd')}</div>
               </div>
             )
           })}
         </div>
+
+        {/* Строка «весь день» */}
+        <div className="grid border-b border-surface-100 dark:border-surface-700 bg-surface-50/40 dark:bg-surface-800/30" style={cols}>
+          <div className="text-[10px] text-surface-400 dark:text-surface-500 px-2 py-1.5 text-right select-none">
+            All-day
+          </div>
+          {days.map(d => {
+            const cellEvents = allDay.filter((e: any) => isSameDay(new Date(e.date), d))
+            return (
+              <div
+                key={d.toISOString()}
+                className="border-l border-surface-100 dark:border-surface-700 min-h-[28px] p-1 space-y-0.5"
+              >
+                {cellEvents.map((e: any) => {
+                  const colorClass = e.type === 'task' && e.scope
+                    ? SCOPE_COLORS[e.scope] || TYPE_COLORS.task
+                    : (TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')
+                  return (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={ev => { ev.stopPropagation(); onEventClick(e) }}
+                      title={e.title}
+                      className={clsx(
+                        'flex items-center gap-1 w-full text-left text-[11px] px-1.5 py-0.5 rounded border font-medium',
+                        colorClass,
+                      )}
+                    >
+                      {e.scope === 'personal' && <Lock size={9} className="shrink-0" />}
+                      <span className="truncate flex-1 min-w-0">{e.title}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+
         {/* Часовые строки */}
         {WEEK_HOURS.map(h => (
           <div
@@ -863,38 +948,52 @@ function WeekView({
             className="grid border-b border-surface-50 dark:border-surface-800"
             style={cols}
           >
-            <div className="text-[11px] text-surface-400 dark:text-surface-500 text-right pr-2 py-1 select-none">
-              {h}:00
+            <div className="text-[10px] text-surface-400 dark:text-surface-500 text-right pr-2 py-1 select-none tabular-nums">
+              {String(h).padStart(2, '0')}:00
             </div>
             {days.map(d => {
-              const cellEvents = events.filter(
+              const cellEvents = timed.filter(
                 (e: any) => isSameDay(new Date(e.date), d) && slotHour(e) === h,
               )
+              const key = `${format(d, 'yyyy-MM-dd')}-${h}`
+              const isHover = hoverKey === key
               return (
                 <div
                   key={d.toISOString()}
                   onClick={() => canCreate && onSlotClick(d, h)}
+                  onDragOver={(ev) => onDragOverCell(ev, key)}
+                  onDragLeave={() => { if (isHover) setHoverKey(null) }}
+                  onDrop={(ev) => onDropCell(ev, d, h)}
                   className={clsx(
-                    'border-l border-surface-100 dark:border-surface-700 min-h-[44px] p-1 space-y-1',
+                    'border-l border-surface-100 dark:border-surface-700 min-h-[44px] p-1 space-y-1 transition-colors',
                     canCreate && 'cursor-pointer hover:bg-primary-50/40 dark:hover:bg-primary-900/10',
+                    isHover && 'bg-primary-100/60 dark:bg-primary-900/30 ring-2 ring-primary-400 ring-inset',
                   )}
                 >
                   {cellEvents.map((e: any) => {
                     const colorClass = e.type === 'task' && e.scope
                       ? SCOPE_COLORS[e.scope] || TYPE_COLORS.task
                       : (TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')
+                    const eventTime = format(new Date(e.date), 'HH:mm')
+                    const draggable = !!onMoveEvent && e.type === 'task' && !!e.taskId
                     return (
                       <button
                         key={e.id}
                         type="button"
+                        draggable={draggable}
+                        onDragStart={(ev) => onDragStart(ev, e)}
+                        onDragEnd={() => { setDraggingId(null); setHoverKey(null) }}
                         onClick={ev => { ev.stopPropagation(); onEventClick(e) }}
-                        title={e.title}
+                        title={`${eventTime} · ${e.title}`}
                         className={clsx(
                           'flex items-center gap-1 w-full text-left text-[11px] px-1.5 py-0.5 rounded border font-medium',
                           colorClass,
+                          draggable && 'cursor-grab active:cursor-grabbing',
+                          draggingId === e.id && 'opacity-50',
                         )}
                       >
                         {e.scope === 'personal' && <Lock size={9} className="shrink-0" />}
+                        <span className="text-[10px] tabular-nums opacity-70 shrink-0">{eventTime}</span>
                         <span className="truncate flex-1 min-w-0">{e.title}</span>
                       </button>
                     )

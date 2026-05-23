@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import StoryCalendar from '@/components/stories/StoryCalendar'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
 import { shortenName } from '@/lib/name'
 import { tasksApi, projectsApi, employeesApi } from '@/services/api.service'
 import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
@@ -13,6 +12,7 @@ import { Plus, Search, LayoutGrid, List, Filter, Edit, Trash2, Download, CheckSq
 import api from '@/lib/api'
 import { format } from 'date-fns'
 import TaskForm from '@/components/tasks/TaskForm'
+import TaskDrawer from '@/components/tasks/TaskDrawer'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -35,6 +35,8 @@ export default function TasksPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
+  // Right-side drawer: клик по задаче открывает её здесь, без перехода на /tasks/:id.
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   // Wave 16: фильтры по новым полям задач (TZ п.13)
   const [filterReviewer, setFilterReviewer] = useState('')
@@ -45,7 +47,6 @@ export default function TasksPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const PAGE_SIZE = 10
   const user = useAuthStore(s => s.user)
-  const navigate = useNavigate()
   const isHeadSMM = user?.role === 'head_smm' || user?.role === 'smm_director'
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
   // МП по продажам: видят задачи своего направления и могут создавать
@@ -499,7 +500,7 @@ export default function TasksPage() {
                 return (
                   <tr
                     key={task.id}
-                    onClick={() => navigate(`/tasks/${task.id}`)}
+                    onClick={() => setOpenTaskId(task.id)}
                     className={clsx(
                       'border-b border-surface-50 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors cursor-pointer',
                       isSelected && 'bg-primary-50/50 dark:bg-primary-900/10',
@@ -576,9 +577,15 @@ export default function TasksPage() {
       ) : (
         <div key={page} className="animate-fade-in stagger-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {pagedTasks.map((task: any) => (
-            <div key={task.id} className="card card-hoverable">
+            <div key={task.id} className="card card-hoverable cursor-pointer" onClick={() => setOpenTaskId(task.id)}>
               <div className="flex items-start justify-between mb-2">
-                <Link to={`/tasks/${task.id}`} className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm flex-1 pr-2">{task.title}</Link>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setOpenTaskId(task.id) }}
+                  className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm flex-1 pr-2 text-left"
+                >
+                  {task.title}
+                </button>
                 <div className="flex gap-0.5 shrink-0">
                   {(isManagerPlus || task.assigneeId === user?.id || task.createdById === user?.id) && (
                     <>
@@ -640,6 +647,13 @@ export default function TasksPage() {
         onClose={() => setDeleteTaskId(null)}
         onConfirm={(reason) => deleteMut.mutate({ id: deleteTaskId!, reason })}
         title={t('tasks.deleteConfirm')}
+      />
+
+      <TaskDrawer
+        taskId={openTaskId}
+        onClose={() => setOpenTaskId(null)}
+        onEdit={(task) => { setOpenTaskId(null); setEditingTask(task); setShowCreate(true) }}
+        onDelete={(id) => { setOpenTaskId(null); setDeleteTaskId(id) }}
       />
 
     </div>

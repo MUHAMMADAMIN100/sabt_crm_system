@@ -466,6 +466,9 @@ export class AnalyticsService {
         remaining,
         endDate: p.endDate,
         startDate: p.startDate,
+        // Используется в SalesDashboard: МП может редактировать дату следующей
+        // оплаты прямо из таблицы; cron-напоминание создаётся отдельно.
+        nextPaymentDate: p.nextPaymentDate || null,
         managerName: p.manager?.name || null,
         salesManagerName: p.salesManager?.name || null,
         salesManagerId: p.salesManagerId || null,

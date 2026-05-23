@@ -11,6 +11,7 @@ import { ru } from 'date-fns/locale'
 import { shortenName } from '@/lib/name'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
+import TaskDrawer from '@/components/tasks/TaskDrawer'
 import DeleteWithReasonDialog from '@/components/tasks/DeleteWithReasonDialog'
 import {
   ProjectOverviewTab, ProjectActivityTab,
@@ -57,6 +58,7 @@ export default function ProjectDetailPage() {
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const [draggedTask, setDraggedTask] = useState<any>(null)
   const [showEditProject, setShowEditProject] = useState(false)
   const [showEditClient, setShowEditClient] = useState(false)
@@ -597,7 +599,11 @@ export default function ProjectDetailPage() {
                       className={clsx('card p-3 hover:shadow-md transition-all', dragOn && 'cursor-grab active:cursor-grabbing')}>
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                          <Link to={`/tasks/${task.id}`} className="text-sm font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 leading-snug truncate">{task.title}</Link>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setOpenTaskId(task.id) }}
+                            className="text-sm font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 leading-snug truncate text-left"
+                          >{task.title}</button>
                           {task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${
                               task.createdById === task.assigneeId
@@ -1146,6 +1152,13 @@ export default function ProjectDetailPage() {
         onClose={() => setDeleteTaskId(null)}
         onConfirm={(reason) => deleteTask.mutate({ id: deleteTaskId!, reason })}
         title={t('tasks.deleteConfirm')}
+      />
+
+      <TaskDrawer
+        taskId={openTaskId}
+        onClose={() => setOpenTaskId(null)}
+        onEdit={(task) => { setOpenTaskId(null); setEditingTask(task); setShowTaskForm(true) }}
+        onDelete={(taskId) => { setOpenTaskId(null); setDeleteTaskId(taskId) }}
       />
 
       {/* Modal: Request payment from client */}

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { analyticsApi, projectsApi } from '@/services/api.service'
+import { analyticsApi, projectsApi, clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { StatusBadge, ProgressBar, CollapsibleSection } from '@/components/ui'
 import { Calendar, CheckCircle2, Mail, Pencil } from 'lucide-react'
@@ -166,6 +166,15 @@ export default function SalesDashboard() {
     staleTime: 30_000,
   })
 
+  // KPI плана МП (новые компании / звонки / письма / встречи) за текущий месяц.
+  const { data: kpi } = useQuery({
+    queryKey: ['sales-kpi', userId],
+    queryFn: clientsApi.kpi,
+    enabled: !!userId,
+    refetchOnMount: 'always',
+    staleTime: 60_000,
+  })
+
   // МП по продажам (СММ И разработка) могут править все колонки таблицы:
   // name / paidAmount / endDate / status. Так оба направления одинаково
   // владеют операционкой по своим проектам.
@@ -230,6 +239,52 @@ export default function SalesDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* KPI блок — план/факт за месяц, считается автоматически из CRM */}
+      {kpi && (
+        <CollapsibleSection
+          id="sales-kpi"
+          title={
+            <div className="flex items-center justify-between w-full">
+              <h3 className="section-title">📊 KPI менеджера — этот месяц</h3>
+              <span className={clsx(
+                'text-xs font-semibold tabular-nums',
+                kpi.overallPercent >= 100 ? 'text-emerald-600' :
+                kpi.overallPercent >= 70  ? 'text-amber-600'   : 'text-red-600',
+              )}>
+                {kpi.overallPercent}% от плана
+              </span>
+            </div>
+          }
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {kpi.items.map((it: any) => (
+              <div key={it.key} className={clsx(
+                'rounded-xl border p-3 space-y-1.5',
+                it.done
+                  ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-900/40'
+                  : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700',
+              )}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-medium text-surface-600 dark:text-surface-300">{it.label}</span>
+                  <span className="text-[10px] text-surface-400">цель {it.target}</span>
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <span className={clsx(
+                    'text-xl font-bold tabular-nums',
+                    it.done ? 'text-emerald-600 dark:text-emerald-400' : 'text-surface-800 dark:text-surface-100',
+                  )}>
+                    {it.value}
+                  </span>
+                  <span className="text-xs text-surface-400">/ {it.target}</span>
+                  {it.done && <span className="ml-auto text-[10px] font-semibold text-emerald-600">✓</span>}
+                </div>
+                <ProgressBar value={it.percent} />
+              </div>
+            ))}
+          </div>
+        </CollapsibleSection>
+      )}
+
       {/* Projects table */}
       <CollapsibleSection
         id="sales-projects"
@@ -266,6 +321,7 @@ export default function SalesDashboard() {
                 <th className="pb-2 font-medium text-right">Бюджет</th>
                 <th className="pb-2 font-medium text-right">Оплачено</th>
                 <th className="pb-2 font-medium text-right">Остаток</th>
+                <th className="pb-2 font-medium">След. оплата</th>
                 <th className="pb-2 font-medium">Дедлайн</th>
                 <th className="pb-2 font-medium">Статус</th>
               </tr>
@@ -324,6 +380,22 @@ export default function SalesDashboard() {
                     {fmt(p.remaining)}
                   </td>
                   <td className="py-2 pr-3 whitespace-nowrap">
+                    <InlineEditCell
+                      mode="date"
+                      value={p.nextPaymentDate ? String(p.nextPaymentDate).slice(0, 10) : ''}
+                      onSave={(v) => patch(p.id, { nextPaymentDate: v || null })}
+                      formatter={(v) => {
+                        if (!v) return '—'
+                        const d = new Date(v)
+                        const today = new Date(); today.setHours(0, 0, 0, 0)
+                        const diff = Math.floor((d.getTime() - today.getTime()) / 86_400_000)
+                        const prefix = diff < 0 ? '🔴 ' : diff <= 3 ? '🟠 ' : ''
+                        return `${prefix}${format(d, 'dd.MM.yy')}`
+                      }}
+                      width="w-28"
+                    />
+                  </td>
+                  <td className="py-2 pr-3 whitespace-nowrap">
                     {isSmmSales ? (
                       <InlineEditCell
                         mode="date"
@@ -366,7 +438,7 @@ export default function SalesDashboard() {
               ))}
               {projects.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-sm text-surface-400">
+                  <td colSpan={8} className="text-center py-8 text-sm text-surface-400">
                     Нет проектов по фильтру
                   </td>
                 </tr>
