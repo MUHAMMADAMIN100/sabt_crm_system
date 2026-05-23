@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { PageLoader, StatusBadge, ProgressBar, CollapsibleSection } from '@/components/ui'
+import { StatusBadge, ProgressBar, CollapsibleSection } from '@/components/ui'
 import { Calendar, CheckCircle2, Mail, Pencil } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
@@ -147,6 +147,7 @@ function BudgetCell({ value, onSave }: { value: number; onSave: (b: number) => v
 export default function SalesDashboard() {
   const [filter, setFilter] = useState('')
   const role = useAuthStore(s => s.user?.role)
+  const userId = useAuthStore(s => s.user?.id)
   // Сегмент МП: СММ → SMM-проекты, разработка → «Web сайт».
   const segmentType =
     role === 'sales_manager_dev' ? 'Web сайт'
@@ -154,9 +155,15 @@ export default function SalesDashboard() {
     : null
 
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({
-    queryKey: ['sales-stats'],
+  // Кэш per-user (чтобы данные другого пользователя не подтекали при
+  // переключении сессий) + всегда фетчим при монтировании, чтобы первый
+  // рендер сразу с актуальными проектами.
+  const { data } = useQuery({
+    queryKey: ['sales-stats', userId],
     queryFn: analyticsApi.sales,
+    enabled: !!userId,
+    refetchOnMount: 'always',
+    staleTime: 30_000,
   })
 
   // МП по продажам (СММ И разработка) могут править все колонки таблицы:
@@ -170,9 +177,9 @@ export default function SalesDashboard() {
     mutationFn: ({ id, patch }: { id: string; patch: Record<string, any> }) =>
       projectsApi.update(id, patch),
     onMutate: async ({ id, patch }) => {
-      await qc.cancelQueries({ queryKey: ['sales-stats'] })
-      const prev = qc.getQueryData(['sales-stats'])
-      qc.setQueryData(['sales-stats'], (old: any) => {
+      await qc.cancelQueries({ queryKey: ['sales-stats', userId] })
+      const prev = qc.getQueryData(['sales-stats', userId])
+      qc.setQueryData(['sales-stats', userId], (old: any) => {
         if (!old?.projects) return old
         return {
           ...old,
@@ -193,7 +200,7 @@ export default function SalesDashboard() {
       return { prev }
     },
     onError: (_e, _v, ctx) => {
-      qc.setQueryData(['sales-stats'], ctx?.prev)
+      qc.setQueryData(['sales-stats', userId], ctx?.prev)
       toast.error('Не удалось сохранить')
     },
     onSuccess: () => {
@@ -202,27 +209,24 @@ export default function SalesDashboard() {
       qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
       qc.invalidateQueries({ queryKey: ['project'] })
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['sales-stats'] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['sales-stats', userId] }),
   })
 
   const patch = (id: string, p: Record<string, any>) => updateProjectMut.mutate({ id, patch: p })
 
-  const projects = useMemo(() => {
-    let list = (data?.projects || []) as any[]
-    // Каждый МП видит только проекты своего направления.
-    if (segmentType) list = list.filter(p => p.projectType === segmentType)
-    if (filter === 'overdue') return list.filter(p => p.isOverdue)
-    if (filter === 'upcoming') return list.filter(p => p.isUpcoming)
-    if (filter === 'outstanding') return list.filter(p => p.remaining > 0)
-    if (filter === 'paid') return list.filter(p => p.budget > 0 && p.remaining === 0)
-    return list
-  }, [data, filter, segmentType])
-
-  if (isLoading) return <PageLoader />
-
-  const totalCount = segmentType
-    ? ((data?.projects || []) as any[]).filter(p => p.projectType === segmentType).length
-    : (data?.projectCount || 0)
+  // Считаем список проектов на каждом рендере — useMemo здесь оборачивал
+  // в стейл-ссылку и из-за этого первый рендер показывал «5 из 5» с пустой
+  // таблицей до клика по фильтру. Стоимость пересчёта мизерная.
+  const allSegmentProjects = ((data?.projects || []) as any[])
+    .filter(p => !segmentType || p.projectType === segmentType)
+  const projects = (() => {
+    if (filter === 'overdue')     return allSegmentProjects.filter(p => p.isOverdue)
+    if (filter === 'upcoming')    return allSegmentProjects.filter(p => p.isUpcoming)
+    if (filter === 'outstanding') return allSegmentProjects.filter(p => p.remaining > 0)
+    if (filter === 'paid')        return allSegmentProjects.filter(p => p.budget > 0 && p.remaining === 0)
+    return allSegmentProjects
+  })()
+  const totalCount = allSegmentProjects.length
 
   return (
     <div className="space-y-6">
