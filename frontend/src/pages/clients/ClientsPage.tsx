@@ -99,9 +99,11 @@ export default function ClientsPage() {
         old.map(l => l.id === ctx?.tempLead.id ? server : l),
       )
       qc.invalidateQueries({ queryKey: ['clients-stats'] })
-      // Инвалидируем ВСЕ кеши клиентов (любые фильтры) — чтобы Онбординг,
-      // открытый в соседней вкладке, увидел изменение без обновления.
       qc.invalidateQueries({ queryKey: ['clients'] })
+      // syncMeetingTask на бэке создал/обновил личную задачу — обновляем
+      // календарь и список «Мои задачи», чтобы новый лид сразу был виден.
+      qc.invalidateQueries({ queryKey: ['calendar'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
       toast.success('Клиент добавлен')
     },
   })
@@ -126,6 +128,10 @@ export default function ClientsPage() {
       // Любое изменение клиента (статус, стадия, контакты) должно
       // отразиться и в Онбординге — инвалидируем общий префикс.
       qc.invalidateQueries({ queryKey: ['clients'] })
+      // И в Календаре + Задачах: следом за update'ом бэк пересинхронит
+      // личную follow-up задачу (название/время/статус закрытия сделки).
+      qc.invalidateQueries({ queryKey: ['calendar'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
       toast.success('Сохранено')
     },
   })

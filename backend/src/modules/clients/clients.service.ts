@@ -195,23 +195,27 @@ export class ClientsService {
     };
   }
 
-  // ─── Авто-синхронизация задачи-встречи ───────────────────────────────
-  /** Поддерживает 1:1 связь между ClientLead.nextContactAt и личной задачей
-   *  в tasks (scope='personal'). Logic:
-   *   - nextContactAt пустой → удалить связанную задачу, обнулить meetingTaskId
-   *   - nextContactAt задан, задачи нет → создать новую (scope=personal)
-   *   - nextContactAt задан, задача есть → обновить title/deadline/desc
+  // ─── Авто-синхронизация задачи в Календаре МП ────────────────────────
+  /** Поддерживает 1:1 связь между ClientLead и личной задачей менеджера
+   *  (scope='personal'). Любое касание клиента сразу видно в Календаре МП.
    *
-   *  Best-effort: ошибки логируются, но не валят апдейт клиента. Задача
-   *  принадлежит ownerId, deadline = nextContactAt в 12:00 (как у фондера). */
+   *  Logic:
+   *   - закрытая сделка (won/lost) или нет владельца → удалить задачу;
+   *   - есть nextContactAt → задача-встреча на этот момент времени;
+   *   - нет nextContactAt → follow-up задача на сегодня 10:00, чтобы лид
+   *     не «потерялся» и МП помнил перезвонить;
+   *   - имя клиента / этап онбординга / контакты меняются — заголовок и
+   *     описание задачи синхронизируются.
+   *
+   *  Best-effort: ошибки логируются, CRUD клиента не валится. */
   private async syncMeetingTask(lead: ClientLead, previous?: ClientLead): Promise<void> {
     try {
-      const nextDate = lead.nextContactAt ? new Date(lead.nextContactAt) : null;
       const hasOwner = !!lead.ownerId;
+      if (!hasOwner) return;
 
-      // Без даты или без владельца — удаляем существующую задачу (если была)
-      // и обнуляем связь.
-      if (!nextDate || !hasOwner) {
+      // Закрытая сделка — задача в календаре больше не нужна, удаляем.
+      const isClosed = lead.status === ClientLeadStatus.WON || lead.status === ClientLeadStatus.LOST;
+      if (isClosed) {
         if (lead.meetingTaskId) {
           await this.taskRepo.delete(lead.meetingTaskId).catch(() => {});
           await this.repo.update(lead.id, { meetingTaskId: null });
@@ -219,28 +223,39 @@ export class ClientsService {
         return;
       }
 
-      // Дедлайн = точное время nextContactAt. Если в БД пришла «голая» дата
-      // (00:00), оставляем 12:00 как разумный дефолт — иначе встреча упадёт
-      // в полночь и в календаре будет неудобно.
-      const deadline = new Date(nextDate);
-      if (deadline.getHours() === 0 && deadline.getMinutes() === 0) {
-        deadline.setHours(12, 0, 0, 0);
+      const nextDate = lead.nextContactAt ? new Date(lead.nextContactAt) : null;
+      const isScheduled = !!nextDate;
+
+      let deadline: Date;
+      let title: string;
+
+      if (isScheduled) {
+        // Точное время nextContactAt. Если пришла голая дата (00:00) —
+        // ставим 12:00 как разумный дефолт.
+        deadline = new Date(nextDate as Date);
+        if (deadline.getHours() === 0 && deadline.getMinutes() === 0) {
+          deadline.setHours(12, 0, 0, 0);
+        }
+        title = this.buildMeetingTaskTitle(lead);
+      } else {
+        // Follow-up по новому/активному лиду. Дедлайн — сегодня 10:00.
+        // Если задача уже существовала, её дедлайн НЕ перезаписываем (МП
+        // мог сам перетащить в календаре), просто обновляем title/desc.
+        deadline = new Date();
+        deadline.setHours(10, 0, 0, 0);
+        title = this.buildFollowUpTaskTitle(lead);
       }
 
-      const title = this.buildMeetingTaskTitle(lead);
       const description = this.buildMeetingTaskDescription(lead);
 
       if (lead.meetingTaskId) {
-        // Обновляем существующую задачу. Если она удалена вручную —
-        // снова создадим новую.
         const exists = await this.taskRepo.findOne({ where: { id: lead.meetingTaskId } });
         if (exists) {
-          await this.taskRepo.update(lead.meetingTaskId, {
-            title,
-            description,
-            deadline,
-            assigneeId: lead.ownerId,
-          });
+          // Дату обновляем только если у клиента есть конкретное расписание
+          // (nextContactAt). Иначе сохраняем то, куда МП утащил задачу руками.
+          const patch: any = { title, description, assigneeId: lead.ownerId };
+          if (isScheduled) patch.deadline = deadline;
+          await this.taskRepo.update(lead.meetingTaskId, patch);
           return;
         }
       }
@@ -268,6 +283,13 @@ export class ClientsService {
     const stage = lead.onboardingStage ? this.stageLabel(lead.onboardingStage) : null;
     if (stage) return `📅 ${stage} с клиентом: ${lead.name}`;
     return `📅 Встреча с клиентом: ${lead.name}`;
+  }
+
+  /** Заголовок follow-up задачи (когда у лида нет назначенной встречи). */
+  private buildFollowUpTaskTitle(lead: ClientLead): string {
+    const stage = lead.onboardingStage ? this.stageLabel(lead.onboardingStage) : null;
+    if (stage) return `📋 ${stage}: ${lead.name}`;
+    return `📋 Новый лид: ${lead.name}`;
   }
 
   private buildMeetingTaskDescription(lead: ClientLead): string {
