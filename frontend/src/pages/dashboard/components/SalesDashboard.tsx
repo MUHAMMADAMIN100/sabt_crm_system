@@ -239,51 +239,56 @@ export default function SalesDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* KPI блок — план/факт за месяц, считается автоматически из CRM */}
-      {kpi && (
-        <CollapsibleSection
-          id="sales-kpi"
-          title={
-            <div className="flex items-center justify-between w-full">
-              <h3 className="section-title">📊 KPI менеджера — этот месяц</h3>
-              <span className={clsx(
-                'text-xs font-semibold tabular-nums',
-                kpi.overallPercent >= 100 ? 'text-emerald-600' :
-                kpi.overallPercent >= 70  ? 'text-amber-600'   : 'text-red-600',
-              )}>
-                {kpi.overallPercent}% от плана
-              </span>
-            </div>
-          }
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {kpi.items.map((it: any) => (
-              <div key={it.key} className={clsx(
-                'rounded-xl border p-3 space-y-1.5',
-                it.done
-                  ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-900/40'
-                  : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700',
-              )}>
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-medium text-surface-600 dark:text-surface-300">{it.label}</span>
-                  <span className="text-[10px] text-surface-400">цель {it.target}</span>
-                </div>
-                <div className="flex items-baseline gap-1">
-                  <span className={clsx(
-                    'text-xl font-bold tabular-nums',
-                    it.done ? 'text-emerald-600 dark:text-emerald-400' : 'text-surface-800 dark:text-surface-100',
-                  )}>
-                    {it.value}
-                  </span>
-                  <span className="text-xs text-surface-400">/ {it.target}</span>
-                  {it.done && <span className="ml-auto text-[10px] font-semibold text-emerald-600">✓</span>}
-                </div>
-                <ProgressBar value={it.percent} />
-              </div>
-            ))}
+      {/* KPI блок — план/факт за месяц, считается автоматически из CRM.
+          Рендерим всегда (даже до получения данных), чтобы блок не пропадал,
+          если /clients/kpi временно недоступен. Тогда показываем 0/цель. */}
+      <CollapsibleSection
+        id="sales-kpi"
+        title={
+          <div className="flex items-center justify-between w-full">
+            <h3 className="section-title">📊 KPI менеджера — этот месяц</h3>
+            <span className={clsx(
+              'text-xs font-semibold tabular-nums',
+              (kpi?.overallPercent ?? 0) >= 100 ? 'text-emerald-600' :
+              (kpi?.overallPercent ?? 0) >= 70  ? 'text-amber-600'   : 'text-red-600',
+            )}>
+              {kpi ? `${kpi.overallPercent}% от плана` : 'загрузка…'}
+            </span>
           </div>
-        </CollapsibleSection>
-      )}
+        }
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {(kpi?.items ?? [
+            { key: 'new_companies',   label: 'Новые компании в базе', target: 30, value: 0, percent: 0, done: false },
+            { key: 'cold_calls',      label: 'Холодные звонки',       target: 10, value: 0, percent: 0, done: false },
+            { key: 'personal_emails', label: 'Персональные письма',   target: 10, value: 0, percent: 0, done: false },
+            { key: 'meetings',        label: 'Встречи / созвоны',     target: 2,  value: 0, percent: 0, done: false },
+          ]).map((it: any) => (
+            <div key={it.key} className={clsx(
+              'rounded-xl border p-3 space-y-1.5',
+              it.done
+                ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-900/40'
+                : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700',
+            )}>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-xs font-medium text-surface-600 dark:text-surface-300">{it.label}</span>
+                <span className="text-[10px] text-surface-400">цель {it.target}</span>
+              </div>
+              <div className="flex items-baseline gap-1">
+                <span className={clsx(
+                  'text-xl font-bold tabular-nums',
+                  it.done ? 'text-emerald-600 dark:text-emerald-400' : 'text-surface-800 dark:text-surface-100',
+                )}>
+                  {it.value}
+                </span>
+                <span className="text-xs text-surface-400">/ {it.target}</span>
+                {it.done && <span className="ml-auto text-[10px] font-semibold text-emerald-600">✓</span>}
+              </div>
+              <ProgressBar value={it.percent} />
+            </div>
+          ))}
+        </div>
+      </CollapsibleSection>
 
       {/* Projects table */}
       <CollapsibleSection

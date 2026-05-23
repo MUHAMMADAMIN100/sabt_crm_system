@@ -110,23 +110,30 @@ export class ClientsService {
       return qb;
     };
 
-    const newCompanies = await base()
-      .andWhere('c.createdAt BETWEEN :from AND :to', { from: monthStart, to: monthEnd })
-      .getCount();
+    // Каждый счётчик отдельно через try/catch: если миграция с новыми
+    // колонками (contactEmail) ещё не прошла, отдельный запрос упадёт,
+    // но эндпоинт всё равно вернёт остальные значения, а не 500.
+    const safeCount = async (build: () => Promise<number>) => {
+      try { return await build(); } catch { return 0; }
+    };
 
-    const coldCalls = await base()
+    const newCompanies = await safeCount(() => base()
+      .andWhere('c.createdAt BETWEEN :from AND :to', { from: monthStart, to: monthEnd })
+      .getCount());
+
+    const coldCalls = await safeCount(() => base()
       .andWhere(`LOWER(COALESCE(c.channel, '')) IN ('call', 'phone', 'whatsapp', 'telegram')`)
       .andWhere('c.updatedAt BETWEEN :from AND :to', { from: monthStart, to: monthEnd })
-      .getCount();
+      .getCount());
 
-    const personalEmails = await base()
+    const personalEmails = await safeCount(() => base()
       .andWhere(`(LOWER(COALESCE(c.channel, '')) = 'email' OR COALESCE(c.contactEmail, '') <> '')`)
       .andWhere('c.lastContactAt BETWEEN :from AND :to', { from: monthStart, to: monthEnd })
-      .getCount();
+      .getCount());
 
-    const meetings = await base()
+    const meetings = await safeCount(() => base()
       .andWhere('c.nextContactAt BETWEEN :now AND :horizon', { now, horizon })
-      .getCount();
+      .getCount());
 
     const items = [
       { key: 'new_companies',   label: 'Новые компании в базе', target: 30, value: newCompanies },
