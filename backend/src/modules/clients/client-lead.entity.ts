@@ -59,9 +59,22 @@ export class ClientLead {
   @Column({ nullable: true })
   contactPerson: string;
 
-  /** Контакты ЛПР: телефон / email / instagram / telegram — свободный текст */
+  /** Старое поле «контакты одной строкой» — остаётся для миграции/совместимости.
+   *  Новый ввод заполняет contactPhone / contactInstagram / contactEmail. */
   @Column({ type: 'text', nullable: true })
   contactInfo: string;
+
+  /** Телефон ЛПР (отдельное поле — для звонков/поиска/KPI). */
+  @Column({ nullable: true })
+  contactPhone: string;
+
+  /** Instagram ЛПР (@handle или ссылка). */
+  @Column({ nullable: true })
+  contactInstagram: string;
+
+  /** Email ЛПР. */
+  @Column({ nullable: true })
+  contactEmail: string;
 
   @Column({ type: 'enum', enum: ClientLeadStatus, default: ClientLeadStatus.NEW })
   status: ClientLeadStatus;
@@ -93,7 +106,9 @@ export class ClientLead {
   @Column({ type: 'date', nullable: true })
   lastContactAt: Date;
 
-  @Column({ type: 'date', nullable: true })
+  /** Дата+время следующей встречи / контакта (timestamp). На этот момент
+   *  создаётся личная задача в Календаре и приходит напоминание. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
   nextContactAt: Date;
 
   /** Канал общения: whatsapp, instagram, telegram, email, call, ... */

@@ -1,27 +1,19 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi, tasksApi, filesApi, employeesApi, storiesApi, launchApi, riskApi } from '@/services/api.service'
+import { projectsApi, tasksApi, employeesApi, storiesApi } from '@/services/api.service'
 import { invalidateAfterTaskChange, invalidateAfterProjectChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
-import { PageLoader, StatusBadge, PriorityBadge, ProgressBar, Modal, Avatar, EmptyState, ConfirmDialog } from '@/components/ui'
-import { ArrowLeft, Plus, Upload, Paperclip, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase, Save, X, UserPlus, Download, DollarSign, Check, Camera, Layers } from 'lucide-react'
+import { PageLoader, StatusBadge, PriorityBadge, ProgressBar, Modal, Avatar, EmptyState } from '@/components/ui'
+import { ArrowLeft, Plus, Calendar, Users, CheckSquare, Edit, Trash2, Building2, Phone, Mail, MessageCircle, User, Briefcase, Save, X, UserPlus, Download, DollarSign, Check, Camera, Layers } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { shortenName } from '@/lib/name'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
-import GanttChart from '@/components/projects/GanttChart'
-import ProjectAdsTab from '@/components/projects/ProjectAdsTab'
-import ProjectImportantTab from '@/components/projects/ProjectImportantTab'
-import LaunchChecklistTab from '@/components/projects/LaunchChecklistTab'
 import DeleteWithReasonDialog from '@/components/tasks/DeleteWithReasonDialog'
-import ProjectRiskTab from '@/components/projects/ProjectRiskTab'
-import ProjectFinanceTab from '@/components/projects/ProjectFinanceTab'
-import ProjectContentPlanTab from '@/components/projects/ProjectContentPlanTab'
 import {
-  ProjectOverviewTab, ProjectDeliverablesTab, ProjectTeamWorkloadTab,
-  ProjectQualityTab, ProjectActivityTab,
+  ProjectOverviewTab, ProjectActivityTab,
 } from '@/components/projects/ProjectExtraTabs'
 import SMM_QUESTIONS from '@/config/smm-questions'
 import { downloadSmmBrief } from '@/lib/smmBrief'
@@ -61,7 +53,7 @@ const fileUrl = (path: string) => path?.startsWith('http') ? path : `${API_URL}$
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'files' | 'about' | 'client' | 'members' | 'gantt' | 'ads' | 'important' | 'launch' | 'risk' | 'finance' | 'content' | 'deliverables' | 'team' | 'quality' | 'activity'>('tasks')
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'about' | 'client' | 'members' | 'activity'>('tasks')
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
@@ -71,7 +63,6 @@ export default function ProjectDetailPage() {
   const [showAddMember, setShowAddMember] = useState(false)
   const [showChangeManager, setShowChangeManager] = useState(false)
   const [newManagerId, setNewManagerId] = useState('')
-  const [deleteFileId, setDeleteFileId] = useState<string | null>(null)
   const [projectForm, setProjectForm] = useState<any>({})
   const [clientForm, setClientForm] = useState<any>({})
   const [addMemberId, setAddMemberId] = useState('')
@@ -110,27 +101,6 @@ export default function ProjectDetailPage() {
     queryKey: ['project', id],
     queryFn: () => projectsApi.get(id!),
     refetchInterval: 30000,
-  })
-
-  // Загружаем launch-чеклист только пока проект ещё в статусе planning
-  // — индикатор показывается только в этот период.
-  const { data: launchState } = useQuery({
-    queryKey: ['launch-checklist', id],
-    queryFn: () => launchApi.get(id!),
-    enabled: !!id && project?.status === 'planning',
-  })
-
-  // Risk score — для бейджа в шапке (только активные проекты)
-  const { data: riskInfo } = useQuery({
-    queryKey: ['project-risk', id],
-    queryFn: () => riskApi.projectRiskDetail(id!),
-    enabled: !!id && !!project && !project.isArchived,
-  })
-
-  const { data: files } = useQuery({
-    queryKey: ['files', id],
-    queryFn: () => filesApi.byProject(id!),
-    enabled: activeTab === 'files',
   })
 
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
@@ -317,22 +287,6 @@ export default function ProjectDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось отправить'),
   })
 
-  const deleteFileMut = useMutation({
-    mutationFn: (fileId: string) => filesApi.remove(fileId),
-    onMutate: async (fileId: string) => {
-      setDeleteFileId(null)
-      await qc.cancelQueries({ queryKey: ['files', id] })
-      const previous = qc.getQueryData(['files', id])
-      qc.setQueryData(['files', id], (old: any[]) => old?.filter((f: any) => f.id !== fileId) ?? [])
-      return { previous }
-    },
-    onError: (_err: any, _vars: any, context: any) => {
-      qc.setQueryData(['files', id], context?.previous)
-      toast.error(t('common.error'))
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['files', id] }); qc.invalidateQueries({ queryKey: ['files-project', id] }); toast.success('Файл удалён') },
-  })
-
   const handleSaveProject = () => {
     updateProject.mutate({
       name: projectForm.name,
@@ -382,17 +336,6 @@ export default function ProjectDetailPage() {
   const handleRemoveMember = (memberId: string) => {
     const currentIds = (project?.members || []).map((m: any) => m.id).filter((mid: string) => mid !== memberId)
     updateProject.mutate({ memberIds: currentIds })
-  }
-
-  const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    try {
-      await filesApi.upload(file, id)
-      qc.invalidateQueries({ queryKey: ['files', id] })
-      qc.invalidateQueries({ queryKey: ['files-project', id] })
-      toast.success(t('files.uploaded'))
-    } catch { toast.error(t('files.uploadError')) }
   }
 
   if (isLoading) return <PageLoader />
@@ -478,36 +421,6 @@ export default function ProjectDetailPage() {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="page-title">{project.name}</h1>
             <StatusBadge status={project.status} />
-            {project.status === 'planning' && launchState && (
-              <button
-                onClick={() => setActiveTab('launch')}
-                title="Открыть launch-чеклист"
-                className={clsx(
-                  'text-xs px-2 py-1 rounded-full font-medium transition-colors',
-                  launchState.isComplete
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    : launchState.percent >= 70
-                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-                )}
-              >
-                🚧 Launch {launchState.completedCount}/{launchState.totalCount}
-              </button>
-            )}
-            {riskInfo && riskInfo.level !== 'green' && (
-              <button
-                onClick={() => setActiveTab('risk')}
-                title={`Риск-скор ${riskInfo.score}: ${riskInfo.factors.filter((f: any) => f.triggered).map((f: any) => f.label).join(', ')}`}
-                className={clsx(
-                  'text-xs px-2 py-1 rounded-full font-medium transition-colors',
-                  riskInfo.level === 'red'
-                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-                )}
-              >
-                {riskInfo.level === 'red' ? '🔥' : '⚠️'} Риск {riskInfo.score}
-              </button>
-            )}
           </div>
           {project.description && <p className="text-surface-500 dark:text-surface-400 text-sm mt-1">{project.description}</p>}
         </div>
@@ -645,24 +558,12 @@ export default function ProjectDetailPage() {
       )}
 
       <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
-        {(['overview', 'tasks', 'gantt', 'files', 'about', 'client', 'members', 'ads', 'content', 'deliverables', 'team', 'quality', 'important', 'launch', 'risk', 'finance', 'activity'] as const)
-          .filter(tab => tab !== 'ads' || project?.projectType === 'SMM')
-          .filter(tab => tab !== 'content' || project?.projectType === 'SMM')
-          .filter(tab => tab !== 'deliverables' || project?.projectType === 'SMM')
+        {(['overview', 'tasks', 'about', 'client', 'members', 'activity'] as const)
           .map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={clsx('px-4 py-3 sm:py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px]',
                 activeTab === tab ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400' : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300')}>
               {tab === 'overview' ? 'Обзор'
-                : tab === 'ads' ? 'Реклама'
-                : tab === 'important' ? 'Важное'
-                : tab === 'launch' ? 'Launch'
-                : tab === 'risk' ? 'Риски'
-                : tab === 'finance' ? 'Финансы'
-                : tab === 'content' ? 'Контент-план'
-                : tab === 'deliverables' ? 'Deliverables'
-                : tab === 'team' ? 'Команда'
-                : tab === 'quality' ? 'Качество'
                 : tab === 'activity' ? 'Активность'
                 : t(`tabs.${tab}`)}
             </button>
@@ -670,26 +571,7 @@ export default function ProjectDetailPage() {
       </div>
 
       {activeTab === 'overview' && project && <ProjectOverviewTab project={project} />}
-      {activeTab === 'deliverables' && project && <ProjectDeliverablesTab projectId={project.id} projectType={project.projectType} />}
-      {activeTab === 'team' && project && <ProjectTeamWorkloadTab project={project} />}
-      {activeTab === 'quality' && project && <ProjectQualityTab projectId={project.id} />}
       {activeTab === 'activity' && project && <ProjectActivityTab projectId={project.id} />}
-
-      {activeTab === 'launch' && project && (
-        <LaunchChecklistTab projectId={project.id} />
-      )}
-
-      {activeTab === 'risk' && project && (
-        <ProjectRiskTab projectId={project.id} projectType={project.projectType} />
-      )}
-
-      {activeTab === 'finance' && project && (
-        <ProjectFinanceTab project={project as any} />
-      )}
-
-      {activeTab === 'content' && project && (
-        <ProjectContentPlanTab projectId={project.id} />
-      )}
 
       {activeTab === 'tasks' && (
         <div className="flex gap-4 overflow-x-auto pb-3 lg:grid lg:grid-cols-4 lg:overflow-x-visible">
@@ -772,45 +654,6 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {activeTab === 'gantt' && (
-        <GanttChart
-          tasks={project.tasks || []}
-          projectStart={project.startDate}
-          projectEnd={project.endDate}
-        />
-      )}
-
-      {activeTab === 'files' && (
-        <div className="space-y-4">
-          <label className="btn-secondary cursor-pointer">
-            <Upload size={16} /> {t('files.upload')}
-            <input type="file" className="hidden" onChange={uploadFile} />
-          </label>
-          {!files?.length ? <EmptyState title={t('files.noFiles')} /> : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {files.map((f: any) => (
-                <div key={f.id} className="card flex items-center gap-3 hover:shadow-md transition-shadow group">
-                  <a href={fileUrl(f.path)} target="_blank" rel="noreferrer" download={f.originalName} className="flex items-center gap-3 flex-1 min-w-0">
-                    <Paperclip size={18} className="text-primary-600 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{f.originalName}</p>
-                      <p className="text-xs text-surface-400 dark:text-surface-500">{(f.size / 1024).toFixed(1)} KB</p>
-                    </div>
-                  </a>
-                  {isManagerPlus && (
-                    <button
-                      onClick={() => setDeleteFileId(f.id)}
-                      className="hidden group-hover:flex p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400 shrink-0"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {activeTab === 'about' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -1082,14 +925,6 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {activeTab === 'ads' && project?.projectType === 'SMM' && (
-        <ProjectAdsTab projectId={project.id} />
-      )}
-
-      {activeTab === 'important' && (
-        <ProjectImportantTab projectId={project.id} />
-      )}
-
       {/* Modal: Edit Project */}
       <Modal open={showEditProject} onClose={() => setShowEditProject(false)} title="Редактировать проект" size="xl">
         <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
@@ -1312,9 +1147,6 @@ export default function ProjectDetailPage() {
         onConfirm={(reason) => deleteTask.mutate({ id: deleteTaskId!, reason })}
         title={t('tasks.deleteConfirm')}
       />
-
-      <ConfirmDialog open={!!deleteFileId} onClose={() => setDeleteFileId(null)}
-        onConfirm={() => deleteFileMut.mutate(deleteFileId!)} title="Удалить файл?" message="Файл будет удалён безвозвратно." danger />
 
       {/* Modal: Request payment from client */}
       <Modal open={showRequestPayment} onClose={() => setShowRequestPayment(false)} title="Запросить оплату у клиента">

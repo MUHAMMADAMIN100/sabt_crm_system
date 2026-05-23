@@ -345,7 +345,14 @@ export default function ClientsPage() {
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell align-top">
                       {l.contactPerson && <div className="text-sm text-surface-800 dark:text-surface-200">{l.contactPerson}</div>}
-                      {l.contactInfo && <div className="text-[11px] text-surface-500 dark:text-surface-400 whitespace-pre-line">{l.contactInfo}</div>}
+                      <div className="text-[11px] text-surface-500 dark:text-surface-400 space-y-0.5">
+                        {l.contactPhone && <div>📞 {l.contactPhone}</div>}
+                        {l.contactInstagram && <div>📷 {l.contactInstagram}</div>}
+                        {l.contactEmail && <div>✉️ {l.contactEmail}</div>}
+                        {!l.contactPhone && !l.contactInstagram && !l.contactEmail && l.contactInfo && (
+                          <div className="whitespace-pre-line">{l.contactInfo}</div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 align-top">
                       <span className={clsx('inline-flex text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap', statusOpt?.color)}>
@@ -365,7 +372,7 @@ export default function ClientsPage() {
                           nextIsOverdue ? 'text-red-500 font-semibold' : nextIsSoon ? 'text-amber-600 dark:text-amber-400' : 'text-surface-500 dark:text-surface-400',
                         )}>
                           {nextIsOverdue && '🔴 '}{nextIsSoon && !nextIsOverdue && '🟠 '}
-                          {format(parseISO(l.nextContactAt.slice(0, 10)), 'dd.MM.yy')}
+                          {format(new Date(l.nextContactAt), 'dd.MM.yy HH:mm')}
                         </span>
                       ) : <span className="text-surface-400">—</span>}
                     </td>
@@ -430,13 +437,29 @@ export default function ClientsPage() {
 }
 
 function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loading, onAddToOnboarding }: any) {
+  // Старые лиды могли иметь contactInfo одной строкой — раскладываем
+  // эвристически: строка с @ — Instagram, с собакой — email, остальное — телефон.
+  const parseLegacyContactInfo = (raw: string) => {
+    const out = { phone: '', instagram: '', email: '' }
+    if (!raw) return out
+    for (const part of String(raw).split(/[\n,;]+/).map(s => s.trim()).filter(Boolean)) {
+      if (/^https?:\/\/(www\.)?instagram\.com/i.test(part) || /^@/.test(part)) out.instagram ||= part
+      else if (/@/.test(part) && /\./.test(part)) out.email ||= part
+      else out.phone ||= part
+    }
+    return out
+  }
+  const legacy = parseLegacyContactInfo(initial?.contactInfo)
+
   const { register, handleSubmit, watch } = useForm({ defaultValues: {
     name: initial?.name || '',
     sphere: initial?.sphere || '',
     problem: initial?.problem || '',
     address: initial?.address || '',
     contactPerson: initial?.contactPerson || '',
-    contactInfo: initial?.contactInfo || '',
+    contactPhone: initial?.contactPhone || legacy.phone,
+    contactInstagram: initial?.contactInstagram || legacy.instagram,
+    contactEmail: initial?.contactEmail || legacy.email,
     status: initial?.status || 'new',
     interest: initial?.interest || '',
     dealPotential: initial?.dealPotential || '',
@@ -444,7 +467,8 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
     channel: initial?.channel || '',
     nextStep: initial?.nextStep || '',
     lastContactAt: initial?.lastContactAt ? String(initial.lastContactAt).slice(0, 10) : '',
-    nextContactAt: initial?.nextContactAt ? String(initial.nextContactAt).slice(0, 10) : '',
+    // datetime-local требует формат YYYY-MM-DDTHH:mm — обрезаем ISO до минут.
+    nextContactAt: initial?.nextContactAt ? String(initial.nextContactAt).slice(0, 16) : '',
     rejectionReason: initial?.rejectionReason || '',
   } })
 
@@ -455,7 +479,12 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
     dealPotential: data.dealPotential ? Number(data.dealPotential) : null,
     interest: data.interest || null,
     lastContactAt: data.lastContactAt || null,
-    nextContactAt: data.nextContactAt || null,
+    // datetime-local → ISO. Если время не выбрано, бэкенд получит null.
+    nextContactAt: data.nextContactAt ? new Date(data.nextContactAt).toISOString() : null,
+    // Старое поле больше не редактируется напрямую, но оставляем его в payload
+    // как «собранный текст» — для бэк-совместимости с местами, где оно ещё читается.
+    contactInfo: [data.contactPhone, data.contactInstagram, data.contactEmail]
+      .filter(Boolean).join('\n') || null,
   })
   const submit = (data: any) => onSubmit(normalize(data))
   const submitWithOnb = (data: any) => onSubmitWithOnboarding(normalize(data))
@@ -483,13 +512,21 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
             <label className="label">Проблема / что нужно</label>
             <textarea {...register('problem')} rows={2} className="input resize-none" placeholder="Разработка сайта, SMM-продвижение..." />
           </div>
-          <div>
+          <div className="sm:col-span-2">
             <label className="label">ЛПР (кто принимает решение)</label>
             <input {...register('contactPerson')} className="input" placeholder="Иван Иванов — директор" />
           </div>
           <div>
-            <label className="label">Контакты ЛПР</label>
-            <textarea {...register('contactInfo')} rows={2} className="input resize-none" placeholder="+992 900 00 00 00&#10;@instagram_handle&#10;email@domain.com" />
+            <label className="label">📞 Телефон ЛПР</label>
+            <input type="tel" {...register('contactPhone')} className="input" placeholder="+992 900 00 00 00" />
+          </div>
+          <div>
+            <label className="label">📷 Instagram ЛПР</label>
+            <input {...register('contactInstagram')} className="input" placeholder="@instagram_handle" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">✉️ Email ЛПР</label>
+            <input type="email" {...register('contactEmail')} className="input" placeholder="email@domain.com" />
           </div>
           <div>
             <label className="label">Статус *</label>
@@ -529,8 +566,11 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
             <input type="date" {...register('lastContactAt')} className="input" />
           </div>
           <div>
-            <label className="label">Дата следующего контакта</label>
-            <input type="date" {...register('nextContactAt')} className="input" />
+            <label className="label">📅 Дата + время встречи / след. контакта</label>
+            <input type="datetime-local" {...register('nextContactAt')} className="input" />
+            <p className="text-[10px] text-surface-400 mt-1">
+              Появится в Календаре на выбранный час и придёт напоминание.
+            </p>
           </div>
           <div className="sm:col-span-2">
             <label className="label">Следующий шаг</label>

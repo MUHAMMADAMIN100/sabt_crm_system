@@ -27,7 +27,10 @@ export class ClientsService {
       .leftJoinAndSelect('c.owner', 'owner');
     if (f.search) {
       qb.andWhere(
-        '(c.name ILIKE :s OR c.sphere ILIKE :s OR c.contactPerson ILIKE :s OR c.contactInfo ILIKE :s OR c.address ILIKE :s)',
+        `(c.name ILIKE :s OR c.sphere ILIKE :s OR c.contactPerson ILIKE :s
+          OR c.contactInfo ILIKE :s OR c.contactPhone ILIKE :s
+          OR c.contactInstagram ILIKE :s OR c.contactEmail ILIKE :s
+          OR c.address ILIKE :s)`,
         { s: `%${f.search}%` },
       );
     }
@@ -147,9 +150,13 @@ export class ClientsService {
         return;
       }
 
-      // Дедлайн = 12:00 указанной даты (чтобы не зависеть от tz).
+      // Дедлайн = точное время nextContactAt. Если в БД пришла «голая» дата
+      // (00:00), оставляем 12:00 как разумный дефолт — иначе встреча упадёт
+      // в полночь и в календаре будет неудобно.
       const deadline = new Date(nextDate);
-      deadline.setHours(12, 0, 0, 0);
+      if (deadline.getHours() === 0 && deadline.getMinutes() === 0) {
+        deadline.setHours(12, 0, 0, 0);
+      }
 
       const title = this.buildMeetingTaskTitle(lead);
       const description = this.buildMeetingTaskDescription(lead);
@@ -198,7 +205,13 @@ export class ClientsService {
     const lines: string[] = [];
     if (lead.sphere) lines.push(`Сфера: ${lead.sphere}`);
     if (lead.contactPerson) lines.push(`ЛПР: ${lead.contactPerson}`);
-    if (lead.contactInfo) lines.push(`Контакты: ${lead.contactInfo}`);
+    if (lead.contactPhone)     lines.push(`📞 ${lead.contactPhone}`);
+    if (lead.contactInstagram) lines.push(`📷 ${lead.contactInstagram}`);
+    if (lead.contactEmail)     lines.push(`✉️ ${lead.contactEmail}`);
+    // Старое поле — для тех лидов, которые ещё не переразложили.
+    if (lead.contactInfo && !lead.contactPhone && !lead.contactInstagram && !lead.contactEmail) {
+      lines.push(`Контакты: ${lead.contactInfo}`);
+    }
     if (lead.problem) lines.push(`Задача: ${lead.problem}`);
     if (lead.channel) lines.push(`Канал: ${lead.channel}`);
     return lines.join('\n');
