@@ -72,8 +72,13 @@ export class FinanceService {
     if (!dto.description || !dto.description.trim()) {
       throw new BadRequestException('Описание обязательно');
     }
+    const splits = this.normalizeSplits(dto.splits, Number(dto.amount));
     const t = this.repo.create({
       ...dto,
+      // Если сплит задан — `account` ставим в счёт первой части (для обратной
+      // совместимости со старыми отчётами, которые не читают splits).
+      account: splits ? splits[0].account : dto.account,
+      splits,
       createdById: dto.createdById ?? createdById,
       status: dto.status ?? FinanceTxStatus.COMPLETED,
     });
@@ -89,8 +94,47 @@ export class FinanceService {
       throw new BadRequestException('Описание не может быть пустым');
     }
     const { id: _id, createdAt, updatedAt, createdById, ...patch } = dto as any;
+    if (patch.splits !== undefined) {
+      const amount = patch.amount != null ? Number(patch.amount) : Number((await this.findOne(id)).amount);
+      patch.splits = this.normalizeSplits(patch.splits, amount);
+      if (patch.splits) patch.account = patch.splits[0].account;
+    }
     await this.repo.update(id, patch);
     return this.findOne(id);
+  }
+
+  /** Проверяем, что splits корректны и сумма частей == полной сумме.
+   *  Возвращаем нормализованный массив (или null если splits пуст/не задан). */
+  private normalizeSplits(
+    raw: any,
+    totalAmount: number,
+  ): Array<{ account: FinanceAccount; amount: number }> | null {
+    if (raw == null) return null;
+    if (!Array.isArray(raw) || raw.length === 0) return null;
+    // Один счёт в сплите — это не сплит, схлопываем.
+    if (raw.length === 1) return null;
+
+    const validAccounts = Object.values(FinanceAccount) as string[];
+    const items = raw.map((r: any, idx: number) => {
+      const amount = Number(r?.amount);
+      const account = r?.account;
+      if (!validAccounts.includes(account)) {
+        throw new BadRequestException(`splits[${idx}]: неизвестный счёт «${account}»`);
+      }
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new BadRequestException(`splits[${idx}]: сумма должна быть больше нуля`);
+      }
+      return { account: account as FinanceAccount, amount: Math.round(amount * 100) / 100 };
+    });
+
+    const sum = items.reduce((s, it) => s + it.amount, 0);
+    // Допускаем погрешность копеек после округления.
+    if (Math.abs(sum - totalAmount) > 0.01) {
+      throw new BadRequestException(
+        `Сумма сплита (${sum.toFixed(2)}) не равна общей сумме (${totalAmount.toFixed(2)})`,
+      );
+    }
+    return items;
   }
 
   async remove(id: string) {
@@ -102,37 +146,55 @@ export class FinanceService {
   // ─── AGGREGATORS ─────────────────────────────────────────────────
 
   /** Сводка по каждому из трёх счетов: баланс, доход, расход, кол-во.
-   *  Транзакции со статусом cancelled не учитываются. */
+   *  Транзакции со статусом cancelled не учитываются.
+   *
+   *  Сплит-оплаты разносятся по счетам в соответствии с частями: одна
+   *  транзакция 1000 → 600 Alif + 400 DC даст +600 балансу Alif и +400 DC.
+   *  Для счётчика count сплит считается как 1 транзакция на основной счёт
+   *  (account), чтобы количество не задваивалось. */
   async getAccountsSummary() {
-    const rows: Array<{ account: string; type: string; total: string; cnt: string }> = await this.repo
-      .createQueryBuilder('t')
-      .select('t.account', 'account')
-      .addSelect('t.type', 'type')
-      .addSelect('SUM(t.amount)', 'total')
-      .addSelect('COUNT(*)', 'cnt')
-      .where(`t.status != 'cancelled'`)
-      .groupBy('t.account')
-      .addGroupBy('t.type')
-      .getRawMany();
-
     const accounts: FinanceAccount[] = [
       FinanceAccount.ALIF, FinanceAccount.DUSHANBE_CITY, FinanceAccount.CASH,
     ];
-    const summary = accounts.map(acc => {
-      const income  = Number(rows.find(r => r.account === acc && r.type === 'income')?.total  || 0);
-      const expense = Number(rows.find(r => r.account === acc && r.type === 'expense')?.total || 0);
-      const incomeCnt  = Number(rows.find(r => r.account === acc && r.type === 'income')?.cnt  || 0);
-      const expenseCnt = Number(rows.find(r => r.account === acc && r.type === 'expense')?.cnt || 0);
-      return {
-        account: acc,
-        balance: income - expense,
-        income,
-        expense,
-        count: incomeCnt + expenseCnt,
-      };
+
+    // Тащим все нужные поля и считаем агрегаты в памяти — простое и
+    // надёжное, объёмов транзакций для агентства это вполне выдерживает.
+    const txs = await this.repo.find({
+      where: {},
+      select: ['id', 'type', 'amount', 'account', 'splits', 'status'] as any,
     });
 
-    // Также «всего» по всем счетам
+    const init = () => ({ income: 0, expense: 0, count: 0 });
+    const map: Record<string, { income: number; expense: number; count: number }> = {};
+    for (const acc of accounts) map[acc] = init();
+
+    for (const t of txs) {
+      if (t.status === FinanceTxStatus.CANCELLED) continue;
+      const total = Number(t.amount) || 0;
+      const isIncome = t.type === FinanceTxType.INCOME;
+      // count — по «основному» счёту, чтобы не дублировать одну транзакцию.
+      if (map[t.account]) map[t.account].count += 1;
+
+      const parts = Array.isArray(t.splits) && t.splits.length > 0
+        ? t.splits
+        : [{ account: t.account, amount: total }];
+      for (const p of parts) {
+        const bucket = map[p.account];
+        if (!bucket) continue;
+        const amt = Number(p.amount) || 0;
+        if (isIncome) bucket.income += amt;
+        else          bucket.expense += amt;
+      }
+    }
+
+    const summary = accounts.map(acc => ({
+      account: acc,
+      balance: map[acc].income - map[acc].expense,
+      income:  map[acc].income,
+      expense: map[acc].expense,
+      count:   map[acc].count,
+    }));
+
     const allIncome  = summary.reduce((s, a) => s + a.income, 0);
     const allExpense = summary.reduce((s, a) => s + a.expense, 0);
     const allCount   = summary.reduce((s, a) => s + a.count, 0);

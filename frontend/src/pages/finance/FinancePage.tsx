@@ -549,9 +549,20 @@ function TransactionsSection({
                     <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800">{catLabel(tx.category)}</span>
                   </td>
                   <td className="px-3 py-2 text-xs whitespace-nowrap">
-                    <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800">
-                      {ACCOUNTS.find(a => a.id === tx.account)?.label ?? tx.account}
-                    </span>
+                    {Array.isArray(tx.splits) && tx.splits.length > 1 ? (
+                      <span
+                        className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 cursor-help"
+                        title={tx.splits.map((s: any) =>
+                          `${ACCOUNTS.find(a => a.id === s.account)?.label ?? s.account}: ${fmtMoney(s.amount)}`,
+                        ).join('\n')}
+                      >
+                        🔀 Сплит · {tx.splits.length}
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800">
+                        {ACCOUNTS.find(a => a.id === tx.account)?.label ?? tx.account}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', STATUS_INFO[tx.status]?.color)}>
@@ -616,11 +627,18 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
   const [type, setType] = useState<'income' | 'expense'>(initial?.type ?? defaultType ?? 'income')
   // Счёт — отдельным state'ом, чтобы отрисовать кнопками-сегментами наверху.
   const [account, setAccount] = useState<string>(initial?.account ?? defaultAccount ?? 'alif')
+  // Сплит-оплата: часть суммы на один счёт, часть на другой.
+  // splitMode: false — обычный режим, один счёт. true — два и более счёта.
+  const initialSplits: Array<{ account: string; amount: string }> = Array.isArray(initial?.splits) && initial.splits.length > 1
+    ? initial.splits.map((s: any) => ({ account: s.account, amount: String(s.amount) }))
+    : [{ account: 'alif', amount: '' }, { account: 'dushanbe_city', amount: '' }]
+  const [splitMode, setSplitMode] = useState<boolean>(Array.isArray(initial?.splits) && initial.splits.length > 1)
+  const [splits, setSplits] = useState(initialSplits)
   // Транзакция по сотруднику (Штраф/Аванс) — упрощённый вид формы.
   const emp = initial?.employee
   const isEmployeeTx = !!emp
   const todayIso = new Date().toISOString().slice(0, 10)
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, watch, formState: { errors } } = useForm({
     defaultValues: {
       amount: initial?.amount ?? '',
       date: initial?.date ? String(initial.date).slice(0, 10) : todayIso,
@@ -634,20 +652,46 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
       comment: initial?.comment ?? '',
     },
   })
+  const watchedAmount = Number(watch('amount')) || 0
+  const splitsSum = splits.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+  const splitsDelta = Math.round((watchedAmount - splitsSum) * 100) / 100
+
+  const updateSplit = (idx: number, patch: Partial<{ account: string; amount: string }>) =>
+    setSplits(prev => prev.map((p, i) => i === idx ? { ...p, ...patch } : p))
+  const addSplit = () => setSplits(prev => [...prev, { account: 'cash', amount: '' }])
+  const removeSplit = (idx: number) => setSplits(prev => prev.length <= 2 ? prev : prev.filter((_, i) => i !== idx))
 
   return (
     <form
-      onSubmit={handleSubmit((data: any) => onSubmit({
-        ...data,
-        type,
-        account,
-        // Сумма всегда положительная — знак определяет тип (доход/расход).
-        amount: Math.abs(Number(data.amount)) || 0,
-        paymentMethod: data.paymentMethod || null,
-        counterparty: data.counterparty || null,
-        project: data.project || null,
-        comment: data.comment || null,
-      }))}
+      onSubmit={handleSubmit((data: any) => {
+        const amount = Math.abs(Number(data.amount)) || 0
+        let payloadSplits: Array<{ account: string; amount: number }> | null = null
+        let resolvedAccount = account
+        if (splitMode) {
+          payloadSplits = splits.map(s => ({ account: s.account, amount: Number(s.amount) || 0 }))
+          const sum = payloadSplits.reduce((s, p) => s + p.amount, 0)
+          if (Math.abs(sum - amount) > 0.01) {
+            toast.error(`Сумма сплита (${sum}) не равна общей сумме (${amount})`)
+            return
+          }
+          if (payloadSplits.some(p => p.amount <= 0)) {
+            toast.error('Каждая часть должна быть больше нуля')
+            return
+          }
+          resolvedAccount = payloadSplits[0].account
+        }
+        onSubmit({
+          ...data,
+          type,
+          account: resolvedAccount,
+          splits: payloadSplits,
+          amount,
+          paymentMethod: data.paymentMethod || null,
+          counterparty: data.counterparty || null,
+          project: data.project || null,
+          comment: data.comment || null,
+        })
+      })}
       className="space-y-4 max-h-[75vh] overflow-y-auto pr-1"
     >
       {/* Доход / Расход */}
@@ -662,27 +706,88 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
         </button>
       </div>
 
-      {/* Счёт — кнопки-сегменты наверху. Скрыт для транзакций по сотруднику. */}
+      {/* Счёт. Сегмент «Один счёт / Сплит» переключает между двумя
+          режимами: одна оплата vs приём на несколько счетов одной сделкой. */}
       {!isEmployeeTx && (
         <div>
-          <label className="text-xs font-medium text-gray-700 dark:text-gray-300 block mb-1.5">Счёт *</label>
-          <div className="flex flex-wrap gap-2">
-            {ACCOUNTS.filter(a => a.id !== 'all').map(a => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => setAccount(a.id)}
-                className={clsx(
-                  'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
-                  account === a.id
-                    ? 'bg-purple-600 text-white border-purple-600'
-                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-purple-300',
-                )}
-              >
-                {a.label}
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Счёт *</label>
+            <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden text-xs">
+              <button type="button" onClick={() => setSplitMode(false)}
+                className={clsx('px-2.5 py-1', !splitMode ? 'bg-purple-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800')}>
+                Один счёт
               </button>
-            ))}
+              <button type="button" onClick={() => setSplitMode(true)}
+                className={clsx('px-2.5 py-1', splitMode ? 'bg-purple-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800')}>
+                🔀 Сплит
+              </button>
+            </div>
           </div>
+
+          {!splitMode ? (
+            <div className="flex flex-wrap gap-2">
+              {ACCOUNTS.filter(a => a.id !== 'all').map(a => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setAccount(a.id)}
+                  className={clsx(
+                    'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
+                    account === a.id
+                      ? 'bg-purple-600 text-white border-purple-600'
+                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-purple-300',
+                  )}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2 rounded-xl border border-purple-200 dark:border-purple-900/50 bg-purple-50/40 dark:bg-purple-900/10 p-3">
+              {splits.map((sp, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={sp.amount}
+                    onChange={e => updateSplit(idx, { amount: e.target.value })}
+                    placeholder="Сумма"
+                    className="input w-28 text-sm"
+                  />
+                  <select
+                    value={sp.account}
+                    onChange={e => updateSplit(idx, { account: e.target.value })}
+                    className="input flex-1 text-sm"
+                  >
+                    {ACCOUNTS.filter(a => a.id !== 'all').map(a => (
+                      <option key={a.id} value={a.id}>{a.label}</option>
+                    ))}
+                  </select>
+                  {splits.length > 2 && (
+                    <button type="button" onClick={() => removeSplit(idx)}
+                      className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                      title="Удалить часть"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-1">
+                <button type="button" onClick={addSplit} className="text-xs font-medium text-purple-600 hover:underline">
+                  + Ещё счёт
+                </button>
+                <span className={clsx(
+                  'text-xs tabular-nums font-medium',
+                  Math.abs(splitsDelta) < 0.01 ? 'text-emerald-600' : 'text-red-600',
+                )}>
+                  Σ {splitsSum.toLocaleString('ru-RU')} / {watchedAmount.toLocaleString('ru-RU')}
+                  {Math.abs(splitsDelta) >= 0.01 && ` (Δ ${splitsDelta > 0 ? '+' : ''}${splitsDelta})`}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

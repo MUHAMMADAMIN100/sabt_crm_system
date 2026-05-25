@@ -61,9 +61,20 @@ export class FinanceTransaction {
   @Column({ type: 'date' })
   date: string;
 
+  /** «Основной» счёт. Для одиночных оплат — единственный счёт зачисления.
+   *  Для сплит-оплат — оставлен для обратной совместимости (отчёты, которые
+   *  ещё не научились читать `splits`, корректно покажут хотя бы один счёт). */
   @Index()
   @Column({ type: 'enum', enum: FinanceAccount })
   account: FinanceAccount;
+
+  /** Сплит-оплата: часть суммы на один счёт, часть на другой.
+   *  Каждый элемент: { account: FinanceAccount, amount: number }.
+   *  Сумма всех частей должна равняться `amount`.
+   *  Если null/пусто — транзакция считается одиночной по `account`.
+   *  Балансы по счетам считаются из splits, если они есть. */
+  @Column({ type: 'jsonb', nullable: true })
+  splits: Array<{ account: FinanceAccount; amount: number }> | null;
 
   @Index()
   @Column({ type: 'enum', enum: FinanceCategory })
