@@ -95,15 +95,18 @@ export default function TaskDrawer({
   const canEdit = isManagerPlus || isOwn || isCreator
   const canChangeStatus = isManagerPlus || isOwn
 
+  // Не рендерим drawer вообще, пока он закрыт. Иначе содержимое (включая
+  // placeholder «Загрузка…») остаётся в DOM и в некоторых браузерах
+  // протекает за пределами viewport (translate-x-full срабатывает не везде
+  // одинаково), создавая «фантомную» панель справа.
+  if (!isOpen) return null
+
   return (
     <>
       {/* Overlay — затемнение + блюр, клик закрывает drawer. */}
       <div
         onClick={onClose}
-        className={clsx(
-          'fixed inset-0 z-40 bg-black/60 transition-opacity duration-300',
-          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none',
-        )}
+        className="fixed inset-0 z-40 bg-black/60 transition-opacity duration-300"
         style={{ WebkitBackdropFilter: 'blur(10px)', backdropFilter: 'blur(10px)' }}
       />
       <aside
@@ -112,8 +115,7 @@ export default function TaskDrawer({
         className={clsx(
           'fixed top-0 right-0 z-50 h-full bg-white dark:bg-surface-900 shadow-2xl border-l border-surface-200 dark:border-surface-700',
           'w-full sm:w-[440px] lg:w-[520px] xl:w-[600px] flex flex-col',
-          'transform transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-          isOpen ? 'translate-x-0' : 'translate-x-full',
+          'animate-slide-in-right',
         )}
       >
         <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-surface-100 dark:border-surface-700">
