@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from 'react'
-import StoryCalendar from '@/components/stories/StoryCalendar'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { shortenName } from '@/lib/name'
 import { tasksApi, projectsApi, employeesApi } from '@/services/api.service'
@@ -52,11 +51,6 @@ export default function TasksPage() {
   // МП по продажам: видят задачи своего направления и могут создавать
   // задачи в доступных им проектах (сервер фильтрует /tasks и /projects).
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
-  // Story widget visible to everyone except admin/founder (they have analytics).
-  // PM sees it too because they may be a member of other projects where they
-  // need to publish stories themselves.
-  // МП по разработке тоже не публикует контент — виджет «Истории» им не нужен.
-  const showStoryWidget = !['admin', 'founder', 'co_founder', 'sales_manager_dev'].includes(user?.role || '')
   const isSMM = user?.role === 'smm_specialist'
   const qc = useQueryClient()
   const { t } = useTranslation()
@@ -462,8 +456,8 @@ export default function TasksPage() {
         </div>
       )}
 
-      <div className={clsx(showStoryWidget && 'grid grid-cols-1 lg:grid-cols-3 gap-4')}>
-      <div className={clsx(showStoryWidget && 'lg:col-span-2')}>
+      <div>
+      <div>
       {!tasks?.length ? (
         <EmptyState title={t('tasks.noTasks')} description={t('tasks.createFirst')} action={
           <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
@@ -620,13 +614,7 @@ export default function TasksPage() {
       )}
       <Pagination page={page} total={tasks.length} pageSize={PAGE_SIZE} onChange={setPage} />
       </div>{/* end tasks col */}
-
-      {showStoryWidget && (
-        <div className="lg:col-span-1">
-          <StoryCalendar compact />
-        </div>
-      )}
-      </div>{/* end grid */}
+      </div>{/* end wrapper */}
 
       {showCreate && (
         <Modal open onClose={() => { setShowCreate(false); setEditingTask(null) }} title={editingTask ? t('tasks.editTask') : t('tasks.newTask')} size="lg">
