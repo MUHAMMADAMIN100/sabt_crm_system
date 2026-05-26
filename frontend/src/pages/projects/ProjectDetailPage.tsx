@@ -344,7 +344,11 @@ export default function ProjectDetailPage() {
   if (!project) return <div className="text-surface-600 dark:text-surface-400">{t('projects.notFound')}</div>
 
   const isMember = project.members?.some((m: any) => m.id === user?.id) ?? false
-  const canCreateTask = isManagerPlus || isMember
+  // Менеджер именно этого проекта — даже если его «глобальная» роль не PM,
+  // он управляет проектом наравне с project_manager/head_smm.
+  const isProjectManagerOfThis = project.managerId === user?.id
+  const hasPmPowersHere = isManagerPlus || isProjectManagerOfThis
+  const canCreateTask = hasPmPowersHere || isMember
 
   // Sort active tasks by deadline ASC (closest/overdue first, no-deadline last).
   // Closed statuses (done/cancelled) keep the same logic so recently-finished
@@ -368,7 +372,7 @@ export default function ProjectDetailPage() {
   const participantCount = project.members?.length || 0
 
   // Drag and drop - for admins/managers and employees own tasks
-  const canDrag = (task: any) => isManagerPlus || task.assigneeId === user?.id
+  const canDrag = (task: any) => hasPmPowersHere || task.assigneeId === user?.id
   const handleDragStart = (e: React.DragEvent, task: any) => {
     if (!canDrag(task)) return
     setDraggedTask(task)
@@ -589,7 +593,7 @@ export default function ProjectDetailPage() {
               <div className="space-y-2 min-h-[300px] rounded-xl p-2 border-2 border-dashed border-surface-100 dark:border-surface-700 transition-colors">
                 {tasksByStatus[status].map((task: any) => {
                   const isOwnTask = task.assigneeId === user?.id
-                  const canChangeStatus = isManagerPlus || isOwnTask
+                  const canChangeStatus = hasPmPowersHere || isOwnTask
                   const dragOn = isDesktop && canDrag(task)
                   return (
                     <div key={task.id}
@@ -614,7 +618,7 @@ export default function ProjectDetailPage() {
                             </span>
                           )}
                         </div>
-                        {(isManagerPlus || isOwnTask) && (
+                        {(hasPmPowersHere || isOwnTask) && (
                           <div className="flex gap-0.5 ml-1 shrink-0">
                             <button onClick={(e) => { e.stopPropagation(); setEditingTask(task); setShowTaskForm(true) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400"><Edit size={12} /></button>
                             <button onClick={(e) => { e.stopPropagation(); setDeleteTaskId(task.id) }} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400"><Trash2 size={12} /></button>
@@ -1140,7 +1144,7 @@ export default function ProjectDetailPage() {
             loading={createTask.isPending || updateTask.isPending}
             initial={editingTask}
             fixedProjectId={id}
-            isAdmin={isManagerPlus}
+            isAdmin={hasPmPowersHere}
             currentUserId={user?.id}
           />
         </Modal>

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Task, TaskStatus, TaskPriority } from './task.entity';
 import { TaskAssignee } from './task-assignee.entity';
+import { Project } from '../projects/project.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -28,6 +29,7 @@ export class TasksService {
     @InjectRepository(TaskAssignee) private assigneesRepo: Repository<TaskAssignee>,
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(DailyReport) private reportRepo: Repository<DailyReport>,
+    @InjectRepository(Project) private projectRepo: Repository<Project>,
     private notificationsService: NotificationsService,
     private projectsService: ProjectsService,
     private mailService: MailService,
@@ -36,6 +38,26 @@ export class TasksService {
     private gateway: AppGateway,
     private taskResultsService: TaskResultsService,
   ) {}
+
+  /** Является ли пользователь PM в контексте конкретного проекта.
+   *  Возвращает true если:
+   *    - у пользователя «глобальная» PM-роль (admin/founder/co_founder/
+   *      smm_director/project_manager/head_smm), ИЛИ
+   *    - он назначен менеджером ИМЕННО этого проекта (project.managerId).
+   *  Без projectId — только проверка роли. */
+  private async hasPmPowersOnProject(
+    userId: string,
+    role: string | undefined,
+    projectId: string | null | undefined,
+  ): Promise<boolean> {
+    if (role && PM_ROLES.includes(role as UserRole)) return true;
+    if (!projectId) return false;
+    const proj = await this.projectRepo.findOne({
+      where: { id: projectId },
+      select: ['id', 'managerId'] as any,
+    });
+    return !!proj && proj.managerId === userId;
+  }
 
   /** Auto-create a daily_report row when a task transitions to DONE. */
   private async autoReportFromTask(task: Task) {
@@ -364,11 +386,14 @@ export class TasksService {
   }
 
   async create(dto: CreateTaskDto, userId: string, userRole?: string) {
-    // Workers (non-PM) can only create tasks assigned to themselves
-    const isPM = userRole && PM_ROLES.includes(userRole as UserRole);
+    // Workers (non-PM) can only create tasks assigned to themselves.
+    // НО: если пользователь — реальный менеджер целевого проекта (по
+    // project.managerId), он тоже может назначать на других, даже когда
+    // его «глобальная» роль не PM (его повысили только в этом проекте).
+    const isPmHere = await this.hasPmPowersOnProject(userId, userRole, dto.projectId);
     // МП по продажам тоже могут назначать задачи на других сотрудников
     // (фича календаря «как у основателя»).
-    const canAssignOthers = isPM || isSalesManager(userRole);
+    const canAssignOthers = isPmHere || isSalesManager(userRole);
     if (!canAssignOthers) {
       dto.assigneeId = userId;
       // Multi-assignee тоже ограничиваем — только сам себе
@@ -523,7 +548,11 @@ export class TasksService {
 
     // Workers can only update tasks assigned to them OR created by them
     // (МП по продажам создаёт задачи в календаре — должен их редактировать).
+    // Исключение: если пользователь — реальный менеджер проекта задачи,
+    // он имеет PM-полномочия и может редактировать любую задачу в нём.
+    const isPmHere = await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
     if (
+      !isPmHere &&
       WORKER_ROLES.includes(user.role as UserRole) &&
       task.assigneeId !== user.id &&
       task.createdById !== user.id
@@ -713,8 +742,9 @@ export class TasksService {
     }
 
     const task = await this.findOne(id);
-    // Workers (any non-PM role) can only delete their own tasks (assigned to them or created by them)
-    const isPM = PM_ROLES.includes(user.role as UserRole);
+    // Workers (any non-PM role) can only delete their own tasks (assigned to them or created by them).
+    // Менеджер целевого проекта тоже может удалять задачи в своём проекте.
+    const isPM = await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
     if (!isPM && task.assigneeId !== user.id && task.createdById !== user.id) {
       throw new ForbiddenException('Not allowed');
     }
@@ -777,10 +807,11 @@ export class TasksService {
   }
 
   async approveTask(id: string, user: { id: string; role: string; name?: string }) {
-    if (!PM_ROLES.includes(user.role as UserRole)) {
+    const task = await this.findOne(id);
+    const isPM = await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
+    if (!isPM) {
       throw new ForbiddenException('Only project managers can approve tasks');
     }
-    const task = await this.findOne(id);
     if (task.status !== TaskStatus.REVIEW) {
       throw new BadRequestException('Задача должна быть на проверке');
     }
@@ -817,16 +848,16 @@ export class TasksService {
   }
 
   async returnTask(id: string, user: { id: string; role: string; name?: string }, reason: string) {
-    if (!PM_ROLES.includes(user.role as UserRole)) {
-      throw new ForbiddenException('Only project managers can return tasks');
-    }
-
     const taskRaw = await this.repo
       .createQueryBuilder('t')
       .select(['t.id', 't.title', 't.status', 't.assigneeId', 't.projectId', 't.reworkCount'])
       .where('t.id = :id', { id })
       .getRawOne();
     if (!taskRaw) throw new NotFoundException('Task not found');
+    const isPM = await this.hasPmPowersOnProject(user.id, user.role, taskRaw.t_projectId);
+    if (!isPM) {
+      throw new ForbiddenException('Only project managers can return tasks');
+    }
     if (taskRaw.t_status !== TaskStatus.REVIEW) {
       throw new BadRequestException('Задача должна быть на проверке');
     }

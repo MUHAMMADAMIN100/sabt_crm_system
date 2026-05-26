@@ -599,11 +599,16 @@ export class ProjectsService {
       );
     }
     await this.validateManagerAssignment(dto.managerId, dto.projectType);
+    // Менеджер проекта всегда должен быть в members — иначе он не пройдёт
+    // member-проверки в задачах и не появится в дропдаунах assignee.
+    const resolvedManagerId = dto.managerId || userId;
+    const memberIds = new Set<string>(dto.memberIds || []);
+    if (resolvedManagerId) memberIds.add(resolvedManagerId);
     const project = this.repo.create({
       ...dto,
-      managerId: dto.managerId || userId,
+      managerId: resolvedManagerId,
       salesManagerId: dto.salesManagerId || undefined,
-      members: dto.memberIds?.map(id => ({ id })) as unknown as User[],
+      members: Array.from(memberIds).map(id => ({ id })) as unknown as User[],
     });
     // If a tariff was selected → snapshot its name+price into the project so
     // future tariff renames/deletions don't rewrite history.
@@ -843,10 +848,21 @@ export class ProjectsService {
     }
 
     // If managerId is being changed, clear the cached manager object
-    // so TypeORM uses the new managerId instead of the stale relation
+    // so TypeORM uses the new managerId instead of the stale relation.
     if (managerChanged) {
       (project as any).manager = null;
       project.managerId = dto.managerId as any;
+    }
+
+    // Менеджер ВСЕГДА должен быть в составе проекта — иначе он не пройдёт
+    // member-проверки в задачах/файлах и не появится в дропдаунах assignee.
+    // Применяется и при смене менеджера, и при ручном редактировании members.
+    const effectiveManagerId = managerChanged ? dto.managerId : project.managerId;
+    if (effectiveManagerId) {
+      const currentMembers = (project.members || []) as Array<{ id: string }>;
+      if (!currentMembers.some(m => m.id === effectiveManagerId)) {
+        project.members = [...currentMembers, { id: effectiveManagerId }] as unknown as User[];
+      }
     }
 
     Object.assign(project, {
