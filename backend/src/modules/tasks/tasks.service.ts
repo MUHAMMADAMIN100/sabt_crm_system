@@ -316,6 +316,10 @@ export class TasksService {
       .leftJoinAndSelect('t.createdBy', 'createdBy')
       .leftJoinAndSelect('t.project', 'project');
 
+    // КП-задачи живут только в Онбординге на колонке «КП». В общих списках
+    // задач/календаря их быть не должно. Применяем глобально.
+    qb.andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`);
+
     if (filters.projectId) qb.andWhere('t.projectId = :projectId', { projectId: filters.projectId });
     // Поддержка multi-assignee: фильтр по assigneeId покрывает и legacy
     // assigneeId на самой задаче, и членство в task_assignees.
@@ -786,6 +790,8 @@ export class TasksService {
           OR (t.scope = 'personal' AND t."createdById" = :uid))`,
         { uid: userId },
       )
+      // КП-задачи скрыты из общих списков — они только в Онбординге.
+      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
       .orderBy('t.deadline', 'ASC', 'NULLS LAST');
 
     const tasks = await qb.getMany();
@@ -803,6 +809,8 @@ export class TasksService {
       .leftJoinAndSelect('t.project', 'project')
       .where('t.deadline < NOW()')
       .andWhere('t.status NOT IN (:...statuses)', { statuses: [TaskStatus.DONE, TaskStatus.CANCELLED] })
+      // КП-задачи скрыты из «Просроченных».
+      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
       .getMany();
   }
 
@@ -933,6 +941,8 @@ export class TasksService {
       .addSelect('COUNT(*)', 'count')
       .groupBy('t.status');
     if (projectId) qb.where('t.projectId = :projectId', { projectId });
+    // КП-задачи не учитываются в общих счётчиках.
+    qb.andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`);
     return qb.getRawMany();
   }
 

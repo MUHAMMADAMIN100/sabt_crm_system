@@ -77,13 +77,15 @@ export class DeadlineScheduler implements OnModuleInit {
     const tomorrow = new Date(now)
     tomorrow.setHours(0, 0, 0, 0)
 
-    const tasks = await this.taskRepo.find({
+    const allTasks = await this.taskRepo.find({
       where: {
         deadline: Between(tomorrow, in3days),
         status: Not(In([TaskStatus.DONE, TaskStatus.CANCELLED])),
       },
       relations: ['assignee', 'project'],
     })
+    // КП-задачи не рассылаем напоминаниями — они живут только в Онбординге.
+    const tasks = allTasks.filter(t => (t as any).originStage !== 'kp_creation')
 
     let sent = 0
     for (const task of tasks) {
@@ -134,13 +136,14 @@ export class DeadlineScheduler implements OnModuleInit {
     this.logger.log('Checking overdue tasks...')
 
     const now = new Date()
-    const overdue = await this.taskRepo.find({
+    const overdueRaw = await this.taskRepo.find({
       where: {
         deadline: LessThan(now),
         status: Not(In([TaskStatus.DONE, TaskStatus.CANCELLED])),
       },
       relations: ['assignee', 'project', 'project.manager'],
     })
+    const overdue = overdueRaw.filter(t => (t as any).originStage !== 'kp_creation')
 
     // Lookup founder/co-founder once (for escalation). Notify all if there are many.
     const founders = await this.userRepo.find({ where: [
@@ -342,14 +345,13 @@ export class DeadlineScheduler implements OnModuleInit {
         },
       })
 
-      // Count overdue tasks assigned to this employee
-      const overdueCount = await this.taskRepo.count({
-        where: {
-          assigneeId: emp.userId,
-          deadline: LessThan(new Date()),
-          status: Not(In([TaskStatus.DONE, TaskStatus.CANCELLED])),
-        },
-      })
+      // Count overdue tasks assigned to this employee. КП-задачи не учитываются.
+      const overdueCount = await this.taskRepo.createQueryBuilder('t')
+        .where('t.assigneeId = :uid', { uid: emp.userId })
+        .andWhere('t.deadline < NOW()')
+        .andWhere('t.status NOT IN (:...statuses)', { statuses: [TaskStatus.DONE, TaskStatus.CANCELLED] })
+        .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
+        .getCount()
 
       // Score formula: (positive * 10 - negative * 10 - overdue * 20) normalized to 0-100
       const rawScore = positive * 10 - negative * 10 - overdueCount * 20
@@ -536,14 +538,16 @@ export class DeadlineScheduler implements OnModuleInit {
       day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC',
     })
 
-    // Include tasks overdue from earlier AND due today — as long as they weren't finished
-    const tasks = await this.taskRepo.find({
+    // Include tasks overdue from earlier AND due today — as long as they weren't finished.
+    // КП-задачи в сводку не включаем.
+    const allTasks = await this.taskRepo.find({
       where: {
         deadline: LessThan(dayEnd),
         status: Not(In([TaskStatus.DONE, TaskStatus.CANCELLED])),
       },
       relations: ['assignee', 'project', 'project.manager'],
     })
+    const tasks = allTasks.filter(t => (t as any).originStage !== 'kp_creation')
 
     // Consider only tasks whose deadline is today in Dushanbe (not earlier ones — those
     // are handled by the daily overdue notifier). This job is the end-of-day verdict.
@@ -656,13 +660,14 @@ export class DeadlineScheduler implements OnModuleInit {
     const oneDayAgo = new Date()
     oneDayAgo.setHours(oneDayAgo.getHours() - 24)
 
-    const pendingReview = await this.taskRepo.find({
+    const pendingReviewRaw = await this.taskRepo.find({
       where: {
         status: TaskStatus.REVIEW,
         updatedAt: LessThan(oneDayAgo),
       },
       relations: ['project', 'assignee'],
     })
+    const pendingReview = pendingReviewRaw.filter(t => (t as any).originStage !== 'kp_creation')
 
     for (const task of pendingReview) {
       if (!task.project?.managerId) continue

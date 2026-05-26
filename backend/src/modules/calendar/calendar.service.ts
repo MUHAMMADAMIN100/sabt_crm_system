@@ -61,7 +61,10 @@ export class CalendarService {
       .andWhere(
         `(t.deadline >= :from AND COALESCE(t."startDate"::date, DATE(t."createdAt")) <= :to)`,
         { from, to },
-      );
+      )
+      // КП-задачи (автозадачи клиента на стадии КП) скрываем из Календаря —
+      // они должны быть видны только в Онбординге на колонке «КП».
+      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`);
 
     if (employeeId) taskQb.andWhere('t.assigneeId = :employeeId', { employeeId });
     if (projectId) taskQb.andWhere('t.projectId = :projectId', { projectId });

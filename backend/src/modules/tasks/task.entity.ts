@@ -85,6 +85,14 @@ export class Task {
   @Column({ type: 'enum', enum: TaskScope, default: TaskScope.BUSINESS })
   scope: TaskScope;
 
+  /** Этап онбординга клиента, из которого автогенерирована задача.
+   *  Значения: negotiation / meeting / kp_creation / contract / implementation.
+   *  Для обычных (ручных) задач — NULL. Используется, чтобы скрывать
+   *  КП-задачи из общих списков задач/календаря — они нужны только в
+   *  Онбординге на соответствующей колонке. */
+  @Column({ type: 'varchar', nullable: true })
+  originStage: string | null;
+
   /** Технические детали для задач разработки. JSON чтобы не плодить
    *  колонки и легко расширять — теперь включает все нужные dev-ссылки. */
   @Column({ type: 'jsonb', nullable: true })

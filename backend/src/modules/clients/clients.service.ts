@@ -248,12 +248,17 @@ export class ClientsService {
 
       const description = this.buildMeetingTaskDescription(lead);
 
+      // Запоминаем этап клиента в задаче — нужно, чтобы фронт/бэк могли
+      // скрывать КП-задачи из общих списков (они должны быть видны только
+      // в Онбординге на колонке «КП»).
+      const originStage = lead.onboardingStage || null;
+
       if (lead.meetingTaskId) {
         const exists = await this.taskRepo.findOne({ where: { id: lead.meetingTaskId } });
         if (exists) {
           // Дату обновляем только если у клиента есть конкретное расписание
           // (nextContactAt). Иначе сохраняем то, куда МП утащил задачу руками.
-          const patch: any = { title, description, assigneeId: lead.ownerId };
+          const patch: any = { title, description, assigneeId: lead.ownerId, originStage };
           if (isScheduled) patch.deadline = deadline;
           await this.taskRepo.update(lead.meetingTaskId, patch);
           return;
@@ -267,6 +272,7 @@ export class ClientsService {
         priority: TaskPriority.MEDIUM,
         status: TaskStatus.NEW,
         scope: TaskScope.PERSONAL,
+        originStage,
         createdById: lead.ownerId,
         assigneeId: lead.ownerId,
       });
