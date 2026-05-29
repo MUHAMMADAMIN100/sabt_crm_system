@@ -2,20 +2,18 @@ import { useState, useEffect, Suspense } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import { PageLoader } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
 import { useSocket } from '@/hooks/useSocket'
 import { authApi } from '@/services/api.service'
 import clsx from 'clsx'
 
-/** Тонкий лоадер ТОЛЬКО для контент-зоны при переходе между route'ами.
- *  Layout (Sidebar + Header) при этом остаётся смонтированным — sidebar
- *  не «мигает» и не теряет пункты при навигации. */
+/** Брендированный «пульсирующий S» лоадер при переходе между route'ами.
+ *  Layout (Sidebar + Header) остаётся смонтированным — sidebar не «мигает»
+ *  и не теряет пункты при навигации, а пользователь видит знакомый
+ *  логотип-плитку вместо пустоты. */
 function RouteLoader() {
-  return (
-    <div className="flex items-center justify-center py-20">
-      <div className="w-6 h-6 border-2 border-surface-300 dark:border-surface-700 border-t-primary-500 rounded-full animate-spin" />
-    </div>
-  )
+  return <PageLoader />
 }
 
 /** Каждые 60 сек шлём heartbeat — backend обновляет lastSeenAt текущей

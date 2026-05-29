@@ -199,13 +199,21 @@ export function Spinner({ size = 20, className }: { size?: number; className?: s
 }
 
 // ── PageLoader ───────────────────────────────────────────────────────
-/** Тонкий нейтральный лоадер. Используется на полных страницах (без
- *  Layout) — на /auth и в начальной загрузке. Внутри Layout роуты
- *  используют RouteLoader из Layout.tsx (просто spinner). */
+/** Брендированный «пульсирующий S» — узнаваемый лоадер для пустых
+ *  состояний загрузки. На светлой теме — белый плиточный фон + индиго
+ *  буква; на тёмной — индиго фон + белая буква. Красная точка — фирменный
+ *  маркер. */
 export function PageLoader() {
   return (
-    <div className="flex items-center justify-center h-64">
-      <div className="w-7 h-7 border-2 border-surface-300 dark:border-surface-700 border-t-primary-500 rounded-full animate-spin" />
+    <div className="flex flex-col items-center justify-center h-64 gap-4">
+      <div className="w-20 h-20 rounded-2xl animate-pulse flex items-center justify-center relative shadow-lg
+                      bg-white dark:bg-primary-600">
+        <span
+          className="text-[52px] font-black leading-none select-none text-primary-600 dark:text-white"
+          style={{ fontFamily: 'Arial Black, sans-serif' }}
+        >S</span>
+        <div className="absolute top-2 right-3 w-4 h-4 rounded-full bg-red-500" />
+      </div>
     </div>
   )
 }
