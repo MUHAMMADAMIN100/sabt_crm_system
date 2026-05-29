@@ -64,7 +64,18 @@ export class CalendarService {
       )
       // КП-задачи (автозадачи клиента на стадии КП) скрываем из Календаря —
       // они должны быть видны только в Онбординге на колонке «КП».
-      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`);
+      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
+      // «Истории» из контент-плана засоряют календарь (десятки в день).
+      // Они нужны в самом контент-плане и в Stories-виджете — там их видно.
+      // Здесь — прячем. Ловим двумя способами:
+      //   1) задача связана с content_plan_items записью типа 'story';
+      //   2) фолбэк: заголовок начинается на «История:» (для старых задач,
+      //      где связь с content_plan_items могла быть потеряна).
+      .andWhere(`NOT EXISTS (
+        SELECT 1 FROM content_plan_items cpi
+        WHERE cpi."taskId" = t.id AND cpi."contentType" = 'story'
+      )`)
+      .andWhere(`t.title NOT ILIKE 'История:%'`);
 
     if (employeeId) taskQb.andWhere('t.assigneeId = :employeeId', { employeeId });
     if (projectId) taskQb.andWhere('t.projectId = :projectId', { projectId });
