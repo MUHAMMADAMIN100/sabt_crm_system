@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { Task, TaskStatus, TaskPriority } from './task.entity';
+import { Task, TaskStatus, TaskPriority, TASK_CLOSED_FOR_OVERDUE } from './task.entity';
 import { TaskAssignee } from './task-assignee.entity';
 import { Project } from '../projects/project.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -594,14 +594,28 @@ export class TasksService {
 
     // SMM specialists have full status control over their own tasks
     const isSmmSpecialist = user.role === UserRole.SMM_SPECIALIST;
+    // Сам себе поставил — управляет полностью (статус, дедлайн, описание).
+    // Это его собственная задача-заметка, через review её гонять не надо.
+    const isSelfCreated = task.createdById === user.id && task.assigneeId === user.id;
 
-    // Workers (except SMM) cannot directly set status to DONE — must go through review
-    if (WORKER_ROLES.includes(user.role as UserRole) && !isSmmSpecialist && dto.status === TaskStatus.DONE) {
+    // Workers (except SMM) cannot directly set status to DONE — must go through review.
+    // Исключения: SMM-специалист и автор-исполнитель собственной задачи.
+    if (
+      WORKER_ROLES.includes(user.role as UserRole) &&
+      !isSmmSpecialist &&
+      !isSelfCreated &&
+      dto.status === TaskStatus.DONE
+    ) {
       throw new ForbiddenException('Only a project manager can confirm task completion');
     }
 
-    // Require at least one result before sending to review (workers only, except SMM)
-    if (dto.status === TaskStatus.REVIEW && WORKER_ROLES.includes(user.role as UserRole) && !isSmmSpecialist) {
+    // Require at least one result before sending to review (workers only, except SMM/own task)
+    if (
+      dto.status === TaskStatus.REVIEW &&
+      WORKER_ROLES.includes(user.role as UserRole) &&
+      !isSmmSpecialist &&
+      !isSelfCreated
+    ) {
       const resultCount = await this.taskResultsService.countByTask(id);
       if (resultCount === 0) {
         throw new BadRequestException('Загрузите результат работы перед отправкой на проверку');
@@ -808,7 +822,9 @@ export class TasksService {
       .leftJoinAndSelect('t.createdBy', 'createdBy')
       .leftJoinAndSelect('t.project', 'project')
       .where('t.deadline < NOW()')
-      .andWhere('t.status NOT IN (:...statuses)', { statuses: [TaskStatus.DONE, TaskStatus.CANCELLED] })
+      // Закрытые для overdue — done/cancelled + review/approved/published.
+      // Если задача дошла до review — исполнитель своё сделал, не overdue.
+      .andWhere('t.status NOT IN (:...statuses)', { statuses: TASK_CLOSED_FOR_OVERDUE })
       // КП-задачи скрыты из «Просроченных».
       .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
       .getMany();

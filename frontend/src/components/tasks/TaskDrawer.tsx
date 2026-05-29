@@ -10,6 +10,7 @@ import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { isTaskOverdue } from '@/lib/taskStatus'
 
 /**
  * Универсальный right-side drawer для задач. Открывается по taskId,
@@ -103,18 +104,19 @@ export default function TaskDrawer({
 
   return (
     <>
-      {/* Overlay — затемнение + блюр, клик закрывает drawer. */}
+      {/* Overlay — плотное затемнение + блюр поверх всего layout'а
+          (Header у нас sticky z-40 → drawer надо поднять выше). */}
       <div
         onClick={onClose}
-        className="fixed inset-0 z-40 bg-black/60 transition-opacity duration-300"
-        style={{ WebkitBackdropFilter: 'blur(10px)', backdropFilter: 'blur(10px)' }}
+        className="fixed inset-0 z-[100] bg-black/70 transition-opacity duration-300 animate-fade-in"
+        style={{ WebkitBackdropFilter: 'blur(8px)', backdropFilter: 'blur(8px)' }}
       />
       <aside
         role="dialog"
         aria-modal="true"
         className={clsx(
-          'fixed top-0 right-0 z-50 h-full bg-white dark:bg-surface-900 shadow-2xl border-l border-surface-200 dark:border-surface-700',
-          'w-full sm:w-[440px] lg:w-[520px] xl:w-[600px] flex flex-col',
+          'fixed top-0 right-0 z-[110] h-full bg-white dark:bg-surface-900 shadow-2xl border-l border-surface-200 dark:border-surface-700',
+          'w-full sm:w-[460px] lg:w-[560px] xl:w-[640px] flex flex-col',
           'animate-slide-in-right',
         )}
       >
@@ -185,7 +187,7 @@ export default function TaskDrawer({
                   <DetailRow icon={<Calendar size={14} />} label="Дедлайн">
                     <span className={clsx(
                       'text-sm',
-                      new Date(task.deadline) < new Date() && !['done', 'cancelled'].includes(task.status)
+                      isTaskOverdue(task)
                         ? 'text-red-500 font-medium'
                         : 'text-surface-700 dark:text-surface-300',
                     )}>

@@ -5,6 +5,7 @@ import { PageLoader, StatusBadge, PriorityBadge, CollapsibleSection } from '@/co
 import { AlertTriangle, RotateCcw, Clock, CheckSquare } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
+import { isTaskOverdue } from '@/lib/taskStatus'
 
 export default function SMMDashboard() {
   const { data: myTasks, isLoading } = useQuery({
@@ -16,9 +17,7 @@ export default function SMMDashboard() {
 
   const now = new Date()
 
-  const overdueTasks = (myTasks || []).filter((t: any) =>
-    t.deadline && new Date(t.deadline) < now && !['done', 'cancelled'].includes(t.status)
-  )
+  const overdueTasks = (myTasks || []).filter((t: any) => isTaskOverdue(t))
 
   const returnedTasks = (myTasks || []).filter((t: any) => t.status === 'returned')
 

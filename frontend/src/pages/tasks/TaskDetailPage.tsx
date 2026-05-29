@@ -17,6 +17,7 @@ import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { isTaskOverdue } from '@/lib/taskStatus'
 
 const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm']
 const WORKER_ROLES = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'employee']
@@ -478,7 +479,7 @@ export default function TaskDetailPage() {
     )
   }
 
-  const isOverdue = task.deadline && new Date(task.deadline) < new Date() && !['done', 'cancelled'].includes(task.status)
+  const isOverdue = isTaskOverdue(task)
   const isReturned = task.status === 'returned'
   const isOnReview = task.status === 'review'
   const isDone = task.status === 'done'

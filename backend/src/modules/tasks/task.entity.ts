@@ -39,6 +39,20 @@ export enum TaskStatus {
   RESCHEDULED        = 'rescheduled',
 }
 
+/** Статусы, при которых задача НЕ должна считаться «просроченной».
+ *  Любой review/approval/публикация значит что исполнитель уже отдал
+ *  результат — она ждёт PM/клиента/публикации, дедлайн исполнителя пройден
+ *  по факту. DONE/CANCELLED — финальные, тоже не overdue. */
+export const TASK_CLOSED_FOR_OVERDUE: TaskStatus[] = [
+  TaskStatus.DONE,
+  TaskStatus.CANCELLED,
+  TaskStatus.REVIEW,
+  TaskStatus.ON_PM_REVIEW,
+  TaskStatus.ON_CLIENT_APPROVAL,
+  TaskStatus.APPROVED,
+  TaskStatus.PUBLISHED,
+];
+
 /** Скоуп задачи — категория видимости.
  *  - PERSONAL — личная заметка/задача создателя. Видна ТОЛЬКО ему, никому
  *    не отправляются уведомления, не показывается в чужих списках/календарях.

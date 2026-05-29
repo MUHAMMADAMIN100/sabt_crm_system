@@ -1494,7 +1494,7 @@ function TaskDetailDrawer({
       <div
         onClick={onClose}
         className={clsx(
-          'fixed inset-0 z-40 bg-black/60 transition-opacity duration-300',
+          'fixed inset-0 z-[100] bg-black/70 transition-opacity duration-300',
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none',
         )}
         style={{ WebkitBackdropFilter: 'blur(10px)', backdropFilter: 'blur(10px)' }}
@@ -1505,7 +1505,7 @@ function TaskDetailDrawer({
         role="dialog"
         aria-modal="true"
         className={clsx(
-          'fixed top-0 right-0 z-50 h-full bg-white dark:bg-surface-900 shadow-2xl border-l border-surface-200 dark:border-surface-700',
+          'fixed top-0 right-0 z-[110] h-full bg-white dark:bg-surface-900 shadow-2xl border-l border-surface-200 dark:border-surface-700',
           'w-full sm:w-[440px] lg:w-[520px] xl:w-[600px]',
           'flex flex-col',
           'transform transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',

@@ -13,6 +13,7 @@ import clsx from 'clsx'
 import {
   EmployeeWorkloadTab, EmployeeQualityTab, EmployeeRiskTab, EmployeeActivityTab,
 } from '@/components/employees/EmployeeAnalyticsTabs'
+import { isTaskOverdue } from '@/lib/taskStatus'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -453,7 +454,7 @@ export default function EmployeeDetailPage() {
                       <PriorityBadge priority={task.priority} />
                       <StatusBadge status={task.status} />
                       {task.deadline && (
-                        <span className={`text-xs shrink-0 ${new Date(task.deadline) < today && !['done','cancelled'].includes(task.status) ? 'text-red-500 font-medium' : 'text-surface-400 dark:text-surface-500'}`}>
+                        <span className={`text-xs shrink-0 ${isTaskOverdue(task) ? 'text-red-500 font-medium' : 'text-surface-400 dark:text-surface-500'}`}>
                           {format(new Date(task.deadline), 'dd.MM')}
                         </span>
                       )}

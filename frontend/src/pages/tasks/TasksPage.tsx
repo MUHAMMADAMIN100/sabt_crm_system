@@ -13,6 +13,7 @@ import api from '@/lib/api'
 import { format } from 'date-fns'
 import TaskForm from '@/components/tasks/TaskForm'
 import TaskDrawer from '@/components/tasks/TaskDrawer'
+import { isTaskOverdue } from '@/lib/taskStatus'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -555,7 +556,7 @@ export default function TasksPage() {
                     </td>
                     <td className="px-4 py-3 hidden xl:table-cell">
                       {task.deadline ? (
-                        <span className={`text-sm ${new Date(task.deadline) < new Date() && !['done','cancelled'].includes(task.status) ? 'text-red-500 font-medium' : 'text-surface-500 dark:text-surface-400'}`}>{format(new Date(task.deadline), 'dd.MM.yyyy')}</span>
+                        <span className={`text-sm ${isTaskOverdue(task) ? 'text-red-500 font-medium' : 'text-surface-500 dark:text-surface-400'}`}>{format(new Date(task.deadline), 'dd.MM.yyyy')}</span>
                       ) : <span className="text-surface-400 dark:text-surface-500 text-sm">—</span>}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
@@ -611,7 +612,7 @@ export default function TasksPage() {
                       <span className="text-xs text-surface-500 dark:text-surface-400 font-medium">{(empNameMap[task.assigneeId] || task.assignee.name)?.split(' ').map((w:string)=>w[0]).join('').slice(0,2).toUpperCase()}</span>
                     </>
                   )}
-                  {task.deadline && (<span className={`text-xs ${new Date(task.deadline) < new Date() && !['done','cancelled'].includes(task.status) ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>{format(new Date(task.deadline), 'dd.MM')}</span>)}
+                  {task.deadline && (<span className={`text-xs ${isTaskOverdue(task) ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>{format(new Date(task.deadline), 'dd.MM')}</span>)}
                 </div>
               </div>
             </div>

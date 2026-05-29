@@ -12,6 +12,7 @@ import { shortenName } from '@/lib/name'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import TaskDrawer from '@/components/tasks/TaskDrawer'
+import { isTaskOverdue } from '@/lib/taskStatus'
 import DeleteWithReasonDialog from '@/components/tasks/DeleteWithReasonDialog'
 import {
   ProjectOverviewTab, ProjectActivityTab,
@@ -637,7 +638,7 @@ export default function ProjectDetailPage() {
                         )}
                       </div>
                       {task.deadline && (
-                        <p className={`text-xs mt-1 ${new Date(task.deadline) < new Date() && !['done','cancelled'].includes(task.status) ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>{format(new Date(task.deadline), 'dd.MM')}</p>
+                        <p className={`text-xs mt-1 ${isTaskOverdue(task) ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>{format(new Date(task.deadline), 'dd.MM')}</p>
                       )}
                       {task.createdAt && (
                         <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5">

@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { Cron, CronExpression } from '@nestjs/schedule'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository, Between, LessThan, Not, In } from 'typeorm'
-import { Task, TaskStatus, TaskPriority, TaskScope } from '../tasks/task.entity'
+import { Task, TaskStatus, TaskPriority, TaskScope, TASK_CLOSED_FOR_OVERDUE } from '../tasks/task.entity'
 import { Employee } from '../employees/employee.entity'
 import { Project, ProjectStatus } from '../projects/project.entity'
 import { User, UserRole } from '../users/user.entity'
@@ -139,7 +139,8 @@ export class DeadlineScheduler implements OnModuleInit {
     const overdueRaw = await this.taskRepo.find({
       where: {
         deadline: LessThan(now),
-        status: Not(In([TaskStatus.DONE, TaskStatus.CANCELLED])),
+        // Задача в review/approved/published уже не overdue для исполнителя.
+        status: Not(In(TASK_CLOSED_FOR_OVERDUE)),
       },
       relations: ['assignee', 'project', 'project.manager'],
     })
@@ -346,10 +347,11 @@ export class DeadlineScheduler implements OnModuleInit {
       })
 
       // Count overdue tasks assigned to this employee. КП-задачи не учитываются.
+      // Задачи в проверочных статусах overdue не считаются.
       const overdueCount = await this.taskRepo.createQueryBuilder('t')
         .where('t.assigneeId = :uid', { uid: emp.userId })
         .andWhere('t.deadline < NOW()')
-        .andWhere('t.status NOT IN (:...statuses)', { statuses: [TaskStatus.DONE, TaskStatus.CANCELLED] })
+        .andWhere('t.status NOT IN (:...statuses)', { statuses: TASK_CLOSED_FOR_OVERDUE })
         .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
         .getCount()
 
@@ -539,11 +541,12 @@ export class DeadlineScheduler implements OnModuleInit {
     })
 
     // Include tasks overdue from earlier AND due today — as long as they weren't finished.
-    // КП-задачи в сводку не включаем.
+    // КП-задачи и задачи в проверочных статусах в сводку не включаем
+    // (исполнитель уже отдал работу, мяч не у него).
     const allTasks = await this.taskRepo.find({
       where: {
         deadline: LessThan(dayEnd),
-        status: Not(In([TaskStatus.DONE, TaskStatus.CANCELLED])),
+        status: Not(In(TASK_CLOSED_FOR_OVERDUE)),
       },
       relations: ['assignee', 'project', 'project.manager'],
     })

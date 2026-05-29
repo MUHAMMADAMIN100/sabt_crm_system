@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom'
 import { format, startOfMonth } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { isTaskOverdue } from '@/lib/taskStatus'
 
 const FounderDashboard = lazy(() => import('./components/FounderDashboard'))
 const PMDashboard = lazy(() => import('./components/PMDashboard'))
@@ -443,7 +444,7 @@ export default function DashboardPage() {
                         )}
                       </div>
                       {task.deadline && (
-                        <span className={`text-xs shrink-0 ${new Date(task.deadline) < new Date() && !['done','cancelled'].includes(task.status) ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>
+                        <span className={`text-xs shrink-0 ${isTaskOverdue(task) ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>
                           {format(new Date(task.deadline), 'dd.MM')}
                         </span>
                       )}
