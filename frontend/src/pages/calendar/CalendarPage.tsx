@@ -883,19 +883,17 @@ function WeekView({
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [hoverKey, setHoverKey] = useState<string | null>(null)
 
-  // Маркер «сейчас» — горизонтальная линия в сегодняшней колонке на высоте,
-  // пропорциональной текущему часу+минутам. Обновляется каждую минуту.
+  // Маркер «сейчас» — рендерится прямо внутри ячейки сегодня × текущий час
+  // (см. ниже в map-е по часам). Здесь только tick раз в минуту, чтобы
+  // компонент перерендеривался и маркер двигался.
   const [now, setNow] = useState(new Date())
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000)
     return () => clearInterval(id)
   }, [])
-  const ROW_HEIGHT = 44
-  const todayIdx = days.findIndex(d => isSameDay(d, now))
-  const inRange = now.getHours() >= WK_MIN && now.getHours() <= WK_MAX
-  const nowTop = todayIdx >= 0 && inRange
-    ? (now.getHours() - WK_MIN) * ROW_HEIGHT + (now.getMinutes() / 60) * ROW_HEIGHT
-    : -1
+  const nowHour = now.getHours()
+  const nowMinute = now.getMinutes()
+  const nowInRange = nowHour >= WK_MIN && nowHour <= WK_MAX
 
   const onDragStart = (ev: React.DragEvent, e: any) => {
     if (!onMoveEvent || e.type !== 'task' || !e.taskId) { ev.preventDefault(); return }
@@ -986,24 +984,11 @@ function WeekView({
           })}
         </div>
 
-        {/* Часовые строки + маркер «сейчас» */}
-        <div className="relative">
-        {nowTop >= 0 && todayIdx >= 0 && (
-          <div
-            className="absolute pointer-events-none z-20"
-            style={{
-              top: nowTop,
-              left: `calc(60px + ${todayIdx} * ((100% - 60px) / 7))`,
-              width: `calc((100% - 60px) / 7)`,
-              height: 0,
-            }}
-          >
-            <div className="relative">
-              <div className="absolute -left-1.5 -top-1.5 w-3 h-3 rounded-full bg-red-500 shadow-md" />
-              <div className="h-[2px] bg-red-500" />
-            </div>
-          </div>
-        )}
+        {/* Часовые строки. Маркер «сейчас» добавляется внутри
+            конкретной ячейки сегодня × текущий час — позиционируется
+            процентами от высоты ячейки, поэтому корректен при любой
+            высоте строки (даже если в ячейке десятки событий). */}
+        <div>
         {WEEK_HOURS.map(h => (
           <div
             key={h}
@@ -1019,6 +1004,7 @@ function WeekView({
               )
               const key = `${format(d, 'yyyy-MM-dd')}-${h}`
               const isHover = hoverKey === key
+              const showNowLine = nowInRange && isSameDay(d, now) && h === nowHour
               return (
                 <div
                   key={d.toISOString()}
@@ -1027,11 +1013,22 @@ function WeekView({
                   onDragLeave={() => { if (isHover) setHoverKey(null) }}
                   onDrop={(ev) => onDropCell(ev, d, h)}
                   className={clsx(
-                    'border-l border-surface-100 dark:border-surface-700 min-h-[44px] p-1 space-y-1 transition-colors',
+                    'relative border-l border-surface-100 dark:border-surface-700 min-h-[44px] p-1 space-y-1 transition-colors',
                     canCreate && 'cursor-pointer hover:bg-primary-50/40 dark:hover:bg-primary-900/10',
                     isHover && 'bg-primary-100/60 dark:bg-primary-900/30 ring-2 ring-primary-400 ring-inset',
                   )}
                 >
+                  {showNowLine && (
+                    <div
+                      className="absolute inset-x-0 pointer-events-none z-20"
+                      style={{ top: `${(nowMinute / 60) * 100}%` }}
+                    >
+                      <div className="relative">
+                        <div className="absolute -left-1.5 -top-1.5 w-3 h-3 rounded-full bg-red-500 shadow-md" />
+                        <div className="h-[2px] bg-red-500" />
+                      </div>
+                    </div>
+                  )}
                   {cellEvents.map((e: any) => {
                     const colorClass = e.type === 'task' && e.scope
                       ? SCOPE_COLORS[e.scope] || TYPE_COLORS.task
