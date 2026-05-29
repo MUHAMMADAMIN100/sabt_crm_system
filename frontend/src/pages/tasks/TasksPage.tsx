@@ -52,11 +52,11 @@ export default function TasksPage() {
   // МП по продажам: видят задачи своего направления и могут создавать
   // задачи в доступных им проектах (сервер фильтрует /tasks и /projects).
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
-  // Виджет «Истории» справа от списка задач — виден всем, кроме МП по
-  // разработке (он не публикует контент, виджет ему не нужен).
-  // Раньше прятался и у admin/founder, но они тоже хотели видеть его рядом
-  // со списком задач — глобальная аналитика на дашборде не заменяет.
-  const showStoryWidget = user?.role !== 'sales_manager_dev'
+  // Виджет «Истории» справа от списка задач. Скрыт у:
+  //  - founder / co_founder — им хватает глобальной аналитики на дашборде;
+  //  - sales_manager_dev — не публикует контент.
+  // Admin виджет видит (он сам попросил вернуть).
+  const showStoryWidget = !['founder', 'co_founder', 'sales_manager_dev'].includes(user?.role || '')
   const isSMM = user?.role === 'smm_specialist'
   const qc = useQueryClient()
   const { t } = useTranslation()
