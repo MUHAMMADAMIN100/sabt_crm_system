@@ -44,9 +44,14 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverStage, setDragOverStage] = useState<StageKey | null>(null)
 
+  // refetchOnMount: 'always' + staleTime 0 — гарантируем свежие данные при
+  // каждом монтировании компонента. Иначе при переключении view-toggle
+  // в Базе клиентов канбан мог показать пустые колонки из устаревшего кеша.
   const { data: clients, isLoading } = useQuery({
     queryKey: ['clients'],
     queryFn: () => clientsApi.list(),
+    refetchOnMount: 'always',
+    staleTime: 0,
   })
 
   // Перетаскивание карточки — смена этапа онбординга.
@@ -152,7 +157,18 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
     },
   })
 
-  if (isLoading) return <PageLoader />
+  if (isLoading) {
+    // В embedded-режиме (внутри Базы клиентов) большой пульсирующий S
+    // выглядит чужеродно — заменяем на компактный спиннер.
+    if (embedded) {
+      return (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-6 h-6 border-2 border-surface-300 dark:border-surface-700 border-t-primary-500 rounded-full animate-spin" />
+        </div>
+      )
+    }
+    return <PageLoader />
+  }
 
   const onboardingClients = (clients || []).filter((c: any) => c.onboardingStage)
   const detailClient = onboardingClients.find((c: any) => c.id === detailId) || null
