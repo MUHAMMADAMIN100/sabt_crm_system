@@ -1,13 +1,17 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, PageLoader, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Edit, Trash2 } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, List, LayoutGrid } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { format, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+
+// Канбан-доска онбординга — отрисовывается прямо здесь при переключении
+// view-mode. Lazy, чтобы не тянуть в bundle когда юзер не открывает kanban.
+const OnboardingPage = lazy(() => import('@/pages/onboarding/OnboardingPage'))
 
 /** Подписи этапов онбординга — для бейджа в списке клиентов. */
 const ONBOARDING_STAGE_LABELS: Record<string, string> = {
@@ -56,6 +60,15 @@ export default function ClientsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  // Переключатель вида: list (таблица клиентов) ↔ kanban (доска онбординга).
+  // Сохраняем в localStorage чтобы при возврате видеть тот же режим.
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(() => {
+    try { return (localStorage.getItem('clients-view') as 'list' | 'kanban') || 'list' } catch { return 'list' }
+  })
+  const setViewModePersisted = (v: 'list' | 'kanban') => {
+    setViewMode(v)
+    try { localStorage.setItem('clients-view', v) } catch {}
+  }
   // У МП по продажам и у основателя/сооснователя — по 10 клиентов на странице,
   // у остальных ролей — 5.
   const role = useAuthStore(s => s.user?.role)
@@ -183,7 +196,9 @@ export default function ClientsPage() {
         <div>
           <h1 className="page-title">База клиентов</h1>
           <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
-            {(() => {
+            {viewMode === 'kanban' ? (
+              <>Канбан-доска онбординга. Перетащите карточку, чтобы сменить этап.</>
+            ) : (() => {
               const total = stats?.total ?? leads?.length ?? 0
               const shown = leads?.length ?? 0
               const filtered = !!(search || status || interest || sphere)
@@ -194,11 +209,52 @@ export default function ClientsPage() {
             })()}
           </p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary">
-          <Plus size={16} /> Добавить клиента
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Переключатель: список ↔ канбан онбординга. */}
+          <div className="inline-flex rounded-md border border-surface-200 dark:border-surface-700 overflow-hidden">
+            <button
+              onClick={() => setViewModePersisted('list')}
+              title="База клиентов (список)"
+              className={clsx(
+                'p-2 transition-colors',
+                viewMode === 'list'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-white dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200',
+              )}
+            >
+              <List size={16} />
+            </button>
+            <button
+              onClick={() => setViewModePersisted('kanban')}
+              title="Онбординг (канбан)"
+              className={clsx(
+                'p-2 transition-colors',
+                viewMode === 'kanban'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-white dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200',
+              )}
+            >
+              <LayoutGrid size={16} />
+            </button>
+          </div>
+          {viewMode === 'list' && (
+            <button onClick={() => setShowCreate(true)} className="btn-primary">
+              <Plus size={16} /> Добавить клиента
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* Канбан-режим — отрисовываем встроенный OnboardingPage и скрываем
+          фильтры/таблицу клиентов. */}
+      {viewMode === 'kanban' && (
+        <Suspense fallback={<PageLoader />}>
+          <OnboardingPage embedded />
+        </Suspense>
+      )}
+
+      {viewMode === 'list' && (
+      <>
       {/* Status chips — always visible, same style as interest row */}
       <div className="flex flex-wrap gap-2 items-center">
         <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Статус:</span>
@@ -396,6 +452,8 @@ export default function ClientsPage() {
         </div>
         <Pagination page={page} total={leads.length} pageSize={PAGE_SIZE} onChange={setPage} />
         </>
+      )}
+      </>
       )}
 
       {(showCreate || editLead) && (

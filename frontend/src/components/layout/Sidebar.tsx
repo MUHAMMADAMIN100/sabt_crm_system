@@ -50,11 +50,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
   const hideTeamsRoles = ['smm_director', 'head_smm']
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
-  const isSalesDev = role === 'sales_manager_dev'
   const filtered = navItems.filter(item => {
     if (item.to === '/teams' && hideTeamsRoles.includes(role || '')) return false
+    // У обоих МП Онбординг встроен переключателем в Базу клиентов — отдельный
+    // пункт сайдбара не нужен. Аналитика и Отчёты — это не их зона работы.
+    if (isSalesManager && (item.to === '/onboarding' || item.to === '/reports' || item.to === '/analytics')) return false
+    // Для остальных ролей Онбординг как отдельный пункт пока скрыт — он
+    // создавался под МП, а у других его всё равно нет.
     if (item.to === '/onboarding' && !isSalesManager) return false
-    if (isSalesDev && (item.to === '/reports' || item.to === '/analytics')) return false
     return hasPermission(role, item.permission)
   })
 

@@ -30,7 +30,9 @@ const STAGE_LABEL: Record<string, string> = Object.fromEntries(
   Object.entries(ALL_STAGES).map(([k, v]) => [k, v.label]),
 )
 
-export default function OnboardingPage() {
+/** Если компонент вмонтирован внутрь другой страницы (Базы клиентов через
+ *  view-toggle), скрываем заголовок «Онбординг» — у Базы свой. */
+export default function OnboardingPage({ embedded = false }: { embedded?: boolean } = {}) {
   const qc = useQueryClient()
   const role = useAuthStore(s => s.user?.role)
   // У МП по разработке свой набор этапов (5 шагов с «Переговор»).
@@ -166,17 +168,26 @@ export default function OnboardingPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="page-title">Онбординг</h1>
-          <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
-            Клиенты на этапе онбординга. Перетащите карточку, чтобы сменить этап.
-          </p>
+      {!embedded && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h1 className="page-title">Онбординг</h1>
+            <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
+              Клиенты на этапе онбординга. Перетащите карточку, чтобы сменить этап.
+            </p>
+          </div>
+          <button onClick={() => setShowAdd(true)} className="btn-primary">
+            <Plus size={16} /> Добавить клиента
+          </button>
         </div>
-        <button onClick={() => setShowAdd(true)} className="btn-primary">
-          <Plus size={16} /> Добавить клиента
-        </button>
-      </div>
+      )}
+      {embedded && (
+        <div className="flex justify-end">
+          <button onClick={() => setShowAdd(true)} className="btn-primary">
+            <Plus size={16} /> Добавить клиента
+          </button>
+        </div>
+      )}
 
       <div className={clsx(
         'flex gap-4 overflow-x-auto pb-3 lg:grid lg:overflow-x-visible stagger-kanban',
