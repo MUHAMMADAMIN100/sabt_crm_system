@@ -55,9 +55,10 @@ export default function TasksPage() {
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
   // Виджет «Истории» справа от списка задач. Скрыт у:
   //  - founder / co_founder — им хватает глобальной аналитики на дашборде;
-  //  - sales_manager_dev — не публикует контент.
+  //  - sales_manager_smm / sales_manager_dev — продажники, не публикуют контент;
+  //  - developer — разработчик, тоже не публикует контент.
   // Admin виджет видит (он сам попросил вернуть).
-  const showStoryWidget = !['founder', 'co_founder', 'sales_manager_dev'].includes(user?.role || '')
+  const showStoryWidget = !['founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev', 'developer'].includes(user?.role || '')
   const isSMM = user?.role === 'smm_specialist'
   const qc = useQueryClient()
   const { t } = useTranslation()

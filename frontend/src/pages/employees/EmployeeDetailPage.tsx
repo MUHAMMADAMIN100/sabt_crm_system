@@ -111,9 +111,7 @@ export default function EmployeeDetailPage() {
 
   const doneTasks     = tasks?.filter((t: any) => t.status === 'done').length || 0
   const inProgress    = tasks?.filter((t: any) => t.status === 'in_progress') || []
-  const overdueTasks  = tasks?.filter((t: any) =>
-    t.deadline && new Date(t.deadline) < today && !['done','cancelled'].includes(t.status)
-  ) || []
+  const overdueTasks  = tasks?.filter((t: any) => isTaskOverdue(t)) || []
   const reviewTasks   = tasks?.filter((t: any) => t.status === 'review') || []
   const totalTasks    = tasks?.length || 0
   const pct           = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0
@@ -365,7 +363,7 @@ export default function EmployeeDetailPage() {
                 </div>
                 <PriorityBadge priority={currentTask.priority} />
                 {currentTask.deadline && (
-                  <span className={`text-xs ${new Date(currentTask.deadline) < today && !['done','cancelled'].includes(currentTask.status) ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>
+                  <span className={`text-xs ${isTaskOverdue(currentTask) ? 'text-red-500' : 'text-surface-400 dark:text-surface-500'}`}>
                     {format(new Date(currentTask.deadline), 'dd.MM')}
                   </span>
                 )}

@@ -447,7 +447,9 @@ ${context}
       this.userRepo.count(),
       this.taskRepo.count({ where: { status: 'done' as any } }),
       this.taskRepo.manager.query(
-        `SELECT COUNT(*)::int AS count FROM tasks WHERE deadline < NOW() AND status NOT IN ('done','cancelled')`
+        // Задачи в review/approved/published уже отданы исполнителем — не overdue.
+        `SELECT COUNT(*)::int AS count FROM tasks WHERE deadline < NOW()
+          AND status NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published')`
       ),
       this.employeeRepo.find({ relations: ['user'], order: { fullName: 'ASC' } }),
       this.projectRepo.find({
@@ -571,7 +573,7 @@ ${context}
     // ── 5. TASKS (recent 200) ──────────────────────────────
     const taskList = tasks.map((t, i) => {
       const deadline = t.deadline ? new Date(t.deadline).toLocaleDateString('ru-RU') : '—';
-      const overdue = t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled'].includes(t.status) ? ' ⚠️ПРОСРОЧЕНА' : '';
+      const overdue = t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled', 'review', 'on_pm_review', 'on_client_approval', 'approved', 'published'].includes(t.status) ? ' ⚠️ПРОСРОЧЕНА' : '';
       return `${i + 1}. "${t.title}" | Проект: ${t.project?.name || '—'} | Статус: ${t.status} | Приоритет: ${t.priority} | Исполнитель: ${t.assignee?.name || '—'} | Создал: ${t.createdBy?.name || '—'} | Дедлайн: ${deadline}${overdue}${t.description ? ` | Описание: ${t.description.slice(0, 100)}` : ''}`;
     }).join('\n');
     parts.push(`## ✅ ЗАДАЧИ (${tasks.length} последних)\n${taskList || 'Нет задач'}`);
@@ -715,7 +717,7 @@ ${context}
     // 5. Задачи
     const taskList = tasks.map((t, i) => {
       const deadline = t.deadline ? new Date(t.deadline).toLocaleDateString('ru-RU') : '—';
-      const overdue = t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled'].includes(t.status) ? ' ⚠️ПРОСРОЧЕНА' : '';
+      const overdue = t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled', 'review', 'on_pm_review', 'on_client_approval', 'approved', 'published'].includes(t.status) ? ' ⚠️ПРОСРОЧЕНА' : '';
       return `${i + 1}. "${t.title}" | Проект: ${t.project?.name || '—'} | Статус: ${t.status} | Приоритет: ${t.priority} | Исполнитель: ${t.assignee?.name || '—'} | Дедлайн: ${deadline}${overdue}`;
     }).join('\n');
     parts.push(`## ✅ ЗАДАЧИ (${tasks.length})\n${taskList || 'Нет задач'}`);
@@ -789,7 +791,7 @@ ${context}
 
     const doneCount = myTasks.filter(t => t.status === 'done').length;
     const overdueCount = myTasks.filter(
-      t => t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled'].includes(t.status),
+      t => t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled', 'review', 'on_pm_review', 'on_client_approval', 'approved', 'published'].includes(t.status),
     ).length;
 
     parts.push(`## 📊 СВОДКА (ваш scope)
@@ -808,7 +810,7 @@ ${context}
     if (myTasks.length > 0) {
       const taskList = myTasks.map((t, i) => {
         const deadline = t.deadline ? new Date(t.deadline).toLocaleDateString('ru-RU') : '—';
-        const overdue = t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled'].includes(t.status) ? ' ⚠️ПРОСРОЧЕНА' : '';
+        const overdue = t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled', 'review', 'on_pm_review', 'on_client_approval', 'approved', 'published'].includes(t.status) ? ' ⚠️ПРОСРОЧЕНА' : '';
         return `${i + 1}. "${t.title}" | Проект: ${t.project?.name || '—'} | Статус: ${t.status} | Приоритет: ${t.priority} | Дедлайн: ${deadline}${overdue}${t.description ? ` | Описание: ${t.description.slice(0, 100)}` : ''}`;
       }).join('\n');
       parts.push(`## ✅ ВАШИ ЗАДАЧИ (${myTasks.length})\n${taskList}`);

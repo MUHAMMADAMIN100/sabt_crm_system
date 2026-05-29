@@ -475,20 +475,31 @@ export class TasksService {
     const totalSteps = incomingAssigneeIds?.length || (dto.assigneeId ? 1 : 0);
     for (const aid of notifyIds) {
       try {
+        const assignee = await this.userRepo.findOne({ where: { id: aid } });
+        // Если задача назначена основателю/со-основателю не им самим — это
+        // отдельный важный кейс. Хотим, чтобы он чётко знал: «У вас задача
+        // от <имя сотрудника>» по всем трём каналам с одинаковым tone.
+        const toFounder = !!assignee && [UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(assignee.role as UserRole);
+
         await this.notificationsService.create({
           userId: aid,
           type: NotificationType.NEW_TASK,
           title: isGeneral && isFromFounder
             ? '👑 Общая задача от основателя'
-            : isFromFounder ? '👑 Задача от основателя' : 'Новая задача',
+            : isFromFounder
+              ? '👑 Задача от основателя'
+              : toFounder
+                ? '📨 Задача для вас от сотрудника'
+                : 'Новая задача',
           message: isGeneral && isFromFounder
             ? `${creator?.name || 'Основатель'} поставил задачу всей команде: "${saved.title}"`
             : isFromFounder
               ? `${creator?.name || 'Основатель'} назначил вам прямую задачу: "${saved.title}"`
-              : `Вам назначена задача: "${saved.title}"${totalSteps > 1 ? ` (этап 1 из ${totalSteps})` : ''}`,
+              : toFounder
+                ? `${creator?.name || 'Сотрудник'} назначил вам задачу: "${saved.title}"`
+                : `Вам назначена задача: "${saved.title}"${totalSteps > 1 ? ` (этап 1 из ${totalSteps})` : ''}`,
           link: `/tasks/${saved.id}`,
         });
-        const assignee = await this.userRepo.findOne({ where: { id: aid } });
         if (assignee?.email) {
           const full = await this.findOne(saved.id);
           const deadline = saved.deadline ? new Date(saved.deadline).toLocaleDateString('ru-RU') : undefined;
@@ -496,12 +507,18 @@ export class TasksService {
             ? `👑 Общая задача от основателя (${creator?.name || ''}): ${saved.title}`
             : isFromFounder
               ? `👑 От основателя (${creator?.name || ''}): ${saved.title}`
-              : saved.title;
+              : toFounder
+                ? `📨 Задача для вас от ${creator?.name || 'сотрудника'}: ${saved.title}`
+                : saved.title;
           await this.mailService.sendTaskAssigned(
             assignee.email, assignee.name, titleForMail, saved.id,
             isGeneral && isFromFounder
               ? 'Общая задача от основателя — для всей команды'
-              : isFromFounder ? 'Прямая задача от основателя' : full.project?.name,
+              : isFromFounder
+                ? 'Прямая задача от основателя'
+                : toFounder
+                  ? `Задача от сотрудника: ${creator?.name || ''}`
+                  : full.project?.name,
             deadline, saved.priority, saved.description || undefined,
           );
           const priorityLabels: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный', critical: 'Критический' };
@@ -511,13 +528,17 @@ export class TasksService {
               ? `👑 <b>Общая задача от основателя</b>\n\n`
               : isFromFounder
                 ? `👑 <b>Задача от основателя</b>\n\n`
-                : `✅ <b>Вам назначена задача</b>\n\n`) +
+                : toFounder
+                  ? `📨 <b>Задача для вас от сотрудника</b>\n\n`
+                  : `✅ <b>Вам назначена задача</b>\n\n`) +
             `📋 ${saved.title}` +
             (isGeneral && isFromFounder
               ? `\n👥 Для всей команды`
               : isFromFounder
                 ? `\n👤 От: ${creator?.name || 'Основатель'}`
-                : (full.project?.name ? `\n📁 ${full.project.name}` : '')) +
+                : toFounder
+                  ? `\n👤 От: ${creator?.name || 'Сотрудник'}`
+                  : (full.project?.name ? `\n📁 ${full.project.name}` : '')) +
             (saved.priority ? `\n🔥 Приоритет: ${priorityLabels[saved.priority] || saved.priority}` : '') +
             (deadline ? `\n📅 Дедлайн: ${deadline}` : '') +
             `\n\n👉 ${this.telegramService.appUrl}/tasks/${saved.id}`,

@@ -39,7 +39,12 @@ export class AnalyticsService {
           (SELECT COUNT(*)::int FROM tasks WHERE status = 'done')                                              AS "doneTasks",
           (SELECT COUNT(*)::int FROM employees)                                                                 AS "totalEmployees",
           (SELECT COUNT(*)::int FROM users WHERE "isActive" = true)                                            AS "totalUsers",
-          (SELECT COUNT(*)::int FROM tasks WHERE deadline < NOW() AND status NOT IN ('done','cancelled'))      AS "overdueTasks"
+          -- Просроченные: дедлайн прошёл И задача всё ещё в активной работе.
+          -- Статусы review/on_pm_review/on_client_approval/approved/published —
+          -- исполнитель уже отдал работу, эти не считаем просрочкой.
+          (SELECT COUNT(*)::int FROM tasks WHERE deadline < NOW()
+              AND status NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published'))
+              AS "overdueTasks"
       `),
       this.timeRepo
         .createQueryBuilder('tl')
@@ -208,7 +213,7 @@ export class AnalyticsService {
       .addSelect('u.avatar', 'avatar')
       .addSelect('COUNT(DISTINCT t.id)', 'activeTasks')
       .addSelect("SUM(CASE WHEN t.priority = 'critical' THEN 1 ELSE 0 END)", 'criticalTasks')
-      .addSelect("SUM(CASE WHEN t.deadline < NOW() AND t.status NOT IN ('done','cancelled') THEN 1 ELSE 0 END)", 'overdueTasks')
+      .addSelect("SUM(CASE WHEN t.deadline < NOW() AND t.status NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published') THEN 1 ELSE 0 END)", 'overdueTasks')
       .where('u.isActive = true')
       .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder', 'co_founder'] })
       .groupBy('e.id, u.id, u.name, e.fullName, e.position, e.department, u.avatar')
@@ -875,9 +880,16 @@ export class AnalyticsService {
         return completedAt >= from && completedAt <= to;
       });
 
+      // Просроченные — только активные. Любой review/approval/publish уже
+      // вне рук исполнителя, дедлайн считается «отбитым».
+      const closedForOverdue: TaskStatus[] = [
+        TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REVIEW,
+        TaskStatus.ON_PM_REVIEW, TaskStatus.ON_CLIENT_APPROVAL,
+        TaskStatus.APPROVED, TaskStatus.PUBLISHED,
+      ];
       const overdueTasks = allTasks.filter(t =>
         t.deadline && new Date(t.deadline) < new Date() &&
-        ![TaskStatus.DONE, TaskStatus.CANCELLED].includes(t.status),
+        !closedForOverdue.includes(t.status),
       );
 
       const reviewTasks = allTasks.filter(t => t.status === TaskStatus.REVIEW);

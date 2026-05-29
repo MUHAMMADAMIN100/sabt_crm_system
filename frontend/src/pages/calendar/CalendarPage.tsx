@@ -150,6 +150,24 @@ export default function CalendarPage() {
   /** Может ли текущий пользователь подтверждать задачи. */
   const canApprove = ['founder', 'co_founder', 'admin'].includes(user?.role || '')
 
+  // Смена статуса задачи прямо из модалки на Календаре. Инвалидируем
+  // все ключи где задача отображается — статус виден синхронно в Проекте,
+  // на странице Задач, в Календаре и в карточке задачи.
+  const statusMut = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      tasksApi.update(id, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['calendar'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['task', editingTaskId] })
+      qc.invalidateQueries({ queryKey: ['tasks-stats'] })
+      qc.invalidateQueries({ queryKey: ['my-tasks'] })
+      qc.invalidateQueries({ queryKey: ['project'] })
+      toast.success('Статус обновлён')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось изменить статус'),
+  })
+
   // Drag-and-drop: при сбросе задачи на другой день — обновляем deadline.
   const updateTask = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => tasksApi.update(id, data),
@@ -665,35 +683,48 @@ export default function CalendarPage() {
                 🕐 Создана: {format(new Date(editingTaskFull.createdAt), 'dd.MM.yyyy HH:mm', { locale: ru })}
               </div>
             )}
-            {/* Большой статус-баннер + кнопка подтверждения для основателя. */}
+            {/* Статус задачи — селектор. Меняется здесь → инвалидируются
+                кеши Проекта/Задач/Календаря, и статус виден везде. */}
             {editingTaskFull.status && (
               <div className={clsx(
                 'rounded-xl px-3 py-2 flex items-center gap-3 mb-3 text-sm',
                 ['done', 'approved', 'published'].includes(editingTaskFull.status)
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                  ? 'bg-emerald-50 dark:bg-emerald-900/20'
                   : isApprovableStatus(editingTaskFull.status)
-                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                    : 'bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-200',
+                    ? 'bg-amber-50 dark:bg-amber-900/20'
+                    : 'bg-surface-50 dark:bg-surface-700/40',
               )}>
-                <span className="font-semibold">
-                  {['done', 'approved', 'published'].includes(editingTaskFull.status) && '✅ '}
-                  {isApprovableStatus(editingTaskFull.status) && '⏳ '}
-                  Статус: {{
-                    new: 'Новая', in_progress: 'В работе', review: 'На ревью',
-                    returned: 'Возвращена', done: 'Выполнена', cancelled: 'Отменена',
-                    accepted: 'Принята', on_pm_review: 'На проверке PM', on_rework: 'На доработке',
-                    on_client_approval: 'У клиента', approved: 'Утверждено', published: 'Опубликовано',
-                    rescheduled: 'Перенесена',
-                  }[editingTaskFull.status as string] || editingTaskFull.status}
-                </span>
+                <label className="text-xs font-semibold text-surface-600 dark:text-surface-300 shrink-0">
+                  Статус
+                </label>
+                <select
+                  value={editingTaskFull.status}
+                  onChange={(e) => statusMut.mutate({ id: editingTaskFull.id, status: e.target.value })}
+                  disabled={statusMut.isPending}
+                  className="text-sm bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-md px-2 py-1 flex-1 min-w-0"
+                >
+                  <option value="new">Новая</option>
+                  <option value="accepted">Принята</option>
+                  <option value="in_progress">В работе</option>
+                  <option value="on_rework">На доработке</option>
+                  <option value="review">На проверке</option>
+                  <option value="on_pm_review">На проверке PM</option>
+                  <option value="on_client_approval">У клиента</option>
+                  <option value="approved">Утверждено</option>
+                  <option value="done">Выполнена</option>
+                  <option value="published">Опубликовано</option>
+                  <option value="returned">Возвращена</option>
+                  <option value="rescheduled">Перенесена</option>
+                  <option value="cancelled">Отменена</option>
+                </select>
                 {canApprove && isApprovableStatus(editingTaskFull.status) && (
                   <button
                     type="button"
                     onClick={() => approveTaskMut.mutate(editingTaskFull.id)}
                     disabled={approveTaskMut.isPending}
-                    className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-60"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-60 shrink-0"
                   >
-                    {approveTaskMut.isPending ? 'Подтверждение…' : '✅ Подтвердить'}
+                    {approveTaskMut.isPending ? '...' : 'Подтвердить'}
                   </button>
                 )}
               </div>
@@ -1323,8 +1354,9 @@ function FounderQuickTaskForm({
                 <button
                   type="button"
                   onClick={() => removeSubtask(s.id)}
-                  className="text-surface-400 hover:text-red-500 shrink-0"
-                ><X size={13} /></button>
+                  title="Удалить подзадачу"
+                  className="p-1 rounded-md text-surface-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0 transition-colors"
+                ><Trash2 size={14} /></button>
               </div>
             ))}
           </div>
