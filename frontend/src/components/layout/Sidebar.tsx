@@ -5,15 +5,20 @@ import { hasPermission, getUserPositionLabel, type Permission } from '@/lib/perm
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
-  FileText, BarChart3, Bell, Archive, HardDrive,
-  X, ChevronRight, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserCog, UserPlus,
+  FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserCog, UserPlus,
+  LogOut, RotateCcw,
 } from 'lucide-react'
 import clsx from 'clsx'
 
 interface SidebarProps { open: boolean; onClose: () => void }
 
+/** Тёмный сайдбар в корпоративном стиле (по референсу GRANT CHINA, но с
+ *  нашим indigo акцентом вместо красного). Фон #0f0f12, белый текст,
+ *  активный пункт — сплошная заливка primary, без декоративных точек.
+ *  Пользовательский блок внизу — компактный, с быстрыми действиями. */
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const user = useAuthStore(s => s.user)
+  const logout = useAuthStore(s => s.logout)
   const { t } = useTranslation()
 
   const handleNavClick = () => {
@@ -21,8 +26,6 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   }
 
   const role = user?.role
-  // Founder/Co-founder работают через дашборд и календарь, не через список задач —
-  // он засоряет навигацию. Прямые задачи они отправляют через быструю форму календаря.
   const isTopExec = role === 'founder' || role === 'co_founder'
 
   const navItems: { to: string; icon: any; label: string; permission: Permission; exact?: boolean }[] = [
@@ -35,7 +38,6 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
     { to: '/analytics',     icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },
     { to: '/archive',       icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
-    // Уведомления убраны из сайдбара — теперь только через колокольчик в Header
     { to: '/employees',     icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
     { to: '/clients',       icon: Contact,         label: 'База клиентов',     permission: 'clients.view' },
     { to: '/onboarding',    icon: UserPlus,        label: 'Онбординг',         permission: 'clients.view' },
@@ -46,12 +48,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/ai',            icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]
 
-  // Вкладку «Команды» скрываем у руководителя SMM и главного SMM-специалиста.
   const hideTeamsRoles = ['smm_director', 'head_smm']
-  // Вкладка «Онбординг» — только для менеджеров по продажам.
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
-  // У МП по разработке скрываем «Отчёты» и «Аналитика» — они работают
-  // с клиентами/проектами, а не с отчётами компании.
   const isSalesDev = role === 'sales_manager_dev'
   const filtered = navItems.filter(item => {
     if (item.to === '/teams' && hideTeamsRoles.includes(role || '')) return false
@@ -64,48 +62,40 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     <aside
       className={clsx(
         'fixed left-0 top-0 z-30 flex flex-col h-full',
-        'bg-white dark:bg-surface-800',
-        'border-r border-surface-100 dark:border-surface-700',
+        'bg-[#0f0f12] text-surface-200',
+        'border-r border-black/40',
         'overflow-hidden',
         open ? 'w-[260px]' : 'w-0 lg:w-[72px]',
       )}
     >
-      {/* Logo */}
-      <div className="flex items-center justify-between h-[60px] px-3 border-b border-surface-100 dark:border-surface-700 shrink-0 overflow-hidden">
-        <div className="flex items-center min-w-0 flex-1 relative h-full">
-
-          {/* Collapsed: S icon — fades out when open */}
-          <div className={clsx(
-            'absolute left-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-            open ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100 lg:left-1/2 lg:-translate-x-1/2',
-          )}>
-            <div className="relative flex items-center justify-center w-9 h-9 shrink-0">
-              <span className="font-black leading-none select-none" style={{ fontSize: 32, color: '#4f46e5', fontFamily: "'Arial Black', Arial, sans-serif", lineHeight: 1 }}>S</span>
-              <div className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-red-500" />
+      {/* Логотип. Открытое состояние — wordmark, свёрнутое — крупная S */}
+      <div className="flex items-center justify-between h-[68px] px-4 shrink-0 overflow-hidden border-b border-white/5">
+        <div className="flex items-center min-w-0 flex-1">
+          {open ? (
+            <div className="flex items-baseline gap-0.5 select-none">
+              <span className="text-2xl font-extrabold tracking-tight text-white" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
+                sabt
+              </span>
+              <span className="text-2xl font-extrabold tracking-tight text-primary-400" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
+                .
+              </span>
             </div>
-          </div>
-
-          {/* Expanded: sabt wordmark — fades in when open */}
-          <div className={clsx(
-            'absolute left-3 flex items-baseline gap-0 leading-none select-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-            open ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 pointer-events-none',
-          )}>
-            <span className="font-black tracking-tight" style={{ fontSize: 22, color: '#4f46e5', fontFamily: "'Arial Black', Arial, sans-serif" }}>sabt</span>
-            <svg width="12" height="14" viewBox="0 0 12 14" fill="none" className="ml-0.5 mb-0.5">
-              <path d="M1 1L1 11L3.8 8.2L5.6 12.5L7 11.9L5.2 7.6L9 7.6L1 1Z" fill="#4f46e5" stroke="#4f46e5" strokeWidth="0.5" strokeLinejoin="round" />
-            </svg>
-            <div className="w-2 h-2 rounded-full bg-red-500 mb-3 ml-0.5 shrink-0" />
-          </div>
+          ) : (
+            <div className="hidden lg:flex w-full justify-center">
+              <span className="text-3xl font-black leading-none select-none text-primary-400" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
+                S
+              </span>
+            </div>
+          )}
         </div>
-
-        <button onClick={onClose} className="lg:hidden p-1 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors shrink-0">
-          <X size={18} className="text-surface-600 dark:text-surface-300" />
+        <button onClick={onClose} className="lg:hidden p-1 rounded-lg hover:bg-white/10 transition-colors shrink-0">
+          <X size={18} className="text-white/70" />
         </button>
       </div>
 
-      {/* Nav */}
+      {/* Навигация */}
       <nav className="flex-1 p-3 overflow-y-auto overflow-x-hidden">
-        <ul className="space-y-0.5 sidebar-nav-stagger">
+        <ul className="space-y-1">
           {filtered.map(item => (
             <li key={item.to}>
               <NavLink
@@ -114,77 +104,67 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 onClick={handleNavClick}
                 className={({ isActive }) =>
                   clsx(
-                    'sidebar-link group relative',
-                    isActive && 'active',
+                    'group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-primary-600 text-white shadow-sm'
+                      : 'text-surface-300 hover:bg-white/5 hover:text-white',
                     !open && 'lg:justify-center lg:px-2',
                   )
                 }
                 title={!open ? item.label : undefined}
               >
-                {({ isActive }) => (
-                  <>
-                    <item.icon
-                      size={18}
-                      className={clsx(
-                        'shrink-0 transition-transform duration-150',
-                        isActive ? 'text-primary-600 dark:text-primary-400' : 'group-hover:scale-110',
-                      )}
-                    />
-                    <span className={clsx(
-                      'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
-                      open ? 'max-w-[200px] opacity-100 ml-0' : 'max-w-0 opacity-0 ml-0',
-                    )}>
-                      {item.label}
-                    </span>
-                    {/* Активность подсвечивается левой полоской через CSS
-                        .sidebar-link.active::before. Декоративные точки/
-                        bounce-аnimations убраны для более сдержанного вида. */}
-                  </>
-                )}
+                <item.icon size={18} className="shrink-0" />
+                <span className={clsx(
+                  'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
+                  open ? 'max-w-[200px] opacity-100' : 'max-w-0 opacity-0',
+                )}>
+                  {item.label}
+                </span>
               </NavLink>
             </li>
           ))}
         </ul>
       </nav>
 
-      {/* User */}
+      {/* Компактный пользовательский блок снизу с быстрыми действиями */}
       {user && (
-        <div className={clsx(
-          'p-3 border-t border-surface-100 dark:border-surface-700 shrink-0',
-          !open && 'lg:flex lg:justify-center',
-        )}>
-          <NavLink
-            to="/profile"
-            onClick={handleNavClick}
-            className={({ isActive }) =>
-              clsx(
-                'flex items-center gap-3 p-2 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700 transition-all duration-150 group overflow-hidden',
-                isActive && 'bg-primary-50 dark:bg-primary-900/30',
-                !open && 'lg:justify-center',
-              )
-            }
-          >
-            <div className="shrink-0 transition-transform duration-150 group-hover:scale-105">
-              {/* Используем общий компонент Avatar — он строит полный URL через
-                  VITE_API_URL (фронт на Vercel, бэк на Railway — разные домены).
-                  Раньше тут был жёстко прописан относительный путь "/uploads/avatars/…",
-                  и в проде картинка отдавала 404, оставляя пустой кружок. */}
+        <div className="p-3 border-t border-white/5 shrink-0">
+          <div className={clsx('flex items-center gap-2', !open && 'lg:flex-col')}>
+            <NavLink
+              to="/profile"
+              onClick={handleNavClick}
+              className="flex items-center gap-2 min-w-0 flex-1 p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+            >
               <Avatar name={user.name} src={user.avatar} size={32} />
-            </div>
-            <div className={clsx(
-              'flex-1 min-w-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden',
-              open ? 'max-w-[160px] opacity-100' : 'max-w-0 opacity-0',
-            )}>
-              <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{user.name}</p>
-              <p className="text-xs text-surface-500 dark:text-surface-400 truncate">
-                {getUserPositionLabel(user)}
-              </p>
-            </div>
-            <ChevronRight size={14} className={clsx(
-              'text-surface-400 shrink-0 transition-all duration-300 group-hover:translate-x-0.5',
-              open ? 'opacity-100 w-3.5' : 'opacity-0 w-0',
-            )} />
-          </NavLink>
+              <div className={clsx(
+                'min-w-0 transition-all duration-300 overflow-hidden',
+                open ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0',
+              )}>
+                <p className="text-xs font-semibold text-white truncate leading-tight">{user.name}</p>
+                <p className="text-[10px] text-surface-400 truncate leading-tight">
+                  {getUserPositionLabel(user)}
+                </p>
+              </div>
+            </NavLink>
+            {open && (
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button
+                  onClick={() => window.location.reload()}
+                  title="Обновить"
+                  className="p-1.5 rounded-md text-surface-400 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  <RotateCcw size={14} />
+                </button>
+                <button
+                  onClick={() => logout()}
+                  title="Выйти"
+                  className="p-1.5 rounded-md text-surface-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <LogOut size={14} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </aside>

@@ -62,11 +62,17 @@
 }
 
 @layer components {
+  /* Card в спокойном корпоративном стиле (по референсу GRANT CHINA):
+     тонкий border, очень мягкая тень, белый фон. */
   .card {
-    @apply bg-white rounded-2xl shadow-card border border-surface-100 p-4 sm:p-5;
+    @apply bg-white rounded-xl border border-surface-200/80 p-4 sm:p-5;
+    box-shadow: 0 1px 2px rgba(15, 15, 18, 0.04);
     @apply transition-all duration-200 ease-out;
   }
-  .dark .card { @apply bg-surface-800 border-surface-700; }
+  .dark .card {
+    @apply bg-surface-800 border-surface-700;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  }
   .card-interactive {
     @apply card cursor-pointer transition-all duration-200 ease-out;
     will-change: transform, box-shadow;
@@ -153,11 +159,16 @@
   }
   .dark .sidebar-link.active { @apply bg-primary-900/30 text-primary-400; }
 
-  .page-title { @apply text-xl sm:text-2xl font-bold text-surface-900; }
+  /* Заголовки страниц/секций — без декораций, чистая типографика. */
+  .page-title { @apply text-xl sm:text-2xl font-bold text-surface-900 tracking-tight; }
   .dark .page-title { @apply text-surface-50; }
 
-  .section-title { @apply text-lg font-semibold text-surface-900; }
+  .section-title { @apply text-base sm:text-lg font-semibold text-surface-900 tracking-tight; }
   .dark .section-title { @apply text-surface-100; }
+
+  /* UPPERCASE-заголовки колонок в таблицах — корпоративный приём. */
+  table thead th { @apply text-[11px] font-semibold uppercase tracking-wider text-surface-500; }
+  .dark table thead th { @apply text-surface-400; }
 
   .stat-card { @apply card flex flex-col gap-1; }
 
