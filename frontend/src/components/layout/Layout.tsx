@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
@@ -6,6 +6,17 @@ import { useAuthStore } from '@/store/auth.store'
 import { useSocket } from '@/hooks/useSocket'
 import { authApi } from '@/services/api.service'
 import clsx from 'clsx'
+
+/** Тонкий лоадер ТОЛЬКО для контент-зоны при переходе между route'ами.
+ *  Layout (Sidebar + Header) при этом остаётся смонтированным — sidebar
+ *  не «мигает» и не теряет пункты при навигации. */
+function RouteLoader() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-6 h-6 border-2 border-surface-300 dark:border-surface-700 border-t-primary-500 rounded-full animate-spin" />
+    </div>
+  )
+}
 
 /** Каждые 60 сек шлём heartbeat — backend обновляет lastSeenAt текущей
  *  открытой сессии, чтобы при следующем входе её длительность была
@@ -93,7 +104,12 @@ export default function Layout() {
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           {/* key on pathname so each navigation re-triggers the animation */}
           <div key={location.pathname} className="max-w-screen-2xl mx-auto animate-page-in">
-            <Outlet />
+            {/* Внутренний Suspense ловит lazy-чанки страниц, не давая
+                верхнему Suspense вышибить весь Layout (sidebar+header) до
+                splash-логотипа. */}
+            <Suspense fallback={<RouteLoader />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>

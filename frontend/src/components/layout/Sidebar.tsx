@@ -80,7 +80,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             open ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100 lg:left-1/2 lg:-translate-x-1/2',
           )}>
             <div className="relative flex items-center justify-center w-9 h-9 shrink-0">
-              <span className="font-black leading-none select-none" style={{ fontSize: 32, color: '#6B4FCF', fontFamily: "'Arial Black', Arial, sans-serif", lineHeight: 1 }}>S</span>
+              <span className="font-black leading-none select-none" style={{ fontSize: 32, color: '#4f46e5', fontFamily: "'Arial Black', Arial, sans-serif", lineHeight: 1 }}>S</span>
               <div className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-red-500" />
             </div>
           </div>
@@ -90,9 +90,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             'absolute left-3 flex items-baseline gap-0 leading-none select-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
             open ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 pointer-events-none',
           )}>
-            <span className="font-black tracking-tight" style={{ fontSize: 22, color: '#6B4FCF', fontFamily: "'Arial Black', Arial, sans-serif" }}>sabt</span>
+            <span className="font-black tracking-tight" style={{ fontSize: 22, color: '#4f46e5', fontFamily: "'Arial Black', Arial, sans-serif" }}>sabt</span>
             <svg width="12" height="14" viewBox="0 0 12 14" fill="none" className="ml-0.5 mb-0.5">
-              <path d="M1 1L1 11L3.8 8.2L5.6 12.5L7 11.9L5.2 7.6L9 7.6L1 1Z" fill="#6B4FCF" stroke="#6B4FCF" strokeWidth="0.5" strokeLinejoin="round" />
+              <path d="M1 1L1 11L3.8 8.2L5.6 12.5L7 11.9L5.2 7.6L9 7.6L1 1Z" fill="#4f46e5" stroke="#4f46e5" strokeWidth="0.5" strokeLinejoin="round" />
             </svg>
             <div className="w-2 h-2 rounded-full bg-red-500 mb-3 ml-0.5 shrink-0" />
           </div>
@@ -136,12 +136,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                     )}>
                       {item.label}
                     </span>
-                    {isActive && (
-                      <span className={clsx(
-                        'w-1.5 h-1.5 rounded-full bg-primary-500 shrink-0 animate-bounce-soft transition-all duration-300',
-                        open ? 'ml-auto opacity-100' : 'ml-0 opacity-0 w-0',
-                      )} />
-                    )}
+                    {/* Активность подсвечивается левой полоской через CSS
+                        .sidebar-link.active::before. Декоративные точки/
+                        bounce-аnimations убраны для более сдержанного вида. */}
                   </>
                 )}
               </NavLink>

@@ -17,18 +17,18 @@ const PMDashboard = lazy(() => import('./components/PMDashboard'))
 /** Комплименты и мотивация для менеджеров продаж — показываются вместо
  *  имени на их панели, случайная фраза при каждом входе. */
 const SALES_GREETINGS = [
-  'Ты сегодня в ударе! 🔥',
-  'Каждый звонок — шаг к новой сделке 💪',
-  'Лучший продажник — это ты 🌟',
-  'Сегодня отличный день для крупной сделки 🚀',
-  'Твоя энергия закрывает сделки ⚡',
-  'Верь в себя — клиенты это чувствуют 😊',
-  'Маленький шаг сегодня — большой результат завтра 📈',
-  'Ты умеешь находить подход к каждому клиенту 🤝',
-  'Продажи любят настойчивых — это про тебя 🎯',
-  'Сделай этот день продуктивным! ✨',
-  'Твой профессионализм впечатляет 👏',
-  'Новый день — новые возможности 🌅',
+  'Ты сегодня в ударе',
+  'Каждый звонок — шаг к новой сделке',
+  'Лучший продажник — это ты',
+  'Сегодня отличный день для крупной сделки',
+  'Твоя энергия закрывает сделки',
+  'Верь в себя — клиенты это чувствуют',
+  'Маленький шаг сегодня — большой результат завтра',
+  'Ты умеешь находить подход к каждому клиенту',
+  'Продажи любят настойчивых — это про тебя',
+  'Сделай этот день продуктивным',
+  'Твой профессионализм впечатляет',
+  'Новый день — новые возможности',
 ]
 const SMMDashboard = lazy(() => import('./components/SMMDashboard'))
 const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
@@ -169,7 +169,7 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="page-title">Привет, {user?.name?.split(' ')[0] || ''} 👋</h1>
+          <h1 className="page-title">Добро пожаловать, {user?.name?.split(' ')[0] || ''}</h1>
           <p className="text-surface-500 dark:text-surface-400 mt-0.5">
             {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
           </p>
@@ -185,7 +185,7 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="page-title">Привет, {user?.name?.split(' ')[0] || ''} 👋</h1>
+          <h1 className="page-title">Добро пожаловать, {user?.name?.split(' ')[0] || ''}</h1>
           <p className="text-surface-500 dark:text-surface-400 mt-0.5">
             {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
           </p>
@@ -217,7 +217,7 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="page-title">Привет, {user?.name?.split(' ')[0] || ''} 👋</h1>
+          <h1 className="page-title">Добро пожаловать, {user?.name?.split(' ')[0] || ''}</h1>
           <p className="text-surface-500 dark:text-surface-400 mt-0.5">
             {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
           </p>

@@ -246,7 +246,7 @@ export default function SalesDashboard() {
         id="sales-kpi"
         title={
           <div className="flex items-center justify-between w-full">
-            <h3 className="section-title">📊 KPI менеджера — этот месяц</h3>
+            <h3 className="section-title">KPI менеджера — этот месяц</h3>
             <span className={clsx(
               'text-xs font-semibold tabular-nums',
               (kpi?.overallPercent ?? 0) >= 100 ? 'text-emerald-600' :

@@ -344,7 +344,7 @@ export default function AnalyticsPage() {
 
       <CollapsibleSection
         id="analytics-stories"
-        title={<h3 className="section-title">📸 Истории по проектам</h3>}
+        title={<h3 className="section-title">Истории по проектам</h3>}
         defaultOpen={false}
       >
         <StoryCalendar adminAll />
