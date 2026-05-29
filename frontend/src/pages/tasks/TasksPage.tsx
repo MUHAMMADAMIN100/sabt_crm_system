@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import StoryCalendar from '@/components/stories/StoryCalendar'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { shortenName } from '@/lib/name'
 import { tasksApi, projectsApi, employeesApi } from '@/services/api.service'
@@ -51,6 +52,10 @@ export default function TasksPage() {
   // МП по продажам: видят задачи своего направления и могут создавать
   // задачи в доступных им проектах (сервер фильтрует /tasks и /projects).
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
+  // Виджет «Истории» справа от списка задач — для всех, кто публикует контент.
+  // Скрыт у admin/founder/co_founder (у них своя глобальная аналитика историй)
+  // и у МП по разработке (они не публикуют контент).
+  const showStoryWidget = !['admin', 'founder', 'co_founder', 'sales_manager_dev'].includes(user?.role || '')
   const isSMM = user?.role === 'smm_specialist'
   const qc = useQueryClient()
   const { t } = useTranslation()
@@ -456,8 +461,8 @@ export default function TasksPage() {
         </div>
       )}
 
-      <div>
-      <div>
+      <div className={clsx(showStoryWidget && 'grid grid-cols-1 lg:grid-cols-3 gap-4')}>
+      <div className={clsx(showStoryWidget && 'lg:col-span-2')}>
       {!tasks?.length ? (
         <EmptyState title={t('tasks.noTasks')} description={t('tasks.createFirst')} action={
           <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
@@ -614,7 +619,13 @@ export default function TasksPage() {
       )}
       <Pagination page={page} total={tasks.length} pageSize={PAGE_SIZE} onChange={setPage} />
       </div>{/* end tasks col */}
-      </div>{/* end wrapper */}
+
+      {showStoryWidget && (
+        <div className="lg:col-span-1">
+          <StoryCalendar compact />
+        </div>
+      )}
+      </div>{/* end grid */}
 
       {showCreate && (
         <Modal open onClose={() => { setShowCreate(false); setEditingTask(null) }} title={editingTask ? t('tasks.editTask') : t('tasks.newTask')} size="lg">
