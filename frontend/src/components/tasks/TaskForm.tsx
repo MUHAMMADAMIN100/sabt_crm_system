@@ -43,6 +43,10 @@ export default function TaskForm({
   const { register, handleSubmit, reset, control, formState: { errors } } = useForm()
   const { t } = useTranslation()
   const authUser = useAuthStore(s => s.user)
+  // Личные задачи (scope='personal') не привязаны к проекту — поле «Проект»
+  // у них необязательное. Применяется ко всем ролям, кто открыл такую задачу
+  // в форме (МП открывает auto-задачи из Базы клиентов и т.п.).
+  const isPersonalTask = initial?.scope === 'personal'
   // Multi-assignee: список выбранных user-id (исполнителей задачи).
   // Для admin'а — управляется чекбоксами; для не-admin'а — всегда [currentUserId].
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([])
@@ -128,7 +132,9 @@ export default function TaskForm({
     onSubmit({
       title: data.title,
       description: data.description || undefined,
-      projectId: fixedProjectId || data.projectId,
+      // Для личных задач пустой projectId отправляем как null — иначе бэк
+      // примет пустую строку и в БД останется некорректное значение.
+      projectId: fixedProjectId || data.projectId || null,
       // Старое поле для совместимости + новый массив
       assigneeId: finalIds[0],
       assigneeIds: finalIds,
@@ -159,12 +165,19 @@ export default function TaskForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {!fixedProjectId && projects && (
           <div>
-            <label className="label">{t('tasks.project')} *</label>
-            <select {...register('projectId', { required: true })} className="input">
-              <option value="">{t('common.selectOption')}</option>
+            <label className="label">
+              {t('tasks.project')}{!isPersonalTask && ' *'}
+              {isPersonalTask && (
+                <span className="text-xs text-surface-400 font-normal ml-1">— необязательно</span>
+              )}
+            </label>
+            <select {...register('projectId', { required: !isPersonalTask })} className="input">
+              <option value="">{isPersonalTask ? '— Без проекта —' : t('common.selectOption')}</option>
               {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            {errors.projectId && <p className="text-xs text-red-500 mt-1">{t('tasks.project')} обязательно</p>}
+            {errors.projectId && !isPersonalTask && (
+              <p className="text-xs text-red-500 mt-1">{t('tasks.project')} обязательно</p>
+            )}
           </div>
         )}
         {!isAdmin ? (
