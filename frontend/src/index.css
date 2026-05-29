@@ -668,6 +668,41 @@ aside {
   }
 }
 
+/* ============ react-day-picker — наш indigo стиль ============== */
+.rdp-custom {
+  --rdp-accent-color: theme('colors.primary.600');
+  --rdp-accent-background-color: theme('colors.primary.50');
+  --rdp-day_button-border-radius: 8px;
+  --rdp-selected-border: 1px solid theme('colors.primary.600');
+  --rdp-today-color: theme('colors.primary.600');
+  --rdp-day_button-height: 36px;
+  --rdp-day_button-width: 36px;
+  --rdp-nav_button-height: 32px;
+  --rdp-nav_button-width: 32px;
+  --rdp-font-family: inherit;
+  font-size: 13px;
+}
+.rdp-custom .rdp-month_caption { @apply font-semibold text-surface-900 px-2 py-1; }
+.rdp-custom .rdp-dropdown_root select { @apply bg-transparent text-surface-700 text-sm font-semibold; }
+.rdp-custom .rdp-weekday { @apply text-surface-400 text-[10px] font-semibold uppercase tracking-wider; }
+.rdp-custom .rdp-day_button:hover:not([disabled]) { @apply bg-surface-100; }
+.rdp-custom .rdp-day_selected .rdp-day_button,
+.rdp-custom .rdp-selected .rdp-day_button { @apply bg-primary-600 text-white; }
+.rdp-custom .rdp-day_today .rdp-day_button,
+.rdp-custom .rdp-today .rdp-day_button { @apply font-bold text-primary-600; }
+.rdp-custom .rdp-range_middle .rdp-day_button { @apply bg-primary-50 text-primary-700 rounded-none; }
+.rdp-custom .rdp-range_start .rdp-day_button,
+.rdp-custom .rdp-range_end .rdp-day_button { @apply bg-primary-600 text-white; }
+.rdp-custom .rdp-outside .rdp-day_button { @apply text-surface-300; }
+.dark .rdp-custom {
+  --rdp-accent-background-color: theme('colors.primary.900' / 30%);
+}
+.dark .rdp-custom .rdp-month_caption { @apply text-surface-100; }
+.dark .rdp-custom .rdp-dropdown_root select { @apply text-surface-200; }
+.dark .rdp-custom .rdp-day_button:hover:not([disabled]) { @apply bg-surface-700; }
+.dark .rdp-custom .rdp-range_middle .rdp-day_button { @apply bg-primary-900/30 text-primary-300; }
+.dark .rdp-custom .rdp-outside .rdp-day_button { @apply text-surface-600; }
+
 /* ====================== MOBILE RESPONSIVE ====================== */
 @media (max-width: 600px) {
   .card { @apply rounded-xl; }

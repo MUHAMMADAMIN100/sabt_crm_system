@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, PageLoader, ConfirmDialog } from '@/components/ui'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { Plus, Edit, Trash2, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -453,12 +454,7 @@ function OnboardingClientForm({
       </div>
       <div>
         <label className="label">📅 Дата встречи / следующего контакта</label>
-        <input
-          type="date"
-          value={nextContactAt}
-          onChange={e => setNextContactAt(e.target.value)}
-          className="input"
-        />
+        <DatePicker value={nextContactAt} onChange={setNextContactAt} />
         <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-1">
           {nextContactAt
             ? 'Появится у вас в Календаре (📌 личная задача) и в Задачах под фильтром «Мои».'

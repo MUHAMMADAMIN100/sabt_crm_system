@@ -4,7 +4,8 @@ import { clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, PageLoader, ConfirmDialog, Pagination } from '@/components/ui'
 import { Plus, Search, Edit, Trash2, List, LayoutGrid } from 'lucide-react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
+import { DatePicker, DateTimePicker } from '@/components/ui/DatePicker'
 import { format, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -515,7 +516,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
   }
   const legacy = parseLegacyContactInfo(initial?.contactInfo)
 
-  const { register, handleSubmit, watch } = useForm({ defaultValues: {
+  const { register, handleSubmit, watch, control } = useForm({ defaultValues: {
     name: initial?.name || '',
     sphere: initial?.sphere || '',
     problem: initial?.problem || '',
@@ -627,11 +628,13 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
           </div>
           <div>
             <label className="label">Дата последнего контакта</label>
-            <input type="date" {...register('lastContactAt')} className="input" />
+            <Controller name="lastContactAt" control={control}
+              render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
           </div>
           <div>
             <label className="label">📅 Дата + время встречи / след. контакта</label>
-            <input type="datetime-local" {...register('nextContactAt')} className="input" />
+            <Controller name="nextContactAt" control={control}
+              render={({ field }) => <DateTimePicker value={field.value || ''} onChange={field.onChange} />} />
             <p className="text-[10px] text-surface-400 mt-1">
               Появится в Календаре на выбранный час и придёт напоминание.
             </p>

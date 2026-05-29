@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi, projectsApi, clientsApi } from '@/services/api.service'
+import { DateRangePicker } from '@/components/ui/DatePicker'
 import { useAuthStore } from '@/store/auth.store'
 import { StatusBadge, ProgressBar, CollapsibleSection } from '@/components/ui'
 import { Calendar, CheckCircle2, Mail, Pencil } from 'lucide-react'
@@ -166,13 +167,16 @@ export default function SalesDashboard() {
     staleTime: 30_000,
   })
 
-  // KPI плана МП (новые компании / звонки / письма / встречи) за текущий месяц.
+  // KPI плана МП — окно по умолчанию «сегодня», можно выбрать диапазон.
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const [kpiFrom, setKpiFrom] = useState(todayIso)
+  const [kpiTo, setKpiTo] = useState(todayIso)
   const { data: kpi } = useQuery({
-    queryKey: ['sales-kpi', userId],
-    queryFn: clientsApi.kpi,
+    queryKey: ['sales-kpi', userId, kpiFrom, kpiTo],
+    queryFn: () => clientsApi.kpi({ from: kpiFrom, to: kpiTo }),
     enabled: !!userId,
     refetchOnMount: 'always',
-    staleTime: 60_000,
+    staleTime: 30_000,
   })
 
   // МП по продажам (СММ И разработка) могут править все колонки таблицы:
@@ -245,15 +249,29 @@ export default function SalesDashboard() {
       <CollapsibleSection
         id="sales-kpi"
         title={
-          <div className="flex items-center justify-between w-full">
-            <h3 className="section-title">KPI менеджера — этот месяц</h3>
-            <span className={clsx(
-              'text-xs font-semibold tabular-nums',
-              (kpi?.overallPercent ?? 0) >= 100 ? 'text-emerald-600' :
-              (kpi?.overallPercent ?? 0) >= 70  ? 'text-amber-600'   : 'text-red-600',
-            )}>
-              {kpi ? `${kpi.overallPercent}% от плана` : 'загрузка…'}
-            </span>
+          <div className="flex items-center justify-between w-full gap-3 flex-wrap">
+            <h3 className="section-title">
+              KPI менеджера {kpiFrom === kpiTo
+                ? (kpiFrom === todayIso ? '— сегодня' : `— ${kpiFrom}`)
+                : `— ${kpiFrom} … ${kpiTo}`}
+            </h3>
+            <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+              <div className="w-[260px]">
+                <DateRangePicker
+                  from={kpiFrom}
+                  to={kpiTo}
+                  onChange={(f, t) => { setKpiFrom(f || todayIso); setKpiTo(t || todayIso) }}
+                  placeholder="Выберите период"
+                />
+              </div>
+              <span className={clsx(
+                'text-xs font-semibold tabular-nums shrink-0',
+                (kpi?.overallPercent ?? 0) >= 100 ? 'text-emerald-600' :
+                (kpi?.overallPercent ?? 0) >= 70  ? 'text-amber-600'   : 'text-red-600',
+              )}>
+                {kpi ? `${kpi.overallPercent}% от плана` : 'загрузка…'}
+              </span>
+            </div>
           </div>
         }
       >

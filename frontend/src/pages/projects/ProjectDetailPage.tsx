@@ -14,6 +14,7 @@ import TaskForm from '@/components/tasks/TaskForm'
 import TaskDrawer from '@/components/tasks/TaskDrawer'
 import { isTaskOverdue } from '@/lib/taskStatus'
 import DeleteWithReasonDialog from '@/components/tasks/DeleteWithReasonDialog'
+import { DatePicker } from '@/components/ui/DatePicker'
 import {
   ProjectOverviewTab, ProjectActivityTab,
 } from '@/components/projects/ProjectExtraTabs'
@@ -959,11 +960,11 @@ export default function ProjectDetailPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label mb-1">Дата начала</label>
-              <input type="date" value={projectForm.startDate || ''} onChange={e => setProjectForm((f: any) => ({ ...f, startDate: e.target.value }))} className="input w-full" />
+              <DatePicker value={projectForm.startDate || ''} onChange={(v) => setProjectForm((f: any) => ({ ...f, startDate: v }))} />
             </div>
             <div>
               <label className="label mb-1">Дата завершения</label>
-              <input type="date" value={projectForm.endDate || ''} onChange={e => setProjectForm((f: any) => ({ ...f, endDate: e.target.value }))} className="input w-full" />
+              <DatePicker value={projectForm.endDate || ''} onChange={(v) => setProjectForm((f: any) => ({ ...f, endDate: v }))} />
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -883,6 +883,20 @@ function WeekView({
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [hoverKey, setHoverKey] = useState<string | null>(null)
 
+  // Маркер «сейчас» — горизонтальная линия в сегодняшней колонке на высоте,
+  // пропорциональной текущему часу+минутам. Обновляется каждую минуту.
+  const [now, setNow] = useState(new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  const ROW_HEIGHT = 44
+  const todayIdx = days.findIndex(d => isSameDay(d, now))
+  const inRange = now.getHours() >= WK_MIN && now.getHours() <= WK_MAX
+  const nowTop = todayIdx >= 0 && inRange
+    ? (now.getHours() - WK_MIN) * ROW_HEIGHT + (now.getMinutes() / 60) * ROW_HEIGHT
+    : -1
+
   const onDragStart = (ev: React.DragEvent, e: any) => {
     if (!onMoveEvent || e.type !== 'task' || !e.taskId) { ev.preventDefault(); return }
     setDraggingId(e.id)
@@ -972,7 +986,24 @@ function WeekView({
           })}
         </div>
 
-        {/* Часовые строки */}
+        {/* Часовые строки + маркер «сейчас» */}
+        <div className="relative">
+        {nowTop >= 0 && todayIdx >= 0 && (
+          <div
+            className="absolute pointer-events-none z-20"
+            style={{
+              top: nowTop,
+              left: `calc(60px + ${todayIdx} * ((100% - 60px) / 7))`,
+              width: `calc((100% - 60px) / 7)`,
+              height: 0,
+            }}
+          >
+            <div className="relative">
+              <div className="absolute -left-1.5 -top-1.5 w-3 h-3 rounded-full bg-red-500 shadow-md" />
+              <div className="h-[2px] bg-red-500" />
+            </div>
+          </div>
+        )}
         {WEEK_HOURS.map(h => (
           <div
             key={h}
@@ -1034,6 +1065,7 @@ function WeekView({
             })}
           </div>
         ))}
+        </div>{/* end relative wrapper */}
       </div>
     </div>
   )

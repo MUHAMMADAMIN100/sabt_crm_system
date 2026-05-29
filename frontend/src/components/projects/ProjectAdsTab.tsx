@@ -4,7 +4,8 @@ import { projectAdsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, ConfirmDialog } from '@/components/ui'
 import { Plus, Edit, Trash2, Megaphone } from 'lucide-react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
+import { DateTimePicker } from '@/components/ui/DatePicker'
 import { format, parseISO, isWithinInterval } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -225,7 +226,7 @@ function AdSection({ title, ads, canManage, onEdit, onDelete, accent }: any) {
 }
 
 function AdForm({ initial, onClose, onSubmit, loading }: any) {
-  const { register, handleSubmit } = useForm({
+  const { register, handleSubmit, control } = useForm({
     defaultValues: {
       title: initial?.title || '',
       channel: initial?.channel || 'instagram',
@@ -276,11 +277,13 @@ function AdForm({ initial, onClose, onSubmit, loading }: any) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Начало *</label>
-            <input type="datetime-local" {...register('startDate', { required: true })} className="input" />
+            <Controller name="startDate" control={control} rules={{ required: true }}
+              render={({ field }) => <DateTimePicker value={field.value || ''} onChange={field.onChange} />} />
           </div>
           <div>
             <label className="label">Конец *</label>
-            <input type="datetime-local" {...register('endDate', { required: true })} className="input" />
+            <Controller name="endDate" control={control} rules={{ required: true }}
+              render={({ field }) => <DateTimePicker value={field.value || ''} onChange={field.onChange} />} />
           </div>
         </div>
         <div>

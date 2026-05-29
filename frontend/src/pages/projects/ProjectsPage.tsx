@@ -6,7 +6,8 @@ import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar, Pagination } from '@/components/ui'
 import { Plus, Search, FolderKanban, Archive, Trash2, Edit, Users, ChevronDown, X, Check, Banknote, Calendar as CalIcon } from 'lucide-react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { format, formatDistanceToNow } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -473,7 +474,7 @@ export default function ProjectsPage() {
 }
 
 function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: ProjectFormProps) {
-  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm()
+  const { register, handleSubmit, reset, watch, control, formState: { errors } } = useForm()
   const { t } = useTranslation()
   const formUser = useAuthStore(s => s.user)
   const isFormHeadSMM = formUser?.role === 'head_smm' || formUser?.role === 'smm_director'
@@ -936,11 +937,13 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
 
           <div>
             <label className="label">{t('projects.startDate')} *</label>
-            <input type="date" {...register('startDate', { required: true })} className="input" />
+            <Controller name="startDate" control={control} rules={{ required: true }}
+              render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
           </div>
           <div>
             <label className="label">{t('projects.endDate')} *</label>
-            <input type="date" {...register('endDate', { required: true })} className="input" />
+            <Controller name="endDate" control={control} rules={{ required: true }}
+              render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
           </div>
           <div>
             <label className="label">{t('common.status')} *</label>
@@ -1158,13 +1161,13 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                           <CalIcon size={10} className="inline mr-0.5" />
                           Дата
                         </label>
-                        <input
-                          type="date"
-                          value={tr.paidAt}
-                          onChange={e => updateTranche(idx, { paidAt: e.target.value })}
-                          disabled={!!tr.id}
-                          className={clsx('input text-sm', tr.id && 'bg-surface-50 dark:bg-surface-700 cursor-not-allowed')}
-                        />
+                        {tr.id ? (
+                          <input type="text" value={tr.paidAt} disabled
+                            className="input text-sm bg-surface-50 dark:bg-surface-700 cursor-not-allowed" />
+                        ) : (
+                          <DatePicker value={tr.paidAt}
+                            onChange={(v) => updateTranche(idx, { paidAt: v })} />
+                        )}
                       </div>
                       <div className="col-span-10 sm:col-span-4">
                         <label className="text-[10px] uppercase font-semibold text-surface-500 dark:text-surface-400">

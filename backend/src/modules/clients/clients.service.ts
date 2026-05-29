@@ -95,14 +95,24 @@ export class ClientsService {
    *    у которых обновлялся lastContactAt в этом месяце
    *  - встречи / созвоны → лиды с nextContactAt в ближайшие 14 дней
    */
-  async kpi(ownerId: string, direction?: ClientLeadDirection) {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    monthStart.setHours(0, 0, 0, 0);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    monthEnd.setHours(23, 59, 59, 999);
-    const horizon = new Date(now);
-    horizon.setDate(horizon.getDate() + 14);
+  async kpi(ownerId: string, direction?: ClientLeadDirection, from?: string, to?: string) {
+    // Окно по умолчанию — сегодняшний день. Если переданы from/to (YYYY-MM-DD),
+    // считаем за указанный интервал. Конец дня всегда захватываем целиком.
+    const today = new Date();
+    const parseLocalDate = (s: string) => {
+      const [y, m, d] = s.split('-').map(Number);
+      return new Date(y, (m || 1) - 1, d || 1);
+    };
+    const periodFrom = from ? parseLocalDate(from) : new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    periodFrom.setHours(0, 0, 0, 0);
+    const periodTo = to ? parseLocalDate(to) : new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    periodTo.setHours(23, 59, 59, 999);
+    // Встречи смотрим вперёд: от выбранного начала окна до конца окна или
+    // ближайших 14 дней — что наступит позже.
+    const horizon = new Date(periodTo);
+    if (horizon.getTime() - periodFrom.getTime() < 14 * 86400_000) {
+      horizon.setTime(periodFrom.getTime() + 14 * 86400_000);
+    }
 
     const base = () => {
       const qb = this.repo.createQueryBuilder('c').where('c.ownerId = :oid', { oid: ownerId });
@@ -110,29 +120,26 @@ export class ClientsService {
       return qb;
     };
 
-    // Каждый счётчик отдельно через try/catch: если миграция с новыми
-    // колонками (contactEmail) ещё не прошла, отдельный запрос упадёт,
-    // но эндпоинт всё равно вернёт остальные значения, а не 500.
     const safeCount = async (build: () => Promise<number>) => {
       try { return await build(); } catch { return 0; }
     };
 
     const newCompanies = await safeCount(() => base()
-      .andWhere('c.createdAt BETWEEN :from AND :to', { from: monthStart, to: monthEnd })
+      .andWhere('c.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 
     const coldCalls = await safeCount(() => base()
       .andWhere(`LOWER(COALESCE(c.channel, '')) IN ('call', 'phone', 'whatsapp', 'telegram')`)
-      .andWhere('c.updatedAt BETWEEN :from AND :to', { from: monthStart, to: monthEnd })
+      .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 
     const personalEmails = await safeCount(() => base()
       .andWhere(`(LOWER(COALESCE(c.channel, '')) = 'email' OR COALESCE(c.contactEmail, '') <> '')`)
-      .andWhere('c.lastContactAt BETWEEN :from AND :to', { from: monthStart, to: monthEnd })
+      .andWhere('c.lastContactAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 
     const meetings = await safeCount(() => base()
-      .andWhere('c.nextContactAt BETWEEN :now AND :horizon', { now, horizon })
+      .andWhere('c.nextContactAt BETWEEN :now AND :horizon', { now: periodFrom, horizon })
       .getCount());
 
     const items = [
@@ -148,8 +155,8 @@ export class ClientsService {
 
     const overall = Math.round(items.reduce((acc, i) => acc + (i.value / i.target) * 100, 0) / items.length);
     return {
-      periodFrom: monthStart.toISOString(),
-      periodTo: monthEnd.toISOString(),
+      periodFrom: periodFrom.toISOString(),
+      periodTo: periodTo.toISOString(),
       overallPercent: Math.min(100, Math.max(0, overall)),
       items,
     };

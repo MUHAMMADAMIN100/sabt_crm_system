@@ -6,7 +6,8 @@ import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, Pagination } from '@/components/ui'
 import { Plus, FileText, Trash2, Download, FileBarChart, Users, FolderKanban, Search, ExternalLink } from 'lucide-react'
 import api from '@/lib/api'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import { generateProjectReport, generateEmployeeReport, generateSingleProjectReport, generateSingleEmployeeReport } from '@/lib/pdfReports'
@@ -412,7 +413,7 @@ interface ReportFormProps {
 }
 
 function ReportForm({ onSubmit, onClose, projects, tasks, loading, t }: ReportFormProps) {
-  const { register, handleSubmit, reset } = useForm<Record<string, unknown>>({ defaultValues: { date: new Date().toISOString().split('T')[0] } })
+  const { register, handleSubmit, reset, control } = useForm<Record<string, unknown>>({ defaultValues: { date: new Date().toISOString().split('T')[0] } })
   const submit = (data: Record<string, unknown>) => { onSubmit(data); reset() }
 
   return (
@@ -420,7 +421,8 @@ function ReportForm({ onSubmit, onClose, projects, tasks, loading, t }: ReportFo
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="label">{t('reports.date')}</label>
-          <input type="date" {...register('date', { required: true })} className="input" />
+          <Controller name="date" control={control} rules={{ required: true }}
+            render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
         </div>
         <div>
           <label className="label">{t('reports.timeSpent')} *</label>

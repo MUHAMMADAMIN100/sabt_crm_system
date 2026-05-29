@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { useForm, useWatch, Controller } from 'react-hook-form'
+import { DateTimePicker } from '@/components/ui/DatePicker'
 import { useTranslation } from '@/i18n'
 import { useAuthStore } from '@/store/auth.store'
 import { Check, ChevronDown, ArrowUp, ArrowDown, X as XIcon, Plus } from 'lucide-react'
@@ -232,7 +233,12 @@ export default function TaskForm({
         </div>
         <div>
           <label className="label">{t('tasks.deadline')} *</label>
-          <input type="datetime-local" {...register('deadline', { required: true })} className="input" />
+          <Controller
+            name="deadline"
+            control={control}
+            rules={{ required: true }}
+            render={({ field }) => <DateTimePicker value={field.value || ''} onChange={field.onChange} />}
+          />
           {errors.deadline && <p className="text-xs text-red-500 mt-1">{t('tasks.deadline')} обязательно</p>}
         </div>
       </div>

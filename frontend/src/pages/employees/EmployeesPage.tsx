@@ -6,7 +6,8 @@ import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
 import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check } from 'lucide-react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -521,7 +522,7 @@ interface EmployeeFormProps {
 }
 
 function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFormProps) {
-  const { register, handleSubmit, reset, setValue, setError, formState: { errors } } = useForm()
+  const { register, handleSubmit, reset, setValue, setError, control, formState: { errors } } = useForm()
   const { t } = useTranslation()
   const actorRole = useAuthStore(s => s.user?.role)
   const isFounderActor = actorRole === 'founder'
@@ -641,11 +642,13 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
           </div>
           <div>
             <label className="label">День рождения</label>
-            <input type="date" {...register('birthDate')} className="input" />
+            <Controller name="birthDate" control={control}
+              render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
           </div>
           <div>
             <label className="label">{t('employees.hireDate')} *</label>
-            <input type="date" {...register('hireDate', { required: 'Обязательное поле' })} className={`input ${errors.hireDate ? 'border-red-400' : ''}`} />
+            <Controller name="hireDate" control={control} rules={{ required: 'Обязательное поле' }}
+              render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
             {errors.hireDate && <p className="text-xs text-red-400 mt-1">{String(errors.hireDate.message)}</p>}
           </div>
           <div>

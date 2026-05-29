@@ -28,8 +28,12 @@ export class ClientsController {
   }
 
   @Get('kpi')
-  getKpi(@Request() req) {
-    return this.service.kpi(req.user.id, leadDirectionFor(req.user?.role));
+  getKpi(
+    @Request() req,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.service.kpi(req.user.id, leadDirectionFor(req.user?.role), from, to);
   }
 
   @Get()

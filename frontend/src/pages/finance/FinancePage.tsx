@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
+import { DatePicker } from '@/components/ui/DatePicker'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import {
@@ -638,7 +639,7 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
   const emp = initial?.employee
   const isEmployeeTx = !!emp
   const todayIso = new Date().toISOString().slice(0, 10)
-  const { register, handleSubmit, watch, formState: { errors } } = useForm({
+  const { register, handleSubmit, watch, control, formState: { errors } } = useForm({
     defaultValues: {
       amount: initial?.amount ?? '',
       date: initial?.date ? String(initial.date).slice(0, 10) : todayIso,
@@ -823,7 +824,8 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
             className="input" />
         </FormField>
         <FormField label="Дата" required>
-          <input type="date" {...register('date', { required: true })} className="input" />
+          <Controller name="date" control={control} rules={{ required: true }}
+            render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
         </FormField>
         <FormField label="Категория" required>
           <select {...register('category', { required: true })} className="input">

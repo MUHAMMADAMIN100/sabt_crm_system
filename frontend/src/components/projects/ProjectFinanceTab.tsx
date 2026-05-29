@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
+import { DatePicker } from '@/components/ui/DatePicker'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { DollarSign, TrendingUp, AlertCircle, Edit, Save, X } from 'lucide-react'
@@ -51,7 +52,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
   const qc = useQueryClient()
   const [editMode, setEditMode] = useState(false)
 
-  const { register, handleSubmit, reset, watch } = useForm({
+  const { register, handleSubmit, reset, watch, control } = useForm({
     defaultValues: {
       totalContractValue: Number(project.totalContractValue ?? 0),
       paidAmount: Number(project.paidAmount ?? 0),
@@ -284,7 +285,8 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
           <input type="number" step="0.01" {...register('monthlyFee')} className="input" />
         </Field>
         <Field label="Следующий платёж">
-          <input type="date" {...register('nextPaymentDate')} className="input" />
+          <Controller name="nextPaymentDate" control={control}
+            render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
         </Field>
         <Field label="Статус оплаты">
           <select {...register('paymentStatus')} className="input">

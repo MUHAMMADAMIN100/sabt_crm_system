@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { Mail, Lock, User, Eye, EyeOff, Briefcase, Send, AtSign } from 'lucide-react'
@@ -60,6 +61,7 @@ export default function AuthPage() {
     setValue,
     setError,
     clearErrors,
+    control,
   } = useForm<any>()
 
   const switchMode = (m: 'login' | 'register') => {
@@ -274,7 +276,8 @@ export default function AuthPage() {
                 {/* День рождения */}
                 <div className="auth-field" style={{ animationDelay: '250ms' }}>
                   <label className="label">День рождения</label>
-                  <input type="date" {...reg('birthDate')} className="input" />
+                  <Controller name="birthDate" control={control}
+                    render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
                 </div>
               </>
             )}

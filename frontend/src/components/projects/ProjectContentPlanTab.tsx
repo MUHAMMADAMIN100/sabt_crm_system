@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
+import { DatePicker } from '@/components/ui/DatePicker'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { Plus, Edit, Trash2, ExternalLink, Filter, Loader2 } from 'lucide-react'
@@ -295,7 +296,7 @@ function ItemForm({ initial, employees, onSubmit, onCancel, loading }: {
   onCancel: () => void
   loading: boolean
 }) {
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, control, formState: { errors } } = useForm({
     defaultValues: {
       topic: initial?.topic ?? '',
       contentType: initial?.contentType ?? 'post',
@@ -344,10 +345,12 @@ function ItemForm({ initial, employees, onSubmit, onCancel, loading }: {
 
       <div className="grid grid-cols-2 gap-3">
         <FormField label="Дата публикации">
-          <input type="date" {...register('publishDate')} className="input" />
+          <Controller name="publishDate" control={control}
+            render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
         </FormField>
         <FormField label="Готовность к ревью">
-          <input type="date" {...register('preparationDeadline')} className="input" />
+          <Controller name="preparationDeadline" control={control}
+            render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
         </FormField>
       </div>
 
