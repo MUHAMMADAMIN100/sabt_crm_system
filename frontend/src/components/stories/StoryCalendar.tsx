@@ -240,8 +240,8 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
     return (
       <div className={clsx('card', compact && 'p-3')}>
         <div className="flex items-center justify-between mb-3">
-          <h3 className={clsx('font-semibold text-surface-900 dark:text-surface-100', compact ? 'text-sm' : 'text-base')}>
-            📸 Истории
+          <h3 className={clsx('font-semibold text-surface-900 dark:text-surface-100 tracking-tight', compact ? 'text-sm' : 'text-base')}>
+            Истории
           </h3>
           <div className="flex items-center gap-1">
             <button onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() - 1))} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400">

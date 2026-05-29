@@ -172,15 +172,15 @@ export default function Header({ onMenuClick }: HeaderProps) {
   )
 
   return (
-    <header className="h-[60px] bg-white dark:bg-surface-800 border-b border-surface-100 dark:border-surface-700 flex items-center px-3 sm:px-4 gap-2 sm:gap-3 shrink-0 sticky-top backdrop-blur-safari relative z-40">
-      <button onClick={onMenuClick} className="p-2 rounded-xl hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
-        <Menu size={20} />
+    <header className="h-[56px] bg-white dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 flex items-center px-3 sm:px-4 gap-2 sm:gap-3 shrink-0 sticky-top relative z-40">
+      <button onClick={onMenuClick} className="p-2 rounded-md hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
+        <Menu size={18} />
       </button>
 
       {/* Desktop Search */}
       <div className="flex-1 max-w-lg hidden sm:block relative" ref={searchRef}>
-        <div className="flex items-center gap-2 bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl px-3 py-2">
-          <Search size={15} className="text-surface-400" />
+        <div className="flex items-center gap-2 bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-lg px-3 py-1.5">
+          <Search size={14} className="text-surface-400" />
           <input
             type="text"
             value={searchQuery}
@@ -209,22 +209,12 @@ export default function Header({ onMenuClick }: HeaderProps) {
       <div className="flex items-center gap-1 ml-auto">
         {/* Notifications dropdown */}
         <div className="relative" ref={notifRef}>
-          <button onClick={() => setNotifOpen(o => !o)} className={clsx(
-            'relative p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300',
-            // Когда есть непрочитанные — мягкое покачивание колокольчика 1 раз при появлении
-            badgeCount > 0 && 'animate-wiggle',
-          )}>
+          <button onClick={() => setNotifOpen(o => !o)} className="relative p-1.5 rounded-md hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
             <Bell size={18} />
             {badgeCount > 0 && (
-              <span
-                key={badgeCount}
-                className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium animate-pop-in shadow-sm ring-2 ring-white dark:ring-surface-900"
-              >
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium ring-2 ring-white dark:ring-surface-800">
                 {badgeCount > 99 ? '99+' : badgeCount}
               </span>
-            )}
-            {badgeCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full animate-notification pointer-events-none" />
             )}
           </button>
           {notifOpen && (

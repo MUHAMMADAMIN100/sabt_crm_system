@@ -73,44 +73,44 @@
     @apply bg-surface-800 border-surface-700;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   }
+  /* Кликабельная карточка — без translateY (был «прыжок» при hover).
+     Только смена границы и лёгкая подкраска фона. */
   .card-interactive {
-    @apply card cursor-pointer transition-all duration-200 ease-out;
-    will-change: transform, box-shadow;
+    @apply card cursor-pointer;
+    transition: border-color 120ms ease, background-color 120ms ease;
   }
-  .card-interactive:hover {
-    @apply shadow-card-hover;
-    transform: translateY(-2px);
-  }
-  .card-interactive:active {
-    transform: translateY(0) scale(0.995);
-  }
+  .card-interactive:hover { @apply border-surface-300; }
+  .dark .card-interactive:hover { @apply border-surface-600 bg-surface-800/60; }
 
-  .btn { @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-medium text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed select-none min-h-[40px] sm:min-h-0;
-    transition: background-color 150ms ease, color 150ms ease, box-shadow 200ms ease, transform 120ms ease;
+  /* Кнопки — сдержанная плоская стилистика. Без translate-Y и scale-bounce
+     при hover/active (это давало «прыгающий» AI-вид). Только цветовой
+     переход + чуть-чуть тени на primary. Единая высота 36px. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg
+           font-medium text-sm cursor-pointer select-none
+           disabled:opacity-50 disabled:cursor-not-allowed min-h-[36px];
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 150ms ease;
   }
-  .btn:hover:not(:disabled) { transform: translateY(-1px); }
-  .btn:active:not(:disabled) { transform: translateY(0) scale(0.97); }
-  .btn-primary { @apply btn bg-primary-600 text-white hover:bg-primary-700 hover:shadow-md; }
-  .btn-secondary { @apply btn bg-surface-100 text-surface-800 hover:bg-surface-200; }
-  .dark .btn-secondary { @apply bg-surface-700 text-surface-100 hover:bg-surface-600; }
-  .btn-danger { @apply btn bg-red-50 text-red-600 hover:bg-red-100; }
-  .dark .btn-danger { @apply bg-red-900/20 text-red-400 hover:bg-red-900/30; }
-  .btn-ghost { @apply btn text-surface-600 hover:bg-surface-100; }
-  .dark .btn-ghost { @apply text-surface-300 hover:bg-surface-700; }
+  .btn-primary   { @apply btn bg-primary-600 text-white hover:bg-primary-700; }
+  .btn-secondary { @apply btn bg-white border border-surface-200 text-surface-700 hover:bg-surface-50 hover:border-surface-300; }
+  .dark .btn-secondary { @apply bg-surface-800 border-surface-700 text-surface-200 hover:bg-surface-700 hover:border-surface-600; }
+  .btn-danger    { @apply btn bg-red-600 text-white hover:bg-red-700; }
+  .btn-ghost     { @apply btn text-surface-600 hover:bg-surface-100 hover:text-surface-900; }
+  .dark .btn-ghost { @apply text-surface-300 hover:bg-surface-700 hover:text-white; }
 
+  /* Инпут — флэт, тонкая граница, focus-ring без translate-Y. */
   .input {
-    @apply w-full px-3 py-2 bg-white border border-surface-200 rounded-xl text-sm;
-    @apply focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
-    transition:
-      border-color 150ms ease,
-      box-shadow 200ms ease,
-      background-color 150ms ease,
-      transform 120ms ease;
+    @apply w-full px-3 py-2 bg-white border border-surface-200 rounded-lg text-sm text-surface-900
+           placeholder:text-surface-400 min-h-[36px]
+           focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20;
+    transition: border-color 120ms ease, box-shadow 150ms ease, background-color 120ms ease;
   }
-  .input:focus { transform: translateY(-1px); }
   .input:hover:not(:focus):not(:disabled) { @apply border-surface-300; }
-  .dark .input { @apply bg-surface-800 border-surface-700 text-surface-100; }
-  .dark .input:hover:not(:focus):not(:disabled) { @apply border-surface-500; }
+  .dark .input {
+    @apply bg-surface-800 border-surface-700 text-surface-100 placeholder:text-surface-500
+           focus:border-primary-400 focus:ring-primary-400/20;
+  }
+  .dark .input:hover:not(:focus):not(:disabled) { @apply border-surface-600; }
 
   /* Native date / datetime inputs render smaller text + weird heights on mobile
    * Safari/Chrome by default. Force matching size with other .input fields. */
@@ -134,30 +134,8 @@
 
   .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
 
-  .sidebar-link {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium relative;
-    @apply transition-all duration-200 text-surface-600;
-    @apply hover:bg-surface-100 hover:text-surface-900;
-    will-change: transform, background-color;
-  }
-  .sidebar-link:hover { transform: translateX(2px); }
-  .dark .sidebar-link { @apply text-surface-300 hover:bg-surface-700 hover:text-surface-100; }
-  .sidebar-link.active {
-    @apply bg-primary-50 text-primary-700 shadow-sm;
-  }
-  /* Левый акцентный вертикальный бар у активного пункта — плавно появляется */
-  .sidebar-link.active::before {
-    content: '';
-    position: absolute;
-    left: -3px;
-    top: 25%;
-    bottom: 25%;
-    width: 3px;
-    border-radius: 0 4px 4px 0;
-    background: theme('colors.primary.500');
-    animation: slideInLeft 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-  .dark .sidebar-link.active { @apply bg-primary-900/30 text-primary-400; }
+  /* .sidebar-link удалён — Sidebar.tsx теперь рендерит свои инлайн-классы
+     для тёмного фона. См. components/layout/Sidebar.tsx. */
 
   /* Заголовки страниц/секций — без декораций, чистая типографика. */
   .page-title { @apply text-xl sm:text-2xl font-bold text-surface-900 tracking-tight; }
@@ -367,16 +345,15 @@ aside {
 }
 .hover-glow:hover { box-shadow: 0 0 0 3px rgba(107, 79, 207, 0.15); }
 
-/* Smooth lift+shadow для интерактивных карточек */
+/* Карточка с hover-эффектом — только смена границы, без подпрыгивания. */
 .card-hoverable {
-  @apply transition-all duration-200 ease-out;
+  transition: border-color 120ms ease, background-color 120ms ease;
 }
 .card-hoverable:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.12);
+  border-color: theme('colors.surface.300');
 }
 .dark .card-hoverable:hover {
-  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  border-color: theme('colors.surface.600');
 }
 
 /* ====================== STAGGER (universal up to 16 items) ====================== */

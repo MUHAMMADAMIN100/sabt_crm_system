@@ -65,10 +65,7 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
     <div className="card animate-fade-up">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className="text-base">📸</span>
-          <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-sm">Истории сегодня</h3>
-        </div>
+        <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-sm">Истории сегодня</h3>
         {myProjects.length > 0 && (
           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
             allDoneToday

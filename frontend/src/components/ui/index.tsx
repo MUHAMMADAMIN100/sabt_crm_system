@@ -31,18 +31,18 @@ export function CollapsibleSection({ id, title, children, defaultOpen = true, cl
     <div className={clsx('card', className)}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-2 -mx-1 px-1 py-1 hover:bg-surface-50 dark:hover:bg-surface-700/30 rounded-lg transition-colors text-left group"
+        className="w-full flex items-center justify-between gap-2 text-left"
       >
         <div className="flex-1 min-w-0">{title}</div>
         <ChevronDown
           size={16}
           className={clsx(
-            'text-surface-400 shrink-0 transition-transform duration-300 ease-out',
+            'text-surface-400 shrink-0 transition-transform duration-200 ease-out',
             open ? 'rotate-0' : '-rotate-90',
           )}
         />
       </button>
-      {open && <div className="mt-3 collapse-content">{children}</div>}
+      {open && <div className="mt-4">{children}</div>}
     </div>
   )
 }
@@ -89,59 +89,48 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
-      {/* Backdrop — затемнение + blur, мягкий fade */}
+      {/* Backdrop — простое затемнение, без backdrop-blur и spring-эффектов. */}
       <div
         className={clsx(
-          'absolute inset-0 bg-black/60 transition-opacity duration-300 ease-out',
+          'absolute inset-0 bg-black/50 transition-opacity duration-200 ease-out',
           visible ? 'opacity-100' : 'opacity-0',
         )}
-        style={{
-          WebkitBackdropFilter: visible ? 'blur(10px)' : 'blur(0px)',
-          backdropFilter: visible ? 'blur(10px)' : 'blur(0px)',
-          transition: 'opacity 300ms ease-out, backdrop-filter 300ms ease-out, -webkit-backdrop-filter 300ms ease-out',
-        }}
         onClick={onClose}
       />
-      {/* Panel — лёгкий «пружинистый» вход через cubic-bezier с пере-стрелом */}
+      {/* Panel — спокойный fade + лёгкий slide-up без overshoot. */}
       <div
         className={clsx(
-          'relative bg-white dark:bg-surface-800 shadow-modal w-full',
-          'rounded-t-2xl sm:rounded-2xl',
+          'relative bg-white dark:bg-surface-800 w-full',
+          'rounded-t-xl sm:rounded-xl border border-surface-200 dark:border-surface-700',
+          'shadow-[0_12px_32px_-8px_rgba(15,15,18,0.18)]',
           'max-h-[90vh] sm:max-h-[85vh] flex flex-col',
-          'transition-all duration-300',
+          'transition-all duration-200 ease-out',
           sizes[size],
           visible
-            ? 'opacity-100 scale-100 translate-y-0'
-            : 'opacity-0 sm:scale-95 translate-y-8 sm:translate-y-5',
+            ? 'opacity-100 translate-y-0'
+            : 'opacity-0 translate-y-3',
         )}
-        style={{
-          // Cubic-bezier с лёгким overshoot (0.34, 1.56, 0.64, 1) — модалка
-          // словно «вылетает» к финалу. На выходе обычный ease-out.
-          transitionTimingFunction: visible
-            ? 'cubic-bezier(0.34, 1.56, 0.64, 1)'
-            : 'cubic-bezier(0.22, 1, 0.36, 1)',
-        }}
       >
         {title && (
-          <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-100 dark:border-surface-700 shrink-0">
-            <h2 className="text-base sm:text-lg font-semibold text-surface-900 dark:text-surface-100">{title}</h2>
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-surface-100 dark:border-surface-700 shrink-0">
+            <h2 className="text-base font-semibold text-surface-900 dark:text-surface-100 tracking-tight">{title}</h2>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 transition-all duration-150 hover:rotate-90"
+              className="p-1.5 rounded-md hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 transition-colors"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
           </div>
         )}
         {!title && (
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 z-10 transition-all duration-150 hover:rotate-90"
+            className="absolute top-3 right-3 p-1.5 rounded-md hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 z-10 transition-colors"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         )}
-        <div className="p-4 sm:p-5 overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>{children}</div>
+        <div className="p-5 overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>{children}</div>
       </div>
     </div>,
     document.body,
@@ -210,15 +199,13 @@ export function Spinner({ size = 20, className }: { size?: number; className?: s
 }
 
 // ── PageLoader ───────────────────────────────────────────────────────
+/** Тонкий нейтральный лоадер. Используется на полных страницах (без
+ *  Layout) — на /auth и в начальной загрузке. Внутри Layout роуты
+ *  используют RouteLoader из Layout.tsx (просто spinner). */
 export function PageLoader() {
   return (
-    <div className="flex flex-col items-center justify-center h-64 gap-4">
-      <div className="w-20 h-20 rounded-2xl animate-pulse flex items-center justify-center relative shadow-lg
-                      bg-white dark:bg-primary-600">
-        <span className="text-[52px] font-black leading-none select-none text-primary-600 dark:text-white"
-              style={{ fontFamily: 'Arial Black, sans-serif' }}>S</span>
-        <div className="absolute top-2 right-3 w-4 h-4 rounded-full bg-red-500" />
-      </div>
+    <div className="flex items-center justify-center h-64">
+      <div className="w-7 h-7 border-2 border-surface-300 dark:border-surface-700 border-t-primary-500 rounded-full animate-spin" />
     </div>
   )
 }
@@ -249,17 +236,16 @@ export function SkeletonCard() {
 }
 
 // ── EmptyState ───────────────────────────────────────────────────────
+/** Нейтральный пустой стейт — без эмодзи и без bouncing. Спокойная плашка
+ *  для всех «нет данных» сценариев. */
 export function EmptyState({ title, description, action }: {
   title: string; description?: string; action?: ReactNode
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center animate-fade-up">
-      <div className="w-16 h-16 rounded-2xl bg-surface-100 dark:bg-surface-700 flex items-center justify-center mb-4 animate-bounce-soft">
-        <span className="text-2xl">📭</span>
-      </div>
-      <h3 className="font-semibold text-surface-900 dark:text-surface-100 mb-1">{title}</h3>
+    <div className="flex flex-col items-center justify-center py-14 text-center">
+      <h3 className="font-semibold text-surface-700 dark:text-surface-200 mb-1">{title}</h3>
       {description && <p className="text-sm text-surface-500 dark:text-surface-400 mb-4 max-w-xs">{description}</p>}
-      {action && <div className="animate-fade-up delay-150">{action}</div>}
+      {action && <div className="mt-1">{action}</div>}
     </div>
   )
 }
@@ -366,20 +352,21 @@ export function Select({ value, onChange, options, placeholder, className }: {
 }
 
 // ── StatCard ─────────────────────────────────────────────────────────
+/** Карточка метрики — без подпрыгивания при hover, без scale на иконке. */
 export function StatCard({ title, value, icon: Icon, color, sub }: {
   title: string; value: string | number; icon: any; color: string; sub?: string
 }) {
   return (
-    <div className="card flex items-center gap-2.5 sm:gap-4 hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200 min-w-0">
+    <div className="card flex items-center gap-3 sm:gap-4 min-w-0">
       <div className={clsx(
-        'w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-110',
+        'w-9 h-9 sm:w-11 sm:h-11 rounded-lg flex items-center justify-center shrink-0',
         color,
       )}>
         <Icon size={18} className="text-white sm:hidden" />
-        <Icon size={22} className="text-white hidden sm:block" />
+        <Icon size={20} className="text-white hidden sm:block" />
       </div>
-      <div className="animate-count-up min-w-0 flex-1">
-        <p className="text-[11px] sm:text-sm leading-tight text-surface-500 dark:text-surface-400 break-words">{title}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] sm:text-xs uppercase tracking-wider text-surface-500 dark:text-surface-400 break-words">{title}</p>
         <p className="text-lg sm:text-2xl font-bold text-surface-900 dark:text-surface-100 tabular-nums leading-tight">{value}</p>
         {sub && <p className="text-[10px] sm:text-xs leading-tight text-surface-400 dark:text-surface-500 mt-0.5 break-words">{sub}</p>}
       </div>
@@ -420,10 +407,10 @@ export function Pagination({ page, total, pageSize, onChange }: {
             key={p}
             onClick={() => onChange(p)}
             className={clsx(
-              'w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-all duration-200',
+              'w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors',
               p === page
-                ? 'bg-primary-600 text-white shadow-sm scale-105'
-                : 'text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 hover:scale-105 active:scale-95',
+                ? 'bg-primary-600 text-white'
+                : 'text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700',
             )}
           >{p}</button>
         )
@@ -447,17 +434,12 @@ export function ProgressBar({ value, className }: { value: number; className?: s
     return () => cancelAnimationFrame(id)
   }, [clamped])
   return (
-    <div className={clsx('w-full bg-surface-100 dark:bg-surface-700 rounded-full h-2 overflow-hidden', className)}>
+    <div className={clsx('w-full bg-surface-100 dark:bg-surface-700 rounded-full h-1.5 overflow-hidden', className)}>
       <div
-        className={clsx(
-          'h-2 rounded-full transition-all ease-out',
-          // Активный (>0%) — добавляем shimmer-блик
-          clamped > 0 && 'progress-shimmer',
-        )}
+        className="h-1.5 rounded-full bg-primary-600 transition-[width] ease-out"
         style={{
           width: `${animated}%`,
-          transitionDuration: '900ms',
-          background: 'linear-gradient(90deg, rgb(107, 79, 207), rgb(139, 92, 246))',
+          transitionDuration: '600ms',
         }}
       />
     </div>
