@@ -119,7 +119,8 @@ export default function GlobalStoriesCalendar() {
                   ))}
                 </div>
 
-                {/* Mini calendar */}
+                {/* Mini calendar — дни до project.startDate в текущем месяце
+                    показываем как пустые клетки (проект ещё не существовал). */}
                 <div className="grid grid-cols-7 gap-0.5">
                   {Array.from({ length: startPad }).map((_, i) => <div key={`pad-${i}`} />)}
                   {days.map(day => {
@@ -127,6 +128,11 @@ export default function GlobalStoriesCalendar() {
                     const count = projectMap[dateKey] || 0
                     const future = isAfter(day, new Date()) && !isToday(day)
                     const today = isToday(day)
+                    const beforeStart = p.startDate && day < new Date(new Date(p.startDate).setHours(0,0,0,0))
+                    if (beforeStart) {
+                      // Проект ещё не стартовал — пустая клетка вместо подсветки.
+                      return <div key={dateKey} className="aspect-square" />
+                    }
                     let bg = 'bg-surface-100 dark:bg-surface-700/40'
                     let textColor = 'text-surface-400 dark:text-surface-500'
                     if (future) {

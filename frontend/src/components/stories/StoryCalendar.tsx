@@ -169,8 +169,25 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
     return totals
   }, [activeProjects, storyMap])
 
-  const days = eachDayOfInterval({ start: startOfMonth(current), end: endOfMonth(current) })
-  const startPad = (getDay(startOfMonth(current)) + 6) % 7
+  const monthStart = startOfMonth(current)
+  const monthEnd = endOfMonth(current)
+  const days = eachDayOfInterval({ start: monthStart, end: monthEnd })
+  const startPad = (getDay(monthStart) + 6) % 7
+
+  /** Видимый диапазон дней для конкретного проекта.
+   *  Если проект начался посреди месяца — отрезаем дни до startDate,
+   *  чтобы не рисовать пустые клетки за период, когда проекта ещё не было. */
+  const projectDaysFor = (project: any) => {
+    if (!project?.startDate) return { days, startPad }
+    const projStart = new Date(project.startDate)
+    // Проект стартовал в будущих месяцах или раньше текущего — без клампа.
+    if (projStart <= monthStart) return { days, startPad }
+    if (projStart > monthEnd) return { days: [], startPad: 0 }
+    return {
+      days: eachDayOfInterval({ start: projStart, end: monthEnd }),
+      startPad: (getDay(projStart) + 6) % 7,
+    }
+  }
 
   /** Color a day by progress against the target. */
   const getDayColor = (count: number, date: Date, target: number) => {
@@ -327,6 +344,9 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
   // Project calendar view
   const projectStories = storyMap[selectedProject.id] || {}
   const dailyTarget = getDailyTarget(selectedProject)
+  // Календарь стартует от project.startDate, если он внутри текущего месяца —
+  // дни до старта проекта не рендерим (раньше там были пустые клетки).
+  const { days: projectDays, startPad: projectPad } = projectDaysFor(selectedProject)
 
   return (
     <div className={clsx('card', compact && 'p-3')}>
@@ -364,9 +384,14 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
       </div>
 
       {/* Calendar days with 3 checkboxes */}
+      {projectDays.length === 0 ? (
+        <p className="text-xs text-surface-400 text-center py-6">
+          Проект ещё не стартовал в этом месяце
+        </p>
+      ) : (
       <div className="grid grid-cols-7 gap-0.5">
-        {Array.from({ length: startPad }).map((_, i) => <div key={`pad-${i}`} />)}
-        {days.map(day => {
+        {Array.from({ length: projectPad }).map((_, i) => <div key={`pad-${i}`} />)}
+        {projectDays.map(day => {
           const dateKey = format(day, 'yyyy-MM-dd')
           const count = projectStories[dateKey] || 0
           const past = day < new Date() && !isToday(day)
@@ -424,6 +449,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
           )
         })}
       </div>
+      )}
 
       {/* Month total */}
       <div className="flex items-center justify-between mt-3 pt-2 border-t border-surface-100 dark:border-surface-700 text-xs">
