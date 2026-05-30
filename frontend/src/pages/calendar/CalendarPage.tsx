@@ -1110,6 +1110,8 @@ function FounderQuickTaskForm({
   projects?: any[]
 }) {
   const isEdit = !!initial
+  // Текущий пользователь — нужен для опции «Я сам» в списке исполнителей.
+  const currentUser = useAuthStore(s => s.user)
   const initialScope = initial?.scope || 'business'
   const [scope, setScope] = useState<'personal' | 'business' | 'general'>(
     !allowGeneral && initialScope === 'general' ? 'business' : initialScope,
@@ -1330,9 +1332,41 @@ function FounderQuickTaskForm({
                 autoFocus
               />
               <div className="max-h-48 overflow-y-auto divide-y divide-surface-100 dark:divide-surface-700">
+                {/* «Я сам» — спецпункт сверху списка. Бизнес-задача, но
+                    исполнитель = текущий пользователь. Доступно всем
+                    ролям. */}
+                {currentUser?.id && !search.trim() && (() => {
+                  const checked = selectedIds.includes(currentUser.id)
+                  return (
+                    <label
+                      className={clsx(
+                        'flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors',
+                        checked
+                          ? 'bg-primary-100 dark:bg-primary-900/30'
+                          : 'bg-primary-50/40 dark:bg-primary-900/10 hover:bg-primary-50 dark:hover:bg-primary-900/20',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleAssignee(currentUser.id)}
+                        className="rounded"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold text-primary-700 dark:text-primary-300">👤 Я сам</div>
+                        <div className="text-[11px] text-primary-500/80 dark:text-primary-400/80">
+                          Поставить задачу самому себе
+                        </div>
+                      </div>
+                    </label>
+                  )
+                })()}
                 {filteredEmployees.length === 0 ? (
                   <div className="p-3 text-xs text-surface-400 text-center">Никого не найдено</div>
-                ) : filteredEmployees.map((emp: any) => {
+                ) : filteredEmployees
+                  // Исключаем себя из общего списка — мы уже наверху «Я сам».
+                  .filter((emp: any) => emp.user?.id !== currentUser?.id)
+                  .map((emp: any) => {
                   const checked = selectedIds.includes(emp.user.id)
                   return (
                     <label
