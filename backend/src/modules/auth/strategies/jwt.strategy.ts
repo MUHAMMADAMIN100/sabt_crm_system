@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
@@ -15,6 +15,8 @@ const fromCookie = (req: Request): string | null => {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly logger = new Logger('JwtStrategy');
+
   constructor(
     config: ConfigService,
     @InjectRepository(User) private userRepo: Repository<User>,
@@ -30,8 +32,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: { sub: string; email: string; role: string }) {
     const user = await this.userRepo.findOne({ where: { id: payload.sub } });
-    if (!user || !user.isActive) throw new UnauthorizedException();
+    if (!user) {
+      this.logger.warn(`JWT validate: user not found by id=${payload.sub} (email in token: ${payload.email})`);
+      throw new UnauthorizedException();
+    }
+    if (!user.isActive) {
+      this.logger.warn(`JWT validate: user ${user.email} (id=${user.id}) is NOT active`);
+      throw new UnauthorizedException();
+    }
     if (user.isBlocked) {
+      this.logger.warn(`JWT validate: user ${user.email} (id=${user.id}) is BLOCKED`);
       const blockedByLabel = user.blockedByRole === 'founder'
         ? 'основатель компании'
         : user.blockedByRole === 'co_founder'
