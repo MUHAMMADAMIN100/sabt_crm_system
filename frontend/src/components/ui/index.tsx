@@ -54,9 +54,12 @@ interface ModalProps {
   title?: string
   children: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl'
+  /** Произвольный контент в правом верхнем углу заголовка (например,
+   *  быстрая кнопка действия). Появляется между title и X-кнопкой. */
+  titleAction?: ReactNode
 }
 
-export function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
+export function Modal({ open, onClose, title, children, size = 'md', titleAction }: ModalProps) {
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
 
@@ -112,14 +115,17 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
         )}
       >
         {title && (
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-surface-100 dark:border-surface-700 shrink-0">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-surface-100 dark:border-surface-700 shrink-0 gap-3">
             <h2 className="text-base font-semibold text-surface-900 dark:text-surface-100 tracking-tight">{title}</h2>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-md hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 transition-colors"
-            >
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {titleAction}
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-md hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
         )}
         {!title && (
@@ -148,9 +154,12 @@ export function Badge({ children, variant = '', className }: BadgeProps) {
   )
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  new: 'Новая', in_progress: 'В работе', review: 'На проверке',
-  returned: 'Возвращено', done: 'Готово', cancelled: 'Отменена',
+// Подписи статусов задачи импортируем из централизованного модуля
+// (Wave 11 — 4-статусная модель). Старые проектные статусы оставлены
+// как есть для других сущностей (project/employee), которые ими пользуются.
+import { STATUS_LABELS as TASK_STATUS_LABELS, normalizeTaskStatus } from '@/lib/taskStatus'
+
+const NON_TASK_STATUS_LABELS: Record<string, string> = {
   planning: 'Планируется', completed: 'Завершён', archived: 'Архив', on_hold: 'Пауза',
   active: 'Активный', inactive: 'Неактивный',
 }
@@ -160,7 +169,11 @@ const PRIORITY_LABELS: Record<string, string> = {
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  return <Badge variant={status}>{STATUS_LABELS[status] || status}</Badge>
+  // Сначала пробуем как статус задачи (нормализуем легаси-значения).
+  // Если статус не из таск-набора — берём подпись из набора проектов/прочих.
+  const taskLabel = TASK_STATUS_LABELS[normalizeTaskStatus(status)]
+  const label = NON_TASK_STATUS_LABELS[status] ?? taskLabel ?? status
+  return <Badge variant={status}>{label}</Badge>
 }
 
 export function PriorityBadge({ priority }: { priority: string }) {

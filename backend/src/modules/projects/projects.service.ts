@@ -1222,12 +1222,11 @@ export class ProjectsService {
       return;
     }
 
-    // Weight per status: new=0%, in_progress=30%, returned=25%, review=70%, done=100%, cancelled=excluded
+    // Weight per status (4-статусная модель): new=0%, in_progress=50%, done=100%,
+    // cancelled — исключена из расчёта.
     const statusWeight: Record<string, number> = {
       new: 0,
-      in_progress: 30,
-      returned: 25,
-      review: 70,
+      in_progress: 50,
       done: 100,
     };
 

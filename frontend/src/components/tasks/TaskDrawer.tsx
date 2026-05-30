@@ -10,7 +10,8 @@ import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
-import { isTaskOverdue } from '@/lib/taskStatus'
+import { isTaskOverdue, STATUS_LABELS, TASK_STATUSES } from '@/lib/taskStatus'
+import { stripLeadingEmoji } from '@/lib/stripEmoji'
 
 /**
  * Универсальный right-side drawer для задач. Открывается по taskId,
@@ -80,14 +81,9 @@ export default function TaskDrawer({
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось обновить статус'),
   })
 
-  const STATUS_LABELS: Record<string, string> = {
-    new: 'Новая', accepted: 'Принята', in_progress: 'В работе',
-    on_pm_review: 'У PM', on_rework: 'На доработке', review: 'На проверке',
-    on_client_approval: 'У клиента', approved: 'Утверждена', done: 'Выполнена',
-    published: 'Опубликована', returned: 'Возвращена', rescheduled: 'Перенесена',
-    cancelled: 'Отменена',
-  }
-  const ALL_STATUSES = Object.keys(STATUS_LABELS)
+  // Wave 11: 4-статусная модель — берём подписи из центрального модуля.
+  const ALL_STATUSES = TASK_STATUSES
+  const labels = STATUS_LABELS
 
   const isOwn = task?.assigneeId === user?.id
   const isCreator = task?.createdById === user?.id
@@ -104,18 +100,22 @@ export default function TaskDrawer({
 
   return (
     <>
-      {/* Overlay — плотное затемнение + блюр поверх всего layout'а
-          (Header у нас sticky z-40 → drawer надо поднять выше). */}
+      {/* Overlay — лёгкое затемнение без backdrop-blur. Blur создаёт
+          артефакты рендера в Chrome/Edge (видно через панель «смазанным»
+          куском фона) и убивает производительность на больших страницах.
+          Тёмная плёнка bg-black/40 + сильная тень самой панели справа
+          даёт достаточный визуальный фокус. */}
       <div
         onClick={onClose}
-        className="fixed inset-0 z-[100] bg-black/70 transition-opacity duration-300 animate-fade-in"
-        style={{ WebkitBackdropFilter: 'blur(8px)', backdropFilter: 'blur(8px)' }}
+        className="fixed inset-0 z-[100] bg-black/40 transition-opacity duration-200 animate-fade-in"
       />
       <aside
         role="dialog"
         aria-modal="true"
         className={clsx(
-          'fixed top-0 right-0 z-[110] h-full bg-white dark:bg-surface-900 shadow-2xl border-l border-surface-200 dark:border-surface-700',
+          'fixed top-0 right-0 z-[110] h-full bg-white dark:bg-surface-900',
+          'shadow-[-12px_0_40px_-8px_rgba(0,0,0,0.25)]',
+          'border-l border-surface-200 dark:border-surface-700',
           'w-full sm:w-[460px] lg:w-[560px] xl:w-[640px] flex flex-col',
           'animate-slide-in-right',
         )}
@@ -160,7 +160,7 @@ export default function TaskDrawer({
           ) : (
             <>
               <h2 className="text-lg font-bold text-surface-900 dark:text-surface-100 leading-snug">
-                {task.title}
+                {stripLeadingEmoji(task.title)}
               </h2>
 
               {task.description && (
@@ -178,7 +178,7 @@ export default function TaskDrawer({
                       className="text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-white dark:bg-surface-800"
                     >
                       {ALL_STATUSES.map(s => (
-                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                        <option key={s} value={s}>{labels[s]}</option>
                       ))}
                     </select>
                   </DetailRow>

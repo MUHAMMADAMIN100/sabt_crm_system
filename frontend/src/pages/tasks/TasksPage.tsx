@@ -8,7 +8,9 @@ import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
 import DeleteWithReasonDialog from '@/components/tasks/DeleteWithReasonDialog'
-import { Plus, Search, LayoutGrid, List, Filter, Edit, Trash2, Download, CheckSquare, X } from 'lucide-react'
+import { Plus, Search, LayoutGrid, List, Filter, Edit, Trash2, Download, CheckSquare, X, FolderKanban, Clock, User as UserIcon, Users as UsersIcon } from 'lucide-react'
+import { stripLeadingEmoji } from '@/lib/stripEmoji'
+import { STATUS_LABELS, TASK_STATUSES } from '@/lib/taskStatus'
 import api from '@/lib/api'
 import { format } from 'date-fns'
 import TaskForm from '@/components/tasks/TaskForm'
@@ -63,29 +65,10 @@ export default function TasksPage() {
   const qc = useQueryClient()
   const { t } = useTranslation()
 
-  // Wave 17: расширенный пайплайн (TZ п.4). STATUSES = быстрые фильтр-чипы;
-  // ALL_STATUSES = полный список для dropdown смены статуса задачи.
-  const STATUSES = ['new', 'in_progress', 'review', 'done']
-  const ALL_STATUSES = [
-    'new', 'accepted', 'in_progress', 'on_pm_review', 'on_rework',
-    'review', 'on_client_approval', 'approved', 'done', 'published',
-    'returned', 'rescheduled', 'cancelled',
-  ]
-  const STATUS_LABELS: Record<string, string> = {
-    new: t('statuses.new'),
-    accepted: 'Принято',
-    in_progress: t('statuses.in_progress'),
-    on_pm_review: 'У PM',
-    on_rework: 'На доработке',
-    review: t('statuses.review'),
-    on_client_approval: 'У клиента',
-    approved: 'Утверждено',
-    done: t('statuses.done'),
-    published: 'Опубликовано',
-    returned: t('statuses.returned'),
-    rescheduled: 'Перенесено',
-    cancelled: t('statuses.cancelled'),
-  }
+  // Wave 11: 4-статусная модель. STATUSES — для чипов-фильтров,
+  // ALL_STATUSES — для dropdown'а смены.
+  const STATUSES = TASK_STATUSES
+  const ALL_STATUSES = TASK_STATUSES
   const PRIORITIES = ['low', 'medium', 'high', 'critical']
 
   const { data: allTasks, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => (isManagerPlus || isSalesManager) ? tasksApi.list() : tasksApi.my(), refetchInterval: 30000 })
@@ -294,21 +277,21 @@ export default function TasksPage() {
           «Общие» = задачи команды, которые не направлены лично мне. */}
       <div className="flex flex-wrap items-center gap-1.5">
         {[
-          { value: 'all'    as TaskScopeFilter, label: 'Все',         icon: '' },
-          { value: 'mine'   as TaskScopeFilter, label: 'Мои задачи',  icon: '👤' },
-          { value: 'common' as TaskScopeFilter, label: 'Общие',       icon: '👥' },
+          { value: 'all'    as TaskScopeFilter, label: 'Все',         Icon: null },
+          { value: 'mine'   as TaskScopeFilter, label: 'Мои задачи',  Icon: UserIcon },
+          { value: 'common' as TaskScopeFilter, label: 'Общие',       Icon: UsersIcon },
         ].map(opt => (
           <button
             key={opt.value}
             onClick={() => setScopeFilter(opt.value)}
             className={clsx(
-              'inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors',
+              'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors',
               scopeFilter === opt.value
                 ? 'bg-primary-600 text-white'
                 : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
             )}
           >
-            {opt.icon && <span>{opt.icon}</span>}{opt.label}
+            {opt.Icon && <opt.Icon size={13} />}{opt.label}
           </button>
         ))}
         {scopeFilter !== 'all' && (
@@ -515,7 +498,7 @@ export default function TasksPage() {
                     )}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{task.title}</span>
+                        <span className="font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{stripLeadingEmoji(task.title)}</span>
                         {isManagerPlus && task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${
                             task.createdById === task.assigneeId
@@ -528,13 +511,13 @@ export default function TasksPage() {
                       </div>
                       {/* Mobile: show project under title */}
                       {task.project?.name && (
-                        <div className="md:hidden text-[10px] text-surface-400 dark:text-surface-500 mt-0.5 truncate">
-                          📁 {task.project.name}
+                        <div className="md:hidden text-[10px] text-surface-400 dark:text-surface-500 mt-0.5 truncate inline-flex items-center gap-1">
+                          <FolderKanban size={10} /> {task.project.name}
                         </div>
                       )}
                       {task.createdAt && (
-                        <div className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5">
-                          🕐 {format(new Date(task.createdAt), 'dd.MM.yyyy HH:mm')}
+                        <div className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5 inline-flex items-center gap-1">
+                          <Clock size={10} /> {format(new Date(task.createdAt), 'dd.MM.yyyy HH:mm')}
                         </div>
                       )}
                     </td>

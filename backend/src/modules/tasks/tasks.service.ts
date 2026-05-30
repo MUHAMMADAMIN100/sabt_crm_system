@@ -240,15 +240,11 @@ export class TasksService {
       ).catch(() => {});
     }
 
-    // Авто-переход в REVIEW когда все готовы
-    const inProgressLike: TaskStatus[] = [
-      TaskStatus.NEW, TaskStatus.IN_PROGRESS, TaskStatus.ACCEPTED,
-      TaskStatus.RETURNED, TaskStatus.ON_REWORK,
-    ];
-    if (allDone && inProgressLike.includes(task.status)) {
-      const isSmm = user.role === UserRole.SMM_SPECIALIST;
-      const newStatus = isSmm ? TaskStatus.DONE : TaskStatus.REVIEW;
-      await this.repo.update(taskId, { status: newStatus });
+    // Авто-переход в DONE когда все исполнители отметили свою часть.
+    // Pipeline статусов упрощён до 4 (Wave 11) — промежуточного «review»
+    // больше нет. Когда все стороны закончили — задача сразу DONE.
+    if (allDone && task.status !== TaskStatus.DONE && task.status !== TaskStatus.CANCELLED) {
+      await this.repo.update(taskId, { status: TaskStatus.DONE });
 
       await this.activityLog.log({
         userId: user.id,
@@ -257,18 +253,18 @@ export class TasksService {
         entity: 'task',
         entityId: taskId,
         entityName: task.title,
-        details: { from: task.status, to: newStatus, reason: 'all_assignees_done' },
+        details: { from: task.status, to: TaskStatus.DONE, reason: 'all_assignees_done' },
       }).catch(() => {});
 
-      if (newStatus === TaskStatus.DONE) {
-        await this.autoReportFromTask({ ...task, status: newStatus } as Task);
-      }
-      if (task.createdById) {
+      await this.autoReportFromTask({ ...task, status: TaskStatus.DONE } as Task);
+
+      // Уведомляем создателя (если это не сам пользователь — анти-self-notify)
+      if (task.createdById && task.createdById !== user.id) {
         this.notificationsService.create({
           userId: task.createdById,
-          type: NotificationType.REVIEW_NEEDED,
-          title: '🎯 Задача готова к проверке',
-          message: `Все этапы завершены в задаче "${task.title}". Нужна ваша проверка.`,
+          type: NotificationType.STATUS_CHANGE,
+          title: 'Задача выполнена',
+          message: `Задача "${task.title}" отмечена как выполненная.`,
           link: `/tasks/${taskId}`,
         }).catch(() => {});
       }
@@ -662,27 +658,18 @@ export class TasksService {
     // Это его собственная задача-заметка, через review её гонять не надо.
     const isSelfCreated = task.createdById === user.id && task.assigneeId === user.id;
 
-    // Workers (except SMM) cannot directly set status to DONE — must go through review.
-    // Исключения: SMM-специалист и автор-исполнитель собственной задачи.
+    // Workers (except SMM) cannot directly set status to DONE without uploading
+    // at least one result file/note. SMM-специалист и автор-исполнитель
+    // собственной задачи могут закрывать без файлов.
     if (
-      WORKER_ROLES.includes(user.role as UserRole) &&
-      !isSmmSpecialist &&
-      !isSelfCreated &&
-      dto.status === TaskStatus.DONE
-    ) {
-      throw new ForbiddenException('Only a project manager can confirm task completion');
-    }
-
-    // Require at least one result before sending to review (workers only, except SMM/own task)
-    if (
-      dto.status === TaskStatus.REVIEW &&
+      dto.status === TaskStatus.DONE &&
       WORKER_ROLES.includes(user.role as UserRole) &&
       !isSmmSpecialist &&
       !isSelfCreated
     ) {
       const resultCount = await this.taskResultsService.countByTask(id);
       if (resultCount === 0) {
-        throw new BadRequestException('Загрузите результат работы перед отправкой на проверку');
+        throw new BadRequestException('Загрузите результат работы перед тем как отметить задачу выполненной');
       }
     }
 
@@ -713,7 +700,12 @@ export class TasksService {
       if (dto.status === TaskStatus.DONE) {
         await this.autoReportFromTask({ ...task, ...dto } as Task);
       }
-      const notifyId = task.createdById !== user.id ? task.createdById : task.assigneeId;
+      // Кого уведомить: создателя, если статус сменил не он сам; иначе — исполнителя.
+      // ВАЖНО: никогда не шлём уведомление самому действующему пользователю
+      // («Я сам сменил статус → мне же пришло сообщение об этом») —
+      // только другим заинтересованным сторонам.
+      const candidate = task.createdById !== user.id ? task.createdById : task.assigneeId;
+      const notifyId = candidate && candidate !== user.id ? candidate : null;
       if (notifyId) {
         await this.notificationsService.create({
           userId: notifyId,
@@ -734,8 +726,9 @@ export class TasksService {
       });
     }
 
-    // Notify on new assignee
-    if (dto.assigneeId && dto.assigneeId !== oldAssigneeId) {
+    // Notify on new assignee — но не самого автора действия (если он
+    // назначил задачу себе, лишние сообщения не приходят).
+    if (dto.assigneeId && dto.assigneeId !== oldAssigneeId && dto.assigneeId !== user.id) {
       await this.notificationsService.create({
         userId: dto.assigneeId,
         type: NotificationType.NEW_TASK,
@@ -900,8 +893,9 @@ export class TasksService {
     if (!isPM) {
       throw new ForbiddenException('Only project managers can approve tasks');
     }
-    if (task.status !== TaskStatus.REVIEW) {
-      throw new BadRequestException('Задача должна быть на проверке');
+    // С 4-статусной моделью «approve» = подтвердить выполнение из IN_PROGRESS.
+    if (task.status === TaskStatus.DONE || task.status === TaskStatus.CANCELLED) {
+      throw new BadRequestException('Задача уже закрыта');
     }
 
     await this.repo.update(id, {
@@ -910,7 +904,8 @@ export class TasksService {
       reviewedAt: new Date(),
     });
 
-    if (task.assigneeId) {
+    // Уведомление исполнителя — только если это другой пользователь.
+    if (task.assigneeId && task.assigneeId !== user.id) {
       await this.notificationsService.create({
         userId: task.assigneeId,
         type: NotificationType.TASK_COMPLETED,
@@ -946,14 +941,16 @@ export class TasksService {
     if (!isPM) {
       throw new ForbiddenException('Only project managers can return tasks');
     }
-    if (taskRaw.t_status !== TaskStatus.REVIEW) {
-      throw new BadRequestException('Задача должна быть на проверке');
+    // В новой 4-статусной модели «return» = вернуть в IN_PROGRESS из
+    // любого активного состояния. Финальные (DONE/CANCELLED) нельзя.
+    if (taskRaw.t_status === TaskStatus.CANCELLED) {
+      throw new BadRequestException('Нельзя вернуть отменённую задачу');
     }
 
     // Wave 3+6: инкрементируем счётчик возвратов, обновляем acceptedOnFirstTry.
     const newReworkCount = (Number(taskRaw.t_reworkCount) || 0) + 1;
     await this.repo.update(id, {
-      status: TaskStatus.RETURNED,
+      status: TaskStatus.IN_PROGRESS,
       returnReason: reason,
       reworkCount: newReworkCount,
       acceptedOnFirstTry: false,

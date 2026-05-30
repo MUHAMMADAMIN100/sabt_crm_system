@@ -15,42 +15,52 @@ export enum TaskPriority {
   CRITICAL = 'critical',
 }
 
-/** Статусы задач.
- *  Существующие (NEW / IN_PROGRESS / REVIEW / RETURNED / DONE / CANCELLED)
- *  оставлены для обратной совместимости со старыми задачами.
- *  Новые (Wave 3) расширяют пайплайн: ACCEPTED — задача принята исполнителем,
- *  ON_PM_REVIEW — на проверке у PM, ON_REWORK — отправлена на доработку,
- *  ON_CLIENT_APPROVAL — на согласовании у клиента, APPROVED — клиент утвердил,
- *  PUBLISHED — опубликовано (для контента), RESCHEDULED — перенесено. */
+/** Статусы задач — упрощены до 4 значений (Wave 11).
+ *  - NEW         — задача создана, ещё не взята в работу
+ *  - IN_PROGRESS — в активной работе (включая прошлые «accepted/review/on_pm_review/
+ *                  on_rework/on_client_approval/approved/returned/rescheduled»)
+ *  - DONE        — выполнена и принята (включая прошлые «published»)
+ *  - CANCELLED   — отменена
+ *
+ *  Старые промежуточные статусы (review/approval/rework) больше не нужны —
+ *  любые попытки прислать их с фронта отвергаются маппером в tasks.service.
+ *  Существующие в БД строки мигрированы в одно из четырёх значений. */
 export enum TaskStatus {
-  NEW                = 'new',
-  IN_PROGRESS        = 'in_progress',
-  REVIEW             = 'review',
-  RETURNED           = 'returned',
-  DONE               = 'done',
-  CANCELLED          = 'cancelled',
-  // Wave 3 additions (новые статусы):
-  ACCEPTED           = 'accepted',
-  ON_PM_REVIEW       = 'on_pm_review',
-  ON_REWORK          = 'on_rework',
-  ON_CLIENT_APPROVAL = 'on_client_approval',
-  APPROVED           = 'approved',
-  PUBLISHED          = 'published',
-  RESCHEDULED        = 'rescheduled',
+  NEW         = 'new',
+  IN_PROGRESS = 'in_progress',
+  DONE        = 'done',
+  CANCELLED   = 'cancelled',
 }
 
-/** Статусы, при которых задача НЕ должна считаться «просроченной».
- *  Любой review/approval/публикация значит что исполнитель уже отдал
- *  результат — она ждёт PM/клиента/публикации, дедлайн исполнителя пройден
- *  по факту. DONE/CANCELLED — финальные, тоже не overdue. */
+/** Маппинг легаси-статусов в новую модель. Используется в tasks.service для
+ *  нормализации входных значений (на случай если старый клиент пришлёт
+ *  «published» / «approved» — мы конвертируем сами). */
+export const LEGACY_STATUS_MAP: Record<string, TaskStatus> = {
+  // active variants → IN_PROGRESS
+  accepted:           TaskStatus.IN_PROGRESS,
+  review:             TaskStatus.IN_PROGRESS,
+  on_pm_review:       TaskStatus.IN_PROGRESS,
+  on_rework:          TaskStatus.IN_PROGRESS,
+  on_client_approval: TaskStatus.IN_PROGRESS,
+  approved:           TaskStatus.IN_PROGRESS,
+  returned:           TaskStatus.IN_PROGRESS,
+  rescheduled:        TaskStatus.IN_PROGRESS,
+  // finalised → DONE
+  published:          TaskStatus.DONE,
+};
+
+/** Нормализатор статуса: новые значения возвращаются как есть, легаси
+ *  мапятся в одно из четырёх. */
+export function normalizeStatus(s: string | TaskStatus): TaskStatus {
+  if ((Object.values(TaskStatus) as string[]).includes(s)) return s as TaskStatus;
+  return LEGACY_STATUS_MAP[s] || TaskStatus.NEW;
+}
+
+/** Статусы, при которых задача НЕ считается «просроченной».
+ *  Только финальные: DONE и CANCELLED. */
 export const TASK_CLOSED_FOR_OVERDUE: TaskStatus[] = [
   TaskStatus.DONE,
   TaskStatus.CANCELLED,
-  TaskStatus.REVIEW,
-  TaskStatus.ON_PM_REVIEW,
-  TaskStatus.ON_CLIENT_APPROVAL,
-  TaskStatus.APPROVED,
-  TaskStatus.PUBLISHED,
 ];
 
 /** Скоуп задачи — категория видимости.

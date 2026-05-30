@@ -18,6 +18,7 @@ import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { isTaskOverdue } from '@/lib/taskStatus'
+import { stripLeadingEmoji } from '@/lib/stripEmoji'
 
 const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm']
 const WORKER_ROLES = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'employee']
@@ -500,7 +501,7 @@ export default function TaskDetailPage() {
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="page-title truncate">{task.title}</h1>
+          <h1 className="page-title truncate">{stripLeadingEmoji(task.title)}</h1>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <StatusBadge status={task.status} />
             <PriorityBadge priority={task.priority} />

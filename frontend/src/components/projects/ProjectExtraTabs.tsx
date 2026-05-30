@@ -17,12 +17,10 @@ export function ProjectOverviewTab({ project }: { project: any }) {
   })
 
   const tasks = project.tasks || []
-  const done = tasks.filter((t: any) => ['done', 'approved', 'published'].includes(t.status)).length
-  const inProgress = tasks.filter((t: any) =>
-    ['in_progress', 'accepted', 'on_pm_review', 'on_rework', 'on_client_approval', 'review'].includes(t.status),
-  ).length
+  const done = tasks.filter((t: any) => t.status === 'done').length
+  const inProgress = tasks.filter((t: any) => t.status === 'in_progress').length
   const overdue = tasks.filter((t: any) =>
-    t.deadline && new Date(t.deadline) < new Date() && !['done', 'approved', 'published', 'cancelled'].includes(t.status),
+    t.deadline && new Date(t.deadline) < new Date() && !['done', 'cancelled'].includes(t.status),
   ).length
 
   const fmt = (v: any) => v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' сомони'

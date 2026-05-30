@@ -146,9 +146,10 @@ export default function CalendarPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || t('common.error')),
   })
 
-  /** Статусы, при которых задача ждёт подтверждения основателем. */
+  /** Статусы, при которых задача ждёт подтверждения основателем.
+   *  Wave 11: 4-статусная модель — IN_PROGRESS и есть «ждёт». */
   const isApprovableStatus = (status?: string) =>
-    !!status && ['review', 'on_pm_review', 'on_client_approval'].includes(status)
+    !!status && status === 'in_progress'
   /** Может ли текущий пользователь подтверждать задачи. */
   const canApprove = ['founder', 'co_founder', 'admin'].includes(user?.role || '')
 
@@ -706,18 +707,9 @@ export default function CalendarPage() {
                   className="text-sm bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-md px-2 py-1 flex-1 min-w-0"
                 >
                   <option value="new">Новая</option>
-                  <option value="accepted">Принята</option>
                   <option value="in_progress">В работе</option>
-                  <option value="on_rework">На доработке</option>
-                  <option value="review">На проверке</option>
-                  <option value="on_pm_review">На проверке PM</option>
-                  <option value="on_client_approval">У клиента</option>
-                  <option value="approved">Утверждено</option>
-                  <option value="done">Выполнена</option>
-                  <option value="published">Опубликовано</option>
-                  <option value="returned">Возвращена</option>
-                  <option value="rescheduled">Перенесена</option>
-                  <option value="cancelled">Отменена</option>
+                  <option value="done">Готово</option>
+                  <option value="cancelled">Отмена</option>
                 </select>
                 {canApprove && isApprovableStatus(editingTaskFull.status) && (
                   <button
@@ -1530,21 +1522,12 @@ function FounderQuickTaskForm({
 /** Side drawer справа с подробной информацией о задаче.
  *  Появляется с анимированным скольжением. ESC и клик по overlay закрывают.
  *  Заменяет переход на `/tasks/:id` для быстрого просмотра. */
-/** Цвет статуса задачи для крупного баннера в drawer-е. */
+/** Цвет статуса задачи для крупного баннера в drawer-е. Wave 11 — 4 значения. */
 const STATUS_BANNER_COLORS: Record<string, string> = {
-  new:                'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
-  accepted:           'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  in_progress:        'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  review:             'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  on_pm_review:       'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  on_client_approval: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  done:               'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  approved:           'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  published:          'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  returned:           'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-  on_rework:          'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-  cancelled:          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  rescheduled:        'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+  new:         'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+  in_progress: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  done:        'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  cancelled:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
 function TaskDetailDrawer({
@@ -1587,12 +1570,9 @@ function TaskDetailDrawer({
     high: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30',
     critical: 'text-red-600 bg-red-50 dark:bg-red-900/30',
   }
+  // Wave 11: 4-статусная модель.
   const statusLabels: Record<string, string> = {
-    new: 'Новая', in_progress: 'В работе', review: 'На ревью',
-    returned: 'Возвращена', done: 'Выполнена', cancelled: 'Отменена',
-    accepted: 'Принята', on_pm_review: 'На проверке PM', on_rework: 'На доработке',
-    on_client_approval: 'У клиента', approved: 'Утверждено', published: 'Опубликовано',
-    rescheduled: 'Перенесена',
+    new: 'Новая', in_progress: 'В работе', done: 'Готово', cancelled: 'Отмена',
   }
 
   return (
@@ -1653,8 +1633,6 @@ function TaskDetailDrawer({
               STATUS_BANNER_COLORS[event.status] || 'bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-200',
             )}>
               <span className="text-sm font-semibold">
-                {['done', 'approved', 'published'].includes(event.status) && '✅ '}
-                {['review', 'on_pm_review', 'on_client_approval'].includes(event.status) && '⏳ '}
                 {statusLabels[event.status] || event.status}
               </span>
               {onApprove && (

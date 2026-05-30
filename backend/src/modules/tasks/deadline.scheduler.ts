@@ -655,17 +655,20 @@ export class DeadlineScheduler implements OnModuleInit {
     this.logger.log(`Daily 20:00 summary sent to ${sent} project manager(s)`)
   }
 
-  // ── 6. Notify PM about tasks pending review > 24h (daily at 10am) ─────────
+  // ── 6. Notify PM about IN_PROGRESS tasks stuck > 24h (daily at 10am) ─────────
+  //  В упрощённой 4-статусной модели «на проверке» больше нет — берём
+  //  все активные задачи которые не обновлялись > 24 часов и шлём PM
+  //  напоминание разобраться.
   @Cron('0 10 * * *')
   async notifyPendingReview() {
-    this.logger.log('Checking tasks pending review...')
+    this.logger.log('Checking stale in-progress tasks...')
 
     const oneDayAgo = new Date()
     oneDayAgo.setHours(oneDayAgo.getHours() - 24)
 
     const pendingReviewRaw = await this.taskRepo.find({
       where: {
-        status: TaskStatus.REVIEW,
+        status: TaskStatus.IN_PROGRESS,
         updatedAt: LessThan(oneDayAgo),
       },
       relations: ['project', 'assignee'],

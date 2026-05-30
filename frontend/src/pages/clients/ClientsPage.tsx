@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, PageLoader, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Edit, Trash2, List, LayoutGrid } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, List, LayoutGrid, Phone, Instagram, Mail, Calendar as CalendarIcon, Flame, Snowflake, Sun, User as UserIcon, AlertCircle, Circle } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker, DateTimePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
@@ -34,18 +34,19 @@ const STATUS_OPTIONS: { value: string; label: string; color: string }[] = [
   { value: 'on_hold',     label: 'На паузе',           color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
 ]
 
-const INTEREST_OPTIONS: { value: string; label: string; icon: string; color: string }[] = [
-  { value: '',     label: 'Все',      icon: '⚪', color: '' },
-  { value: 'cold', label: 'Холодный', icon: '🧊', color: 'text-sky-500' },
-  { value: 'warm', label: 'Тёплый',   icon: '☀️', color: 'text-amber-500' },
-  { value: 'hot',  label: 'Горячий',  icon: '🔥', color: 'text-red-500' },
+type InterestIcon = typeof Circle
+const INTEREST_OPTIONS: { value: string; label: string; Icon: InterestIcon; color: string }[] = [
+  { value: '',     label: 'Все',      Icon: Circle,    color: '' },
+  { value: 'cold', label: 'Холодный', Icon: Snowflake, color: 'text-sky-500' },
+  { value: 'warm', label: 'Тёплый',   Icon: Sun,       color: 'text-amber-500' },
+  { value: 'hot',  label: 'Горячий',  Icon: Flame,     color: 'text-red-500' },
 ]
 
 // Chip styles for interest filter — visual states
-const INTEREST_CHIPS: { value: string; label: string; bg: string; bgActive: string }[] = [
-  { value: 'hot',  label: '🔥 Горячие',  bg: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',           bgActive: 'bg-red-500 text-white' },
-  { value: 'warm', label: '☀️ Тёплые',   bg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',   bgActive: 'bg-amber-500 text-white' },
-  { value: 'cold', label: '🧊 Холодные', bg: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',           bgActive: 'bg-sky-500 text-white' },
+const INTEREST_CHIPS: { value: string; label: string; Icon: InterestIcon; bg: string; bgActive: string }[] = [
+  { value: 'hot',  label: 'Горячие',  Icon: Flame,     bg: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',           bgActive: 'bg-red-500 text-white' },
+  { value: 'warm', label: 'Тёплые',   Icon: Sun,       bg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',   bgActive: 'bg-amber-500 text-white' },
+  { value: 'cold', label: 'Холодные', Icon: Snowflake, bg: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',           bgActive: 'bg-sky-500 text-white' },
 ]
 
 const CHANNEL_OPTIONS = ['WhatsApp', 'Telegram', 'Instagram', 'Звонок', 'Email', 'Личная встреча']
@@ -239,11 +240,12 @@ export default function ClientsPage() {
               <LayoutGrid size={16} />
             </button>
           </div>
-          {viewMode === 'list' && (
-            <button onClick={() => setShowCreate(true)} className="btn-primary">
-              <Plus size={16} /> Добавить клиента
-            </button>
-          )}
+          {/* Кнопка «Добавить клиента» видна в обоих режимах (список и канбан),
+              чтобы header не «прыгал» при переключении view. В канбан-режиме
+              новый клиент создаётся сразу с onboardingStage = первый этап. */}
+          <button onClick={() => setShowCreate(true)} className="btn-primary">
+            <Plus size={16} /> Добавить клиента
+          </button>
         </div>
       </div>
 
@@ -297,13 +299,13 @@ export default function ClientsPage() {
         <button
           onClick={() => setInterest('')}
           className={clsx(
-            'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+            'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
             !interest
               ? 'bg-primary-600 text-white'
               : 'bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
           )}
         >
-          ⚪ Все
+          <Circle size={12} /> Все
           {stats?.byInterest && (
             <> · {(stats.byInterest.cold || 0) + (stats.byInterest.warm || 0) + (stats.byInterest.hot || 0) + (stats.byInterest.none || 0)}</>
           )}
@@ -311,16 +313,17 @@ export default function ClientsPage() {
         {INTEREST_CHIPS.map(c => {
           const n = stats?.byInterest?.[c.value]
           const active = interest === c.value
+          const Ico = c.Icon
           return (
             <button
               key={c.value}
               onClick={() => setInterest(active ? '' : c.value)}
               className={clsx(
-                'px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
                 active ? c.bgActive + ' shadow-sm' : c.bg,
               )}
             >
-              {c.label}{n !== undefined && <> · {n}</>}
+              <Ico size={12} /> {c.label}{n !== undefined && <> · {n}</>}
             </button>
           )
         })}
@@ -404,15 +407,15 @@ export default function ClientsPage() {
                       {l.problem && <div className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5 italic truncate max-w-[200px]">{l.problem}</div>}
                       {/* mobile: contact inline */}
                       <div className="md:hidden mt-1 text-[11px] text-surface-500 dark:text-surface-400">
-                        {l.contactPerson && <span>👤 {l.contactPerson}</span>}
+                        {l.contactPerson && <span className="inline-flex items-center gap-1"><UserIcon size={11} /> {l.contactPerson}</span>}
                       </div>
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell align-top">
                       {l.contactPerson && <div className="text-sm text-surface-800 dark:text-surface-200">{l.contactPerson}</div>}
                       <div className="text-[11px] text-surface-500 dark:text-surface-400 space-y-0.5">
-                        {l.contactPhone && <div>📞 {l.contactPhone}</div>}
-                        {l.contactInstagram && <div>📷 {l.contactInstagram}</div>}
-                        {l.contactEmail && <div>✉️ {l.contactEmail}</div>}
+                        {l.contactPhone && <div className="inline-flex items-center gap-1"><Phone size={11} /> {l.contactPhone}</div>}
+                        {l.contactInstagram && <div className="inline-flex items-center gap-1"><Instagram size={11} /> {l.contactInstagram}</div>}
+                        {l.contactEmail && <div className="inline-flex items-center gap-1"><Mail size={11} /> {l.contactEmail}</div>}
                         {!l.contactPhone && !l.contactInstagram && !l.contactEmail && l.contactInfo && (
                           <div className="whitespace-pre-line">{l.contactInfo}</div>
                         )}
@@ -424,7 +427,11 @@ export default function ClientsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell align-top text-sm">
-                      {interestOpt ? <span className={interestOpt.color}>{interestOpt.icon} {interestOpt.label}</span> : <span className="text-surface-400">—</span>}
+                      {interestOpt ? (
+                        <span className={clsx('inline-flex items-center gap-1', interestOpt.color)}>
+                          <interestOpt.Icon size={12} /> {interestOpt.label}
+                        </span>
+                      ) : <span className="text-surface-400">—</span>}
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell align-top text-right tabular-nums">
                       {l.dealPotential ? `${Number(l.dealPotential).toLocaleString('ru-RU')}` : <span className="text-surface-400">—</span>}
@@ -435,7 +442,8 @@ export default function ClientsPage() {
                           'text-xs inline-flex items-center gap-1',
                           nextIsOverdue ? 'text-red-500 font-semibold' : nextIsSoon ? 'text-amber-600 dark:text-amber-400' : 'text-surface-500 dark:text-surface-400',
                         )}>
-                          {nextIsOverdue && '🔴 '}{nextIsSoon && !nextIsOverdue && '🟠 '}
+                          {nextIsOverdue && <AlertCircle size={12} className="text-red-500" />}
+                          {nextIsSoon && !nextIsOverdue && <AlertCircle size={12} className="text-amber-500" />}
                           {format(new Date(l.nextContactAt), 'dd.MM.yy HH:mm')}
                         </span>
                       ) : <span className="text-surface-400">—</span>}
@@ -555,8 +563,36 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
   const submit = (data: any) => onSubmit(normalize(data))
   const submitWithOnb = (data: any) => onSubmitWithOnboarding(normalize(data))
 
+  // «+ Добавить в онбординг» — выносим в правый верхний угол модалки
+  // (через titleAction), чтобы кнопка не плавала рядом с Save/Cancel.
+  const onboardingAction = onAddToOnboarding ? (
+    <button
+      type="button"
+      onClick={onAddToOnboarding}
+      disabled={loading}
+      className="px-3 py-1.5 rounded-md text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors flex items-center gap-1"
+    >
+      <Plus size={14} /> В онбординг
+    </button>
+  ) : (!initial && onSubmitWithOnboarding) ? (
+    <button
+      type="button"
+      onClick={handleSubmit(submitWithOnb)}
+      disabled={loading}
+      className="px-3 py-1.5 rounded-md text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors flex items-center gap-1"
+    >
+      <Plus size={14} /> В онбординг
+    </button>
+  ) : null
+
   return (
-    <Modal open onClose={onClose} title={initial ? 'Редактировать клиента' : 'Новый клиент'} size="xl">
+    <Modal
+      open
+      onClose={onClose}
+      title={initial ? 'Редактировать клиента' : 'Новый клиент'}
+      size="xl"
+      titleAction={onboardingAction}
+    >
       <form onSubmit={handleSubmit(submit)} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="sm:col-span-2">
@@ -586,15 +622,15 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
             <input {...register('contactPerson')} className="input" placeholder="Иван Иванов — директор" />
           </div>
           <div>
-            <label className="label">📞 Телефон ЛПР</label>
+            <label className="label inline-flex items-center gap-1"><Phone size={12} /> Телефон ЛПР</label>
             <input type="tel" {...register('contactPhone')} className="input" placeholder="+992 900 00 00 00" />
           </div>
           <div>
-            <label className="label">📷 Instagram ЛПР</label>
+            <label className="label inline-flex items-center gap-1"><Instagram size={12} /> Instagram ЛПР</label>
             <input {...register('contactInstagram')} className="input" placeholder="@instagram_handle" />
           </div>
           <div className="sm:col-span-2">
-            <label className="label">✉️ Email ЛПР</label>
+            <label className="label inline-flex items-center gap-1"><Mail size={12} /> Email ЛПР</label>
             <input type="email" {...register('contactEmail')} className="input" placeholder="email@domain.com" />
           </div>
           <div>
@@ -607,9 +643,9 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
             <label className="label">Степень интереса</label>
             <select {...register('interest')} className="input">
               <option value="">Не указано</option>
-              <option value="cold">🧊 Холодный</option>
-              <option value="warm">☀️ Тёплый</option>
-              <option value="hot">🔥 Горячий</option>
+              <option value="cold">Холодный</option>
+              <option value="warm">Тёплый</option>
+              <option value="hot">Горячий</option>
             </select>
           </div>
           <div>
@@ -645,7 +681,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
               render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
           </CollapsibleField>
           <div>
-            <label className="label">📅 Дата + время встречи / след. контакта</label>
+            <label className="label inline-flex items-center gap-1"><CalendarIcon size={12} /> Дата + время встречи / след. контакта</label>
             <Controller name="nextContactAt" control={control}
               render={({ field }) => <DateTimePicker value={field.value || ''} onChange={field.onChange} />} />
             <p className="text-[10px] text-surface-400 mt-1">
@@ -669,29 +705,6 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
         </div>
 
         <div className="flex flex-wrap gap-2 justify-end pt-2">
-          {/* В режиме редактирования — кнопка добавления существующего лида в онбординг. */}
-          {onAddToOnboarding && (
-            <button
-              type="button"
-              onClick={onAddToOnboarding}
-              disabled={loading}
-              className="btn-secondary text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 mr-auto"
-            >
-              + Добавить в онбординг
-            </button>
-          )}
-          {/* В режиме создания (МП по разработке) — отдельная кнопка
-              «Создать и добавить в онбординг». */}
-          {!initial && onSubmitWithOnboarding && (
-            <button
-              type="button"
-              onClick={handleSubmit(submitWithOnb)}
-              disabled={loading}
-              className="btn-secondary text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 mr-auto"
-            >
-              + Добавить в онбординг
-            </button>
-          )}
           <button type="button" onClick={onClose} className="btn-secondary">Отмена</button>
           <button type="submit" disabled={loading} className="btn-primary">
             {loading ? 'Сохранение...' : (initial ? 'Сохранить' : 'Добавить')}

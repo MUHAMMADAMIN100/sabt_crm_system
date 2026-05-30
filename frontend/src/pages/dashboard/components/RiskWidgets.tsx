@@ -183,8 +183,10 @@ export function PmWidgets() {
   }
 
   const myTasks = (tasks ?? []).filter((t: any) => myProjectIds.has(t.projectId))
-  const onReview = myTasks.filter((t: any) => ['review', 'on_pm_review'].includes(t.status)).length
-  const onRework = myTasks.filter((t: any) => ['returned', 'on_rework'].includes(t.status)).length
+  // Wave 11: 4-статусная модель — нет отдельного review/rework.
+  // Метрика «in_progress» как «активные», вторая — заглушка для совместимости.
+  const onReview = myTasks.filter((t: any) => t.status === 'in_progress').length
+  const onRework = 0
 
   // Недельный план — задачи с deadline в ближайшие 7 дней
   const now = new Date()

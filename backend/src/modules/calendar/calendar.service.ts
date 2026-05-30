@@ -14,23 +14,14 @@ function computeTaskProgress(t: Task): number {
     const done = ac.filter((c: any) => c?.done).length;
     return Math.round((done / ac.length) * 100);
   }
+  // 4-статусная модель: NEW=0%, IN_PROGRESS=50%, DONE=100%, CANCELLED=0%.
   switch (t.status) {
     case 'done':
-    case 'approved':
-    case 'published':
       return 100;
-    case 'review':
-    case 'on_pm_review':
-    case 'on_client_approval':
-      return 60;
     case 'in_progress':
-    case 'accepted':
-      return 30;
-    case 'returned':
-    case 'on_rework':
-      return 20;
+      return 50;
     default:
-      return 0; // new / cancelled / rescheduled
+      return 0; // new / cancelled
   }
 }
 

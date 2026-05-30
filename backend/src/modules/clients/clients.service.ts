@@ -3,6 +3,29 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ClientLead, ClientLeadStatus, ClientLeadInterest, ClientLeadDirection } from './client-lead.entity';
 import { Task, TaskScope, TaskStatus, TaskPriority } from '../tasks/task.entity';
+import { ActivityLogService } from '../activity-log/activity-log.service';
+import { ActivityAction, ActivityLog } from '../activity-log/activity-log.entity';
+
+/** Порядок продвижения лида по статусу — для подсчёта «прогрессий вперёд». */
+const STATUS_ORDER: Record<string, number> = {
+  new:         0,
+  waiting:     1,
+  negotiating: 2,
+  proposal:    3,
+  won:         4,
+  // терминальные — не считаются прогрессом
+  lost:        -1,
+  on_hold:     -1,
+};
+
+/** Порядок этапов онбординга. */
+const STAGE_ORDER: Record<string, number> = {
+  negotiation:    1,
+  meeting:        2,
+  kp_creation:    3,
+  contract:       4,
+  implementation: 5,
+};
 
 export interface ListFilters {
   search?: string;
@@ -20,7 +43,46 @@ export class ClientsService {
   constructor(
     @InjectRepository(ClientLead) private repo: Repository<ClientLead>,
     @InjectRepository(Task) private taskRepo: Repository<Task>,
+    @InjectRepository(ActivityLog) private activityRepo: Repository<ActivityLog>,
+    private activityLog: ActivityLogService,
   ) {}
+
+  /** Если статус ИЛИ этап онбординга у лида продвинулись «вперёд» — пишем
+   *  отдельное событие LEAD_PROGRESS. Используется для KPI продаж. */
+  private async maybeLogProgress(
+    before: { status?: string | null; onboardingStage?: string | null; name?: string; ownerId?: string | null },
+    after: { status?: string | null; onboardingStage?: string | null; name?: string; ownerId?: string | null },
+    actor: { id: string; name?: string },
+  ): Promise<void> {
+    const advancedStatus =
+      after.status && after.status !== before.status &&
+      (STATUS_ORDER[after.status] ?? -1) > (STATUS_ORDER[before.status || ''] ?? 0);
+    const advancedStage =
+      after.onboardingStage && after.onboardingStage !== before.onboardingStage &&
+      (STAGE_ORDER[after.onboardingStage] ?? 0) > (STAGE_ORDER[before.onboardingStage || ''] ?? 0);
+    if (!advancedStatus && !advancedStage) return;
+    try {
+      await this.activityLog.log({
+        userId: actor.id,
+        userName: actor.name,
+        action: ActivityAction.LEAD_PROGRESS,
+        entity: 'client_lead',
+        entityId: undefined,
+        entityName: after.name,
+        details: {
+          ownerId: after.ownerId,
+          statusFrom: before.status ?? null,
+          statusTo: after.status ?? null,
+          stageFrom: before.onboardingStage ?? null,
+          stageTo: after.onboardingStage ?? null,
+          advancedStatus: !!advancedStatus,
+          advancedStage: !!advancedStage,
+        },
+      });
+    } catch {
+      // best-effort
+    }
+  }
 
   async findAll(f: ListFilters) {
     const qb = this.repo.createQueryBuilder('c')
@@ -79,17 +141,27 @@ export class ClientsService {
   }
 
   /** Update с ownership-проверкой. Менеджер продаж может править ТОЛЬКО
-   *  свои лиды. Админ/основатель/сооснователь — любые. */
-  async updateWithAuth(id: string, dto: Partial<ClientLead>, user: { id: string; role: string }) {
+   *  свои лиды. Админ/основатель/сооснователь — любые.
+   *  Дополнительно логирует прогрессии воронки в activity_log → KPI. */
+  async updateWithAuth(
+    id: string,
+    dto: Partial<ClientLead>,
+    user: { id: string; role: string; name?: string },
+  ) {
     const isAdmin = ['admin', 'founder', 'co_founder'].includes(user.role);
-    if (!isAdmin) {
-      const lead = await this.repo.findOne({ where: { id } });
-      if (!lead) throw new NotFoundException('Client lead not found');
-      if (lead.ownerId && lead.ownerId !== user.id) {
-        throw new ForbiddenException('Вы можете редактировать только своих лидов');
-      }
+    const before = await this.repo.findOne({ where: { id } });
+    if (!before) throw new NotFoundException('Client lead not found');
+    if (!isAdmin && before.ownerId && before.ownerId !== user.id) {
+      throw new ForbiddenException('Вы можете редактировать только своих лидов');
     }
-    return this.update(id, dto);
+    const updated = await this.update(id, dto);
+    // KPI: лог прогрессий вперёд по status / onboardingStage.
+    await this.maybeLogProgress(
+      { status: before.status, onboardingStage: before.onboardingStage, name: before.name, ownerId: before.ownerId },
+      { status: updated.status, onboardingStage: updated.onboardingStage, name: updated.name, ownerId: updated.ownerId },
+      user,
+    );
+    return updated;
   }
 
   async remove(id: string) {
@@ -116,13 +188,16 @@ export class ClientsService {
   }
 
   /**
-   * KPI менеджера продаж — план/факт за текущий календарный месяц.
-   * Считается из того, что МП реально делает в CRM:
-   *  - база новых компаний → лиды, созданные менеджером в этом месяце
-   *  - холодные звонки → лиды с call/телефонным каналом, активные в этом месяце
-   *  - персонализированные письма → лиды с email-каналом или contactEmail,
-   *    у которых обновлялся lastContactAt в этом месяце
-   *  - встречи / созвоны → лиды с nextContactAt в ближайшие 14 дней
+   * KPI менеджера продаж за период.
+   * Wave 11: ключевая метрика — «прогрессии воронки», т.е. сколько раз МП
+   * сдвинул лидов на шаг вперёд по status или onboardingStage. Считается
+   * из activity_logs (action = LEAD_PROGRESS).
+   *
+   * Дополнительные показатели остаются для контекста:
+   *  - новые компании в базе (createdAt в окне)
+   *  - холодные звонки (channel ∈ call/whatsapp/telegram, updatedAt в окне)
+   *  - персональные письма (channel=email или есть contactEmail, lastContactAt)
+   *  - встречи / созвоны (nextContactAt в ближайшем горизонте)
    */
   async kpi(ownerId: string, direction?: ClientLeadDirection, from?: string, to?: string) {
     // Окно по умолчанию — сегодняшний день. Если переданы from/to (YYYY-MM-DD),
@@ -171,11 +246,23 @@ export class ClientsService {
       .andWhere('c.nextContactAt BETWEEN :now AND :horizon', { now: periodFrom, horizon })
       .getCount());
 
+    // Wave 11 — главная метрика: сколько раз МП двинул лидов вперёд по
+    // воронке (status или onboardingStage). Берём из activity_logs.
+    const progressCount = await safeCount(() =>
+      this.activityRepo
+        .createQueryBuilder('a')
+        .where('a.userId = :uid', { uid: ownerId })
+        .andWhere('a.action = :act', { act: ActivityAction.LEAD_PROGRESS })
+        .andWhere('a.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+        .getCount(),
+    );
+
     const items = [
-      { key: 'new_companies',   label: 'Новые компании в базе', target: 30, value: newCompanies },
-      { key: 'cold_calls',      label: 'Холодные звонки',       target: 10, value: coldCalls },
-      { key: 'personal_emails', label: 'Персональные письма',   target: 10, value: personalEmails },
-      { key: 'meetings',        label: 'Встречи / созвоны',     target: 2,  value: meetings },
+      { key: 'funnel_progress', label: 'Продвижения по воронке',  target: 20, value: progressCount },
+      { key: 'new_companies',   label: 'Новые компании в базе',   target: 30, value: newCompanies },
+      { key: 'cold_calls',      label: 'Холодные звонки',         target: 10, value: coldCalls },
+      { key: 'personal_emails', label: 'Персональные письма',     target: 10, value: personalEmails },
+      { key: 'meetings',        label: 'Встречи / созвоны',       target: 2,  value: meetings },
     ].map(i => ({
       ...i,
       percent: i.target > 0 ? Math.min(100, Math.round((i.value / i.target) * 100)) : 0,
@@ -325,24 +412,24 @@ export class ClientsService {
 
   private buildMeetingTaskTitle(lead: ClientLead): string {
     const stage = lead.onboardingStage ? this.stageLabel(lead.onboardingStage) : null;
-    if (stage) return `📅 ${stage} с клиентом: ${lead.name}`;
-    return `📅 Встреча с клиентом: ${lead.name}`;
+    if (stage) return `${stage} с клиентом: ${lead.name}`;
+    return `Встреча с клиентом: ${lead.name}`;
   }
 
   /** Заголовок follow-up задачи (когда у лида нет назначенной встречи). */
   private buildFollowUpTaskTitle(lead: ClientLead): string {
     const stage = lead.onboardingStage ? this.stageLabel(lead.onboardingStage) : null;
-    if (stage) return `📋 ${stage}: ${lead.name}`;
-    return `📋 Новый лид: ${lead.name}`;
+    if (stage) return `${stage}: ${lead.name}`;
+    return `Новый лид: ${lead.name}`;
   }
 
   private buildMeetingTaskDescription(lead: ClientLead): string {
     const lines: string[] = [];
     if (lead.sphere) lines.push(`Сфера: ${lead.sphere}`);
     if (lead.contactPerson) lines.push(`ЛПР: ${lead.contactPerson}`);
-    if (lead.contactPhone)     lines.push(`📞 ${lead.contactPhone}`);
-    if (lead.contactInstagram) lines.push(`📷 ${lead.contactInstagram}`);
-    if (lead.contactEmail)     lines.push(`✉️ ${lead.contactEmail}`);
+    if (lead.contactPhone)     lines.push(`Телефон: ${lead.contactPhone}`);
+    if (lead.contactInstagram) lines.push(`Instagram: ${lead.contactInstagram}`);
+    if (lead.contactEmail)     lines.push(`Email: ${lead.contactEmail}`);
     // Старое поле — для тех лидов, которые ещё не переразложили.
     if (lead.contactInfo && !lead.contactPhone && !lead.contactInstagram && !lead.contactEmail) {
       lines.push(`Контакты: ${lead.contactInfo}`);

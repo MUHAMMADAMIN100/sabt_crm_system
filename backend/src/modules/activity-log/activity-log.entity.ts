@@ -55,6 +55,11 @@ export enum ActivityAction {
   AVATAR_UPDATE  = 'AVATAR_UPDATE',
   USER_ACTIVATE  = 'USER_ACTIVATE',
   USER_DEACTIVATE = 'USER_DEACTIVATE',
+  // Wave 11 — Sales KPI
+  /** Менеджер продаж двинул лида на следующий этап (status или
+   *  onboardingStage прогрессировал вперёд). Используется для подсчёта
+   *  KPI «количество продвижений по воронке за период». */
+  LEAD_PROGRESS  = 'LEAD_PROGRESS',
 }
 
 @Entity('activity_logs')

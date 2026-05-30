@@ -23,33 +23,22 @@ import SMM_QUESTIONS from '@/config/smm-questions'
 import { downloadSmmBrief } from '@/lib/smmBrief'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { STATUS_LABELS as TASK_STATUS_LABELS } from '@/lib/taskStatus'
 
-// Канбан-колонки (4 группы). Новые статусы из Wave 17 маппятся в эти группы:
-// accepted/in_progress/on_pm_review/on_rework/on_client_approval → in_progress
-// approved/published → done
-// rescheduled/cancelled/returned → отдельной колонки нет, в кнопке статуса видно
-const TASK_STATUSES = ['new', 'in_progress', 'review', 'done']
-// Полный список статусов — используется в дропдаунах смены статуса.
-const ALL_TASK_STATUSES = [
-  'new', 'accepted', 'in_progress', 'on_pm_review', 'on_rework',
-  'review', 'on_client_approval', 'approved', 'done', 'published',
-  'returned', 'rescheduled', 'cancelled',
-]
-// Маппинг любого статуса в колонку канбана.
+// Wave 11: 4-статусная модель — канбан имеет 4 колонки = 4 статуса.
+// Маппер STATUS_TO_COLUMN остаётся для безопасной обработки старых
+// данных, которые ещё могли остаться в кэше клиента до миграции.
+const TASK_STATUSES = ['new', 'in_progress', 'done', 'cancelled']
+const ALL_TASK_STATUSES = TASK_STATUSES
 const STATUS_TO_COLUMN: Record<string, string> = {
   new: 'new',
-  accepted: 'in_progress',
   in_progress: 'in_progress',
-  on_pm_review: 'review',
-  on_rework: 'in_progress',
-  review: 'review',
-  on_client_approval: 'review',
-  approved: 'done',
   done: 'done',
-  published: 'done',
-  returned: 'in_progress',
-  rescheduled: 'new',
-  cancelled: 'new',
+  cancelled: 'cancelled',
+  // Legacy fallbacks (на случай если в кэше осталось)
+  accepted: 'in_progress', on_pm_review: 'in_progress', on_rework: 'in_progress',
+  review: 'in_progress', on_client_approval: 'in_progress', approved: 'in_progress',
+  returned: 'in_progress', rescheduled: 'in_progress', published: 'done',
 }
 const API_URL = import.meta.env.VITE_API_URL || ''
 const fileUrl = (path: string) => path?.startsWith('http') ? path : `${API_URL}${path}`
@@ -404,21 +393,8 @@ export default function ProjectDetailPage() {
     }
   }
 
-  const STATUS_LABELS: Record<string, string> = {
-    new: t('statuses.new'),
-    accepted: 'Принято',
-    in_progress: t('statuses.in_progress'),
-    on_pm_review: 'У PM на проверке',
-    on_rework: 'На доработке',
-    review: t('statuses.review'),
-    on_client_approval: 'У клиента',
-    approved: 'Утверждено',
-    done: t('statuses.done'),
-    published: 'Опубликовано',
-    returned: 'Возвращено',
-    rescheduled: 'Перенесено',
-    cancelled: 'Отменено',
-  }
+  // Wave 11: 4-статусная модель.
+  const STATUS_LABELS: Record<string, string> = TASK_STATUS_LABELS
 
   return (
     <div className="space-y-5">

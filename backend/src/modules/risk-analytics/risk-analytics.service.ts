@@ -20,20 +20,12 @@ import {
 const ACTIVE_TASK_STATUSES: TaskStatus[] = [
   TaskStatus.NEW,
   TaskStatus.IN_PROGRESS,
-  TaskStatus.REVIEW,
-  TaskStatus.RETURNED,
-  TaskStatus.ACCEPTED,
-  TaskStatus.ON_PM_REVIEW,
-  TaskStatus.ON_REWORK,
-  TaskStatus.ON_CLIENT_APPROVAL,
 ];
 
 /** Статусы задач, считающиеся «завершёнными». */
 const FINISHED_TASK_STATUSES: TaskStatus[] = [
   TaskStatus.DONE,
   TaskStatus.CANCELLED,
-  TaskStatus.APPROVED,
-  TaskStatus.PUBLISHED,
 ];
 
 /** Маппинг типа контента к лимиту в тарифе. */
@@ -278,13 +270,10 @@ export class RiskAnalyticsService {
         .addSelect('t.status', 'status')
         .addSelect('COUNT(*)', 'cnt')
         .where('t.projectId IN (:...ids)', { ids: allProjectIds })
+        // В упрощённой 4-статусной модели «review/rework» больше нет —
+        // считаем все активные задачи (NEW + IN_PROGRESS).
         .andWhere('t.status IN (:...statuses)', {
-          statuses: [
-            TaskStatus.REVIEW,
-            TaskStatus.ON_PM_REVIEW,
-            TaskStatus.RETURNED,
-            TaskStatus.ON_REWORK,
-          ],
+          statuses: [TaskStatus.NEW, TaskStatus.IN_PROGRESS],
         })
         .groupBy('t.projectId')
         .addGroupBy('t.status')
@@ -323,21 +312,21 @@ export class RiskAnalyticsService {
     // Свести в результат
     return pms.map(pm => {
       const projInfo = byPm.get(pm.id) ?? { cnt: 0, ids: [] };
-      let onReview = 0;
-      let onRework = 0;
+      // В 4-статусной модели нет review/rework — для UI оставляем поля
+      // совместимости, но обе агрегации считаем как «активные in_progress».
+      let inProgress = 0;
       for (const row of taskByPm) {
         if (!projInfo.ids.includes(row.projectId)) continue;
         const cnt = Number(row.cnt);
-        if (row.status === TaskStatus.REVIEW || row.status === TaskStatus.ON_PM_REVIEW) onReview += cnt;
-        if (row.status === TaskStatus.RETURNED || row.status === TaskStatus.ON_REWORK) onRework += cnt;
+        if (row.status === TaskStatus.IN_PROGRESS) inProgress += cnt;
       }
       return {
         pmId: pm.id,
         pmName: pm.name,
         projectCount: projInfo.cnt,
         smmSpecialistCount: smmByPm.get(pm.id) ?? 0,
-        tasksOnReview: onReview,
-        tasksOnRework: onRework,
+        tasksOnReview: inProgress,
+        tasksOnRework: 0,
         projectsAtRisk: overdueByPm.get(pm.id) ?? 0,
       };
     });
@@ -682,15 +671,13 @@ export class RiskAnalyticsService {
       detail: `${Math.round(reworkRate * 100)}% задач возвращались`,
     });
 
-    // Факт. 3 — частые переносы (rescheduled > 3 за 30 дней)
-    const rescheduled = tasks.filter(
-      t => t.status === TaskStatus.RESCHEDULED &&
-        t.updatedAt && new Date(t.updatedAt) > cutoff30d,
-    );
+    // Факт. 3 — в новой 4-статусной модели статуса «перенесено» нет,
+    // фактор отключён (оставлено как заглушка для совместимости UI).
+    const rescheduled: typeof tasks = [];
     factors.push({
       key: 'frequent_reschedules',
       label: 'Частые переносы дедлайнов',
-      triggered: rescheduled.length > 3,
+      triggered: false,
       weight: 1,
       detail: `${rescheduled.length} переносов за 30 дней`,
     });

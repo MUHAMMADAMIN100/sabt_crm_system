@@ -880,19 +880,17 @@ export class AnalyticsService {
         return completedAt >= from && completedAt <= to;
       });
 
-      // Просроченные — только активные. Любой review/approval/publish уже
-      // вне рук исполнителя, дедлайн считается «отбитым».
-      const closedForOverdue: TaskStatus[] = [
-        TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REVIEW,
-        TaskStatus.ON_PM_REVIEW, TaskStatus.ON_CLIENT_APPROVAL,
-        TaskStatus.APPROVED, TaskStatus.PUBLISHED,
-      ];
+      // Просроченные — только активные (NEW / IN_PROGRESS). DONE/CANCELLED
+      // финальные, не считаются.
+      const closedForOverdue: TaskStatus[] = [TaskStatus.DONE, TaskStatus.CANCELLED];
       const overdueTasks = allTasks.filter(t =>
         t.deadline && new Date(t.deadline) < new Date() &&
         !closedForOverdue.includes(t.status),
       );
 
-      const reviewTasks = allTasks.filter(t => t.status === TaskStatus.REVIEW);
+      // В упрощённой 4-статусной модели «на проверке» больше не существует
+      // отдельным статусом — все активные задачи это IN_PROGRESS.
+      const reviewTasks: typeof allTasks = [];
 
       // Hours logged in period
       const hoursRow = await this.timeRepo
