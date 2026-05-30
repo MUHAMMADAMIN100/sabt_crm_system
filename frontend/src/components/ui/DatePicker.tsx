@@ -18,7 +18,8 @@ import 'react-day-picker/dist/style.css'
 
 const dayPickerClass = clsx('rdp-custom p-3 text-sm')
 // Фиксированная ширина popover'а — нужна для корректного flip'а у правого края.
-const POPOVER_WIDTH = 296
+// 320px = 7 колонок дат × 36px + padding × 2 + бордеры (с запасом для preset-чипов).
+const POPOVER_WIDTH = 320
 
 /**
  * Popover через portal в body. Раньше абсолютно позиционировался относительно
