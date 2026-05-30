@@ -1,10 +1,23 @@
-import { Controller, Post, Get, Body, UseGuards, Request, Patch, Query } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Request, Patch, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+
+/** Имя httpOnly-куки, в которой хранится JWT. Cross-site (Vercel ↔ Railway)
+ *  поэтому нужны SameSite=None + Secure. JavaScript прочитать не может. */
+const AUTH_COOKIE = 'auth_token';
+const COOKIE_OPTS = {
+  httpOnly: true as const,
+  secure: true as const,
+  sameSite: 'none' as const,
+  path: '/',
+  // 7 дней — синхронно с JWT TTL
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -14,8 +27,10 @@ export class AuthController {
   @Post('register')
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Register new user' })
-  register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.register(dto);
+    if (result?.token) res.cookie(AUTH_COOKIE, result.token, COOKIE_OPTS);
+    return result;
   }
 
   @Get('founder-exists')
@@ -37,8 +52,10 @@ export class AuthController {
   @Post('login')
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   @ApiOperation({ summary: 'Login' })
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.login(dto);
+    if (result?.token) res.cookie(AUTH_COOKIE, result.token, COOKIE_OPTS);
+    return result;
   }
 
   @Get('me')
@@ -69,7 +86,10 @@ export class AuthController {
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  logout(@Request() req) {
+  async logout(@Request() req, @Res({ passthrough: true }) res: Response) {
+    // Чистим httpOnly cookie — после logout даже украденный токен бесполезен
+    // на нашем домене (cookie уже нет в браузере). На бэке закрываем сессию.
+    res.clearCookie(AUTH_COOKIE, { ...COOKIE_OPTS, maxAge: 0 });
     return this.authService.logout(req.user.id);
   }
 

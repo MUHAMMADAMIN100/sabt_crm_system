@@ -4,16 +4,24 @@ import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/auth.store'
 
-export function useSocket(token: string | null) {
+/**
+ * Подключение к WebSocket. JWT теперь живёт в httpOnly cookie — она
+ * автоматически уйдёт в socket.io handshake при `withCredentials: true`.
+ * Если есть legacy-токен (старая сессия в localStorage) — отдадим его
+ * в auth для совместимости с пере-деплоем бэка.
+ */
+export function useSocket(authMarker: string | null) {
   const qc = useQueryClient()
   const socketRef = useRef<Socket | null>(null)
 
   useEffect(() => {
-    if (!token) return
+    if (!authMarker) return
 
     const wsUrl = import.meta.env.VITE_API_URL || window.location.origin
+    const legacyToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null
     const socket = io(`${wsUrl}/ws`, {
-      auth: { token },
+      withCredentials: true,
+      auth: legacyToken ? { token: legacyToken } : {},
       transports: ['websocket'],
       reconnectionAttempts: 5,
     })
@@ -140,7 +148,7 @@ export function useSocket(token: string | null) {
 
     socketRef.current = socket
     return () => { socket.disconnect() }
-  }, [token, qc])
+  }, [authMarker, qc])
 
   return socketRef
 }

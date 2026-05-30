@@ -117,9 +117,20 @@ export default function AiChatPage() {
     if (chatKey) localStorage.removeItem(chatKey)
   }
 
-  // Simple markdown rendering
+  // Безопасный markdown-рендер: СНАЧАЛА экранируем весь HTML, ПОТОМ
+  // прокатываем разметку. Раньше regex прокидывал $1 как HTML и злоумышленник
+  // мог через `**<img src=x onerror=alert(1)>**` встроить script — содержимое
+  // лежит в localStorage и при рендере исполнялось бы как HTML.
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, '&amp;')
+     .replace(/</g, '&lt;')
+     .replace(/>/g, '&gt;')
+     .replace(/"/g, '&quot;')
+     .replace(/'/g, '&#39;')
+
   const renderContent = (content: string) => {
-    return content
+    const escaped = escapeHtml(content)
+    return escaped
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
       .replace(/`(.*?)`/g, '<code class="bg-surface-100 dark:bg-surface-700 px-1 py-0.5 rounded text-xs">$1</code>')

@@ -5,6 +5,13 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../users/user.entity';
+import type { Request } from 'express';
+
+/** Берём JWT из httpOnly cookie (`auth_token`), а если её нет — пытаемся
+ *  из заголовка Authorization (поддержка старых клиентов и Swagger). */
+const fromCookie = (req: Request): string | null => {
+  return (req?.cookies && req.cookies['auth_token']) || null;
+};
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -13,7 +20,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     @InjectRepository(User) private userRepo: Repository<User>,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        fromCookie,
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ]),
       secretOrKey: config.get('JWT_SECRET'),
     });
   }

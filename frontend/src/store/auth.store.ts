@@ -36,8 +36,12 @@ export interface User {
 }
 
 interface AuthState {
-  token: string | null
+  /** true когда сервер вернул валидный /auth/me — единственный показатель,
+   *  что пользователь авторизован. JWT теперь живёт в httpOnly cookie и
+   *  фронт его не видит вообще. */
+  authenticated: boolean
   user: User | null
+  loading: boolean
   login: (email: string, password: string) => Promise<void>
   register: (data: {
     name: string
@@ -55,44 +59,64 @@ interface AuthState {
   updateUser: (user: Partial<User>) => void
 }
 
+/**
+ * Security note:
+ *  - JWT хранится только в httpOnly cookie (ставится бэком на login/register,
+ *    чистится на logout). Из JavaScript прочитать нельзя.
+ *  - Никаких user / role / token в localStorage. Подмена user.role через
+ *    DevTools больше ничего не даёт — фронт каждый раз тянет /auth/me
+ *    при старте и берёт роль оттуда.
+ *  - В localStorage сохраняем ТОЛЬКО флаг authenticated, чтобы при
+ *    F5 не мигал экран логина пока идёт /auth/me. Даже если кто-то выставит
+ *    его в true — реальный fetch свалится 401 и состояние сбросится.
+ */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      token: null,
+      authenticated: false,
       user: null,
+      loading: false,
 
       login: async (email, password) => {
-        const { data } = await api.post('/auth/login', { email, password })
-        localStorage.setItem('token', data.token)
-        set({ token: data.token, user: data.user })
+        // Тело ответа использовать не обязательно — backend выставит
+        // httpOnly cookie. Дальше зовём /auth/me чтобы получить актуальный
+        // user-объект (без необходимости доверять telу ответа).
+        await api.post('/auth/login', { email, password })
+        set({ authenticated: true })
+        await get().fetchMe()
       },
 
       register: async (regData) => {
-        const { data } = await api.post('/auth/register', regData)
-        localStorage.setItem('token', data.token)
-        set({ token: data.token, user: data.user })
+        await api.post('/auth/register', regData)
+        set({ authenticated: true })
+        await get().fetchMe()
       },
 
       logout: async () => {
         try { await api.post('/auth/logout') } catch {}
-        localStorage.removeItem('token')
-        set({ token: null, user: null })
+        // Сносим всё локальное — даже если cookie не очистилась (другой домен,
+        // ошибка сети), пользователь должен видеть экран логина.
+        try { localStorage.removeItem('auth-storage') } catch {}
+        try { localStorage.removeItem('token') } catch {} // legacy ключ
+        set({ authenticated: false, user: null })
       },
 
       fetchMe: async () => {
+        set({ loading: true })
         try {
           const { data } = await api.get('/auth/me')
           const oldRole = get().user?.role
-          set({ user: data })
-          // If role changed (e.g. admin promoted/demoted user) — force a hard reload
-          // so all permissions, sidebar items, and React Query caches reset properly
+          set({ user: data, authenticated: true, loading: false })
+          // Если роль реально сменилась (промоут / демоут / blockUser) —
+          // полный reload, чтобы все React Query кеши/sidebar/routes сбросились.
           if (oldRole && data.role && oldRole !== data.role) {
             window.location.reload()
           }
         } catch {
-          // Clear locally without calling API logout to avoid infinite recursion
-          localStorage.removeItem('token')
-          set({ token: null, user: null })
+          // 401 = cookie протухла или подделана. Чистим всё.
+          try { localStorage.removeItem('auth-storage') } catch {}
+          try { localStorage.removeItem('token') } catch {}
+          set({ authenticated: false, user: null, loading: false })
         }
       },
 
@@ -100,8 +124,13 @@ export const useAuthStore = create<AuthState>()(
         set(s => ({ user: s.user ? { ...s.user, ...updates } : null }))
       },
     }),
-    { name: 'auth-storage', partialize: s => ({ token: s.token, user: s.user }) }
-  )
+    {
+      name: 'auth-storage',
+      // ВАЖНО: НЕ персистим user и token. Сохраняем только флаг — это
+      // подсказка для splash-загрузки, не доверенное значение.
+      partialize: (s) => ({ authenticated: s.authenticated }),
+    },
+  ),
 )
 
 // ── Role helper hooks ─────────────────────────────────────────────────────────
@@ -118,7 +147,6 @@ export function useIsFounder() {
 }
 
 export function useIsPM() {
-  // smm_director / head_smm / project_manager — все менеджерские роли
   return useAuthStore(s => ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(s.user?.role || ''))
 }
 

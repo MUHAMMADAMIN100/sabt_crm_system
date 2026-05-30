@@ -67,8 +67,11 @@ const FinancePage       = lazy(() => import('@/pages/finance/FinancePage'))
 const TeamsPage         = lazy(() => import('@/pages/teams/TeamsPage'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore(s => s.token)
-  return token ? <>{children}</> : <Navigate to="/auth" replace />
+  // `authenticated` — это локальная подсказка. Реальная авторизация —
+  // в httpOnly cookie на бэке. Если cookie протухла, /auth/me вернёт 401,
+  // axios-interceptor выкинет на /auth.
+  const authenticated = useAuthStore(s => s.authenticated)
+  return authenticated ? <>{children}</> : <Navigate to="/auth" replace />
 }
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
@@ -84,13 +87,13 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const token = useAuthStore(s => s.token)
+  const authenticated = useAuthStore(s => s.authenticated)
 
   return (
     <ChunkErrorBoundary>
     <Suspense fallback={<PageLoader />}>
       <Routes>
-        <Route path="/auth" element={token ? <Navigate to="/" replace /> : <AuthPage />} />
+        <Route path="/auth" element={authenticated ? <Navigate to="/" replace /> : <AuthPage />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<DashboardPage />} />
           <Route path="projects" element={<RoleGuard><ProjectsPage /></RoleGuard>} />

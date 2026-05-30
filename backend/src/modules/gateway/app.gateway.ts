@@ -27,7 +27,20 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleConnection(client: Socket) {
     try {
-      const token = client.handshake.auth?.token || client.handshake.headers?.authorization?.split(' ')[1];
+      // Источники JWT в порядке приоритета:
+      //  1) httpOnly cookie `auth_token` (новый безопасный путь)
+      //  2) handshake.auth.token (legacy — фронт ещё не обновился)
+      //  3) Authorization: Bearer (Swagger / curl)
+      const cookieHeader = client.handshake.headers?.cookie || '';
+      const cookieToken = cookieHeader
+        .split(';')
+        .map(c => c.trim())
+        .find(c => c.startsWith('auth_token='))
+        ?.slice('auth_token='.length);
+      const token =
+        cookieToken
+        || client.handshake.auth?.token
+        || client.handshake.headers?.authorization?.split(' ')[1];
       if (!token) { client.disconnect(); return; }
 
       const payload = this.jwtService.verify(token);

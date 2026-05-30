@@ -19,7 +19,8 @@ function RouteLoader() {
 /** Каждые 60 сек шлём heartbeat — backend обновляет lastSeenAt текущей
  *  открытой сессии, чтобы при следующем входе её длительность была
  *  посчитана до момента реального ухода пользователя, а не до бесконечности. */
-function useSessionHeartbeat(token: string | null) {
+function useSessionHeartbeat(authMarker: string | null) {
+  const token = authMarker // alias: токен теперь в httpOnly cookie, нам нужен только маркер «есть сессия»
   useEffect(() => {
     if (!token) return
     let cancelled = false
@@ -57,12 +58,14 @@ function useSessionHeartbeat(token: string | null) {
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 993)
   const fetchMe = useAuthStore(s => s.fetchMe)
-  const token = useAuthStore(s => s.token)
+  // authenticated — флаг локального состояния. JWT теперь в httpOnly cookie,
+  // фронт его не видит. Socket / heartbeat пускаем когда юзер залогинен.
+  const authenticated = useAuthStore(s => s.authenticated)
   const location = useLocation()
 
   useEffect(() => { fetchMe() }, [])
-  useSocket(token)
-  useSessionHeartbeat(token)
+  useSocket(authenticated ? 'cookie' : null)
+  useSessionHeartbeat(authenticated ? 'cookie' : null)
 
   // Auto-close sidebar on mobile/tablet navigation
   useEffect(() => {

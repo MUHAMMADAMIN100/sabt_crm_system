@@ -9,6 +9,8 @@ import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
 import 'winston-daily-rotate-file';
 import * as compression from 'compression';
+import helmet from 'helmet';
+import * as cookieParser from 'cookie-parser';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -52,6 +54,13 @@ async function bootstrap() {
   });
 
   app.use(compression({ level: 6, threshold: 1024 }));
+  // Security HTTP-заголовки: X-Frame-Options, X-Content-Type-Options,
+  // Referrer-Policy, Strict-Transport-Security (HSTS) и т.д.
+  // CSP отключаем — у нас отдельный фронт, политику задаём на Vercel.
+  app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
+  // cookie-parser нужен, чтобы JwtStrategy могла прочитать токен из httpOnly
+  // куки — пользователи больше не хранят JWT в localStorage.
+  app.use(cookieParser());
 
   // Разбираем CORS_ORIGINS из ENV
   const allowedOrigins = process.env.CORS_ORIGINS
@@ -74,9 +83,10 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: false,
+      whitelist: true,         // выкидывает поля, не описанные в DTO
+      transform: true,         // приводит к ожидаемым типам (number, Date)
+      forbidNonWhitelisted: true, // 400, если присланы лишние поля — защита от поди и payload-poison
+      transformOptions: { enableImplicitConversion: true },
     }),
   );
 

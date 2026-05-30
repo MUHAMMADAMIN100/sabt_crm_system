@@ -3,12 +3,17 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api',
   timeout: 90000, // 90s — AI requests can take 30-60s
+  // httpOnly cookie с JWT уйдёт автоматически на каждый запрос (CORS +
+  // credentials true на бэке). JavaScript токен прочитать не может.
+  withCredentials: true,
 })
 
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  // Cachebuster on GET requests so no proxy/browser cache serves stale data
+  // Поддержка legacy-токена в localStorage — если кто-то ещё не
+  // перелогинился после миграции на httpOnly cookie. Через 1-2 недели
+  // после деплоя этот блок можно убрать.
+  const legacyToken = localStorage.getItem('token')
+  if (legacyToken) config.headers.Authorization = `Bearer ${legacyToken}`
   if (config.method === 'get' || config.method === 'GET') {
     config.params = { ...(config.params || {}), _t: Date.now() }
   }
