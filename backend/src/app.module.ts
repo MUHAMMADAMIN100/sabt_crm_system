@@ -52,6 +52,12 @@ import { TeamsModule } from './modules/teams/teams.module';
         migrations: [join(__dirname, 'database/migrations/*.{ts,js}')],
         synchronize: process.env.NODE_ENV !== 'production',
         migrationsRun: process.env.NODE_ENV === 'production',
+        // 'each' — каждая миграция выполняется в собственной транзакции,
+        // а миграции с `transaction = false` (например ALTER TYPE ADD VALUE
+        // в Postgres) могут пропустить transaction-wrapper. По умолчанию
+        // TypeORM ставит 'all' (одна транзакция на все миграции), что
+        // запрещает per-migration override и ломает наш security wave.
+        migrationsTransactionMode: 'each',
         logging: false,
         ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
         poolSize: 5,
