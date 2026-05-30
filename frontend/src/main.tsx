@@ -6,6 +6,21 @@ import { Toaster } from 'react-hot-toast'
 import App from './App'
 import './index.css'
 
+/**
+ * Одноразовая чистка legacy-данных в localStorage от старой схемы
+ * аутентификации (до перехода на httpOnly cookie). Если ключ есть —
+ * удаляем. Пользователь будет автоматически перелогинен через axios-
+ * interceptor (401 → редирект на /auth) при первом запросе.
+ *
+ * После того как ВСЕ активные пользователи перелогинятся хотя бы один
+ * раз (1-2 недели), этот блок можно убрать.
+ */
+try {
+  if (localStorage.getItem('token')) {
+    localStorage.removeItem('token')
+  }
+} catch {}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

@@ -9,11 +9,8 @@ const api = axios.create({
 })
 
 api.interceptors.request.use(config => {
-  // Поддержка legacy-токена в localStorage — если кто-то ещё не
-  // перелогинился после миграции на httpOnly cookie. Через 1-2 недели
-  // после деплоя этот блок можно убрать.
-  const legacyToken = localStorage.getItem('token')
-  if (legacyToken) config.headers.Authorization = `Bearer ${legacyToken}`
+  // Никаких токенов из localStorage — JWT теперь только в httpOnly cookie,
+  // браузер сам прикрепит его благодаря withCredentials.
   if (config.method === 'get' || config.method === 'GET') {
     config.params = { ...(config.params || {}), _t: Date.now() }
   }

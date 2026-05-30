@@ -18,10 +18,10 @@ export function useSocket(authMarker: string | null) {
     if (!authMarker) return
 
     const wsUrl = import.meta.env.VITE_API_URL || window.location.origin
-    const legacyToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null
     const socket = io(`${wsUrl}/ws`, {
+      // httpOnly cookie auth_token уйдёт в handshake благодаря
+      // withCredentials. Gateway читает её из handshake.headers.cookie.
       withCredentials: true,
-      auth: legacyToken ? { token: legacyToken } : {},
       transports: ['websocket'],
       reconnectionAttempts: 5,
     })
