@@ -6,6 +6,7 @@ import { Modal, EmptyState, ConfirmDialog } from '@/components/ui'
 import { Plus, Edit, Trash2, Megaphone } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
 import { DateTimePicker } from '@/components/ui/DatePicker'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { format, parseISO, isWithinInterval } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -286,10 +287,9 @@ function AdForm({ initial, onClose, onSubmit, loading }: any) {
               render={({ field }) => <DateTimePicker value={field.value || ''} onChange={field.onChange} />} />
           </div>
         </div>
-        <div>
-          <label className="label">Заметка</label>
+        <CollapsibleField label="Заметка" defaultOpen={!!initial?.note} hint={initial?.note ? 'заполнено' : ''}>
           <textarea {...register('note')} rows={2} className="input resize-none" placeholder="Ссылка на креатив, ЦА, условия..." />
-        </div>
+        </CollapsibleField>
         <div className="flex gap-2 justify-end pt-2">
           <button type="button" onClick={onClose} className="btn-secondary">Отмена</button>
           <button type="submit" disabled={loading} className="btn-primary">

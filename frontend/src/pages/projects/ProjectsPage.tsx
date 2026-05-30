@@ -8,6 +8,7 @@ import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog,
 import { Plus, Search, FolderKanban, Archive, Trash2, Edit, Users, ChevronDown, X, Check, Banknote, Calendar as CalIcon } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { format, formatDistanceToNow } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -696,10 +697,14 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             <input {...register('name', { required: true })} className="input" placeholder={t('projects.name')} />
             {errors.name && <p className="text-xs text-red-500 mt-1">Обязательное поле</p>}
           </div>
-          <div className="sm:col-span-2">
-            <label className="label">{t('projects.description')}</label>
+          <CollapsibleField
+            className="sm:col-span-2"
+            label={t('projects.description')}
+            defaultOpen={!!initial?.description}
+            hint={initial?.description ? 'заполнено' : ''}
+          >
             <textarea {...register('description')} className="input resize-none" rows={3} />
-          </div>
+          </CollapsibleField>
 
           {/* Project type */}
           <div className="sm:col-span-2">
@@ -719,8 +724,12 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           </div>
 
           {/* Менеджер проекта — head_smm показываем только для SMM-проектов */}
-          <div className="sm:col-span-2">
-            <label className="label">Менеджер проекта</label>
+          <CollapsibleField
+            className="sm:col-span-2"
+            label="Менеджер проекта"
+            defaultOpen={!!initial?.managerId}
+            hint={initial?.managerId ? 'назначен' : ''}
+          >
             <select {...register('managerId')} className="input">
               <option value="">— Не назначен —</option>
               {employees
@@ -741,12 +750,16 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 Главный SMM специалист может быть менеджером только SMM-проектов
               </p>
             )}
-          </div>
+          </CollapsibleField>
 
           {/* Менеджер по продажам */}
           {canCreateProject && (
-          <div className="sm:col-span-2">
-            <label className="label">Менеджер по продажам</label>
+          <CollapsibleField
+            className="sm:col-span-2"
+            label="Менеджер по продажам"
+            defaultOpen={!!(initial as any)?.salesManagerId}
+            hint={(initial as any)?.salesManagerId ? 'назначен' : ''}
+          >
             <select {...register('salesManagerId')} className="input">
               <option value="">— Не назначен —</option>
               {employees.map((e: any) => (
@@ -756,12 +769,16 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
               ))}
             </select>
             <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">Получит напоминание об оплате через 2 недели после создания проекта</p>
-          </div>
+          </CollapsibleField>
           )}
 
           {/* Команда — фильтрует список участников проекта */}
-          <div className="sm:col-span-2">
-            <label className="label">Команда</label>
+          <CollapsibleField
+            className="sm:col-span-2"
+            label="Команда"
+            defaultOpen={!!(initial as any)?.teamId}
+            hint={(initial as any)?.teamId ? 'выбрана' : ''}
+          >
             <select {...register('teamId')} className="input">
               <option value="">— Без команды —</option>
               {(teams || []).map((t: any) => (
@@ -777,7 +794,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 Если команда не выбрана — в списке доступны все сотрудники.
               </p>
             )}
-          </div>
+          </CollapsibleField>
 
           {/* SMM-тариф (только для SMM-проектов).
               Цена показывается только основателю/сооснователю. */}
@@ -976,8 +993,12 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           )}
 
           {/* Участники проекта */}
-          <div className="sm:col-span-2" ref={dropRef}>
-            <label className="label">Участники проекта</label>
+          <CollapsibleField
+            className="sm:col-span-2"
+            label="Участники проекта"
+            defaultOpen={selectedMembers.length > 0}
+            badge={selectedMembers.length || undefined}
+          ><div ref={dropRef}>
 
             {/* Trigger */}
             <div
@@ -1097,6 +1118,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
               </p>
             )}
           </div>
+          </CollapsibleField>
           {/* Поле "Цвет" убрано из формы — оно не несло смысловой нагрузки,
               перегружало форму и сбивало пользователей. Дефолтный цвет
               проекта проставляется на бэке. */}
@@ -1108,7 +1130,13 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
               Каждый транш = сумма + дата + комментарий. Сумма суммируется
               в paidAmount проекта. */}
           {canManagePayments && (
-            <div className="sm:col-span-2 border border-emerald-300/60 dark:border-emerald-800/60 rounded-xl p-4 bg-emerald-50/50 dark:bg-emerald-900/10 space-y-3">
+            <CollapsibleField
+              className="sm:col-span-2"
+              label="Платежи (транши)"
+              defaultOpen={tranches.length > 0}
+              badge={tranches.length || undefined}
+            >
+            <div className="border border-emerald-300/60 dark:border-emerald-800/60 rounded-xl p-4 bg-emerald-50/50 dark:bg-emerald-900/10 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Banknote size={16} className="text-emerald-600 dark:text-emerald-400" />
@@ -1210,6 +1238,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 </div>
               )}
             </div>
+            </CollapsibleField>
           )}
         </div>
 

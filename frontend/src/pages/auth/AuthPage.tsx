@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { Mail, Lock, User, Eye, EyeOff, Briefcase, Send, AtSign } from 'lucide-react'
@@ -264,21 +265,19 @@ export default function AuthPage() {
                   {errors.telegram && <p className="auth-error">{String(errors.telegram.message)}</p>}
                 </div>
 
-                {/* Instagram */}
-                <div className="auth-field" style={{ animationDelay: '200ms' }}>
-                  <label className="label">Instagram</label>
+                {/* Instagram (свёрнуто) */}
+                <CollapsibleField label="Instagram" defaultOpen={false}>
                   <div className="relative">
                     <AtSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
                     <input {...reg('instagram')} placeholder="@username" className="input pl-9" />
                   </div>
-                </div>
+                </CollapsibleField>
 
-                {/* День рождения */}
-                <div className="auth-field" style={{ animationDelay: '250ms' }}>
-                  <label className="label">День рождения</label>
+                {/* День рождения (свёрнуто) */}
+                <CollapsibleField label="День рождения" defaultOpen={false}>
                   <Controller name="birthDate" control={control}
                     render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
-                </div>
+                </CollapsibleField>
               </>
             )}
 

@@ -6,6 +6,7 @@ import clsx from 'clsx'
 import { Plus, Edit, Trash2, Copy, Power, Search } from 'lucide-react'
 import { smmTariffsApi } from '@/services/api.service'
 import { Modal, EmptyState, PageLoader, ConfirmDialog, FormField } from '@/components/ui'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { hasPermission } from '@/lib/permissions'
 import { useAuthStore } from '@/store/auth.store'
 
@@ -328,13 +329,13 @@ function TariffForm({ initial, canSeeFinance, onSubmit, onCancel, loading }: {
         />
       </FormField>
 
-      <FormField label="Описание">
+      <CollapsibleField label="Описание" defaultOpen={!!initial?.description} hint={initial?.description ? 'заполнено' : ''}>
         <textarea
           {...register('description')}
           rows={2}
           className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
         />
-      </FormField>
+      </CollapsibleField>
 
       <div className="grid grid-cols-2 gap-3">
         {canSeeFinance ? (
@@ -351,18 +352,30 @@ function TariffForm({ initial, canSeeFinance, onSubmit, onCancel, loading }: {
         </FormField>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <FormField label="Stories"><input type="number" {...register('storiesPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-        <FormField label="Reels"><input type="number" {...register('reelsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-        <FormField label="Posts"><input type="number" {...register('postsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-        <FormField label="Дизайны"><input type="number" {...register('designsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-      </div>
+      <CollapsibleField
+        label="Контент-наполнение"
+        defaultOpen={!!(initial?.storiesPerMonth || initial?.reelsPerMonth || initial?.postsPerMonth || initial?.designsPerMonth)}
+        hint="Stories / Reels / Posts / Дизайны"
+      >
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <FormField label="Stories"><input type="number" {...register('storiesPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
+          <FormField label="Reels"><input type="number" {...register('reelsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
+          <FormField label="Posts"><input type="number" {...register('postsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
+          <FormField label="Дизайны"><input type="number" {...register('designsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
+        </div>
+      </CollapsibleField>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <FormField label="Съёмок / мес"><input type="number" {...register('shootingDaysPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-        <FormField label="Отчётов / мес"><input type="number" {...register('reportsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-        <FormField label="Лимит правок"><input type="number" {...register('revisionLimit')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-      </div>
+      <CollapsibleField
+        label="Доп. лимиты"
+        defaultOpen={!!(initial?.shootingDaysPerMonth || initial?.reportsPerMonth || initial?.revisionLimit)}
+        hint="Съёмки / Отчёты / Правки"
+      >
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <FormField label="Съёмок / мес"><input type="number" {...register('shootingDaysPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
+          <FormField label="Отчётов / мес"><input type="number" {...register('reportsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
+          <FormField label="Лимит правок"><input type="number" {...register('revisionLimit')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
+        </div>
+      </CollapsibleField>
 
       <div className="flex items-center gap-6 text-sm">
         <label className="inline-flex items-center gap-2 cursor-pointer">

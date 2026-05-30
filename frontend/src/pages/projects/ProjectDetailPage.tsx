@@ -15,6 +15,7 @@ import TaskDrawer from '@/components/tasks/TaskDrawer'
 import { isTaskOverdue } from '@/lib/taskStatus'
 import DeleteWithReasonDialog from '@/components/tasks/DeleteWithReasonDialog'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import {
   ProjectOverviewTab, ProjectActivityTab,
 } from '@/components/projects/ProjectExtraTabs'
@@ -953,10 +954,13 @@ export default function ProjectDetailPage() {
               <option value="SMM">SMM</option>
             </select>
           </div>
-          <div>
-            <label className="label mb-1">Описание</label>
+          <CollapsibleField
+            label="Описание"
+            defaultOpen={!!projectForm.description}
+            hint={projectForm.description ? 'заполнено' : ''}
+          >
             <textarea value={projectForm.description || ''} onChange={e => setProjectForm((f: any) => ({ ...f, description: e.target.value }))} rows={3} className="input w-full resize-none" />
-          </div>
+          </CollapsibleField>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label mb-1">Дата начала</label>
@@ -984,8 +988,12 @@ export default function ProjectDetailPage() {
 
           {/* SMM-specific fields */}
           {projectForm.projectType === 'SMM' && (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <CollapsibleField
+              label="SMM-параметры и анкета"
+              defaultOpen={false}
+              hint={projectForm.smmData && Object.keys(projectForm.smmData || {}).length > 0 ? 'заполнено' : ''}
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className="label mb-1">Историй в день</label>
                   <input
@@ -1052,7 +1060,7 @@ export default function ProjectDetailPage() {
                   </div>
                 ))}
               </div>
-            </>
+            </CollapsibleField>
           )}
 
           <div className="flex gap-2 justify-end pt-2">
@@ -1085,16 +1093,20 @@ export default function ProjectDetailPage() {
               <input type="email" value={clientForm.email || ''} onChange={e => setClientForm((f: any) => ({ ...f, email: e.target.value }))} className="input w-full" placeholder="email@..." />
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label mb-1">WhatsApp</label>
-              <input value={clientForm.whatsapp || ''} onChange={e => setClientForm((f: any) => ({ ...f, whatsapp: e.target.value }))} className="input w-full" placeholder="+7..." />
-            </div>
-            <div>
-              <label className="label mb-1">Instagram</label>
-              <input value={clientForm.instagram || ''} onChange={e => setClientForm((f: any) => ({ ...f, instagram: e.target.value }))} className="input w-full" placeholder="@username" />
-            </div>
-          </div>
+          <CollapsibleField
+            label="WhatsApp"
+            defaultOpen={!!clientForm.whatsapp}
+            hint={clientForm.whatsapp || ''}
+          >
+            <input value={clientForm.whatsapp || ''} onChange={e => setClientForm((f: any) => ({ ...f, whatsapp: e.target.value }))} className="input w-full" placeholder="+7..." />
+          </CollapsibleField>
+          <CollapsibleField
+            label="Instagram"
+            defaultOpen={!!clientForm.instagram}
+            hint={clientForm.instagram || ''}
+          >
+            <input value={clientForm.instagram || ''} onChange={e => setClientForm((f: any) => ({ ...f, instagram: e.target.value }))} className="input w-full" placeholder="@username" />
+          </CollapsibleField>
           <div className="flex gap-2 justify-end pt-2">
             <button onClick={() => setShowEditClient(false)} className="btn-secondary">Отмена</button>
             <button onClick={handleSaveClient} disabled={updateProject.isPending} className="btn-primary flex items-center gap-2">

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { Plus, Edit, Trash2, ExternalLink, Filter, Loader2 } from 'lucide-react'
@@ -386,17 +387,17 @@ function ItemForm({ initial, employees, onSubmit, onCancel, loading }: {
         </FormField>
       </div>
 
-      <FormField label="Ссылка на файл">
+      <CollapsibleField label="Ссылка на файл" defaultOpen={!!initial?.fileLink} hint={initial?.fileLink ? 'есть' : ''}>
         <input {...register('fileLink')} className="input" placeholder="Google Drive, Figma, R2 — https://..." />
-      </FormField>
+      </CollapsibleField>
 
-      <FormField label="Подпись к публикации">
+      <CollapsibleField label="Подпись к публикации" defaultOpen={!!initial?.caption} hint={initial?.caption ? 'заполнено' : ''}>
         <textarea {...register('caption')} rows={3} className="input resize-none" />
-      </FormField>
+      </CollapsibleField>
 
-      <FormField label="Комментарии">
+      <CollapsibleField label="Комментарии" defaultOpen={!!initial?.comments} hint={initial?.comments ? 'заполнено' : ''}>
         <textarea {...register('comments')} rows={2} className="input resize-none" />
-      </FormField>
+      </CollapsibleField>
 
       <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
         <button type="button" onClick={onCancel} className="px-4 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700">Отмена</button>
