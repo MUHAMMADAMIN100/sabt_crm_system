@@ -8,6 +8,7 @@ import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from
 import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -636,15 +637,13 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
               onChange={handleTelegramChange} className={`input ${errors.telegram ? 'border-red-400' : ''}`} placeholder="@username" />
             {errors.telegram && <p className="text-xs text-red-400 mt-1">{String(errors.telegram.message)}</p>}
           </div>
-          <div>
-            <label className="label">Instagram</label>
+          <CollapsibleField label="Instagram" defaultOpen={!!initial?.instagram} hint={initial?.instagram || ''}>
             <input {...register('instagram')} className="input" placeholder="@username" />
-          </div>
-          <div>
-            <label className="label">День рождения</label>
+          </CollapsibleField>
+          <CollapsibleField label="День рождения" defaultOpen={!!initial?.birthDate} hint={initial?.birthDate ? String(initial.birthDate).slice(0, 10) : ''}>
             <Controller name="birthDate" control={control}
               render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
-          </div>
+          </CollapsibleField>
           <div>
             <label className="label">{t('employees.hireDate')} *</label>
             <Controller name="hireDate" control={control} rules={{ required: 'Обязательное поле' }}

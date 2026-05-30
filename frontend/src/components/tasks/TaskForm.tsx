@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useForm, useWatch, Controller } from 'react-hook-form'
 import { DateTimePicker } from '@/components/ui/DatePicker'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { useTranslation } from '@/i18n'
 import { useAuthStore } from '@/store/auth.store'
 import { Check, ChevronDown, ArrowUp, ArrowDown, X as XIcon, Plus } from 'lucide-react'
@@ -159,10 +160,13 @@ export default function TaskForm({
         <input {...register('title', { required: true })} className="input" />
         {errors.title && <p className="text-xs text-red-500 mt-1">{t('tasks.name')} обязательно</p>}
       </div>
-      <div>
-        <label className="label">{t('tasks.description')}</label>
+      <CollapsibleField
+        label={t('tasks.description')}
+        defaultOpen={!!initial?.description}
+        hint={initial?.description ? 'заполнено' : ''}
+      >
         <textarea {...register('description')} className="input resize-none" rows={3} />
-      </div>
+      </CollapsibleField>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {!fixedProjectId && projects && (
           <div>

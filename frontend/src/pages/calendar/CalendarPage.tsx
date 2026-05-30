@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { calendarApi, projectsApi, tasksApi, employeesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal } from '@/components/ui'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
@@ -1245,20 +1246,28 @@ function FounderQuickTaskForm({
           autoFocus
         />
       </div>
-      <div>
-        <label className="label">Описание</label>
+      <CollapsibleField
+        label="Описание"
+        defaultOpen={!!description}
+        hint={description ? 'заполнено' : ''}
+      >
         <textarea
           value={description}
           onChange={e => setDescription(e.target.value)}
           className="input min-h-[80px] resize-y"
           placeholder="Детали, контекст (необязательно)"
         />
-      </div>
+      </CollapsibleField>
 
       {/* Проект задачи — только для бизнес-задач и если список передан */}
       {scope === 'business' && projects && projects.length > 0 && (
-        <div>
-          <label className="label">Проект <span className="text-[11px] text-surface-400 font-normal">— необязательно</span></label>
+        <CollapsibleField
+          label="Проект"
+          defaultOpen={!!projectId}
+          hint={projectId
+            ? (projects.find((p: any) => p.id === projectId)?.name || 'выбран')
+            : 'необязательно'}
+        >
           <select
             value={projectId}
             onChange={e => setProjectId(e.target.value)}
@@ -1269,13 +1278,17 @@ function FounderQuickTaskForm({
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
-        </div>
+        </CollapsibleField>
       )}
 
       {/* Multi-select исполнителей — дропдаун (только business) */}
       {scope === 'business' && (
-        <div>
-          <label className="label">Исполнители * <span className="text-[11px] text-surface-400 font-normal">— получат in-app, email, Telegram</span></label>
+        <CollapsibleField
+          label="Исполнители"
+          defaultOpen={selectedIds.length > 0}
+          badge={selectedIds.length || undefined}
+          hint={selectedIds.length ? '' : 'получат in-app, email, Telegram'}
+        >
           {/* Чипы выбранных */}
           {selectedIds.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2">
@@ -1345,7 +1358,7 @@ function FounderQuickTaskForm({
               </div>
             </div>
           )}
-        </div>
+        </CollapsibleField>
       )}
 
       {/* Подсказка для general */}
@@ -1359,8 +1372,11 @@ function FounderQuickTaskForm({
       )}
 
       {/* Подзадачи — у каждой свой исполнитель */}
-      <div>
-        <label className="label">Подзадачи</label>
+      <CollapsibleField
+        label="Подзадачи"
+        defaultOpen={subtasks.length > 0}
+        badge={subtasks.length || undefined}
+      >
         {subtasks.length > 0 && (
           <div className="space-y-1.5 mb-2">
             {subtasks.map((s, idx) => (
@@ -1417,7 +1433,7 @@ function FounderQuickTaskForm({
             <Plus size={15} />
           </button>
         </div>
-      </div>
+      </CollapsibleField>
 
       {/* Дедлайн — дата и время (часы). Дату — через наш DatePicker;
           время оставляем native (он терпимый), только стилизован. */}

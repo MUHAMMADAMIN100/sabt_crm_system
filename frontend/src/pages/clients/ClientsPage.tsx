@@ -6,6 +6,7 @@ import { Modal, EmptyState, PageLoader, ConfirmDialog, Pagination } from '@/comp
 import { Plus, Search, Edit, Trash2, List, LayoutGrid } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker, DateTimePicker } from '@/components/ui/DatePicker'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { format, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -569,10 +570,13 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
               {SPHERE_SUGGESTIONS.map(s => <option key={s} value={s} />)}
             </datalist>
           </div>
-          <div>
-            <label className="label">Адрес</label>
+          <CollapsibleField
+            label="Адрес"
+            defaultOpen={!!initial?.address}
+            hint={initial?.address || ''}
+          >
             <input {...register('address')} className="input" placeholder="г. Душанбе, ул. ..." />
-          </div>
+          </CollapsibleField>
           <div className="sm:col-span-2">
             <label className="label">Проблема / что нужно</label>
             <textarea {...register('problem')} rows={2} className="input resize-none" placeholder="Разработка сайта, SMM-продвижение..." />
@@ -612,25 +616,34 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
             <label className="label">Потенциал сделки (сомони)</label>
             <input type="number" min={0} step="0.01" {...register('dealPotential')} className="input" placeholder="10000" />
           </div>
-          <div>
-            <label className="label">Источник лида</label>
+          <CollapsibleField
+            label="Источник лида"
+            defaultOpen={!!initial?.leadSource}
+            hint={initial?.leadSource || ''}
+          >
             <input list="source-list" {...register('leadSource')} className="input" placeholder="Instagram, Рекомендация..." />
             <datalist id="source-list">
               {SOURCE_OPTIONS.map(s => <option key={s} value={s} />)}
             </datalist>
-          </div>
-          <div>
-            <label className="label">Канал общения</label>
+          </CollapsibleField>
+          <CollapsibleField
+            label="Канал общения"
+            defaultOpen={!!initial?.channel}
+            hint={initial?.channel || ''}
+          >
             <input list="channel-list" {...register('channel')} className="input" placeholder="WhatsApp, Telegram..." />
             <datalist id="channel-list">
               {CHANNEL_OPTIONS.map(s => <option key={s} value={s} />)}
             </datalist>
-          </div>
-          <div>
-            <label className="label">Дата последнего контакта</label>
+          </CollapsibleField>
+          <CollapsibleField
+            label="Дата последнего контакта"
+            defaultOpen={!!initial?.lastContactAt}
+            hint={initial?.lastContactAt ? String(initial.lastContactAt).slice(0, 10) : ''}
+          >
             <Controller name="lastContactAt" control={control}
               render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
-          </div>
+          </CollapsibleField>
           <div>
             <label className="label">📅 Дата + время встречи / след. контакта</label>
             <Controller name="nextContactAt" control={control}
@@ -639,10 +652,14 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
               Появится в Календаре на выбранный час и придёт напоминание.
             </p>
           </div>
-          <div className="sm:col-span-2">
-            <label className="label">Следующий шаг</label>
+          <CollapsibleField
+            className="sm:col-span-2"
+            label="Следующий шаг"
+            defaultOpen={!!initial?.nextStep}
+            hint={initial?.nextStep ? 'заполнено' : ''}
+          >
             <textarea {...register('nextStep')} rows={2} className="input resize-none" placeholder="Отправить коммерческое предложение..." />
-          </div>
+          </CollapsibleField>
           {currentStatus === 'lost' && (
             <div className="sm:col-span-2">
               <label className="label">Причина отказа</label>

@@ -4,6 +4,7 @@ import { clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, PageLoader, ConfirmDialog } from '@/components/ui'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { Plus, Edit, Trash2, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -432,26 +433,21 @@ function OnboardingClientForm({
         <label className="label">Название клиента *</label>
         <input value={name} onChange={e => setName(e.target.value)} className="input" placeholder="ООО Ромашка, @blogger" autoFocus />
       </div>
-      <div>
-        <label className="label">Сфера</label>
+      <CollapsibleField label="Сфера" defaultOpen={!!sphere} hint={sphere}>
         <input value={sphere} onChange={e => setSphere(e.target.value)} className="input" placeholder="Ресторан, Клиника, Блогер..." />
-      </div>
-      <div>
-        <label className="label">Задача / услуга</label>
+      </CollapsibleField>
+      <CollapsibleField label="Задача / услуга" defaultOpen={!!problem} hint={problem ? 'заполнено' : ''}>
         <textarea value={problem} onChange={e => setProblem(e.target.value)} rows={2} className="input resize-none" placeholder="Разработка сайта, SMM-продвижение..." />
-      </div>
-      <div>
-        <label className="label">Контактное лицо</label>
+      </CollapsibleField>
+      <CollapsibleField label="Контактное лицо" defaultOpen={!!contactPerson} hint={contactPerson}>
         <input value={contactPerson} onChange={e => setContactPerson(e.target.value)} className="input" placeholder="Иван Иванов — директор" />
-      </div>
-      <div>
-        <label className="label">Контакты</label>
+      </CollapsibleField>
+      <CollapsibleField label="Контакты" defaultOpen={!!contactInfo} hint={contactInfo ? 'заполнено' : ''}>
         <textarea value={contactInfo} onChange={e => setContactInfo(e.target.value)} rows={2} className="input resize-none" placeholder="+992 900 00 00 00, @instagram, email@domain.com" />
-      </div>
-      <div>
-        <label className="label">Потенциал сделки (смн)</label>
+      </CollapsibleField>
+      <CollapsibleField label="Потенциал сделки (смн)" defaultOpen={!!dealPotential} hint={dealPotential ? `${dealPotential} смн` : ''}>
         <input type="number" min={0} step="0.01" value={dealPotential} onChange={e => setDealPotential(e.target.value)} className="input" placeholder="10000" />
-      </div>
+      </CollapsibleField>
       <div>
         <label className="label">📅 Дата встречи / следующего контакта</label>
         <DatePicker value={nextContactAt} onChange={setNextContactAt} />

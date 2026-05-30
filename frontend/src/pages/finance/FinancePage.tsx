@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import {
@@ -838,40 +839,58 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
         <input {...register('description', { required: 'Описание обязательно' })} className="input" />
       </FormField>
 
-      {/* Клиент/Проект/Способ оплаты/Статус — скрыты для транзакций
-          по сотруднику (Штраф/Аванс): там это не нужно. */}
+      {/* Клиент/Проект/Способ оплаты — свёрнуты по умолчанию; Статус
+          остаётся раскрытым (он обязательный). */}
       {!isEmployeeTx && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <FormField label="Клиент / Контрагент">
-            <input {...register('counterparty')} className="input" placeholder="Имя клиента/поставщика" />
-          </FormField>
-          <FormField label="Проект">
-            <select {...register('project')} className="input">
-              <option value="">— Не выбран —</option>
-              {projects.map((p: any) => (
-                <option key={p.id} value={p.name}>{p.name}</option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Способ оплаты">
-            <select {...register('paymentMethod')} className="input">
-              <option value="">— Не указан —</option>
-              {PAYMENT_METHODS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Статус" required>
-            <select {...register('status', { required: true })} className="input">
-              {Object.entries(STATUS_INFO).map(([id, info]) => (
-                <option key={id} value={id}>{info.label}</option>
-              ))}
-            </select>
-          </FormField>
-        </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <CollapsibleField
+              label="Клиент / Контрагент"
+              defaultOpen={!!initial?.counterparty}
+              hint={initial?.counterparty || ''}
+            >
+              <input {...register('counterparty')} className="input" placeholder="Имя клиента/поставщика" />
+            </CollapsibleField>
+            <CollapsibleField
+              label="Проект"
+              defaultOpen={!!initial?.project}
+              hint={initial?.project || ''}
+            >
+              <select {...register('project')} className="input">
+                <option value="">— Не выбран —</option>
+                {projects.map((p: any) => (
+                  <option key={p.id} value={p.name}>{p.name}</option>
+                ))}
+              </select>
+            </CollapsibleField>
+            <CollapsibleField
+              label="Способ оплаты"
+              defaultOpen={!!initial?.paymentMethod}
+              hint={initial?.paymentMethod || ''}
+            >
+              <select {...register('paymentMethod')} className="input">
+                <option value="">— Не указан —</option>
+                {PAYMENT_METHODS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            </CollapsibleField>
+            <FormField label="Статус" required>
+              <select {...register('status', { required: true })} className="input">
+                {Object.entries(STATUS_INFO).map(([id, info]) => (
+                  <option key={id} value={id}>{info.label}</option>
+                ))}
+              </select>
+            </FormField>
+          </div>
+        </>
       )}
 
-      <FormField label="Комментарий">
+      <CollapsibleField
+        label="Комментарий"
+        defaultOpen={!!initial?.comment}
+        hint={initial?.comment ? 'заполнено' : ''}
+      >
         <textarea {...register('comment')} rows={2} className="input resize-none" placeholder="Произвольная заметка" />
-      </FormField>
+      </CollapsibleField>
 
       <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
         <button type="button" onClick={onCancel} className="px-4 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700">
