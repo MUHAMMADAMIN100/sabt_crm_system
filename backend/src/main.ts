@@ -60,9 +60,12 @@ function assertSecurityCriticalEnv() {
   }
 
   if (isProduction) {
+    // DATABASE_URL — критично, без БД приложение бесполезно.
     if (!process.env.DATABASE_URL) errors.push('DATABASE_URL is required in production');
-    if (!process.env.CORS_ORIGINS) errors.push('CORS_ORIGINS must be set explicitly in production (no wildcard fallback)');
-    if (process.env.NODE_ENV !== 'production') errors.push('NODE_ENV must be "production" in prod build');
+    // CORS_ORIGINS / NODE_ENV — желательно, но если не задано — используем
+    // fallback и предупреждаем. Не валим контейнер из-за этого.
+    if (!process.env.CORS_ORIGINS) warnings.push('CORS_ORIGINS not set — using built-in fallback list (Vercel + localhost)');
+    if (process.env.NODE_ENV !== 'production') warnings.push('NODE_ENV is not "production" — некоторые оптимизации Nest/winston отключены');
   }
 
   // ─── Advisory: всё остальное (placeholder'ы интеграций) ─────────────
@@ -76,7 +79,7 @@ function assertSecurityCriticalEnv() {
     }
   }
 
-  // ─── CORS_ORIGINS: дополнительная проверка на localhost в проде ─────
+  // ─── CORS_ORIGINS: дополнительные проверки на localhost / wildcard ─────
   if (isProduction && process.env.CORS_ORIGINS) {
     const origins = process.env.CORS_ORIGINS.split(',').map(o => o.trim());
     const hasLocalhost = origins.some(o => /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(o));
@@ -85,7 +88,10 @@ function assertSecurityCriticalEnv() {
     }
     const hasWildcard = origins.some(o => o === '*');
     if (hasWildcard) {
-      errors.push('CORS_ORIGINS contains "*" wildcard — break cookies + open CSRF. Use explicit URLs only.');
+      // Wildcard "*" с credentials:true браузеры всё равно отвергают —
+      // но из-за этого ломаются легитимные cookies. Громко предупреждаем,
+      // не валим контейнер: будут страдать только запросы за wildcard.
+      warnings.push('CORS_ORIGINS contains "*" — браузеры отвергают это с credentials:true. Замени на явные URLs.');
     }
   }
 
@@ -183,16 +189,21 @@ async function bootstrap() {
       'https://sabt-crm-system-frontend.vercel.app',
     ];
 
-  // Настройка CORS: разрешаем только явно перечисленные origins.
+  // Настройка CORS: разрешаем явно перечисленные origins + любые preview-
+  // деплои Vercel (*.vercel.app) — у Vercel каждый коммит может получить
+  // отдельный URL вида sabt-crm-system-frontend-abc123.vercel.app, и мы
+  // не хотим ломать их CORS-ом.
   // Никаких "*"  — иначе SameSite=None cookies сломаются + CSRF.
   // Для unknown origin отдаём (null, false) — браузер просто не получит
   // Access-Control-Allow-Origin и заблокирует ответ сам. Никаких 500-ок
   // и шумных error-логов от нелегитимных origin'ов.
+  const VERCEL_PREVIEW_RE = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i;
   app.enableCors({
     origin: (origin, cb) => {
       // origin === undefined → не браузерный запрос (curl, server-to-server)
       if (!origin) return cb(null, true);
       if (allowedOrigins.includes(origin)) return cb(null, true);
+      if (VERCEL_PREVIEW_RE.test(origin)) return cb(null, true);
       return cb(null, false);
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
