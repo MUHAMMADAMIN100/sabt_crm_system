@@ -378,15 +378,58 @@ export class TasksService {
     return tasks;
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, viewer?: { id: string; role?: string } | null) {
     const task = await this.repo.findOne({
       where: { id },
-      relations: ['assignee', 'createdBy', 'project', 'comments', 'comments.author', 'timeLogs', 'files'],
+      relations: ['assignee', 'createdBy', 'project', 'project.members', 'comments', 'comments.author', 'timeLogs', 'files'],
     });
     if (!task) throw new NotFoundException('Task not found');
     const map = await this.loadAssignees([id]);
     (task as any).assignees = map.get(id) || [];
+
+    // ─── IDOR-защита: можно читать задачу если ────────────────────────
+    //   - PM-роль (admin/founder/co_founder/smm_director/PM/head_smm)
+    //   - назначен исполнителем (legacy assigneeId или multi-assignee)
+    //   - создатель задачи
+    //   - менеджер проекта
+    //   - участник проекта (project.members)
+    //   - GENERAL-задача от основателя (видна всей компании)
+    if (viewer) {
+      const isPm = task.project
+        ? await this.hasPmPowersOnProject(viewer.id, viewer.role, task.projectId)
+        : (viewer.role ? PM_ROLES.includes(viewer.role as UserRole) : false);
+      const isAssignee = task.assigneeId === viewer.id;
+      const isCoAssignee = ((task as any).assignees || []).some((a: any) => a.userId === viewer.id);
+      const isCreator = task.createdById === viewer.id;
+      const isProjectMember = (task.project?.members || []).some((m: any) => m.id === viewer.id);
+      const isManager = task.project?.managerId === viewer.id;
+      const isGeneralFromFounder = (task as any).scope === 'general' && task.fromFounder;
+      const canView = isPm || isAssignee || isCoAssignee || isCreator || isProjectMember || isManager || isGeneralFromFounder;
+      if (!canView) {
+        throw new ForbiddenException('Нет доступа к этой задаче');
+      }
+    }
+
     return task;
+  }
+
+  /** Лёгкая проверка доступа к задаче без полной загрузки relations —
+   *  для comments/files/time-tracker IDOR-фильтров. */
+  async assertCanAccessTask(taskId: string, viewer: { id: string; role?: string }): Promise<void> {
+    if (viewer.role && PM_ROLES.includes(viewer.role as UserRole)) return;
+    const task = await this.repo.findOne({
+      where: { id: taskId },
+      relations: ['project', 'project.members'],
+      select: { id: true, assigneeId: true, createdById: true, projectId: true } as any,
+    });
+    if (!task) throw new NotFoundException('Task not found');
+    if (task.assigneeId === viewer.id) return;
+    if (task.createdById === viewer.id) return;
+    const coAssignees = await this.assigneesRepo.find({ where: { taskId, userId: viewer.id } });
+    if (coAssignees.length > 0) return;
+    if (task.project?.managerId === viewer.id) return;
+    if ((task.project?.members || []).some((m: any) => m.id === viewer.id)) return;
+    throw new ForbiddenException('Нет доступа к этой задаче');
   }
 
   async create(dto: CreateTaskDto, userId: string, userRole?: string) {

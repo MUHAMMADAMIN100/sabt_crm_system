@@ -82,7 +82,9 @@ export class TasksController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) { return this.service.findOne(id); }
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.service.findOne(id, req.user);
+  }
 
   @Post()
   create(@Body() dto: CreateTaskDto, @Request() req) {

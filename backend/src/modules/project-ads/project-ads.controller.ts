@@ -3,6 +3,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ProjectAdsService } from './project-ads.service';
+import { CreateProjectAdDto } from './dto/create-project-ad.dto';
+import { UpdateProjectAdDto } from './dto/update-project-ad.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
@@ -23,16 +25,16 @@ export class ProjectAdsController {
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM, UserRole.SMM_SPECIALIST)
   create(
     @Param('projectId') projectId: string,
-    @Body() dto: any,
+    @Body() dto: CreateProjectAdDto,
     @Request() req,
   ) {
-    return this.service.create(projectId, dto, req.user.id);
+    return this.service.create(projectId, dto as any, req.user.id);
   }
 
   @Patch(':id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM, UserRole.SMM_SPECIALIST)
-  update(@Param('id') id: string, @Body() dto: any) {
-    return this.service.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateProjectAdDto) {
+    return this.service.update(id, dto as any);
   }
 
   @Delete(':id')

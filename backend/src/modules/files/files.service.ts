@@ -9,6 +9,7 @@ import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 
 const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'];
+const PM_ROLES_SET = new Set(PM_ROLES);
 
 @Injectable()
 export class FilesService {
@@ -21,11 +22,32 @@ export class FilesService {
     private activityLog: ActivityLogService,
   ) {}
 
-  findByProject(projectId: string) {
+  async findByProject(projectId: string, viewer?: { id: string; role?: string } | null) {
+    if (viewer && !PM_ROLES_SET.has(viewer.role || '')) {
+      const project = await this.projectRepo.findOne({ where: { id: projectId }, relations: ['members'] });
+      if (!project) throw new NotFoundException('Project not found');
+      const isMember = (project.members || []).some((m: any) => m.id === viewer.id);
+      if (!isMember && project.managerId !== viewer.id) {
+        throw new ForbiddenException('Нет доступа к файлам этого проекта');
+      }
+    }
     return this.repo.find({ where: { projectId }, relations: ['uploadedBy'], order: { createdAt: 'DESC' } });
   }
 
-  findByTask(taskId: string) {
+  async findByTask(taskId: string, viewer?: { id: string; role?: string } | null) {
+    if (viewer && !PM_ROLES_SET.has(viewer.role || '')) {
+      const task = await this.taskRepo.findOne({
+        where: { id: taskId },
+        relations: ['project', 'project.members'],
+      });
+      if (!task) throw new NotFoundException('Task not found');
+      const isAccessor =
+        task.assigneeId === viewer.id ||
+        task.createdById === viewer.id ||
+        task.project?.managerId === viewer.id ||
+        (task.project?.members || []).some((m: any) => m.id === viewer.id);
+      if (!isAccessor) throw new ForbiddenException('Нет доступа к файлам этой задачи');
+    }
     return this.repo.find({ where: { taskId }, relations: ['uploadedBy'], order: { createdAt: 'DESC' } });
   }
 

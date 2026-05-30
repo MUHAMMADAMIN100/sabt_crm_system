@@ -11,6 +11,8 @@ import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
 
+const PM_ROLES = new Set(['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm']);
+
 @Injectable()
 export class CommentsService {
   constructor(
@@ -23,7 +25,25 @@ export class CommentsService {
     private telegramService: TelegramService,
   ) {}
 
-  findByTask(taskId: string) {
+  /** Доступ к комментариям задачи имеют только: PM-роли, исполнитель,
+   *  создатель, участник проекта, менеджер проекта. */
+  private async assertCanAccessTask(taskId: string, viewer: { id: string; role?: string }): Promise<void> {
+    if (viewer.role && PM_ROLES.has(viewer.role)) return;
+    const task = await this.taskRepo.findOne({
+      where: { id: taskId },
+      relations: ['project', 'project.members', 'assignees'],
+    });
+    if (!task) throw new NotFoundException('Task not found');
+    if (task.assigneeId === viewer.id) return;
+    if (task.createdById === viewer.id) return;
+    if ((task as any).assignees?.some((a: any) => a.userId === viewer.id)) return;
+    if (task.project?.managerId === viewer.id) return;
+    if ((task.project?.members || []).some((m: any) => m.id === viewer.id)) return;
+    throw new ForbiddenException('Нет доступа к этой задаче');
+  }
+
+  async findByTask(taskId: string, viewer?: { id: string; role?: string }) {
+    if (viewer) await this.assertCanAccessTask(taskId, viewer);
     return this.repo.find({
       where: { taskId },
       relations: ['author'],
@@ -31,7 +51,8 @@ export class CommentsService {
     });
   }
 
-  async create(taskId: string, message: string, userId: string) {
+  async create(taskId: string, message: string, userId: string, userRole?: string) {
+    await this.assertCanAccessTask(taskId, { id: userId, role: userRole });
     // Валидация: пустые комментарии не сохраняем — иначе на UI
     // получаем пустую серую плашку без текста.
     const cleanMessage = (message || '').trim();

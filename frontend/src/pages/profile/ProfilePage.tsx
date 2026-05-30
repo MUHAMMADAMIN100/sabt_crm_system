@@ -10,6 +10,7 @@ import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import TwoFactorSection from '@/components/profile/TwoFactorSection'
 
 export default function ProfilePage() {
   const user = useAuthStore(s => s.user)
@@ -229,6 +230,9 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+
+      {/* 2FA — двухфакторная аутентификация */}
+      <TwoFactorSection />
 
       {/* Change Password */}
       <div className="card">

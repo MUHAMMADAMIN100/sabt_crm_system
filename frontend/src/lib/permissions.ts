@@ -82,6 +82,7 @@ export type Permission =
   | 'risks.view'
   | 'finance.manage'
   | 'teams.manage'
+  | 'security-log.view'
 
 const PERMISSIONS: Record<UserRole, Permission[]> = {
   admin: [
@@ -95,7 +96,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
-    'tariffs.manage', 'risks.view', 'clients.view',
+    'tariffs.manage', 'risks.view', 'clients.view', 'security-log.view',
   ],
   founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -108,7 +109,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
-    'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view',
+    'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view',
   ],
   co_founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -121,7 +122,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
-    'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view',
+    'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view',
   ],
   project_manager: [
     'dashboard', 'projects.view', 'projects.edit',
@@ -274,6 +275,7 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
   'risks.view': '/risks',
   'finance.manage': '/finance',
   'teams.manage': '/teams',
+  'security-log.view': '/security-log',
 }
 
 export function canAccessRoute(role: UserRole | undefined, route: string): boolean {

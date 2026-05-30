@@ -3,6 +3,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ContentPlanService } from './content-plan.service';
+import { CreateContentPlanDto } from './dto/create-content-plan.dto';
+import { UpdateContentPlanDto } from './dto/update-content-plan.dto';
 import {
   ContentPlanStatus, ContentApprovalStatus, ContentItemType,
 } from './content-plan-item.entity';
@@ -52,14 +54,14 @@ export class ContentPlanController {
 
   @Post()
   @Roles(...EDIT_ROLES)
-  create(@Body() dto: any, @Request() req) {
-    return this.service.create(dto, req.user?.id);
+  create(@Body() dto: CreateContentPlanDto, @Request() req) {
+    return this.service.create(dto as any, req.user?.id);
   }
 
   @Patch(':id')
   @Roles(...EDIT_ROLES)
-  update(@Param('id') id: string, @Body() dto: any, @Request() req) {
-    return this.service.update(id, dto, req.user?.id);
+  update(@Param('id') id: string, @Body() dto: UpdateContentPlanDto, @Request() req) {
+    return this.service.update(id, dto as any, req.user?.id);
   }
 
   @Delete(':id')

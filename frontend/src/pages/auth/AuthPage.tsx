@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
-import { useAuthStore } from '@/store/auth.store'
+import { useAuthStore, TwoFactorRequiredError } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { Mail, Lock, User, Eye, EyeOff, Briefcase, Send, AtSign } from 'lucide-react'
 import { Spinner } from '@/components/ui'
@@ -32,6 +32,7 @@ export default function AuthPage() {
   const [founderExists, setFounderExists] = useState(false)
   const [coFounderExists, setCoFounderExists] = useState(false)
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null)
+  const [needs2FA, setNeeds2FA] = useState(false)
   const { login, register: doRegister } = useAuthStore()
   const { t } = useTranslation()
 
@@ -77,7 +78,8 @@ export default function AuthPage() {
     setLoading(true)
     try {
       if (mode === 'login') {
-        await login(data.email, data.password)
+        await login(data.email, data.password, data.twoFactorCode)
+        setNeeds2FA(false)
       } else {
         const selectedRole = ROLES.find(r => r.value === data.role)
         await doRegister({
@@ -94,9 +96,18 @@ export default function AuthPage() {
       }
     } catch (e: any) {
       const msg: string = e?.response?.data?.message || ''
-      if (mode === 'login') {
-        if (msg.includes('заблокировал') || msg.toLowerCase().includes('blocked')) {
+      if (e instanceof TwoFactorRequiredError) {
+        setNeeds2FA(true)
+        toast('Введите 6-значный код из приложения-аутентификатора', { icon: '🔐' })
+      } else if (mode === 'login') {
+        if (msg.includes('Слишком много неудачных попыток')) {
+          toast.error(msg, { duration: 8000 })
+          setError('password', { message: ' ' })
+          setError('email', { message: ' ' })
+        } else if (msg.includes('заблокировал') || msg.toLowerCase().includes('blocked')) {
           setBlockedMessage(msg.replace(/^BLOCKED:\s*/i, ''))
+        } else if (msg.toLowerCase().includes('2fa')) {
+          setError('twoFactorCode', { message: 'Неверный код 2FA' })
         } else if (
           msg.toLowerCase().includes('invalid') ||
           msg.toLowerCase().includes('credentials') ||
@@ -328,6 +339,31 @@ export default function AuthPage() {
               </div>
               {errors.password && <p className="auth-error">{String(errors.password.message)}</p>}
             </div>
+
+            {/* 2FA код — показывается только когда бэк попросил */}
+            {needs2FA && mode === 'login' && (
+              <div className="auth-field" style={{ animationDelay: '0ms' }}>
+                <label className="label">Код 2FA *</label>
+                <div className="relative">
+                  <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
+                  <input
+                    {...reg('twoFactorCode', {
+                      required: 'Введите 6-значный код',
+                      pattern: { value: /^\d{6,8}$/, message: 'Код состоит из цифр' },
+                    })}
+                    inputMode="numeric"
+                    maxLength={8}
+                    autoComplete="one-time-code"
+                    placeholder="123456"
+                    className={`input pl-9 font-mono tracking-widest text-center ${errors.twoFactorCode ? 'border-red-400 focus:ring-red-400' : ''}`}
+                  />
+                </div>
+                <p className="auth-error text-xs text-surface-500">
+                  Код из Google Authenticator / Authy / 1Password
+                </p>
+                {errors.twoFactorCode && <p className="auth-error">{String(errors.twoFactorCode.message)}</p>}
+              </div>
+            )}
 
             {/* Submit */}
             <div className="auth-field" style={{ animationDelay: mode === 'register' ? '350ms' : '120ms' }}>

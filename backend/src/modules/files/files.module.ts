@@ -12,8 +12,11 @@ import { FilesService } from './files.service';
 import { FilesController } from './files.controller';
 import * as fs from 'fs';
 
+/** MIME-типы, которые разрешено загружать. SVG ИСКЛЮЧЁН — он
+ *  выполняет JavaScript при просмотре в браузере (stored-XSS).
+ *  Если очень нужны векторы — добавляй конвертацию в PNG на бэке. */
 const ALLOWED_MIMETYPES = new Set([
-  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -23,6 +26,14 @@ const ALLOWED_MIMETYPES = new Set([
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'text/plain', 'text/csv',
   'application/zip', 'application/x-zip-compressed',
+]);
+
+/** Расширения, заблокированные явно — даже если кто-то подделает MIME,
+ *  имя файла само себя выдаёт. */
+const FORBIDDEN_EXTENSIONS = new Set([
+  '.html', '.htm', '.svg', '.xml', '.js', '.mjs', '.cjs',
+  '.exe', '.bat', '.cmd', '.sh', '.ps1', '.msi', '.dll', '.com',
+  '.jar', '.apk', '.app', '.dmg', '.pkg', '.php', '.phtml', '.py', '.rb', '.pl',
 ]);
 
 // Ensure upload dirs exist
@@ -37,16 +48,33 @@ const ALLOWED_MIMETYPES = new Set([
       storage: diskStorage({
         destination: './uploads/files',
         filename: (req, file, cb) => {
-          cb(null, `${uuidv4()}${extname(file.originalname)}`);
+          // Сохраняем только UUID + расширение из оригинального имени
+          // (нормализованное к нижнему регистру). Никаких юзерских строк
+          // в имени файла → защита от path-traversal и поддельных расширений.
+          const ext = extname(file.originalname).toLowerCase().slice(0, 16);
+          cb(null, `${uuidv4()}${ext}`);
         },
       }),
-      limits: { fileSize: 10 * 1024 * 1024 },
+      limits: {
+        fileSize: 25 * 1024 * 1024, // 25MB — больше пускать опасно (DoS диска)
+        files: 1,
+        fields: 20,
+      },
       fileFilter: (_req, file, cb) => {
-        if (ALLOWED_MIMETYPES.has(file.mimetype)) {
-          cb(null, true);
-        } else {
-          cb(new BadRequestException(`Тип файла не разрешён: ${file.mimetype}`), false);
+        const ext = extname(file.originalname).toLowerCase();
+        if (FORBIDDEN_EXTENSIONS.has(ext)) {
+          return cb(
+            new BadRequestException(`Расширение файла запрещено: ${ext}`),
+            false,
+          );
         }
+        if (!ALLOWED_MIMETYPES.has(file.mimetype)) {
+          return cb(
+            new BadRequestException(`Тип файла не разрешён: ${file.mimetype}`),
+            false,
+          );
+        }
+        cb(null, true);
       },
     }),
   ],

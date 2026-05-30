@@ -11,15 +11,15 @@ import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { WorkSession } from './work-session.entity';
 import { RefreshToken } from './refresh-token.entity';
-import { SecurityEvent } from './security-event.entity';
-import { SecurityAuditService } from './security-audit.service';
+import { SecurityAuditModule } from './security-audit.module';
 import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Employee, WorkSession, RefreshToken, SecurityEvent]),
+    TypeOrmModule.forFeature([User, Employee, WorkSession, RefreshToken]),
     GatewayModule,
     PassportModule,
+    SecurityAuditModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
@@ -32,7 +32,7 @@ import { GatewayModule } from '../gateway/gateway.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, LocalStrategy, SecurityAuditService],
-  exports: [AuthService, JwtModule, SecurityAuditService],
+  providers: [AuthService, JwtStrategy, LocalStrategy],
+  exports: [AuthService, JwtModule, SecurityAuditModule],
 })
 export class AuthModule {}

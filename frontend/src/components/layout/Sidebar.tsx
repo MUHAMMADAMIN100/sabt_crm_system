@@ -6,7 +6,7 @@ import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserCog, UserPlus,
-  LogOut, RotateCcw,
+  Shield, LogOut, RotateCcw,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -45,6 +45,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/risks',         icon: ShieldAlert,     label: 'Риски',             permission: 'risks.view' },
     { to: '/finance',       icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
     { to: '/teams',         icon: UserCog,         label: 'Команды',           permission: 'teams.manage' },
+    { to: '/security-log',  icon: Shield,          label: 'Журнал безопасности', permission: 'security-log.view' },
     { to: '/ai',            icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]
 

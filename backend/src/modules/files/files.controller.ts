@@ -12,13 +12,13 @@ export class FilesController {
   constructor(private service: FilesService) {}
 
   @Get('project/:projectId')
-  byProject(@Param('projectId') projectId: string) {
-    return this.service.findByProject(projectId);
+  byProject(@Param('projectId') projectId: string, @Request() req) {
+    return this.service.findByProject(projectId, req.user);
   }
 
   @Get('task/:taskId')
-  byTask(@Param('taskId') taskId: string) {
-    return this.service.findByTask(taskId);
+  byTask(@Param('taskId') taskId: string, @Request() req) {
+    return this.service.findByTask(taskId, req.user);
   }
 
   @Post('upload')

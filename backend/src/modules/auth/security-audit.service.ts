@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository } from 'typeorm';
 import { SecurityEvent, SecurityEventType } from './security-event.entity';
 import type { Request } from 'express';
 
@@ -57,26 +57,43 @@ export class SecurityAuditService {
     return qb.getMany();
   }
 
-  /** Сколько неуспешных логинов с IP за последние N минут — для rate-limit логики
-   *  и для предупреждения «возможный bruteforce». */
-  async failsFromIpRecent(ip: string, minutes = 15): Promise<number> {
+  /** Сколько неуспешных логинов с этого IP за последние N минут. */
+  async failsFromIpRecent(ip: string | null, minutes = 15): Promise<number> {
     if (!ip) return 0;
     const since = new Date(Date.now() - minutes * 60_000);
-    return this.repo.count({
-      where: {
-        ip,
-        type: SecurityEventType.LOGIN_FAIL,
-        createdAt: LessThan(new Date()) as any,
-      },
-    }).then(async () => {
-      // Считаем точно с фильтром createdAt > since
-      return this.repo
-        .createQueryBuilder('e')
-        .where('e.ip = :ip', { ip })
-        .andWhere('e.type = :t', { t: SecurityEventType.LOGIN_FAIL })
-        .andWhere('e.createdAt > :since', { since })
-        .getCount();
-    });
+    return this.repo
+      .createQueryBuilder('e')
+      .where('e.ip = :ip', { ip })
+      .andWhere('e.type = :t', { t: SecurityEventType.LOGIN_FAIL })
+      .andWhere('e.createdAt > :since', { since })
+      .getCount();
+  }
+
+  /** Сколько неуспешных логинов на этот email за последние N минут. */
+  async failsForEmailRecent(email: string | null, minutes = 15): Promise<number> {
+    if (!email) return 0;
+    const since = new Date(Date.now() - minutes * 60_000);
+    return this.repo
+      .createQueryBuilder('e')
+      .where('e.email = :em', { em: email })
+      .andWhere('e.type = :t', { t: SecurityEventType.LOGIN_FAIL })
+      .andWhere('e.createdAt > :since', { since })
+      .getCount();
+  }
+
+  /** Проверяем lockout: достигнуты ли пороги по email или IP за 15 минут.
+   *  Пороги — компромисс между UX (опечатки пароля) и защитой от bruteforce:
+   *   - 5 неудач на один email
+   *   - 20 неудач с одного IP (учитывает попытки по нескольким аккаунтам)
+   *  Возвращает { locked, by, retryAfterSec }. */
+  async checkLoginLockout(email: string | null, ip: string | null) {
+    const [byEmail, byIp] = await Promise.all([
+      this.failsForEmailRecent(email, 15),
+      this.failsFromIpRecent(ip, 15),
+    ]);
+    if (byEmail >= 5) return { locked: true as const, by: 'email' as const, count: byEmail, retryAfterSec: 15 * 60 };
+    if (byIp >= 20)   return { locked: true as const, by: 'ip' as const,    count: byIp,    retryAfterSec: 15 * 60 };
+    return { locked: false as const };
   }
 
   /** Берём IP из стандартных мест: X-Forwarded-For (Vercel/Railway), X-Real-IP,

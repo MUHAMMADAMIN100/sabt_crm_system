@@ -33,6 +33,17 @@ export interface User {
   blockedByName?: string | null
   blockedByRole?: string | null
   blockReason?: string | null
+  /** Включена ли двухфакторная аутентификация. */
+  twoFactorEnabled?: boolean
+}
+
+/** Специальная ошибка, которую кидает login() когда бэк ответил 2FA_REQUIRED.
+ *  UI ловит её и просит ввести 6-значный код, потом повторяет login(...). */
+export class TwoFactorRequiredError extends Error {
+  constructor() {
+    super('2FA_REQUIRED')
+    this.name = 'TwoFactorRequiredError'
+  }
 }
 
 interface AuthState {
@@ -42,7 +53,7 @@ interface AuthState {
   authenticated: boolean
   user: User | null
   loading: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string, twoFactorCode?: string) => Promise<void>
   register: (data: {
     name: string
     email: string
@@ -77,11 +88,19 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       loading: false,
 
-      login: async (email, password) => {
+      login: async (email, password, twoFactorCode) => {
         // Тело ответа использовать не обязательно — backend выставит
         // httpOnly cookie. Дальше зовём /auth/me чтобы получить актуальный
         // user-объект (без необходимости доверять telу ответа).
-        await api.post('/auth/login', { email, password })
+        try {
+          await api.post('/auth/login', { email, password, twoFactorCode })
+        } catch (e: any) {
+          const msg = e?.response?.data?.message
+          if (typeof msg === 'string' && msg.includes('2FA_REQUIRED')) {
+            throw new TwoFactorRequiredError()
+          }
+          throw e
+        }
         set({ authenticated: true })
         await get().fetchMe()
       },

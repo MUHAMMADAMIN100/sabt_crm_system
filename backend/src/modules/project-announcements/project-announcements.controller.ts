@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ProjectAnnouncementsService } from './project-announcements.service';
-import { AnnouncementPriority } from './project-announcement.entity';
+import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
@@ -24,7 +24,7 @@ export class ProjectAnnouncementsController {
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM)
   create(
     @Param('projectId') projectId: string,
-    @Body() dto: { title: string; description?: string; priority?: AnnouncementPriority },
+    @Body() dto: CreateAnnouncementDto,
     @Request() req,
   ) {
     return this.service.create(projectId, dto, req.user.id, req.user.name);

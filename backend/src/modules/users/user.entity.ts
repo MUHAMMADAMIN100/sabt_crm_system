@@ -61,6 +61,7 @@ export class User {
    *  плейн-секрет). Если БД утечёт — атакующий получит TOTP, но без email
    *  и пароля жертвы он бесполезен. */
   @Column({ type: 'varchar', nullable: true })
+  @Exclude()
   twoFactorSecret: string | null;
 
   /** Включена ли 2FA пользователем. Только после успешной проверки первого кода. */
@@ -86,9 +87,11 @@ export class User {
   avatar: string;
 
   @Column({ nullable: true })
+  @Exclude()
   resetPasswordToken: string;
 
   @Column({ nullable: true })
+  @Exclude()
   resetPasswordExpires: Date;
 
   /** Команда сотрудника. m:1 — один сотрудник в одной команде.

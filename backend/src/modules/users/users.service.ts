@@ -6,6 +6,8 @@ import { Employee, EmployeeStatus } from '../employees/employee.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { AppGateway } from '../gateway/app.gateway';
+import { SecurityAuditService } from '../auth/security-audit.service';
+import { SecurityEventType } from '../auth/security-event.entity';
 
 @Injectable()
 export class UsersService {
@@ -14,6 +16,7 @@ export class UsersService {
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     private activityLog: ActivityLogService,
     private gateway: AppGateway,
+    private securityAudit: SecurityAuditService,
   ) {}
 
   findAll(role?: UserRole) {
@@ -42,6 +45,7 @@ export class UsersService {
   async update(id: string, dto: Partial<User>, actorRole?: string) {
     const user = await this.findOne(id);
     this.assertCanManage(user, actorRole);
+    const oldRole = user.role;
 
     // Enforce single founder / co-founder in the system when role is changed.
     if (dto.role && dto.role !== user.role) {
@@ -76,6 +80,16 @@ export class UsersService {
       entityName: user.name,
       details: { fields: Object.keys(dto).filter(k => k !== 'password') },
     });
+
+    // Аудит-лог в security_events: смена роли — событие повышенной важности.
+    if (dto.role && dto.role !== oldRole) {
+      await this.securityAudit.log({
+        type: SecurityEventType.ROLE_CHANGED,
+        userId: id,
+        email: user.email,
+        details: { oldRole, newRole: dto.role, actorRole },
+      });
+    }
 
     return this.findOne(id);
   }
@@ -198,6 +212,12 @@ export class UsersService {
       entityName: user.name,
       details: { blocked: true, reason },
     });
+    await this.securityAudit.log({
+      type: SecurityEventType.USER_BLOCKED,
+      userId: id,
+      email: user.email,
+      details: { blockedBy: blockedBy.role, reason: reason ?? null },
+    });
 
     // Мгновенно сообщаем заблокированному клиенту через WebSocket — фронт
     // слушает 'auth:blocked' и сразу выкидывает пользователя из системы,
@@ -235,6 +255,12 @@ export class UsersService {
       entityId: id,
       entityName: user.name,
       details: { unblocked: true },
+    });
+    await this.securityAudit.log({
+      type: SecurityEventType.USER_UNBLOCKED,
+      userId: id,
+      email: user.email,
+      details: { unblockedBy: unblockedBy.role },
     });
 
     return this.findOne(id);

@@ -3,6 +3,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { FinanceService } from './finance.service';
+import { CreateFinanceTransactionDto } from './dto/create-finance-transaction.dto';
+import { UpdateFinanceTransactionDto } from './dto/update-finance-transaction.dto';
 import {
   FinanceAccount, FinanceCategory, FinanceTxStatus, FinanceTxType,
 } from './finance-transaction.entity';
@@ -65,13 +67,13 @@ export class FinanceController {
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 
   @Post()
-  create(@Body() dto: any, @Request() req) {
-    return this.service.create(dto, req.user.id);
+  create(@Body() dto: CreateFinanceTransactionDto, @Request() req) {
+    return this.service.create(dto as any, req.user.id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: any) {
-    return this.service.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateFinanceTransactionDto) {
+    return this.service.update(id, dto as any);
   }
 
   @Delete(':id')

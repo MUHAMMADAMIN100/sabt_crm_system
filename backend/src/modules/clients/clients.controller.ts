@@ -3,6 +3,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ClientsService } from './clients.service';
+import { CreateClientDto } from './dto/create-client.dto';
+import { UpdateClientDto } from './dto/update-client.dto';
 import { ClientLeadStatus, ClientLeadInterest, ClientLeadDirection } from './client-lead.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
@@ -58,22 +60,25 @@ export class ClientsController {
   }
 
   @Post()
-  create(@Body() dto: any, @Request() req) {
+  create(@Body() dto: CreateClientDto, @Request() req) {
     // Направление лида задаётся автоматически по сегменту менеджера-создателя.
     // meetingTaskId выставляется только сервером — игнорируем то, что прислал фронт.
     const direction = leadDirectionFor(req.user?.role);
-    const { meetingTaskId: _t, ...rest } = dto || {};
-    return this.service.create({ ...rest, direction: direction ?? rest.direction }, req.user.id);
+    return this.service.create(
+      { ...(dto as any), direction: direction ?? dto.direction },
+      req.user.id,
+    );
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: any) {
+  update(@Param('id') id: string, @Body() dto: UpdateClientDto, @Request() req) {
     // Направление лида менять через update нельзя — оно фиксируется при создании.
-    // meetingTaskId — внутреннее поле, выставляется сервером.
-    const { direction: _ignored, meetingTaskId: _t, ...rest } = dto || {};
-    return this.service.update(id, rest);
+    const { direction: _ignored, ...rest } = dto || {};
+    return this.service.updateWithAuth(id, rest as any, req.user);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) { return this.service.remove(id); }
+  remove(@Param('id') id: string, @Request() req) {
+    return this.service.removeWithAuth(id, req.user);
+  }
 }

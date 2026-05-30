@@ -8,6 +8,35 @@ import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from './user.entity';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { BlockUserDto } from './dto/block-user.dto';
+import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
+
+/** Безопасный конфиг для загрузки аватарок: только PNG/JPEG/WEBP,
+ *  максимум 2MB. Никаких SVG (XSS) и тем более .html/.exe. */
+const AVATAR_ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const AVATAR_ALLOWED_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+
+const AVATAR_MULTER_CONFIG = {
+  storage: diskStorage({
+    destination: './uploads/avatars',
+    filename: (_req: any, file: Express.Multer.File, cb: any) => {
+      const ext = extname(file.originalname).toLowerCase().slice(0, 8);
+      cb(null, `${uuidv4()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 }, // 2MB max
+  fileFilter: (_req: any, file: Express.Multer.File, cb: any) => {
+    const ext = extname(file.originalname).toLowerCase();
+    if (!AVATAR_ALLOWED_EXT.has(ext)) {
+      return cb(new BadRequestException(`Аватар: расширение ${ext} запрещено. Только JPG/PNG/WEBP.`), false);
+    }
+    if (!AVATAR_ALLOWED_MIME.has(file.mimetype)) {
+      return cb(new BadRequestException(`Аватар: тип ${file.mimetype} запрещён.`), false);
+    }
+    cb(null, true);
+  },
+};
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -29,7 +58,7 @@ export class UsersController {
 
   @Patch(':id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  update(@Param('id') id: string, @Body() dto: Partial<{ name: string; email: string; role: UserRole; isActive: boolean }>, @Request() req) {
+  update(@Param('id') id: string, @Body() dto: UpdateUserDto, @Request() req) {
     return this.usersService.update(id, dto, req.user?.role);
   }
 
@@ -41,7 +70,7 @@ export class UsersController {
 
   @Patch(':id/block')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  async block(@Param('id') id: string, @Body() body: { reason?: string }, @Request() req) {
+  async block(@Param('id') id: string, @Body() body: BlockUserDto, @Request() req) {
     try {
       return await this.usersService.block(id, req.user, body?.reason);
     } catch (e: any) {
@@ -51,7 +80,7 @@ export class UsersController {
 
   @Patch(':id/reset-password')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  async resetPassword(@Param('id') id: string, @Body() body: { newPassword?: string }, @Request() req) {
+  async resetPassword(@Param('id') id: string, @Body() body: ResetUserPasswordDto, @Request() req) {
     try {
       return await this.usersService.resetPassword(id, req.user, body?.newPassword);
     } catch (e: any) {
@@ -78,30 +107,18 @@ export class UsersController {
   }
 
   @Patch('me/avatar')
-  @UseInterceptors(
-    FileInterceptor('avatar', {
-      storage: diskStorage({
-        destination: './uploads/avatars',
-        filename: (req, file, cb) => cb(null, `${uuidv4()}${extname(file.originalname)}`),
-      }),
-    }),
-  )
+  @UseInterceptors(FileInterceptor('avatar', AVATAR_MULTER_CONFIG))
   updateAvatar(@Request() req, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('Файл не загружен');
     return this.usersService.updateAvatar(req.user.id, file.filename);
   }
 
   /** Админ/основатель/сооснователь меняет аватар любого сотрудника. */
   @Patch(':id/avatar')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  @UseInterceptors(
-    FileInterceptor('avatar', {
-      storage: diskStorage({
-        destination: './uploads/avatars',
-        filename: (req, file, cb) => cb(null, `${uuidv4()}${extname(file.originalname)}`),
-      }),
-    }),
-  )
+  @UseInterceptors(FileInterceptor('avatar', AVATAR_MULTER_CONFIG))
   updateAvatarFor(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('Файл не загружен');
     return this.usersService.updateAvatar(id, file.filename);
   }
 }

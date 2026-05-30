@@ -5,6 +5,10 @@ import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { TwoFactorCodeDto } from './dto/two-factor-code.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 /** Имя httpOnly-куки, в которой хранится JWT. Cross-site (Vercel ↔ Railway)
@@ -93,14 +97,14 @@ export class AuthController {
   @Post('2fa/enable')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  enable2FA(@Request() req, @Body() body: { code: string }) {
+  enable2FA(@Request() req, @Body() body: TwoFactorCodeDto) {
     return this.authService.enable2FA(req.user.id, body.code, req);
   }
 
   @Post('2fa/disable')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  disable2FA(@Request() req, @Body() body: { code: string }) {
+  disable2FA(@Request() req, @Body() body: TwoFactorCodeDto) {
     return this.authService.disable2FA(req.user.id, body.code, req);
   }
 
@@ -129,19 +133,20 @@ export class AuthController {
 
   @Post('forgot-password')
   @Throttle({ default: { ttl: 60000, limit: 3 } })
-  forgotPassword(@Body() body: { email: string }) {
+  forgotPassword(@Body() body: ForgotPasswordDto) {
     return this.authService.forgotPassword(body.email);
   }
 
   @Post('reset-password')
-  resetPassword(@Body() body: { token: string; newPassword: string }) {
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  resetPassword(@Body() body: ResetPasswordDto) {
     return this.authService.resetPassword(body.token, body.newPassword);
   }
 
   @Patch('change-password')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  changePassword(@Request() req, @Body() body: { oldPassword: string; newPassword: string }) {
+  changePassword(@Request() req, @Body() body: ChangePasswordDto) {
     return this.authService.changePassword(req.user.id, body.oldPassword, body.newPassword);
   }
 

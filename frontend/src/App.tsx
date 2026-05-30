@@ -65,6 +65,7 @@ const TariffsPage       = lazy(() => import('@/pages/tariffs/TariffsPage'))
 const RisksPage         = lazy(() => import('@/pages/risks/RisksPage'))
 const FinancePage       = lazy(() => import('@/pages/finance/FinancePage'))
 const TeamsPage         = lazy(() => import('@/pages/teams/TeamsPage'))
+const SecurityLogPage   = lazy(() => import('@/pages/security/SecurityLogPage'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   // `authenticated` — это локальная подсказка. Реальная авторизация —
@@ -116,6 +117,7 @@ export default function App() {
           <Route path="risks" element={<RoleGuard><RisksPage /></RoleGuard>} />
           <Route path="finance" element={<RoleGuard><FinancePage /></RoleGuard>} />
           <Route path="teams" element={<RoleGuard><TeamsPage /></RoleGuard>} />
+          <Route path="security-log" element={<RoleGuard><SecurityLogPage /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

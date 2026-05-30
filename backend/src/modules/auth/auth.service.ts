@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
@@ -11,7 +11,7 @@ import { User, UserRole } from '../users/user.entity';
 import { Employee, EmployeeStatus } from '../employees/employee.entity';
 import { WorkSession } from './work-session.entity';
 import { RefreshToken } from './refresh-token.entity';
-import { SecurityEvent, SecurityEventType } from './security-event.entity';
+import { SecurityEventType } from './security-event.entity';
 import { SecurityAuditService } from './security-audit.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -31,7 +31,6 @@ export class AuthService {
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
     @InjectRepository(RefreshToken) private refreshRepo: Repository<RefreshToken>,
-    @InjectRepository(SecurityEvent) private secEventRepo: Repository<SecurityEvent>,
     private jwtService: JwtService,
     private activityLog: ActivityLogService,
     private mailService: MailService,
@@ -235,6 +234,31 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, req?: Request | null) {
+    // ─── Account lockout: проверяем ДО валидации пароля ────────────────
+    // 5 неудач по email или 20 с одного IP за 15 минут → блок на 15 мин.
+    // Это защищает и от bruteforce конкретного аккаунта, и от перебора
+    // паролей по списку email с одного IP.
+    const ip = req ? this.extractIp(req) : null;
+    const lock = await this.audit.checkLoginLockout(dto.email || null, ip);
+    if (lock.locked) {
+      await this.audit.log({
+        type: SecurityEventType.LOGIN_BLOCKED,
+        email: dto.email,
+        req,
+        details: { reason: `lockout_by_${lock.by}`, count: lock.count },
+      });
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          message: lock.by === 'email'
+            ? 'Слишком много неудачных попыток входа. Попробуйте через 15 минут.'
+            : 'Слишком много неудачных попыток с вашего IP. Попробуйте через 15 минут.',
+          retryAfterSec: lock.retryAfterSec,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     const user = await this.userRepo.findOne({ where: { email: dto.email } });
     if (!user || !(await user.validatePassword(dto.password))) {
       await this.audit.log({

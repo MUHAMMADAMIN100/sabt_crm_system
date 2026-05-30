@@ -5,9 +5,14 @@ import { Employee } from '../employees/employee.entity';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { GatewayModule } from '../gateway/gateway.module';
+import { SecurityAuditModule } from '../auth/security-audit.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Employee]), GatewayModule],
+  imports: [
+    TypeOrmModule.forFeature([User, Employee]),
+    GatewayModule,
+    SecurityAuditModule,
+  ],
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService, TypeOrmModule],

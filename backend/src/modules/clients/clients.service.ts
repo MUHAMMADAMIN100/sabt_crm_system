@@ -68,12 +68,28 @@ export class ClientsService {
 
   async update(id: string, dto: Partial<ClientLead>) {
     const existing = await this.findOne(id);
-    await this.repo.update(id, dto);
+    // meetingTaskId — внутреннее поле, выставляется только сервером.
+    const { meetingTaskId: _ignored, ...safe } = dto as any;
+    await this.repo.update(id, safe);
     const updated = await this.findOne(id);
     // Авто-синхронизация задачи-встречи: создать / обновить / удалить
     // в зависимости от изменений nextContactAt, name, onboardingStage.
     await this.syncMeetingTask(updated, existing);
     return this.findOne(updated.id);
+  }
+
+  /** Update с ownership-проверкой. Менеджер продаж может править ТОЛЬКО
+   *  свои лиды. Админ/основатель/сооснователь — любые. */
+  async updateWithAuth(id: string, dto: Partial<ClientLead>, user: { id: string; role: string }) {
+    const isAdmin = ['admin', 'founder', 'co_founder'].includes(user.role);
+    if (!isAdmin) {
+      const lead = await this.repo.findOne({ where: { id } });
+      if (!lead) throw new NotFoundException('Client lead not found');
+      if (lead.ownerId && lead.ownerId !== user.id) {
+        throw new ForbiddenException('Вы можете редактировать только своих лидов');
+      }
+    }
+    return this.update(id, dto);
   }
 
   async remove(id: string) {
@@ -84,6 +100,19 @@ export class ClientsService {
     }
     await this.repo.remove(lead);
     return { message: 'Lead deleted' };
+  }
+
+  /** Remove с ownership-проверкой. */
+  async removeWithAuth(id: string, user: { id: string; role: string }) {
+    const isAdmin = ['admin', 'founder', 'co_founder'].includes(user.role);
+    if (!isAdmin) {
+      const lead = await this.repo.findOne({ where: { id } });
+      if (!lead) throw new NotFoundException('Client lead not found');
+      if (lead.ownerId && lead.ownerId !== user.id) {
+        throw new ForbiddenException('Вы можете удалять только своих лидов');
+      }
+    }
+    return this.remove(id);
   }
 
   /**
