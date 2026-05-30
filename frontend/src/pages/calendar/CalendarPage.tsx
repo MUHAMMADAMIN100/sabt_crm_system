@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { calendarApi, projectsApi, tasksApi, employeesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal } from '@/components/ui'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday, isSameMonth, subDays, addDays, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns'
@@ -1418,16 +1419,12 @@ function FounderQuickTaskForm({
         </div>
       </div>
 
-      {/* Дедлайн — дата и время (часы) */}
+      {/* Дедлайн — дата и время (часы). Дату — через наш DatePicker;
+          время оставляем native (он терпимый), только стилизован. */}
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="label">Дата дедлайна</label>
-          <input
-            type="date"
-            value={deadlineDate}
-            onChange={e => setDeadlineDate(e.target.value)}
-            className="input"
-          />
+          <DatePicker value={deadlineDate} onChange={setDeadlineDate} />
         </div>
         <div>
           <label className="label">Время</label>

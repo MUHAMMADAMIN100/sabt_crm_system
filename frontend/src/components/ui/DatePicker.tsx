@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { DayPicker } from 'react-day-picker'
 import type { DateRange } from 'react-day-picker'
 import { ru } from 'date-fns/locale'
@@ -16,8 +17,18 @@ import 'react-day-picker/dist/style.css'
  */
 
 const dayPickerClass = clsx('rdp-custom p-3 text-sm')
+// Фиксированная ширина popover'а — нужна для корректного flip'а у правого края.
+const POPOVER_WIDTH = 296
 
-/** Базовый popover: открывает DayPicker по клику на инпут. */
+/**
+ * Popover через portal в body. Раньше абсолютно позиционировался относительно
+ * якоря и обрезался при overflow:hidden родителя (внутри модалок popover
+ * вылезал за границу и был обрезан). Теперь:
+ *  - рендерится в document.body (поверх всего, не зависит от overflow);
+ *  - координаты считаются от bounding-rect якоря;
+ *  - если справа не помещается — flip вправо (right-align к якорю);
+ *  - если снизу не помещается — flip вверх над якорем.
+ */
 function Popover({
   children, open, onClose, anchorRef,
 }: {
@@ -27,6 +38,29 @@ function Popover({
   anchorRef: React.RefObject<HTMLDivElement | null>
 }) {
   const popRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  // Считаем позицию ПЕРЕД отрисовкой, чтобы не было «прыжка» из левого
+  // верхнего угла. useLayoutEffect синхронен относительно reflow.
+  useLayoutEffect(() => {
+    if (!open || !anchorRef.current) return
+    const rect = anchorRef.current.getBoundingClientRect()
+    const popH = popRef.current?.offsetHeight || 360
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    let left = rect.left
+    if (left + POPOVER_WIDTH + 8 > vw) {
+      // Не лезет справа — выравниваем по правому краю якоря.
+      left = Math.max(8, rect.right - POPOVER_WIDTH)
+    }
+    let top = rect.bottom + 4
+    if (top + popH + 8 > vh) {
+      const flipped = rect.top - popH - 4
+      top = flipped > 8 ? flipped : Math.max(8, vh - popH - 8)
+    }
+    setPos({ top, left })
+  }, [open, anchorRef])
+
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
@@ -36,23 +70,33 @@ function Popover({
       onClose()
     }
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onScroll = () => onClose()
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onEsc)
+    // На скролл закрываем — пересчёт позиции при каждом скролле даёт
+    // дёрганый popover, проще закрыть и открыть заново.
+    window.addEventListener('scroll', onScroll, true)
     return () => {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onEsc)
+      window.removeEventListener('scroll', onScroll, true)
     }
   }, [open, onClose, anchorRef])
 
   if (!open) return null
-  return (
+  return createPortal(
     <div
       ref={popRef}
-      className="absolute z-50 mt-1 bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl shadow-lg overflow-hidden animate-fade-in"
-      style={{ left: 0 }}
+      className="fixed z-[200] bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl shadow-xl animate-fade-in"
+      style={{
+        top: pos?.top ?? -9999,
+        left: pos?.left ?? -9999,
+        width: POPOVER_WIDTH,
+      }}
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   )
 }
 

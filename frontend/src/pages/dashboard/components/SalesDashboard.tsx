@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi, projectsApi, clientsApi } from '@/services/api.service'
-import { DateRangePicker } from '@/components/ui/DatePicker'
+import { DatePicker, DateRangePicker } from '@/components/ui/DatePicker'
 import { useAuthStore } from '@/store/auth.store'
 import { StatusBadge, ProgressBar, CollapsibleSection } from '@/components/ui'
 import { Calendar, CheckCircle2, Mail, Pencil } from 'lucide-react'
@@ -65,10 +65,21 @@ function InlineEditCell({
         </select>
       )
     }
+    // Дата — наш красивый DatePicker. После выбора сразу коммитим.
+    if (mode === 'date') {
+      return (
+        <div className={clsx('inline-block', width)}>
+          <DatePicker
+            value={draft}
+            onChange={(v) => { setDraft(v); onSave(v); setEditing(false) }}
+          />
+        </div>
+      )
+    }
     return (
       <input
         autoFocus
-        type={mode === 'date' ? 'date' : 'text'}
+        type="text"
         value={draft}
         onChange={e => setDraft(e.target.value)}
         onBlur={commit}
