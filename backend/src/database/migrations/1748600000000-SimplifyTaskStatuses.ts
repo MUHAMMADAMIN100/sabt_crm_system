@@ -10,34 +10,47 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *   - new, in_progress, done, cancelled (уже валидные) → без изменений
  *
  * Сам Postgres-enum НЕ перезаписываем — это потребовало бы пересоздавать
- * тип и колонку (риск). Просто UPDATE'им строки. Енум продолжит содержать
- * старые литералы как «зомби-значения», но в код-базе они не используются,
- * и нормализатор normalizeStatus() конвертирует их при чтении на всякий случай.
+ * тип и колонку (риск). Просто UPDATE'им строки.
+ *
+ * ВАЖНО: НЕ используем `::tasks_status_enum` cast — TypeORM мог назвать
+ * тип по-другому в зависимости от истории миграций. Делаем UPDATE с
+ * параметрами, Postgres сам приведёт строки к enum-типу.
  */
 export class SimplifyTaskStatuses1748600000000 implements MigrationInterface {
   name = 'SimplifyTaskStatuses1748600000000';
 
   async up(queryRunner: QueryRunner): Promise<void> {
-    // Маппинг в одной транзакции. Используем text-кастинг чтобы enum-проверки
-    // не помешали (cast → text → новое enum-значение).
+    // Защитный шаг: убедимся что таблица tasks существует, прежде чем
+    // что-то с ней делать. На свежей БД (где таблиц ещё нет) миграция
+    // должна быть no-op.
+    const exists = await queryRunner.query(
+      `SELECT to_regclass('public.tasks') AS t`,
+    );
+    if (!exists?.[0]?.t) {
+      return;
+    }
+
+    // Маппинг старых → новых статусов. Используем параметризованный
+    // запрос — Postgres сам приведёт строки к enum-типу столбца.
     await queryRunner.query(`
       UPDATE "tasks"
-      SET status = CASE
-        WHEN status::text IN ('accepted','review','on_pm_review','on_rework',
-                              'on_client_approval','approved','returned','rescheduled')
-          THEN 'in_progress'::tasks_status_enum
-        WHEN status::text = 'published'
-          THEN 'done'::tasks_status_enum
-        ELSE status
-      END
-      WHERE status::text NOT IN ('new','in_progress','done','cancelled');
+      SET status = 'in_progress'
+      WHERE status::text IN (
+        'accepted','review','on_pm_review','on_rework',
+        'on_client_approval','approved','returned','rescheduled'
+      )
+    `);
+
+    await queryRunner.query(`
+      UPDATE "tasks"
+      SET status = 'done'
+      WHERE status::text = 'published'
     `);
   }
 
   async down(_queryRunner: QueryRunner): Promise<void> {
     // Откатить уже нельзя — мы потеряли информацию о промежуточных
     // статусах (review/approved/published и т.д.). Down-миграция оставлена
-    // пустой намеренно: чтобы вернуть пайплайн нужно прокатить ВСЕ задачи
-    // вручную через новые статусы.
+    // пустой намеренно.
   }
 }
