@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Request, Patch, Query, Res } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Request, Patch, Query, Res, Req } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
@@ -10,14 +10,20 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 /** Имя httpOnly-куки, в которой хранится JWT. Cross-site (Vercel ↔ Railway)
  *  поэтому нужны SameSite=None + Secure. JavaScript прочитать не может. */
 const AUTH_COOKIE = 'auth_token';
-const COOKIE_OPTS = {
+const REFRESH_COOKIE = 'refresh_token';
+const ACCESS_COOKIE_OPTS = {
   httpOnly: true as const,
   secure: true as const,
   sameSite: 'none' as const,
   path: '/',
-  // 7 дней — синхронно с JWT TTL
-  maxAge: 7 * 24 * 60 * 60 * 1000,
+  // 15 минут — синхронно с JWT_ACCESS_TTL
+  maxAge: 15 * 60 * 1000,
 };
+const REFRESH_COOKIE_OPTS = {
+  ...ACCESS_COOKIE_OPTS,
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 дней
+};
+const COOKIE_OPTS = ACCESS_COOKIE_OPTS; // alias для clearCookie
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -27,9 +33,12 @@ export class AuthController {
   @Post('register')
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Register new user' })
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.register(dto);
-    if (result?.token) res.cookie(AUTH_COOKIE, result.token, COOKIE_OPTS);
+  async register(@Body() dto: RegisterDto, @Req() req: any, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.register(dto, req);
+    if (result?.token) res.cookie(AUTH_COOKIE, result.token, ACCESS_COOKIE_OPTS);
+    if ((result as any)?.refreshToken) {
+      res.cookie(REFRESH_COOKIE, (result as any).refreshToken, REFRESH_COOKIE_OPTS);
+    }
     return result;
   }
 
@@ -52,10 +61,63 @@ export class AuthController {
   @Post('login')
   @Throttle({ default: { ttl: 60000, limit: 10 } })
   @ApiOperation({ summary: 'Login' })
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.login(dto);
-    if (result?.token) res.cookie(AUTH_COOKIE, result.token, COOKIE_OPTS);
+  async login(@Body() dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.login(dto, req);
+    if (result?.token) res.cookie(AUTH_COOKIE, result.token, ACCESS_COOKIE_OPTS);
+    if ((result as any)?.refreshToken) {
+      res.cookie(REFRESH_COOKIE, (result as any).refreshToken, REFRESH_COOKIE_OPTS);
+    }
     return result;
+  }
+
+  @Post('refresh')
+  @SkipThrottle()
+  @ApiOperation({ summary: 'Rotate access token via refresh cookie' })
+  async refresh(@Req() req: any, @Res({ passthrough: true }) res: Response) {
+    const raw = req.cookies?.[REFRESH_COOKIE];
+    const { accessToken, refreshToken, user } = await this.authService.refresh(raw, req);
+    res.cookie(AUTH_COOKIE, accessToken, ACCESS_COOKIE_OPTS);
+    res.cookie(REFRESH_COOKIE, refreshToken, REFRESH_COOKIE_OPTS);
+    return { user };
+  }
+
+  // ─── 2FA ────────────────────────────────────────────────────────────
+
+  @Post('2fa/setup')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  setup2FA(@Request() req) {
+    return this.authService.setup2FA(req.user.id);
+  }
+
+  @Post('2fa/enable')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  enable2FA(@Request() req, @Body() body: { code: string }) {
+    return this.authService.enable2FA(req.user.id, body.code, req);
+  }
+
+  @Post('2fa/disable')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  disable2FA(@Request() req, @Body() body: { code: string }) {
+    return this.authService.disable2FA(req.user.id, body.code, req);
+  }
+
+  @Get('security-log')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  securityLog(
+    @Request() req,
+    @Query('type') type?: string,
+    @Query('limit') limit?: string,
+  ) {
+    // Только админ / основатель / со-основатель видят журнал безопасности.
+    const role = req.user?.role;
+    if (!['admin', 'founder', 'co_founder'].includes(role)) {
+      return { events: [] };
+    }
+    return this.authService.getSecurityLog({ type: type as any, limit: limit ? Number(limit) : undefined });
   }
 
   @Get('me')
@@ -87,10 +149,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   async logout(@Request() req, @Res({ passthrough: true }) res: Response) {
-    // Чистим httpOnly cookie — после logout даже украденный токен бесполезен
-    // на нашем домене (cookie уже нет в браузере). На бэке закрываем сессию.
-    res.clearCookie(AUTH_COOKIE, { ...COOKIE_OPTS, maxAge: 0 });
-    return this.authService.logout(req.user.id);
+    // Чистим обе httpOnly cookies. На бэке закрываем сессию и отзываем
+    // все refresh-токены этого пользователя.
+    res.clearCookie(AUTH_COOKIE, { ...ACCESS_COOKIE_OPTS, maxAge: 0 });
+    res.clearCookie(REFRESH_COOKIE, { ...REFRESH_COOKIE_OPTS, maxAge: 0 });
+    return this.authService.logout(req.user.id, req);
   }
 
   @Post('heartbeat')

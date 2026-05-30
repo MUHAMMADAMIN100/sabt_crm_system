@@ -56,6 +56,17 @@ export class User {
   @Column({ default: false })
   isBlocked: boolean;
 
+  /** TOTP-secret (Base32), используется otplib для генерации/проверки кода.
+   *  NULL → 2FA не настроена. Хранится как есть (для генерации кода нужен
+   *  плейн-секрет). Если БД утечёт — атакующий получит TOTP, но без email
+   *  и пароля жертвы он бесполезен. */
+  @Column({ type: 'varchar', nullable: true })
+  twoFactorSecret: string | null;
+
+  /** Включена ли 2FA пользователем. Только после успешной проверки первого кода. */
+  @Column({ default: false })
+  twoFactorEnabled: boolean;
+
   @Column({ type: 'timestamp', nullable: true })
   blockedAt: Date;
 

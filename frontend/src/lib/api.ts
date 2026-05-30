@@ -20,13 +20,28 @@ api.interceptors.request.use(config => {
   return config
 })
 
+// Concurrent-safe refresh: пока один запрос обновляет access-токен,
+// остальные ждут его результат, не плодя N параллельных /auth/refresh.
+let refreshPromise: Promise<boolean> | null = null
+const tryRefresh = (): Promise<boolean> => {
+  if (refreshPromise) return refreshPromise
+  refreshPromise = (async () => {
+    try {
+      await api.post('/auth/refresh')
+      return true
+    } catch {
+      return false
+    } finally {
+      // Освобождаем чтобы следующий 401 мог снова попробовать.
+      setTimeout(() => { refreshPromise = null }, 0)
+    }
+  })()
+  return refreshPromise
+}
+
 api.interceptors.response.use(
   res => res,
-  err => {
-    // Нормализуем err.response.data.message до строки.
-    // NestJS ValidationPipe возвращает массив (["Пароль должен...", ...]),
-    // другие ошибки — строку. Без нормализации любой .toLowerCase()/.includes()
-    // в обработчиках крашит catch и глотает ошибку без уведомления пользователю.
+  async err => {
     const raw = err.response?.data?.message
     if (err.response?.data) {
       if (Array.isArray(raw)) {
@@ -36,14 +51,27 @@ api.interceptors.response.use(
       }
     }
 
-    if (err.response?.status === 401 && !window.location.pathname.includes('/auth')) {
-      // Capture blocked message so AuthPage can show the banner
+    const status = err.response?.status
+    const url: string = err.config?.url || ''
+    const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/refresh') || url.includes('/auth/register')
+
+    // Один раз пробуем refresh при 401 (access-токен живёт всего 15 мин).
+    // Не для /auth/* — иначе бесконечный цикл.
+    if (status === 401 && !isAuthEndpoint && !err.config?.__retry) {
+      const ok = await tryRefresh()
+      if (ok) {
+        err.config.__retry = true
+        return api.request(err.config)
+      }
+    }
+
+    if (status === 401 && !window.location.pathname.includes('/auth')) {
       const msg: string = err.response?.data?.message || ''
       if (msg.includes('заблокировал') || msg.toLowerCase().startsWith('blocked')) {
         sessionStorage.setItem('blocked-message', msg.replace(/^BLOCKED:\s*/i, ''))
       }
-      localStorage.removeItem('token')
-      localStorage.removeItem('auth-storage')
+      try { localStorage.removeItem('token') } catch {}
+      try { localStorage.removeItem('auth-storage') } catch {}
       window.location.href = '/auth'
     }
     return Promise.reject(err)

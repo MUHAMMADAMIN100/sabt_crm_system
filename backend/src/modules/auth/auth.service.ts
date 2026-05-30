@@ -4,15 +4,25 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { authenticator } = require('otplib');
+import * as QRCode from 'qrcode';
 import { User, UserRole } from '../users/user.entity';
 import { Employee, EmployeeStatus } from '../employees/employee.entity';
 import { WorkSession } from './work-session.entity';
+import { RefreshToken } from './refresh-token.entity';
+import { SecurityEvent, SecurityEventType } from './security-event.entity';
+import { SecurityAuditService } from './security-audit.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { MailService } from '../mail/mail.service';
 import { AppGateway } from '../gateway/app.gateway';
+import type { Request } from 'express';
+
+/** Время жизни refresh-токена. */
+const REFRESH_TTL_DAYS = 30;
 
 @Injectable()
 export class AuthService {
@@ -20,13 +30,101 @@ export class AuthService {
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
+    @InjectRepository(RefreshToken) private refreshRepo: Repository<RefreshToken>,
+    @InjectRepository(SecurityEvent) private secEventRepo: Repository<SecurityEvent>,
     private jwtService: JwtService,
     private activityLog: ActivityLogService,
     private mailService: MailService,
     private gateway: AppGateway,
+    private audit: SecurityAuditService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  // ─── Refresh tokens ──────────────────────────────────────────────────
+
+  /** Хешируем сырой токен sha256 — в БД храним только hash. */
+  private hashToken(raw: string): string {
+    return crypto.createHash('sha256').update(raw).digest('hex');
+  }
+
+  /** Выпустить новый refresh: сгенерировать 256-битный random, сохранить hash. */
+  async issueRefreshToken(userId: string, req?: Request | null): Promise<string> {
+    const raw = crypto.randomBytes(48).toString('hex');
+    const expiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 86400_000);
+    const ip = req ? this.extractIp(req) : null;
+    const ua = req?.headers?.['user-agent']?.toString().slice(0, 500) || null;
+    await this.refreshRepo.save(this.refreshRepo.create({
+      userId,
+      tokenHash: this.hashToken(raw),
+      revokedAt: null,
+      replacedBy: null,
+      expiresAt,
+      ip,
+      userAgent: ua,
+    }));
+    return raw;
+  }
+
+  /** Использовать refresh: проверить, отозвать старый, выпустить новый.
+   *  Возвращает {accessToken, refreshToken, user}. Если предъявлен
+   *  уже-отозванный токен — это сигнал кражи: отзываем ВСЕ refresh'ы
+   *  пользователя и логируем. */
+  async refresh(rawRefreshToken: string, req?: Request | null) {
+    if (!rawRefreshToken) throw new UnauthorizedException('No refresh token');
+    const hash = this.hashToken(rawRefreshToken);
+    const found = await this.refreshRepo.findOne({ where: { tokenHash: hash } });
+    if (!found) {
+      await this.audit.log({ type: SecurityEventType.REFRESH_REUSE, req, details: { reason: 'unknown_hash' } });
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    if (found.expiresAt < new Date()) {
+      throw new UnauthorizedException('Refresh expired');
+    }
+    if (found.revokedAt) {
+      // Этот токен УЖЕ был использован для ротации — кто-то применил повторно.
+      // Отзываем все активные токены этого пользователя на всякий случай.
+      await this.refreshRepo.update({ userId: found.userId, revokedAt: IsNull() }, { revokedAt: new Date() });
+      await this.audit.log({
+        type: SecurityEventType.REFRESH_REUSE,
+        userId: found.userId,
+        req,
+        details: { reason: 'reuse_of_revoked' },
+      });
+      throw new UnauthorizedException('Refresh token reused — all sessions revoked');
+    }
+    const user = await this.userRepo.findOne({ where: { id: found.userId } });
+    if (!user || !user.isActive || user.isBlocked) throw new UnauthorizedException('User inactive');
+
+    // Rotation: помечаем старый, выпускаем новый.
+    const newRaw = await this.issueRefreshToken(user.id, req);
+    const newHash = this.hashToken(newRaw);
+    const newRow = await this.refreshRepo.findOne({ where: { tokenHash: newHash } });
+    await this.refreshRepo.update({ id: found.id }, { revokedAt: new Date(), replacedBy: newRow?.id || null });
+
+    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role });
+    await this.audit.log({ type: SecurityEventType.TOKEN_REFRESH, userId: user.id, req });
+    return { accessToken, refreshToken: newRaw, user: this.sanitize(user) };
+  }
+
+  /** Отозвать все refresh'ы пользователя — на logout / при смене пароля. */
+  async revokeAllRefresh(userId: string): Promise<void> {
+    await this.refreshRepo.update(
+      { userId, revokedAt: IsNull() },
+      { revokedAt: new Date() },
+    );
+  }
+
+  private extractIp(req: Request): string | null {
+    const xff = (req.headers['x-forwarded-for'] as string) || '';
+    if (xff) return xff.split(',')[0].trim();
+    return req.socket?.remoteAddress || null;
+  }
+
+  async getSecurityLog(opts: { type?: SecurityEventType; limit?: number } = {}) {
+    const events = await this.audit.list(opts);
+    return { events };
+  }
+
+  async register(dto: RegisterDto, req?: Request | null) {
     // Открытая регистрация ОТКЛЮЧЕНА. Новых сотрудников добавляет
     // администратор / основатель / сооснователь через раздел
     // «Сотрудники». Единственное исключение — bootstrap самого первого
@@ -122,9 +220,12 @@ export class AuthService {
     });
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role });
+    const refreshToken = await this.issueRefreshToken(user.id, req);
+    await this.audit.log({ type: SecurityEventType.LOGIN_SUCCESS, userId: user.id, email: user.email, req, details: { via: 'register' } });
     const emp = await this.employeeRepo.findOne({ where: { userId: user.id } });
     return {
       token,
+      refreshToken,
       user: {
         ...this.sanitize(user),
         position: emp?.position || null,
@@ -133,12 +234,20 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, req?: Request | null) {
     const user = await this.userRepo.findOne({ where: { email: dto.email } });
     if (!user || !(await user.validatePassword(dto.password))) {
+      await this.audit.log({
+        type: SecurityEventType.LOGIN_FAIL,
+        email: dto.email,
+        userId: user?.id ?? null,
+        req,
+        details: { reason: user ? 'bad_password' : 'unknown_email' },
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
     if (user.isBlocked) {
+      await this.audit.log({ type: SecurityEventType.LOGIN_BLOCKED, userId: user.id, email: user.email, req });
       const blockedByLabel = user.blockedByRole === 'founder'
         ? 'основатель компании'
         : user.blockedByRole === 'co_founder'
@@ -150,6 +259,17 @@ export class AuthService {
       throw new UnauthorizedException(`Вас заблокировал ${blockedByLabel}${user.blockedByName ? ` (${user.blockedByName})` : ''}.${reasonText}`);
     }
     if (!user.isActive) throw new UnauthorizedException('Account is deactivated');
+
+    // 2FA: если включена, требуем поле twoFactorCode в DTO.
+    if (user.twoFactorEnabled && user.twoFactorSecret) {
+      const code = (dto as any).twoFactorCode as string | undefined;
+      if (!code) throw new UnauthorizedException('2FA_REQUIRED');
+      const ok = authenticator.check(code, user.twoFactorSecret);
+      if (!ok) {
+        await this.audit.log({ type: SecurityEventType.TWO_FACTOR_FAIL, userId: user.id, req });
+        throw new UnauthorizedException('Invalid 2FA code');
+      }
+    }
 
     // Check if employee is sub-admin — grant admin access (but don't downgrade founder/co_founder)
     const employee = await this.employeeRepo.findOne({ where: { userId: user.id } });
@@ -191,9 +311,13 @@ export class AuthService {
       entityName: user.name,
       details: { role: effectiveRole },
     });
+    await this.audit.log({ type: SecurityEventType.LOGIN_SUCCESS, userId: user.id, email: user.email, req });
+
+    const refreshToken = await this.issueRefreshToken(user.id, req);
 
     return {
       token,
+      refreshToken,
       user: {
         ...sanitized,
         role: effectiveRole,
@@ -202,6 +326,48 @@ export class AuthService {
         isSubAdmin: employee?.isSubAdmin || false,
       },
     };
+  }
+
+  // ─── 2FA (TOTP) ──────────────────────────────────────────────────────
+
+  /** Сгенерировать новый secret и QR-картинку. 2FA НЕ включается до
+   *  успешной проверки первого кода в enable2FA(). */
+  async setup2FA(userId: string) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    const secret = authenticator.generateSecret();
+    const otpauthUrl = authenticator.keyuri(user.email, 'sabt CRM', secret);
+    const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
+    // Сохраняем секрет, но enabled остаётся false — пользователь должен
+    // подтвердить кодом из приложения, что QR действительно отсканирован.
+    await this.userRepo.update(userId, { twoFactorSecret: secret, twoFactorEnabled: false });
+    return { secret, otpauthUrl, qrDataUrl };
+  }
+
+  async enable2FA(userId: string, code: string, req?: Request | null) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user || !user.twoFactorSecret) throw new BadRequestException('2FA setup not started');
+    if (!authenticator.check(code, user.twoFactorSecret)) {
+      await this.audit.log({ type: SecurityEventType.TWO_FACTOR_FAIL, userId, req });
+      throw new BadRequestException('Invalid 2FA code');
+    }
+    await this.userRepo.update(userId, { twoFactorEnabled: true });
+    await this.audit.log({ type: SecurityEventType.TWO_FACTOR_ENABLED, userId, req });
+    return { ok: true };
+  }
+
+  async disable2FA(userId: string, code: string, req?: Request | null) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.twoFactorEnabled && user.twoFactorSecret) {
+      if (!authenticator.check(code, user.twoFactorSecret)) {
+        await this.audit.log({ type: SecurityEventType.TWO_FACTOR_FAIL, userId, req });
+        throw new BadRequestException('Invalid 2FA code');
+      }
+    }
+    await this.userRepo.update(userId, { twoFactorEnabled: false, twoFactorSecret: null });
+    await this.audit.log({ type: SecurityEventType.TWO_FACTOR_DISABLED, userId, req });
+    return { ok: true };
   }
 
   /** Heartbeat от активной вкладки — обновляет lastSeenAt текущей
@@ -217,7 +383,7 @@ export class AuthService {
     }
   }
 
-  async logout(userId: string) {
+  async logout(userId: string, req?: Request | null) {
     const session = await this.sessionRepo.findOne({
       where: { userId, logoutAt: IsNull() },
       order: { loginAt: 'DESC' },
@@ -231,6 +397,10 @@ export class AuthService {
       await this.sessionRepo.save(session);
     }
 
+    // Отзываем все активные refresh-токены этого пользователя — украденный
+    // refresh теперь бесполезен сразу после logout, а не через 30 дней.
+    await this.revokeAllRefresh(userId);
+
     const user = await this.userRepo.findOne({ where: { id: userId } });
     await this.activityLog.log({
       userId,
@@ -239,6 +409,7 @@ export class AuthService {
       entity: 'user',
       entityId: userId,
     });
+    await this.audit.log({ type: SecurityEventType.LOGOUT, userId, email: user?.email, req });
 
     return { message: 'Logged out' };
   }
