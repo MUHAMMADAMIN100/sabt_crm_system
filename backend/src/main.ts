@@ -188,8 +188,11 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  bootstrapLogger.log(`Backend running on http://localhost:${port}`, 'Bootstrap');
-  bootstrapLogger.log(`Swagger docs: http://localhost:${port}/api/docs`, 'Bootstrap');
+  // Используем warn-уровень для bootstrap-сообщений, чтобы они были видны
+  // даже в production-конфиге Winston (level=warn). Это не ошибки —
+  // просто гарантированно видимые «бэкенд жив, такой-то порт».
+  bootstrapLogger.warn(`✅ Backend running on http://localhost:${port}`, 'Bootstrap');
+  bootstrapLogger.warn(`📚 Swagger docs: http://localhost:${port}/api/docs`, 'Bootstrap');
 }
 
 bootstrap();
