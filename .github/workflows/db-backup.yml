@@ -1,0 +1,71 @@
+name: Daily PostgreSQL backup
+
+# Каждый день в 02:00 UTC = 07:00 в Душанбе.
+# Ручной запуск — кнопка "Run workflow" во вкладке Actions на GitHub.
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+# Запрещаем параллельные запуски: если предыдущий бэкап ещё идёт,
+# новый дождётся завершения.
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL 16 client (matches Railway version)
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16
+
+      - name: Dump database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set. Add it in repo Settings → Secrets → Actions."
+            exit 1
+          fi
+          DATE=$(date -u +%Y-%m-%d_%H%M)
+          FILE="backup-${DATE}.sql"
+          echo "Dumping to ${FILE}..."
+          pg_dump "$DATABASE_URL" \
+            --no-owner --no-acl --clean --if-exists \
+            --format=plain \
+            > "${FILE}"
+          gzip "${FILE}"
+          ls -lh "${FILE}.gz"
+          # Sanity-check: бэкап не должен быть < 1KB (обычно > 100KB)
+          SIZE=$(stat -c%s "${FILE}.gz")
+          if [ "$SIZE" -lt 1024 ]; then
+            echo "::error::Backup file is suspiciously small (${SIZE} bytes). Possible auth or connectivity issue."
+            exit 1
+          fi
+          echo "BACKUP_FILE=${FILE}.gz" >> $GITHUB_ENV
+
+      - name: Upload backup as artifact (30-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Notify on failure (optional — uncomment after adding TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)
+        if: failure()
+        run: |
+          echo "Backup failed at $(date -u). Check Actions log."
+          # curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          #   -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+          #   -d "text=⚠️ DB backup failed at $(date -u). Check https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
