@@ -208,7 +208,9 @@ export class ClientsService {
 
     const interestQb = this.repo
       .createQueryBuilder('c')
-      .select('COALESCE(c.interest, \'none\')', 'interest')
+      // c.interest — Postgres enum. COALESCE требует одинаковых типов,
+      // и 'none' НЕ существует в enum'е → каст в text спасает.
+      .select('COALESCE(c.interest::text, \'none\')', 'interest')
       .addSelect('COUNT(*)', 'count')
       .groupBy('c.interest');
     if (direction) interestQb.where(dirSql, { dir: direction });
