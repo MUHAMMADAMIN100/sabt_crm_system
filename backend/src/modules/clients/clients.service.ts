@@ -1,10 +1,21 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ClientLead, ClientLeadStatus, ClientLeadInterest, ClientLeadDirection } from './client-lead.entity';
 import { Task, TaskScope, TaskStatus, TaskPriority } from '../tasks/task.entity';
+import { User, UserRole } from '../users/user.entity';
+import { Employee } from '../employees/employee.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction, ActivityLog } from '../activity-log/activity-log.entity';
+
+/** Роли менеджеров продаж — для bulk-KPI и фильтров. */
+const SALES_MANAGER_ROLES = [UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV];
+
+/** Соответствие роли МП → направление лидов. */
+const ROLE_TO_DIRECTION: Record<string, ClientLeadDirection> = {
+  [UserRole.SALES_MANAGER_SMM]: ClientLeadDirection.SMM,
+  [UserRole.SALES_MANAGER_DEV]: ClientLeadDirection.DEVELOPMENT,
+};
 
 /** Порядок продвижения лида по статусу — для подсчёта «прогрессий вперёд». */
 const STATUS_ORDER: Record<string, number> = {
@@ -44,8 +55,54 @@ export class ClientsService {
     @InjectRepository(ClientLead) private repo: Repository<ClientLead>,
     @InjectRepository(Task) private taskRepo: Repository<Task>,
     @InjectRepository(ActivityLog) private activityRepo: Repository<ActivityLog>,
+    @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     private activityLog: ActivityLogService,
   ) {}
+
+  /** Лёгкий lookup юзера по id — для controller'а чтобы определить
+   *  направление КПИ. Возвращаем только нужные поля. */
+  async findOwnerInfo(userId: string): Promise<{ id: string; name: string; role: string } | null> {
+    const u = await this.userRepo.findOne({ where: { id: userId } });
+    if (!u) return null;
+    return { id: u.id, name: u.name, role: u.role };
+  }
+
+  /** Bulk-KPI всех МП за период. Для дашборда основателя.
+   *  Возвращает массив `{ user, employee, kpi }`. */
+  async kpiForAllSalesManagers(from?: string, to?: string) {
+    const users = await this.userRepo.find({
+      where: { role: In(SALES_MANAGER_ROLES), isActive: true, isBlocked: false },
+      order: { name: 'ASC' },
+    });
+    if (users.length === 0) return [];
+
+    // Подтягиваем employee-record'ы одним запросом — без N+1.
+    const userIds = users.map(u => u.id);
+    const employees = await this.employeeRepo.find({ where: { userId: In(userIds) } });
+    const empByUserId = new Map(employees.map(e => [e.userId, e]));
+
+    return Promise.all(users.map(async (u) => {
+      const direction = ROLE_TO_DIRECTION[u.role];
+      const kpi = await this.kpi(u.id, direction, from, to).catch(() => null);
+      const emp = empByUserId.get(u.id);
+      return {
+        user: {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          avatar: u.avatar || null,
+        },
+        employee: emp ? {
+          id: emp.id,
+          position: emp.position,
+          department: emp.department,
+        } : null,
+        kpi,
+      };
+    }));
+  }
 
   /** Если статус ИЛИ этап онбординга у лида продвинулись «вперёд» — пишем
    *  отдельное событие LEAD_PROGRESS. Используется для KPI продаж. */

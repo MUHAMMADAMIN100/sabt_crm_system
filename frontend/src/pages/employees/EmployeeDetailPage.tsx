@@ -14,6 +14,11 @@ import {
   EmployeeWorkloadTab, EmployeeQualityTab, EmployeeRiskTab, EmployeeActivityTab,
 } from '@/components/employees/EmployeeAnalyticsTabs'
 import { isTaskOverdue } from '@/lib/taskStatus'
+import SalesManagerKpiCard from '@/components/sales/SalesManagerKpiCard'
+
+/** Wave 12: KPI продаж — только для менеджеров продаж и только видящим. */
+const isSalesManagerRole = (role?: string | null): boolean =>
+  role === 'sales_manager_smm' || role === 'sales_manager_dev'
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -29,6 +34,7 @@ export default function EmployeeDetailPage() {
   const canEditSalary = user?.role === 'founder' || user?.role === 'co_founder'
   // admin/founder/co_founder могут менять аватар сотрудника
   const canEditAvatar = ['admin', 'founder', 'co_founder'].includes(user?.role || '')
+  const canViewSalesKpi = ['admin', 'founder', 'co_founder'].includes(user?.role || '')
   const avatarFileRef = useRef<HTMLInputElement>(null)
   const uploadAvatarMut = useMutation({
     mutationFn: ({ userId, file }: { userId: string; file: File }) => usersApi.uploadAvatarFor(userId, file),
@@ -169,6 +175,22 @@ export default function EmployeeDetailPage() {
       {activeTab === 'activity' && emp?.userId && <EmployeeActivityTab userId={emp.userId} />}
 
       {activeTab === 'overview' && <>
+
+      {/* KPI продаж — видно founder/co_founder/admin, только для менеджеров продаж */}
+      {canViewSalesKpi && isSalesManagerRole(emp?.user?.role) && emp?.userId && (
+        <div className="card">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="section-title">KPI менеджера продаж</h3>
+            <Link
+              to="/clients"
+              className="text-xs text-primary-600 hover:underline inline-flex items-center gap-1"
+            >
+              Перейти к клиентам →
+            </Link>
+          </div>
+          <SalesManagerKpiCard userId={emp.userId} />
+        </div>
+      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

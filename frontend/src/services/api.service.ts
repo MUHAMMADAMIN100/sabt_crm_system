@@ -197,6 +197,11 @@ export const clientsApi = {
     api.get('/clients', { params }).then(r => r.data),
   stats: () => api.get('/clients/stats').then(r => r.data),
   kpi: (params?: { from?: string; to?: string }) => api.get('/clients/kpi', { params }).then(r => r.data),
+  /** KPI всех МП — для дашборда основателя (admin/founder/co_founder only). */
+  kpiAll: (params?: { from?: string; to?: string }) => api.get('/clients/kpi/all', { params }).then(r => r.data),
+  /** KPI конкретного МП по userId — для карточки/страницы сотрудника. */
+  kpiOfUser: (userId: string, params?: { from?: string; to?: string }) =>
+    api.get(`/clients/kpi/user/${userId}`, { params }).then(r => r.data),
   get: (id: string) => api.get(`/clients/${id}`).then(r => r.data),
   create: (data: any) => api.post('/clients', data).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/clients/${id}`, data).then(r => r.data),

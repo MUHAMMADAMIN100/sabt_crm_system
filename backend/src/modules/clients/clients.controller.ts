@@ -38,6 +38,45 @@ export class ClientsController {
     return this.service.kpi(req.user.id, leadDirectionFor(req.user?.role), from, to);
   }
 
+  /** KPI всех менеджеров продаж — для виджета на дашборде основателя.
+   *  Доступно только admin/founder/co_founder, остальные получат 403. */
+  @Get('kpi/all')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  getKpiAll(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.service.kpiForAllSalesManagers(from, to);
+  }
+
+  /** KPI конкретного сотрудника-МП по userId. Доступ:
+   *   - admin/founder/co_founder — любого МП;
+   *   - сам менеджер — только свой userId. */
+  @Get('kpi/user/:userId')
+  async getKpiByUser(
+    @Param('userId') userId: string,
+    @Request() req,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const role = req.user?.role;
+    const isPrivileged = ['admin', 'founder', 'co_founder'].includes(role);
+    if (!isPrivileged && req.user?.id !== userId) {
+      // Тихо вернём пустой ответ — не палим существование других МП.
+      return null;
+    }
+    // Направление определяем по роли запрошенного юзера, не по роли актора —
+    // иначе founder не увидит правильный сегмент чужого МП.
+    const target = await this.service.findOwnerInfo(userId);
+    if (!target) return null;
+    const direction = target.role === 'sales_manager_smm'
+      ? 'smm' as any
+      : target.role === 'sales_manager_dev'
+        ? 'development' as any
+        : undefined;
+    return this.service.kpi(userId, direction, from, to);
+  }
+
   @Get()
   findAll(
     @Request() req,

@@ -12,6 +12,11 @@ import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import SalesManagerKpiCard from '@/components/sales/SalesManagerKpiCard'
+
+/** Wave 12: KPI продаж видят только основатель/сооснователь/админ. */
+const isSalesManagerRole = (role?: string | null): boolean =>
+  role === 'sales_manager_smm' || role === 'sales_manager_dev'
 
 export default function EmployeesPage() {
   const [search, setSearch] = useState('')
@@ -31,6 +36,7 @@ export default function EmployeesPage() {
   const [pwdCopied, setPwdCopied] = useState(false)
   const user = useAuthStore(s => s.user)
   const canManage = user?.role === 'admin' || user?.role === 'founder' || user?.role === 'co_founder'
+  const canViewSalesKpi = canManage // те же роли, что и canManage
   const isAdmin = canManage  // alias for backward compat
   const isFounderUser = user?.role === 'founder'
   const canEditEmployee = (emp: any) => {
@@ -301,6 +307,16 @@ export default function EmployeesPage() {
                   <a href={`https://instagram.com/${emp.instagram.replace('@','')}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-pink-500 hover:underline"><AtSignIcon /><span>{emp.instagram}</span></a>
                 )}
               </div>
+              {/* KPI продаж — показываем основателю/сооснователю/админу,
+                  только для менеджеров продаж. Компактный режим: круг + чипы. */}
+              {canViewSalesKpi && isSalesManagerRole(emp.user?.role) && emp.userId && (
+                <div
+                  className="mt-3 pt-3 border-t border-surface-50 dark:border-surface-700"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <SalesManagerKpiCard userId={emp.userId} compact />
+                </div>
+              )}
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-surface-50 dark:border-surface-700">
                 {emp.user?.isBlocked ? (
                   <span className="badge bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 flex items-center gap-1">
