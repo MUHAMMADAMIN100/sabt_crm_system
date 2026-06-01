@@ -12,7 +12,7 @@ import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
-import EmployeeKpiCard from '@/components/kpi/EmployeeKpiCard'
+import EmployeeKpiCard, { KpiPeriod, KPI_PERIOD_LABELS } from '@/components/kpi/EmployeeKpiCard'
 
 /** Wave 13: KPI считается для всех «рабочих» ролей. Top-роли исключаются. */
 const hasKpi = (role?: string | null): boolean =>
@@ -34,6 +34,8 @@ export default function EmployeesPage() {
   const [customPwd, setCustomPwd] = useState('')
   const [resetResult, setResetResult] = useState<{ name: string; password: string } | null>(null)
   const [pwdCopied, setPwdCopied] = useState(false)
+  // Wave 14: общий период для KPI всех карточек на странице.
+  const [kpiPeriod, setKpiPeriod] = useState<KpiPeriod>('month')
   const user = useAuthStore(s => s.user)
   const canManage = user?.role === 'admin' || user?.role === 'founder' || user?.role === 'co_founder'
   const canViewSalesKpi = canManage // те же роли, что и canManage
@@ -255,6 +257,32 @@ export default function EmployeesPage() {
         </select>
       </div>
 
+      {/* Wave 14: общий переключатель периода для KPI всех карточек на
+          странице. Показываем только основателю/сооснователю/админу
+          (тем кто реально видит KPI). */}
+      {canViewSalesKpi && view === 'cards' && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-surface-500 dark:text-surface-400">
+            Период KPI:
+          </span>
+          {(['today', 'week', 'month', 'prev_month'] as KpiPeriod[]).map(p => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setKpiPeriod(p)}
+              className={clsx(
+                'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+                kpiPeriod === p
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+              )}
+            >
+              {KPI_PERIOD_LABELS[p]}
+            </button>
+          ))}
+        </div>
+      )}
+
       {!employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'cards' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {pagedEmployees.map((emp: any) => (
@@ -307,14 +335,14 @@ export default function EmployeesPage() {
                   <a href={`https://instagram.com/${emp.instagram.replace('@','')}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-pink-500 hover:underline"><AtSignIcon /><span>{emp.instagram}</span></a>
                 )}
               </div>
-              {/* Wave 13: KPI любого сотрудника. Видно только canManage-ролям
-                  (admin/founder/co_founder). Для top-ролей KPI не показываем. */}
+              {/* Wave 13/14: KPI любого сотрудника. Видно только canManage-ролям.
+                  Период берётся из общего переключателя сверху страницы. */}
               {canViewSalesKpi && hasKpi(emp.user?.role) && emp.userId && (
                 <div
                   className="mt-3 pt-3 border-t border-surface-50 dark:border-surface-700"
                   onClick={e => e.stopPropagation()}
                 >
-                  <EmployeeKpiCard userId={emp.userId} compact />
+                  <EmployeeKpiCard userId={emp.userId} compact period={kpiPeriod} />
                 </div>
               )}
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-surface-50 dark:border-surface-700">

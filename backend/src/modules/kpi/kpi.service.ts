@@ -4,7 +4,6 @@ import { In, Repository } from 'typeorm';
 import { User, UserRole } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { Task } from '../tasks/task.entity';
-import { TimeLog } from '../time-tracker/time-log.entity';
 import { WorkSession } from '../auth/work-session.entity';
 import { StoryLog } from '../stories/story.entity';
 import { Project } from '../projects/project.entity';
@@ -81,7 +80,6 @@ export class KpiService {
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     @InjectRepository(Task) private taskRepo: Repository<Task>,
-    @InjectRepository(TimeLog) private timeRepo: Repository<TimeLog>,
     @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
     @InjectRepository(StoryLog) private storyRepo: Repository<StoryLog>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
@@ -146,8 +144,10 @@ export class KpiService {
       ?? await this.userRepo.find({ where: { id: In(userIds) } });
     const userMap = new Map(users.map(u => [u.id, u]));
 
-    // 2) Параллельно гонимся за всеми агрегациями
-    const [tasksRows, hoursRows, sessionRows, storyRows, projectRows] = await Promise.all([
+    // 2) Параллельно гонимся за всеми агрегациями.
+    // Wave 14: убрали запрос hours/time_logs — метрика «Часов залогировано»
+    // выпилена, считать её больше не нужно.
+    const [tasksRows, sessionRows, storyRows, projectRows] = await Promise.all([
       this.taskRepo.manager.query(
         `SELECT "assigneeId" AS uid,
                 COUNT(*)::int AS done_count,
@@ -159,14 +159,6 @@ export class KpiService {
            AND status::text = 'done'
            AND "updatedAt" BETWEEN $2 AND $3
          GROUP BY "assigneeId"`,
-        [userIds, periodFrom, periodTo],
-      ),
-      this.timeRepo.manager.query(
-        `SELECT "employeeId" AS uid, COALESCE(SUM("timeSpent"), 0)::float AS total
-         FROM time_logs
-         WHERE "employeeId" = ANY($1::uuid[])
-           AND date BETWEEN $2 AND $3
-         GROUP BY "employeeId"`,
         [userIds, periodFrom, periodTo],
       ),
       this.sessionRepo.manager.query(
@@ -200,8 +192,6 @@ export class KpiService {
     for (const r of tasksRows) {
       tasksByUid.set(r.uid, { done: Number(r.done_count) || 0, onTime: Number(r.on_time_count) || 0 });
     }
-    const hoursByUid = new Map<string, number>();
-    for (const r of hoursRows) hoursByUid.set(r.uid, Number(r.total) || 0);
     const activityByUid = new Map<string, number>();
     for (const r of sessionRows) activityByUid.set(r.uid, Number(r.days) || 0);
     const storiesByUid = new Map<string, number>();
@@ -232,34 +222,17 @@ export class KpiService {
       }
       const targets = targetsFor(user.role);
       const t = tasksByUid.get(uid) || { done: 0, onTime: 0 };
-      const hours = hoursByUid.get(uid) || 0;
       const actDays = activityByUid.get(uid) || 0;
       const stories = storiesByUid.get(uid) || 0;
       const projects = projectsByUid.get(uid) || 0;
 
       const items: KpiItem[] = [];
 
-      // Универсальные 4 метрики
-      const tasksTarget = this.scaleTarget(targets.tasksDone, days);
-      items.push({
-        key: 'tasks_done',
-        label: 'Задач выполнено',
-        target: tasksTarget,
-        value: t.done,
-        percent: Math.min(100, Math.round(t.done / tasksTarget * 100)),
-        done: t.done >= tasksTarget,
-      });
-
-      const hoursTarget = this.scaleTarget(targets.hoursLogged, days);
-      const hoursRounded = Math.round(hours * 10) / 10;
-      items.push({
-        key: 'hours_logged',
-        label: 'Часов залогировано',
-        target: hoursTarget,
-        value: hoursRounded,
-        percent: Math.min(100, Math.round(hoursRounded / hoursTarget * 100)),
-        done: hoursRounded >= hoursTarget,
-      });
+      // Wave 14: убрали tasks_done и hours_logged — они показывали 0 за период
+      // и читались как баг рассинхрона с БД (StatCard рядом считает по всему
+      // времени и показывает другие числа). Оставляем только deadline_rate
+      // и activity_days как универсальные. Подсчёт `t.done`/`hours` ниже
+      // всё ещё нужен для deadline_rate.
 
       // Deadline rate: %, не скейлим. Если done=0 → null/100 чтобы не штрафовать.
       const deadlineRate = t.done > 0 ? Math.round((t.onTime / t.done) * 100) : 0;

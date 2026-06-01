@@ -5,7 +5,6 @@ import { KpiController } from './kpi.controller';
 import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { Task } from '../tasks/task.entity';
-import { TimeLog } from '../time-tracker/time-log.entity';
 import { WorkSession } from '../auth/work-session.entity';
 import { StoryLog } from '../stories/story.entity';
 import { Project } from '../projects/project.entity';
@@ -19,7 +18,7 @@ import { ClientsModule } from '../clients/clients.module';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Employee, Task, TimeLog, WorkSession, StoryLog, Project]),
+    TypeOrmModule.forFeature([User, Employee, Task, WorkSession, StoryLog, Project]),
     ClientsModule,
   ],
   controllers: [KpiController],

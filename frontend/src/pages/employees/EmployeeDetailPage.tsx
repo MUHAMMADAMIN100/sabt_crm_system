@@ -190,7 +190,7 @@ export default function EmployeeDetailPage() {
               </Link>
             )}
           </div>
-          <EmployeeKpiCard userId={emp.userId} />
+          <EmployeeKpiCard userId={emp.userId} showPeriodSelector />
         </div>
       )}
 
