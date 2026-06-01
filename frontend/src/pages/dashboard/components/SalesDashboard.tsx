@@ -9,6 +9,7 @@ import { Calendar, CheckCircle2, Mail, Pencil } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import KpiDetailsModal from '@/components/kpi/KpiDetailsModal'
 
 const TYPE_FILTERS = [
   { value: '', label: 'Все' },
@@ -160,6 +161,8 @@ export default function SalesDashboard() {
   const [filter, setFilter] = useState('')
   const role = useAuthStore(s => s.user?.role)
   const userId = useAuthStore(s => s.user?.id)
+  // Wave 16: модалка с подробностями для кликнутой метрики KPI.
+  const [openedKpiItem, setOpenedKpiItem] = useState<{ key: string; label: string } | null>(null)
   // Сегмент МП: СММ → SMM-проекты, разработка → «Web сайт».
   const segmentType =
     role === 'sales_manager_dev' ? 'Web сайт'
@@ -293,12 +296,21 @@ export default function SalesDashboard() {
             { key: 'personal_emails', label: 'Персональные письма',   target: 10, value: 0, percent: 0, done: false },
             { key: 'meetings',        label: 'Встречи / созвоны',     target: 2,  value: 0, percent: 0, done: false },
           ]).map((it: any) => (
-            <div key={it.key} className={clsx(
-              'rounded-xl border p-3 space-y-1.5',
-              it.done
-                ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-900/40'
-                : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700',
-            )}>
+            <button
+              key={it.key}
+              type="button"
+              onClick={() => setOpenedKpiItem({ key: it.key, label: it.label })}
+              disabled={!kpi}
+              title="Кликни чтобы посмотреть подробности"
+              className={clsx(
+                'text-left rounded-xl border p-3 space-y-1.5 transition-all',
+                kpi && 'hover:shadow-md hover:-translate-y-0.5 hover:border-primary-300 dark:hover:border-primary-700 cursor-pointer',
+                !kpi && 'opacity-60 cursor-not-allowed',
+                it.done
+                  ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-900/40'
+                  : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700',
+              )}
+            >
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-xs font-medium text-surface-600 dark:text-surface-300">{it.label}</span>
                 <span className="text-[10px] text-surface-400">цель {it.target}</span>
@@ -314,10 +326,23 @@ export default function SalesDashboard() {
                 {it.done && <span className="ml-auto text-[10px] font-semibold text-emerald-600">✓</span>}
               </div>
               <ProgressBar value={it.percent} />
-            </div>
+            </button>
           ))}
         </div>
       </CollapsibleSection>
+
+      {/* Модалка с подробностями метрики */}
+      {openedKpiItem && userId && (
+        <KpiDetailsModal
+          open
+          onClose={() => setOpenedKpiItem(null)}
+          userId={userId}
+          metric={openedKpiItem.key}
+          metricLabel={openedKpiItem.label}
+          from={kpiFrom}
+          to={kpiTo}
+        />
+      )}
 
       {/* Projects table */}
       <CollapsibleSection

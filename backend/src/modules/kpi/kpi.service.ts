@@ -341,7 +341,15 @@ export class KpiService {
       return qb;
     };
 
-    switch (metric) {
+    // Нормализуем ключ: SalesDashboard передаёт `new_companies` (без префикса),
+    // EmployeeKpiCard — `sales_new_companies` (с префиксом). Внутри switch
+    // всегда работаем с префиксом sales_*. Универсальные метрики остаются как есть.
+    const UNIVERSAL_KEYS = new Set(['deadline_rate', 'activity_days', 'stories_posted', 'projects_managed']);
+    const normalized = UNIVERSAL_KEYS.has(metric)
+      ? metric
+      : (metric.startsWith('sales_') ? metric : `sales_${metric}`);
+
+    switch (normalized) {
       // ─── Sales: продвижения по воронке (из activity_logs) ──────────────
       case 'sales_funnel_progress': {
         const rows = await this.activityRepo
