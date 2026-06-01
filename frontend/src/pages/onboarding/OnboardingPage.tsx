@@ -17,14 +17,18 @@ const ALL_STAGES = {
   kp_creation:    { label: 'КП',           accent: 'border-t-amber-500' },
   contract:       { label: 'Договор',      accent: 'border-t-emerald-500' },
   implementation: { label: 'Реализация',   accent: 'border-t-violet-500' },
+  // Wave 15: финальная колонка справа — клиент снят с воронки.
+  // Перенос сюда НЕ считается прогрессом и НЕ начисляет KPI.
+  cancelled:      { label: 'Отмена',       accent: 'border-t-red-500' },
 } as const
 
 type StageKey = keyof typeof ALL_STAGES
 
-// Унифицированный 5-этапный пайплайн онбординга — одинаковый для всех МП
+// Унифицированный 6-этапный пайплайн онбординга — одинаковый для всех МП
 // (и СММ, и разработка). Раньше у СММ было 4 этапа без «Переговор», но
 // продажникам с двух направлений нужна одна логика воронки.
-const STAGES_ALL: StageKey[] = ['negotiation', 'meeting', 'kp_creation', 'contract', 'implementation']
+// Wave 15 — добавили «Отмена» как 6-й этап.
+const STAGES_ALL: StageKey[] = ['negotiation', 'meeting', 'kp_creation', 'contract', 'implementation', 'cancelled']
 const STAGES_SMM: StageKey[] = STAGES_ALL
 const STAGES_DEV: StageKey[] = STAGES_ALL
 
@@ -209,7 +213,10 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
 
       <div className={clsx(
         'flex gap-4 overflow-x-auto pb-3 lg:grid lg:overflow-x-visible stagger-kanban',
-        stageKeys.length === 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4',
+        // Сетка адаптивная под число колонок (Wave 15 — 6).
+        stageKeys.length === 6 ? 'lg:grid-cols-6'
+          : stageKeys.length === 5 ? 'lg:grid-cols-5'
+          : 'lg:grid-cols-4',
       )}>
         {stageKeys.map(key => {
           const stage = ALL_STAGES[key]

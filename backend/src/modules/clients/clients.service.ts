@@ -29,13 +29,15 @@ const STATUS_ORDER: Record<string, number> = {
   on_hold:     -1,
 };
 
-/** Порядок этапов онбординга. */
+/** Порядок этапов онбординга. cancelled = -1 значит «отмена не считается
+ *  прогрессом» — KPI менеджеру за переход в эту колонку не начисляется. */
 const STAGE_ORDER: Record<string, number> = {
   negotiation:    1,
   meeting:        2,
   kp_creation:    3,
   contract:       4,
   implementation: 5,
+  cancelled:      -1,
 };
 
 export interface ListFilters {
@@ -503,6 +505,7 @@ export class ClientsService {
       kp_creation:    'КП',
       contract:       'Договор',
       implementation: 'Реализация',
+      cancelled:      'Отмена',
     };
     return map[stage] || 'Встреча';
   }

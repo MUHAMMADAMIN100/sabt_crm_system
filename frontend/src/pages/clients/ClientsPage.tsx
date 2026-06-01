@@ -22,6 +22,7 @@ const ONBOARDING_STAGE_LABELS: Record<string, string> = {
   kp_creation: 'Создание КП',
   contract: 'Договор',
   implementation: 'Реализация',
+  cancelled: 'Отмена',
 }
 
 const STATUS_OPTIONS: { value: string; label: string; color: string }[] = [

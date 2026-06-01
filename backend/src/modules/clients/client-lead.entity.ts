@@ -33,6 +33,7 @@ export enum ClientLeadOnboardingStage {
   KP_CREATION    = 'kp_creation',     // Создание КП
   IMPLEMENTATION = 'implementation',  // Реализация
   CONTRACT       = 'contract',        // Договор
+  CANCELLED      = 'cancelled',       // Отмена — клиент отказался / снят с воронки
 }
 
 @Entity('client_leads')
