@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { kpiApi } from '@/services/api.service'
+import KpiDetailsModal from './KpiDetailsModal'
 import {
   TrendingUp, Building2, Phone, Mail, Calendar,
   Target, Activity, Camera, Briefcase,
@@ -164,39 +165,59 @@ export default function EmployeeKpiCard({
     staleTime: 30_000,
   })
 
+  // Стейт открытой модалки с детализацией метрики.
+  const [openedMetric, setOpenedMetric] = useState<KpiItem | null>(null)
+
   const kpi: UserKpi | null = preloadedKpi ?? data
   if (!preloadedKpi && isLoading) {
     return <div className="text-xs text-surface-400 animate-pulse">Загрузка KPI…</div>
   }
   if (!kpi) return null
 
+  const detailsModal = openedMetric && (
+    <KpiDetailsModal
+      open
+      onClose={() => setOpenedMetric(null)}
+      userId={userId}
+      metric={openedMetric.key}
+      metricLabel={openedMetric.label}
+      from={effectiveFrom}
+      to={effectiveTo}
+    />
+  )
+
   if (compact) {
     return (
-      <div className="flex items-center gap-3 flex-wrap">
-        <PercentRing percent={kpi.overallPercent} size={48} />
-        <div className="flex flex-wrap gap-1.5">
-          {kpi.items.map(it => {
-            const Icon = KEY_ICON[it.key] || TrendingUp
-            return (
-              <div
-                key={it.key}
-                title={`${it.label}: ${formatValue(it)} / ${it.target}${it.key === 'deadline_rate' ? '%' : ''} (${it.percent}%)`}
-                className={clsx(
-                  'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium',
-                  it.done
-                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    : it.percent >= 50
-                      ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                      : 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-300',
-                )}
-              >
-                <Icon size={11} />
-                <span className="tabular-nums">{formatValue(it)}/{it.target}{it.key === 'deadline_rate' ? '%' : ''}</span>
-              </div>
-            )
-          })}
+      <>
+        <div className="flex items-center gap-3 flex-wrap">
+          <PercentRing percent={kpi.overallPercent} size={48} />
+          <div className="flex flex-wrap gap-1.5">
+            {kpi.items.map(it => {
+              const Icon = KEY_ICON[it.key] || TrendingUp
+              return (
+                <button
+                  key={it.key}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setOpenedMetric(it) }}
+                  title={`${it.label}: ${formatValue(it)} / ${it.target}${it.key === 'deadline_rate' ? '%' : ''} (${it.percent}%) — кликни для подробностей`}
+                  className={clsx(
+                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors cursor-pointer',
+                    it.done
+                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50'
+                      : it.percent >= 50
+                        ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50'
+                        : 'bg-surface-100 text-surface-600 hover:bg-surface-200 dark:bg-surface-700 dark:text-surface-300 dark:hover:bg-surface-600',
+                  )}
+                >
+                  <Icon size={11} />
+                  <span className="tabular-nums">{formatValue(it)}/{it.target}{it.key === 'deadline_rate' ? '%' : ''}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
-      </div>
+        {detailsModal}
+      </>
     )
   }
 
@@ -204,6 +225,7 @@ export default function EmployeeKpiCard({
   // Активный период для подсветки в selector'е (если selector внутренний).
   const activePeriod = externalPeriod ?? internalPeriod
   return (
+    <>
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-4">
@@ -242,7 +264,13 @@ export default function EmployeeKpiCard({
         {kpi.items.map(it => {
           const Icon = KEY_ICON[it.key] || TrendingUp
           return (
-            <div key={it.key} className="space-y-1">
+            <button
+              key={it.key}
+              type="button"
+              onClick={() => setOpenedMetric(it)}
+              title="Кликни чтобы посмотреть подробности"
+              className="w-full text-left space-y-1 p-1 -mx-1 rounded-md hover:bg-surface-50 dark:hover:bg-surface-700/40 transition-colors cursor-pointer"
+            >
               <div className="flex items-center justify-between text-xs">
                 <span className="inline-flex items-center gap-1.5 text-surface-700 dark:text-surface-200">
                   <Icon size={13} className={colorByPercent(it.percent)} />
@@ -267,10 +295,12 @@ export default function EmployeeKpiCard({
                   style={{ width: `${Math.min(100, it.percent)}%` }}
                 />
               </div>
-            </div>
+            </button>
           )
         })}
       </div>
     </div>
+    {detailsModal}
+    </>
   )
 }

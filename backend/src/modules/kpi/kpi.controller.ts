@@ -36,4 +36,23 @@ export class KpiController {
     }
     return this.kpi.getUserKpi(userId, from, to);
   }
+
+  /** Детализация конкретной KPI-метрики — список записей за период.
+   *  Для модалки «открыть подробно» при клике на карточку метрики. */
+  @Get('user/:userId/details')
+  async getDetails(
+    @Param('userId') userId: string,
+    @Query('metric') metric: string,
+    @Request() req,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const role = req.user?.role;
+    const isPrivileged = ['admin', 'founder', 'co_founder'].includes(role);
+    if (!isPrivileged && req.user?.id !== userId) {
+      return [];
+    }
+    if (!metric) return [];
+    return this.kpi.getMetricDetails(userId, metric, from, to);
+  }
 }

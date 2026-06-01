@@ -8,6 +8,8 @@ import { Task } from '../tasks/task.entity';
 import { WorkSession } from '../auth/work-session.entity';
 import { StoryLog } from '../stories/story.entity';
 import { Project } from '../projects/project.entity';
+import { ClientLead } from '../clients/client-lead.entity';
+import { ActivityLog } from '../activity-log/activity-log.entity';
 import { ClientsModule } from '../clients/clients.module';
 
 /**
@@ -18,7 +20,7 @@ import { ClientsModule } from '../clients/clients.module';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Employee, Task, WorkSession, StoryLog, Project]),
+    TypeOrmModule.forFeature([User, Employee, Task, WorkSession, StoryLog, Project, ClientLead, ActivityLog]),
     ClientsModule,
   ],
   controllers: [KpiController],

@@ -106,6 +106,7 @@ export class ClientsController {
     return this.service.create(
       { ...(dto as any), direction: direction ?? dto.direction },
       req.user.id,
+      { id: req.user.id, name: req.user.name },
     );
   }
 

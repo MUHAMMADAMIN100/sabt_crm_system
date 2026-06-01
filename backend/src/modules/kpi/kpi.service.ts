@@ -7,6 +7,8 @@ import { Task } from '../tasks/task.entity';
 import { WorkSession } from '../auth/work-session.entity';
 import { StoryLog } from '../stories/story.entity';
 import { Project } from '../projects/project.entity';
+import { ClientLead, ClientLeadDirection } from '../clients/client-lead.entity';
+import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity';
 import { ClientsService } from '../clients/clients.service';
 
 /** Универсальная KPI-метрика. */
@@ -83,6 +85,8 @@ export class KpiService {
     @InjectRepository(WorkSession) private sessionRepo: Repository<WorkSession>,
     @InjectRepository(StoryLog) private storyRepo: Repository<StoryLog>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
+    @InjectRepository(ClientLead) private leadRepo: Repository<ClientLead>,
+    @InjectRepository(ActivityLog) private activityRepo: Repository<ActivityLog>,
     private clientsService: ClientsService,
   ) {}
 
@@ -303,5 +307,225 @@ export class KpiService {
         items,
       } as UserKpi;
     }).filter(Boolean) as UserKpi[];
+  }
+
+  /** Детализация конкретной KPI-метрики — для модалки «открыть подробно».
+   *  Возвращает массив записей с консистентной структурой:
+   *    { id, title, subtitle, date, link?, meta? }
+   *  где link — куда вести при клике на запись.
+   */
+  async getMetricDetails(
+    userId: string,
+    metric: string,
+    from?: string,
+    to?: string,
+  ): Promise<Array<{
+    id: string;
+    title: string;
+    subtitle?: string | null;
+    date?: string | null;
+    link?: string | null;
+    meta?: Record<string, any>;
+  }>> {
+    const { periodFrom, periodTo } = this.periodRange(from, to);
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) return [];
+    const direction: ClientLeadDirection | undefined =
+      user.role === UserRole.SALES_MANAGER_SMM ? ClientLeadDirection.SMM
+      : user.role === UserRole.SALES_MANAGER_DEV ? ClientLeadDirection.DEVELOPMENT
+      : undefined;
+
+    // Общий хелпер: где есть direction — фильтруем лиды по нему + старые без направления.
+    const applyDirection = (qb: any) => {
+      if (direction) qb.andWhere('(c.direction = :dir OR c.direction IS NULL)', { dir: direction });
+      return qb;
+    };
+
+    switch (metric) {
+      // ─── Sales: продвижения по воронке (из activity_logs) ──────────────
+      case 'sales_funnel_progress': {
+        const rows = await this.activityRepo
+          .createQueryBuilder('a')
+          .where('a.userId = :uid', { uid: userId })
+          .andWhere('a.action = :act', { act: ActivityAction.LEAD_PROGRESS })
+          .andWhere('a.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+          .orderBy('a.createdAt', 'DESC')
+          .getMany();
+        return rows.map(r => {
+          const d = r.details || {};
+          const status = d.statusTo && d.statusFrom ? `${d.statusFrom} → ${d.statusTo}` : null;
+          const stage = d.stageTo && d.stageFrom !== d.stageTo
+            ? `этап: ${d.stageFrom ?? '—'} → ${d.stageTo}`
+            : (d.stageTo ? `этап: ${d.stageTo}` : null);
+          const subtitleParts = [status, stage].filter(Boolean);
+          return {
+            id: r.id,
+            title: r.entityName || 'Лид',
+            subtitle: subtitleParts.join(' · ') || null,
+            date: r.createdAt?.toISOString() || null,
+            link: '/clients',
+          };
+        });
+      }
+
+      // ─── Sales: новые компании в базе (created в период) ───────────────
+      case 'sales_new_companies': {
+        const qb = this.leadRepo.createQueryBuilder('c')
+          .where('c.ownerId = :uid', { uid: userId })
+          .andWhere('c.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+          .orderBy('c.createdAt', 'DESC');
+        const leads = await applyDirection(qb).getMany();
+        return leads.map(l => ({
+          id: l.id,
+          title: l.name,
+          subtitle: [l.sphere, l.contactPerson || l.contactPhone || l.contactInstagram || l.contactEmail]
+            .filter(Boolean).join(' · ') || null,
+          date: l.createdAt?.toISOString() || null,
+          link: `/clients?id=${l.id}`,
+          meta: { potential: l.dealPotential },
+        }));
+      }
+
+      // ─── Sales: холодные звонки ────────────────────────────────────────
+      case 'sales_cold_calls': {
+        const qb = this.leadRepo.createQueryBuilder('c')
+          .where('c.ownerId = :uid', { uid: userId })
+          .andWhere(`LOWER(COALESCE(c.channel, '')) IN ('call', 'phone', 'whatsapp', 'telegram')`)
+          .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+          .orderBy('c.updatedAt', 'DESC');
+        const leads = await applyDirection(qb).getMany();
+        return leads.map(l => ({
+          id: l.id,
+          title: l.name,
+          subtitle: [l.channel, l.contactPhone || l.contactInstagram || l.contactPerson]
+            .filter(Boolean).join(' · ') || null,
+          date: l.updatedAt?.toISOString() || null,
+          link: `/clients?id=${l.id}`,
+        }));
+      }
+
+      // ─── Sales: персональные письма ────────────────────────────────────
+      case 'sales_personal_emails': {
+        const qb = this.leadRepo.createQueryBuilder('c')
+          .where('c.ownerId = :uid', { uid: userId })
+          .andWhere(`(LOWER(COALESCE(c.channel, '')) = 'email' OR COALESCE(c.contactEmail, '') <> '')`)
+          .andWhere('c.lastContactAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+          .orderBy('c.lastContactAt', 'DESC');
+        const leads = await applyDirection(qb).getMany();
+        return leads.map(l => ({
+          id: l.id,
+          title: l.name,
+          subtitle: [l.contactEmail || l.channel, l.contactPerson].filter(Boolean).join(' · ') || null,
+          date: l.lastContactAt ? new Date(l.lastContactAt).toISOString() : null,
+          link: `/clients?id=${l.id}`,
+        }));
+      }
+
+      // ─── Sales: встречи / созвоны ──────────────────────────────────────
+      case 'sales_meetings': {
+        const horizon = new Date(periodTo);
+        if (horizon.getTime() - periodFrom.getTime() < 14 * 86400_000) {
+          horizon.setTime(periodFrom.getTime() + 14 * 86400_000);
+        }
+        const qb = this.leadRepo.createQueryBuilder('c')
+          .where('c.ownerId = :uid', { uid: userId })
+          .andWhere('c.nextContactAt BETWEEN :now AND :horizon', { now: periodFrom, horizon })
+          .orderBy('c.nextContactAt', 'ASC');
+        const leads = await applyDirection(qb).getMany();
+        return leads.map(l => ({
+          id: l.id,
+          title: l.name,
+          subtitle: [l.channel, l.contactPerson || l.contactPhone].filter(Boolean).join(' · ') || null,
+          date: l.nextContactAt?.toISOString() || null,
+          link: `/clients?id=${l.id}`,
+        }));
+      }
+
+      // ─── Универсальное: соблюдено дедлайнов (done tasks за период) ─────
+      case 'deadline_rate': {
+        const tasks = await this.taskRepo.manager.query(
+          `SELECT id, title, deadline, "updatedAt", "reviewedAt", status
+           FROM tasks
+           WHERE "assigneeId" = $1
+             AND status::text = 'done'
+             AND "updatedAt" BETWEEN $2 AND $3
+           ORDER BY "updatedAt" DESC`,
+          [userId, periodFrom, periodTo],
+        );
+        return (tasks as any[]).map(t => {
+          const closedAt = t.reviewedAt || t.updatedAt;
+          const onTime = !t.deadline || new Date(closedAt) <= new Date(t.deadline);
+          return {
+            id: t.id,
+            title: t.title,
+            subtitle: onTime ? '✓ в срок' : '⚠ просрочена',
+            date: closedAt ? new Date(closedAt).toISOString() : null,
+            link: `/tasks/${t.id}`,
+            meta: { onTime, deadline: t.deadline },
+          };
+        });
+      }
+
+      // ─── Универсальное: активные дни (work_sessions) ───────────────────
+      case 'activity_days': {
+        const rows = await this.sessionRepo.manager.query(
+          `SELECT date, COUNT(*)::int AS sessions,
+                  MIN("loginAt") AS first_login,
+                  COALESCE(SUM("durationHours"), 0)::float AS total_hours
+           FROM work_sessions
+           WHERE "userId" = $1
+             AND date::date BETWEEN $2::date AND $3::date
+           GROUP BY date
+           ORDER BY date DESC`,
+          [userId, periodFrom, periodTo],
+        );
+        return (rows as any[]).map(r => ({
+          id: String(r.date),
+          title: new Date(r.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', weekday: 'short' }),
+          subtitle: `${r.sessions} вход(а/ов) · ${Number(r.total_hours).toFixed(1)} ч`,
+          date: r.first_login ? new Date(r.first_login).toISOString() : null,
+          link: null,
+        }));
+      }
+
+      // ─── SMM: истории за период ────────────────────────────────────────
+      case 'stories_posted': {
+        const stories = await this.storyRepo.find({
+          where: { employeeId: userId },
+          order: { date: 'DESC' },
+          relations: ['project'],
+        });
+        return stories
+          .filter(s => {
+            const d = new Date(s.date);
+            return d >= periodFrom && d <= periodTo;
+          })
+          .map(s => ({
+            id: s.id,
+            title: s.project?.name || 'Проект',
+            subtitle: `${s.storiesCount} истор${s.storiesCount === 1 ? 'ия' : 'ий'}`,
+            date: s.date,
+            link: s.projectId ? `/projects/${s.projectId}` : null,
+          }));
+      }
+
+      // ─── PM: проекты под управлением ───────────────────────────────────
+      case 'projects_managed': {
+        const projects = await this.projectRepo.find({
+          where: { managerId: userId, isArchived: false },
+          order: { createdAt: 'DESC' },
+        });
+        return projects.map(p => ({
+          id: p.id,
+          title: p.name,
+          subtitle: p.status,
+          date: p.createdAt?.toISOString() || null,
+          link: `/projects/${p.id}`,
+        }));
+      }
+
+      default:
+        return [];
+    }
   }
 }

@@ -178,12 +178,26 @@ export class ClientsService {
     return lead;
   }
 
-  async create(dto: Partial<ClientLead>, ownerId?: string) {
+  async create(
+    dto: Partial<ClientLead>,
+    ownerId?: string,
+    actor?: { id: string; name?: string },
+  ) {
     const lead = this.repo.create({ ...dto, ownerId: dto.ownerId ?? ownerId });
     const saved = await this.repo.save(lead);
-    // Если при создании указана дата встречи — авто-генерируем личную задачу
-    // для владельца лида. Она появится в его календаре и в задачах под «Мои».
+    // Если при создании указана дата встречи — авто-генерируем личную задачу.
     await this.syncMeetingTask(saved);
+    // KPI: если лид создаётся СРАЗУ с продвинутым статусом или onboardingStage
+    // (например, МП имел холодный звонок и заводит клиента уже в «negotiating»
+    // или с этапом «meeting» в онбординге) — это тоже прогресс. Логируем как
+    // переход из «пустого» состояния → текущего.
+    if (actor) {
+      await this.maybeLogProgress(
+        { status: null, onboardingStage: null, name: saved.name, ownerId: saved.ownerId },
+        { status: saved.status, onboardingStage: saved.onboardingStage, name: saved.name, ownerId: saved.ownerId },
+        actor,
+      );
+    }
     return this.findOne(saved.id);
   }
 

@@ -198,6 +198,9 @@ export const kpiApi = {
   /** KPI конкретного юзера. */
   user: (userId: string, params?: { from?: string; to?: string }) =>
     api.get(`/kpi/user/${userId}`, { params }).then(r => r.data),
+  /** Детализация конкретной KPI-метрики — массив записей для модалки. */
+  details: (userId: string, metric: string, params?: { from?: string; to?: string }) =>
+    api.get(`/kpi/user/${userId}/details`, { params: { metric, ...params } }).then(r => r.data),
 }
 
 // ─── Clients (sales CRM) ─────────────────────────────────
