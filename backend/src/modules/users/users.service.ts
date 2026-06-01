@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { User, UserRole } from './user.entity';
 import { Employee, EmployeeStatus } from '../employees/employee.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
@@ -8,16 +8,28 @@ import { ActivityAction } from '../activity-log/activity-log.entity';
 import { AppGateway } from '../gateway/app.gateway';
 import { SecurityAuditService } from '../auth/security-audit.service';
 import { SecurityEventType } from '../auth/security-event.entity';
+import { RefreshToken } from '../auth/refresh-token.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User) private repo: Repository<User>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
+    @InjectRepository(RefreshToken) private refreshRepo: Repository<RefreshToken>,
     private activityLog: ActivityLogService,
     private gateway: AppGateway,
     private securityAudit: SecurityAuditService,
   ) {}
+
+  /** Отзываем все ещё-активные refresh-токены пользователя.
+   *  Используется при блокировке / сбросе пароля админом / похожих операциях,
+   *  чтобы украденная refresh-cookie сразу перестала работать. */
+  private async revokeAllRefresh(userId: string): Promise<void> {
+    await this.refreshRepo.update(
+      { userId, revokedAt: IsNull() },
+      { revokedAt: new Date() },
+    );
+  }
 
   findAll(role?: UserRole) {
     const where = role ? { role } : {};
@@ -160,6 +172,12 @@ export class UsersService {
     user.password = finalPassword; // BeforeUpdate hook will hash it
     await this.repo.save(user);
 
+    // Security: админский сброс пароля — это обычно ответ на инцидент
+    // (юзер потерял доступ, утечка, увольнение). Без отзыва refresh-токенов
+    // атакующий, у которого уже есть украденная refresh-cookie, продолжит
+    // получать access-токены ещё 30 дней. Отзываем всё.
+    await this.revokeAllRefresh(id);
+
     await this.activityLog.log({
       userId: resetBy.id,
       userName: resetBy.name,
@@ -202,6 +220,12 @@ export class UsersService {
     user.blockedByRole = blockedBy.role;
     user.blockReason = reason || null;
     await this.repo.save(user);
+
+    // Defense-in-depth: refresh() уже проверяет user.isBlocked и отдаёт 401,
+    // но если эта проверка где-то когда-то даст сбой (баг рефактора, race,
+    // вернули admin-а к жизни через прямой UPDATE в БД) — пустые refresh-
+    // токены гарантируют что атакующий не сможет восстановить сессию.
+    await this.revokeAllRefresh(id);
 
     await this.activityLog.log({
       userId: blockedBy.id,
@@ -266,8 +290,17 @@ export class UsersService {
     return this.findOne(id);
   }
 
-  async updateAvatar(id: string, avatar: string) {
+  async updateAvatar(id: string, avatar: string, actor?: { id: string; role?: string }) {
     const user = await this.findOne(id);
+    // Security: смена аватарки другого пользователя должна проходить через
+    // ту же policy-проверку assertCanManage, что и остальные mutator'ы
+    // (block/unblock/update/remove/toggleActive/resetPassword). Self-edit
+    // (юзер меняет аватарку САМ СЕБЕ) разрешён всегда — пропускаем проверку
+    // когда actor.id совпадает с id целевого юзера. Без этого admin мог
+    // менять аватарку founder/co_founder в обход документированной политики.
+    if (actor && actor.id !== id) {
+      this.assertCanManage(user, actor.role);
+    }
     await this.repo.update(id, { avatar });
 
     // У Employee своя колонка avatar — синхронизируем, иначе на странице

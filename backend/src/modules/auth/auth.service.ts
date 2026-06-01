@@ -485,6 +485,12 @@ export class AuthService {
     user.password = newPassword;
     await this.userRepo.save(user);
 
+    // Security: при смене пароля отзываем ВСЕ refresh-токены этого юзера.
+    // Без этого украденный refresh-cookie продолжал бы выдавать access-токены
+    // ещё 30 дней даже после того как жертва сменила пароль чтобы заблокировать
+    // атакующего. Помечаем как closed_loop для аудит-трейла.
+    await this.revokeAllRefresh(userId);
+
     await this.activityLog.log({
       userId,
       userName: user.name,
@@ -523,6 +529,11 @@ export class AuthService {
     user.resetPasswordToken = null;
     user.resetPasswordExpires = null;
     await this.userRepo.save(user);
+
+    // Security: forgot-password flow часто запускается ИМЕННО потому, что
+    // юзер подозревает компрометацию. Отзываем все refresh-токены, чтобы
+    // украденная cookie сразу перестала работать (а не жила 30 дней).
+    await this.revokeAllRefresh(user.id);
 
     await this.activityLog.log({
       userId: user.id,

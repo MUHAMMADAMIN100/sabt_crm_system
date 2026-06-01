@@ -110,15 +110,18 @@ export class UsersController {
   @UseInterceptors(FileInterceptor('avatar', AVATAR_MULTER_CONFIG))
   updateAvatar(@Request() req, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('Файл не загружен');
-    return this.usersService.updateAvatar(req.user.id, file.filename);
+    // Self-edit — actor.id совпадает с целевым id, assertCanManage skip'нется.
+    return this.usersService.updateAvatar(req.user.id, file.filename, { id: req.user.id, role: req.user.role });
   }
 
-  /** Админ/основатель/сооснователь меняет аватар любого сотрудника. */
+  /** Админ/основатель/сооснователь меняет аватар любого сотрудника.
+   *  Внутри updateAvatar() сработает assertCanManage(target, actor.role) —
+   *  не даст admin'у трогать founder/co_founder. */
   @Patch(':id/avatar')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   @UseInterceptors(FileInterceptor('avatar', AVATAR_MULTER_CONFIG))
-  updateAvatarFor(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+  updateAvatarFor(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Request() req) {
     if (!file) throw new BadRequestException('Файл не загружен');
-    return this.usersService.updateAvatar(id, file.filename);
+    return this.usersService.updateAvatar(id, file.filename, { id: req.user.id, role: req.user.role });
   }
 }

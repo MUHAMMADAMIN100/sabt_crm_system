@@ -32,16 +32,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: { sub: string; email: string; role: string }) {
     const user = await this.userRepo.findOne({ where: { id: payload.sub } });
+    // Логи без email — email это PII под GDPR/CCPA, не должна попадать
+    // в persistent log файлы. Оператор найдёт юзера по UUID в БД, если надо.
     if (!user) {
-      this.logger.warn(`JWT validate: user not found by id=${payload.sub} (email in token: ${payload.email})`);
+      this.logger.warn(`JWT validate: user_missing sub=${payload.sub}`);
       throw new UnauthorizedException();
     }
     if (!user.isActive) {
-      this.logger.warn(`JWT validate: user ${user.email} (id=${user.id}) is NOT active`);
+      this.logger.warn(`JWT validate: user_inactive sub=${user.id}`);
       throw new UnauthorizedException();
     }
     if (user.isBlocked) {
-      this.logger.warn(`JWT validate: user ${user.email} (id=${user.id}) is BLOCKED`);
+      this.logger.warn(`JWT validate: user_blocked sub=${user.id}`);
       const blockedByLabel = user.blockedByRole === 'founder'
         ? 'основатель компании'
         : user.blockedByRole === 'co_founder'
