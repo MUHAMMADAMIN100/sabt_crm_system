@@ -12,11 +12,11 @@ import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
-import SalesManagerKpiCard from '@/components/sales/SalesManagerKpiCard'
+import EmployeeKpiCard from '@/components/kpi/EmployeeKpiCard'
 
-/** Wave 12: KPI продаж видят только основатель/сооснователь/админ. */
-const isSalesManagerRole = (role?: string | null): boolean =>
-  role === 'sales_manager_smm' || role === 'sales_manager_dev'
+/** Wave 13: KPI считается для всех «рабочих» ролей. Top-роли исключаются. */
+const hasKpi = (role?: string | null): boolean =>
+  !!role && !['admin', 'founder', 'co_founder'].includes(role)
 
 export default function EmployeesPage() {
   const [search, setSearch] = useState('')
@@ -307,14 +307,14 @@ export default function EmployeesPage() {
                   <a href={`https://instagram.com/${emp.instagram.replace('@','')}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-pink-500 hover:underline"><AtSignIcon /><span>{emp.instagram}</span></a>
                 )}
               </div>
-              {/* KPI продаж — показываем основателю/сооснователю/админу,
-                  только для менеджеров продаж. Компактный режим: круг + чипы. */}
-              {canViewSalesKpi && isSalesManagerRole(emp.user?.role) && emp.userId && (
+              {/* Wave 13: KPI любого сотрудника. Видно только canManage-ролям
+                  (admin/founder/co_founder). Для top-ролей KPI не показываем. */}
+              {canViewSalesKpi && hasKpi(emp.user?.role) && emp.userId && (
                 <div
                   className="mt-3 pt-3 border-t border-surface-50 dark:border-surface-700"
                   onClick={e => e.stopPropagation()}
                 >
-                  <SalesManagerKpiCard userId={emp.userId} compact />
+                  <EmployeeKpiCard userId={emp.userId} compact />
                 </div>
               )}
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-surface-50 dark:border-surface-700">

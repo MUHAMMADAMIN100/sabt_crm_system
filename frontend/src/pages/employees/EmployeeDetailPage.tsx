@@ -14,11 +14,11 @@ import {
   EmployeeWorkloadTab, EmployeeQualityTab, EmployeeRiskTab, EmployeeActivityTab,
 } from '@/components/employees/EmployeeAnalyticsTabs'
 import { isTaskOverdue } from '@/lib/taskStatus'
-import SalesManagerKpiCard from '@/components/sales/SalesManagerKpiCard'
+import EmployeeKpiCard from '@/components/kpi/EmployeeKpiCard'
 
-/** Wave 12: KPI продаж — только для менеджеров продаж и только видящим. */
-const isSalesManagerRole = (role?: string | null): boolean =>
-  role === 'sales_manager_smm' || role === 'sales_manager_dev'
+/** Wave 13: KPI считается для всех «рабочих» ролей. */
+const hasKpi = (role?: string | null): boolean =>
+  !!role && !['admin', 'founder', 'co_founder'].includes(role)
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -176,19 +176,21 @@ export default function EmployeeDetailPage() {
 
       {activeTab === 'overview' && <>
 
-      {/* KPI продаж — видно founder/co_founder/admin, только для менеджеров продаж */}
-      {canViewSalesKpi && isSalesManagerRole(emp?.user?.role) && emp?.userId && (
+      {/* Wave 13: KPI любого сотрудника — видно founder/co_founder/admin */}
+      {canViewSalesKpi && hasKpi(emp?.user?.role) && emp?.userId && (
         <div className="card">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="section-title">KPI менеджера продаж</h3>
-            <Link
-              to="/clients"
-              className="text-xs text-primary-600 hover:underline inline-flex items-center gap-1"
-            >
-              Перейти к клиентам →
-            </Link>
+            <h3 className="section-title">KPI сотрудника</h3>
+            {(emp.user?.role === 'sales_manager_smm' || emp.user?.role === 'sales_manager_dev') && (
+              <Link
+                to="/clients"
+                className="text-xs text-primary-600 hover:underline inline-flex items-center gap-1"
+              >
+                Перейти к клиентам →
+              </Link>
+            )}
           </div>
-          <SalesManagerKpiCard userId={emp.userId} />
+          <EmployeeKpiCard userId={emp.userId} />
         </div>
       )}
 

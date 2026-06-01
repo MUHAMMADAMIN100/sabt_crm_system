@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts'
 import { FounderWidgets } from './RiskWidgets'
-import SalesManagersKpiWidget from '@/components/sales/SalesManagersKpiWidget'
+import EmployeesKpiWidget from '@/components/kpi/EmployeesKpiWidget'
 
 const StoryCalendar = lazy(() => import('@/components/stories/StoryCalendar'))
 const GlobalStoriesCalendar = lazy(() => import('./GlobalStoriesCalendar'))
@@ -126,9 +126,9 @@ export default function FounderDashboard() {
           Только для основателя/сооснователя — у админа этот блок скрыт. */}
       {canSeeFinance && <FounderWidgets />}
 
-      {/* Wave 12: KPI менеджеров продаж — отдельная секция, видна
-          основателю/сооснователю/админу. */}
-      <SalesManagersKpiWidget />
+      {/* Wave 13: KPI всех сотрудников (универсальный widget с фильтрами).
+          Видно admin / founder / co_founder. */}
+      <EmployeesKpiWidget />
 
       {/* KPI row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">

@@ -191,6 +191,15 @@ export const projectAnnouncementsApi = {
   remove: (projectId: string, id: string) => api.delete(`/projects/${projectId}/announcements/${id}`).then(r => r.data),
 }
 
+// ─── KPI (Wave 13: универсальный KPI всех сотрудников) ────
+export const kpiApi = {
+  /** KPI всех сотрудников (admin/founder/co_founder only). */
+  all: (params?: { from?: string; to?: string }) => api.get('/kpi/all', { params }).then(r => r.data),
+  /** KPI конкретного юзера. */
+  user: (userId: string, params?: { from?: string; to?: string }) =>
+    api.get(`/kpi/user/${userId}`, { params }).then(r => r.data),
+}
+
 // ─── Clients (sales CRM) ─────────────────────────────────
 export const clientsApi = {
   list: (params?: { search?: string; status?: string; interest?: string; sphere?: string; ownerId?: string; source?: string }) =>

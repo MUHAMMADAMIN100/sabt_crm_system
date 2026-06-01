@@ -37,6 +37,7 @@ import { ContentPlanModule } from './modules/content-plan/content-plan.module';
 import { RiskAnalyticsModule } from './modules/risk-analytics/risk-analytics.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { TeamsModule } from './modules/teams/teams.module';
+import { KpiModule } from './modules/kpi/kpi.module';
 
 @Module({
   controllers: [HealthController],
@@ -103,6 +104,7 @@ import { TeamsModule } from './modules/teams/teams.module';
     RiskAnalyticsModule,
     FinanceModule,
     TeamsModule,
+    KpiModule,
   ],
 })
 export class AppModule {}

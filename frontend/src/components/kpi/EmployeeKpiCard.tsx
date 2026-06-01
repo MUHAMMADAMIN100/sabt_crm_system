@@ -1,10 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
-import { clientsApi } from '@/services/api.service'
-import { TrendingUp, Building2, Phone, Mail, Calendar } from 'lucide-react'
+import { kpiApi } from '@/services/api.service'
+import {
+  TrendingUp, Building2, Phone, Mail, Calendar,
+  CheckSquare, Clock, Target, Activity, Camera, Briefcase,
+} from 'lucide-react'
 import clsx from 'clsx'
 
-/** KPI-метрика — одна строка/чип. */
-interface KpiItem {
+/** Универсальная KPI-метрика. */
+export interface KpiItem {
   key: string
   label: string
   target: number
@@ -13,23 +16,30 @@ interface KpiItem {
   done: boolean
 }
 
-interface KpiResponse {
+export interface UserKpi {
+  userId: string
+  role: string
   periodFrom: string
   periodTo: string
   overallPercent: number
   items: KpiItem[]
 }
 
-/** Иконка под каждый ключ метрики. */
+/** Иконка для каждого ключа метрики — универсальные + sales-префикс. */
 const KEY_ICON: Record<string, any> = {
-  funnel_progress: TrendingUp,
-  new_companies: Building2,
-  cold_calls: Phone,
-  personal_emails: Mail,
-  meetings: Calendar,
+  tasks_done: CheckSquare,
+  hours_logged: Clock,
+  deadline_rate: Target,
+  activity_days: Activity,
+  stories_posted: Camera,
+  projects_managed: Briefcase,
+  sales_funnel_progress: TrendingUp,
+  sales_new_companies: Building2,
+  sales_cold_calls: Phone,
+  sales_personal_emails: Mail,
+  sales_meetings: Calendar,
 }
 
-/** Цвет прогресс-кольца в зависимости от % выполнения. */
 function colorByPercent(p: number): string {
   if (p >= 100) return 'text-emerald-500'
   if (p >= 70) return 'text-lime-500'
@@ -37,7 +47,6 @@ function colorByPercent(p: number): string {
   return 'text-red-500'
 }
 
-/** Маленькое круговое прогресс-кольцо для overall%. */
 function PercentRing({ percent, size = 56 }: { percent: number; size?: number }) {
   const stroke = 5
   const radius = (size - stroke) / 2
@@ -63,38 +72,41 @@ function PercentRing({ percent, size = 56 }: { percent: number; size?: number })
   )
 }
 
+/** Форматирование значения для чипа — десятичные у часов, % у дедлайн-метрики. */
+function formatValue(item: KpiItem): string {
+  if (item.key === 'deadline_rate') return `${item.value}%`
+  if (item.key === 'hours_logged') return `${item.value}ч`
+  return String(item.value)
+}
+
 interface Props {
-  /** ID юзера (МП) чей KPI показывать. */
+  /** ID юзера. */
   userId: string
-  /** Компактный режим — для карточки сотрудника / виджета дашборда. */
+  /** Компактный режим — для карточек / виджета дашборда. */
   compact?: boolean
   /** Период (опционально, по умолчанию — текущий месяц). */
   from?: string
   to?: string
-  /** Уже загруженные данные — позволяет переиспользовать compact для bulk-данных
-   *  без отдельного запроса. Если передано — userId/from/to игнорируются. */
-  kpi?: KpiResponse | null
+  /** Предзагруженный KPI — позволяет переиспользовать карточку для bulk-данных. */
+  kpi?: UserKpi | null
 }
 
 /**
- * Reusable KPI-карточка менеджера продаж.
- *  - compact: одна строка с круговым % + 5 чипов метрик.
- *  - full: список метрик с прогресс-баром у каждой + большой overall%.
- *
- * Источник данных: `GET /clients/kpi/user/:userId` (или переданный `kpi` prop).
- * Если у юзера нет доступа (API возвращает null) — компонент не рендерится.
+ * Reusable KPI-карточка любого сотрудника (Wave 13).
+ *  - compact: PercentRing + чипы каждой метрики value/target.
+ *  - full: PercentRing 72px + прогресс-бары для каждой метрики.
  */
-export default function SalesManagerKpiCard({
+export default function EmployeeKpiCard({
   userId, compact, from, to, kpi: preloadedKpi,
 }: Props) {
   const { data, isLoading } = useQuery({
-    queryKey: ['kpi-of-user', userId, from, to],
-    queryFn: () => clientsApi.kpiOfUser(userId, { from, to }),
+    queryKey: ['kpi-user', userId, from, to],
+    queryFn: () => kpiApi.user(userId, { from, to }),
     enabled: !!userId && !preloadedKpi,
     staleTime: 30_000,
   })
 
-  const kpi: KpiResponse | null = preloadedKpi ?? data
+  const kpi: UserKpi | null = preloadedKpi ?? data
   if (!preloadedKpi && isLoading) {
     return <div className="text-xs text-surface-400 animate-pulse">Загрузка KPI…</div>
   }
@@ -110,7 +122,7 @@ export default function SalesManagerKpiCard({
             return (
               <div
                 key={it.key}
-                title={`${it.label}: ${it.value} / ${it.target} (${it.percent}%)`}
+                title={`${it.label}: ${formatValue(it)} / ${it.target}${it.key === 'deadline_rate' ? '%' : ''} (${it.percent}%)`}
                 className={clsx(
                   'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium',
                   it.done
@@ -121,7 +133,7 @@ export default function SalesManagerKpiCard({
                 )}
               >
                 <Icon size={11} />
-                <span className="tabular-nums">{it.value}/{it.target}</span>
+                <span className="tabular-nums">{formatValue(it)}/{it.target}{it.key === 'deadline_rate' ? '%' : ''}</span>
               </div>
             )
           })}
@@ -156,8 +168,8 @@ export default function SalesManagerKpiCard({
                   {it.label}
                 </span>
                 <span className="tabular-nums text-surface-500 dark:text-surface-400">
-                  <b className={clsx('font-bold', colorByPercent(it.percent))}>{it.value}</b>
-                  {' / '}{it.target}
+                  <b className={clsx('font-bold', colorByPercent(it.percent))}>{formatValue(it)}</b>
+                  {' / '}{it.target}{it.key === 'deadline_rate' ? '%' : ''}
                   <span className="ml-2 text-[10px]">({it.percent}%)</span>
                 </span>
               </div>
