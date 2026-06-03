@@ -49,13 +49,13 @@ export function useSocket(authMarker: string | null) {
         duration: 6000,
         icon: '🔒',
       })
-      // Чистим токен и перебрасываем на /login. logout() сам обнулит store.
+      // Чистим токен и перебрасываем на /auth. logout() сам обнулит store.
       ;(async () => {
         try { await useAuthStore.getState().logout() } catch {}
         // Защита: если logout не довёл — точно вычистить и редирект.
         try { localStorage.removeItem('token') } catch {}
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login'
+        if (!window.location.pathname.includes('/auth')) {
+          window.location.href = '/auth'
         }
       })()
     })

@@ -121,6 +121,12 @@ export default function ClientsPage() {
       // календарь и список «Мои задачи», чтобы новый лид сразу был виден.
       qc.invalidateQueries({ queryKey: ['calendar'] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
+      // Создание лида с продвинутым статусом / онбординг-этапом тоже
+      // считается прогрессом по воронке (бэк пишет LEAD_PROGRESS).
+      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
+      qc.invalidateQueries({ queryKey: ['kpi-user'] })
+      qc.invalidateQueries({ queryKey: ['kpi-all'] })
+      qc.invalidateQueries({ queryKey: ['kpi-details'] })
       toast.success('Клиент добавлен')
     },
   })
@@ -149,6 +155,13 @@ export default function ClientsPage() {
       // личную follow-up задачу (название/время/статус закрытия сделки).
       qc.invalidateQueries({ queryKey: ['calendar'] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
+      // KPI воронки/менеджера — продвижения по status/onboardingStage
+      // считаются из activity_logs бэком; виджеты дашборда должны
+      // обновиться сразу, без F5.
+      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
+      qc.invalidateQueries({ queryKey: ['kpi-user'] })
+      qc.invalidateQueries({ queryKey: ['kpi-all'] })
+      qc.invalidateQueries({ queryKey: ['kpi-details'] })
       toast.success('Сохранено')
     },
   })

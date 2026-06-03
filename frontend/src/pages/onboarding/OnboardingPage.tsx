@@ -78,7 +78,17 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
       qc.setQueryData(['clients'], ctx?.prev)
       toast.error('Не удалось переместить клиента')
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['clients'] }),
+    // Прогресс по воронке пишется бэком в activity_log → влияет на KPI.
+    // Инвалидируем все KPI-кеши, иначе виджет «Продвижения по воронке»
+    // на дашборде остаётся stale до перезагрузки.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
+      qc.invalidateQueries({ queryKey: ['kpi-user'] })
+      qc.invalidateQueries({ queryKey: ['kpi-all'] })
+      qc.invalidateQueries({ queryKey: ['kpi-details'] })
+      qc.invalidateQueries({ queryKey: ['clients-stats'] })
+    },
   })
 
   // Новый клиент — попадает на доску в первый этап роли (Встреча у СММ,
@@ -97,6 +107,13 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
     mutationFn: ({ id, data }: { id: string; data: any }) => clientsApi.update(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clients'] })
+      // Любое изменение лида может изменить status/onboardingStage →
+      // обновляем KPI воронки, чтобы счётчик отражал прогресс сразу.
+      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
+      qc.invalidateQueries({ queryKey: ['kpi-user'] })
+      qc.invalidateQueries({ queryKey: ['kpi-all'] })
+      qc.invalidateQueries({ queryKey: ['kpi-details'] })
+      qc.invalidateQueries({ queryKey: ['clients-stats'] })
       setEditMode(false)
       toast.success('Изменения сохранены')
     },

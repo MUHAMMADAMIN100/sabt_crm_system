@@ -8,6 +8,17 @@ const api = axios.create({
   withCredentials: true,
 })
 
+/** Окно «грейс-периода» после успешного login/refresh. Auth store зовёт
+ *  markJustAuthed() сразу после установки cookie. В течение этого окна
+ *  interceptor НЕ выкидывает на /auth по 401 — это защита от гонки:
+ *  dashboard'ы стартуют параллельно кучу запросов, и первый-же с косячным
+ *  таймингом куки забирал пользователя обратно на экран входа, хотя
+ *  cookie уже выставлена. */
+let justAuthedUntil = 0
+export const markJustAuthed = (windowMs = 5000) => {
+  justAuthedUntil = Date.now() + windowMs
+}
+
 api.interceptors.request.use(config => {
   // Никаких токенов из localStorage — JWT теперь только в httpOnly cookie,
   // браузер сам прикрепит его благодаря withCredentials.
@@ -63,6 +74,12 @@ api.interceptors.response.use(
     }
 
     if (status === 401 && !window.location.pathname.includes('/auth')) {
+      // Грейс после login: даём фронту 5 сек устаканиться, не делаем агрессивный
+      // редирект — пользователь только-только вошёл, выкидывать его обратно
+      // на /auth из-за тайминга гонки куки нельзя.
+      if (Date.now() < justAuthedUntil) {
+        return Promise.reject(err)
+      }
       const msg: string = err.response?.data?.message || ''
       if (msg.includes('заблокировал') || msg.toLowerCase().startsWith('blocked')) {
         sessionStorage.setItem('blocked-message', msg.replace(/^BLOCKED:\s*/i, ''))

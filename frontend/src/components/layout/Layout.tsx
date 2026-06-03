@@ -63,7 +63,13 @@ export default function Layout() {
   const authenticated = useAuthStore(s => s.authenticated)
   const location = useLocation()
 
-  useEffect(() => { fetchMe() }, [])
+  // fetchMe нужен только если пришли по F5 (user пуст). После свежего login()
+  // user уже загружен — повторный вызов плодит гонку с interceptor'ом
+  // (если он по таймингу вернёт 401, выкинет на /auth сразу после успешного
+  // входа). Поэтому вызываем строго при отсутствии user.
+  useEffect(() => {
+    if (!useAuthStore.getState().user) fetchMe()
+  }, [])
   useSocket(authenticated ? 'cookie' : null)
   useSessionHeartbeat(authenticated ? 'cookie' : null)
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import api from '@/lib/api'
+import api, { markJustAuthed } from '@/lib/api'
 
 export type UserRole =
   | 'admin'
@@ -101,12 +101,17 @@ export const useAuthStore = create<AuthState>()(
           }
           throw e
         }
+        // Грейс-окно: interceptor не выкинет на /auth ближайшие 5 сек,
+        // даже если параллельные дашборд-запросы случайно поймают 401
+        // из-за тайминга cookie.
+        markJustAuthed()
         set({ authenticated: true })
         await get().fetchMe()
       },
 
       register: async (regData) => {
         await api.post('/auth/register', regData)
+        markJustAuthed()
         set({ authenticated: true })
         await get().fetchMe()
       },
