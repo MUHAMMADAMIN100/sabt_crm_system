@@ -15,9 +15,13 @@ const api = axios.create({
  *  таймингом куки забирал пользователя обратно на экран входа, хотя
  *  cookie уже выставлена. */
 let justAuthedUntil = 0
-export const markJustAuthed = (windowMs = 5000) => {
+export const markJustAuthed = (windowMs = 8000) => {
   justAuthedUntil = Date.now() + windowMs
 }
+/** true пока действует грейс после login — auth.store смотрит на это,
+ *  чтобы не сбрасывать `authenticated: false` при случайном 401 в первые
+ *  секунды после входа (там могут быть гонки cookie / параллельные запросы). */
+export const isJustAuthed = () => Date.now() < justAuthedUntil
 
 api.interceptors.request.use(config => {
   // Никаких токенов из localStorage — JWT теперь только в httpOnly cookie,

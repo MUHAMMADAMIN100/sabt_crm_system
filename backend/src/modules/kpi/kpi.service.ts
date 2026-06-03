@@ -398,7 +398,12 @@ export class KpiService {
       case 'sales_cold_calls': {
         const qb = this.leadRepo.createQueryBuilder('c')
           .where('c.ownerId = :uid', { uid: userId })
-          .andWhere(`LOWER(COALESCE(c.channel, '')) IN ('call', 'phone', 'whatsapp', 'telegram')`)
+          .andWhere(
+            `LOWER(COALESCE(c.channel, '')) IN (
+              'call', 'phone', 'whatsapp', 'telegram',
+              'звонок', 'звон', 'тел', 'телефон', 'вотсап', 'ватсап'
+            )`,
+          )
           .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
           .orderBy('c.updatedAt', 'DESC');
         const leads = await applyDirection(qb).getMany();

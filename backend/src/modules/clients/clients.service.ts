@@ -305,8 +305,16 @@ export class ClientsService {
       .andWhere('c.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 
+    // Whitelist каналов для «холодных звонков». Фронт пишет русские
+    // значения через datalist (Звонок/WhatsApp/Telegram), плюс старые лиды
+    // могут хранить английские варианты — поддерживаем оба.
     const coldCalls = await safeCount(() => base()
-      .andWhere(`LOWER(COALESCE(c.channel, '')) IN ('call', 'phone', 'whatsapp', 'telegram')`)
+      .andWhere(
+        `LOWER(COALESCE(c.channel, '')) IN (
+          'call', 'phone', 'whatsapp', 'telegram',
+          'звонок', 'звон', 'тел', 'телефон', 'вотсап', 'ватсап'
+        )`,
+      )
       .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 

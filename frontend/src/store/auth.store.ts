@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import api, { markJustAuthed } from '@/lib/api'
+import api, { markJustAuthed, isJustAuthed } from '@/lib/api'
 
 export type UserRole =
   | 'admin'
@@ -137,6 +137,21 @@ export const useAuthStore = create<AuthState>()(
             window.location.reload()
           }
         } catch {
+          // КРИТИЧНО: грейс после login. Иначе если /auth/me случайно
+          // вернётся с 401 в первые секунды после входа (тайминг cookie,
+          // первый запрос ещё не успел донести Set-Cookie), мы сами себя
+          // выкидывали обратно на /auth. Не сбрасываем state, пытаемся ещё
+          // раз через секунду — куки уже точно будут.
+          if (isJustAuthed()) {
+            set({ loading: false })
+            setTimeout(() => {
+              const st = get()
+              if (st.authenticated && !st.user) {
+                st.fetchMe().catch(() => {})
+              }
+            }, 1000)
+            return
+          }
           // 401 = cookie протухла или подделана. Чистим всё.
           try { localStorage.removeItem('auth-storage') } catch {}
           try { localStorage.removeItem('token') } catch {}
