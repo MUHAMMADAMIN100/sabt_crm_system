@@ -14,7 +14,7 @@ import clsx from 'clsx'
  * без вертикального скролла.
  */
 export function CollapsibleField({
-  label, hint, children, defaultOpen = false, badge, className,
+  label, hint, children, defaultOpen = false, badge, className, forceOpen = false,
 }: {
   label: string
   /** Подсказка справа от label маленьким серым (например «(заполнено)»). */
@@ -24,6 +24,10 @@ export function CollapsibleField({
   children: ReactNode
   /** Принудительно раскрыть. По умолчанию закрыт. */
   defaultOpen?: boolean
+  /** Полностью отключить сворачивание — поле всегда открыто, без кнопки +/−.
+   *  Используется когда роль/контекст требуют постоянного видимого поля
+   *  (например, у менеджера продаж по разработке все поля раскрыты сразу). */
+  forceOpen?: boolean
   className?: string
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -34,6 +38,26 @@ export function CollapsibleField({
     if (defaultOpen && !prev.current) setOpen(true)
     prev.current = defaultOpen
   }, [defaultOpen])
+
+  // forceOpen — упрощённый рендер без переключателя: заголовок + сразу контент.
+  if (forceOpen) {
+    return (
+      <div className={className}>
+        <div className="flex items-center gap-2 -mx-1 px-1 py-1">
+          <span className="text-sm font-medium text-surface-700 dark:text-surface-300">{label}</span>
+          {badge !== undefined && badge !== '' && badge !== 0 && (
+            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">
+              {badge}
+            </span>
+          )}
+          {hint && (
+            <span className="text-xs text-surface-400 truncate flex-1 min-w-0">{hint}</span>
+          )}
+        </div>
+        <div className="mt-1.5">{children}</div>
+      </div>
+    )
+  }
 
   return (
     <div className={className}>
