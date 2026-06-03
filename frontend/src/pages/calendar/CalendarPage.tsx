@@ -1104,10 +1104,6 @@ function FounderQuickTaskForm({
   const isEdit = !!initial
   // Текущий пользователь — нужен для опции «Я сам» в списке исполнителей.
   const currentUser = useAuthStore(s => s.user)
-  // У МП по разработке все секции формы (Описание/Проект/Исполнители/Подзадачи)
-  // должны быть раскрыты по умолчанию без плюсиков — индивидуальная просьба
-  // от роли. Для остальных ролей оставляем сворачиваемый дефолт.
-  const forceFieldsOpen = currentUser?.role === 'sales_manager_dev'
   const initialScope = initial?.scope || 'business'
   const [scope, setScope] = useState<'personal' | 'business' | 'general'>(
     !allowGeneral && initialScope === 'general' ? 'business' : initialScope,
@@ -1247,7 +1243,6 @@ function FounderQuickTaskForm({
       <CollapsibleField
         label="Описание"
         defaultOpen={!!description}
-        forceOpen={forceFieldsOpen}
         hint={description ? 'заполнено' : ''}
       >
         <textarea
@@ -1263,7 +1258,6 @@ function FounderQuickTaskForm({
         <CollapsibleField
           label="Проект"
           defaultOpen={!!projectId}
-          forceOpen={forceFieldsOpen}
           hint={projectId
             ? (projects.find((p: any) => p.id === projectId)?.name || 'выбран')
             : 'необязательно'}
@@ -1286,7 +1280,6 @@ function FounderQuickTaskForm({
         <CollapsibleField
           label="Исполнители"
           defaultOpen={selectedIds.length > 0}
-          forceOpen={forceFieldsOpen}
           badge={selectedIds.length || undefined}
           hint={selectedIds.length ? '' : 'получат in-app, email, Telegram'}
         >
@@ -1408,7 +1401,6 @@ function FounderQuickTaskForm({
       <CollapsibleField
         label="Подзадачи"
         defaultOpen={subtasks.length > 0}
-        forceOpen={forceFieldsOpen}
         badge={subtasks.length || undefined}
       >
         {subtasks.length > 0 && (

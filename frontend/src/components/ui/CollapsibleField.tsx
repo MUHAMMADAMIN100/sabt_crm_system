@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Plus, Minus } from 'lucide-react'
 import clsx from 'clsx'
+import { useAuthStore } from '@/store/auth.store'
 
 /**
  * Свёрнутое по умолчанию поле формы. Заголовок (label) + кнопка
@@ -39,8 +40,15 @@ export function CollapsibleField({
     prev.current = defaultOpen
   }, [defaultOpen])
 
+  // Глобальное правило: у менеджера продаж по разработке все сворачиваемые
+  // поля во всех формах проекта раскрыты по умолчанию без плюсиков —
+  // персональная просьба пользователя «исправь везде от А до Я».
+  // Для остальных ролей поведение прежнее (сворачиваемое с +/−).
+  const role = useAuthStore(s => s.user?.role)
+  const effectiveForceOpen = forceOpen || role === 'sales_manager_dev'
+
   // forceOpen — упрощённый рендер без переключателя: заголовок + сразу контент.
-  if (forceOpen) {
+  if (effectiveForceOpen) {
     return (
       <div className={className}>
         <div className="flex items-center gap-2 -mx-1 px-1 py-1">
