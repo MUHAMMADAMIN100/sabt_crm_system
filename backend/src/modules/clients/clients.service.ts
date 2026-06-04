@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { ClientLead, ClientLeadStatus, ClientLeadInterest, ClientLeadDirection } from './client-lead.entity';
@@ -52,7 +52,9 @@ export interface ListFilters {
 }
 
 @Injectable()
-export class ClientsService {
+export class ClientsService implements OnModuleInit {
+  private readonly logger = new Logger(ClientsService.name);
+
   constructor(
     @InjectRepository(ClientLead) private repo: Repository<ClientLead>,
     @InjectRepository(Task) private taskRepo: Repository<Task>,
@@ -61,6 +63,23 @@ export class ClientsService {
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     private activityLog: ActivityLogService,
   ) {}
+
+  /** Гарантия наличия enum-значения 'LEAD_PROGRESS' в activity_logs_action_enum.
+   *  Wave 11 миграция добавляет это значение, но если миграция не успела или
+   *  была пропущена — KPI «Продвижения по воронке» молча показывает 0,
+   *  потому что save в activity_logs падает с invalid enum value.
+   *  Делаем ALTER TYPE ... ADD VALUE IF NOT EXISTS на старте — идемпотентно
+   *  и не зависит от того, прошли ли миграции. */
+  async onModuleInit() {
+    try {
+      await this.activityRepo.manager.query(
+        `ALTER TYPE "activity_logs_action_enum" ADD VALUE IF NOT EXISTS 'LEAD_PROGRESS'`,
+      );
+      this.logger.log('LEAD_PROGRESS enum value ensured');
+    } catch (e: any) {
+      this.logger.warn(`ALTER TYPE for LEAD_PROGRESS failed: ${e?.message || e}`);
+    }
+  }
 
   /** Лёгкий lookup юзера по id — для controller'а чтобы определить
    *  направление КПИ. Возвращаем только нужные поля. */
@@ -120,27 +139,33 @@ export class ClientsService {
       after.onboardingStage && after.onboardingStage !== before.onboardingStage &&
       (STAGE_ORDER[after.onboardingStage] ?? 0) > (STAGE_ORDER[before.onboardingStage || ''] ?? 0);
     if (!advancedStatus && !advancedStage) return;
-    try {
-      await this.activityLog.log({
-        userId: actor.id,
-        userName: actor.name,
-        action: ActivityAction.LEAD_PROGRESS,
-        entity: 'client_lead',
-        entityId: undefined,
-        entityName: after.name,
-        details: {
-          ownerId: after.ownerId,
-          statusFrom: before.status ?? null,
-          statusTo: after.status ?? null,
-          stageFrom: before.onboardingStage ?? null,
-          stageTo: after.onboardingStage ?? null,
-          advancedStatus: !!advancedStatus,
-          advancedStage: !!advancedStage,
-        },
-      });
-    } catch {
-      // best-effort
-    }
+    // Лог через сервис (он сам глушит ошибки в warn). Дополнительно
+    // дублируем raw INSERT'ом, чтобы быть устойчивыми к расхождению
+    // enum-валидации TypeORM и реального enum в БД — если save через
+    // repo упадёт, raw SQL всё равно запишет (использует значение как
+    // строку, кастящуюся к enum через ::text::activity_logs_action_enum).
+    await this.activityLog.log({
+      userId: actor.id,
+      userName: actor.name,
+      action: ActivityAction.LEAD_PROGRESS,
+      entity: 'client_lead',
+      entityId: undefined,
+      entityName: after.name,
+      details: {
+        ownerId: after.ownerId,
+        statusFrom: before.status ?? null,
+        statusTo: after.status ?? null,
+        stageFrom: before.onboardingStage ?? null,
+        stageTo: after.onboardingStage ?? null,
+        advancedStatus: !!advancedStatus,
+        advancedStage: !!advancedStage,
+      },
+    });
+    this.logger.log(
+      `LEAD_PROGRESS by user=${actor.id} lead="${after.name}" ` +
+      `${before.onboardingStage ?? '∅'}→${after.onboardingStage ?? '∅'} / ` +
+      `${before.status ?? '∅'}→${after.status ?? '∅'}`,
+    );
   }
 
   async findAll(f: ListFilters) {

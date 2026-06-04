@@ -72,7 +72,14 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   // в httpOnly cookie на бэке. Если cookie протухла, /auth/me вернёт 401,
   // axios-interceptor выкинет на /auth.
   const authenticated = useAuthStore(s => s.authenticated)
-  return authenticated ? <>{children}</> : <Navigate to="/auth" replace />
+  const user = useAuthStore(s => s.user)
+  if (!authenticated) return <Navigate to="/auth" replace />
+  // Пока fetchMe не вернул свежего user — показываем splash, чтобы не
+  // мигало «чужое» содержимое (сайдбар без пунктов / DashboardPage
+  // с дефолтной ролью employee и админскими виджетами). После прихода
+  // user'а сразу рендерим правильный layout без перерисовки.
+  if (!user) return <PageLoader />
+  return <>{children}</>
 }
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
