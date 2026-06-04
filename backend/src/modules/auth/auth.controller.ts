@@ -76,13 +76,24 @@ export class AuthController {
 
   @Post('refresh')
   @SkipThrottle()
-  @ApiOperation({ summary: 'Rotate access token via refresh cookie' })
-  async refresh(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    const raw = req.cookies?.[REFRESH_COOKIE];
+  @ApiOperation({ summary: 'Rotate access token via refresh cookie or body' })
+  async refresh(
+    @Req() req: any,
+    @Body() body: { refreshToken?: string } | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    // Источники refresh-токена (по приоритету):
+    //  1) httpOnly cookie (стандартный путь);
+    //  2) body.refreshToken — для браузеров, блокирующих third-party cookies
+    //     (Chrome с anti-tracking, incognito и т.д.).
+    const raw = req.cookies?.[REFRESH_COOKIE] || body?.refreshToken;
     const { accessToken, refreshToken, user } = await this.authService.refresh(raw, req);
     res.cookie(AUTH_COOKIE, accessToken, ACCESS_COOKIE_OPTS);
     res.cookie(REFRESH_COOKIE, refreshToken, REFRESH_COOKIE_OPTS);
-    return { user };
+    // Тело тоже отдаём — фронт сохраняет в sessionStorage если cookie
+    // не сработала. Это допустимо для access-токена (15 мин), и работает
+    // как fallback для refresh-токена тоже.
+    return { accessToken, refreshToken, user };
   }
 
   // ─── 2FA ────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client'
 import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/auth.store'
+import { tokenStore } from '@/lib/api'
 
 /**
  * Подключение к WebSocket. JWT теперь живёт в httpOnly cookie — она
@@ -18,10 +19,14 @@ export function useSocket(authMarker: string | null) {
     if (!authMarker) return
 
     const wsUrl = import.meta.env.VITE_API_URL || window.location.origin
+    const bearer = tokenStore.getAccess()
     const socket = io(`${wsUrl}/ws`, {
       // httpOnly cookie auth_token уйдёт в handshake благодаря
       // withCredentials. Gateway читает её из handshake.headers.cookie.
+      // Параллельно отдаём токен через auth.token — это fallback для
+      // браузеров, где cookies заблокированы (Chrome anti-tracking).
       withCredentials: true,
+      auth: bearer ? { token: bearer } : undefined,
       transports: ['websocket'],
       reconnectionAttempts: 5,
     })

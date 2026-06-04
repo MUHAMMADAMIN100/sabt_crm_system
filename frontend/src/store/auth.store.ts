@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import api, { markJustAuthed, isJustAuthed } from '@/lib/api'
+import api, { markJustAuthed, isJustAuthed, tokenStore } from '@/lib/api'
 
 export type UserRole =
   | 'admin'
@@ -66,7 +66,7 @@ interface AuthState {
     birthDate?: string
   }) => Promise<void>
   logout: () => Promise<void>
-  fetchMe: () => Promise<void>
+  fetchMe: () => Promise<void> 
   updateUser: (user: Partial<User>) => void
 }
 
@@ -89,11 +89,13 @@ export const useAuthStore = create<AuthState>()(
       loading: false,
 
       login: async (email, password, twoFactorCode) => {
-        // Тело ответа использовать не обязательно — backend выставит
-        // httpOnly cookie. Дальше зовём /auth/me чтобы получить актуальный
-        // user-объект (без необходимости доверять telу ответа).
+        // Backend ставит httpOnly cookie + возвращает токены в теле ответа.
+        // Тело сохраняем в sessionStorage как Bearer-фоллбэк — нужно для
+        // Chrome/incognito, где third-party cookies блокируются. Cookie
+        // и Bearer работают в параллель, backend принимает любой источник.
+        let resp: any
         try {
-          await api.post('/auth/login', { email, password, twoFactorCode })
+          resp = await api.post('/auth/login', { email, password, twoFactorCode })
         } catch (e: any) {
           const msg = e?.response?.data?.message
           if (typeof msg === 'string' && msg.includes('2FA_REQUIRED')) {
@@ -101,16 +103,16 @@ export const useAuthStore = create<AuthState>()(
           }
           throw e
         }
-        // Грейс-окно: interceptor не выкинет на /auth ближайшие 5 сек,
-        // даже если параллельные дашборд-запросы случайно поймают 401
-        // из-за тайминга cookie.
+        tokenStore.set(resp?.data?.token, resp?.data?.refreshToken)
+        // Грейс-окно: interceptor не выкинет на /auth ближайшие 8 сек.
         markJustAuthed()
         set({ authenticated: true })
         await get().fetchMe()
       },
 
       register: async (regData) => {
-        await api.post('/auth/register', regData)
+        const resp = await api.post('/auth/register', regData)
+        tokenStore.set(resp?.data?.token, resp?.data?.refreshToken)
         markJustAuthed()
         set({ authenticated: true })
         await get().fetchMe()
@@ -122,6 +124,7 @@ export const useAuthStore = create<AuthState>()(
         // ошибка сети), пользователь должен видеть экран логина.
         try { localStorage.removeItem('auth-storage') } catch {}
         try { localStorage.removeItem('token') } catch {} // legacy ключ
+        tokenStore.clear()
         set({ authenticated: false, user: null })
       },
 
@@ -155,6 +158,7 @@ export const useAuthStore = create<AuthState>()(
           // 401 = cookie протухла или подделана. Чистим всё.
           try { localStorage.removeItem('auth-storage') } catch {}
           try { localStorage.removeItem('token') } catch {}
+          tokenStore.clear()
           set({ authenticated: false, user: null, loading: false })
         }
       },

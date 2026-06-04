@@ -8,6 +8,38 @@ const api = axios.create({
   withCredentials: true,
 })
 
+/** Bearer-токен fallback на случай когда third-party cookies не работают
+ *  (Chrome с anti-tracking, incognito, разные домены frontend/backend).
+ *  Храним в sessionStorage:
+ *    - живёт только в одной вкладке (закрыл — токен умер),
+ *    - не доступен другим вкладкам/доменам,
+ *    - не сохраняется между сессиями браузера.
+ *  Безопаснее localStorage: автологин при следующем визите невозможен.
+ *  Refresh-токен НЕ храним в JS-окружении — после истечения access (15 мин)
+ *  в браузерах без cookies юзеру придётся перелогиниться. */
+const TOKEN_KEY = 'sabt-access-token'
+const REFRESH_KEY = 'sabt-refresh-token'
+export const tokenStore = {
+  getAccess(): string | null {
+    try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null }
+  },
+  getRefresh(): string | null {
+    try { return sessionStorage.getItem(REFRESH_KEY) } catch { return null }
+  },
+  set(accessToken?: string | null, refreshToken?: string | null) {
+    try {
+      if (accessToken)  sessionStorage.setItem(TOKEN_KEY, accessToken)
+      if (refreshToken) sessionStorage.setItem(REFRESH_KEY, refreshToken)
+    } catch {}
+  },
+  clear() {
+    try {
+      sessionStorage.removeItem(TOKEN_KEY)
+      sessionStorage.removeItem(REFRESH_KEY)
+    } catch {}
+  },
+}
+
 /** Окно «грейс-периода» после успешного login/refresh. Auth store зовёт
  *  markJustAuthed() сразу после установки cookie. В течение этого окна
  *  interceptor НЕ выкидывает на /auth по 401 — это защита от гонки:
@@ -24,8 +56,15 @@ export const markJustAuthed = (windowMs = 8000) => {
 export const isJustAuthed = () => Date.now() < justAuthedUntil
 
 api.interceptors.request.use(config => {
-  // Никаких токенов из localStorage — JWT теперь только в httpOnly cookie,
-  // браузер сам прикрепит его благодаря withCredentials.
+  // Bearer-фоллбэк: если в sessionStorage есть access-токен — отправляем
+  // его в Authorization header. Cookie с тем же токеном тоже идёт через
+  // withCredentials — что сработает, то backend и примет (JwtStrategy
+  // умеет извлекать из обоих источников). Это нужно для браузеров,
+  // блокирующих third-party cookies (Chrome anti-tracking, incognito).
+  const access = tokenStore.getAccess()
+  if (access && config.headers && !(config.headers as any).Authorization) {
+    ;(config.headers as any).Authorization = `Bearer ${access}`
+  }
   if (config.method === 'get' || config.method === 'GET') {
     config.params = { ...(config.params || {}), _t: Date.now() }
   }
@@ -39,7 +78,14 @@ const tryRefresh = (): Promise<boolean> => {
   if (refreshPromise) return refreshPromise
   refreshPromise = (async () => {
     try {
-      await api.post('/auth/refresh')
+      // Если у нас есть refresh-токен в sessionStorage (cookies заблокированы)
+      // — отдаём его в body. Иначе бэк прочитает из httpOnly cookie.
+      const refreshFromStore = tokenStore.getRefresh()
+      const { data } = await api.post('/auth/refresh', refreshFromStore ? { refreshToken: refreshFromStore } : {})
+      // Обновляем sessionStorage свежими токенами (если бэк их вернул).
+      if (data?.accessToken || data?.refreshToken) {
+        tokenStore.set(data.accessToken, data.refreshToken)
+      }
       return true
     } catch {
       return false
@@ -90,6 +136,7 @@ api.interceptors.response.use(
       }
       try { localStorage.removeItem('token') } catch {}
       try { localStorage.removeItem('auth-storage') } catch {}
+      tokenStore.clear()
       window.location.href = '/auth'
     }
     return Promise.reject(err)
