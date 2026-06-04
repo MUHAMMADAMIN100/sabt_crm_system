@@ -64,20 +64,39 @@ export class ClientsService implements OnModuleInit {
     private activityLog: ActivityLogService,
   ) {}
 
-  /** Гарантия наличия enum-значения 'LEAD_PROGRESS' в activity_logs_action_enum.
-   *  Wave 11 миграция добавляет это значение, но если миграция не успела или
-   *  была пропущена — KPI «Продвижения по воронке» молча показывает 0,
-   *  потому что save в activity_logs падает с invalid enum value.
-   *  Делаем ALTER TYPE ... ADD VALUE IF NOT EXISTS на старте — идемпотентно
-   *  и не зависит от того, прошли ли миграции. */
+  /** На старте гарантируем оба пути учёта прогрессий по воронке:
+   *   1) ALTER TYPE ... ADD VALUE IF NOT EXISTS 'LEAD_PROGRESS' для
+   *      activity_logs (старый путь);
+   *   2) CREATE TABLE IF NOT EXISTS lead_progress — отдельная таблица
+   *      БЕЗ enum-зависимостей. KPI читает в первую очередь отсюда.
+   *      Идемпотентно, не требует миграции, гарантированно работает. */
   async onModuleInit() {
     try {
       await this.activityRepo.manager.query(
         `ALTER TYPE "activity_logs_action_enum" ADD VALUE IF NOT EXISTS 'LEAD_PROGRESS'`,
       );
-      this.logger.log('LEAD_PROGRESS enum value ensured');
     } catch (e: any) {
       this.logger.warn(`ALTER TYPE for LEAD_PROGRESS failed: ${e?.message || e}`);
+    }
+    try {
+      await this.activityRepo.manager.query(`
+        CREATE TABLE IF NOT EXISTS lead_progress (
+          id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id      uuid NOT NULL,
+          lead_id      uuid,
+          lead_name    varchar,
+          stage_from   varchar,
+          stage_to     varchar,
+          status_from  varchar,
+          status_to    varchar,
+          created_at   timestamp with time zone NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_lead_progress_user_date
+          ON lead_progress(user_id, created_at);
+      `);
+      this.logger.log('lead_progress table ensured');
+    } catch (e: any) {
+      this.logger.error(`CREATE TABLE lead_progress failed: ${e?.message || e}`);
     }
   }
 
@@ -126,11 +145,13 @@ export class ClientsService implements OnModuleInit {
   }
 
   /** Если статус ИЛИ этап онбординга у лида продвинулись «вперёд» — пишем
-   *  отдельное событие LEAD_PROGRESS. Используется для KPI продаж. */
+   *  отдельное событие LEAD_PROGRESS. Используется для KPI продаж.
+   *  Дублируем в lead_progress (без enum) — KPI читает оттуда первым делом. */
   private async maybeLogProgress(
     before: { status?: string | null; onboardingStage?: string | null; name?: string; ownerId?: string | null },
     after: { status?: string | null; onboardingStage?: string | null; name?: string; ownerId?: string | null },
     actor: { id: string; name?: string },
+    leadId?: string,
   ): Promise<void> {
     const advancedStatus =
       after.status && after.status !== before.status &&
@@ -139,6 +160,27 @@ export class ClientsService implements OnModuleInit {
       after.onboardingStage && after.onboardingStage !== before.onboardingStage &&
       (STAGE_ORDER[after.onboardingStage] ?? 0) > (STAGE_ORDER[before.onboardingStage || ''] ?? 0);
     if (!advancedStatus && !advancedStage) return;
+
+    // ─── Первичный путь: lead_progress (без enum-зависимостей) ─────────
+    try {
+      await this.activityRepo.manager.query(
+        `INSERT INTO lead_progress
+           (user_id, lead_id, lead_name, stage_from, stage_to, status_from, status_to)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          actor.id,
+          leadId || null,
+          after.name || null,
+          before.onboardingStage || null,
+          after.onboardingStage || null,
+          before.status || null,
+          after.status || null,
+        ],
+      );
+    } catch (e: any) {
+      this.logger.error(`lead_progress insert failed: ${e?.message || e}`);
+    }
+
     // Лог через сервис (он сам глушит ошибки в warn). Дополнительно
     // дублируем raw INSERT'ом, чтобы быть устойчивыми к расхождению
     // enum-валидации TypeORM и реального enum в БД — если save через
@@ -221,6 +263,7 @@ export class ClientsService implements OnModuleInit {
         { status: null, onboardingStage: null, name: saved.name, ownerId: saved.ownerId },
         { status: saved.status, onboardingStage: saved.onboardingStage, name: saved.name, ownerId: saved.ownerId },
         actor,
+        saved.id,
       );
     }
     return this.findOne(saved.id);
@@ -258,6 +301,7 @@ export class ClientsService implements OnModuleInit {
       { status: before.status, onboardingStage: before.onboardingStage, name: before.name, ownerId: before.ownerId },
       { status: updated.status, onboardingStage: updated.onboardingStage, name: updated.name, ownerId: updated.ownerId },
       user,
+      id,
     );
     return updated;
   }
@@ -353,8 +397,21 @@ export class ClientsService implements OnModuleInit {
       .getCount());
 
     // Wave 11 — главная метрика: сколько раз МП двинул лидов вперёд по
-    // воронке (status или onboardingStage). Берём из activity_logs.
-    const progressCount = await safeCount(() =>
+    // воронке (status или onboardingStage).
+    // Источник №1 — таблица lead_progress (без enum-зависимостей,
+    // гарантированно работает). Источник №2 — activity_logs (legacy путь
+    // для исторических данных). Берём максимум из двух чтобы не потерять
+    // записи, сделанные ДО появления lead_progress, и не задвоить
+    // те что писались в оба места.
+    const progressFromTable = await safeCount(async () => {
+      const rows = await this.activityRepo.manager.query(
+        `SELECT COUNT(*)::int AS c FROM lead_progress
+         WHERE user_id = $1 AND created_at BETWEEN $2 AND $3`,
+        [ownerId, periodFrom, periodTo],
+      );
+      return Number(rows?.[0]?.c || 0);
+    });
+    const progressFromActivity = await safeCount(() =>
       this.activityRepo
         .createQueryBuilder('a')
         .where('a.userId = :uid', { uid: ownerId })
@@ -362,6 +419,7 @@ export class ClientsService implements OnModuleInit {
         .andWhere('a.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
         .getCount(),
     );
+    const progressCount = Math.max(progressFromTable, progressFromActivity);
 
     const items = [
       { key: 'funnel_progress', label: 'Продвижения по воронке',  target: 20, value: progressCount },

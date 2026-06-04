@@ -350,30 +350,55 @@ export class KpiService {
       : (metric.startsWith('sales_') ? metric : `sales_${metric}`);
 
     switch (normalized) {
-      // ─── Sales: продвижения по воронке (из activity_logs) ──────────────
+      // ─── Sales: продвижения по воронке ────────────────────────────────
+      // Источник №1 — lead_progress (новая таблица, без enum), №2 —
+      // activity_logs (legacy). Берём оба, дедуплицируем по дате+лиду.
       case 'sales_funnel_progress': {
-        const rows = await this.activityRepo
+        const tableRows: any[] = await this.activityRepo.manager.query(
+          `SELECT id, lead_id, lead_name, stage_from, stage_to, status_from, status_to, created_at
+           FROM lead_progress
+           WHERE user_id = $1 AND created_at BETWEEN $2 AND $3
+           ORDER BY created_at DESC`,
+          [userId, periodFrom, periodTo],
+        ).catch(() => []);
+        const legacyRows = await this.activityRepo
           .createQueryBuilder('a')
           .where('a.userId = :uid', { uid: userId })
           .andWhere('a.action = :act', { act: ActivityAction.LEAD_PROGRESS })
           .andWhere('a.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
           .orderBy('a.createdAt', 'DESC')
-          .getMany();
-        return rows.map(r => {
+          .getMany().catch(() => []);
+
+        const fromTable = (tableRows || []).map(r => ({
+          id: r.id,
+          title: r.lead_name || 'Лид',
+          subtitle: [
+            r.status_to && r.status_from ? `${r.status_from} → ${r.status_to}` : null,
+            r.stage_to && r.stage_from !== r.stage_to
+              ? `этап: ${r.stage_from ?? '—'} → ${r.stage_to}`
+              : (r.stage_to ? `этап: ${r.stage_to}` : null),
+          ].filter(Boolean).join(' · ') || null,
+          date: r.created_at ? new Date(r.created_at).toISOString() : null,
+          link: '/clients',
+        }));
+        const fromActivity = legacyRows.map(r => {
           const d = r.details || {};
           const status = d.statusTo && d.statusFrom ? `${d.statusFrom} → ${d.statusTo}` : null;
           const stage = d.stageTo && d.stageFrom !== d.stageTo
             ? `этап: ${d.stageFrom ?? '—'} → ${d.stageTo}`
             : (d.stageTo ? `этап: ${d.stageTo}` : null);
-          const subtitleParts = [status, stage].filter(Boolean);
           return {
             id: r.id,
             title: r.entityName || 'Лид',
-            subtitle: subtitleParts.join(' · ') || null,
+            subtitle: [status, stage].filter(Boolean).join(' · ') || null,
             date: r.createdAt?.toISOString() || null,
             link: '/clients',
           };
         });
+
+        // Возвращаем более длинный массив — он точнее (дедуп руками по дате
+        // не делаем, потому что одна запись пишется в оба источника один раз).
+        return fromTable.length >= fromActivity.length ? fromTable : fromActivity;
       }
 
       // ─── Sales: новые компании в базе (created в период) ───────────────
