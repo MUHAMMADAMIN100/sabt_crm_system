@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react'
+import React, { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import Layout from '@/components/layout/Layout'
@@ -73,11 +73,22 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   // axios-interceptor выкинет на /auth.
   const authenticated = useAuthStore(s => s.authenticated)
   const user = useAuthStore(s => s.user)
+  const loading = useAuthStore(s => s.loading)
+  const fetchMe = useAuthStore(s => s.fetchMe)
+
+  // Если authenticated=true но user пуст (F5 страницы или только что после
+  // login) — сами тянем /auth/me. Раньше это делал Layout.useEffect, но
+  // PrivateRoute блокирует рендер Layout до прихода user → был бы deadlock.
+  useEffect(() => {
+    if (authenticated && !user && !loading) {
+      fetchMe().catch(() => {})
+    }
+  }, [authenticated, user, loading, fetchMe])
+
   if (!authenticated) return <Navigate to="/auth" replace />
   // Пока fetchMe не вернул свежего user — показываем splash, чтобы не
-  // мигало «чужое» содержимое (сайдбар без пунктов / DashboardPage
-  // с дефолтной ролью employee и админскими виджетами). После прихода
-  // user'а сразу рендерим правильный layout без перерисовки.
+  // мигало «чужое» содержимое (DashboardPage с дефолтной ролью employee
+  // и админскими виджетами на 1 секунду).
   if (!user) return <PageLoader />
   return <>{children}</>
 }
