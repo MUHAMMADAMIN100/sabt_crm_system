@@ -5,7 +5,7 @@ import { employeesApi, usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check } from 'lucide-react'
+import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
@@ -175,6 +175,25 @@ export default function EmployeesPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('common.updated')) },
   })
 
+  const toggleStoryMaker = useMutation({
+    mutationFn: employeesApi.toggleStoryMaker,
+    onMutate: async (empId: string) => {
+      await qc.cancelQueries({ queryKey: ['employees'] })
+      const previous = qc.getQueryData(['employees'])
+      qc.setQueryData(['employees'], (old: any[]) => old?.map((e: any) => e.id === empId ? { ...e, isStoryMaker: !e.isStoryMaker } : e) ?? [])
+      return { previous }
+    },
+    onError: (_err: any, _vars: any, context: any) => {
+      qc.setQueryData(['employees'], context?.previous)
+      toast.error(t('common.error'))
+    },
+    onSuccess: (_data, empId) => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      const emp = (qc.getQueryData(['employees']) as any[] | undefined)?.find(e => e.id === empId)
+      toast.success(emp?.isStoryMaker ? 'Сторисмейкер включён' : 'Сторисмейкер выключен')
+    },
+  })
+
   const blockMut = useMutation({
     mutationFn: ({ userId, reason }: { userId: string; reason?: string }) => usersApi.block(userId, reason),
     onMutate: async ({ userId }) => {
@@ -294,6 +313,7 @@ export default function EmployeesPage() {
                     <div className="flex items-center gap-1">
                       <span className="font-semibold text-surface-900 dark:text-surface-100">{emp.fullName}</span>
                       {emp.isSubAdmin && <ShieldCheck size={14} className="text-primary-500" aria-label="Помощник администратора" />}
+                      {emp.isStoryMaker && <Camera size={14} className="text-pink-500" aria-label="Сторисмейкер" />}
                     </div>
                     <p className="text-sm text-surface-500 dark:text-surface-400">{emp.position}</p>
                     <span className="text-xs bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-2 py-0.5 rounded-full">{emp.department}</span>
@@ -305,6 +325,9 @@ export default function EmployeesPage() {
                       <>
                         <button onClick={() => toggleSubAdmin.mutate(emp.id)} className={clsx('p-1.5 rounded-lg', emp.isSubAdmin ? 'bg-primary-50 dark:bg-primary-900/30' : 'hover:bg-surface-100 dark:hover:bg-surface-700')} title="Помощник админа">
                           <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400'} />
+                        </button>
+                        <button onClick={() => toggleStoryMaker.mutate(emp.id)} className={clsx('p-1.5 rounded-lg', emp.isStoryMaker ? 'bg-pink-50 dark:bg-pink-900/30' : 'hover:bg-surface-100 dark:hover:bg-surface-700')} title="Сторисмейкер — доступ к историям всех SMM-проектов">
+                          <Camera size={14} className={emp.isStoryMaker ? 'text-pink-600 dark:text-pink-400' : 'text-surface-400'} />
                         </button>
                         <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500" title="Сбросить пароль">
                           <Key size={14} />
@@ -380,6 +403,7 @@ export default function EmployeesPage() {
                       <div>
                         <span className="text-sm font-medium text-surface-900 dark:text-surface-100">{emp.fullName}</span>
                         {emp.isSubAdmin && <ShieldCheck size={12} className="inline ml-1 text-primary-500" />}
+                        {emp.isStoryMaker && <Camera size={12} className="inline ml-1 text-pink-500" aria-label="Сторисмейкер" />}
                       </div>
                     </div>
                   </td>
@@ -404,6 +428,9 @@ export default function EmployeesPage() {
                           <>
                             <button onClick={() => toggleSubAdmin.mutate(emp.id)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg" title="Помощник админа">
                               <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600' : 'text-surface-400'} />
+                            </button>
+                            <button onClick={() => toggleStoryMaker.mutate(emp.id)} className="p-1.5 hover:bg-pink-50 dark:hover:bg-pink-900/20 rounded-lg" title="Сторисмейкер — доступ к историям всех SMM-проектов">
+                              <Camera size={14} className={emp.isStoryMaker ? 'text-pink-600' : 'text-surface-400'} />
                             </button>
                             <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500" title="Сбросить пароль">
                               <Key size={14} />

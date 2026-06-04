@@ -54,6 +54,12 @@ export class EmployeesController {
     return this.service.toggleSubAdmin(id);
   }
 
+  @Patch(':id/toggle-story-maker')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  toggleStoryMaker(@Param('id') id: string) {
+    return this.service.toggleStoryMaker(id);
+  }
+
   @Delete(':id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   remove(@Param('id') id: string) { return this.service.remove(id); }

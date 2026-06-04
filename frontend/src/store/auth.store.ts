@@ -26,6 +26,8 @@ export interface User {
   avatar?: string
   isActive: boolean
   isSubAdmin?: boolean
+  /** Сторисмейкер — видит истории всех SMM-проектов, а не только своих. */
+  isStoryMaker?: boolean
   position?: string | null
   department?: string | null
   isBlocked?: boolean

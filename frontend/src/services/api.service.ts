@@ -45,6 +45,7 @@ export const employeesApi = {
   update: (id: string, data: any) => api.patch(`/employees/${id}`, data).then(r => r.data),
   remove: (id: string) => api.delete(`/employees/${id}`).then(r => r.data),
   toggleSubAdmin: (id: string) => api.patch(`/employees/${id}/toggle-sub-admin`).then(r => r.data),
+  toggleStoryMaker: (id: string) => api.patch(`/employees/${id}/toggle-story-maker`).then(r => r.data),
   departments: () => api.get('/employees/departments').then(r => r.data),
   stats: () => api.get('/employees/stats').then(r => r.data),
 }

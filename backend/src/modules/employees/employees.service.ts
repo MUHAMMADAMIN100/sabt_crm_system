@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource, FindOptionsWhere } from 'typeorm';
 import { Employee, EmployeeStatus } from './employee.entity';
@@ -29,7 +29,9 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 @Injectable()
-export class EmployeesService {
+export class EmployeesService implements OnModuleInit {
+  private readonly logger = new Logger(EmployeesService.name);
+
   constructor(
     @InjectRepository(Employee) private repo: Repository<Employee>,
     @InjectRepository(User) private userRepo: Repository<User>,
@@ -40,6 +42,29 @@ export class EmployeesService {
     private mailService: MailService,
     private telegramService: TelegramService,
   ) {}
+
+  /** Идемпотентно добавляем колонку isStoryMaker — это рантайм-замена
+   *  миграции. Без неё entity знает о колонке, а БД нет → запросы падают.
+   *  Плюс одноразовый seed флага для сотрудницы, которая переведена в роль
+   *  сторисмейкера — чтобы не возиться руками в админке после деплоя. */
+  async onModuleInit() {
+    try {
+      await this.repo.manager.query(
+        `ALTER TABLE employees ADD COLUMN IF NOT EXISTS "isStoryMaker" boolean NOT NULL DEFAULT false`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`ALTER TABLE employees isStoryMaker failed: ${e?.message || e}`);
+    }
+    try {
+      await this.repo.manager.query(
+        `UPDATE employees SET "isStoryMaker" = true
+         WHERE LOWER(email) = LOWER($1) AND "isStoryMaker" = false`,
+        ['mayunusovaf@gmail.com'],
+      );
+    } catch (e: any) {
+      this.logger.warn(`Seed isStoryMaker for mayunusovaf failed: ${e?.message || e}`);
+    }
+  }
 
   /** Strip salary from employee(s) for non-founder users */
   private stripSalary<T extends Employee | Employee[]>(data: T, role?: string): T {
@@ -300,6 +325,25 @@ export class EmployeesService {
       details: { isSubAdmin: saved.isSubAdmin },
     });
 
+    return saved;
+  }
+
+  /** Переключает флаг «сторисмейкер». Открывает доступ к историям всех
+   *  SMM-проектов без выдачи других прав роли. */
+  async toggleStoryMaker(id: string) {
+    const emp = await this.findOne(id);
+    emp.isStoryMaker = !emp.isStoryMaker;
+    const saved = await this.repo.save(emp);
+
+    await this.activityLog.log({
+      action: ActivityAction.EMPLOYEE_UPDATE,
+      entity: 'employee',
+      entityId: id,
+      entityName: emp.fullName,
+      details: { isStoryMaker: saved.isStoryMaker },
+    });
+
+    this.gateway.broadcast('employees:changed', {});
     return saved;
   }
 

@@ -59,6 +59,16 @@ export class Employee {
   @Column({ default: false })
   isSubAdmin: boolean;
 
+  /** Сторисмейкер — сотрудник, чья работа покрывает истории по ВСЕМ
+   *  активным SMM-проектам компании. Когда true:
+   *   - на странице «Истории» и виджете дашборда видит все SMM-проекты,
+   *     а не только те, где формально member;
+   *   - может вносить /stories/upsert по любому SMM-проекту.
+   *  Не даёт никаких других прав — нужен ровно для функции сторисмейкера.
+   *  Включается отдельно через профиль сотрудника. */
+  @Column({ default: false })
+  isStoryMaker: boolean;
+
   @Column({ nullable: true })
   managerId: string;
 

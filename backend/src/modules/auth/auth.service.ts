@@ -348,6 +348,7 @@ export class AuthService {
         position: employee?.position || null,
         department: employee?.department || null,
         isSubAdmin: employee?.isSubAdmin || false,
+        isStoryMaker: employee?.isStoryMaker || false,
       },
     };
   }
@@ -471,6 +472,7 @@ export class AuthService {
       position: employee?.position || null,
       department: employee?.department || null,
       isSubAdmin: employee?.isSubAdmin || false,
+      isStoryMaker: employee?.isStoryMaker || false,
     };
   }
 
