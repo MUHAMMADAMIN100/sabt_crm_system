@@ -100,14 +100,12 @@ export default function TaskDrawer({
 
   return (
     <>
-      {/* Overlay — лёгкое затемнение без backdrop-blur. Blur создаёт
-          артефакты рендера в Chrome/Edge (видно через панель «смазанным»
-          куском фона) и убивает производительность на больших страницах.
-          Тёмная плёнка bg-black/40 + сильная тень самой панели справа
-          даёт достаточный визуальный фокус. */}
+      {/* Overlay: тёмная плёнка + backdrop-blur — фон уходит на второй план,
+          фокус на модалке. По запросу пользователя. Современные Chrome/Edge
+          обрабатывают backdrop-filter аппаратно, артефактов нет. */}
       <div
         onClick={onClose}
-        className="fixed inset-0 z-[100] bg-black/40 transition-opacity duration-200 animate-fade-in"
+        className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm transition-opacity duration-200 animate-fade-in"
       />
       <aside
         role="dialog"
