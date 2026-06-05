@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { tasksApi, commentsApi } from '@/services/api.service'
@@ -98,20 +99,22 @@ export default function TaskDrawer({
   // одинаково), создавая «фантомную» панель справа.
   if (!isOpen) return null
 
-  return (
+  // Рендерим через portal в document.body — иначе stacking context
+  // родителя (Layout) не даёт overlay'ю накрыть Sidebar/Header.
+  // На скриншоте пользователя сайдбар оставался резким; portal +
+  // z-[9999] + backdrop-blur-xl закрывают это полностью.
+  return createPortal(
     <>
-      {/* Overlay: лёгкая тонировка + сильный backdrop-blur. Фон не
-          «чёрный», а «размыто-светлый» — модалка в фокусе, контекст
-          виден, но не отвлекает. */}
+      {/* Overlay: лёгкая тонировка + сильный backdrop-blur по всему viewport. */}
       <div
         onClick={onClose}
-        className="fixed inset-0 z-[100] bg-black/20 backdrop-blur-md transition-opacity duration-200 animate-fade-in"
+        className="fixed inset-0 z-[9998] bg-black/20 backdrop-blur-xl transition-opacity duration-200 animate-fade-in"
       />
       <aside
         role="dialog"
         aria-modal="true"
         className={clsx(
-          'fixed top-0 right-0 z-[110] h-full bg-white dark:bg-surface-900',
+          'fixed top-0 right-0 z-[9999] h-full bg-white dark:bg-surface-900',
           'shadow-[-12px_0_40px_-8px_rgba(0,0,0,0.25)]',
           'border-l border-surface-200 dark:border-surface-700',
           'w-full sm:w-[460px] lg:w-[560px] xl:w-[640px] flex flex-col',
@@ -286,7 +289,8 @@ export default function TaskDrawer({
           )}
         </div>
       </aside>
-    </>
+    </>,
+    document.body,
   )
 }
 
