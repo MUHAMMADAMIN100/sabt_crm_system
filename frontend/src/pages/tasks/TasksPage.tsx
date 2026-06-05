@@ -81,7 +81,12 @@ export default function TasksPage() {
     if (isHeadSMM) return all.filter((p: any) => p.projectType === 'SMM')
     // МП — сервер уже вернул только проекты их направления.
     if (isManagerPlus || isSalesManager) return all
-    return all.filter((p: any) => p.members?.some((m: any) => m.id === user?.id))
+    // Видим если ты член проекта ИЛИ менеджер этого проекта.
+    return all.filter((p: any) =>
+      p.members?.some((m: any) => m.id === user?.id) ||
+      p.managerId === user?.id ||
+      p.manager?.id === user?.id,
+    )
   },
     [projects, isManagerPlus, isSalesManager, isHeadSMM, user?.id]
   )

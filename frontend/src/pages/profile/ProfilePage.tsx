@@ -61,7 +61,9 @@ export default function ProfilePage() {
   })
 
   const myProjects = allProjects?.filter((p: any) =>
-    p.members?.some((m: any) => m.id === user?.id)
+    p.members?.some((m: any) => m.id === user?.id) ||
+    p.managerId === user?.id ||
+    p.manager?.id === user?.id,
   ) || []
 
   const onChangePassword = async (data: any) => {

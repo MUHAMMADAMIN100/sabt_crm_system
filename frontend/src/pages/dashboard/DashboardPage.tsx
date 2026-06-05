@@ -288,7 +288,12 @@ export default function DashboardPage() {
     if (user?.isStoryMaker) {
       return all.filter((p: any) => (p.projectType || 'SMM') === 'SMM')
     }
-    return all.filter((p: any) => p.members?.some((m: any) => m.id === user?.id))
+    // Мой проект = я в members ИЛИ я менеджер проекта.
+    return all.filter((p: any) =>
+      p.members?.some((m: any) => m.id === user?.id) ||
+      p.managerId === user?.id ||
+      p.manager?.id === user?.id,
+    )
   }, [allProjectsList, user])
 
   const todayStoryMap = useMemo(() => {

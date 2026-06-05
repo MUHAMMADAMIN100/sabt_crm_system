@@ -490,12 +490,15 @@ export class ProjectsService {
         // вне зависимости от членства. Как smm_director, но только в SMM.
         qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
       } else if (!['admin', 'founder', 'co_founder'].includes(role)) {
-        // All other roles see only projects they are members of
+        // All other roles: видят проекты где они member ИЛИ менеджер
+        // (project.managerId === userId). Раньше учитывалось только
+        // membership — sm­m_specialist'а, повышенного до manager'а отдельного
+        // проекта, отсекали из списка, и он не мог даже создать в нём задачу.
         qb.andWhere(
-          `p.id IN (
+          `(p.managerId = :userId OR p.id IN (
             SELECT pm."projectsId" FROM project_members pm
             WHERE pm."usersId" = :userId
-          )`,
+          ))`,
           { userId },
         );
       }
