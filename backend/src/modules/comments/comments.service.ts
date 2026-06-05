@@ -29,16 +29,24 @@ export class CommentsService {
    *  создатель, участник проекта, менеджер проекта. */
   private async assertCanAccessTask(taskId: string, viewer: { id: string; role?: string }): Promise<void> {
     if (viewer.role && PM_ROLES.has(viewer.role)) return;
+    // На Task НЕТ relation 'assignees' — таблица task_assignees отдельная.
+    // Если включить её в relations[], TypeORM сразу выкинет 500
+    // (EntityMetadataNotFound), что и было причиной internal server error
+    // при попытке самокомментария. Мульти-исполнителей проверяем raw SQL.
     const task = await this.taskRepo.findOne({
       where: { id: taskId },
-      relations: ['project', 'project.members', 'assignees'],
+      relations: ['project', 'project.members'],
     });
     if (!task) throw new NotFoundException('Task not found');
     if (task.assigneeId === viewer.id) return;
     if (task.createdById === viewer.id) return;
-    if ((task as any).assignees?.some((a: any) => a.userId === viewer.id)) return;
     if (task.project?.managerId === viewer.id) return;
     if ((task.project?.members || []).some((m: any) => m.id === viewer.id)) return;
+    const rows: any[] = await this.taskRepo.manager.query(
+      `SELECT 1 FROM task_assignees WHERE "taskId" = $1 AND "userId" = $2 LIMIT 1`,
+      [taskId, viewer.id],
+    ).catch(() => []);
+    if (rows && rows.length > 0) return;
     throw new ForbiddenException('Нет доступа к этой задаче');
   }
 
@@ -69,51 +77,57 @@ export class CommentsService {
     const comment = this.repo.create({ taskId, message: cleanMessage, authorId: userId });
     const saved = await this.repo.save(comment);
 
-    if (task?.assigneeId && task.assigneeId !== userId) {
-      // In-app notification
-      await this.notificationsService.create({
-        userId: task.assigneeId,
-        type: NotificationType.TASK_COMMENT,
-        title: 'Новый комментарий',
-        message: `Новый комментарий к задаче "${task.title}"`,
-        link: `/tasks/${taskId}`,
-      });
-
-      // Email + Telegram notification to task assignee
-      if (task.assignee?.email) {
-        const author = await this.userRepo.findOne({ where: { id: userId } });
+    // Побочные эффекты (in-app / email / telegram / activity log) — best-effort.
+    // Любая ошибка здесь НЕ должна возвращать 500 пользователю: комментарий
+    // уже сохранён в БД, фронт получит свежий объект и отрисует его.
+    try {
+      if (task?.assigneeId && task.assigneeId !== userId) {
+        const author = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null);
         const authorName = author?.name || 'Сотрудник';
-        await this.mailService.sendCommentNotification(
-          task.assignee.email,
-          task.assignee.name,
-          message,
-          task.title,
-          task.project?.name || '',
-          taskId,
-          authorName,
-        );
-        await this.telegramService.sendToUser(
-          task.assigneeId,
-          `💬 <b>Новый комментарий к задаче</b>\n\n` +
-          `📋 ${task.title}` +
-          (task.project?.name ? `\n📁 ${task.project.name}` : '') +
-          `\n👤 Автор: ${authorName}\n\n` +
-          `<i>${message}</i>\n\n` +
-          `👉 ${this.telegramService.appUrl}/tasks/${taskId}`,
-        );
-      }
-    }
 
-    const author = await this.userRepo.findOne({ where: { id: userId } });
-    await this.activityLog.log({
-      userId,
-      userName: author?.name,
-      action: ActivityAction.COMMENT_CREATE,
-      entity: 'task',
-      entityId: taskId,
-      entityName: task?.title,
-      details: { commentId: saved.id },
-    });
+        await this.notificationsService.create({
+          userId: task.assigneeId,
+          type: NotificationType.TASK_COMMENT,
+          title: 'Новый комментарий',
+          message: `Новый комментарий к задаче "${task.title}"`,
+          link: `/tasks/${taskId}`,
+        }).catch(() => {});
+
+        if (task.assignee?.email) {
+          await this.mailService.sendCommentNotification(
+            task.assignee.email,
+            task.assignee.name || 'Сотрудник',
+            message,
+            task.title,
+            task.project?.name || '',
+            taskId,
+            authorName,
+          ).catch(() => {});
+          await this.telegramService.sendToUser(
+            task.assigneeId,
+            `💬 <b>Новый комментарий к задаче</b>\n\n` +
+            `📋 ${task.title}` +
+            (task.project?.name ? `\n📁 ${task.project.name}` : '') +
+            `\n👤 Автор: ${authorName}\n\n` +
+            `<i>${message}</i>\n\n` +
+            `👉 ${this.telegramService.appUrl}/tasks/${taskId}`,
+          ).catch(() => {});
+        }
+      }
+
+      const author = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null);
+      await this.activityLog.log({
+        userId,
+        userName: author?.name,
+        action: ActivityAction.COMMENT_CREATE,
+        entity: 'task',
+        entityId: taskId,
+        entityName: task?.title,
+        details: { commentId: saved.id },
+      }).catch(() => {});
+    } catch {
+      // best-effort: ничего не делаем — комментарий уже сохранён.
+    }
 
     return this.repo.findOne({ where: { id: saved.id }, relations: ['author'] });
   }
