@@ -101,28 +101,30 @@ export default function TaskDrawer({
 
   // Рендерим через portal в document.body — иначе stacking context
   // родителя (Layout) не даёт overlay'ю накрыть Sidebar/Header.
-  // На скриншоте пользователя сайдбар оставался резким; portal +
-  // z-[9999] + backdrop-blur-xl закрывают это полностью.
   return createPortal(
     <>
-      {/* Overlay: лёгкая тонировка + сильный backdrop-blur по всему viewport. */}
+      {/* Overlay: матовая плёнка + сильный backdrop-blur по всему viewport. */}
       <div
         onClick={onClose}
-        className="fixed inset-0 z-[9998] bg-black/20 backdrop-blur-xl transition-opacity duration-200 animate-fade-in"
+        className="fixed inset-0 z-[9998] bg-slate-900/30 backdrop-blur-2xl transition-opacity duration-200 animate-fade-in"
       />
       <aside
         role="dialog"
         aria-modal="true"
         className={clsx(
-          'fixed top-0 right-0 z-[9999] h-full bg-white dark:bg-surface-900',
-          'shadow-[-12px_0_40px_-8px_rgba(0,0,0,0.25)]',
-          'border-l border-surface-200 dark:border-surface-700',
-          'w-full sm:w-[460px] lg:w-[560px] xl:w-[640px] flex flex-col',
+          // Прижато к правому краю: top 0, bottom 0, right 0, без gap'ов.
+          'fixed top-0 right-0 bottom-0 z-[9999]',
+          'bg-white dark:bg-surface-900',
+          // Округление только слева (справа упирается в край экрана).
+          'rounded-l-3xl overflow-hidden',
+          'shadow-[-24px_0_60px_-12px_rgba(15,23,42,0.35)]',
+          'w-full sm:w-[480px] lg:w-[580px] xl:w-[660px] flex flex-col',
           'animate-slide-in-right',
         )}
       >
-        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-surface-100 dark:border-surface-700">
-          <div className="flex items-center gap-2 min-w-0">
+        {/* Top bar: бейджи слева, кнопки действий справа */}
+        <div className="shrink-0 flex items-center justify-between px-6 pt-5 pb-3">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
             {task?.priority && <PriorityBadge priority={task.priority} />}
             {task?.status && <StatusBadge status={task.status} />}
           </div>
@@ -130,7 +132,7 @@ export default function TaskDrawer({
             {task && canEdit && onEdit && (
               <button
                 onClick={() => onEdit(task)}
-                className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500"
+                className="p-2 rounded-xl hover:bg-surface-100 dark:hover:bg-surface-800 text-surface-500 transition-colors"
                 title="Редактировать"
               >
                 <Edit2 size={16} />
@@ -139,7 +141,7 @@ export default function TaskDrawer({
             {task && canEdit && onDelete && (
               <button
                 onClick={() => onDelete(task.id)}
-                className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"
+                className="p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors"
                 title="Удалить"
               >
                 <Trash2 size={16} />
@@ -147,7 +149,7 @@ export default function TaskDrawer({
             )}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700"
+              className="p-2 rounded-xl hover:bg-surface-100 dark:hover:bg-surface-800 text-surface-500 transition-colors"
               aria-label="Закрыть"
             >
               <X size={18} />
@@ -155,12 +157,12 @@ export default function TaskDrawer({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-0">
+        <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-5 min-h-0">
           {!task ? (
-            <div className="flex items-center justify-center h-32 text-sm text-surface-400">Загрузка…</div>
+            <div className="flex items-center justify-center h-40 text-sm text-surface-400">Загрузка…</div>
           ) : (
             <>
-              <h2 className="text-lg font-bold text-surface-900 dark:text-surface-100 leading-snug">
+              <h2 className="text-2xl font-bold text-surface-900 dark:text-surface-50 leading-tight tracking-tight">
                 {stripLeadingEmoji(task.title)}
               </h2>
 
@@ -170,13 +172,14 @@ export default function TaskDrawer({
                 </p>
               )}
 
-              <div className="grid grid-cols-1 gap-2">
+              {/* Сводная карточка метаданных */}
+              <div className="rounded-2xl bg-surface-50 dark:bg-surface-800/50 border border-surface-100 dark:border-surface-700/50 divide-y divide-surface-100 dark:divide-surface-700/50 overflow-hidden">
                 {canChangeStatus && (
-                  <DetailRow icon={<Edit2 size={14} />} label="Статус">
+                  <DetailRow icon={<Edit2 size={15} />} label="Статус" tone="indigo">
                     <select
                       value={task.status}
                       onChange={(e) => statusMut.mutate(e.target.value)}
-                      className="text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-white dark:bg-surface-800"
+                      className="text-sm border border-surface-200 dark:border-surface-600 rounded-lg px-2.5 py-1 bg-white dark:bg-surface-900 focus:outline-none focus:ring-2 focus:ring-primary-200"
                     >
                       {ALL_STATUSES.map(s => (
                         <option key={s} value={s}>{labels[s]}</option>
@@ -185,40 +188,40 @@ export default function TaskDrawer({
                   </DetailRow>
                 )}
                 {task.deadline && (
-                  <DetailRow icon={<Calendar size={14} />} label="Дедлайн">
+                  <DetailRow icon={<Calendar size={15} />} label="Дедлайн" tone="rose">
                     <span className={clsx(
-                      'text-sm',
+                      'text-sm font-medium',
                       isTaskOverdue(task)
-                        ? 'text-red-500 font-medium'
-                        : 'text-surface-700 dark:text-surface-300',
+                        ? 'text-red-500'
+                        : 'text-surface-800 dark:text-surface-100',
                     )}>
                       {format(new Date(task.deadline), 'd MMMM yyyy, HH:mm', { locale: ru })}
                     </span>
                   </DetailRow>
                 )}
                 {task.createdAt && (
-                  <DetailRow icon={<Clock size={14} />} label="Создана">
-                    <span className="text-sm text-surface-700 dark:text-surface-300">
+                  <DetailRow icon={<Clock size={15} />} label="Создана" tone="slate">
+                    <span className="text-sm text-surface-700 dark:text-surface-200">
                       {format(new Date(task.createdAt), 'd MMMM yyyy, HH:mm', { locale: ru })}
                     </span>
                   </DetailRow>
                 )}
                 {task.assignee && (
-                  <DetailRow icon={<UserIcon size={14} />} label="Исполнитель">
+                  <DetailRow icon={<UserIcon size={15} />} label="Исполнитель" tone="violet">
                     <div className="flex items-center gap-2">
-                      <Avatar name={task.assignee.name} src={task.assignee.avatar} size={22} />
-                      <span className="text-sm text-surface-700 dark:text-surface-300">
+                      <Avatar name={task.assignee.name} src={task.assignee.avatar} size={24} />
+                      <span className="text-sm font-medium text-surface-800 dark:text-surface-100">
                         {task.assigneeId === user?.id ? 'Вы' : task.assignee.name}
                       </span>
                     </div>
                   </DetailRow>
                 )}
                 {task.project && (
-                  <DetailRow icon={<FolderKanban size={14} />} label="Проект">
+                  <DetailRow icon={<FolderKanban size={15} />} label="Проект" tone="emerald">
                     <Link
                       to={`/projects/${task.project.id}`}
                       onClick={onClose}
-                      className="text-sm text-primary-600 dark:text-primary-400 hover:underline"
+                      className="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline"
                     >
                       {task.project.name}
                     </Link>
@@ -226,23 +229,28 @@ export default function TaskDrawer({
                 )}
               </div>
 
-              <div className="pt-2 border-t border-surface-100 dark:border-surface-700">
-                <h3 className="text-sm font-semibold text-surface-700 dark:text-surface-200 mb-2 flex items-center gap-2">
-                  <MessageSquare size={14} /> Комментарии ({comments?.length ?? 0})
+              {/* Комментарии */}
+              <div className="pt-3 border-t border-surface-100 dark:border-surface-700/60">
+                <h3 className="text-sm font-semibold text-surface-800 dark:text-surface-100 mb-3 flex items-center gap-2">
+                  <MessageSquare size={15} className="text-primary-500" />
+                  Комментарии
+                  <span className="ml-1 px-2 py-0.5 rounded-full bg-surface-100 dark:bg-surface-800 text-xs text-surface-500">
+                    {comments?.length ?? 0}
+                  </span>
                 </h3>
                 <div className="space-y-2 mb-3">
                   {comments?.length ? comments.map((c: any) => (
-                    <div key={c.id} className="rounded-lg bg-surface-50 dark:bg-surface-800/50 p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Avatar name={c.user?.name} src={c.user?.avatar} size={20} />
-                        <span className="text-xs font-medium text-surface-700 dark:text-surface-300">
-                          {c.user?.name || '—'}
+                    <div key={c.id} className="rounded-xl bg-surface-50 dark:bg-surface-800/50 border border-surface-100 dark:border-surface-700/50 p-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Avatar name={c.user?.name || c.author?.name} src={c.user?.avatar || c.author?.avatar} size={22} />
+                        <span className="text-xs font-semibold text-surface-700 dark:text-surface-200">
+                          {c.user?.name || c.author?.name || '—'}
                         </span>
-                        <span className="text-[10px] text-surface-400">
+                        <span className="text-[10px] text-surface-400 ml-auto">
                           {c.createdAt ? format(new Date(c.createdAt), 'dd.MM HH:mm') : ''}
                         </span>
                       </div>
-                      <p className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-wrap">
+                      <p className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-wrap leading-relaxed">
                         {c.message}
                       </p>
                     </div>
@@ -262,14 +270,15 @@ export default function TaskDrawer({
                     value={draft}
                     onChange={e => setDraft(e.target.value)}
                     placeholder="Написать комментарий…"
-                    className="input flex-1 text-sm"
+                    className="flex-1 text-sm rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"
                   />
                   <button
                     type="submit"
                     disabled={!draft.trim() || addCommentMut.isPending}
-                    className="btn-primary px-3"
+                    className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-primary-600 hover:bg-primary-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    aria-label="Отправить"
                   >
-                    <Send size={14} />
+                    <Send size={16} />
                   </button>
                 </form>
               </div>
@@ -277,29 +286,49 @@ export default function TaskDrawer({
           )}
         </div>
 
-        <div className="shrink-0 px-5 py-3 border-t border-surface-100 dark:border-surface-700 flex gap-2">
-          {task && (
+        {task && (
+          <div className="shrink-0 px-6 py-3 border-t border-surface-100 dark:border-surface-700/60 bg-surface-50/50 dark:bg-surface-800/30">
             <Link
               to={`/tasks/${task.id}`}
               onClick={onClose}
-              className="btn-secondary flex-1 justify-center text-sm inline-flex items-center gap-1"
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 hover:bg-surface-100 dark:hover:bg-surface-800 text-sm font-medium text-surface-700 dark:text-surface-200 transition-colors"
             >
               <ExternalLink size={14} /> Открыть полностью
             </Link>
-          )}
-        </div>
+          </div>
+        )}
       </aside>
     </>,
     document.body,
   )
 }
 
-function DetailRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+const TONE_BG: Record<string, string> = {
+  indigo:  'bg-indigo-50  dark:bg-indigo-500/15  text-indigo-600  dark:text-indigo-300',
+  rose:    'bg-rose-50    dark:bg-rose-500/15    text-rose-600    dark:text-rose-300',
+  slate:   'bg-slate-100  dark:bg-slate-700/40   text-slate-600   dark:text-slate-300',
+  violet:  'bg-violet-50  dark:bg-violet-500/15  text-violet-600  dark:text-violet-300',
+  emerald: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',
+}
+
+function DetailRow({
+  icon, label, children, tone = 'slate',
+}: {
+  icon: React.ReactNode
+  label: string
+  children: React.ReactNode
+  tone?: keyof typeof TONE_BG
+}) {
+  const toneClass = TONE_BG[tone] || TONE_BG.slate
   return (
-    <div className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-surface-50 dark:bg-surface-800/50">
-      <span className="text-surface-400 dark:text-surface-500 shrink-0">{icon}</span>
-      <span className="text-xs text-surface-500 dark:text-surface-400 min-w-[90px]">{label}</span>
-      <span className="flex-1 min-w-0">{children}</span>
+    <div className="flex items-center gap-3 px-4 py-3">
+      <span className={clsx('shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-xl', toneClass)}>
+        {icon}
+      </span>
+      <span className="text-xs uppercase tracking-wide text-surface-400 dark:text-surface-500 min-w-[96px] font-medium">
+        {label}
+      </span>
+      <span className="flex-1 min-w-0 text-right">{children}</span>
     </div>
   )
 }
