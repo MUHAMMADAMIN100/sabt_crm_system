@@ -149,6 +149,23 @@ export function useSocket(authMarker: string | null) {
       qc.refetchQueries({ queryKey: ['my-tasks'], type: 'active' })
     })
 
+    // Real-time KPI продаж: бэк броадкастит при любом изменении лида
+    // (create/update/remove) — сразу инвалидируем и рефечим все KPI-кэши
+    // и список клиентов. Это убирает необходимость F5 на дашборде MP и
+    // у founder, когда менеджер двигает лида / меняет «Тип звонка».
+    socket.on('leads:changed', () => {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+      qc.invalidateQueries({ queryKey: ['clients-stats'] })
+      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
+      qc.invalidateQueries({ queryKey: ['kpi-user'] })
+      qc.invalidateQueries({ queryKey: ['kpi-all'] })
+      qc.invalidateQueries({ queryKey: ['kpi-details'] })
+      qc.refetchQueries({ queryKey: ['sales-kpi'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['kpi-user'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['kpi-all'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['clients'], type: 'active' })
+    })
+
     socket.on('disconnect', () => {})
 
     socketRef.current = socket

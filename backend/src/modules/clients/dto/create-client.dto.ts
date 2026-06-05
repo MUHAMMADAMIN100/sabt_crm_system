@@ -66,6 +66,12 @@ export class CreateClientDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(50)
   channel?: string;
 
+  /** Тип звонка для KPI «Холодные звонки». Селект в форме клиента —
+   *  Холодный / Нейтральный / Горячий. Считается KPI только когда 'cold'. */
+  @ApiPropertyOptional({ enum: ['cold', 'neutral', 'hot'] })
+  @IsOptional() @IsString() @MaxLength(20)
+  callType?: 'cold' | 'neutral' | 'hot';
+
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(2000)
   rejectionReason?: string;
 

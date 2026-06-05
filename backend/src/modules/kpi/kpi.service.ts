@@ -420,15 +420,11 @@ export class KpiService {
       }
 
       // ─── Sales: холодные звонки ────────────────────────────────────────
+      // По полю callType='cold' (новый явный селект в форме клиента).
       case 'sales_cold_calls': {
         const qb = this.leadRepo.createQueryBuilder('c')
           .where('c.ownerId = :uid', { uid: userId })
-          .andWhere(
-            `LOWER(COALESCE(c.channel, '')) IN (
-              'call', 'phone', 'whatsapp', 'telegram',
-              'звонок', 'звон', 'тел', 'телефон', 'вотсап', 'ватсап'
-            )`,
-          )
+          .andWhere(`LOWER(COALESCE(c."callType", '')) = 'cold'`)
           .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
           .orderBy('c.updatedAt', 'DESC');
         const leads = await applyDirection(qb).getMany();

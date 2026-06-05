@@ -7,6 +7,7 @@ import { User, UserRole } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction, ActivityLog } from '../activity-log/activity-log.entity';
+import { AppGateway } from '../gateway/app.gateway';
 
 /** Роли менеджеров продаж — для bulk-KPI и фильтров. */
 const SALES_MANAGER_ROLES = [UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV];
@@ -62,6 +63,7 @@ export class ClientsService implements OnModuleInit {
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     private activityLog: ActivityLogService,
+    private gateway: AppGateway,
   ) {}
 
   /** На старте гарантируем оба пути учёта прогрессий по воронке:
@@ -97,6 +99,13 @@ export class ClientsService implements OnModuleInit {
       this.logger.log('lead_progress table ensured');
     } catch (e: any) {
       this.logger.error(`CREATE TABLE lead_progress failed: ${e?.message || e}`);
+    }
+    try {
+      await this.repo.manager.query(
+        `ALTER TABLE client_leads ADD COLUMN IF NOT EXISTS "callType" varchar`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`ALTER TABLE client_leads callType failed: ${e?.message || e}`);
     }
   }
 
@@ -266,6 +275,8 @@ export class ClientsService implements OnModuleInit {
         saved.id,
       );
     }
+    // Real-time: всем онлайн-юзерам обновить кэши лидов/KPI.
+    try { this.gateway.broadcast('leads:changed', { leadId: saved.id, ownerId: saved.ownerId }); } catch {}
     return this.findOne(saved.id);
   }
 
@@ -303,6 +314,8 @@ export class ClientsService implements OnModuleInit {
       user,
       id,
     );
+    // Real-time: KPI «Холодные звонки» и др. пересчитаются у всех онлайн-юзеров.
+    try { this.gateway.broadcast('leads:changed', { leadId: id, ownerId: updated.ownerId }); } catch {}
     return updated;
   }
 
@@ -313,6 +326,7 @@ export class ClientsService implements OnModuleInit {
       try { await this.taskRepo.delete(lead.meetingTaskId); } catch { /* ignore */ }
     }
     await this.repo.remove(lead);
+    try { this.gateway.broadcast('leads:changed', { leadId: id, ownerId: lead.ownerId, deleted: true }); } catch {}
     return { message: 'Lead deleted' };
   }
 
@@ -374,16 +388,12 @@ export class ClientsService implements OnModuleInit {
       .andWhere('c.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 
-    // Whitelist каналов для «холодных звонков». Фронт пишет русские
-    // значения через datalist (Звонок/WhatsApp/Telegram), плюс старые лиды
-    // могут хранить английские варианты — поддерживаем оба.
+    // «Холодные звонки» — теперь считаются по ЯВНОМУ полю callType='cold',
+    // которое менеджер выбирает в форме клиента селектом «Тип звонка»
+    // (Холодный / Нейтральный / Горячий). Это точная цифра, а не эвристика
+    // по каналу. updatedAt в окне — значит менеджер «трогал» лида в периоде.
     const coldCalls = await safeCount(() => base()
-      .andWhere(
-        `LOWER(COALESCE(c.channel, '')) IN (
-          'call', 'phone', 'whatsapp', 'telegram',
-          'звонок', 'звон', 'тел', 'телефон', 'вотсап', 'ватсап'
-        )`,
-      )
+      .andWhere(`LOWER(COALESCE(c."callType", '')) = 'cold'`)
       .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 

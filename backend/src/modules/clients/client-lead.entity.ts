@@ -116,6 +116,13 @@ export class ClientLead {
   @Column({ nullable: true })
   channel: string;
 
+  /** Явный «тип звонка» — выбирается менеджером отдельным селектом в форме
+   *  лида: 'cold' / 'neutral' / 'hot'. Используется для KPI «Холодные звонки»
+   *  (раньше это была эвристика по channel — Звонок/WhatsApp/Telegram).
+   *  Теперь — точная цифра по тем лидам, где менеджер сам пометил «холодный». */
+  @Column({ nullable: true })
+  callType: string;
+
   /** Причина отказа (если status = lost) */
   @Column({ type: 'text', nullable: true })
   rejectionReason: string;

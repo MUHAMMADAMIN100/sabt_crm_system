@@ -54,6 +54,25 @@ const CHANNEL_OPTIONS = ['WhatsApp', 'Telegram', 'Instagram', 'Звонок', 'E
 const SOURCE_OPTIONS = ['Instagram', 'Рекомендация', 'Холодный обзвон', 'Сайт', 'Реклама', 'Другое']
 const SPHERE_SUGGESTIONS = ['Ресторан', 'Кафе', 'Клиника', 'Школа', 'Салон красоты', 'Отель', 'Магазин', 'Блогер', 'Модель', 'SMM', 'Разработка', 'Другое']
 
+/** Оптимистично прибавляет delta к value метрики с заданным ключом
+ *  в KPI-объекте {items: [{key, value, target, percent, done}, ...]}.
+ *  WebSocket потом перетрёт точным значением с сервера. */
+function bumpKpiValue(kpi: any, key: string, delta: number) {
+  if (!kpi || !Array.isArray(kpi.items)) return kpi
+  let touched = false
+  const items = kpi.items.map((it: any) => {
+    if (it.key !== key) return it
+    touched = true
+    const value = Math.max(0, (Number(it.value) || 0) + delta)
+    const target = Number(it.target) || 0
+    const percent = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0
+    return { ...it, value, percent, done: value >= target }
+  })
+  if (!touched) return kpi
+  const overall = Math.round(items.reduce((acc: number, i: any) => acc + (i.value / (i.target || 1)) * 100, 0) / items.length)
+  return { ...kpi, items, overallPercent: Math.min(100, Math.max(0, overall)) }
+}
+
 export default function ClientsPage() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
@@ -137,6 +156,21 @@ export default function ClientsPage() {
       setEditLead(null)
       await qc.cancelQueries({ queryKey: ['clients'] })
       const previous = qc.getQueryData(queryKey)
+      // Если меняется callType именно НА 'cold' (с другого) — оптимистично
+      // прибавляем +1 к «Холодным звонкам» в KPI-кэшах. Если уходит ОТ 'cold'
+      // — соответственно -1. WebSocket потом приведёт цифру к точной.
+      const lead = (previous as any[] | undefined)?.find(l => l.id === id)
+      const beforeCall = String(lead?.callType || '').toLowerCase()
+      const afterCall = String(data?.callType || '').toLowerCase()
+      if (beforeCall !== afterCall) {
+        const becameCold = afterCall === 'cold' && beforeCall !== 'cold'
+        const leftCold = beforeCall === 'cold' && afterCall !== 'cold'
+        if (becameCold || leftCold) {
+          const delta = becameCold ? +1 : -1
+          qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'cold_calls', delta))
+          qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'cold_calls', delta))
+        }
+      }
       qc.setQueryData(queryKey, (old: any[] = []) =>
         old.map(l => l.id === id ? { ...l, ...data, updatedAt: new Date().toISOString() } : l),
       )
@@ -144,6 +178,9 @@ export default function ClientsPage() {
     },
     onError: (e: any, _vars, ctx) => {
       if (ctx?.previous) qc.setQueryData(queryKey, ctx.previous)
+      // Откат оптимистичного KPI — рефетчем.
+      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
+      qc.invalidateQueries({ queryKey: ['kpi-user'] })
       toast.error(e?.response?.data?.message || 'Ошибка')
     },
     onSuccess: () => {
@@ -553,6 +590,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
     dealPotential: initial?.dealPotential || '',
     leadSource: initial?.leadSource || '',
     channel: initial?.channel || '',
+    callType: initial?.callType || '',
     nextStep: initial?.nextStep || '',
     lastContactAt: initial?.lastContactAt ? String(initial.lastContactAt).slice(0, 10) : '',
     // datetime-local требует формат YYYY-MM-DDTHH:mm — обрезаем ISO до минут.
@@ -566,6 +604,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
     ...data,
     dealPotential: data.dealPotential ? Number(data.dealPotential) : null,
     interest: data.interest || null,
+    callType: data.callType || null,
     lastContactAt: data.lastContactAt || null,
     // datetime-local → ISO. Если время не выбрано, бэкенд получит null.
     nextContactAt: data.nextContactAt ? new Date(data.nextContactAt).toISOString() : null,
@@ -686,6 +725,18 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
               {CHANNEL_OPTIONS.map(s => <option key={s} value={s} />)}
             </datalist>
           </CollapsibleField>
+          <div>
+            <label className="label">Тип звонка</label>
+            <select {...register('callType')} className="input">
+              <option value="">Не указано</option>
+              <option value="cold">Холодный</option>
+              <option value="neutral">Нейтральный</option>
+              <option value="hot">Горячий</option>
+            </select>
+            <p className="text-[11px] text-surface-400 mt-1">
+              «Холодный» → +1 в KPI «Холодные звонки» за сегодня
+            </p>
+          </div>
           <CollapsibleField
             label="Дата последнего контакта"
             defaultOpen={!!initial?.lastContactAt}

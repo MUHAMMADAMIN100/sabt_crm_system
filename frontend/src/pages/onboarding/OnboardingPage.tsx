@@ -36,6 +36,26 @@ const STAGE_LABEL: Record<string, string> = Object.fromEntries(
   Object.entries(ALL_STAGES).map(([k, v]) => [k, v.label]),
 )
 
+/** Оптимистично прибавляет +delta к value метрики с заданным ключом
+ *  в KPI-объекте {items: [{key, value, target, percent, done}, ...]}.
+ *  Используется в onMutate, чтобы цифра мгновенно прыгнула в UI до
+ *  ответа сервера. WebSocket потом перетрёт точным значением. */
+function bumpKpiValue(kpi: any, key: string, delta: number) {
+  if (!kpi || !Array.isArray(kpi.items)) return kpi
+  let touched = false
+  const items = kpi.items.map((it: any) => {
+    if (it.key !== key) return it
+    touched = true
+    const value = Math.max(0, (Number(it.value) || 0) + delta)
+    const target = Number(it.target) || 0
+    const percent = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0
+    return { ...it, value, percent, done: value >= target }
+  })
+  if (!touched) return kpi
+  const overall = Math.round(items.reduce((acc: number, i: any) => acc + (i.value / (i.target || 1)) * 100, 0) / items.length)
+  return { ...kpi, items, overallPercent: Math.min(100, Math.max(0, overall)) }
+}
+
 /** Если компонент вмонтирован внутрь другой страницы (Базы клиентов через
  *  view-toggle), скрываем заголовок «Онбординг» — у Базы свой. */
 export default function OnboardingPage({ embedded = false }: { embedded?: boolean } = {}) {
@@ -60,6 +80,12 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
     staleTime: 0,
   })
 
+  // Локальная карта порядка этапов — для оптимистичной проверки «вперёд».
+  // Совпадает с STAGE_ORDER на бэке (cancelled не считается прогрессом).
+  const STAGE_ORDER_FE: Record<string, number> = {
+    negotiation: 1, meeting: 2, kp_creation: 3, contract: 4, implementation: 5, cancelled: -1,
+  }
+
   // Перетаскивание карточки — смена этапа онбординга.
   const moveMut = useMutation({
     mutationFn: ({ id, stage }: { id: string; stage: StageKey }) =>
@@ -67,20 +93,36 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
     onMutate: async ({ id, stage }) => {
       await qc.cancelQueries({ queryKey: ['clients'] })
       const prev = qc.getQueryData(['clients'])
+      // Считаем — это прогресс «вперёд»? Чтобы оптимистично прыгнуть на +1.
+      const lead = Array.isArray(prev)
+        ? (prev as any[]).find((c: any) => c.id === id)
+        : null
+      const fromOrder = STAGE_ORDER_FE[lead?.onboardingStage || ''] ?? 0
+      const toOrder = STAGE_ORDER_FE[stage] ?? 0
+      const isForward = toOrder > 0 && toOrder > fromOrder
       qc.setQueryData(['clients'], (old: any) =>
         Array.isArray(old)
           ? old.map((c: any) => (c.id === id ? { ...c, onboardingStage: stage } : c))
           : old,
       )
+      // Оптимистично прибавляем +1 к «funnel_progress» во всех sales-kpi кэшах,
+      // чтобы цифра 5/20 прыгнула на 6/20 мгновенно (а не через рефетч).
+      if (isForward) {
+        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'funnel_progress', +1))
+        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'funnel_progress', +1))
+      }
       return { prev }
     },
     onError: (_e, _v, ctx) => {
       qc.setQueryData(['clients'], ctx?.prev)
+      // Откатить оптимистичный +1 — проще всего рефетчем KPI.
+      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
+      qc.invalidateQueries({ queryKey: ['kpi-user'] })
       toast.error('Не удалось переместить клиента')
     },
-    // Прогресс по воронке пишется бэком в activity_log → влияет на KPI.
-    // Инвалидируем все KPI-кеши, иначе виджет «Продвижения по воронке»
-    // на дашборде остаётся stale до перезагрузки.
+    // Финальная синхронизация: бэк уже broadcast'нул leads:changed через
+    // WebSocket — useSocket инвалидирует/рефечит точную цифру с сервера,
+    // оптимистичный bump перетрётся правильным значением.
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['clients'] })
       qc.invalidateQueries({ queryKey: ['sales-kpi'] })
