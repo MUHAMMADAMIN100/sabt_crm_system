@@ -11,6 +11,7 @@ import { ContentPlanService } from '../content-plan/content-plan.service';
 import { ContentItemType, ContentPlanItem } from '../content-plan/content-plan-item.entity';
 import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
 import { Team } from '../teams/team.entity';
+import { Employee } from '../employees/employee.entity';
 import {
   LAUNCH_KEYS, MANUAL_LAUNCH_KEYS, LAUNCH_LABELS,
   computeLaunchState, LaunchState, LaunchSignals,
@@ -33,6 +34,7 @@ export class ProjectsService {
     @InjectRepository(SmmTariff) private tariffRepo: Repository<SmmTariff>,
     @InjectRepository(Task) private taskRepo: Repository<Task>,
     @InjectRepository(Team) private teamRepo: Repository<Team>,
+    @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     private notificationsService: NotificationsService,
     private mailService: MailService,
     private activityLog: ActivityLogService,
@@ -445,6 +447,15 @@ export class ProjectsService {
     // so leftJoinAndSelect still loads ALL members in the result
     if (requestUser) {
       const { id: userId, role } = requestUser;
+      // Сторисмейкер должен видеть все активные SMM-проекты — его работа
+      // покрывает истории по всему продакшну, а не только мемберским.
+      // Подгружаем флаг разово из employees (легче чем хранить в JWT).
+      const emp = await this.employeeRepo.findOne({
+        where: { userId },
+        select: ['id', 'isStoryMaker'] as any,
+      }).catch(() => null);
+      const isStoryMaker = !!emp?.isStoryMaker;
+
       if (role === 'project_manager') {
         qb.andWhere(
           `(p.managerId = :userId OR p.id IN (
@@ -474,6 +485,10 @@ export class ProjectsService {
         qb.andWhere('p.projectType = :salesType', {
           salesType: getSalesSegment(role)!.projectType,
         });
+      } else if (isStoryMaker) {
+        // Сторисмейкер (флаг на Employee) — все активные SMM-проекты,
+        // вне зависимости от членства. Как smm_director, но только в SMM.
+        qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
       } else if (!['admin', 'founder', 'co_founder'].includes(role)) {
         // All other roles see only projects they are members of
         qb.andWhere(

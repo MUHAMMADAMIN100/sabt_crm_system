@@ -11,10 +11,11 @@ import { SmmTariff } from '../smm-tariffs/smm-tariff.entity';
 import { ContentPlanModule } from '../content-plan/content-plan.module';
 import { Task } from '../tasks/task.entity';
 import { Team } from '../teams/team.entity';
+import { Employee } from '../employees/employee.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Project, User, ProjectPayment, SmmTariff, Task, Team]),
+    TypeOrmModule.forFeature([Project, User, ProjectPayment, SmmTariff, Task, Team, Employee]),
     NotificationsModule,
     GatewayModule,
     ContentPlanModule,
