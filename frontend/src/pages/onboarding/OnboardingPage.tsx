@@ -93,23 +93,27 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
     onMutate: async ({ id, stage }) => {
       await qc.cancelQueries({ queryKey: ['clients'] })
       const prev = qc.getQueryData(['clients'])
-      // Считаем — это прогресс «вперёд»? Чтобы оптимистично прыгнуть на +1.
+      // Считаем — forward (+1) / backward (-1) / нейтрально (0, cancelled).
       const lead = Array.isArray(prev)
         ? (prev as any[]).find((c: any) => c.id === id)
         : null
       const fromOrder = STAGE_ORDER_FE[lead?.onboardingStage || ''] ?? 0
       const toOrder = STAGE_ORDER_FE[stage] ?? 0
-      const isForward = toOrder > 0 && toOrder > fromOrder
+      // Только реальные этапы (order > 0) участвуют в подсчёте. cancelled
+      // имеет order=-1 и не двигает KPI ни в +, ни в −.
+      const isForward  = toOrder > 0 && toOrder > fromOrder
+      const isBackward = toOrder > 0 && fromOrder > 0 && toOrder < fromOrder
       qc.setQueryData(['clients'], (old: any) =>
         Array.isArray(old)
           ? old.map((c: any) => (c.id === id ? { ...c, onboardingStage: stage } : c))
           : old,
       )
-      // Оптимистично прибавляем +1 к «funnel_progress» во всех sales-kpi кэшах,
-      // чтобы цифра 5/20 прыгнула на 6/20 мгновенно (а не через рефетч).
-      if (isForward) {
-        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'funnel_progress', +1))
-        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'funnel_progress', +1))
+      // Оптимистично двигаем «funnel_progress» — мгновенный отклик в UI,
+      // WebSocket потом перетрёт точной цифрой с сервера.
+      const delta = isForward ? +1 : isBackward ? -1 : 0
+      if (delta !== 0) {
+        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'funnel_progress', delta))
+        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'funnel_progress', delta))
       }
       return { prev }
     },

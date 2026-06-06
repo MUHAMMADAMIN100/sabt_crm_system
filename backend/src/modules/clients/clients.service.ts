@@ -96,6 +96,13 @@ export class ClientsService implements OnModuleInit {
         CREATE INDEX IF NOT EXISTS idx_lead_progress_user_date
           ON lead_progress(user_id, created_at);
       `);
+      // delta = +1 при движении вперёд по воронке, -1 при движении назад.
+      // KPI «Продвижения по воронке» теперь = SUM(delta), а не COUNT(*) —
+      // если менеджер откатил, цифра уменьшается, и нельзя «накручивать»
+      // KPI гоняя один лид взад-вперёд.
+      await this.activityRepo.manager.query(
+        `ALTER TABLE lead_progress ADD COLUMN IF NOT EXISTS delta int NOT NULL DEFAULT 1`,
+      );
       this.logger.log('lead_progress table ensured');
     } catch (e: any) {
       this.logger.error(`CREATE TABLE lead_progress failed: ${e?.message || e}`);
@@ -153,29 +160,49 @@ export class ClientsService implements OnModuleInit {
     }));
   }
 
-  /** Если статус ИЛИ этап онбординга у лида продвинулись «вперёд» — пишем
-   *  отдельное событие LEAD_PROGRESS. Используется для KPI продаж.
-   *  Дублируем в lead_progress (без enum) — KPI читает оттуда первым делом. */
+  /** Если статус ИЛИ этап онбординга у лида сдвинулись — пишем событие
+   *  LEAD_PROGRESS с дельтой +1 (вперёд) или -1 (назад). KPI «Продвижения
+   *  по воронке» считает SUM(delta), а не COUNT — иначе можно «накручивать»
+   *  KPI, гоняя один лид взад-вперёд. cancelled — не считается ни тем, ни
+   *  тем (STAGE_ORDER=-1 → ни forward, ни backward). */
   private async maybeLogProgress(
     before: { status?: string | null; onboardingStage?: string | null; name?: string; ownerId?: string | null },
     after: { status?: string | null; onboardingStage?: string | null; name?: string; ownerId?: string | null },
     actor: { id: string; name?: string },
     leadId?: string,
   ): Promise<void> {
-    const advancedStatus =
-      after.status && after.status !== before.status &&
-      (STATUS_ORDER[after.status] ?? -1) > (STATUS_ORDER[before.status || ''] ?? 0);
-    const advancedStage =
-      after.onboardingStage && after.onboardingStage !== before.onboardingStage &&
-      (STAGE_ORDER[after.onboardingStage] ?? 0) > (STAGE_ORDER[before.onboardingStage || ''] ?? 0);
-    if (!advancedStatus && !advancedStage) return;
+    // Хелпер: считаем дельту по двум значениям order'а. Только если ОБА
+    // валидные (>0) — иначе игнорируем (cancelled / lost / on_hold).
+    const deltaOf = (toOrder: number | undefined, fromOrder: number | undefined): 0 | 1 | -1 => {
+      const t = toOrder ?? 0;
+      const f = fromOrder ?? 0;
+      // cancelled/lost/on_hold == -1 → не учитываем переходы в них.
+      if (t <= 0) return 0;
+      // Из «нулевого» состояния (создание лида с уже выставленным этапом)
+      // в реальный этап = +1.
+      if (t > f) return 1;
+      if (t < f && f > 0) return -1;
+      return 0;
+    };
+    const statusChanged = after.status && after.status !== before.status;
+    const stageChanged  = after.onboardingStage && after.onboardingStage !== before.onboardingStage;
+    const statusDelta = statusChanged
+      ? deltaOf(STATUS_ORDER[after.status as string], STATUS_ORDER[before.status || ''])
+      : 0;
+    const stageDelta = stageChanged
+      ? deltaOf(STAGE_ORDER[after.onboardingStage as string], STAGE_ORDER[before.onboardingStage || ''])
+      : 0;
+    // Берём ту дельту, что не ноль. Если оба сдвинулись в одну сторону —
+    // считаем как один шаг (одна запись), чтобы не задвоить.
+    const delta = stageDelta !== 0 ? stageDelta : statusDelta;
+    if (delta === 0) return;
 
     // ─── Первичный путь: lead_progress (без enum-зависимостей) ─────────
     try {
       await this.activityRepo.manager.query(
         `INSERT INTO lead_progress
-           (user_id, lead_id, lead_name, stage_from, stage_to, status_from, status_to)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+           (user_id, lead_id, lead_name, stage_from, stage_to, status_from, status_to, delta)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           actor.id,
           leadId || null,
@@ -184,36 +211,41 @@ export class ClientsService implements OnModuleInit {
           after.onboardingStage || null,
           before.status || null,
           after.status || null,
+          delta,
         ],
       );
     } catch (e: any) {
       this.logger.error(`lead_progress insert failed: ${e?.message || e}`);
     }
 
-    // Лог через сервис (он сам глушит ошибки в warn). Дополнительно
-    // дублируем raw INSERT'ом, чтобы быть устойчивыми к расхождению
-    // enum-валидации TypeORM и реального enum в БД — если save через
-    // repo упадёт, raw SQL всё равно запишет (использует значение как
-    // строку, кастящуюся к enum через ::text::activity_logs_action_enum).
-    await this.activityLog.log({
-      userId: actor.id,
-      userName: actor.name,
-      action: ActivityAction.LEAD_PROGRESS,
-      entity: 'client_lead',
-      entityId: undefined,
-      entityName: after.name,
-      details: {
-        ownerId: after.ownerId,
-        statusFrom: before.status ?? null,
-        statusTo: after.status ?? null,
-        stageFrom: before.onboardingStage ?? null,
-        stageTo: after.onboardingStage ?? null,
-        advancedStatus: !!advancedStatus,
-        advancedStage: !!advancedStage,
-      },
-    });
+    // На уровне entity-флагов — что произошло, для legacy activity_logs.
+    const advancedStatus = statusDelta > 0;
+    const advancedStage = stageDelta > 0;
+
+    // Legacy activity_logs: пишем ТОЛЬКО при движении вперёд (delta > 0).
+    // Backward в activity_logs не пишем — там схема не позволяет хранить
+    // знак, и KPI с этого источника считается COUNT (получили бы задвоение).
+    if (delta > 0) {
+      await this.activityLog.log({
+        userId: actor.id,
+        userName: actor.name,
+        action: ActivityAction.LEAD_PROGRESS,
+        entity: 'client_lead',
+        entityId: undefined,
+        entityName: after.name,
+        details: {
+          ownerId: after.ownerId,
+          statusFrom: before.status ?? null,
+          statusTo: after.status ?? null,
+          stageFrom: before.onboardingStage ?? null,
+          stageTo: after.onboardingStage ?? null,
+          advancedStatus: !!advancedStatus,
+          advancedStage: !!advancedStage,
+        },
+      });
+    }
     this.logger.log(
-      `LEAD_PROGRESS by user=${actor.id} lead="${after.name}" ` +
+      `LEAD_PROGRESS (delta=${delta}) by user=${actor.id} lead="${after.name}" ` +
       `${before.onboardingStage ?? '∅'}→${after.onboardingStage ?? '∅'} / ` +
       `${before.status ?? '∅'}→${after.status ?? '∅'}`,
     );
@@ -406,20 +438,18 @@ export class ClientsService implements OnModuleInit {
       .andWhere('c.nextContactAt BETWEEN :now AND :horizon', { now: periodFrom, horizon })
       .getCount());
 
-    // Wave 11 — главная метрика: сколько раз МП двинул лидов вперёд по
-    // воронке (status или onboardingStage).
-    // Источник №1 — таблица lead_progress (без enum-зависимостей,
-    // гарантированно работает). Источник №2 — activity_logs (legacy путь
-    // для исторических данных). Берём максимум из двух чтобы не потерять
-    // записи, сделанные ДО появления lead_progress, и не задвоить
-    // те что писались в оба места.
+    // Главная метрика: чистый прогресс по воронке.
+    // Источник №1 (первичный) — SUM(delta) из lead_progress: +1 forward,
+    // -1 backward. Менеджер не может «накручивать», гоняя лид взад-вперёд.
+    // Источник №2 (fallback) — COUNT из activity_logs, только если в
+    // lead_progress 0 (миграция не прошла / новый деплой ещё не подхватился).
     const progressFromTable = await safeCount(async () => {
       const rows = await this.activityRepo.manager.query(
-        `SELECT COUNT(*)::int AS c FROM lead_progress
+        `SELECT COALESCE(SUM(delta), 0)::int AS s FROM lead_progress
          WHERE user_id = $1 AND created_at BETWEEN $2 AND $3`,
         [ownerId, periodFrom, periodTo],
       );
-      return Number(rows?.[0]?.c || 0);
+      return Math.max(0, Number(rows?.[0]?.s || 0));
     });
     const progressFromActivity = await safeCount(() =>
       this.activityRepo
@@ -429,7 +459,7 @@ export class ClientsService implements OnModuleInit {
         .andWhere('a.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
         .getCount(),
     );
-    const progressCount = Math.max(progressFromTable, progressFromActivity);
+    const progressCount = progressFromTable > 0 ? progressFromTable : progressFromActivity;
 
     const items = [
       { key: 'funnel_progress', label: 'Продвижения по воронке',  target: 20, value: progressCount },
