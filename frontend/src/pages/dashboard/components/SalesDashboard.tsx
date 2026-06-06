@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi, projectsApi, clientsApi } from '@/services/api.service'
@@ -10,6 +10,7 @@ import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import KpiDetailsModal from '@/components/kpi/KpiDetailsModal'
+import KpiCelebration from '@/components/kpi/KpiCelebration'
 
 const TYPE_FILTERS = [
   { value: '', label: 'Все' },
@@ -193,6 +194,49 @@ export default function SalesDashboard() {
     staleTime: 30_000,
   })
 
+  // ─── Поздравления при закрытии метрик KPI ───────────────────────────
+  // Когда метрика впервые за день/период достигает цели — показываем
+  // большой анимированный модал с похвалой. Антиспам: храним показанные
+  // ключи в useRef Set с подмесом периода, чтобы при refetch'е / WebSocket
+  // обновлении один и тот же триггер не вызывал модал заново.
+  const userName = useAuthStore(s => s.user?.name) || 'Сотрудник'
+  const [celebrationKey, setCelebrationKey] = useState<string | null>(null)
+  const celebratedRef = useRef<Set<string>>(new Set())
+  // Сбрасываем «уже показанные» когда меняется окно периода или юзер.
+  useEffect(() => {
+    celebratedRef.current = new Set()
+  }, [userId, kpiFrom, kpiTo])
+
+  useEffect(() => {
+    if (!kpi?.items?.length) return
+    const periodTag = `${kpiFrom}_${kpiTo}`
+    // Сначала проверяем оверолл — если ровно сейчас 100% И ранее ещё не
+    // праздновали — это «золотой» триггер, имеет приоритет над отдельными.
+    const overall = Number(kpi.overallPercent || 0)
+    if (overall >= 100) {
+      const k = `${periodTag}:__all__`
+      if (!celebratedRef.current.has(k)) {
+        celebratedRef.current.add(k)
+        // Помечаем и каждую отдельную как «уже» — чтобы не сыпались 5 модалов подряд.
+        kpi.items.forEach((it: any) => {
+          if (it.done) celebratedRef.current.add(`${periodTag}:${it.key}`)
+        })
+        setCelebrationKey('__all__')
+        return
+      }
+    }
+    // Иначе — ищем первую done-метрику, по которой ещё не праздновали.
+    for (const it of kpi.items) {
+      if (!it.done) continue
+      const k = `${periodTag}:${it.key}`
+      if (!celebratedRef.current.has(k)) {
+        celebratedRef.current.add(k)
+        setCelebrationKey(it.key)
+        break
+      }
+    }
+  }, [kpi, kpiFrom, kpiTo])
+
   // МП по продажам (СММ И разработка) могут править все колонки таблицы:
   // name / paidAmount / endDate / status. Так оба направления одинаково
   // владеют операционкой по своим проектам.
@@ -343,6 +387,14 @@ export default function SalesDashboard() {
           to={kpiTo}
         />
       )}
+
+      {/* Поздравительный модал при закрытии KPI-метрики */}
+      <KpiCelebration
+        open={!!celebrationKey}
+        name={userName}
+        metricKey={celebrationKey}
+        onClose={() => setCelebrationKey(null)}
+      />
 
       {/* Projects table */}
       <CollapsibleSection
