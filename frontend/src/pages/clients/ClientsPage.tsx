@@ -147,6 +147,25 @@ export default function ClientsPage() {
         updatedAt: new Date().toISOString(),
       }
       qc.setQueryData(queryKey, (old: any[] = []) => [tempLead, ...old])
+      // Оптимистичные бампы KPI — мгновенный отклик до прихода ответа сервера.
+      // Создание клиента ВСЕГДА увеличивает new_companies (createdAt сегодня).
+      qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'new_companies', +1))
+      qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'new_companies', +1))
+      // Если сразу проставили callType='cold' — +1 к холодным звонкам.
+      if (String(newLead?.callType || '').toLowerCase() === 'cold') {
+        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'cold_calls', +1))
+        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'cold_calls', +1))
+      }
+      // Если сразу указали nextContactAt — +1 к встречам.
+      if (newLead?.nextContactAt) {
+        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'meetings', +1))
+        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'meetings', +1))
+      }
+      // Если указали email + lastContactAt (с email) — +1 к персональным письмам.
+      if (newLead?.lastContactAt && (newLead?.contactEmail || String(newLead?.channel || '').toLowerCase() === 'email')) {
+        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'personal_emails', +1))
+        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'personal_emails', +1))
+      }
       return { previous, tempLead }
     },
     onError: (e: any, _vars, ctx) => {
@@ -179,12 +198,16 @@ export default function ClientsPage() {
       setEditLead(null)
       await qc.cancelQueries({ queryKey: ['clients'] })
       const previous = qc.getQueryData(queryKey)
-      // Если меняется callType именно НА 'cold' (с другого) — оптимистично
-      // прибавляем +1 к «Холодным звонкам» в KPI-кэшах. Если уходит ОТ 'cold'
-      // — соответственно -1. WebSocket потом приведёт цифру к точной.
+      // Оптимистичные бампы KPI: считаем дельты для всех 3-х метрик,
+      // которые могут поменяться через update (без перетаскивания).
+      // WebSocket leads:changed потом перетрёт точной серверной цифрой.
       const lead = (previous as any[] | undefined)?.find(l => l.id === id)
+
+      // 1) callType: переход → 'cold' = +1, обратно = -1.
       const beforeCall = String(lead?.callType || '').toLowerCase()
-      const afterCall = String(data?.callType || '').toLowerCase()
+      const afterCall = data?.callType !== undefined
+        ? String(data.callType || '').toLowerCase()
+        : beforeCall
       if (beforeCall !== afterCall) {
         const becameCold = afterCall === 'cold' && beforeCall !== 'cold'
         const leftCold = beforeCall === 'cold' && afterCall !== 'cold'
@@ -192,6 +215,30 @@ export default function ClientsPage() {
           const delta = becameCold ? +1 : -1
           qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'cold_calls', delta))
           qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'cold_calls', delta))
+        }
+      }
+
+      // 2) nextContactAt: появилось → +1 к meetings, исчезло → -1.
+      if (data?.nextContactAt !== undefined) {
+        const had = !!lead?.nextContactAt
+        const now = !!data.nextContactAt
+        if (had !== now) {
+          const delta = now ? +1 : -1
+          qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'meetings', delta))
+          qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'meetings', delta))
+        }
+      }
+
+      // 3) lastContactAt с email → +1 / -1 к personal_emails.
+      if (data?.lastContactAt !== undefined) {
+        const hasEmail = !!(data?.contactEmail ?? lead?.contactEmail)
+          || String(data?.channel ?? lead?.channel ?? '').toLowerCase() === 'email'
+        const had = !!lead?.lastContactAt
+        const now = !!data.lastContactAt
+        if (had !== now && hasEmail) {
+          const delta = now ? +1 : -1
+          qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'personal_emails', delta))
+          qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'personal_emails', delta))
         }
       }
       qc.setQueryData(queryKey, (old: any[] = []) =>

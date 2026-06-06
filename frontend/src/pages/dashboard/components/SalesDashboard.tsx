@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi, projectsApi, clientsApi } from '@/services/api.service'
@@ -10,7 +10,6 @@ import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import KpiDetailsModal from '@/components/kpi/KpiDetailsModal'
-import KpiCelebration from '@/components/kpi/KpiCelebration'
 
 const TYPE_FILTERS = [
   { value: '', label: 'Все' },
@@ -194,72 +193,11 @@ export default function SalesDashboard() {
     staleTime: 30_000,
   })
 
-  // ─── Поздравления при закрытии метрик KPI ───────────────────────────
-  // Когда метрика впервые за день/период достигает цели — показываем
-  // большой анимированный модал с похвалой. Антиспам:
-  // храним показанные ключи в localStorage (а не в useRef), иначе при
-  // выходе с дашборда и возврате обратно компонент монтируется заново,
-  // ref пустеет и модал срабатывает повторно. localStorage переживает
-  // навигацию, F5 и закрытие вкладки — поздравление за конкретную метрику
-  // за конкретный период покажется один раз.
-  // Ключ: kpiCelebrated:<userId>:<from_to>:<metricKey>. Старые записи
-  // (>3 дней) самочистимся при каждом запуске.
-  const userName = useAuthStore(s => s.user?.name) || 'Сотрудник'
-  const [celebrationKey, setCelebrationKey] = useState<string | null>(null)
-
-  // Версионированный префикс. При багах в антиспам-логике (старая версия
-  // случайно помечала всё как «уже показано») достаточно поднять номер —
-  // у всех юзеров локальные пометки сброшены, и поздравление за невидянные
-  // KPI снова сработает один раз.
-  const KEY_PREFIX = 'kpiCelebrated_v2:'
-  const lsKey = (metric: string) => `${KEY_PREFIX}${userId}:${kpiFrom}_${kpiTo}:${metric}`
-  const wasCelebrated = (metric: string): boolean => {
-    try { return !!localStorage.getItem(lsKey(metric)) } catch { return false }
-  }
-  const markCelebrated = (metric: string) => {
-    try { localStorage.setItem(lsKey(metric), String(Date.now())) } catch {}
-  }
-
-  // Разовая чистка при монтировании:
-  //  1) старые v1-ключи (kpiCelebrated:*) — удаляем безусловно;
-  //  2) v2-ключи старше 3 дней — удаляем по TTL.
-  useEffect(() => {
-    try {
-      const threshold = Date.now() - 3 * 86400_000
-      const keys = Object.keys(localStorage)
-      for (const k of keys) {
-        // Старая версия — сметаем целиком.
-        if (k.startsWith('kpiCelebrated:')) { localStorage.removeItem(k); continue }
-        if (!k.startsWith(KEY_PREFIX)) continue
-        const ts = Number(localStorage.getItem(k))
-        if (!Number.isFinite(ts) || ts < threshold) localStorage.removeItem(k)
-      }
-    } catch { /* sandbox без storage — пофиг */ }
-  }, [])
-
-  useEffect(() => {
-    if (!kpi?.items?.length || !userId) return
-    // Сначала проверяем оверолл — если 100% и ранее не праздновали —
-    // это «золотой» триггер, имеет приоритет над отдельными.
-    const overall = Number(kpi.overallPercent || 0)
-    if (overall >= 100 && !wasCelebrated('__all__')) {
-      markCelebrated('__all__')
-      // Помечаем и каждую отдельную как «уже» — чтобы не сыпались 5 модалов подряд.
-      kpi.items.forEach((it: any) => { if (it.done) markCelebrated(it.key) })
-      setCelebrationKey('__all__')
-      return
-    }
-    // Иначе — ищем первую done-метрику, по которой ещё не праздновали.
-    for (const it of kpi.items) {
-      if (!it.done) continue
-      if (!wasCelebrated(it.key)) {
-        markCelebrated(it.key)
-        setCelebrationKey(it.key)
-        break
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kpi, kpiFrom, kpiTo, userId])
+  // Поздравительный модал KPI теперь смонтирован глобально в Layout
+  // через KpiCelebrationWatcher — он триггерится в любой странице
+  // (онбординг, база клиентов, дашборд), а не только когда юзер сидит
+  // на «Панели». Локальную копию здесь больше не держим, чтобы не было
+  // двойного срабатывания.
 
   // МП по продажам (СММ И разработка) могут править все колонки таблицы:
   // name / paidAmount / endDate / status. Так оба направления одинаково
@@ -411,14 +349,6 @@ export default function SalesDashboard() {
           to={kpiTo}
         />
       )}
-
-      {/* Поздравительный модал при закрытии KPI-метрики */}
-      <KpiCelebration
-        open={!!celebrationKey}
-        name={userName}
-        metricKey={celebrationKey}
-        onClose={() => setCelebrationKey(null)}
-      />
 
       {/* Projects table */}
       <CollapsibleSection
