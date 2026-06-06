@@ -207,7 +207,12 @@ export default function SalesDashboard() {
   const userName = useAuthStore(s => s.user?.name) || 'Сотрудник'
   const [celebrationKey, setCelebrationKey] = useState<string | null>(null)
 
-  const lsKey = (metric: string) => `kpiCelebrated:${userId}:${kpiFrom}_${kpiTo}:${metric}`
+  // Версионированный префикс. При багах в антиспам-логике (старая версия
+  // случайно помечала всё как «уже показано») достаточно поднять номер —
+  // у всех юзеров локальные пометки сброшены, и поздравление за невидянные
+  // KPI снова сработает один раз.
+  const KEY_PREFIX = 'kpiCelebrated_v2:'
+  const lsKey = (metric: string) => `${KEY_PREFIX}${userId}:${kpiFrom}_${kpiTo}:${metric}`
   const wasCelebrated = (metric: string): boolean => {
     try { return !!localStorage.getItem(lsKey(metric)) } catch { return false }
   }
@@ -215,13 +220,17 @@ export default function SalesDashboard() {
     try { localStorage.setItem(lsKey(metric), String(Date.now())) } catch {}
   }
 
-  // Разовая чистка старых записей при монтировании — старше 3 дней.
+  // Разовая чистка при монтировании:
+  //  1) старые v1-ключи (kpiCelebrated:*) — удаляем безусловно;
+  //  2) v2-ключи старше 3 дней — удаляем по TTL.
   useEffect(() => {
     try {
       const threshold = Date.now() - 3 * 86400_000
       const keys = Object.keys(localStorage)
       for (const k of keys) {
-        if (!k.startsWith('kpiCelebrated:')) continue
+        // Старая версия — сметаем целиком.
+        if (k.startsWith('kpiCelebrated:')) { localStorage.removeItem(k); continue }
+        if (!k.startsWith(KEY_PREFIX)) continue
         const ts = Number(localStorage.getItem(k))
         if (!Number.isFinite(ts) || ts < threshold) localStorage.removeItem(k)
       }
