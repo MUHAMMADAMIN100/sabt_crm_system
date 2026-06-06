@@ -1,4 +1,5 @@
-import { useState, useMemo, lazy, Suspense } from 'react'
+import { useState, useMemo, useEffect, lazy, Suspense } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
@@ -110,6 +111,28 @@ export default function ClientsPage() {
   })
 
   const queryKey = ['clients', search, status, interest, sphere]
+
+  // Глубокий линк из KPI-модалки: /clients?id=<leadId> — открываем форму
+  // редактирования этого клиента сразу, а не оставляем юзера искать руками
+  // в общем списке. После открытия чистим query, чтобы при перезагрузке
+  // F5 не открывалась снова. Если лид не найден (удалили / нет доступа) —
+  // показываем toast, query тоже чистим.
+  const location = useLocation()
+  const navigate = useNavigate()
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const leadId = params.get('id')
+    if (!leadId || !leads) return
+    const lead = leads.find((l: any) => l.id === leadId)
+    if (lead) {
+      setEditLead(lead)
+    } else {
+      toast('Клиент не найден или удалён', { icon: 'ℹ️' })
+    }
+    // Убираем ?id из URL чтобы при F5 не триггерилось снова.
+    navigate(location.pathname, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leads, location.search])
 
   const createMut = useMutation({
     mutationFn: clientsApi.create,

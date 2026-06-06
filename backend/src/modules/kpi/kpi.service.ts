@@ -379,7 +379,10 @@ export class KpiService {
               : (r.stage_to ? `этап: ${r.stage_to}` : null),
           ].filter(Boolean).join(' · ') || null,
           date: r.created_at ? new Date(r.created_at).toISOString() : null,
-          link: '/clients',
+          // Deep-link на конкретного клиента — открывает форму
+          // редактирования в ClientsPage. Если lead_id потерян (старые
+          // записи) — ссылка просто на /clients.
+          link: r.lead_id ? `/clients?id=${r.lead_id}` : '/clients',
         }));
         const fromActivity = legacyRows.map(r => {
           const d = r.details || {};
@@ -392,6 +395,8 @@ export class KpiService {
             title: r.entityName || 'Лид',
             subtitle: [status, stage].filter(Boolean).join(' · ') || null,
             date: r.createdAt?.toISOString() || null,
+            // У activity_logs нет lead_id — entityId раньше тоже
+            // ставился в undefined. Ссылка остаётся общая.
             link: '/clients',
           };
         });
