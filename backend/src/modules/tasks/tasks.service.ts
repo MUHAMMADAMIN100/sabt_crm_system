@@ -873,18 +873,39 @@ export class TasksService {
     return tasks;
   }
 
-  getOverdueTasks() {
-    return this.repo.createQueryBuilder('t')
+  getOverdueTasks(viewer?: { id: string; role: string }) {
+    const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
       .leftJoinAndSelect('t.createdBy', 'createdBy')
       .leftJoinAndSelect('t.project', 'project')
       .where('t.deadline < NOW()')
-      // Закрытые для overdue — done/cancelled + review/approved/published.
-      // Если задача дошла до review — исполнитель своё сделал, не overdue.
+      // Закрытые для overdue — done/cancelled.
       .andWhere('t.status NOT IN (:...statuses)', { statuses: TASK_CLOSED_FOR_OVERDUE })
       // КП-задачи скрыты из «Просроченных».
-      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
-      .getMany();
+      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`);
+
+    // SMM-роли (head_smm / smm_director / smm_specialist) НЕ должны видеть
+    // sales-задачи в «Просроченных». Это автозадачи-встречи менеджеров
+    // продаж (scope=personal, без project'а) — они к SMM-сегменту не
+    // относятся, мешают читать виджет. PM проектов тоже видят только
+    // задачи СВОИХ проектов, а не всё подряд.
+    const role = viewer?.role || '';
+    const isSmmRole = ['head_smm', 'smm_director', 'smm_specialist'].includes(role);
+    const isPm = role === 'project_manager';
+    if (isSmmRole) {
+      qb.andWhere(`(t.scope <> 'personal' OR t.scope IS NULL)`);
+      qb.andWhere(`(project."projectType" IS NULL OR project."projectType" = 'SMM')`);
+    } else if (isPm && viewer?.id) {
+      // PM — только задачи его проектов (где он manager или member).
+      qb.andWhere(
+        `(project."managerId" = :uid OR project.id IN (
+          SELECT pm."projectsId" FROM project_members pm WHERE pm."usersId" = :uid
+        ))`,
+        { uid: viewer.id },
+      );
+    }
+    // admin / founder / co_founder — без фильтров (видят всё).
+    return qb.getMany();
   }
 
   async approveTask(id: string, user: { id: string; role: string; name?: string }) {

@@ -104,4 +104,28 @@ export class ProjectsController {
   ) {
     return this.service.setManualLaunchItem(id, body.item, body.value);
   }
+
+  // ─── SMM-бриф клиента (вкладка «Бриф» в карточке SMM-проекта) ─────
+  @Patch(':id/brief')
+  @Roles(
+    UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
+    UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM,
+    UserRole.SMM_SPECIALIST,
+  )
+  saveBrief(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Request() req,
+  ) {
+    return this.service.saveBrief(id, body, req.user);
+  }
+
+  @Delete(':id/brief')
+  @Roles(
+    UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
+    UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM,
+  )
+  clearBrief(@Param('id') id: string, @Request() req) {
+    return this.service.clearBrief(id, req.user);
+  }
 }

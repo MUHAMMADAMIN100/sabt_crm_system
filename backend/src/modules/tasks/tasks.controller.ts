@@ -74,7 +74,7 @@ export class TasksController {
 
   @Get('overdue')
   @Roles(ADMIN, FOUNDER, CO_FOUNDER, SMM_DIRECTOR, PROJECT_MANAGER, HEAD_SMM)
-  getOverdue() { return this.service.getOverdueTasks(); }
+  getOverdue(@Request() req) { return this.service.getOverdueTasks(req.user); }
 
   @Get('stats')
   getStats(@Query('projectId') projectId?: string) {

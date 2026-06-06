@@ -63,6 +63,9 @@ export const projectsApi = {
   restore: (id: string) => api.patch(`/projects/${id}/restore`).then(r => r.data),
   remove: (id: string) => api.delete(`/projects/${id}`).then(r => r.data),
   stats: () => api.get('/projects/stats').then(r => r.data),
+  // SMM-бриф клиента
+  saveBrief: (id: string, brief: any) => api.patch(`/projects/${id}/brief`, brief).then(r => r.data),
+  clearBrief: (id: string) => api.delete(`/projects/${id}/brief`).then(r => r.data),
 }
 
 // ─── Tasks ───────────────────────────────────────────────

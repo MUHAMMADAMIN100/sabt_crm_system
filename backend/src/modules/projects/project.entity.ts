@@ -202,6 +202,15 @@ export class Project {
   @Column({ type: 'jsonb', nullable: true, default: () => `'{}'::jsonb` })
   launchChecklist: Record<string, boolean>;
 
+  /** SMM-бриф клиента — структурированная анкета из ~37 вопросов
+   *  (см. WeBrand_SMM_brief.pdf). Хранит сами ответы + мета-инфу
+   *  (когда заполнен, кем, какой тариф). Структура:
+   *  { tariff, filledAt, filledByUserId, clientSignature,
+   *    managerSignature, answers: { q1, q2, ..., q37 } }.
+   *  Null = бриф ещё не заполнен. */
+  @Column({ type: 'jsonb', nullable: true })
+  brief: Record<string, any> | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

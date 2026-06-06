@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SmmTariff } from './smm-tariff.entity';
@@ -8,11 +8,139 @@ export interface ListFilters {
   isActive?: boolean;
 }
 
+/** Канонические тарифы WeBrand из официальной таблицы услуг SMM
+ *  (Start / Business / Premium) + пустой «Индивидуальный» для случаев
+ *  когда менеджер сам задаёт лимиты и цену проекту. Сидятся в БД при
+ *  старте сервиса — при изменении значений просто меняем константы. */
+const CANON_TARIFFS: Array<Partial<SmmTariff>> = [
+  {
+    name: 'Start',
+    description: 'Тариф Start — базовый пакет для одного канала.',
+    monthlyPrice: 3499 as any,
+    storiesPerMonth: 30,
+    reelsPerMonth: 4,
+    postsPerMonth: 3,
+    designsPerMonth: 0,
+    adsIncluded: false,
+    shootingDaysPerMonth: 0,
+    reportsPerMonth: 1,
+    revisionLimit: 2,
+    durationDays: 30,
+    isActive: true,
+    isCustom: false,
+  },
+  {
+    name: 'Business',
+    description: 'Тариф Business — расширенный пакет с настройкой таргета.',
+    monthlyPrice: 5499 as any,
+    storiesPerMonth: 50,
+    reelsPerMonth: 7,
+    postsPerMonth: 4,
+    designsPerMonth: 0,
+    adsIncluded: true,
+    shootingDaysPerMonth: 0,
+    reportsPerMonth: 2,
+    revisionLimit: 3,
+    durationDays: 30,
+    isActive: true,
+    isCustom: false,
+  },
+  {
+    name: 'Premium',
+    description: 'Тариф Premium — полный пакет с проект-менеджером и доп. площадками.',
+    monthlyPrice: 7499 as any,
+    storiesPerMonth: 70,
+    reelsPerMonth: 10,
+    postsPerMonth: 7,
+    designsPerMonth: 0,
+    adsIncluded: true,
+    shootingDaysPerMonth: 0,
+    reportsPerMonth: 4,
+    revisionLimit: 5,
+    durationDays: 30,
+    isActive: true,
+    isCustom: false,
+  },
+  {
+    name: 'Индивидуальный',
+    description: 'Параметры тарифа (лимиты и цена) задаёт менеджер вручную при назначении проекту.',
+    monthlyPrice: 0 as any,
+    storiesPerMonth: 0,
+    reelsPerMonth: 0,
+    postsPerMonth: 0,
+    designsPerMonth: 0,
+    adsIncluded: false,
+    shootingDaysPerMonth: 0,
+    reportsPerMonth: 0,
+    revisionLimit: 0,
+    durationDays: 30,
+    isActive: true,
+    isCustom: true,
+  },
+];
+
 @Injectable()
-export class SmmTariffsService {
+export class SmmTariffsService implements OnModuleInit {
+  private readonly logger = new Logger(SmmTariffsService.name);
+
   constructor(
     @InjectRepository(SmmTariff) private repo: Repository<SmmTariff>,
   ) {}
+
+  /** Рантайм-миграция + сид канонических тарифов. */
+  async onModuleInit() {
+    // 1) ALTER TABLE ADD COLUMN IF NOT EXISTS isCustom — на случай если
+    //    в БД ещё нет колонки (старая схема без поля).
+    try {
+      await this.repo.manager.query(
+        `ALTER TABLE smm_tariffs ADD COLUMN IF NOT EXISTS "isCustom" boolean NOT NULL DEFAULT false`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`ALTER TABLE smm_tariffs isCustom failed: ${e?.message || e}`);
+    }
+
+    // 2) Сид/обновление канонических тарифов. Сравнение по имени (case-insensitive).
+    //    Старые тарифы с другими именами (Базовый/Бизнес и т.п.) — деактивируем,
+    //    чтобы они не появлялись в селекторах при создании новых проектов.
+    //    Существующие проекты сохраняют их в snapshot — данные не теряются.
+    try {
+      const all = await this.repo.find();
+      const canonNames = new Set(CANON_TARIFFS.map(t => (t.name || '').toLowerCase()));
+      for (const t of all) {
+        if (!canonNames.has(String(t.name || '').toLowerCase()) && t.isActive) {
+          await this.repo.update(t.id, { isActive: false });
+        }
+      }
+      for (const canon of CANON_TARIFFS) {
+        const existing = all.find(
+          t => String(t.name || '').toLowerCase() === String(canon.name || '').toLowerCase(),
+        );
+        if (existing) {
+          // Обновляем лимиты/цену — но НЕ трогаем createdById/createdAt.
+          await this.repo.update(existing.id, {
+            description: canon.description,
+            monthlyPrice: canon.monthlyPrice,
+            storiesPerMonth: canon.storiesPerMonth,
+            reelsPerMonth: canon.reelsPerMonth,
+            postsPerMonth: canon.postsPerMonth,
+            designsPerMonth: canon.designsPerMonth,
+            adsIncluded: canon.adsIncluded,
+            shootingDaysPerMonth: canon.shootingDaysPerMonth,
+            reportsPerMonth: canon.reportsPerMonth,
+            revisionLimit: canon.revisionLimit,
+            durationDays: canon.durationDays,
+            isActive: canon.isActive,
+            isCustom: canon.isCustom,
+          } as any);
+        } else {
+          await this.repo.save(this.repo.create(canon as any));
+        }
+      }
+      this.logger.log('SMM tariffs seeded (Start/Business/Premium/Индивидуальный)');
+    } catch (e: any) {
+      this.logger.warn(`SMM tariffs seed failed: ${e?.message || e}`);
+    }
+  }
 
   /** Цены тарифа видят только founder/co_founder. Все остальные
    *  (admin, smm_director, head_smm, project_manager, sales_manager и т.д.)

@@ -52,6 +52,12 @@ export class SmmTariff {
   @Column({ default: true })
   isActive: boolean;
 
+  /** «Индивидуальный» тариф — значения лимитов/цены задаёт менеджер
+   *  при назначении проекту. UI показывает поля для ручного ввода
+   *  storiesPerMonth/reelsPerMonth/postsPerMonth/monthlyPrice. */
+  @Column({ default: false })
+  isCustom: boolean;
+
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'createdById' })
   createdBy: User;

@@ -43,4 +43,8 @@ export class CreateSmmTariffDto {
 
   @ApiPropertyOptional() @IsOptional() @IsBoolean()
   isActive?: boolean;
+
+  /** «Индивидуальный» — параметры задаются вручную при назначении проекту. */
+  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  isCustom?: boolean;
 }

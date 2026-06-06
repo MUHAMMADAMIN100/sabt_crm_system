@@ -811,15 +811,37 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                   if (t.postsPerMonth > 0) parts.push(`${t.postsPerMonth} posts`)
                   if (t.designsPerMonth > 0) parts.push(`${t.designsPerMonth} дизайнов`)
                   const deliverables = parts.length > 0 ? ` — ${parts.join(', ')}` : ''
+                  const customMark = t.isCustom ? ' (настраиваемый)' : ''
                   return (
                     <option key={t.id} value={t.id}>
-                      {canSeeFinance
+                      {canSeeFinance && !t.isCustom
                         ? `${t.name} — ${Number(t.monthlyPrice).toLocaleString('ru-RU')} сомони/мес`
-                        : `${t.name}${deliverables}`}
+                        : `${t.name}${customMark}${deliverables}`}
                     </option>
                   )
                 })}
               </select>
+              {/* Подсказка по «Индивидуальному» тарифу — менеджер сам
+                  задаёт стоимость через поле «Бюджет/месяц» ниже. */}
+              {tariffId && (() => {
+                const selectedTariff = (tariffs || []).find((tt: any) => tt.id === tariffId)
+                if (!selectedTariff?.isCustom) return null
+                return (
+                  <div className="mt-3 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 p-3 text-xs text-violet-700 dark:text-violet-300 space-y-1">
+                    <p>
+                      ⚙️ <b>Индивидуальный тариф.</b> Лимиты и стоимость задаются вручную для этого
+                      конкретного проекта.
+                    </p>
+                    {canSeeFinance && (
+                      <p>
+                        Укажите стоимость в поле <b>«Бюджет / Месячная плата»</b>. Лимиты по контенту
+                        (stories / reels / posts) добавите вручную через вкладку «Контент-план» в
+                        карточке проекта.
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
               {/* Скидка — только для основателя/сооснователя.
                   Тип (фиксированная/процентная) + значение + предварительный расчёт. */}
               {canSeeFinance && tariffId && (() => {

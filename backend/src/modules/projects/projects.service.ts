@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike } from 'typeorm';
 import { Project, ProjectStatus, ProjectBillingType, ProjectPaymentStatus } from './project.entity';
@@ -26,7 +26,21 @@ import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
 
 @Injectable()
-export class ProjectsService {
+export class ProjectsService implements OnModuleInit {
+  private readonly logger = new Logger(ProjectsService.name);
+
+  /** Авто-миграция: jsonb-колонка brief для SMM-брифа клиента (CRUD на
+   *  /projects/:id/brief). Идемпотентно — не требует отдельной миграции. */
+  async onModuleInit() {
+    try {
+      await this.repo.manager.query(
+        `ALTER TABLE projects ADD COLUMN IF NOT EXISTS brief jsonb`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`ALTER TABLE projects brief failed: ${e?.message || e}`);
+    }
+  }
+
   constructor(
     @InjectRepository(Project) private repo: Repository<Project>,
     @InjectRepository(User) private userRepo: Repository<User>,
@@ -46,7 +60,11 @@ export class ProjectsService {
   /** Заполняет проект полями из выбранного тарифа (snapshot имени и цены).
    *  Не перезаписывает уже заданные monthlyFee / billingType — клиент мог
    *  указать индивидуальную скидку. Используется в create() и при смене
-   *  tariffId в update(). */
+   *  tariffId в update().
+   *  Для «Индивидуального» тарифа (isCustom=true) цена берётся из
+   *  monthlyFee, переданного клиентом в DTO (если != null). Сам snapshot
+   *  цены тоже подменяется этим значением, чтобы оно отображалось
+   *  везде где показывается тариф проекта. */
   private async applyTariffSnapshot(
     target: Partial<Project>,
     tariffId: string,
@@ -55,8 +73,14 @@ export class ProjectsService {
     if (!tariff) throw new NotFoundException('Tariff not found');
     target.tariffId = tariff.id;
     target.tariffNameSnapshot = tariff.name;
-    target.tariffPriceSnapshot = tariff.monthlyPrice;
-    if (target.monthlyFee == null) target.monthlyFee = tariff.monthlyPrice;
+    // Для custom тарифа клиент сам передал monthlyFee — используем его как
+    // snapshot цены. Для обычных тарифов берём цену с тарифа.
+    if ((tariff as any).isCustom && target.monthlyFee != null) {
+      target.tariffPriceSnapshot = target.monthlyFee as any;
+    } else {
+      target.tariffPriceSnapshot = tariff.monthlyPrice;
+      if (target.monthlyFee == null) target.monthlyFee = tariff.monthlyPrice;
+    }
     if (target.billingType == null) target.billingType = ProjectBillingType.MONTHLY;
   }
 
@@ -140,6 +164,67 @@ export class ProjectsService {
     await this.repo.update(projectId, { launchChecklist: checklist });
     this.gateway.broadcast('projects:changed', {});
     return this.getLaunchChecklist(projectId);
+  }
+
+  // ─── SMM-бриф клиента ────────────────────────────────────────────────
+  /** Сохраняет/обновляет бриф проекта. Доступно admin/founder/co_founder,
+   *  PM-ролям и менеджеру проекта. SMM-специалист тоже может (часто бриф
+   *  заполняет он совместно с менеджером). */
+  async saveBrief(projectId: string, payload: any, user: { id: string; role: string; name?: string }) {
+    const project = await this.findOne(projectId);
+    if (project.projectType !== 'SMM') {
+      throw new ForbiddenException('Бриф доступен только для SMM-проектов');
+    }
+    const PM_OR_ADMIN = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm', 'smm_specialist'];
+    const isAllowed = PM_OR_ADMIN.includes(user.role) || project.managerId === user.id;
+    if (!isAllowed) {
+      throw new ForbiddenException('Нет прав на редактирование брифа этого проекта');
+    }
+    // Меta: кто заполнил последним и когда. Сами ответы — в answers.
+    const safe = payload && typeof payload === 'object' ? payload : {};
+    const brief = {
+      ...safe,
+      filledAt: new Date().toISOString(),
+      filledByUserId: user.id,
+      filledByName: user.name || null,
+    };
+    await this.repo.update(projectId, { brief } as any);
+    await this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.PROJECT_UPDATE,
+      entity: 'project',
+      entityId: projectId,
+      entityName: project.name,
+      details: { brief: true },
+    }).catch(() => {});
+    this.gateway.broadcast('projects:changed', { projectId });
+    return this.findOne(projectId);
+  }
+
+  /** Очистка брифа (полное удаление). Доступно только PM-ролям/админу. */
+  async clearBrief(projectId: string, user: { id: string; role: string; name?: string }) {
+    const project = await this.findOne(projectId);
+    if (project.projectType !== 'SMM') {
+      throw new ForbiddenException('Бриф доступен только для SMM-проектов');
+    }
+    const ADMIN_PM = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'];
+    const isAllowed = ADMIN_PM.includes(user.role) || project.managerId === user.id;
+    if (!isAllowed) {
+      throw new ForbiddenException('Нет прав на удаление брифа этого проекта');
+    }
+    await this.repo.update(projectId, { brief: null } as any);
+    await this.activityLog.log({
+      userId: user.id,
+      userName: user.name,
+      action: ActivityAction.PROJECT_UPDATE,
+      entity: 'project',
+      entityId: projectId,
+      entityName: project.name,
+      details: { briefCleared: true },
+    }).catch(() => {});
+    this.gateway.broadcast('projects:changed', { projectId });
+    return this.findOne(projectId);
   }
 
   // ─── Wave 13: автопересчёт финансовых полей ─────────────────────────
