@@ -248,19 +248,89 @@ export class ProjectsService implements OnModuleInit {
   /** Публичный (без auth) — клиент сохраняет ответы. */
   async savePublicBrief(token: string, payload: any) {
     if (!token || token.length < 8) throw new NotFoundException('Invalid token');
-    const p = await this.repo.findOne({ where: { briefShareToken: token } });
+    const p = await this.repo.findOne({
+      where: { briefShareToken: token },
+      relations: ['manager'],
+    });
     if (!p) throw new NotFoundException('Бриф не найден или ссылка отозвана');
     const safe = payload && typeof payload === 'object' ? payload : {};
+    const clientName = String(safe.clientSignature || '').trim() || 'Клиент';
     const brief = {
       ...safe,
       filledAt: new Date().toISOString(),
       filledByUserId: null,
-      filledByName: safe.clientSignature || 'Клиент',
+      filledByName: clientName,
       source: 'client',
     };
     await this.repo.update(p.id, { brief } as any);
+
     // Real-time: команда видит обновление мгновенно.
     try { this.gateway.broadcast('projects:changed', { projectId: p.id }); } catch {}
+
+    // ─── Уведомление менеджеру проекта (in-app + email + Telegram) ────
+    // Best-effort: каждая интеграция в своём try/catch, чтобы упавший
+    // Brevo или Telegram не ломали клиентский сабмит брифа.
+    try {
+      // Считаем процент заполненности (минимум для понимания «полный
+      // бриф» vs «черновик»).
+      const answers = (brief as any).answers || {};
+      const totalQs = 37; // см. frontend/src/lib/briefSchema.ts
+      let filledQs = 0;
+      for (const k of Object.keys(answers)) {
+        if (typeof answers[k] === 'string' && answers[k].trim().length > 0) filledQs++;
+      }
+      const percent = Math.round((filledQs / totalQs) * 100);
+
+      const manager = p.manager;
+      const projectLink = `/projects/${p.id}`;
+      const title = '📋 Клиент заполнил бриф';
+      const message =
+        `${clientName} заполнил${clientName.endsWith('а') ? 'а' : ''} бриф для проекта ` +
+        `«${p.name}» (${percent}% — ${filledQs} из ${totalQs} вопросов).`;
+
+      if (manager?.id) {
+        // 1) In-app notification — кликабельная карточка в шторке.
+        await this.notificationsService.create({
+          userId: manager.id,
+          type: NotificationType.STATUS_CHANGE,
+          title,
+          message,
+          link: projectLink,
+          data: { projectId: p.id, briefPercent: percent, source: 'client' },
+        }).catch(() => {});
+
+        // 2) Email — если у менеджера есть email.
+        if (manager.email) {
+          await this.mailService.sendGenericNotification(
+            manager.email,
+            manager.name || 'Менеджер',
+            title,
+            `Здравствуйте, <strong>${manager.name || 'коллега'}</strong>!<br><br>` +
+            `Клиент <strong>${clientName}</strong> только что заполнил бриф для проекта ` +
+            `<strong>«${p.name}»</strong>.<br><br>` +
+            `📊 Заполнено: <strong>${percent}%</strong> (${filledQs} из ${totalQs} вопросов).<br>` +
+            `📅 ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Dushanbe' })}<br><br>` +
+            `<a href="${this.telegramService.appUrl}${projectLink}" ` +
+            `style="display:inline-block;padding:12px 24px;background:#4f6ef7;` +
+            `color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">` +
+            `Открыть бриф →</a>`,
+          ).catch(() => {});
+        }
+
+        // 3) Telegram — если менеджер привязал свой Telegram.
+        await this.telegramService.sendToUser(
+          manager.id,
+          `📋 <b>Клиент заполнил бриф</b>\n\n` +
+          `👤 Клиент: <b>${clientName}</b>\n` +
+          `📁 Проект: <b>${p.name}</b>\n` +
+          `📊 Заполнено: <b>${percent}%</b> (${filledQs}/${totalQs})\n\n` +
+          `👉 ${this.telegramService.appUrl}${projectLink}`,
+        ).catch(() => {});
+      }
+    } catch (e: any) {
+      this.logger.warn(`Brief notification to manager failed: ${e?.message || e}`);
+    }
+
     return { ok: true };
   }
 
