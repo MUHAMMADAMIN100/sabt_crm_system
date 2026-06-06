@@ -206,10 +206,16 @@ export class Project {
    *  (см. WeBrand_SMM_brief.pdf). Хранит сами ответы + мета-инфу
    *  (когда заполнен, кем, какой тариф). Структура:
    *  { tariff, filledAt, filledByUserId, clientSignature,
-   *    managerSignature, answers: { q1, q2, ..., q37 } }.
+   *    managerSignature, answers: { q1, q2, ..., q37 }, source }.
    *  Null = бриф ещё не заполнен. */
   @Column({ type: 'jsonb', nullable: true })
   brief: Record<string, any> | null;
+
+  /** Публичный токен-ссылка для клиента, по которой он заполняет бриф
+   *  без авторизации. Генерируется по запросу PM-роли. Изменения
+   *  попадают в Project.brief мгновенно (broadcast 'projects:changed'). */
+  @Column({ nullable: true })
+  briefShareToken: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

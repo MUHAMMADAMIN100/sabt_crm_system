@@ -15,6 +15,9 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import SMM_QUESTIONS from '@/config/smm-questions'
 import type { Project, Employee } from '@/types/entities'
+import BriefFormBody, { BriefDraft } from '@/components/projects/BriefFormBody'
+import { briefFilledPercent, TOTAL_BRIEF_QUESTIONS } from '@/lib/briefSchema'
+import { FileText } from 'lucide-react'
 
 interface ProjectFormProps {
   open: boolean
@@ -141,7 +144,14 @@ export default function ProjectsPage() {
       // download button on ProjectDetailPage renders it live, no need to
       // attach a text file that would eventually 404 when Railway's
       // ephemeral filesystem rotates.
-      return await projectsApi.create(data)
+      // Бриф пришёл из формы как поле `__brief` (только в момент создания)
+      // — извлекаем, чтобы не отправлять в /projects.
+      const { __brief, ...projectData } = data || {}
+      const created = await projectsApi.create(projectData)
+      if (__brief && created?.id) {
+        try { await projectsApi.saveBrief(created.id, __brief) } catch { /* best-effort */ }
+      }
+      return created
     },
     onSuccess: async (newProject: any) => {
       setShowCreate(false)
@@ -496,6 +506,13 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     .includes(formUser?.role || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
+  // Бриф клиента (заполнение прямо в форме создания SMM-проекта).
+  // Если не пуст — отправляется вторым запросом после успешного create.
+  const [briefDraft, setBriefDraft] = useState<BriefDraft>({
+    tariff: '', clientSignature: '', managerSignature: '', answers: {},
+  })
+  const [showBriefModal, setShowBriefModal] = useState(false)
+  const briefFilled = briefFilledPercent({ answers: briefDraft.answers })
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
   const [memberDropOpen, setMemberDropOpen] = useState(false)
   const [memberSearch, setMemberSearch] = useState('')
@@ -669,6 +686,17 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           paidAt: t.paidAt,
           note: t.note?.trim() || undefined,
         }))
+    }
+    // Бриф клиента — прикрепляем только при создании SMM-проекта и
+    // если хотя бы что-то заполнено. Родительский createMut выдернет
+    // его из data.__brief и отправит отдельным запросом после create.
+    if (data.projectType === 'SMM' && !initial && briefFilled > 0) {
+      formattedData.__brief = {
+        tariff: briefDraft.tariff || null,
+        clientSignature: briefDraft.clientSignature,
+        managerSignature: briefDraft.managerSignature,
+        answers: briefDraft.answers,
+      }
     }
     onSubmit(formattedData)
   }
@@ -920,6 +948,36 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                   ⚠️ Без тарифа SMM-проект попадёт в риск-зону. Выберите тариф или создайте новый в разделе «SMM-тарифы».
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Бриф клиента — показывается только при создании SMM-проекта,
+              в режиме редактирования не показываем (там есть отдельная вкладка). */}
+          {projectType === 'SMM' && !initial && (
+            <div className="sm:col-span-2 border border-primary-200 dark:border-primary-800 rounded-xl p-4 bg-primary-50/30 dark:bg-primary-900/10">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100 flex items-center gap-2">
+                    <FileText size={14} className="text-primary-600" />
+                    Бриф клиента
+                  </h3>
+                  <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-0.5">
+                    8 разделов · {TOTAL_BRIEF_QUESTIONS} вопросов. Можно заполнить сейчас или позже в карточке проекта.
+                  </p>
+                  {briefFilled > 0 && (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
+                      ✓ Заполнено {briefFilled}% — будет сохранено вместе с проектом
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowBriefModal(true)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-primary-700 bg-white border border-primary-300 hover:bg-primary-50 dark:bg-surface-800 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-900/30 transition-colors shrink-0"
+                >
+                  {briefFilled > 0 ? '✏️ Редактировать бриф' : '📋 Заполнить бриф'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -1281,6 +1339,41 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           </button>
         </div>
       </form>
+
+      {/* Inner modal: бриф клиента при создании проекта */}
+      <Modal
+        open={showBriefModal}
+        onClose={() => setShowBriefModal(false)}
+        title={`Бриф клиента ${briefFilled > 0 ? `· заполнено ${briefFilled}%` : ''}`}
+        size="xl"
+      >
+        <div className="max-h-[70vh] overflow-y-auto pr-1">
+          <BriefFormBody value={briefDraft} onChange={setBriefDraft} />
+        </div>
+        <div className="flex items-center justify-between gap-2 pt-3 border-t border-surface-100 dark:border-surface-700 mt-3">
+          <p className="text-[11px] text-surface-500 dark:text-surface-400">
+            Сохранится автоматически после создания проекта.
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setBriefDraft({ tariff: '', clientSignature: '', managerSignature: '', answers: {} })
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 transition-colors"
+            >
+              Очистить
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowBriefModal(false)}
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors"
+            >
+              Готово
+            </button>
+          </div>
+        </div>
+      </Modal>
     </Modal>
   )
 }

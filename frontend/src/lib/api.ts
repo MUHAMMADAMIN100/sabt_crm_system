@@ -123,7 +123,11 @@ api.interceptors.response.use(
       }
     }
 
-    if (status === 401 && !window.location.pathname.includes('/auth')) {
+    if (
+      status === 401 &&
+      !window.location.pathname.includes('/auth') &&
+      !window.location.pathname.startsWith('/public/')
+    ) {
       // Грейс после login: даём фронту 5 сек устаканиться, не делаем агрессивный
       // редирект — пользователь только-только вошёл, выкидывать его обратно
       // на /auth из-за тайминга гонки куки нельзя.

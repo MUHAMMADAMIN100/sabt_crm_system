@@ -99,15 +99,24 @@ export class SmmTariffsService implements OnModuleInit {
       this.logger.warn(`ALTER TABLE smm_tariffs isCustom failed: ${e?.message || e}`);
     }
 
-    // 2) Сид/обновление канонических тарифов. Сравнение по имени (case-insensitive).
-    //    Старые тарифы с другими именами (Базовый/Бизнес и т.п.) — деактивируем,
-    //    чтобы они не появлялись в селекторах при создании новых проектов.
-    //    Существующие проекты сохраняют их в snapshot — данные не теряются.
+    // 2) Сид/обновление канонических тарифов. Сравнение по имени
+    //    (case-insensitive). Любые «индивид*» (Индивидуал, Индив.тариф)
+    //    считаются дубликатами канонического «Индивидуальный» и
+    //    деактивируются. Существующие проекты сохраняют их в snapshot —
+    //    данные не теряются.
     try {
       const all = await this.repo.find();
       const canonNames = new Set(CANON_TARIFFS.map(t => (t.name || '').toLowerCase()));
+      const isIndividualLike = (name: string) =>
+        /^индивид/i.test((name || '').trim());
       for (const t of all) {
-        if (!canonNames.has(String(t.name || '').toLowerCase()) && t.isActive) {
+        const lower = String(t.name || '').toLowerCase();
+        // Точно канонический — пропускаем (его обновит цикл ниже).
+        if (canonNames.has(lower)) continue;
+        // Не канонический. Деактивируем если был активен, ИЛИ если это
+        // дубль «индивидуального» (даже если деактивирован — чтобы не
+        // путать в админке).
+        if (t.isActive || isIndividualLike(t.name)) {
           await this.repo.update(t.id, { isActive: false });
         }
       }

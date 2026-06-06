@@ -3,12 +3,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '@/services/api.service'
 import { ConfirmDialog } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
-import { BRIEF_SECTIONS, BRIEF_TARIFFS, briefFilledPercent, TOTAL_BRIEF_QUESTIONS } from '@/lib/briefSchema'
+import { briefFilledPercent, TOTAL_BRIEF_QUESTIONS } from '@/lib/briefSchema'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { Save, Trash2, FileText, CheckCircle2 } from 'lucide-react'
+import { Save, Trash2, FileText, CheckCircle2, Link as LinkIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import BriefFormBody, { BriefDraft } from './BriefFormBody'
 
 interface Props {
   project: any
@@ -28,34 +29,26 @@ export default function ProjectBriefTab({ project }: Props) {
   const canDelete = canEdit && role !== 'smm_specialist'
 
   // Локальный state с черновиком (чтобы поля не лагали на каждом keystroke).
-  const initial = useMemo(() => ({
+  const initial = useMemo<BriefDraft>(() => ({
     tariff: project?.brief?.tariff || '',
     clientSignature: project?.brief?.clientSignature || '',
     managerSignature: project?.brief?.managerSignature || '',
     answers: (project?.brief?.answers as Record<string, string>) || {},
   }), [project?.brief])
 
-  const [tariff, setTariff] = useState<string>(initial.tariff)
-  const [clientSignature, setClientSignature] = useState<string>(initial.clientSignature)
-  const [managerSignature, setManagerSignature] = useState<string>(initial.managerSignature)
-  const [answers, setAnswers] = useState<Record<string, string>>(initial.answers)
+  const [draft, setDraft] = useState<BriefDraft>(initial)
   const [confirmClear, setConfirmClear] = useState(false)
 
-  useEffect(() => {
-    setTariff(initial.tariff)
-    setClientSignature(initial.clientSignature)
-    setManagerSignature(initial.managerSignature)
-    setAnswers(initial.answers)
-  }, [initial])
+  useEffect(() => { setDraft(initial) }, [initial])
 
-  const filledPercent = briefFilledPercent({ answers })
+  const filledPercent = briefFilledPercent({ answers: draft.answers })
 
   const saveMut = useMutation({
     mutationFn: () => projectsApi.saveBrief(project.id, {
-      tariff: tariff || null,
-      clientSignature,
-      managerSignature,
-      answers,
+      tariff: draft.tariff || null,
+      clientSignature: draft.clientSignature,
+      managerSignature: draft.managerSignature,
+      answers: draft.answers,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['project', project.id] })
@@ -68,14 +61,29 @@ export default function ProjectBriefTab({ project }: Props) {
     mutationFn: () => projectsApi.clearBrief(project.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['project', project.id] })
-      setTariff('')
-      setClientSignature('')
-      setManagerSignature('')
-      setAnswers({})
+      setDraft({ tariff: '', clientSignature: '', managerSignature: '', answers: {} })
       setConfirmClear(false)
       toast.success('Бриф очищен')
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось очистить бриф'),
+  })
+
+  // Публичная ссылка для клиента: GET/PATCH-токен сгенерирован на бэке.
+  const shareLinkMut = useMutation({
+    mutationFn: () => projectsApi.briefShareLink(project.id),
+    onSuccess: async (res: any) => {
+      const url = res?.url
+      if (!url) { toast.error('Не удалось получить ссылку'); return }
+      try {
+        await navigator.clipboard.writeText(url)
+        toast.success('Ссылка скопирована в буфер', { duration: 4000 })
+      } catch {
+        // Старые браузеры без clipboard API — показываем prompt.
+        // eslint-disable-next-line no-alert
+        window.prompt('Скопируйте ссылку и отправьте клиенту:', url)
+      }
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось создать ссылку'),
   })
 
   if (project?.projectType !== 'SMM') {
@@ -105,114 +113,56 @@ export default function ProjectBriefTab({ project }: Props) {
             <p className="text-[11px] text-surface-400 mt-1">
               Последнее изменение: {format(new Date(project.brief.filledAt), 'd MMMM yyyy, HH:mm', { locale: ru })}
               {project.brief.filledByName ? ` · ${project.brief.filledByName}` : ''}
+              {project.brief.source === 'client' ? ' · клиент через ссылку' : ''}
             </p>
           )}
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className={clsx(
-              'text-xs font-semibold px-3 py-1 rounded-full',
-              filledPercent === 100 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                : filledPercent >= 50 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                : 'bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-400',
-            )}>
-              {filledPercent === 100 ? <span className="inline-flex items-center gap-1"><CheckCircle2 size={12} /> Заполнен 100%</span>
-                : `${filledPercent}% заполнено`}
-            </span>
-          </div>
+          <span className={clsx(
+            'text-xs font-semibold px-3 py-1 rounded-full',
+            filledPercent === 100 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+              : filledPercent >= 50 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+              : 'bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-400',
+          )}>
+            {filledPercent === 100 ? <span className="inline-flex items-center gap-1"><CheckCircle2 size={12} /> Заполнен 100%</span>
+              : `${filledPercent}% заполнено`}
+          </span>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => shareLinkMut.mutate()}
+              disabled={shareLinkMut.isPending}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 dark:bg-primary-900/30 dark:hover:bg-primary-900/50 dark:text-primary-300 transition-colors"
+              title="Скопировать публичную ссылку для клиента"
+            >
+              <LinkIcon size={12} /> {shareLinkMut.isPending ? 'Создаю…' : 'Ссылка для клиента'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Тариф + дата (шапка анкеты) */}
-      <div className="card grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
-          <label className="label text-xs">Компания</label>
-          <input className="input" value={project?.name || ''} disabled />
-        </div>
-        <div>
-          <label className="label text-xs">Дата создания проекта</label>
-          <input
-            className="input"
-            value={project?.createdAt ? format(new Date(project.createdAt), 'd MMMM yyyy', { locale: ru }) : ''}
-            disabled
-          />
-        </div>
-        <div>
-          <label className="label text-xs">Тариф</label>
-          <select
-            className="input"
-            value={tariff}
-            onChange={e => setTariff(e.target.value)}
-            disabled={!canEdit}
-          >
-            <option value="">— Не выбран —</option>
-            {BRIEF_TARIFFS.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {/* Секции */}
-      {BRIEF_SECTIONS.map((sec, idx) => (
-        <div key={sec.title} className="card">
-          <h3 className="text-base font-bold text-surface-900 dark:text-surface-100 mb-3 pb-2 border-b border-surface-100 dark:border-surface-700">
-            <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-xs font-bold mr-2">
-              {idx + 1}
-            </span>
-            {sec.title}
-          </h3>
-          <div className="space-y-3">
-            {sec.fields.map(f => (
-              <div key={f.key}>
-                <label className="label text-xs flex items-start gap-2">
-                  <span className="text-surface-400 font-mono shrink-0 mt-0.5">{f.num}.</span>
-                  <span>{f.label}</span>
-                </label>
-                {f.long ? (
-                  <textarea
-                    className="input min-h-[72px] resize-y"
-                    value={answers[f.key] || ''}
-                    onChange={e => setAnswers({ ...answers, [f.key]: e.target.value })}
-                    disabled={!canEdit}
-                    placeholder="—"
-                  />
-                ) : (
-                  <input
-                    className="input"
-                    value={answers[f.key] || ''}
-                    onChange={e => setAnswers({ ...answers, [f.key]: e.target.value })}
-                    disabled={!canEdit}
-                    placeholder="—"
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {/* Подписи */}
-      <div className="card grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="label text-xs">Клиент</label>
-          <input
-            className="input"
-            value={clientSignature}
-            onChange={e => setClientSignature(e.target.value)}
-            disabled={!canEdit}
-            placeholder="ФИО клиента"
-          />
-        </div>
-        <div>
-          <label className="label text-xs">Менеджер WeBrand</label>
-          <input
-            className="input"
-            value={managerSignature}
-            onChange={e => setManagerSignature(e.target.value)}
-            disabled={!canEdit}
-            placeholder="ФИО менеджера"
-          />
-        </div>
-      </div>
+      {/* Форма брифа */}
+      <BriefFormBody
+        value={draft}
+        onChange={setDraft}
+        disabled={!canEdit}
+        headerExtra={
+          <>
+            <div>
+              <label className="label text-xs">Компания</label>
+              <input className="input" value={project?.name || ''} disabled />
+            </div>
+            <div>
+              <label className="label text-xs">Дата создания проекта</label>
+              <input
+                className="input"
+                value={project?.createdAt ? format(new Date(project.createdAt), 'd MMMM yyyy', { locale: ru }) : ''}
+                disabled
+              />
+            </div>
+          </>
+        }
+      />
 
       {/* Actions */}
       {canEdit && (

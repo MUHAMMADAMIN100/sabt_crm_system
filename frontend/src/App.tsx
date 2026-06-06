@@ -66,6 +66,7 @@ const RisksPage         = lazy(() => import('@/pages/risks/RisksPage'))
 const FinancePage       = lazy(() => import('@/pages/finance/FinancePage'))
 const TeamsPage         = lazy(() => import('@/pages/teams/TeamsPage'))
 const SecurityLogPage   = lazy(() => import('@/pages/security/SecurityLogPage'))
+const PublicBriefPage   = lazy(() => import('@/pages/public/PublicBriefPage'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   // `authenticated` — это локальная подсказка. Реальная авторизация —
@@ -113,6 +114,8 @@ export default function App() {
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/auth" element={authenticated ? <Navigate to="/" replace /> : <AuthPage />} />
+        {/* Публичная страница брифа — без авторизации, по токену. */}
+        <Route path="/public/brief/:token" element={<PublicBriefPage />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<DashboardPage />} />
           <Route path="projects" element={<RoleGuard><ProjectsPage /></RoleGuard>} />

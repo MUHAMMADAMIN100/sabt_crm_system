@@ -66,6 +66,13 @@ export const projectsApi = {
   // SMM-бриф клиента
   saveBrief: (id: string, brief: any) => api.patch(`/projects/${id}/brief`, brief).then(r => r.data),
   clearBrief: (id: string) => api.delete(`/projects/${id}/brief`).then(r => r.data),
+  briefShareLink: (id: string) => api.post(`/projects/${id}/brief/share-link`).then(r => r.data),
+}
+
+/** Публичные эндпоинты брифа (для клиентской ссылки без auth). */
+export const publicBriefApi = {
+  get: (token: string) => api.get(`/public/brief/${token}`).then(r => r.data),
+  save: (token: string, brief: any) => api.patch(`/public/brief/${token}`, brief).then(r => r.data),
 }
 
 // ─── Tasks ───────────────────────────────────────────────

@@ -29,15 +29,24 @@ import { AppGateway } from '../gateway/app.gateway';
 export class ProjectsService implements OnModuleInit {
   private readonly logger = new Logger(ProjectsService.name);
 
-  /** Авто-миграция: jsonb-колонка brief для SMM-брифа клиента (CRUD на
-   *  /projects/:id/brief). Идемпотентно — не требует отдельной миграции. */
+  /** Авто-миграция:
+   *   - jsonb-колонка brief для SMM-брифа клиента (CRUD /projects/:id/brief);
+   *   - varchar briefShareToken для публичной ссылки клиенту.
+   *  Идемпотентно — не требует отдельной миграции. */
   async onModuleInit() {
     try {
       await this.repo.manager.query(
         `ALTER TABLE projects ADD COLUMN IF NOT EXISTS brief jsonb`,
       );
+      await this.repo.manager.query(
+        `ALTER TABLE projects ADD COLUMN IF NOT EXISTS "briefShareToken" varchar`,
+      );
+      await this.repo.manager.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_brief_share_token
+         ON projects("briefShareToken") WHERE "briefShareToken" IS NOT NULL`,
+      );
     } catch (e: any) {
-      this.logger.warn(`ALTER TABLE projects brief failed: ${e?.message || e}`);
+      this.logger.warn(`ALTER TABLE projects brief/briefShareToken failed: ${e?.message || e}`);
     }
   }
 
@@ -200,6 +209,59 @@ export class ProjectsService implements OnModuleInit {
     }).catch(() => {});
     this.gateway.broadcast('projects:changed', { projectId });
     return this.findOne(projectId);
+  }
+
+  /** Генерирует (или возвращает существующий) публичный токен для брифа.
+   *  Клиент по URL `/public/brief/<token>` заполняет анкету без auth. */
+  async generateBriefShareToken(projectId: string, user: { id: string; role: string; name?: string }): Promise<{ token: string }> {
+    const project = await this.findOne(projectId);
+    if (project.projectType !== 'SMM') {
+      throw new ForbiddenException('Бриф доступен только для SMM-проектов');
+    }
+    const ADMIN_PM = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm', 'smm_specialist'];
+    const isAllowed = ADMIN_PM.includes(user.role) || project.managerId === user.id;
+    if (!isAllowed) throw new ForbiddenException('Нет прав на проект');
+
+    let token = project.briefShareToken;
+    if (!token) {
+      // 32 hex-символа — достаточно для unguessable URL.
+      token = require('crypto').randomBytes(16).toString('hex');
+      await this.repo.update(projectId, { briefShareToken: token } as any);
+    }
+    return { token };
+  }
+
+  /** Публичный (без auth) — отдаёт минимум проектной инфы по токену +
+   *  текущий бриф для пред-заполнения. Если токена нет — 404. */
+  async getPublicBriefByToken(token: string) {
+    if (!token || token.length < 8) throw new NotFoundException('Invalid token');
+    const p = await this.repo.findOne({ where: { briefShareToken: token } });
+    if (!p) throw new NotFoundException('Бриф не найден или ссылка отозвана');
+    return {
+      projectId: p.id,
+      projectName: p.name,
+      projectType: p.projectType,
+      brief: p.brief || null,
+    };
+  }
+
+  /** Публичный (без auth) — клиент сохраняет ответы. */
+  async savePublicBrief(token: string, payload: any) {
+    if (!token || token.length < 8) throw new NotFoundException('Invalid token');
+    const p = await this.repo.findOne({ where: { briefShareToken: token } });
+    if (!p) throw new NotFoundException('Бриф не найден или ссылка отозвана');
+    const safe = payload && typeof payload === 'object' ? payload : {};
+    const brief = {
+      ...safe,
+      filledAt: new Date().toISOString(),
+      filledByUserId: null,
+      filledByName: safe.clientSignature || 'Клиент',
+      source: 'client',
+    };
+    await this.repo.update(p.id, { brief } as any);
+    // Real-time: команда видит обновление мгновенно.
+    try { this.gateway.broadcast('projects:changed', { projectId: p.id }); } catch {}
+    return { ok: true };
   }
 
   /** Очистка брифа (полное удаление). Доступно только PM-ролям/админу. */

@@ -128,4 +128,23 @@ export class ProjectsController {
   clearBrief(@Param('id') id: string, @Request() req) {
     return this.service.clearBrief(id, req.user);
   }
+
+  /** Сгенерировать (или вернуть существующую) публичную ссылку для
+   *  клиента — по этой ссылке он заполнит бриф без авторизации. */
+  @Post(':id/brief/share-link')
+  @Roles(
+    UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
+    UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM,
+    UserRole.SMM_SPECIALIST,
+  )
+  async briefShareLink(@Param('id') id: string, @Request() req) {
+    const { token } = await this.service.generateBriefShareToken(id, req.user);
+    // Базовый URL фронта — берём из заголовка Origin (правильный для CORS-
+    // разрешённых доменов) или из APP_URL / CORS_ORIGINS как fallback.
+    const origin = req.headers?.origin
+      || (process.env.APP_URL || '').trim()
+      || (process.env.CORS_ORIGINS || '').split(',')[0]?.trim()
+      || 'https://sabt-crm-system-frontend.vercel.app';
+    return { token, url: `${origin.replace(/\/+$/, '')}/public/brief/${token}` };
+  }
 }
