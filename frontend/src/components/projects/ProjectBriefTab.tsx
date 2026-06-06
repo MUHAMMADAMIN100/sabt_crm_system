@@ -44,23 +44,41 @@ export default function ProjectBriefTab({ project }: Props) {
   const filledPercent = briefFilledPercent({ answers: draft.answers })
 
   const saveMut = useMutation({
-    mutationFn: () => projectsApi.saveBrief(project.id, {
-      tariff: draft.tariff || null,
-      clientSignature: draft.clientSignature,
-      managerSignature: draft.managerSignature,
-      answers: draft.answers,
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['project', project.id] })
+    mutationFn: async () => {
+      await qc.cancelQueries({ queryKey: ['project', project.id] })
+      return projectsApi.saveBrief(project.id, {
+        tariff: draft.tariff || null,
+        clientSignature: draft.clientSignature,
+        managerSignature: draft.managerSignature,
+        answers: draft.answers,
+      })
+    },
+    onSuccess: (freshProject: any) => {
+      // Подменяем кеш ответом сервера — без invalidate, чтобы избежать
+      // гонки с WebSocket projects:changed.
+      if (freshProject?.id) qc.setQueryData(['project', project.id], freshProject)
       toast.success('Бриф сохранён')
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось сохранить бриф'),
   })
 
   const clearMut = useMutation({
-    mutationFn: () => projectsApi.clearBrief(project.id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['project', project.id] })
+    mutationFn: async () => {
+      // Отменяем все in-flight рефетчи проекта — иначе они могут
+      // вернуться позже с уже устаревшим brief и затереть наш пустой
+      // ответ (тогда поля «возвращаются» через секунду).
+      await qc.cancelQueries({ queryKey: ['project', project.id] })
+      return projectsApi.clearBrief(project.id)
+    },
+    onSuccess: (freshProject: any) => {
+      // Подменяем кеш свежим project'ом синхронно. НЕ invalidate —
+      // иначе WebSocket projects:changed и любой другой триггер могут
+      // запустить refetch и принести stale данные.
+      if (freshProject?.id) {
+        qc.setQueryData(['project', project.id], freshProject)
+      }
+      // Локальный draft тоже принудительно очищаем (на случай если бэк
+      // вернул project без поля brief, а не явный null).
       setDraft({ tariff: '', clientSignature: '', managerSignature: '', answers: {} })
       setConfirmClear(false)
       toast.success('Бриф очищен')
