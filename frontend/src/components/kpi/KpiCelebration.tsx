@@ -3,104 +3,117 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 
 /**
- * Анимированный поздравительный модал когда менеджер закрывает KPI-метрику.
- * Центрируется на экране через portal, scale+fade анимация, конфетти
- * из эмодзи по краям, авто-закрытие через 5 сек или по клику на фон.
- *
- * Триггерится из SalesDashboard когда `done` переходит false→true для
- * одной из метрик. Антиспам — на стороне родителя (useRef<Set>).
+ * Полноэкранное анимированное поздравление с фейерверком.
+ * Триггерится из KpiCelebrationWatcher / SalesDashboard когда метрика
+ * KPI впервые за день достигает цели.
  */
 
 interface KpiCelebrationProps {
-  /** Открыто или нет. Закрывается через onClose (родитель ставит state в null). */
   open: boolean
-  /** Имя сотрудника — кладётся в заголовок. */
   name: string
-  /** Ключ метрики (sales_*) — определяет конкретный текст похвалы и эмодзи. */
   metricKey: string | null
-  /** Колбэк закрытия — родитель сбрасывает state. */
   onClose: () => void
 }
 
-/** Готовые похвалы для каждой sales-метрики + специальная для overall=100%. */
-const PRAISES: Record<string, { icon: string; title: string; subtitle: string; accent: string }> = {
+/** Похвалы для каждой метрики. */
+const PRAISES: Record<string, { icon: string; title: string; subtitle: string; accent: string; ring: string }> = {
   sales_funnel_progress: {
     icon: '🚀',
     title: 'Воронка в огне!',
     subtitle: 'Ты сделал все продвижения по воронке за сегодня. Так держать!',
-    accent: 'from-indigo-500 to-violet-600',
+    accent: 'from-indigo-400 via-violet-500 to-purple-600',
+    ring: 'rgba(139,92,246,0.6)',
   },
   funnel_progress: {
     icon: '🚀',
     title: 'Воронка в огне!',
     subtitle: 'Ты сделал все продвижения по воронке за сегодня. Так держать!',
-    accent: 'from-indigo-500 to-violet-600',
+    accent: 'from-indigo-400 via-violet-500 to-purple-600',
+    ring: 'rgba(139,92,246,0.6)',
   },
   sales_new_companies: {
     icon: '🌟',
     title: 'Ты — машина!',
     subtitle: 'Все новые компании добавлены. База растёт благодаря тебе.',
-    accent: 'from-amber-400 to-orange-500',
+    accent: 'from-amber-300 via-orange-400 to-rose-500',
+    ring: 'rgba(251,146,60,0.6)',
   },
   new_companies: {
     icon: '🌟',
     title: 'Ты — машина!',
     subtitle: 'Все новые компании добавлены. База растёт благодаря тебе.',
-    accent: 'from-amber-400 to-orange-500',
+    accent: 'from-amber-300 via-orange-400 to-rose-500',
+    ring: 'rgba(251,146,60,0.6)',
   },
   sales_cold_calls: {
     icon: '📞',
     title: 'Король холодных звонков!',
     subtitle: 'План по звонкам закрыт. Каждый звонок — шаг к новой сделке.',
-    accent: 'from-sky-500 to-blue-600',
+    accent: 'from-sky-300 via-blue-500 to-indigo-600',
+    ring: 'rgba(59,130,246,0.6)',
   },
   cold_calls: {
     icon: '📞',
     title: 'Король холодных звонков!',
     subtitle: 'План по звонкам закрыт. Каждый звонок — шаг к новой сделке.',
-    accent: 'from-sky-500 to-blue-600',
+    accent: 'from-sky-300 via-blue-500 to-indigo-600',
+    ring: 'rgba(59,130,246,0.6)',
   },
   sales_personal_emails: {
     icon: '💌',
     title: 'Мастер переписки!',
     subtitle: 'Все письма отправлены. Каждое — на вес золота.',
-    accent: 'from-pink-500 to-rose-600',
+    accent: 'from-pink-400 via-rose-500 to-fuchsia-600',
+    ring: 'rgba(244,114,182,0.6)',
   },
   personal_emails: {
     icon: '💌',
     title: 'Мастер переписки!',
     subtitle: 'Все письма отправлены. Каждое — на вес золота.',
-    accent: 'from-pink-500 to-rose-600',
+    accent: 'from-pink-400 via-rose-500 to-fuchsia-600',
+    ring: 'rgba(244,114,182,0.6)',
   },
   sales_meetings: {
     icon: '🤝',
     title: 'Встречи закрыты!',
     subtitle: 'Сделки уже совсем рядом. Так держать!',
-    accent: 'from-emerald-500 to-green-600',
+    accent: 'from-emerald-400 via-green-500 to-teal-600',
+    ring: 'rgba(52,211,153,0.6)',
   },
   meetings: {
     icon: '🤝',
     title: 'Встречи закрыты!',
     subtitle: 'Сделки уже совсем рядом. Так держать!',
-    accent: 'from-emerald-500 to-green-600',
+    accent: 'from-emerald-400 via-green-500 to-teal-600',
+    ring: 'rgba(52,211,153,0.6)',
   },
   __all__: {
     icon: '🏆',
     title: 'Сегодня ты — №1!',
     subtitle: 'ВСЕ KPI закрыты на 100%. Это уровень чемпиона!',
-    accent: 'from-yellow-400 via-amber-500 to-orange-500',
+    accent: 'from-yellow-300 via-amber-400 to-orange-500',
+    ring: 'rgba(250,204,21,0.7)',
   },
 }
 
-/** 24 эмодзи-конфетти, разлетающиеся от центра по случайным траекториям. */
-const CONFETTI_EMOJI = ['🎉', '🎊', '⭐', '✨', '💥', '🔥', '💪', '👑', '🏆', '🚀', '💎', '⚡']
-const CONFETTI_COUNT = 24
+const FIREWORK_COLORS = ['#f87171', '#fbbf24', '#34d399', '#60a5fa', '#a78bfa', '#f472b6', '#fb7185', '#facc15', '#22d3ee']
+const FIREWORK_BURSTS = 6        // сколько залпов
+const SPARKS_PER_BURST = 22      // искр в каждом залпе
+const CONFETTI_EMOJI = ['🎉', '🎊', '⭐', '✨', '💥', '🔥', '💪', '👑', '🏆', '🚀', '💎', '⚡', '🌟', '✊', '🙌']
+const CONFETTI_COUNT = 50
+
+/** Псевдослучайный детерминированный rand по двум числам (для стабильных
+ *  значений между рендерами без Math.random). */
+function rand(a: number, b: number): number {
+  const seed = (a * 9301 + b * 49297 + 7919) % 233280
+  return seed / 233280
+}
 
 export default function KpiCelebration({ open, name, metricKey, onClose }: KpiCelebrationProps) {
-  // Автозакрытие через 5 секунд
+  // Авто-закрытие через 6 сек
   useEffect(() => {
     if (!open) return
-    const t = window.setTimeout(onClose, 5000)
+    const t = window.setTimeout(onClose, 6000)
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => {
@@ -109,23 +122,42 @@ export default function KpiCelebration({ open, name, metricKey, onClose }: KpiCe
     }
   }, [open, onClose])
 
-  // Случайные траектории для конфетти — генерируются один раз при открытии.
+  // Залпы фейерверка — позиции, цвета и сетка искр.
+  // Стабильны между рендерами одного и того же metricKey.
+  const bursts = useMemo(() => {
+    if (!open || !metricKey) return []
+    return Array.from({ length: FIREWORK_BURSTS }).map((_, b) => {
+      // Позиция залпа: в верхней-средней зоне экрана, разнесены по X.
+      const left = 10 + rand(b, 11) * 80               // 10–90% по X
+      const top  = 12 + rand(b, 13) * 50               // 12–62% по Y
+      const delay = rand(b, 17) * 0.4 + b * 0.35        // последовательные залпы
+      const color = FIREWORK_COLORS[Math.floor(rand(b, 19) * FIREWORK_COLORS.length)]
+      const sparks = Array.from({ length: SPARKS_PER_BURST }).map((__, s) => {
+        const angle = (360 / SPARKS_PER_BURST) * s + rand(b, s) * 10
+        const distance = 180 + rand(b + 1, s + 7) * 140
+        const dx = Math.cos((angle * Math.PI) / 180) * distance
+        const dy = Math.sin((angle * Math.PI) / 180) * distance
+        const dur = 1.0 + rand(b, s + 31) * 0.6
+        return { s, dx, dy, dur, color }
+      })
+      return { b, left, top, delay, color, sparks }
+    })
+  }, [open, metricKey])
+
+  // Эмодзи-конфетти из центра — поверх фейерверка.
   const confetti = useMemo(() => {
     if (!open) return []
     return Array.from({ length: CONFETTI_COUNT }).map((_, i) => {
-      // Псевдослучайные значения с детерминированным сидом (i) — чтобы каждый
-      // рендер не плодил новых стилей. Math.random нельзя — нет stable.
-      const seed = (i * 9301 + 49297) % 233280
-      const rand = (k: number) => ((seed * (k + 1)) % 233280) / 233280
-      const angle = rand(1) * 360
-      const distance = 200 + rand(2) * 250
+      const angle = rand(i, 3) * 360
+      const distance = 200 + rand(i, 7) * 400
       const dx = Math.cos((angle * Math.PI) / 180) * distance
       const dy = Math.sin((angle * Math.PI) / 180) * distance
-      const delay = rand(3) * 0.3
-      const duration = 1.2 + rand(4) * 0.8
-      const rotate = (rand(5) - 0.5) * 720
-      const emoji = CONFETTI_EMOJI[Math.floor(rand(6) * CONFETTI_EMOJI.length)]
-      return { i, dx, dy, delay, duration, rotate, emoji }
+      const delay = rand(i, 11) * 0.5
+      const duration = 1.4 + rand(i, 13) * 1.0
+      const rotate = (rand(i, 17) - 0.5) * 1080
+      const emoji = CONFETTI_EMOJI[Math.floor(rand(i, 23) * CONFETTI_EMOJI.length)]
+      const size = 24 + rand(i, 29) * 28
+      return { i, dx, dy, delay, duration, rotate, emoji, size }
     })
   }, [open, metricKey])
 
@@ -135,125 +167,206 @@ export default function KpiCelebration({ open, name, metricKey, onClose }: KpiCe
   return createPortal(
     <>
       <style>{`
-        @keyframes kpiCelebrationFadeIn {
-          0%   { opacity: 0; }
-          100% { opacity: 1; }
+        @keyframes kpiFadeIn        { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes kpiBgShift {
+          0%   { background-position: 0% 50%; }
+          50%  { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
         }
-        @keyframes kpiCelebrationPop {
-          0%   { transform: scale(0.3) rotate(-8deg); opacity: 0; }
-          60%  { transform: scale(1.08) rotate(2deg); opacity: 1; }
+        @keyframes kpiIconPop {
+          0%   { transform: scale(0) rotate(-180deg); opacity: 0; }
+          55%  { transform: scale(1.25) rotate(15deg); opacity: 1; }
           100% { transform: scale(1) rotate(0); opacity: 1; }
         }
-        @keyframes kpiCelebrationIcon {
-          0%   { transform: scale(0) rotate(-180deg); }
-          50%  { transform: scale(1.3) rotate(20deg); }
-          100% { transform: scale(1) rotate(0); }
+        @keyframes kpiIconFloat {
+          0%, 100% { transform: translateY(0); }
+          50%      { transform: translateY(-12px); }
         }
-        @keyframes kpiCelebrationConfetti {
-          0%   { transform: translate(0, 0) rotate(0); opacity: 1; }
-          100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
+        @keyframes kpiTextRise {
+          0%   { opacity: 0; transform: translateY(40px); }
+          100% { opacity: 1; transform: translateY(0); }
         }
-        @keyframes kpiCelebrationShimmer {
+        @keyframes kpiNameShimmer {
           0%   { background-position: -200% 0; }
           100% { background-position: 200% 0; }
         }
+        @keyframes kpiSpark {
+          0%   { transform: translate(0, 0) scale(1); opacity: 1; }
+          70%  { opacity: 1; }
+          100% { transform: translate(var(--dx), var(--dy)) scale(0.4); opacity: 0; }
+        }
+        @keyframes kpiBurstFlash {
+          0%   { transform: scale(0.2); opacity: 0; }
+          30%  { transform: scale(1.4); opacity: 1; }
+          100% { transform: scale(0.6); opacity: 0; }
+        }
+        @keyframes kpiConfetti {
+          0%   { transform: translate(0, 0) rotate(0); opacity: 1; }
+          100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
+        }
+        @keyframes kpiBtnPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.4); }
+          50%      { box-shadow: 0 0 0 16px rgba(255,255,255,0); }
+        }
       `}</style>
 
-      {/* Overlay — кликабельно для закрытия */}
+      {/* Overlay на весь экран */}
       <div
         onClick={onClose}
-        className="fixed inset-0 z-[10000] bg-slate-900/40 backdrop-blur-md flex items-center justify-center px-4"
-        style={{ animation: 'kpiCelebrationFadeIn 0.25s ease-out' }}
+        className="fixed inset-0 z-[10000] overflow-hidden cursor-pointer"
+        style={{
+          animation: 'kpiFadeIn 0.3s ease-out',
+        }}
       >
-        {/* Центральная карточка */}
+        {/* Слой 1 — анимированный градиентный фон */}
+        <div
+          className={clsx('absolute inset-0 bg-gradient-to-br', praise.accent)}
+          style={{
+            backgroundSize: '300% 300%',
+            animation: 'kpiBgShift 8s ease-in-out infinite',
+          }}
+        />
+        {/* Затемнение поверх градиента */}
+        <div className="absolute inset-0 bg-slate-950/55" />
+
+        {/* Слой 2 — фейерверк (залпы искр) */}
+        {bursts.map(burst => (
+          <div
+            key={burst.b}
+            className="absolute pointer-events-none"
+            style={{ left: `${burst.left}%`, top: `${burst.top}%` }}
+          >
+            {/* Вспышка центра залпа */}
+            <span
+              className="absolute -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full"
+              style={{
+                background: `radial-gradient(circle, ${burst.color} 0%, transparent 65%)`,
+                animation: `kpiBurstFlash 0.8s ease-out ${burst.delay}s both`,
+              }}
+            />
+            {/* Искры разлетаются радиально */}
+            {burst.sparks.map(sp => (
+              <span
+                key={sp.s}
+                className="absolute -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full"
+                style={{
+                  ['--dx' as any]: `${sp.dx}px`,
+                  ['--dy' as any]: `${sp.dy}px`,
+                  backgroundColor: sp.color,
+                  boxShadow: `0 0 8px ${sp.color}, 0 0 16px ${sp.color}80`,
+                  animation: `kpiSpark ${sp.dur}s ease-out ${burst.delay}s forwards`,
+                }}
+              />
+            ))}
+          </div>
+        ))}
+
+        {/* Слой 3 — эмодзи-конфетти из центра */}
+        {confetti.map(c => (
+          <span
+            key={c.i}
+            className="absolute left-1/2 top-1/2 pointer-events-none select-none"
+            style={{
+              ['--dx' as any]: `${c.dx}px`,
+              ['--dy' as any]: `${c.dy}px`,
+              ['--rot' as any]: `${c.rotate}deg`,
+              fontSize: `${c.size}px`,
+              animation: `kpiConfetti ${c.duration}s ease-out ${c.delay}s forwards`,
+            }}
+          >
+            {c.emoji}
+          </span>
+        ))}
+
+        {/* Слой 4 — центральный контент */}
         <div
           onClick={(e) => e.stopPropagation()}
-          className="relative"
-          style={{ animation: 'kpiCelebrationPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
+          className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 pointer-events-none"
         >
-          {/* Конфетти разлетается от центра */}
-          {confetti.map((c) => (
-            <span
-              key={c.i}
-              className="absolute left-1/2 top-1/2 text-3xl pointer-events-none select-none"
-              style={{
-                ['--dx' as any]: `${c.dx}px`,
-                ['--dy' as any]: `${c.dy}px`,
-                ['--rot' as any]: `${c.rotate}deg`,
-                animation: `kpiCelebrationConfetti ${c.duration}s ease-out ${c.delay}s forwards`,
-              }}
-            >
-              {c.emoji}
-            </span>
-          ))}
-
-          {/* Карточка */}
+          {/* Огромная иконка */}
           <div
-            className={clsx(
-              'relative w-[min(92vw,460px)] rounded-3xl p-8 text-center',
-              'bg-white dark:bg-surface-900',
-              'shadow-[0_30px_80px_-20px_rgba(15,23,42,0.5)]',
-              'border border-white/40 dark:border-white/10',
-              'overflow-hidden',
-            )}
+            className="pointer-events-auto"
+            style={{
+              fontSize: 'min(200px, 30vw)',
+              filter: `drop-shadow(0 0 40px ${praise.ring}) drop-shadow(0 0 80px ${praise.ring})`,
+              animation: 'kpiIconPop 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), kpiIconFloat 3s ease-in-out 0.8s infinite',
+              lineHeight: 1,
+            }}
           >
-            {/* Градиент-акцент сверху */}
-            <div className={clsx('absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r', praise.accent)} />
-
-            {/* Иконка */}
-            <div
-              className={clsx(
-                'mx-auto mb-4 w-24 h-24 rounded-full flex items-center justify-center text-6xl',
-                'bg-gradient-to-br shadow-lg',
-                praise.accent,
-              )}
-              style={{ animation: 'kpiCelebrationIcon 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both' }}
-            >
-              <span className="drop-shadow-md">{praise.icon}</span>
-            </div>
-
-            {/* Имя с shimmer-эффектом */}
-            <p
-              className="text-sm uppercase tracking-widest text-surface-400 mb-1 font-semibold"
-            >
-              Поздравляем
-            </p>
-            <h2
-              className={clsx(
-                'text-3xl font-extrabold mb-3 bg-clip-text text-transparent bg-gradient-to-r',
-                praise.accent,
-              )}
-              style={{
-                backgroundSize: '200% 100%',
-                animation: 'kpiCelebrationShimmer 2.5s linear infinite',
-              }}
-            >
-              {name || 'Сотрудник'}
-            </h2>
-
-            {/* Заголовок похвалы */}
-            <h3 className="text-2xl font-bold text-surface-900 dark:text-surface-50 mb-2 leading-snug">
-              {praise.title}
-            </h3>
-
-            {/* Подзаголовок */}
-            <p className="text-sm text-surface-600 dark:text-surface-300 leading-relaxed">
-              {praise.subtitle}
-            </p>
-
-            {/* Кнопка закрытия */}
-            <button
-              onClick={onClose}
-              className={clsx(
-                'mt-6 inline-flex items-center justify-center px-6 py-2.5 rounded-xl',
-                'bg-gradient-to-r text-white font-semibold text-sm',
-                'shadow-md hover:shadow-lg transition-shadow',
-                praise.accent,
-              )}
-            >
-              Спасибо! 🙌
-            </button>
+            {praise.icon}
           </div>
+
+          {/* «ПОЗДРАВЛЯЕМ» */}
+          <p
+            className="text-white/70 uppercase tracking-[0.4em] font-bold mt-8 text-base sm:text-lg"
+            style={{ animation: 'kpiTextRise 0.6s ease-out 0.4s both' }}
+          >
+            Поздравляем
+          </p>
+
+          {/* Имя сотрудника — огромное, с переливающимся градиентом */}
+          <h1
+            className={clsx(
+              'font-black mt-2 leading-none bg-clip-text text-transparent bg-gradient-to-r',
+              praise.accent,
+            )}
+            style={{
+              fontSize: 'min(120px, 14vw)',
+              backgroundSize: '300% 100%',
+              animation: 'kpiTextRise 0.7s ease-out 0.5s both, kpiNameShimmer 3s linear 0.5s infinite',
+              filter: `drop-shadow(0 4px 20px ${praise.ring})`,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            {name || 'Сотрудник'}
+          </h1>
+
+          {/* Заголовок похвалы */}
+          <h2
+            className="font-extrabold text-white mt-6 leading-tight"
+            style={{
+              fontSize: 'min(56px, 7vw)',
+              textShadow: '0 4px 20px rgba(0,0,0,0.4)',
+              animation: 'kpiTextRise 0.7s ease-out 0.65s both',
+            }}
+          >
+            {praise.title}
+          </h2>
+
+          {/* Подзаголовок */}
+          <p
+            className="text-white/85 mt-4 max-w-2xl leading-relaxed"
+            style={{
+              fontSize: 'min(22px, 3vw)',
+              textShadow: '0 2px 10px rgba(0,0,0,0.3)',
+              animation: 'kpiTextRise 0.7s ease-out 0.8s both',
+            }}
+          >
+            {praise.subtitle}
+          </p>
+
+          {/* Кнопка */}
+          <button
+            onClick={onClose}
+            className={clsx(
+              'pointer-events-auto mt-10 px-10 py-4 rounded-2xl text-xl font-bold text-white',
+              'bg-white/15 backdrop-blur-md border-2 border-white/40',
+              'hover:bg-white/25 hover:scale-105 active:scale-95 transition-all',
+            )}
+            style={{
+              animation: 'kpiTextRise 0.6s ease-out 1s both, kpiBtnPulse 2s ease-out 1.5s infinite',
+            }}
+          >
+            Спасибо! 🙌
+          </button>
+
+          {/* Подсказка снизу */}
+          <p
+            className="absolute bottom-6 text-white/40 text-sm tracking-wide"
+            style={{ animation: 'kpiTextRise 0.6s ease-out 1.3s both' }}
+          >
+            Кликни в любое место чтобы закрыть · Esc
+          </p>
         </div>
       </div>
     </>,
