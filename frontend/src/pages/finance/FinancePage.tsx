@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import {
   Plus, Edit, Trash2, Search, ArrowUpRight, ArrowDownRight,
-  Wallet, BarChart3, ListOrdered, Loader2, X,
+  Wallet, BarChart3, ListOrdered, Loader2, X, Users, FolderOpen,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
@@ -318,6 +318,11 @@ function Tile({ label, value, accent }: { label: string; value: any; accent?: st
 
 // ─── Overview ────────────────────────────────────────────────────────
 function OverviewSection({ monthly, byCategory, employees, projects, onCreate, onGoTransactions, onQuickTx }: any) {
+  // Какая панель-вкладка открыта: «Сотрудники», «Проекты» или ничего. По умолчанию закрыто.
+  const [panelTab, setPanelTab] = useState<'employees' | 'projects' | null>(null)
+  const togglePanel = (tab: 'employees' | 'projects') =>
+    setPanelTab(prev => (prev === tab ? null : tab))
+
   const chartData = (monthly ?? []).map((m: any) => {
     const [_, mm] = m.month.split('-')
     return { name: MONTH_LABELS[parseInt(mm, 10) - 1] ?? m.month, Доход: m.income, Расход: m.expense }
@@ -339,11 +344,35 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
         <button onClick={onGoTransactions} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm hover:bg-gray-50 dark:hover:bg-gray-800">
           <ListOrdered size={14} /> К транзакциям
         </button>
+
+        {/* Вкладки-панели: раскрывают список сотрудников / проектов по клику */}
+        <div className="w-px self-stretch bg-gray-200 dark:bg-gray-700 mx-1" />
+        <button
+          onClick={() => togglePanel('employees')}
+          className={clsx(
+            'inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm border',
+            panelTab === 'employees'
+              ? 'bg-purple-600 border-purple-600 text-white'
+              : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800',
+          )}
+        >
+          <Users size={14} /> Сотрудники
+        </button>
+        <button
+          onClick={() => togglePanel('projects')}
+          className={clsx(
+            'inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm border',
+            panelTab === 'projects'
+              ? 'bg-purple-600 border-purple-600 text-white'
+              : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800',
+          )}
+        >
+          <FolderOpen size={14} /> Проекты
+        </button>
       </div>
 
-      {/* Два блока: Сотрудники и Проекты */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Сотрудники: ФИО / должность / ЗП + штраф/аванс */}
+      {/* Раскрываемая панель «Сотрудники» */}
+      {panelTab === 'employees' && (
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-3">👥 Сотрудники</h3>
           {activeEmployees.length === 0 ? (
@@ -381,8 +410,10 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
             </div>
           )}
         </div>
+      )}
 
-        {/* Проекты: название / дата контракта / сумма тарифа + платёж */}
+      {/* Раскрываемая панель «Проекты» */}
+      {panelTab === 'projects' && (
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-3">📁 Проекты</h3>
           {activeProjects.length === 0 ? (
@@ -416,7 +447,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
             </div>
           )}
         </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
