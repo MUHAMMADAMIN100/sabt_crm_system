@@ -318,6 +318,8 @@ export const financeApi = {
     api.get('/finance/monthly', { params }).then(r => r.data),
   byCategory: (params?: { account?: string; from?: string; to?: string }) =>
     api.get('/finance/by-category', { params }).then(r => r.data),
+  categories: (): Promise<string[]> =>
+    api.get('/finance/categories').then(r => r.data),
 }
 
 // ─── Risk Analytics (Wave 5) ─────────────────────────────

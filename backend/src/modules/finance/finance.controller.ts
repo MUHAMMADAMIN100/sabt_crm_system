@@ -6,7 +6,7 @@ import { FinanceService } from './finance.service';
 import { CreateFinanceTransactionDto } from './dto/create-finance-transaction.dto';
 import { UpdateFinanceTransactionDto } from './dto/update-finance-transaction.dto';
 import {
-  FinanceAccount, FinanceCategory, FinanceTxStatus, FinanceTxType,
+  FinanceAccount, FinanceTxStatus, FinanceTxType,
 } from './finance-transaction.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
@@ -42,12 +42,16 @@ export class FinanceController {
     return this.service.getByCategory(account, from, to);
   }
 
+  /** Список категорий для выпадашки в форме (стандартные + пользовательские). */
+  @Get('categories')
+  getCategories() { return this.service.getCategories(); }
+
   // ─── CRUD ────────────────────────────────────────────────────────
   @Get()
   findAll(
     @Query('account')  account?: FinanceAccount,
     @Query('type')     type?: FinanceTxType,
-    @Query('category') category?: FinanceCategory,
+    @Query('category') category?: string,
     @Query('status')   status?: FinanceTxStatus,
     @Query('search')   search?: string,
     @Query('from')     from?: string,

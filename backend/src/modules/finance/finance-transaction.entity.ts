@@ -17,7 +17,9 @@ export enum FinanceAccount {
   CASH          = 'cash',
 }
 
-/** Категории транзакций — единый список для income/expense. */
+/** Стандартные категории транзакций — стартовый набор.
+ *  Поле `category` теперь свободная строка: пользователь может добавлять
+ *  свои категории прямо в форме, и они сохраняются вместе с транзакцией. */
 export enum FinanceCategory {
   SALARY      = 'salary',
   PROJECT     = 'project',
@@ -76,9 +78,11 @@ export class FinanceTransaction {
   @Column({ type: 'jsonb', nullable: true })
   splits: Array<{ account: FinanceAccount; amount: number }> | null;
 
+  /** Категория — свободная строка. Стандартные значения берутся из
+   *  FinanceCategory, но допускаются и произвольные пользовательские. */
   @Index()
-  @Column({ type: 'enum', enum: FinanceCategory })
-  category: FinanceCategory;
+  @Column({ type: 'varchar', length: 100 })
+  category: string;
 
   /** Краткое название операции — обязательное. */
   @Column()

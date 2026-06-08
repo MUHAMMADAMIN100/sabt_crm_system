@@ -4,7 +4,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  FinanceAccount, FinanceCategory, FinancePaymentMethod, FinanceTxStatus, FinanceTxType,
+  FinanceAccount, FinancePaymentMethod, FinanceTxStatus, FinanceTxType,
 } from '../finance-transaction.entity';
 
 class FinanceSplitDto {
@@ -32,8 +32,9 @@ export class CreateFinanceTransactionDto {
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => FinanceSplitDto)
   splits?: FinanceSplitDto[];
 
-  @ApiProperty({ enum: FinanceCategory }) @IsEnum(FinanceCategory)
-  category: FinanceCategory;
+  @ApiProperty({ description: 'Категория: стандартная или произвольная строка' })
+  @IsString() @MaxLength(100)
+  category: string;
 
   @ApiProperty() @IsString() @MaxLength(500)
   description: string;

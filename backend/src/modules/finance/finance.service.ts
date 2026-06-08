@@ -9,7 +9,7 @@ import {
 export interface FinanceFilters {
   account?: FinanceAccount;
   type?: FinanceTxType;
-  category?: FinanceCategory;
+  category?: string;
   status?: FinanceTxStatus;
   search?: string;
   from?: string;
@@ -262,5 +262,19 @@ export class FinanceService {
       count: Number(r.cnt),
       percent: total > 0 ? Math.round((Number(r.total) / total) * 100) : 0,
     }));
+  }
+
+  /** Список доступных категорий: стандартные + все, что когда-либо
+   *  встречались в транзакциях (т.е. добавленные пользователем). Так
+   *  пользовательские категории «сохраняются» и переиспользуются. */
+  async getCategories(): Promise<string[]> {
+    const rows: Array<{ category: string }> = await this.repo
+      .createQueryBuilder('t')
+      .select('DISTINCT t.category', 'category')
+      .where('t.category IS NOT NULL')
+      .getRawMany();
+    const used = rows.map(r => r.category).filter(Boolean);
+    const defaults = Object.values(FinanceCategory) as string[];
+    return Array.from(new Set([...defaults, ...used]));
   }
 }

@@ -137,6 +137,12 @@ export default function FinancePage() {
     queryFn: () => employeesApi.list(),
   })
 
+  // Категории — стандартные + добавленные пользователем; для выпадашки в форме.
+  const { data: financeCategories } = useQuery({
+    queryKey: ['finance-categories'],
+    queryFn: () => financeApi.categories(),
+  })
+
   // Метрики (фильтр по выбранному счёту)
   const accountSummary = useMemo(() => {
     if (!summary) return null
@@ -149,6 +155,7 @@ export default function FinancePage() {
     qc.invalidateQueries({ queryKey: ['finance-summary'] })
     qc.invalidateQueries({ queryKey: ['finance-monthly'] })
     qc.invalidateQueries({ queryKey: ['finance-by-category'] })
+    qc.invalidateQueries({ queryKey: ['finance-categories'] })
   }
 
   const createMut = useMutation({
@@ -264,6 +271,7 @@ export default function FinancePage() {
           filterPeriod={filterPeriod} setFilterPeriod={setFilterPeriod}
           sort={sort} setSort={setSort}
           search={search} setSearch={setSearch}
+          categories={financeCategories || []}
           onAdd={() => { setDefaultType('income'); setEditTx(null); setShowForm(true) }}
           onEdit={(tx) => { setEditTx(tx); setShowForm(true) }}
           onDelete={(tx) => setDeleteTx(tx)}
@@ -277,6 +285,7 @@ export default function FinancePage() {
             defaultType={defaultType}
             defaultAccount={account === 'all' ? undefined : account}
             projects={financeProjects || []}
+            categories={financeCategories || []}
             loading={createMut.isPending || updateMut.isPending}
             onCancel={() => { setShowForm(false); setEditTx(null); setTxPrefill(null) }}
             onSubmit={(data) => {
@@ -503,6 +512,7 @@ function TransactionsSection({
   items, totalPages, page, setPage, rangeStart, rangeEnd, total, loading,
   filterType, setFilterType, filterCategory, setFilterCategory,
   filterPeriod, setFilterPeriod, sort, setSort, search, setSearch,
+  categories = [],
   onAdd, onEdit, onDelete,
 }: any) {
   return (
@@ -515,7 +525,9 @@ function TransactionsSection({
         </select>
         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
           <option value="">Все категории</option>
-          {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+          {Array.from(new Set([...CATEGORIES.map(c => c.id), ...categories])).map((id: any) => (
+            <option key={id} value={id}>{CATEGORIES.find(c => c.id === id)?.label ?? id}</option>
+          ))}
         </select>
         <select value={filterPeriod} onChange={e => setFilterPeriod(e.target.value as any)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
           <option value="all">Весь период</option>
@@ -649,7 +661,62 @@ function workDuration(hireDate?: string | Date | null): string {
 }
 
 // ─── Form ───────────────────────────────────────────────────────────
-function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit, onCancel, loading }: any) {
+// Категория с возможностью добавить свою прямо в форме. Список = стандартные
+// + пришедшие с сервера (ранее добавленные). Новая категория сохраняется
+// вместе с транзакцией и затем подхватывается списком на сервере.
+function CategorySelect({ value, onChange, categories = [] }: { value: string; onChange: (v: string) => void; categories: string[] }) {
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState('')
+
+  const ids = Array.from(new Set([...CATEGORIES.map(c => c.id), ...categories]))
+  const labelFor = (id: string) => CATEGORIES.find(c => c.id === id)?.label ?? id
+
+  const confirm = () => {
+    const v = name.trim()
+    if (!v) return
+    onChange(v)
+    setName('')
+    setAdding(false)
+  }
+
+  if (adding) {
+    return (
+      <div className="flex gap-2">
+        <input
+          autoFocus
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); confirm() }
+            if (e.key === 'Escape') { setName(''); setAdding(false) }
+          }}
+          placeholder="Название новой категории"
+          className="input flex-1"
+        />
+        <button type="button" onClick={confirm} className="px-3 py-2 rounded-lg bg-purple-600 text-white text-sm shrink-0">
+          Добавить
+        </button>
+        <button type="button" onClick={() => { setName(''); setAdding(false) }} className="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm shrink-0">
+          Отмена
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <select
+      value={value || ''}
+      onChange={e => { if (e.target.value === '__add__') setAdding(true); else onChange(e.target.value) }}
+      className="input"
+    >
+      {ids.map(id => <option key={id} value={id}>{labelFor(id)}</option>)}
+      {value && !ids.includes(value) && <option value={value}>{value}</option>}
+      <option value="__add__">＋ Добавить категорию…</option>
+    </select>
+  )
+}
+
+function TxForm({ initial, defaultType, defaultAccount, projects = [], categories = [], onSubmit, onCancel, loading }: any) {
   const [type, setType] = useState<'income' | 'expense'>(initial?.type ?? defaultType ?? 'income')
   // Счёт — отдельным state'ом, чтобы отрисовать кнопками-сегментами наверху.
   const [account, setAccount] = useState<string>(initial?.account ?? defaultAccount ?? 'alif')
@@ -853,9 +920,14 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
             render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
         </FormField>
         <FormField label="Категория" required>
-          <select {...register('category', { required: true })} className="input">
-            {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
+          <Controller
+            name="category"
+            control={control}
+            rules={{ required: true }}
+            render={({ field }) => (
+              <CategorySelect value={field.value} onChange={field.onChange} categories={categories} />
+            )}
+          />
         </FormField>
       </div>
 
