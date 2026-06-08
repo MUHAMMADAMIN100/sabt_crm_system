@@ -123,6 +123,15 @@ export class ClientLead {
   @Column({ nullable: true })
   callType: string;
 
+  /** Статус персонального письма клиенту:
+   *   'sent'     — Написал (засчитывается в KPI «Персональные письма»)
+   *   'answered' — Клиент ответил
+   *   'no_reply' — Не ответили
+   *   'rejected' — Отказ
+   *  Используется для KPI вместо старой эвристики (просто заполнен email). */
+  @Column({ nullable: true })
+  emailStatus: string;
+
   /** Причина отказа (если status = lost) */
   @Column({ type: 'text', nullable: true })
   rejectionReason: string;

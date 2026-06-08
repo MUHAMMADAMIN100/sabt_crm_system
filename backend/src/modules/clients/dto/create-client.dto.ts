@@ -72,6 +72,15 @@ export class CreateClientDto {
   @IsOptional() @IsString() @MaxLength(20)
   callType?: 'cold' | 'neutral' | 'hot';
 
+  /** Статус персонального письма для KPI «Персональные письма».
+   *   sent — «Написал» (+1 в KPI за сегодня)
+   *   answered — «Ответили»
+   *   no_reply — «Не ответили»
+   *   rejected — «Отказ» */
+  @ApiPropertyOptional({ enum: ['sent', 'answered', 'no_reply', 'rejected'] })
+  @IsOptional() @IsString() @MaxLength(20)
+  emailStatus?: 'sent' | 'answered' | 'no_reply' | 'rejected';
+
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(2000)
   rejectionReason?: string;
 

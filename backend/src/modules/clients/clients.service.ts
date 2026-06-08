@@ -114,6 +114,17 @@ export class ClientsService implements OnModuleInit {
     } catch (e: any) {
       this.logger.warn(`ALTER TABLE client_leads callType failed: ${e?.message || e}`);
     }
+    try {
+      // emailStatus — точный признак отправленного письма. KPI
+      // «Персональные письма» теперь = count(emailStatus='sent' AND
+      // updatedAt в окне). Раньше была эвристика «есть email +
+      // lastContactAt», которая ловила всё подряд.
+      await this.repo.manager.query(
+        `ALTER TABLE client_leads ADD COLUMN IF NOT EXISTS "emailStatus" varchar`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`ALTER TABLE client_leads emailStatus failed: ${e?.message || e}`);
+    }
   }
 
   /** Лёгкий lookup юзера по id — для controller'а чтобы определить
@@ -429,9 +440,13 @@ export class ClientsService implements OnModuleInit {
       .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 
+    // «Персональные письма» — теперь считаются по ЯВНОМУ полю
+    // emailStatus='sent' («Написал»), которое менеджер выбирает в форме
+    // клиента селектом «Письмо». updatedAt в окне — менеджер «трогал»
+    // лида в этом периоде. Точная цифра вместо эвристики по channel/email.
     const personalEmails = await safeCount(() => base()
-      .andWhere(`(LOWER(COALESCE(c.channel, '')) = 'email' OR COALESCE(c.contactEmail, '') <> '')`)
-      .andWhere('c.lastContactAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+      .andWhere(`LOWER(COALESCE(c."emailStatus", '')) = 'sent'`)
+      .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 
     const meetings = await safeCount(() => base()

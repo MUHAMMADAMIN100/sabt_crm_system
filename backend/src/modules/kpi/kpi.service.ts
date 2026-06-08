@@ -444,18 +444,20 @@ export class KpiService {
       }
 
       // ─── Sales: персональные письма ────────────────────────────────────
+      // По полю emailStatus='sent' («Написал») — точный учёт отправленных
+      // писем вместо эвристики через channel/contactEmail.
       case 'sales_personal_emails': {
         const qb = this.leadRepo.createQueryBuilder('c')
           .where('c.ownerId = :uid', { uid: userId })
-          .andWhere(`(LOWER(COALESCE(c.channel, '')) = 'email' OR COALESCE(c.contactEmail, '') <> '')`)
-          .andWhere('c.lastContactAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-          .orderBy('c.lastContactAt', 'DESC');
+          .andWhere(`LOWER(COALESCE(c."emailStatus", '')) = 'sent'`)
+          .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+          .orderBy('c.updatedAt', 'DESC');
         const leads = await applyDirection(qb).getMany();
         return leads.map(l => ({
           id: l.id,
           title: l.name,
           subtitle: [l.contactEmail || l.channel, l.contactPerson].filter(Boolean).join(' · ') || null,
-          date: l.lastContactAt ? new Date(l.lastContactAt).toISOString() : null,
+          date: l.updatedAt ? new Date(l.updatedAt).toISOString() : null,
           link: `/clients?id=${l.id}`,
         }));
       }

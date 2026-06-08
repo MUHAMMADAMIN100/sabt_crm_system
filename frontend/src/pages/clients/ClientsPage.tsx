@@ -156,16 +156,19 @@ export default function ClientsPage() {
         qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'cold_calls', +1))
         qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'cold_calls', +1))
       }
+      // Если сразу проставили emailStatus='sent' — +1 к персональным письмам.
+      if (String(newLead?.emailStatus || '').toLowerCase() === 'sent') {
+        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'personal_emails', +1))
+        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'personal_emails', +1))
+      }
       // Если сразу указали nextContactAt — +1 к встречам.
       if (newLead?.nextContactAt) {
         qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'meetings', +1))
         qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'meetings', +1))
       }
-      // Если указали email + lastContactAt (с email) — +1 к персональным письмам.
-      if (newLead?.lastContactAt && (newLead?.contactEmail || String(newLead?.channel || '').toLowerCase() === 'email')) {
-        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'personal_emails', +1))
-        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'personal_emails', +1))
-      }
+      // (Старая эвристика lastContactAt+email удалена — теперь
+      // KPI personal_emails считается строго по emailStatus='sent',
+      // bump для этого случая сделан выше.)
       return { previous, tempLead }
     },
     onError: (e: any, _vars, ctx) => {
@@ -229,16 +232,19 @@ export default function ClientsPage() {
         }
       }
 
-      // 3) lastContactAt с email → +1 / -1 к personal_emails.
-      if (data?.lastContactAt !== undefined) {
-        const hasEmail = !!(data?.contactEmail ?? lead?.contactEmail)
-          || String(data?.channel ?? lead?.channel ?? '').toLowerCase() === 'email'
-        const had = !!lead?.lastContactAt
-        const now = !!data.lastContactAt
-        if (had !== now && hasEmail) {
-          const delta = now ? +1 : -1
-          qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'personal_emails', delta))
-          qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'personal_emails', delta))
+      // 3) emailStatus: переход → 'sent' = +1, обратно = -1.
+      // По аналогии с callType — точный учёт по полю «Письмо» в форме.
+      if (data?.emailStatus !== undefined) {
+        const beforeMail = String(lead?.emailStatus || '').toLowerCase()
+        const afterMail = String(data?.emailStatus || '').toLowerCase()
+        if (beforeMail !== afterMail) {
+          const becameSent = afterMail === 'sent' && beforeMail !== 'sent'
+          const leftSent = beforeMail === 'sent' && afterMail !== 'sent'
+          if (becameSent || leftSent) {
+            const delta = becameSent ? +1 : -1
+            qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'personal_emails', delta))
+            qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'personal_emails', delta))
+          }
         }
       }
       qc.setQueryData(queryKey, (old: any[] = []) =>
@@ -661,6 +667,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
     leadSource: initial?.leadSource || '',
     channel: initial?.channel || '',
     callType: initial?.callType || '',
+    emailStatus: initial?.emailStatus || '',
     nextStep: initial?.nextStep || '',
     lastContactAt: initial?.lastContactAt ? String(initial.lastContactAt).slice(0, 10) : '',
     // datetime-local требует формат YYYY-MM-DDTHH:mm — обрезаем ISO до минут.
@@ -675,6 +682,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
     dealPotential: data.dealPotential ? Number(data.dealPotential) : null,
     interest: data.interest || null,
     callType: data.callType || null,
+    emailStatus: data.emailStatus || null,
     lastContactAt: data.lastContactAt || null,
     // datetime-local → ISO. Если время не выбрано, бэкенд получит null.
     nextContactAt: data.nextContactAt ? new Date(data.nextContactAt).toISOString() : null,
@@ -805,6 +813,19 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
             </select>
             <p className="text-[11px] text-surface-400 mt-1">
               «Холодный» → +1 в KPI «Холодные звонки» за сегодня
+            </p>
+          </div>
+          <div>
+            <label className="label">Письмо</label>
+            <select {...register('emailStatus')} className="input">
+              <option value="">Не указано</option>
+              <option value="sent">Написал</option>
+              <option value="answered">Ответили</option>
+              <option value="no_reply">Не ответили</option>
+              <option value="rejected">Отказ</option>
+            </select>
+            <p className="text-[11px] text-surface-400 mt-1">
+              «Написал» → +1 в KPI «Персональные письма» за сегодня
             </p>
           </div>
           <CollapsibleField
