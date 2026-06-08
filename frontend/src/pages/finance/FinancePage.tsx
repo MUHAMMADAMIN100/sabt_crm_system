@@ -43,13 +43,6 @@ const STATUS_INFO: Record<string, { label: string; color: string }> = {
   cancelled: { label: 'Отменено',  color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
 }
 
-const PAYMENT_METHODS: { id: string; label: string }[] = [
-  { id: 'transfer', label: 'Перевод' },
-  { id: 'card',     label: 'Карта' },
-  { id: 'cash',     label: 'Наличные' },
-  { id: 'qr',       label: 'QR-платёж' },
-]
-
 const CATEGORY_COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4', '#ec4899', '#64748b']
 const MONTH_LABELS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
@@ -870,8 +863,9 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
         <input {...register('description', { required: 'Описание обязательно' })} className="input" />
       </FormField>
 
-      {/* Клиент/Проект/Способ оплаты — свёрнуты по умолчанию; Статус
-          остаётся раскрытым (он обязательный). */}
+      {/* Клиент / Проект — свёрнуты по умолчанию.
+          «Способ оплаты» убран (счёт выбирается выше), «Статус» всегда
+          «Проведено» — транзакцию заводят уже после получения средств. */}
       {!isEmployeeTx && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -894,23 +888,6 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
                 ))}
               </select>
             </CollapsibleField>
-            <CollapsibleField
-              label="Способ оплаты"
-              defaultOpen={!!initial?.paymentMethod}
-              hint={initial?.paymentMethod || ''}
-            >
-              <select {...register('paymentMethod')} className="input">
-                <option value="">— Не указан —</option>
-                {PAYMENT_METHODS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-              </select>
-            </CollapsibleField>
-            <FormField label="Статус" required>
-              <select {...register('status', { required: true })} className="input">
-                {Object.entries(STATUS_INFO).map(([id, info]) => (
-                  <option key={id} value={id}>{info.label}</option>
-                ))}
-              </select>
-            </FormField>
           </div>
         </>
       )}
