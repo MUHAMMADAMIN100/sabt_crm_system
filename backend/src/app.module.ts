@@ -38,9 +38,11 @@ import { RiskAnalyticsModule } from './modules/risk-analytics/risk-analytics.mod
 import { FinanceModule } from './modules/finance/finance.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { KpiModule } from './modules/kpi/kpi.module';
+import { DbIndexesService } from './common/db-indexes.service';
 
 @Module({
   controllers: [HealthController],
+  providers: [DbIndexesService],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     LoggerModule,

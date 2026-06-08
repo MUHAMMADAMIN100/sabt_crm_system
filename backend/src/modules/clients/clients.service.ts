@@ -284,6 +284,10 @@ export class ClientsService implements OnModuleInit {
       qb.andWhere('(c.direction = :dir OR c.direction IS NULL)', { dir: f.direction });
     }
     qb.orderBy('c.updatedAt', 'DESC');
+    // Серверный LIMIT — фронт всё равно пагинирует по 5/10 на страницу,
+    // тащить 5+к лидов одним JSON-ом смысла нет: и сервер тормозит,
+    // и фронт-парсинг массива замедляет интерактивность.
+    qb.limit(500);
     return qb.getMany();
   }
 
