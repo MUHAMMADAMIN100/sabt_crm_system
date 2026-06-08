@@ -732,44 +732,44 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], onSubmit,
         </button>
       </div>
 
-      {/* Счёт. Сегмент «Один счёт / Сплит» переключает между двумя
-          режимами: одна оплата vs приём на несколько счетов одной сделкой. */}
+      {/* Счёт. Кнопки счетов + «Разделить оплату» в одном ряду: одна оплата
+          на выбранный счёт vs приём на несколько счетов одной сделкой. */}
       {!isEmployeeTx && (
         <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Счёт *</label>
-            <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden text-xs">
-              <button type="button" onClick={() => setSplitMode(false)}
-                className={clsx('px-2.5 py-1', !splitMode ? 'bg-purple-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800')}>
-                Один счёт
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Счёт *</label>
+
+          <div className="flex flex-wrap gap-2">
+            {ACCOUNTS.filter(a => a.id !== 'all').map(a => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => { setSplitMode(false); setAccount(a.id) }}
+                className={clsx(
+                  'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
+                  !splitMode && account === a.id
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-purple-300',
+                )}
+              >
+                {a.label}
               </button>
-              <button type="button" onClick={() => setSplitMode(true)}
-                className={clsx('px-2.5 py-1', splitMode ? 'bg-purple-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800')}>
-                🔀 Сплит
-              </button>
-            </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setSplitMode(true)}
+              className={clsx(
+                'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
+                splitMode
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-purple-300',
+              )}
+            >
+              Разделить оплату
+            </button>
           </div>
 
-          {!splitMode ? (
-            <div className="flex flex-wrap gap-2">
-              {ACCOUNTS.filter(a => a.id !== 'all').map(a => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => setAccount(a.id)}
-                  className={clsx(
-                    'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
-                    account === a.id
-                      ? 'bg-purple-600 text-white border-purple-600'
-                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-purple-300',
-                  )}
-                >
-                  {a.label}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-2 rounded-xl border border-purple-200 dark:border-purple-900/50 bg-purple-50/40 dark:bg-purple-900/10 p-3">
+          {splitMode && (
+            <div className="space-y-2 rounded-xl border border-purple-200 dark:border-purple-900/50 bg-purple-50/40 dark:bg-purple-900/10 p-3 mt-2">
               {splits.map((sp, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <input
