@@ -697,10 +697,11 @@ export class ProjectsService implements OnModuleInit {
         // только в SMM-сегменте). Не-SMM проекты ему не показываем.
         qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
       } else if (getSalesSegment(role)) {
-        // Менеджер продаж видит только проекты своего направления:
-        // sales_manager_smm → SMM, sales_manager_dev → «Web сайт».
-        qb.andWhere('p.projectType = :salesType', {
-          salesType: getSalesSegment(role)!.projectType,
+        // Менеджер продаж видит только проекты своего направления.
+        // У МП-dev несколько подтипов (Лендинг, Телеграм бот, CRM,
+        // Интернет магазин + legacy «Web сайт») → IN(...).
+        qb.andWhere('p.projectType IN (:...salesTypes)', {
+          salesTypes: getSalesSegment(role)!.projectTypes,
         });
       } else if (isStoryMaker) {
         // Сторисмейкер (флаг на Employee) — все активные SMM-проекты,
@@ -780,7 +781,7 @@ export class ProjectsService implements OnModuleInit {
     if (!project) throw new NotFoundException('Project not found');
     // Менеджер продаж не может открыть проект чужого направления.
     const segment = getSalesSegment(requestUserRole);
-    if (segment && project.projectType !== segment.projectType) {
+    if (segment && !segment.projectTypes.includes(project.projectType as string)) {
       throw new ForbiddenException('Проект не относится к вашему направлению');
     }
     // Задачи-«Истории» из контент-плана не показываем в списке задач проекта —
@@ -828,9 +829,9 @@ export class ProjectsService implements OnModuleInit {
     }
     // Менеджер продаж может создавать проекты только своего направления.
     const createSegment = getSalesSegment(userRole);
-    if (createSegment && dto.projectType !== createSegment.projectType) {
+    if (createSegment && !createSegment.projectTypes.includes(dto.projectType as string)) {
       throw new ForbiddenException(
-        `Вы можете создавать только проекты типа «${createSegment.projectType}»`,
+        `Вы можете создавать только проекты типов: ${createSegment.projectTypes.join(', ')}`,
       );
     }
     await this.validateManagerAssignment(dto.managerId, dto.projectType);
@@ -839,10 +840,14 @@ export class ProjectsService implements OnModuleInit {
     const resolvedManagerId = dto.managerId || userId;
     const memberIds = new Set<string>(dto.memberIds || []);
     if (resolvedManagerId) memberIds.add(resolvedManagerId);
+    // МП сам автоматически становится salesManager своих проектов —
+    // он же продал, у него же напоминание об оплате через 2 недели.
+    const resolvedSalesManagerId = dto.salesManagerId
+      || (createSegment ? userId : undefined);
     const project = this.repo.create({
       ...dto,
       managerId: resolvedManagerId,
-      salesManagerId: dto.salesManagerId || undefined,
+      salesManagerId: resolvedSalesManagerId,
       members: Array.from(memberIds).map(id => ({ id })) as unknown as User[],
     });
     // If a tariff was selected → snapshot its name+price into the project so

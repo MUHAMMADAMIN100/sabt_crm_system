@@ -557,6 +557,23 @@ export class ClientsService implements OnModuleInit {
       const hasOwner = !!lead.ownerId;
       if (!hasOwner) return;
 
+      // МП по продажам (sales_manager_smm / sales_manager_dev) не должны
+      // получать клиентские лиды в раздел «Задачи» — иначе после срока
+      // встречи задача становится «просрочкой» и засоряет дашборд.
+      // Они видят клиентов в Базе клиентов + Календаре (по nextContactAt).
+      // Если задача когда-то создавалась — удаляем её здесь же.
+      const owner = await this.userRepo.findOne({
+        where: { id: lead.ownerId },
+        select: ['id', 'role'],
+      }).catch(() => null);
+      if (owner && SALES_MANAGER_ROLES.includes(owner.role as any)) {
+        if (lead.meetingTaskId) {
+          await this.taskRepo.delete(lead.meetingTaskId).catch(() => {});
+          await this.repo.update(lead.id, { meetingTaskId: null });
+        }
+        return;
+      }
+
       // Закрытая сделка — задача в календаре больше не нужна, удаляем.
       const isClosed = lead.status === ClientLeadStatus.WON || lead.status === ClientLeadStatus.LOST;
       if (isClosed) {

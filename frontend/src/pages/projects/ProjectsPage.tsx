@@ -490,11 +490,15 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const formUser = useAuthStore(s => s.user)
   const isFormHeadSMM = formUser?.role === 'head_smm' || formUser?.role === 'smm_director'
   const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm', 'sales_manager_smm', 'sales_manager_dev'].includes(formUser?.role || '')
-  // Тип проекта, зафиксированный для роли: SMM-роли и МП по СММ → «SMM»,
-  // МП по разработке → «Web сайт». Для них селект типа скрыт.
+  const isSalesDev = formUser?.role === 'sales_manager_dev'
+  // Подтипы DEV-проектов, которые МП-dev выбирает в селекте «Тип проекта».
+  // (На бэке проверка в createSegment.projectTypes допускает эти 4 + legacy
+  //  «Web сайт».)
+  const DEV_SUBTYPES = ['Лендинг', 'Телеграм бот', 'CRM система', 'Интернет магазин']
+  // Тип проекта, зафиксированный для роли: SMM-роли и МП по СММ → «SMM».
+  // Для МП по разработке селект показываем (DEV_SUBTYPES) — не форсим.
   const forcedProjectType =
     isFormHeadSMM || formUser?.role === 'sales_manager_smm' ? 'SMM'
-    : formUser?.role === 'sales_manager_dev' ? 'Web сайт'
     : null
   // Финансовые поля и цены тарифа видят только основатель/сооснователь.
   // smm_director, PM, head_smm и admin — управляют проектом, но цены/деньги не видят.
@@ -605,7 +609,9 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
       } else {
         reset({
           name: '', description: '', startDate: '', endDate: '',
-          status: 'planning', color: '#6B4FCF', budget: '', projectType: forcedProjectType || '', managerId: '', salesManagerId: '',
+          status: 'planning', color: '#6B4FCF', budget: '',
+          projectType: forcedProjectType || (isSalesDev ? 'Лендинг' : ''),
+          managerId: '', salesManagerId: '',
           tariffId: '',
           teamId: '',
           showAllMembers: false,
@@ -742,6 +748,11 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 <input type="hidden" {...register('projectType')} value={forcedProjectType} />
                 <div className="input bg-surface-50 dark:bg-surface-700 cursor-not-allowed">{forcedProjectType}</div>
               </>
+            ) : isSalesDev ? (
+              // МП по разработке — селект из 4 подтипов веб-проекта.
+              <select {...register('projectType', { required: true })} className="input">
+                {DEV_SUBTYPES.map(pt => <option key={pt} value={pt}>{pt}</option>)}
+              </select>
             ) : (
               <select {...register('projectType', { required: true })} className="input">
                 <option value="">— Выбрать тип —</option>
@@ -780,8 +791,9 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             )}
           </CollapsibleField>
 
-          {/* Менеджер по продажам */}
-          {canCreateProject && (
+          {/* Менеджер по продажам — скрыт для МП-dev (он сам автоматически
+              становится МП проекта; бэк проставит salesManagerId=userId). */}
+          {canCreateProject && !isSalesDev && (
           <CollapsibleField
             className="sm:col-span-2"
             label="Менеджер по продажам"
@@ -800,7 +812,8 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           </CollapsibleField>
           )}
 
-          {/* Команда — фильтрует список участников проекта */}
+          {/* Команда — скрыта для МП-dev (упрощённая форма без команды). */}
+          {!isSalesDev && (
           <CollapsibleField
             className="sm:col-span-2"
             label="Команда"
@@ -823,6 +836,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
               </p>
             )}
           </CollapsibleField>
+          )}
 
           {/* SMM-тариф (только для SMM-проектов).
               Цена показывается только основателю/сооснователю. */}
