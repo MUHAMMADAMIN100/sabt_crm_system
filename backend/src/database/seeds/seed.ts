@@ -7,7 +7,7 @@ dotenv.config()
 const AppDataSource = new DataSource({
   type: 'postgres',
   url: process.env.DATABASE_URL || 'postgresql://erp_user:erp_password@localhost:5432/erp_db',
-  entities: [__dirname + '/../**/*.entity.{ts,js}'],
+  entities: [__dirname + '/../../**/*.entity.{ts,js}'],
   synchronize: true,
 })
 
