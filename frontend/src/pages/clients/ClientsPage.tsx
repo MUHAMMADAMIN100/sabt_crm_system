@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, lazy, Suspense } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, PageLoader, ConfirmDialog, Pagination } from '@/components/ui'
@@ -77,6 +77,14 @@ function bumpKpiValue(kpi: any, key: string, delta: number) {
 export default function ClientsPage() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
+  // Дебаунсим поисковую строку — иначе при каждом keystroke стартует
+  // новый запрос /clients и весь список перерисовывается (мигает).
+  // 250 мс — компромисс между «отзывчивостью» и «не дёргать сервер».
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250)
+    return () => clearTimeout(t)
+  }, [search])
   const [status, setStatus] = useState('')
   const [interest, setInterest] = useState('')
   const [sphere, setSphere] = useState('')
@@ -101,8 +109,12 @@ export default function ClientsPage() {
   const PAGE_SIZE = (isSalesManager || isTopExec) ? 10 : 5
 
   const { data: leads, isLoading } = useQuery({
-    queryKey: ['clients', search, status, interest, sphere],
-    queryFn: () => clientsApi.list({ search: search || undefined, status: status || undefined, interest: interest || undefined, sphere: sphere || undefined }),
+    queryKey: ['clients', debouncedSearch, status, interest, sphere],
+    queryFn: () => clientsApi.list({ search: debouncedSearch || undefined, status: status || undefined, interest: interest || undefined, sphere: sphere || undefined }),
+    // Пока летит новый запрос — оставляем на экране предыдущий список,
+    // чтобы страница не «обновлялась» полным экраном PageLoader при каждом
+    // обновлении фильтров.
+    placeholderData: keepPreviousData,
   })
 
   const { data: stats } = useQuery({
@@ -110,7 +122,7 @@ export default function ClientsPage() {
     queryFn: clientsApi.stats,
   })
 
-  const queryKey = ['clients', search, status, interest, sphere]
+  const queryKey = ['clients', debouncedSearch, status, interest, sphere]
 
   // Глубокий линк из KPI-модалки: /clients?id=<leadId> — открываем форму
   // редактирования этого клиента сразу, а не оставляем юзера искать руками
