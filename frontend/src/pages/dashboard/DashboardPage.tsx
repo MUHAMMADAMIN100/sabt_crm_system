@@ -166,7 +166,9 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="page-title">Добро пожаловать, {user?.name?.split(' ')[0] || ''}</h1>
+          <h1 className="page-title">
+            {role === 'founder' ? 'Добро пожаловать хозяин' : `Добро пожаловать, ${user?.name?.split(' ')[0] || ''}`}
+          </h1>
           <p className="text-surface-500 dark:text-surface-400 mt-0.5">
             {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
           </p>
