@@ -105,7 +105,7 @@ function Popover({
 
 export function DatePicker({
   value, onChange, placeholder = 'Выберите дату', className, disabled,
-  clearable = true, allowFuture = true,
+  clearable = true, allowFuture = true, startYear = 2020,
 }: {
   /** ISO YYYY-MM-DD или пустая строка. */
   value: string
@@ -115,6 +115,8 @@ export function DatePicker({
   disabled?: boolean
   clearable?: boolean
   allowFuture?: boolean
+  /** Первый год в дропдауне (для дат рождения — например 1940). */
+  startYear?: number
 }) {
   const [open, setOpen] = useState(false)
   const anchorRef = useRef<HTMLDivElement>(null)
@@ -161,7 +163,7 @@ export function DatePicker({
           disabled={allowFuture ? undefined : { after: new Date() }}
           className={dayPickerClass}
           captionLayout="dropdown"
-          startMonth={new Date(2020, 0)}
+          startMonth={new Date(startYear, 0)}
           endMonth={new Date(2035, 11)}
         />
         <div className="flex gap-2 px-3 py-2 border-t border-surface-100 dark:border-surface-700 text-xs">

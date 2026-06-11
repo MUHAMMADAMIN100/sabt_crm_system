@@ -288,7 +288,7 @@ export default function AuthPage() {
                 {/* День рождения (свёрнуто) */}
                 <CollapsibleField label="День рождения" defaultOpen={false}>
                   <Controller name="birthDate" control={control}
-                    render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
+                    render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} startYear={1940} />} />
                 </CollapsibleField>
               </>
             )}

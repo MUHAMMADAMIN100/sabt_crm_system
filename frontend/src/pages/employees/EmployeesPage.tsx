@@ -716,7 +716,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
           </CollapsibleField>
           <CollapsibleField label="День рождения" defaultOpen={!!initial?.birthDate} hint={initial?.birthDate ? String(initial.birthDate).slice(0, 10) : ''}>
             <Controller name="birthDate" control={control}
-              render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
+              render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} startYear={1940} />} />
           </CollapsibleField>
           <div>
             <label className="label">{t('employees.hireDate')} *</label>
