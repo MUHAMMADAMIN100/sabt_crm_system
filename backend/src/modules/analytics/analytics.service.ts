@@ -42,8 +42,16 @@ export class AnalyticsService {
           -- Просроченные: дедлайн прошёл И задача всё ещё в активной работе.
           -- Статусы review/on_pm_review/on_client_approval/approved/published —
           -- исполнитель уже отдал работу, эти не считаем просрочкой.
-          (SELECT COUNT(*)::int FROM tasks WHERE deadline < NOW()
-              AND status NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published'))
+          -- Истории контент-плана и КП-задачи онбординга не считаем —
+          -- так счётчик совпадает со списком GET /tasks/overdue.
+          (SELECT COUNT(*)::int FROM tasks t WHERE t.deadline < NOW()
+              AND t.status NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published')
+              AND (t."originStage" IS NULL OR t."originStage" <> 'kp_creation')
+              AND NOT EXISTS (
+                SELECT 1 FROM content_plan_items cpi
+                WHERE cpi."taskId" = t.id AND cpi."contentType" = 'story'
+              )
+              AND t.title NOT ILIKE 'История:%')
               AS "overdueTasks"
       `),
       this.timeRepo
@@ -213,7 +221,16 @@ export class AnalyticsService {
       .addSelect('u.avatar', 'avatar')
       .addSelect('COUNT(DISTINCT t.id)', 'activeTasks')
       .addSelect("SUM(CASE WHEN t.priority = 'critical' THEN 1 ELSE 0 END)", 'criticalTasks')
-      .addSelect("SUM(CASE WHEN t.deadline < NOW() AND t.status NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published') THEN 1 ELSE 0 END)", 'overdueTasks')
+      // Истории КП и kp_creation-задачи не считаем просрочкой — единая
+      // логика с GET /tasks/overdue и dashboard overview.
+      .addSelect(`SUM(CASE WHEN t.deadline < NOW()
+        AND t.status NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published')
+        AND (t."originStage" IS NULL OR t."originStage" <> 'kp_creation')
+        AND t.title NOT ILIKE 'История:%'
+        AND NOT EXISTS (
+          SELECT 1 FROM content_plan_items cpi
+          WHERE cpi."taskId" = t.id AND cpi."contentType" = 'story'
+        ) THEN 1 ELSE 0 END)`, 'overdueTasks')
       .where('u.isActive = true')
       .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder', 'co_founder'] })
       .groupBy('e.id, u.id, u.name, e.fullName, e.position, e.department, u.avatar')
@@ -881,11 +898,14 @@ export class AnalyticsService {
       });
 
       // Просроченные — только активные (NEW / IN_PROGRESS). DONE/CANCELLED
-      // финальные, не считаются.
+      // финальные, не считаются. «Истории» контент-плана и КП-задачи
+      // онбординга не считаем — единая логика с GET /tasks/overdue.
       const closedForOverdue: TaskStatus[] = [TaskStatus.DONE, TaskStatus.CANCELLED];
       const overdueTasks = allTasks.filter(t =>
         t.deadline && new Date(t.deadline) < new Date() &&
-        !closedForOverdue.includes(t.status),
+        !closedForOverdue.includes(t.status) &&
+        !(t.title || '').startsWith('История:') &&
+        (t as any).originStage !== 'kp_creation',
       );
 
       // В упрощённой 4-статусной модели «на проверке» больше не существует

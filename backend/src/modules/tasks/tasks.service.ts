@@ -882,7 +882,17 @@ export class TasksService {
       // Закрытые для overdue — done/cancelled.
       .andWhere('t.status NOT IN (:...statuses)', { statuses: TASK_CLOSED_FOR_OVERDUE })
       // КП-задачи скрыты из «Просроченных».
-      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`);
+      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
+      // «Истории» из контент-плана не показываем в «Просроченных» — они
+      // ведутся во вкладке «Контент-план» проекта и засоряют виджет
+      // (десятки штук). Тот же двойной фильтр, что в Календаре:
+      //   1) связь с content_plan_items типа 'story';
+      //   2) фолбэк по заголовку «История:» (старые задачи без связи).
+      .andWhere(`NOT EXISTS (
+        SELECT 1 FROM content_plan_items cpi
+        WHERE cpi."taskId" = t.id AND cpi."contentType" = 'story'
+      )`)
+      .andWhere(`t.title NOT ILIKE 'История:%'`);
 
     // SMM-роли (head_smm / smm_director / smm_specialist) НЕ должны видеть
     // sales-задачи в «Просроченных». Это автозадачи-встречи менеджеров

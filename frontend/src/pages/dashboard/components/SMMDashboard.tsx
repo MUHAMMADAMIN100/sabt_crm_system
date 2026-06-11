@@ -17,7 +17,10 @@ export default function SMMDashboard() {
 
   const now = new Date()
 
-  const overdueTasks = (myTasks || []).filter((t: any) => isTaskOverdue(t))
+  // «Истории» контент-плана не считаем просрочкой — они ведутся во
+  // вкладке «Контент-план» (та же логика, что на бэке в GET /tasks/overdue).
+  const overdueTasks = (myTasks || []).filter((t: any) =>
+    isTaskOverdue(t) && !String(t.title || '').startsWith('История:'))
 
   const returnedTasks = (myTasks || []).filter((t: any) => t.status === 'returned')
 
