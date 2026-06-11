@@ -72,7 +72,7 @@ function targetsFor(role: string): RoleTargets {
     };
   }
   // Любая «рабочая» роль (designer / marketer / targetologist / developer /
-  // employee) — стандартный набор.
+  // videographer / employee) — стандартный набор.
   return { tasksDone: 20, hoursLogged: 160, deadlineRate: 90, activityDays: 22 };
 }
 

@@ -20,7 +20,7 @@ import { DailyReport } from '../reports/daily-report.entity';
 import { getSalesSegment, isSalesManager } from '../../common/sales-segment';
 
 const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM];
-const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.MARKETER, UserRole.TARGETOLOGIST, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.EMPLOYEE];
+const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.MARKETER, UserRole.TARGETOLOGIST, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.VIDEOGRAPHER, UserRole.EMPLOYEE];
 
 @Injectable()
 export class TasksService {

@@ -20,6 +20,7 @@ const ROLE_LABELS: Record<string, string> = {
   sales_manager_dev: 'Менеджер продаж (Разработка)',
   marketer: 'Маркетолог',
   developer: 'Разработчик',
+  videographer: 'Видеограф',
   employee: 'Сотрудник',
 }
 
@@ -222,6 +223,16 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'clients.view',
   ],
   developer: [
+    'dashboard', 'projects.view',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    'calendar.view',
+    'reports.view', 'reports.create',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
+  ],
+  // Видеограф — исполнитель производства контента, права как у дизайнера.
+  videographer: [
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',

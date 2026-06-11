@@ -201,7 +201,7 @@ export default function CalendarPage() {
   // задач команды. См. оригинальный комментарий выше.
   const PERSONAL_VIEW_ROLES = [
     'founder', 'co_founder',
-    'developer', 'designer', 'smm_specialist',
+    'developer', 'designer', 'videographer', 'smm_specialist',
     'marketer', 'targetologist', 'employee', 'sales_manager_smm', 'sales_manager_dev',
   ]
   const isPersonalView = PERSONAL_VIEW_ROLES.includes(user?.role || '')

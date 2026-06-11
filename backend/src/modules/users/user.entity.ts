@@ -29,6 +29,8 @@ export enum UserRole {
   MARKETER        = 'marketer',
   TARGETOLOGIST   = 'targetologist',
   DEVELOPER       = 'developer',
+  /** Видеограф — исполнитель производства контента (права как у designer). */
+  VIDEOGRAPHER    = 'videographer',
   EMPLOYEE        = 'employee',
 }
 

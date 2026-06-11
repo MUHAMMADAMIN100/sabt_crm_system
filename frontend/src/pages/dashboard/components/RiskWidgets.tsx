@@ -82,7 +82,7 @@ export function HeadSmmWidgets() {
 
   // Рейтинг SMM-специалистов по качеству (меньше rework rate — лучше)
   const smmEmployees = (workloads ?? []).filter((w: any) =>
-    ['smm_specialist', 'head_smm', 'designer'].includes(w.role),
+    ['smm_specialist', 'head_smm', 'designer', 'videographer'].includes(w.role),
   )
   const smmRanked = smmEmployees.slice().sort((a: any, b: any) => a.tasksInProgress - b.tasksInProgress)
 
@@ -176,7 +176,7 @@ export function PmWidgets() {
   const mySMMSpecialists = new Set<string>()
   for (const p of myProjects) {
     for (const m of (p.members || [])) {
-      if (['smm_specialist', 'head_smm', 'designer'].includes(m.role)) {
+      if (['smm_specialist', 'head_smm', 'designer', 'videographer'].includes(m.role)) {
         mySMMSpecialists.add(m.id)
       }
     }

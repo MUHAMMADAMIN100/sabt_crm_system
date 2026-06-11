@@ -77,6 +77,7 @@ export default function UsersPage() {
     sales_manager_smm: 'Менеджер продаж (СММ)',
     sales_manager_dev: 'Менеджер продаж (Разработка)',
     developer: 'Разработчик',
+    videographer: 'Видеограф',
     employee: 'Сотрудник',
   }
 

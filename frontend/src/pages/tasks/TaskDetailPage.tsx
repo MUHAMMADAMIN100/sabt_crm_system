@@ -21,7 +21,7 @@ import { isTaskOverdue } from '@/lib/taskStatus'
 import { stripLeadingEmoji } from '@/lib/stripEmoji'
 
 const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm']
-const WORKER_ROLES = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'employee']
+const WORKER_ROLES = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'employee']
 
 /** Доступные tech tags + их цвета. Можно вводить и свои — fallback цвет
  *  применяется в render'е. */

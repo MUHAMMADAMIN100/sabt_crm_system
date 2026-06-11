@@ -13,6 +13,7 @@ import clsx from 'clsx'
  *  Имя группы показывается в форме как «🎨 Дизайнеры». */
 const ASSIGNEE_GROUPS: Array<{ id: string; label: string; roles: string[] }> = [
   { id: 'design',     label: '🎨 Дизайнеры',           roles: ['designer'] },
+  { id: 'video',      label: '🎬 Видеографы',           roles: ['videographer'] },
   { id: 'smm',        label: '📱 SMM',                  roles: ['smm_specialist', 'head_smm'] },
   { id: 'targeting',  label: '🎯 Таргетологи',          roles: ['targetologist'] },
   { id: 'marketing',  label: '📣 Маркетологи',          roles: ['marketer'] },

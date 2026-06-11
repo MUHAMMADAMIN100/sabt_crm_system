@@ -13,6 +13,7 @@ const ROLES: { value: string; label: string; position: string }[] = [
   { value: 'head_smm',         label: 'Главный SMM специалист', position: 'Главный SMM специалист' },
   { value: 'smm_specialist',   label: 'SMM специалист',       position: 'SMM специалист' },
   { value: 'designer',         label: 'Дизайнер',             position: 'Дизайнер' },
+  { value: 'videographer',     label: 'Видеограф',            position: 'Видеограф' },
   { value: 'targetologist',    label: 'Таргетолог',           position: 'Таргетолог' },
   { value: 'marketer',         label: 'Маркетолог',           position: 'Маркетолог' },
   { value: 'sales_manager_smm', label: 'Менеджер продаж (СММ)',        position: 'Менеджер продаж (СММ)' },

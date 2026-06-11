@@ -48,7 +48,7 @@ const ROLE_GROUPS: { value: string; label: string; roles: string[] }[] = [
   { value: 'sales',    label: 'Менеджеры продаж',   roles: ['sales_manager_smm', 'sales_manager_dev'] },
   { value: 'smm',      label: 'SMM',                roles: ['smm_specialist', 'head_smm'] },
   { value: 'pm',       label: 'PM / руководители',  roles: ['project_manager', 'head_smm', 'smm_director'] },
-  { value: 'design',   label: 'Дизайн / маркетинг', roles: ['designer', 'marketer', 'targetologist'] },
+  { value: 'design',   label: 'Дизайн / маркетинг', roles: ['designer', 'marketer', 'targetologist', 'videographer'] },
   { value: 'dev',      label: 'Разработчики',       roles: ['developer'] },
 ]
 
@@ -63,6 +63,7 @@ const ROLE_LABEL: Record<string, string> = {
   marketer:          'Маркетолог',
   targetologist:     'Таргетолог',
   developer:         'Разработчик',
+  videographer:      'Видеограф',
   employee:          'Сотрудник',
 }
 
