@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike } from 'typeorm';
 import { Project, ProjectStatus, ProjectBillingType, ProjectPaymentStatus } from './project.entity';
@@ -802,6 +802,12 @@ export class ProjectsService implements OnModuleInit {
     // smm_director может создавать только SMM-проекты
     if (userRole === UserRole.SMM_DIRECTOR && dto.projectType !== 'SMM') {
       throw new ForbiddenException('Руководитель SMM может создавать только SMM-проекты');
+    }
+    // SMM-проект без тарифа не создаётся: все тарифы действуют 1 месяц,
+    // от тарифа считаются лимиты/финансы. Старые проекты без тарифа
+    // остаются как есть — проверка только на создание.
+    if (dto.projectType === 'SMM' && !dto.tariffId) {
+      throw new BadRequestException('Выберите SMM-тариф — без него проект не создаётся');
     }
     // Менеджер продаж может создавать проекты только своего направления.
     const createSegment = getSalesSegment(userRole);

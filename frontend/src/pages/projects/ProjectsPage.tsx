@@ -485,7 +485,7 @@ export default function ProjectsPage() {
 }
 
 function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: ProjectFormProps) {
-  const { register, handleSubmit, reset, watch, control, formState: { errors } } = useForm()
+  const { register, handleSubmit, reset, watch, setValue, getValues, control, formState: { errors } } = useForm()
   const { t } = useTranslation()
   const formUser = useAuthStore(s => s.user)
   const isFormHeadSMM = formUser?.role === 'smm_director'
@@ -540,6 +540,37 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     queryFn: () => smmTariffsApi.list({ isActive: true }),
     enabled: projectType === 'SMM',
   })
+
+  // ── Автозаполнение от тарифа ────────────────────────────────────────
+  // Все тарифы действуют 1 месяц: при выборе тарифа в НОВОМ SMM-проекте
+  // дата начала = сегодня, дата завершения = +1 месяц. «Макетов в месяц»
+  // подставляется из тарифа (designsPerMonth); для «Индивидуального» —
+  // ручной ввод. «Историй в день» не трогаем — задаётся вручную.
+  const watchedStartDate = watch('startDate')
+  useEffect(() => {
+    if (initial || projectType !== 'SMM' || !tariffId) return
+    const selected = (tariffs || []).find((t: any) => t.id === tariffId)
+    if (!selected) return
+    const start = getValues('startDate') || format(new Date(), 'yyyy-MM-dd')
+    if (!getValues('startDate')) setValue('startDate', start)
+    const end = new Date(start)
+    end.setMonth(end.getMonth() + 1)
+    setValue('endDate', format(end, 'yyyy-MM-dd'))
+    if (!selected.isCustom && Number(selected.designsPerMonth) >= 0) {
+      setSmmAnswers(prev => ({ ...prev, layoutsPerMonth: String(selected.designsPerMonth ?? 0) }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tariffId, tariffs, projectType, initial])
+
+  // Сдвинули дату начала вручную — завершение пересчитывается на +1 месяц
+  // (только при создании SMM-проекта с выбранным тарифом).
+  useEffect(() => {
+    if (initial || projectType !== 'SMM' || !tariffId || !watchedStartDate) return
+    const end = new Date(watchedStartDate)
+    end.setMonth(end.getMonth() + 1)
+    setValue('endDate', format(end, 'yyyy-MM-dd'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedStartDate])
 
   // Загружаем команды — для селектора команды и фильтрации участников
   const { data: teams } = useQuery({
@@ -838,13 +869,17 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           </CollapsibleField>
           )}
 
-          {/* SMM-тариф (только для SMM-проектов).
-              Цена показывается только основателю/сооснователю. */}
+          {/* SMM-тариф (только для SMM-проектов). При СОЗДАНИИ — обязателен:
+              все тарифы действуют 1 месяц, от тарифа автозаполняются даты
+              и «Макетов в месяц». Цена видна только основателю/сооснователю. */}
           {projectType === 'SMM' && (
             <div className="sm:col-span-2">
-              <label className="label">SMM-тариф</label>
-              <select {...register('tariffId')} className="input">
-                <option value="">— Без тарифа —</option>
+              <label className="label">SMM-тариф {!initial && '*'}</label>
+              <select
+                {...register('tariffId', { required: projectType === 'SMM' && !initial })}
+                className={clsx('input', errors.tariffId && 'border-red-400')}
+              >
+                <option value="">{initial ? '— Без тарифа —' : '— Выберите тариф —'}</option>
                 {(tariffs || []).map((t: any) => {
                   // Краткое описание deliverables для НЕ-финансовых ролей
                   const parts: string[] = []
@@ -957,9 +992,14 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                   ✨ После создания проекта будет автоматически сгенерирован контент-план из тарифа
                 </p>
               )}
-              {!tariffId && (
+              {errors.tariffId && (
+                <p className="text-xs text-red-500 mt-1">Выберите SMM-тариф — без него проект не создаётся</p>
+              )}
+              {!tariffId && !errors.tariffId && (
                 <p className="text-[11px] text-surface-600 dark:text-surface-400 mt-1">
-                  ⚠️ Без тарифа SMM-проект попадёт в риск-зону. Выберите тариф или создайте новый в разделе «SMM-тарифы».
+                  {initial
+                    ? '⚠️ Без тарифа SMM-проект попадёт в риск-зону. Выберите тариф или создайте новый в разделе «SMM-тарифы».'
+                    : 'Тариф обязателен. Все тарифы действуют 1 месяц — даты проекта и «Макетов в месяц» заполнятся автоматически.'}
                 </p>
               )}
             </div>
