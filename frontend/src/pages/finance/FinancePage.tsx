@@ -15,6 +15,7 @@ import {
 } from 'recharts'
 import { financeApi, projectsApi, employeesApi } from '@/services/api.service'
 import { Modal, FormField, ConfirmDialog, EmptyState, PageLoader } from '@/components/ui'
+import { useChartColors } from '@/lib/theme'
 
 // ─── Constants ───────────────────────────────────────────────────────
 type Account = 'all' | 'alif' | 'dushanbe_city' | 'cash'
@@ -43,7 +44,6 @@ const STATUS_INFO: Record<string, { label: string; color: string }> = {
   cancelled: { label: 'Отменено',  color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
 }
 
-const CATEGORY_COLORS = ['#18181b', '#3f3f46', '#52525b', '#71717a', '#8a8a93', '#a1a1aa', '#b4b4bb', '#d4d4d8']
 const MONTH_LABELS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
 const fmtMoney = (v: any) => {
@@ -320,6 +320,8 @@ function Tile({ label, value, accent }: { label: string; value: any; accent?: st
 
 // ─── Overview ────────────────────────────────────────────────────────
 function OverviewSection({ monthly, byCategory, employees, projects, onCreate, onGoTransactions, onQuickTx }: any) {
+  // Палитра следует персональному цвету системы.
+  const CATEGORY_COLORS = useChartColors()
   // Какая панель-вкладка открыта: «Сотрудники», «Проекты» или ничего. По умолчанию закрыто.
   const [panelTab, setPanelTab] = useState<'employees' | 'projects' | null>(null)
   const togglePanel = (tab: 'employees' | 'projects') =>

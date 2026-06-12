@@ -20,6 +20,7 @@ import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, ea
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { useChartColors } from '@/lib/theme'
 
 type FinancePeriod = 'this_month' | 'last_3_months' | 'this_year' | 'all_time'
 
@@ -585,6 +586,8 @@ const CHART_PERIODS: { value: FinancePeriod; label: string }[] = [
 ]
 
 function IncomeExpenseChart({ title, perProject, sectionId }: { title: string; perProject?: boolean; sectionId: string }) {
+  // Палитра следует персональному цвету системы.
+  const chartColors = useChartColors()
   const [period, setPeriod] = useState<FinancePeriod>('this_year')
   const [projectId, setProjectId] = useState<string>('')
   const [projectType, setProjectType] = useState<string>('')
@@ -700,8 +703,8 @@ function IncomeExpenseChart({ title, perProject, sectionId }: { title: string; p
                 <Tooltip formatter={(v: any) => `${fmt(Number(v))} сомони`} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Line type="monotone" dataKey="income" name="Доход" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                <Line type="monotone" dataKey="payroll" name="Зарплаты" stroke="#8a8a93" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                <Line type="monotone" dataKey="ads" name="Реклама" stroke="#71717a" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="payroll" name="Зарплаты" stroke={chartColors[1]} strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="ads" name="Реклама" stroke={chartColors[3]} strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
               </LineChart>
             </ResponsiveContainer>
           )}

@@ -11,6 +11,61 @@ import { format } from 'date-fns'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import TwoFactorSection from '@/components/profile/TwoFactorSection'
+import { ACCENTS, useThemeStore, type AccentKey } from '@/lib/theme'
+import { Check, Palette } from 'lucide-react'
+import clsx from 'clsx'
+
+/** Секция «Цвет системы» — персональный акцент интерфейса.
+ *  Клик по свотчу применяется МГНОВЕННО (CSS-переменные), параллельно
+ *  сохраняется на сервере (users.themeColor) — цвет ездит за
+ *  сотрудником между устройствами и ни на кого больше не влияет. */
+function ThemeColorSection() {
+  const accent = useThemeStore(s => s.accent)
+  const setAccent = useThemeStore(s => s.setAccent)
+
+  const pick = (key: AccentKey) => {
+    if (key === accent) return
+    setAccent(key) // мгновенно — вся система перекрашивается сразу
+    authApi.setTheme(key === 'black' ? null : key)
+      .catch(() => toast.error('Не удалось сохранить цвет — выбор действует до перезахода'))
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center gap-2 mb-1">
+        <Palette size={16} className="text-primary-600" />
+        <h3 className="section-title">Цвет системы</h3>
+      </div>
+      <p className="text-xs text-surface-500 dark:text-surface-400 mb-4">
+        Личная настройка — интерфейс перекрашивается мгновенно и только у вас.
+      </p>
+      <div className="flex flex-wrap gap-3">
+        {ACCENTS.map(a => (
+          <button
+            key={a.key}
+            type="button"
+            onClick={() => pick(a.key)}
+            title={a.label}
+            className={clsx(
+              'flex flex-col items-center gap-1.5 p-2 rounded-xl border-2 transition-colors min-w-[72px]',
+              accent === a.key
+                ? 'border-primary-600 bg-primary-50 dark:bg-primary-900/20'
+                : 'border-transparent hover:border-surface-300 dark:hover:border-surface-600',
+            )}
+          >
+            <span
+              className="w-9 h-9 rounded-full inline-flex items-center justify-center shadow-inner"
+              style={{ backgroundColor: a.swatch }}
+            >
+              {accent === a.key && <Check size={16} className="text-white" strokeWidth={3} />}
+            </span>
+            <span className="text-[11px] font-medium text-surface-600 dark:text-surface-300">{a.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function ProfilePage() {
   const user = useAuthStore(s => s.user)
@@ -232,6 +287,9 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+
+      {/* Персональный цвет интерфейса */}
+      <ThemeColorSection />
 
       {/* 2FA — двухфакторная аутентификация */}
       <TwoFactorSection />

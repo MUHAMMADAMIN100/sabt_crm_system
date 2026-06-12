@@ -72,6 +72,12 @@ export class User {
   @Column({ type: 'varchar', length: 50, nullable: true })
   secondaryRole: UserRole | null;
 
+  /** Персональный акцентный цвет интерфейса (black/violet/blue/green/
+   *  red/orange/teal/pink). NULL — дефолтный ч/б монохром. Каждый
+   *  сотрудник выбирает себе сам в Профиле; ни на кого больше не влияет. */
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  themeColor: string | null;
+
   @Column({ default: true })
   isActive: boolean;
 

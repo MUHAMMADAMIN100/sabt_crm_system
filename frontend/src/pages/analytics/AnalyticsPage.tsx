@@ -15,10 +15,11 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area, Legend,
 } from 'recharts'
+import { useChartColors } from '@/lib/theme'
 
-const COLORS = ['#18181b', '#52525b', '#8a8a93', '#a1a1aa', '#b4b4bb', '#d4d4d8']
 
 export default function AnalyticsPage() {
+  const COLORS = useChartColors()
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const isHeadSMM = user?.role === 'smm_director'

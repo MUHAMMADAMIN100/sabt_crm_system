@@ -10,6 +10,7 @@ import { format, startOfMonth } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { isTaskOverdue } from '@/lib/taskStatus'
+import { useChartColors } from '@/lib/theme'
 
 const FounderDashboard = lazy(() => import('./components/FounderDashboard'))
 const PMDashboard = lazy(() => import('./components/PMDashboard'))
@@ -33,7 +34,6 @@ const SALES_GREETINGS = [
 const SMMDashboard = lazy(() => import('./components/SMMDashboard'))
 const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
 
-const PIE_COLORS = ['#18181b', '#52525b', '#8a8a93', '#b4b4bb', '#d4d4d8']
 
 // ── Helpers for story dot colors ──────────────────────────────────
 function storyDotColor(index: number, count: number, target: number) {
@@ -155,6 +155,8 @@ export default function DashboardPage() {
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(role)
   const isAdmin = ['admin', 'founder', 'co_founder'].includes(role)
   const { t } = useTranslation()
+  // Палитра графиков следует персональному цвету системы.
+  const PIE_COLORS = useChartColors()
   // Случайный комплимент для МП — выбирается один раз за вход на панель.
   const salesGreeting = useMemo(
     () => SALES_GREETINGS[Math.floor(Math.random() * SALES_GREETINGS.length)],

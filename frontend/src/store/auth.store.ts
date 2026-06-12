@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import api, { markJustAuthed, isJustAuthed, tokenStore } from '@/lib/api'
+import { syncAccentFromServer, resetAccent } from '@/lib/theme'
 
 export type UserRole =
   | 'admin'
@@ -130,6 +131,7 @@ export const useAuthStore = create<AuthState>()(
         try { localStorage.removeItem('auth-storage') } catch {}
         try { localStorage.removeItem('token') } catch {} // legacy ключ
         tokenStore.clear()
+        resetAccent()
         set({ authenticated: false, user: null })
       },
 
@@ -139,6 +141,9 @@ export const useAuthStore = create<AuthState>()(
           const { data } = await api.get('/auth/me')
           const oldRole = get().user?.role
           set({ user: data, authenticated: true, loading: false })
+          // Персональный цвет интерфейса: значение с сервера — источник
+          // истины, применяется мгновенно (ездит между устройствами).
+          syncAccentFromServer(data?.themeColor)
           // Если роль реально сменилась (промоут / демоут / blockUser) —
           // полный reload, чтобы все React Query кеши/sidebar/routes сбросились.
           if (oldRole && data.role && oldRole !== data.role) {

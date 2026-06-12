@@ -6,6 +6,7 @@ export const authApi = {
   changePassword: (data: any) => api.patch('/auth/change-password', data).then(r => r.data),
   sessions: (days = 7) => api.get('/auth/sessions', { params: { days } }).then(r => r.data),
   heartbeat: () => api.post('/auth/heartbeat').then(r => r.data),
+  setTheme: (themeColor: string | null) => api.patch('/auth/theme', { themeColor }).then(r => r.data),
 }
 
 // helper для multipart/form-data загрузки аватара

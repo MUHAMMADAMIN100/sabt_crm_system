@@ -475,6 +475,17 @@ export class AuthService {
     };
   }
 
+  /** Персональный акцентный цвет интерфейса. Валидируем по белому
+   *  списку; null/'' /'black' — сброс к дефолтному ч/б монохрому. */
+  async setThemeColor(userId: string, themeColor: string | null) {
+    const ALLOWED = ['black', 'violet', 'blue', 'green', 'red', 'orange', 'teal', 'pink'];
+    const value = themeColor && ALLOWED.includes(themeColor) && themeColor !== 'black'
+      ? themeColor
+      : null;
+    await this.userRepo.update(userId, { themeColor: value });
+    return { themeColor: value };
+  }
+
   async changePassword(userId: string, oldPassword: string, newPassword: string) {
     if (!newPassword || newPassword.length < 8) {
       throw new BadRequestException('Новый пароль должен содержать минимум 8 символов');

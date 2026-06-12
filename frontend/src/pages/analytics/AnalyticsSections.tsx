@@ -9,6 +9,7 @@ import {
   riskApi, smmTariffsApi, projectsApi, analyticsApi, employeesApi,
 } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import { useChartColors } from '@/lib/theme'
 
 type Level = 'green' | 'yellow' | 'red'
 
@@ -18,7 +19,6 @@ const LEVEL_CHIP: Record<Level, string> = {
   red:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
-const COLORS = ['#18181b', '#52525b', '#8a8a93', '#a1a1aa', '#b4b4bb', '#d4d4d8']
 
 const fmtMoney = (v: any) => v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' сомони'
 
@@ -195,6 +195,7 @@ export function SmmAnalyticsSection() {
 // 4. FINANCE ANALYTICS — выручка, маржа по проектам
 // ═══════════════════════════════════════════════════════════════════
 export function FinanceAnalyticsSection() {
+  const COLORS = useChartColors()
   const { data: projects, isLoading } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
 
   if (isLoading) return <Loading />
@@ -320,6 +321,7 @@ export function RiskAnalyticsSection() {
 // 6. TARIFF ANALYTICS — распределение проектов по тарифам
 // ═══════════════════════════════════════════════════════════════════
 export function TariffAnalyticsSection() {
+  const COLORS = useChartColors()
   const role = useAuthStore(s => s.user?.role)
   // Цены и выручку по тарифу видят ТОЛЬКО founder/co_founder.
   // Остальные могут смотреть распределение проектов по тарифам — это

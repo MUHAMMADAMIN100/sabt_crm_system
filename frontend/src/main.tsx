@@ -5,6 +5,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import App from './App'
 import './index.css'
+import { initAccentFromStorage } from './lib/theme'
+
+// Применяем персональный акцентный цвет ДО первого рендера — иначе
+// интерфейс мигает дефолтным ч/б, пока не придёт /auth/me.
+initAccentFromStorage()
 
 /**
  * Одноразовая чистка legacy-данных в localStorage от старой схемы

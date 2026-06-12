@@ -161,6 +161,15 @@ export class AuthController {
     return this.authService.changePassword(req.user.id, body.oldPassword, body.newPassword);
   }
 
+  /** Персональный акцентный цвет интерфейса. Меняет только СВОЮ
+   *  настройку; список допустимых значений зашит на бэке. */
+  @Patch('theme')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  setTheme(@Request() req, @Body() body: { themeColor?: string }) {
+    return this.authService.setThemeColor(req.user.id, body?.themeColor ?? null);
+  }
+
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
