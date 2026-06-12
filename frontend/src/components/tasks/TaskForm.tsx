@@ -413,18 +413,25 @@ function AssigneeGroupedList({ employees, selected, onToggle }: {
   selected: string[]
   onToggle: (uid: string) => void
 }) {
-  // Группируем по user.role; если role не покрыт — кладём в OTHER
+  // Группируем по user.role (+ secondaryRole — сотрудник с двумя ролями,
+  // например «Видеограф / Монтажёр», появляется в ОБЕИХ группах).
+  // Если ни одна роль не покрыта — кладём в OTHER.
   const grouped = useMemo(() => {
     const buckets: Record<string, any[]> = {}
     for (const g of ASSIGNEE_GROUPS) buckets[g.id] = []
     buckets[OTHER_GROUP.id] = []
-    const knownRoles = new Set(ASSIGNEE_GROUPS.flatMap(g => g.roles))
     for (const e of employees) {
       const role = e.user?.role || e.role || ''
-      const group = ASSIGNEE_GROUPS.find(g => g.roles.includes(role))
-      if (group) buckets[group.id].push(e)
-      else if (!knownRoles.has(role)) buckets[OTHER_GROUP.id].push(e)
-      else buckets[OTHER_GROUP.id].push(e)
+      const secondary = e.user?.secondaryRole || e.secondaryRole || ''
+      const primaryGroup = ASSIGNEE_GROUPS.find(g => g.roles.includes(role))
+      const secondaryGroup = secondary
+        ? ASSIGNEE_GROUPS.find(g => g.roles.includes(secondary))
+        : undefined
+      if (primaryGroup) buckets[primaryGroup.id].push(e)
+      if (secondaryGroup && secondaryGroup.id !== primaryGroup?.id) {
+        buckets[secondaryGroup.id].push(e)
+      }
+      if (!primaryGroup && !secondaryGroup) buckets[OTHER_GROUP.id].push(e)
     }
     return buckets
   }, [employees])

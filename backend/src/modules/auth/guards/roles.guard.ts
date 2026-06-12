@@ -20,7 +20,10 @@ export class RolesGuard implements CanActivate {
     if (!roles) return true;
     const req = context.switchToHttp().getRequest();
     const user = req.user;
-    const allowed = roles.includes(user?.role);
+    // У сотрудника может быть вторая роль (например видеограф + монтажёр).
+    // Доступ разрешён, если ЛЮБАЯ из двух ролей подходит под @Roles(...).
+    const allowed = roles.includes(user?.role)
+      || (!!user?.secondaryRole && roles.includes(user.secondaryRole));
     if (!allowed) {
       // Логируем попытку доступа выше роли — это сигнал либо о реальном
       // bruteforce, либо о подмене role на фронте, либо о баге в UI
@@ -34,6 +37,7 @@ export class RolesGuard implements CanActivate {
           path: req.originalUrl || req.url,
           method: req.method,
           userRole: user?.role,
+          userSecondaryRole: user?.secondaryRole ?? null,
           required: roles,
         },
       }).catch(() => {});

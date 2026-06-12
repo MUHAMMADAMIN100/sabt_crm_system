@@ -258,6 +258,28 @@ export function hasPermission(role: UserRole | undefined, permission: Permission
   return PERMISSIONS[role]?.includes(permission) ?? false
 }
 
+/** Проверка с учётом второй роли: права = объединение обеих.
+ *  Например видеограф со второй ролью «Сторисмейкер» получает
+ *  stories.manage. */
+export function hasPermissionAny(
+  role: UserRole | undefined,
+  secondaryRole: UserRole | null | undefined,
+  permission: Permission,
+): boolean {
+  return hasPermission(role, permission)
+    || (!!secondaryRole && hasPermission(secondaryRole, permission))
+}
+
+/** Комбинированный лейбл ролей: «Видеограф / Монтажёр». */
+export function getCombinedRoleLabel(
+  role: string | undefined | null,
+  secondaryRole?: string | null,
+): string {
+  const primary = getRoleLabel(role)
+  if (!secondaryRole) return primary
+  return `${primary} / ${getRoleLabel(secondaryRole)}`
+}
+
 export function canAny(role: UserRole | undefined, permissions: Permission[]): boolean {
   if (!role) return false
   return permissions.some(p => hasPermission(role, p))
@@ -290,7 +312,11 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
   'security-log.view': '/security-log',
 }
 
-export function canAccessRoute(role: UserRole | undefined, route: string): boolean {
+export function canAccessRoute(
+  role: UserRole | undefined,
+  route: string,
+  secondaryRole?: UserRole | null,
+): boolean {
   if (!role) return false
 
   // Always allowed routes
@@ -299,11 +325,11 @@ export function canAccessRoute(role: UserRole | undefined, route: string): boole
   if (route === '/onboarding') return role === 'sales_manager_smm' || role === 'sales_manager_dev'
 
   // Detail pages — allow if user can view the parent
-  if (route.startsWith('/projects/')) return hasPermission(role, 'projects.view')
-  if (route.startsWith('/tasks/')) return hasPermission(role, 'tasks.view')
-  if (route.startsWith('/employees/')) return hasPermission(role, 'employees.view')
+  if (route.startsWith('/projects/')) return hasPermissionAny(role, secondaryRole, 'projects.view')
+  if (route.startsWith('/tasks/')) return hasPermissionAny(role, secondaryRole, 'tasks.view')
+  if (route.startsWith('/employees/')) return hasPermissionAny(role, secondaryRole, 'employees.view')
 
   const perm = Object.entries(PERMISSION_TO_ROUTE).find(([_, r]) => r === route)?.[0] as Permission | undefined
   if (!perm) return true
-  return hasPermission(role, perm)
+  return hasPermissionAny(role, secondaryRole, perm)
 }

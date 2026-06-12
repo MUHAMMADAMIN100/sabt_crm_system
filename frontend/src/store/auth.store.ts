@@ -24,6 +24,8 @@ export interface User {
   name: string
   email: string
   role: UserRole
+  /** Вторая (дополнительная) роль — права = объединение обеих. */
+  secondaryRole?: UserRole | null
   avatar?: string
   isActive: boolean
   isSubAdmin?: boolean

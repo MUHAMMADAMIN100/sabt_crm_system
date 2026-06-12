@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { employeesApi, usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import { getRoleLabel } from '@/lib/permissions'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
 import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera } from 'lucide-react'
@@ -316,7 +317,7 @@ export default function EmployeesPage() {
                       {emp.isSubAdmin && <ShieldCheck size={14} className="text-primary-500" aria-label="Помощник администратора" />}
                       {emp.isStoryMaker && <Camera size={14} className="text-surface-500" aria-label="Сторисмейкер" />}
                     </div>
-                    <p className="text-sm text-surface-500 dark:text-surface-400">{emp.position}</p>
+                    <p className="text-sm text-surface-500 dark:text-surface-400">{emp.position}{emp.user?.secondaryRole ? ` / ${getRoleLabel(emp.user.secondaryRole)}` : ''}</p>
                     <span className="text-xs bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-2 py-0.5 rounded-full">{emp.department}</span>
                   </div>
                 </div>
@@ -408,7 +409,7 @@ export default function EmployeesPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 hidden md:table-cell text-sm text-surface-600 dark:text-surface-300">{emp.position}</td>
+                  <td className="px-4 py-3 hidden md:table-cell text-sm text-surface-600 dark:text-surface-300">{emp.position}{emp.user?.secondaryRole ? ` / ${getRoleLabel(emp.user.secondaryRole)}` : ''}</td>
                   <td className="px-4 py-3 hidden lg:table-cell text-sm text-surface-500 dark:text-surface-400">{emp.department}</td>
                   <td className="px-4 py-3 hidden lg:table-cell">
                     {emp.telegram && <a href={getTelegramUrl(emp.telegram)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="text-xs text-primary-500 hover:underline">{emp.telegram}</a>}
@@ -599,15 +600,18 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
   const { t } = useTranslation()
   const actorRole = useAuthStore(s => s.user?.role)
   const isFounderActor = actorRole === 'founder'
+  // Вторую роль могут назначать только admin / founder / co_founder.
+  const canAssignSecondRole = ['admin', 'founder', 'co_founder'].includes(actorRole || '')
 
   useEffect(() => {
     if (initial) {
       reset({ fullName: initial.fullName||'', position: initial.position||'',
         email: initial.email||'', phone: initial.phone||'', telegram: initial.telegram ? (initial.telegram.startsWith('@') ? initial.telegram : '@' + initial.telegram) : '@', instagram: initial.instagram||'',
         birthDate: initial.birthDate ? new Date(initial.birthDate).toISOString().split('T')[0] : '',
-        hireDate: initial.hireDate ? new Date(initial.hireDate).toISOString().split('T')[0] : '', status: initial.status||'active', bio: initial.bio||'' })
+        hireDate: initial.hireDate ? new Date(initial.hireDate).toISOString().split('T')[0] : '', status: initial.status||'active', bio: initial.bio||'',
+        secondaryRole: initial.user?.secondaryRole || '' })
     } else {
-      reset({ fullName:'', position:'', email:'', phone:'', telegram:'@', instagram:'', birthDate:'', hireDate:'', status:'active', bio:'' })
+      reset({ fullName:'', position:'', email:'', phone:'', telegram:'@', instagram:'', birthDate:'', hireDate:'', status:'active', bio:'', secondaryRole:'' })
     }
   }, [initial, open, reset])
 
@@ -646,7 +650,10 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
       await onSubmit({ fullName: data.fullName, position: data.position, department: 'Общий',
         email: data.email, phone: data.phone, telegram: data.telegram !== '@' ? data.telegram : undefined,
         instagram: data.instagram||undefined, birthDate: data.birthDate||null, hireDate: data.hireDate, status: data.status, bio: data.bio||undefined,
-        ...(role && { role }) })
+        ...(role && { role }),
+        // Вторая роль: отправляем только если актёр вправе её менять.
+        // '' → бэк снимет вторую роль; undefined → поле не трогается.
+        ...(canAssignSecondRole ? { secondaryRole: data.secondaryRole || '' } : {}) })
     } catch (e: any) {
       const msg: string = e?.response?.data?.message || ''
       if (msg.toLowerCase().includes('email')) {
@@ -695,6 +702,32 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
             </select>
             {errors.position && <p className="text-xs text-red-400 mt-1">{String(errors.position.message)}</p>}
           </div>
+          {/* Вторая (дополнительная) роль — например «Видеограф / Монтажёр».
+              Видна и назначается только admin / founder / co_founder.
+              Права сотрудника = объединение обеих ролей. */}
+          {canAssignSecondRole && (
+          <div className="sm:col-span-2">
+            <label className="label">Дополнительная роль</label>
+            <select {...register('secondaryRole')} className="input">
+              <option value="">— Нет —</option>
+              <option value="smm_specialist">SMM специалист</option>
+              <option value="designer">Дизайнер</option>
+              <option value="videographer">Видеограф</option>
+              <option value="video_editor">Монтажёр</option>
+              <option value="organizer">Организатор</option>
+              <option value="storymaker">Сторисмейкер</option>
+              <option value="developer">Разработчик</option>
+              <option value="smm_director">Руководитель SMM</option>
+              <option value="video_director">Руководитель по видеографии</option>
+              <option value="sales_manager_smm">Менеджер продаж (СММ)</option>
+              <option value="sales_manager_dev">Менеджер продаж (Разработка)</option>
+              <option value="employee">Сотрудник</option>
+            </select>
+            <p className="text-[11px] text-surface-400 mt-1">
+              Сотрудник получит права обеих ролей и появится в обеих группах исполнителей — например «Видеограф / Монтажёр».
+            </p>
+          </div>
+          )}
           <div>
             <label className="label">{t('employees.email')} *</label>
             <input type="email" {...register('email', { required: 'Обязательное поле' })} onBlur={handleEmailBlur} placeholder="username" className={`input ${errors.email ? 'border-red-400' : ''}`} />

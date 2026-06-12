@@ -107,6 +107,19 @@ export class EmployeesService implements OnModuleInit {
     const derivedRole = this.positionToRole(dto.position);
     const newRole = explicitRole || derivedRole || UserRole.EMPLOYEE;
 
+    // Вторая роль при создании: эндпоинт доступен только
+    // admin/founder/co_founder (см. @Roles в контроллере), поэтому
+    // отдельной проверки актёра не нужно. Валидируем значение.
+    const rawSecondary = (dto as any).secondaryRole as string | undefined;
+    const forbiddenSecondary = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER];
+    const newSecondary: UserRole | null =
+      rawSecondary
+      && Object.values(UserRole).includes(rawSecondary as UserRole)
+      && !forbiddenSecondary.includes(rawSecondary as UserRole)
+      && rawSecondary !== newRole
+        ? (rawSecondary as UserRole)
+        : null;
+
     // Ищем существующего User по email, если нет — создаём
     let savedUser = await this.userRepo.findOne({ where: { email: dto.email } });
     if (!savedUser) {
@@ -115,14 +128,15 @@ export class EmployeesService implements OnModuleInit {
         email: dto.email,
         password: 'Sabt@2024',
         role: newRole,
+        secondaryRole: newSecondary,
       });
       savedUser = await this.userRepo.save(user);
-    } else if (savedUser.role !== newRole) {
+    } else if (savedUser.role !== newRole || (savedUser.secondaryRole || null) !== newSecondary) {
       // Update existing user's role to match
-      await this.userRepo.update(savedUser.id, { role: newRole });
+      await this.userRepo.update(savedUser.id, { role: newRole, secondaryRole: newSecondary });
     }
 
-    const { role: _r, ...empDto } = dto as any;
+    const { role: _r, secondaryRole: _sr, ...empDto } = dto as any;
     const emp = this.repo.create({ ...empDto, userId: savedUser.id } as Partial<Employee>);
     const saved = await this.repo.save(emp as Employee);
 
@@ -145,8 +159,9 @@ export class EmployeesService implements OnModuleInit {
     const oldUser = emp.userId ? await this.userRepo.findOne({ where: { id: emp.userId } }) : null;
     const oldRole = oldUser?.role;
 
-    // Strip role from dto before updating employee (role belongs to User)
-    const { role: newRoleParam, ...empDto } = dto as any;
+    // Strip role/secondaryRole from dto before updating employee
+    // (обе роли принадлежат User, а не Employee)
+    const { role: newRoleParam, secondaryRole: secondaryRoleParam, ...empDto } = dto as any;
     await this.repo.update(id, empDto);
 
     // ── Record salary history if salary actually changed ──────────────
@@ -211,6 +226,34 @@ export class EmployeesService implements OnModuleInit {
           if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
         }
         userUpdate.role = resolvedRole;
+        // Если новая основная роль совпала с текущей второй — снимаем
+        // вторую, чтобы роли не дублировались.
+        if (oldUser?.secondaryRole === resolvedRole) {
+          userUpdate.secondaryRole = null;
+        }
+      }
+
+      // ── Вторая (дополнительная) роль ───────────────────────────────
+      // Назначать/снимать может только admin/founder/co_founder.
+      // Привилегированные роли второй ролью не назначаются; вторая роль
+      // не может совпадать с основной. Пустая строка/null — снять.
+      if (secondaryRoleParam !== undefined) {
+        const actorCanAssign = ['admin', 'founder', 'co_founder'].includes(actor?.role || '');
+        if (actorCanAssign) {
+          const value = (secondaryRoleParam || null) as UserRole | null;
+          const forbidden = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER];
+          const primary = resolvedRole || oldRole;
+          if (value === null) {
+            userUpdate.secondaryRole = null;
+          } else if (
+            Object.values(UserRole).includes(value)
+            && !forbidden.includes(value)
+            && value !== primary
+          ) {
+            userUpdate.secondaryRole = value;
+          }
+          // Невалидное значение — молча игнорируем (как эскалацию роли).
+        }
       }
 
       if (Object.keys(userUpdate).length > 0) {

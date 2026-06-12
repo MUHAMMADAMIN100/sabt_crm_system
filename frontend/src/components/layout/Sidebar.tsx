@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermission, getUserPositionLabel, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
@@ -26,6 +26,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   }
 
   const role = user?.role
+  const secondaryRole = user?.secondaryRole
   const isTopExec = role === 'founder' || role === 'co_founder'
 
   const navItems: { to: string; icon: any; label: string; permission: Permission; exact?: boolean }[] = [
@@ -59,7 +60,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     // отдельный пункт скрываем. У sales_manager_dev — отдельный пункт сайдбара
     // (по запросу пользователя). Остальным ролям пункт не нужен.
     if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
-    return hasPermission(role, item.permission)
+    // Права = объединение основной и дополнительной ролей.
+    return hasPermissionAny(role, secondaryRole, item.permission)
   })
 
   return (

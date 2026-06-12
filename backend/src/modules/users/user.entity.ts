@@ -64,6 +64,14 @@ export class User {
   @Column({ type: 'varchar', length: 50, default: UserRole.EMPLOYEE })
   role: UserRole;
 
+  /** Дополнительная (вторая) роль — например видеограф, который ещё и
+   *  монтажёр. Права = объединение обеих ролей (см. RolesGuard).
+   *  Назначать может только admin/founder/co_founder. Привилегированные
+   *  роли (admin/founder/co_founder) второй ролью не назначаются.
+   *  KPI-таргеты и дашборд — по основной роли. */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  secondaryRole: UserRole | null;
+
   @Column({ default: true })
   isActive: boolean;
 

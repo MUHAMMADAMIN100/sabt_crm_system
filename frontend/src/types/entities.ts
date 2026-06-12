@@ -17,6 +17,8 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  /** Вторая (дополнительная) роль — например видеограф + монтажёр. */
+  secondaryRole?: string | null;
   isActive: boolean;
   avatar: string | null;
   createdAt: string;

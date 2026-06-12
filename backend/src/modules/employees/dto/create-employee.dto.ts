@@ -19,6 +19,15 @@ export class CreateEmployeeDto {
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() salary?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() userId?: string;
   @ApiProperty({ enum: UserRole, required: false }) @IsOptional() @IsEnum(UserRole) role?: UserRole;
+
+  /** Вторая (дополнительная) роль — например видеограф + монтажёр.
+   *  Назначается только admin/founder/co_founder. Пустая строка — снять.
+   *  Валидация значения (членство в enum, не привилегированная, не равна
+   *  основной) — в сервисе; здесь только строка, чтобы '' проходила. */
+  @ApiProperty({ enum: UserRole, required: false })
+  @IsOptional()
+  @IsString()
+  secondaryRole?: UserRole | '' | null;
 }
 
 export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {}

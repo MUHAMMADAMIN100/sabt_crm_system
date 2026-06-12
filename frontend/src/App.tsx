@@ -96,11 +96,12 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const role = useAuthStore(s => s.user?.role)
+  const secondaryRole = useAuthStore(s => s.user?.secondaryRole)
   const location = useLocation()
   // Strip query/hash, get pathname
   const path = location.pathname
   // Build canonical path: /projects/:id → /projects/abc treated as /projects/abc
-  if (role && !canAccessRoute(role, path)) {
+  if (role && !canAccessRoute(role, path, secondaryRole)) {
     return <Navigate to="/" replace />
   }
   return <>{children}</>

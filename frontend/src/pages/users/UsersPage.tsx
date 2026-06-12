@@ -121,7 +121,7 @@ export default function UsersPage() {
                 </td>
                 <td className="px-4 py-3 hidden md:table-cell text-sm text-surface-500">{u.email}</td>
                 <td className="px-4 py-3">
-                  <span className="badge bg-surface-100 text-surface-700">{ROLE_LABELS[u.role] || u.role}</span>
+                  <span className="badge bg-surface-100 text-surface-700">{(ROLE_LABELS[u.role] || u.role) + (u.secondaryRole ? ' / ' + (ROLE_LABELS[u.secondaryRole] || u.secondaryRole) : '')}</span>
                 </td>
                 <td className="px-4 py-3 hidden lg:table-cell text-sm text-surface-400">
                   {format(new Date(u.createdAt), 'dd.MM.yyyy')}
