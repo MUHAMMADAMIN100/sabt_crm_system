@@ -14,12 +14,13 @@ import clsx from 'clsx'
 const ASSIGNEE_GROUPS: Array<{ id: string; label: string; roles: string[] }> = [
   { id: 'design',     label: '🎨 Дизайнеры',           roles: ['designer'] },
   { id: 'video',      label: '🎬 Видеографы',           roles: ['videographer'] },
-  { id: 'smm',        label: '📱 SMM',                  roles: ['smm_specialist', 'head_smm'] },
-  { id: 'targeting',  label: '🎯 Таргетологи',          roles: ['targetologist'] },
-  { id: 'marketing',  label: '📣 Маркетологи',          roles: ['marketer'] },
+  { id: 'editors',    label: '🎞 Монтажёры',            roles: ['video_editor'] },
+  { id: 'organizers', label: '📋 Организаторы',         roles: ['organizer'] },
+  { id: 'smm',        label: '📱 SMM',                  roles: ['smm_specialist'] },
+  { id: 'stories',    label: '📸 Сторисмейкеры',        roles: ['storymaker'] },
   { id: 'dev',        label: '💻 Разработчики',         roles: ['developer'] },
   { id: 'sales',      label: '💰 Менеджеры по продажам',roles: ['sales_manager_smm', 'sales_manager_dev'] },
-  { id: 'pm',         label: '👔 Менеджеры проектов',   roles: ['project_manager'] },
+  { id: 'directors',  label: '👔 Руководители направлений', roles: ['smm_director', 'video_director'] },
   { id: 'leadership', label: '👑 Руководство',          roles: ['admin', 'founder', 'co_founder'] },
 ]
 const OTHER_GROUP = { id: 'other', label: '👤 Прочие сотрудники' }

@@ -64,17 +64,17 @@ export default function ProjectDetailPage() {
   const qc = useQueryClient()
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
-  // head_smm — это менеджер SMM-проектов, должен иметь те же права что
-  // и project_manager (создавать задачи, редактировать, управлять составом).
-  // Бэкенд отдельно проверит что head_smm управляет именно своим SMM-проектом
+  // smm_director — руководитель SMM-проектов, имеет те же права что
+  // и назначенный менеджер (создавать задачи, редактировать, управлять составом).
+  // Бэкенд отдельно проверит что smm_director управляет именно SMM-проектом
   // (project.managerId === user.id) и вернёт 403 для чужих.
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
   const canManagePayment = user?.role === 'founder' || user?.role === 'co_founder'
   const canSeePayment = ['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
   const canRequestPayment = ['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
   // Бюджет — может редактировать sales_manager (его прерогатива), а также
-  // менеджеры проекта (PM, head_smm, smm_director) и top-tier (founder/co_founder/admin).
-  const canEditBudget = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
+  // назначенный менеджер проекта, руководители направлений и top-tier (founder/co_founder/admin).
+  const canEditBudget = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
 
   // Detect desktop (lg and up) — mobile/tablet use select instead of drag
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)
@@ -338,7 +338,7 @@ export default function ProjectDetailPage() {
 
   const isMember = project.members?.some((m: any) => m.id === user?.id) ?? false
   // Менеджер именно этого проекта — даже если его «глобальная» роль не PM,
-  // он управляет проектом наравне с project_manager/head_smm.
+  // он управляет проектом как назначенный менеджер.
   const isProjectManagerOfThis = project.managerId === user?.id
   const hasPmPowersHere = isManagerPlus || isProjectManagerOfThis
   const canCreateTask = hasPmPowersHere || isMember
@@ -1224,18 +1224,18 @@ export default function ProjectDetailPage() {
               {(employees || [])
                 .filter((e: any) => {
                   const role = e.user?.role
-                  if (role === 'head_smm' && project?.projectType !== 'SMM') return false
+                  if (role === 'smm_director' && project?.projectType !== 'SMM') return false
                   return true
                 })
                 .map((e: any) => (
                   <option key={e.userId || e.id} value={e.userId || e.id}>
-                    {e.fullName}{e.user?.role === 'head_smm' ? ' — Главный SMM' : ''}
+                    {e.fullName}{e.user?.role === 'smm_director' ? ' — Руководитель SMM' : ''}
                   </option>
                 ))}
             </select>
             {project?.projectType !== 'SMM' && (
               <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-1">
-                Главный SMM специалист — только для SMM-проектов
+                Руководитель SMM — только для SMM-проектов
               </p>
             )}
           </div>

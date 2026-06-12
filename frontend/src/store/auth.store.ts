@@ -7,16 +7,16 @@ export type UserRole =
   | 'founder'
   | 'co_founder'
   | 'smm_director'
-  | 'project_manager'
-  | 'head_smm'
+  | 'video_director'
   | 'smm_specialist'
   | 'designer'
   | 'sales_manager_smm'
   | 'sales_manager_dev'
-  | 'marketer'
-  | 'targetologist'
   | 'developer'
   | 'videographer'
+  | 'video_editor'
+  | 'organizer'
+  | 'storymaker'
   | 'employee'
 
 export interface User {
@@ -193,13 +193,13 @@ export function useIsFounder() {
 }
 
 export function useIsPM() {
-  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(s.user?.role || ''))
 }
 
 export function useIsWorker() {
-  return useAuthStore(s => ['smm_specialist', 'designer', 'marketer', 'targetologist', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'employee'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'employee'].includes(s.user?.role || ''))
 }
 
 export function useCanManageTasks() {
-  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(s.user?.role || ''))
 }

@@ -14,7 +14,7 @@ export class ReportsController {
   constructor(private service: ReportsService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.VIDEO_DIRECTOR)
   findAll(
     @Query('employeeId') employeeId?: string,
     @Query('projectId') projectId?: string,
@@ -25,7 +25,7 @@ export class ReportsController {
   }
 
   @Get('export/csv')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.VIDEO_DIRECTOR)
   async exportCsv(
     @Query('employeeId') employeeId: string,
     @Query('projectId') projectId: string,

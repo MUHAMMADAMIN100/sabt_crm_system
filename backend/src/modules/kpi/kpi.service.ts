@@ -35,13 +35,13 @@ const TOP_ROLES = new Set<string>([
   UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
 ]);
 const PM_ROLES = new Set<string>([
-  UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM, UserRole.SMM_DIRECTOR,
+  UserRole.VIDEO_DIRECTOR, UserRole.SMM_DIRECTOR,
 ]);
 const SALES_ROLES = new Set<string>([
   UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV,
 ]);
 const SMM_ROLES = new Set<string>([
-  UserRole.SMM_SPECIALIST, UserRole.HEAD_SMM,
+  UserRole.SMM_SPECIALIST, UserRole.STORYMAKER,
 ]);
 
 /** Базовые таргеты на 30-дневный период. Для других периодов скейлим
@@ -71,8 +71,8 @@ function targetsFor(role: string): RoleTargets {
       storiesPosted: 80,
     };
   }
-  // Любая «рабочая» роль (designer / marketer / targetologist / developer /
-  // videographer / employee) — стандартный набор.
+  // Любая «рабочая» роль (designer / developer / videographer /
+  // video_editor / organizer / employee) — стандартный набор.
   return { tasksDone: 20, hoursLogged: 160, deadlineRate: 90, activityDays: 22 };
 }
 

@@ -29,7 +29,7 @@ export default function EmployeeDetailPage() {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
-  const canView = ['admin', 'founder', 'co_founder', 'project_manager'].includes(user?.role || '')
+  const canView = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
   const isAdminOrFounder = user?.role === 'founder' || user?.role === 'co_founder'
   const canEditSalary = user?.role === 'founder' || user?.role === 'co_founder'
   // admin/founder/co_founder могут менять аватар сотрудника

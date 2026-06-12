@@ -149,10 +149,10 @@ export default function DashboardPage() {
   const user = useAuthStore(s => s.user)
   const role = user?.role || 'employee'
   const isFounderView = ['admin', 'founder', 'co_founder'].includes(role)
-  const isPMView = role === 'project_manager' || role === 'head_smm' || role === 'smm_director'
+  const isPMView = role === 'video_director' || role === 'smm_director'
   const isSalesView = role === 'sales_manager_smm' || role === 'sales_manager_dev'
-  const isWorkerView = ['smm_specialist', 'designer', 'marketer', 'targetologist', 'developer', 'videographer', 'employee'].includes(role)
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(role)
+  const isWorkerView = ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'developer', 'videographer', 'employee'].includes(role)
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(role)
   const isAdmin = ['admin', 'founder', 'co_founder'].includes(role)
   const { t } = useTranslation()
   // Случайный комплимент для МП — выбирается один раз за вход на панель.

@@ -38,13 +38,13 @@ export class ProjectsController {
   }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   create(@Body() dto: CreateProjectDto, @Request() req) {
     return this.service.create(dto, req.user.id, req.user.role);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto, @Request() req) {
     return this.service.update(id, dto, req.user);
   }
@@ -68,7 +68,7 @@ export class ProjectsController {
   }
 
   @Get(':id/payments')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.PROJECT_MANAGER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR)
   listPayments(@Param('id') id: string) {
     return this.service.listPayments(id);
   }
@@ -96,7 +96,7 @@ export class ProjectsController {
   @Patch(':id/launch-checklist')
   @Roles(
     UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-    UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM,
+    UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
   )
   setManualLaunchItem(
     @Param('id') id: string,
@@ -109,7 +109,7 @@ export class ProjectsController {
   @Patch(':id/brief')
   @Roles(
     UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-    UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM,
+    UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
     UserRole.SMM_SPECIALIST,
   )
   saveBrief(
@@ -123,7 +123,7 @@ export class ProjectsController {
   @Delete(':id/brief')
   @Roles(
     UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-    UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM,
+    UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
   )
   clearBrief(@Param('id') id: string, @Request() req) {
     return this.service.clearBrief(id, req.user);
@@ -134,7 +134,7 @@ export class ProjectsController {
   @Post(':id/brief/share-link')
   @Roles(
     UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-    UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM,
+    UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
     UserRole.SMM_SPECIALIST,
   )
   async briefShareLink(@Param('id') id: string, @Request() req) {

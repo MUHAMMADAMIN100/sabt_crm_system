@@ -21,7 +21,7 @@ const COLORS = ['#18181b', '#52525b', '#8a8a93', '#a1a1aa', '#b4b4bb', '#d4d4d8'
 export default function AnalyticsPage() {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
-  const isHeadSMM = user?.role === 'head_smm'
+  const isHeadSMM = user?.role === 'smm_director'
   // МП по продажам не видят вкладку Founder в аналитике.
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
   const [expandedEmp, setExpandedEmp] = useState<string | null>(null)
@@ -46,11 +46,11 @@ export default function AnalyticsPage() {
 
   if (isLoading) return <PageLoader />
 
-  const smmPositions = ['SMM специалист', 'Главный SMM специалист']
-  const smmRoles = ['smm_specialist', 'head_smm']
+  const smmPositions = ['SMM специалист', 'Руководитель SMM', 'Сторисмейкер']
+  const smmRoles = ['smm_specialist', 'storymaker']
   const isSMMEmployee = (emp: any) => smmRoles.includes(emp?.user?.role || emp?.role || '') || smmPositions.includes(emp?.position || '')
 
-  // Filter workload & efficiency for head_smm — include both position and role check
+  // Filter workload & efficiency for smm_director — include both position and role check
   const filteredWorkload = isHeadSMM
     ? (workload || []).filter((e: any) => smmPositions.includes(e.position || '') || smmRoles.includes(e.role || ''))
     : workload
@@ -58,7 +58,7 @@ export default function AnalyticsPage() {
     ? (empEff || []).filter((e: any) => smmPositions.includes(e.position || '') || smmRoles.includes(e.role || ''))
     : empEff
 
-  // Group tasks by employee (filter to SMM projects for head_smm)
+  // Group tasks by employee (filter to SMM projects for smm_director)
   const tasksByEmployee: Record<string, any[]> = {}
   allTasks?.forEach((task: any) => {
     if (isHeadSMM && task.project?.projectType !== 'SMM') return

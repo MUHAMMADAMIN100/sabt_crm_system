@@ -88,7 +88,7 @@ export default function TaskDrawer({
 
   const isOwn = task?.assigneeId === user?.id
   const isCreator = task?.createdById === user?.id
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm']
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director']
     .includes(user?.role || '')
   const canEdit = isManagerPlus || isOwn || isCreator
   const canChangeStatus = isManagerPlus || isOwn

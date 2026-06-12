@@ -23,7 +23,7 @@ import { UserRole } from '../users/user.entity';
 const TOP = [UserRole.FOUNDER, UserRole.CO_FOUNDER];
 const VIEWERS = [
   UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-  UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM,
+  UserRole.VIDEO_DIRECTOR,
 ];
 
 @ApiTags('Teams')

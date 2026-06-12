@@ -24,7 +24,7 @@ const ALLOWED_WS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:5173,h
  *   - комнаты проектов где они участники / менеджер
  *   - комнаты задач где они исполнители / создатели */
 const WS_ADMIN_ROLES = new Set([
-  'admin', 'founder', 'co_founder', 'smm_director', 'head_smm',
+  'admin', 'founder', 'co_founder', 'smm_director', 'video_director',
 ]);
 
 @WebSocketGateway({

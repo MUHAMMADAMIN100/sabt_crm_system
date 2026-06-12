@@ -106,7 +106,7 @@ export function useSocket(authMarker: string | null) {
     })
 
     socket.on('stories:changed', () => {
-      // Все возможные ключи запросов, использующие stories — иначе head_smm/PM
+      // Все возможные ключи запросов, использующие stories — иначе руководители
       // не видит отметки SMM-команды без ручного refresh.
       qc.invalidateQueries({ queryKey: ['stories'] })
       qc.invalidateQueries({ queryKey: ['employee-stories'] })

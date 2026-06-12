@@ -62,13 +62,13 @@ export default function EmployeesPage() {
     'Сооснователь',
     'Администратор',
     'Руководитель SMM',
-    'Проект-менеджер',
-    'Главный SMM специалист',
+    'Руководитель по видеографии',
     'SMM специалист',
     'Дизайнер',
     'Видеограф',
-    'Таргетолог',
-    'Маркетолог',
+    'Монтажёр',
+    'Организатор',
+    'Сторисмейкер',
     'Менеджер продаж (СММ)',
     'Менеджер продаж (Разработка)',
     'Разработчик',
@@ -82,12 +82,12 @@ export default function EmployeesPage() {
   // Reset page when filters change
   useEffect(() => { setPage(1) }, [search, position])
 
-  const isHeadSMM = user?.role === 'head_smm'
-  const smmPositions = ['SMM специалист', 'Главный SMM специалист']
+  // Руководитель SMM видит только SMM-сотрудников в списке.
+  const isSmmLead = user?.role === 'smm_director'
+  const smmPositions = ['SMM специалист', 'Руководитель SMM', 'Сторисмейкер']
 
   const employees = allEmployees?.filter((emp: any) => {
-    // head_smm sees only SMM employees
-    if (isHeadSMM && !smmPositions.includes(emp.position || '') && !['smm_specialist', 'head_smm'].includes(emp.user?.role || '')) return false
+    if (isSmmLead && !smmPositions.includes(emp.position || '') && !['smm_specialist', 'smm_director', 'storymaker'].includes(emp.user?.role || '')) return false
     const matchesSearch = !search || emp.fullName?.toLowerCase().includes(search.toLowerCase()) || emp.email?.toLowerCase().includes(search.toLowerCase()) || emp.position?.toLowerCase().includes(search.toLowerCase())
     const matchesPosition = !position || emp.position === position
     return matchesSearch && matchesPosition
@@ -626,15 +626,15 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
     // Map position label → role enum value
     const positionToRoleMap: Record<string, string> = {
       'SMM специалист': 'smm_specialist',
-      'Главный SMM специалист': 'head_smm',
       'Руководитель SMM': 'smm_director',
+      'Руководитель по видеографии': 'video_director',
       'Дизайнер': 'designer',
       'Видеограф': 'videographer',
-      'Таргетолог': 'targetologist',
+      'Монтажёр': 'video_editor',
+      'Организатор': 'organizer',
+      'Сторисмейкер': 'storymaker',
       'Менеджер продаж (СММ)': 'sales_manager_smm',
       'Менеджер продаж (Разработка)': 'sales_manager_dev',
-      'Проект-менеджер': 'project_manager',
-      'Маркетолог': 'marketer',
       'Разработчик': 'developer',
       'Сотрудник': 'employee',
       'Основатель': 'founder',
@@ -674,15 +674,15 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
               <option value="">Выберите должность</option>
               {[
                 'Руководитель SMM',
-                'Главный SMM специалист',
+                'Руководитель по видеографии',
                 'SMM специалист',
                 'Дизайнер',
                 'Видеограф',
-                'Таргетолог',
-                'Маркетолог',
+                'Монтажёр',
+                'Организатор',
+                'Сторисмейкер',
                 'Менеджер продаж (СММ)',
                 'Менеджер продаж (Разработка)',
-                'Проект-менеджер',
                 'Разработчик',
                 'Администратор',
                 'Основатель',

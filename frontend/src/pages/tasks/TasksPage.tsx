@@ -50,8 +50,8 @@ export default function TasksPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const PAGE_SIZE = 10
   const user = useAuthStore(s => s.user)
-  const isHeadSMM = user?.role === 'head_smm' || user?.role === 'smm_director'
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
+  const isHeadSMM = user?.role === 'smm_director'
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
   // МП по продажам: видят задачи своего направления и могут создавать
   // задачи в доступных им проектах (сервер фильтрует /tasks и /projects).
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
@@ -358,7 +358,7 @@ export default function TasksPage() {
               <select value={assigneeUserId} onChange={e => setAssigneeUserId(e.target.value)} className="input w-48">
                 <option value="">Все исполнители</option>
                 {(isHeadSMM
-                  ? employees?.filter((e: any) => ['smm_specialist', 'head_smm'].includes(e.user?.role || '') || ['SMM специалист', 'Главный SMM специалист'].includes(e.position || ''))
+                  ? employees?.filter((e: any) => ['smm_specialist', 'smm_director', 'storymaker'].includes(e.user?.role || '') || ['SMM специалист', 'Руководитель SMM', 'Сторисмейкер'].includes(e.position || ''))
                   : employees
                 )?.map((e: any) => (
                   <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>

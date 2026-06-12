@@ -37,25 +37,25 @@ export class SmmTariffsController {
   }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
   create(@Body() dto: CreateSmmTariffDto, @Request() req) {
     return this.service.create(dto as any, req.user.id, req.user.role);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
   update(@Param('id') id: string, @Body() dto: UpdateSmmTariffDto, @Request() req) {
     return this.service.update(id, dto as any, req.user.role);
   }
 
   @Patch(':id/toggle-active')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
   toggleActive(@Param('id') id: string, @Request() req) {
     return this.service.toggleActive(id, req.user.role);
   }
 
   @Post(':id/clone')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
   clone(@Param('id') id: string, @Request() req) {
     return this.service.clone(id, req.user.id, req.user.role);
   }

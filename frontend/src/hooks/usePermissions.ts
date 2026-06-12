@@ -20,7 +20,7 @@ export function usePermissions() {
     /** Check if user is admin or founder (includes co-founder) */
     isFounder: role === 'admin' || role === 'founder' || role === 'co_founder',
     /** Check if user is admin, founder, co-founder, or project manager */
-    isManager: role === 'admin' || role === 'founder' || role === 'co_founder' || role === 'project_manager',
+    isManager: role === 'admin' || role === 'founder' || role === 'co_founder' || role === 'smm_director' || role === 'video_director',
     /** Check if user is admin */
     isAdmin: role === 'admin',
   }

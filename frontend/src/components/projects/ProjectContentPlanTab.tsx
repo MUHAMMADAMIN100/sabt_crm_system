@@ -58,8 +58,8 @@ const APPROVAL_OPTIONS = [
   { value: 'rejected',          label: 'Отказ' },
 ]
 
-const EDIT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm', 'smm_specialist']
-const DELETE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm']
+const EDIT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'smm_specialist']
+const DELETE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director']
 
 export default function ProjectContentPlanTab({ projectId }: { projectId: string }) {
   const role = useAuthStore(s => s.user?.role)

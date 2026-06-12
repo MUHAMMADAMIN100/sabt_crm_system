@@ -10,16 +10,16 @@ import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import { PmWidgets, HeadSmmWidgets } from './RiskWidgets'
 
-// Глобальный календарь историй — для head_smm чтобы видеть отметки SMM-команды
+// Глобальный календарь историй — для руководителя SMM (отметки SMM-команды)
 const GlobalStoriesCalendar = lazy(() => import('./GlobalStoriesCalendar'))
 
-const SMM_POSITIONS = ['SMM специалист', 'Главный SMM специалист']
-const SMM_ROLES = ['smm_specialist', 'head_smm']
+const SMM_POSITIONS = ['SMM специалист', 'Руководитель SMM', 'Сторисмейкер']
+const SMM_ROLES = ['smm_specialist', 'storymaker']
 
 export default function PMDashboard() {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
-  const isHeadSMM = user?.role === 'head_smm'
+  const isHeadSMM = user?.role === 'smm_director'
 
   const { data: overdueTasksRaw, isLoading: loadingOverdue } = useQuery({
     queryKey: ['tasks-overdue'],
@@ -36,7 +36,7 @@ export default function PMDashboard() {
     queryFn: analyticsApi.employeeWorkload,
   })
 
-  // For head_smm — filter to SMM-only data
+  // For smm_director — filter to SMM-only data
   const overdueTasks = useMemo(() => {
     if (!isHeadSMM) return overdueTasksRaw
     return (overdueTasksRaw || []).filter((t: any) => t.project?.projectType === 'SMM')
@@ -84,11 +84,11 @@ export default function PMDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Wave 20: TZ п.11 — для head_smm показываем виджеты Head of SMM,
-          для project_manager — виджеты PM. Старая Summary row остаётся ниже. */}
+      {/* Wave 20: TZ п.11 — для smm_director показываем виджеты Head of SMM,
+          для video_director — виджеты PM. Старая Summary row остаётся ниже. */}
       {isHeadSMM ? <HeadSmmWidgets /> : <PmWidgets />}
 
-      {/* Глобальный календарь сторис — head_smm видит отметки своей SMM-команды.
+      {/* Глобальный календарь сторис — smm_director видит отметки своей SMM-команды.
           Раньше показывался только на FounderDashboard, что лишало главного SMM
           обзора публикаций исполнителей. */}
       {isHeadSMM && (

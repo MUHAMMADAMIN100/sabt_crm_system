@@ -35,7 +35,7 @@ export default function TariffsPage() {
   const role = useAuthStore(s => s.user?.role)
   const canEdit = hasPermission(role as any, 'tariffs.manage')
   // Цены тарифов видят и могут редактировать ТОЛЬКО founder/co_founder.
-  // Остальные (admin, smm_director, head_smm и т.д.) видят состав тарифа,
+  // Остальные (admin, smm_director и т.д.) видят состав тарифа,
   // но саму цену не показываем.
   const canSeeFinance = role === 'founder' || role === 'co_founder'
 

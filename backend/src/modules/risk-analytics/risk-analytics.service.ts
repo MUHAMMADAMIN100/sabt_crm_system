@@ -230,8 +230,7 @@ export class RiskAnalyticsService {
   /** Нагрузка PM-ов (опционально по конкретному pmId). */
   async getPmWorkload(pmId?: string): Promise<PmWorkload[]> {
     const pmRoles: UserRole[] = [
-      UserRole.PROJECT_MANAGER,
-      UserRole.HEAD_SMM,
+      UserRole.VIDEO_DIRECTOR,
       UserRole.ADMIN,
       UserRole.FOUNDER,
       UserRole.CO_FOUNDER,
@@ -290,7 +289,7 @@ export class RiskAnalyticsService {
          JOIN users u ON u.id = pm."usersId"
          WHERE p."isArchived" = false
            AND p."managerId" = ANY($1::uuid[])
-           AND u.role IN ('smm_specialist','head_smm')
+           AND u.role IN ('smm_specialist','storymaker')
          GROUP BY p."managerId"`,
         [pmIds],
       );

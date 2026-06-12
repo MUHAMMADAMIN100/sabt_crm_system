@@ -152,7 +152,7 @@ export class SmmTariffsService implements OnModuleInit {
   }
 
   /** Цены тарифа видят только founder/co_founder. Все остальные
-   *  (admin, smm_director, head_smm, project_manager, sales_manager и т.д.)
+   *  (admin, smm_director, video_director, sales_manager и т.д.)
    *  могут смотреть состав тарифа (stories/reels/posts/designs/...) и
    *  редактировать всё кроме цены, но саму цену не видят. */
   stripPrice<T extends SmmTariff | SmmTariff[]>(data: T, role?: string): T {

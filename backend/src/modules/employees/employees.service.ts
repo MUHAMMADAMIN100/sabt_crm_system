@@ -16,16 +16,17 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   founder: 'Основатель',
   co_founder: 'Сооснователь',
-  project_manager: 'Проект-менеджер',
-  head_smm: 'Главный SMM специалист',
+  smm_director: 'Руководитель SMM',
+  video_director: 'Руководитель по видеографии',
   smm_specialist: 'SMM специалист',
   designer: 'Дизайнер',
-  targetologist: 'Таргетолог',
   sales_manager_smm: 'Менеджер продаж (СММ)',
   sales_manager_dev: 'Менеджер продаж (Разработка)',
-  marketer: 'Маркетолог',
   developer: 'Разработчик',
   videographer: 'Видеограф',
+  video_editor: 'Монтажёр',
+  organizer: 'Организатор',
+  storymaker: 'Сторисмейкер',
   employee: 'Сотрудник',
 };
 
@@ -373,17 +374,21 @@ export class EmployeesService implements OnModuleInit {
     if (!position) return undefined;
     const norm = position.toLowerCase().replace(/[\s\-—_]+/g, '').trim();
 
-    if (norm.includes('главныйsmm') || norm.includes('headsmm') || (norm.includes('smm') && (norm.includes('главн') || norm.includes('head')))) return UserRole.HEAD_SMM;
+    // Руководители направлений. «Главный SMM» больше не роль —
+    // руководящие SMM-должности теперь дают smm_director.
+    if (norm.includes('руководительsmm') || norm.includes('главныйsmm') || norm.includes('headsmm')
+      || (norm.includes('smm') && (norm.includes('главн') || norm.includes('head') || norm.includes('руковод')))) return UserRole.SMM_DIRECTOR;
+    if (norm.includes('видео') && norm.includes('руковод')) return UserRole.VIDEO_DIRECTOR;
+    if (norm.includes('сторисмейкер') || norm.includes('storymaker')) return UserRole.STORYMAKER;
     if (norm.includes('smm')) return UserRole.SMM_SPECIALIST;
     if (norm.includes('дизайнер') || norm.includes('designer')) return UserRole.DESIGNER;
+    if (norm.includes('монтаж') || norm.includes('editor')) return UserRole.VIDEO_EDITOR;
     if (norm.includes('видеограф') || norm.includes('videograph')) return UserRole.VIDEOGRAPHER;
-    if (norm.includes('таргетолог') || norm.includes('targetolog')) return UserRole.TARGETOLOGIST;
+    if (norm.includes('организатор') || norm.includes('organiz')) return UserRole.ORGANIZER;
     if (norm.includes('продаж') || norm.includes('sales'))
       return norm.includes('разработ') || norm.includes('dev')
         ? UserRole.SALES_MANAGER_DEV
         : UserRole.SALES_MANAGER_SMM;
-    if (norm.includes('маркетолог') || norm.includes('marketer')) return UserRole.MARKETER;
-    if (norm.includes('проектменеджер') || norm.includes('projectmanager') || norm.includes('пм')) return UserRole.PROJECT_MANAGER;
     if (norm.includes('разработчик') || norm.includes('developer') || norm.includes('программист')) return UserRole.DEVELOPER;
     if (norm.includes('сотрудник') || norm.includes('employee')) return UserRole.EMPLOYEE;
     // Explicitly NOT derived from position: FOUNDER, ADMIN

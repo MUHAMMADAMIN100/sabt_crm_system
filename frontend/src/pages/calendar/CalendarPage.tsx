@@ -56,7 +56,7 @@ export default function CalendarPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
   // МП по продажам получают календарь как у основателя, но без типа «Общая».
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
   const isFounderView = user?.role === 'founder' || user?.role === 'co_founder' || isSalesManager
@@ -202,7 +202,7 @@ export default function CalendarPage() {
   const PERSONAL_VIEW_ROLES = [
     'founder', 'co_founder',
     'developer', 'designer', 'videographer', 'smm_specialist',
-    'marketer', 'targetologist', 'employee', 'sales_manager_smm', 'sales_manager_dev',
+    'video_editor', 'organizer', 'storymaker', 'employee', 'sales_manager_smm', 'sales_manager_dev',
   ]
   const isPersonalView = PERSONAL_VIEW_ROLES.includes(user?.role || '')
 

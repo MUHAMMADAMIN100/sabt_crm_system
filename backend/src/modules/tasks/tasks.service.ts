@@ -19,8 +19,8 @@ import { TaskResultsService } from '../task-results/task-results.service';
 import { DailyReport } from '../reports/daily-report.entity';
 import { getSalesSegment, isSalesManager } from '../../common/sales-segment';
 
-const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM];
-const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.MARKETER, UserRole.TARGETOLOGIST, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.VIDEOGRAPHER, UserRole.EMPLOYEE];
+const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR];
+const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.VIDEO_EDITOR, UserRole.ORGANIZER, UserRole.STORYMAKER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.VIDEOGRAPHER, UserRole.EMPLOYEE];
 
 @Injectable()
 export class TasksService {
@@ -42,8 +42,10 @@ export class TasksService {
   /** Является ли пользователь PM в контексте конкретного проекта.
    *  Возвращает true если:
    *    - у пользователя «глобальная» PM-роль (admin/founder/co_founder/
-   *      smm_director/project_manager/head_smm), ИЛИ
-   *    - он назначен менеджером ИМЕННО этого проекта (project.managerId).
+   *      smm_director/video_director), ИЛИ
+   *    - он назначен менеджером ИМЕННО этого проекта (project.managerId) —
+   *      менеджером может быть сотрудник ЛЮБОЙ роли, назначение даёт
+   *      руководство проектом без отдельной роли.
    *  Без projectId — только проверка роли. */
   private async hasPmPowersOnProject(
     userId: string,
@@ -384,7 +386,7 @@ export class TasksService {
     (task as any).assignees = map.get(id) || [];
 
     // ─── IDOR-защита: можно читать задачу если ────────────────────────
-    //   - PM-роль (admin/founder/co_founder/smm_director/PM/head_smm)
+    //   - PM-роль (admin/founder/co_founder/smm_director/video_director)
     //   - назначен исполнителем (legacy assigneeId или multi-assignee)
     //   - создатель задачи
     //   - менеджер проекта
@@ -894,19 +896,19 @@ export class TasksService {
       )`)
       .andWhere(`t.title NOT ILIKE 'История:%'`);
 
-    // SMM-роли (head_smm / smm_director / smm_specialist) НЕ должны видеть
-    // sales-задачи в «Просроченных». Это автозадачи-встречи менеджеров
-    // продаж (scope=personal, без project'а) — они к SMM-сегменту не
-    // относятся, мешают читать виджет. PM проектов тоже видят только
-    // задачи СВОИХ проектов, а не всё подряд.
+    // SMM-роли (smm_director / smm_specialist / storymaker) НЕ должны
+    // видеть sales-задачи в «Просроченных». Это автозадачи-встречи
+    // менеджеров продаж (scope=personal, без project'а) — они к
+    // SMM-сегменту не относятся, мешают читать виджет.
+    // video_director видит только задачи СВОИХ проектов (где он manager
+    // или member), а не всё подряд.
     const role = viewer?.role || '';
-    const isSmmRole = ['head_smm', 'smm_director', 'smm_specialist'].includes(role);
-    const isPm = role === 'project_manager';
+    const isSmmRole = ['smm_director', 'smm_specialist', 'storymaker'].includes(role);
+    const isPm = role === 'video_director';
     if (isSmmRole) {
       qb.andWhere(`(t.scope <> 'personal' OR t.scope IS NULL)`);
       qb.andWhere(`(project."projectType" IS NULL OR project."projectType" = 'SMM')`);
     } else if (isPm && viewer?.id) {
-      // PM — только задачи его проектов (где он manager или member).
       qb.andWhere(
         `(project."managerId" = :uid OR project.id IN (
           SELECT pm."projectsId" FROM project_members pm WHERE pm."usersId" = :uid

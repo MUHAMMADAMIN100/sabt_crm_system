@@ -767,8 +767,8 @@ export class DeadlineScheduler implements OnModuleInit {
         { role: UserRole.ADMIN, isActive: true },
         { role: UserRole.FOUNDER, isActive: true },
         { role: UserRole.CO_FOUNDER, isActive: true },
-        { role: UserRole.PROJECT_MANAGER, isActive: true },
-        { role: UserRole.HEAD_SMM, isActive: true },
+        { role: UserRole.SMM_DIRECTOR, isActive: true },
+        { role: UserRole.VIDEO_DIRECTOR, isActive: true },
       ],
     })
 

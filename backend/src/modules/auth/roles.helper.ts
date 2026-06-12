@@ -1,8 +1,8 @@
 import { UserRole } from '../users/user.entity';
 
-export const MANAGER_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM];
-export const REVIEW_ROLES = [UserRole.ADMIN, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM];
-export const PRODUCTION_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.TARGETOLOGIST, UserRole.VIDEOGRAPHER];
+export const MANAGER_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR];
+export const REVIEW_ROLES = [UserRole.ADMIN, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR];
+export const PRODUCTION_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.VIDEOGRAPHER, UserRole.VIDEO_EDITOR, UserRole.ORGANIZER, UserRole.STORYMAKER];
 export const VIEW_ALL_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER];
 
 /** SMM-director видит все SMM-проекты (как founder, но только SMM). */

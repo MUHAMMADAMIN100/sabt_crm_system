@@ -17,8 +17,7 @@ const EDIT_ROLES = [
   UserRole.FOUNDER,
   UserRole.CO_FOUNDER,
   UserRole.SMM_DIRECTOR,
-  UserRole.PROJECT_MANAGER,
-  UserRole.HEAD_SMM,
+  UserRole.VIDEO_DIRECTOR,
   UserRole.SMM_SPECIALIST,
 ];
 
@@ -65,6 +64,6 @@ export class ContentPlanController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR)
   remove(@Param('id') id: string) { return this.service.remove(id); }
 }

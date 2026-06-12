@@ -20,7 +20,7 @@ interface LaunchState {
   isComplete: boolean
 }
 
-const EDIT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm']
+const EDIT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director']
 
 export default function LaunchChecklistTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient()
@@ -122,7 +122,7 @@ export default function LaunchChecklistTab({ projectId }: { projectId: string })
 
       {!canEditManual && (
         <p className="text-xs text-gray-500 italic">
-          Ручные пункты могут переключать только PM, head_smm, admin, основатели.
+          Ручные пункты могут переключать только менеджер проекта, руководители направлений, admin, основатели.
         </p>
       )}
     </div>

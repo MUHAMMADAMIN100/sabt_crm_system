@@ -9,7 +9,7 @@ import { UserRole } from '../users/user.entity';
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM, UserRole.SMM_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.VIDEO_DIRECTOR, UserRole.SMM_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
 @Controller('analytics')
 @UseInterceptors(CacheInterceptor)
 export class AnalyticsController {
@@ -130,9 +130,9 @@ export class AnalyticsController {
   }
 
   @Get('stories-global')
-  // head_smm — главный SMM-специалист, должен видеть истории всей SMM-команды
+  // smm_director — руководитель SMM, должен видеть истории всей SMM-команды
   // (без него глобальный календарь у него на дашборде не загружается).
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN, UserRole.SMM_DIRECTOR, UserRole.HEAD_SMM)
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN, UserRole.SMM_DIRECTOR)
   getStoriesGlobal(
     @Query('from') from: string,
     @Query('to') to: string,

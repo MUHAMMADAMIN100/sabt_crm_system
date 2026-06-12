@@ -10,15 +10,14 @@ import toast from 'react-hot-toast'
 import api from '@/lib/api'
 
 const ROLES: { value: string; label: string; position: string }[] = [
-  { value: 'head_smm',         label: 'Главный SMM специалист', position: 'Главный SMM специалист' },
   { value: 'smm_specialist',   label: 'SMM специалист',       position: 'SMM специалист' },
   { value: 'designer',         label: 'Дизайнер',             position: 'Дизайнер' },
   { value: 'videographer',     label: 'Видеограф',            position: 'Видеограф' },
-  { value: 'targetologist',    label: 'Таргетолог',           position: 'Таргетолог' },
-  { value: 'marketer',         label: 'Маркетолог',           position: 'Маркетолог' },
+  { value: 'video_editor',     label: 'Монтажёр',             position: 'Монтажёр' },
+  { value: 'organizer',        label: 'Организатор',          position: 'Организатор' },
+  { value: 'storymaker',       label: 'Сторисмейкер',         position: 'Сторисмейкер' },
   { value: 'sales_manager_smm', label: 'Менеджер продаж (СММ)',        position: 'Менеджер продаж (СММ)' },
   { value: 'sales_manager_dev', label: 'Менеджер продаж (Разработка)', position: 'Менеджер продаж (Разработка)' },
-  { value: 'project_manager',  label: 'Проект-менеджер',      position: 'Проект-менеджер' },
   { value: 'developer',        label: 'Разработчик',          position: 'Разработчик' },
   { value: 'admin',            label: 'Администратор',        position: 'Администратор' },
   { value: 'founder',          label: 'Основатель',           position: 'Основатель' },

@@ -67,18 +67,18 @@ export default function ProjectsPage() {
   const [editProject, setEditProject] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
-  const isHeadSMM = user?.role === 'head_smm' || user?.role === 'smm_director'
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
+  const isHeadSMM = user?.role === 'smm_director'
   // Роли, привязанные к одному типу проектов (SMM-руководство/специалисты,
   // МП по продажам), видят проекты только своего типа — фильтр по типу им
   // не нужен и не показывается.
-  const isSingleTypeRole = ['smm_director', 'head_smm', 'sales_manager_smm', 'sales_manager_dev']
+  const isSingleTypeRole = ['smm_director', 'sales_manager_smm', 'sales_manager_dev']
     .includes(user?.role || '')
   // У МП по продажам на карточке показываем доп. инфо: активность и оплату.
   const isSalesManagerView = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
-  // admin/founder/co-founder + smm_director/head_smm (SMM only) can create projects
+  // admin/founder/co-founder + smm_director (SMM only) can create projects
   // МП по продажам управляют проектами своего направления (создание/правка/архив/удаление).
-  const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
+  const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
   const qc = useQueryClient()
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -109,7 +109,7 @@ export default function ProjectsPage() {
 
   // Список PM-ов: только сотрудники с менеджерскими ролями
   const pmList = (employees ?? []).filter((e: any) =>
-    ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(e.user?.role),
+    ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(e.user?.role),
   )
 
   // Reset page when filters change
@@ -488,8 +488,8 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const { register, handleSubmit, reset, watch, control, formState: { errors } } = useForm()
   const { t } = useTranslation()
   const formUser = useAuthStore(s => s.user)
-  const isFormHeadSMM = formUser?.role === 'head_smm' || formUser?.role === 'smm_director'
-  const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm', 'sales_manager_smm', 'sales_manager_dev'].includes(formUser?.role || '')
+  const isFormHeadSMM = formUser?.role === 'smm_director'
+  const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm', 'sales_manager_dev'].includes(formUser?.role || '')
   const isSalesDev = formUser?.role === 'sales_manager_dev'
   // Подтипы DEV-проектов, которые МП-dev выбирает в селекте «Тип проекта».
   // (На бэке проверка в createSegment.projectTypes допускает эти 4 + legacy
@@ -501,12 +501,12 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     isFormHeadSMM || formUser?.role === 'sales_manager_smm' ? 'SMM'
     : null
   // Финансовые поля и цены тарифа видят только основатель/сооснователь.
-  // smm_director, PM, head_smm и admin — управляют проектом, но цены/деньги не видят.
+  // smm_director, video_director и admin — управляют проектом, но цены/деньги не видят.
   const canSeeFinance = ['founder', 'co_founder'].includes(formUser?.role || '')
   // Платежи (транши) — может управлять любой кто имеет доступ к форме проекта:
   // Admin, Founder, Co-founder, SMM Director, Head SMM, Project Manager.
   // Они вносят оплаты от клиента — финансовая информация по проекту, не зарплаты.
-  const canManagePayments = ['admin', 'founder', 'co_founder', 'smm_director', 'head_smm', 'project_manager']
+  const canManagePayments = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director']
     .includes(formUser?.role || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
@@ -762,7 +762,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             {errors.projectType && <p className="text-xs text-red-500 mt-1">Выберите тип проекта</p>}
           </div>
 
-          {/* Менеджер проекта — head_smm показываем только для SMM-проектов */}
+          {/* Менеджер проекта — любой сотрудник; smm_director только для SMM-проектов */}
           <CollapsibleField
             className="sm:col-span-2"
             label="Менеджер проекта"
@@ -774,19 +774,19 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
               {employees
                 .filter((e: any) => {
                   const role = e.user?.role
-                  if (role === 'head_smm' && projectType !== 'SMM') return false
+                  if (role === 'smm_director' && projectType !== 'SMM') return false
                   return true
                 })
                 .map((e: any) => (
                   <option key={e.id} value={e.userId || e.id}>
                     {e.fullName || e.name}
-                    {e.user?.role === 'head_smm' ? ' — Главный SMM' : ''}
+                    {e.user?.role === 'smm_director' ? ' — Руководитель SMM' : ''}
                   </option>
                 ))}
             </select>
             {projectType !== 'SMM' && (
               <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-1">
-                Главный SMM специалист может быть менеджером только SMM-проектов
+                Руководитель SMM может быть менеджером только SMM-проектов
               </p>
             )}
           </CollapsibleField>

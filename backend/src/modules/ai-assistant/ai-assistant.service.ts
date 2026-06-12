@@ -26,7 +26,7 @@ export interface AiUserContext {
 const FULL_ACCESS_ROLES: ReadonlySet<UserRole> = new Set([UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER]);
 
 /** Пользователи, которые видят только свои проекты (плюс команду и задачи в них). */
-const PROJECT_SCOPED_ROLES: ReadonlySet<UserRole> = new Set([UserRole.PROJECT_MANAGER, UserRole.HEAD_SMM]);
+const PROJECT_SCOPED_ROLES: ReadonlySet<UserRole> = new Set([UserRole.VIDEO_DIRECTOR]);
 
 // Default fallback chain (used when user doesn't pick a specific model)
 const GEMINI_MODEL_CHAIN = [
@@ -134,7 +134,7 @@ export class AiAssistantService {
 АНАЛИТИЧЕСКИЕ ВОЗМОЖНОСТИ:
 Помимо обычных вопросов, ты умеешь готовить:
 - Еженедельные сводки для founder/co_founder (главные риски, перегрузы, перерасход тарифов, выручка/маржа).
-- Еженедельные сводки для head_smm (рейтинг PM/SMM, возвраты, качество, сложные проекты).
+- Еженедельные сводки для руководителей направлений (рейтинг SMM, возвраты, качество, сложные проекты).
 - Анализ рисков по проектам — какие проекты в зоне yellow/red и почему (см. раздел "РИСКИ И НАГРУЗКА" ниже).
 - Анализ перегруза команды — кто конкретно перегружен, по каким метрикам.
 - Анализ перерасхода по тарифам — какие проекты выходят за лимит и насколько.
@@ -319,7 +319,7 @@ ${context}
   /**
    * Собирает контекст для ИИ с учётом роли пользователя.
    * - admin/founder → полный снимок БД
-   * - project_manager → только свои проекты, их задачи/команда/файлы (без PII сотрудников)
+   * - video_director / назначенный менеджер → только свои проекты, их задачи/команда/файлы (без PII сотрудников)
    * - остальные роли → только свои задачи/отчёты/тайм-логи
    */
   private async gatherFullContext(userCtx: AiUserContext): Promise<string> {
@@ -340,7 +340,7 @@ ${context}
    *  Что включается зависит от роли:
    *  - admin/founder/co_founder: топ-10 рисковых проектов, топ-10 рисковых сотрудников,
    *    PM-нагрузка, перерасход тарифов;
-   *  - project_manager/head_smm: только их проекты + workload их команды;
+   *  - video_director: только их проекты + workload их команды;
    *  - workers: только собственная нагрузка. */
   private async gatherRiskAndWorkloadContext(userCtx: AiUserContext): Promise<string> {
     const isAdmin = FULL_ACCESS_ROLES.has(userCtx.role);

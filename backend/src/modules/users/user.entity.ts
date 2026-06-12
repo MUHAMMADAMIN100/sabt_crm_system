@@ -14,25 +14,37 @@ export enum UserRole {
   ADMIN           = 'admin',
   FOUNDER         = 'founder',
   CO_FOUNDER      = 'co_founder',
-  /** Руководитель СММ — на ступень выше head_smm и project_manager.
-   *  Полный доступ ко ВСЕМ SMM-проектам (создание/редактирование/удаление,
-   *  задачи, участники), но БЕЗ доступа к финансам. */
+  /** Руководитель СММ — полный доступ ко ВСЕМ SMM-проектам (создание/
+   *  редактирование/удаление, задачи, участники), но БЕЗ финансов. */
   SMM_DIRECTOR    = 'smm_director',
-  PROJECT_MANAGER = 'project_manager',
-  HEAD_SMM        = 'head_smm',
+  /** Руководитель по видеографии — менеджерский уровень для видео-
+   *  направления (approve/return задач, аналитика, отчёты, риски). */
+  VIDEO_DIRECTOR  = 'video_director',
   SMM_SPECIALIST  = 'smm_specialist',
   DESIGNER        = 'designer',
   /** Менеджер продаж по SMM-направлению. */
   SALES_MANAGER_SMM = 'sales_manager_smm',
   /** Менеджер продаж по направлению разработки. */
   SALES_MANAGER_DEV = 'sales_manager_dev',
-  MARKETER        = 'marketer',
-  TARGETOLOGIST   = 'targetologist',
   DEVELOPER       = 'developer',
   /** Видеограф — исполнитель производства контента (права как у designer). */
   VIDEOGRAPHER    = 'videographer',
+  /** Монтажёр — исполнитель видео-продакшна. */
+  VIDEO_EDITOR    = 'video_editor',
+  /** Организатор — исполнитель (организация съёмок/мероприятий). */
+  ORGANIZER       = 'organizer',
+  /** Сторисмейкер — исполнитель, ведёт истории SMM-проектов
+   *  (права как у smm_specialist по историям). */
+  STORYMAKER      = 'storymaker',
   EMPLOYEE        = 'employee',
 }
+
+/* Удалённые роли (12.06.2026): project_manager, head_smm, targetologist,
+ * marketer. Существующие пользователи мигрируются:
+ *   head_smm → smm_director; остальные → employee.
+ * «Менеджер проекта» теперь назначается ЛЮБОМУ сотруднику в форме проекта
+ * (project.managerId) и даёт права руководителя этого проекта без
+ * отдельной роли. См. миграцию RemoveLegacyRoles. */
 
 @Entity('users')
 export class User {

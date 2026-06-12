@@ -24,7 +24,7 @@ export default function ProjectBriefTab({ project }: Props) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const role = user?.role || ''
-  const PM_OR_ADMIN = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm', 'smm_specialist']
+  const PM_OR_ADMIN = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'smm_specialist']
   const canEdit = PM_OR_ADMIN.includes(role) || project?.managerId === user?.id
   const canDelete = canEdit && role !== 'smm_specialist'
 

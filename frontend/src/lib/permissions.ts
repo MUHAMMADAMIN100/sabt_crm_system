@@ -11,16 +11,16 @@ const ROLE_LABELS: Record<string, string> = {
   founder: 'Основатель',
   co_founder: 'Сооснователь',
   smm_director: 'Руководитель SMM',
-  project_manager: 'Проект-менеджер',
-  head_smm: 'Главный SMM специалист',
+  video_director: 'Руководитель по видеографии',
   smm_specialist: 'SMM специалист',
   designer: 'Дизайнер',
-  targetologist: 'Таргетолог',
   sales_manager_smm: 'Менеджер продаж (СММ)',
   sales_manager_dev: 'Менеджер продаж (Разработка)',
-  marketer: 'Маркетолог',
   developer: 'Разработчик',
   videographer: 'Видеограф',
+  video_editor: 'Монтажёр',
+  organizer: 'Организатор',
+  storymaker: 'Сторисмейкер',
   employee: 'Сотрудник',
 }
 
@@ -125,7 +125,9 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
     'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view',
   ],
-  project_manager: [
+  // Руководитель по видеографии — менеджерский уровень для видео-
+  // направления: управление задачами, аналитика, отчёты, риски.
+  video_director: [
     'dashboard', 'projects.view', 'projects.edit',
     'projects.members.manage',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
@@ -134,24 +136,11 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use',
     'ai.chat', 'risks.view',
   ],
-  head_smm: [
-    'dashboard', 'projects.view', 'projects.edit',
-    'projects.members.manage',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
-    'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',
-    'employees.view', 'analytics.view',
-    'reports.view', 'reports.create',
-    'calendar.view', 'calendar.create', 'archive.view',
-    'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
-    'ai.chat', 'tariffs.manage', 'risks.view',
-  ],
-  // Руководитель SMM — на уровень выше head_smm и project_manager. Полный
-  // доступ ко ВСЕМ SMM-проектам (создание/удаление/архив/смена менеджера),
-  // но без финансов.
+  // Руководитель SMM — полный доступ ко ВСЕМ SMM-проектам
+  // (создание/удаление/архив/смена менеджера), но без финансов.
   smm_director: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
     'projects.archive', 'projects.members.manage', 'projects.manager.change',
@@ -174,24 +163,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'ai.chat',
   ],
   designer: [
-    'dashboard', 'projects.view',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
-    'reports.view', 'reports.create',
-    'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
-    'ai.chat',
-  ],
-  targetologist: [
-    'dashboard', 'projects.view',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
-    'reports.view', 'reports.create',
-    'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
-    'ai.chat',
-  ],
-  marketer: [
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
@@ -239,6 +210,36 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
+  ],
+  // Монтажёр — исполнитель видео-продакшна.
+  video_editor: [
+    'dashboard', 'projects.view',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    'calendar.view',
+    'reports.view', 'reports.create',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
+  ],
+  // Организатор — исполнитель (организация съёмок/мероприятий).
+  organizer: [
+    'dashboard', 'projects.view',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    'calendar.view',
+    'reports.view', 'reports.create',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
+  ],
+  // Сторисмейкер — исполнитель + ведение историй SMM-проектов.
+  storymaker: [
+    'dashboard', 'projects.view',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    'calendar.view',
+    'reports.view', 'reports.create',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
     'ai.chat',
   ],
   employee: [

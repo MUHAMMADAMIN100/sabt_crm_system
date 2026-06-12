@@ -46,9 +46,9 @@ function periodRange(p: Period): { from: string; to: string } {
 const ROLE_GROUPS: { value: string; label: string; roles: string[] }[] = [
   { value: 'all',      label: 'Все',                roles: [] },
   { value: 'sales',    label: 'Менеджеры продаж',   roles: ['sales_manager_smm', 'sales_manager_dev'] },
-  { value: 'smm',      label: 'SMM',                roles: ['smm_specialist', 'head_smm'] },
-  { value: 'pm',       label: 'PM / руководители',  roles: ['project_manager', 'head_smm', 'smm_director'] },
-  { value: 'design',   label: 'Дизайн / маркетинг', roles: ['designer', 'marketer', 'targetologist', 'videographer'] },
+  { value: 'smm',      label: 'SMM',                roles: ['smm_specialist', 'storymaker'] },
+  { value: 'pm',       label: 'Руководители',       roles: ['video_director', 'smm_director'] },
+  { value: 'design',   label: 'Продакшн',           roles: ['designer', 'videographer', 'video_editor', 'organizer'] },
   { value: 'dev',      label: 'Разработчики',       roles: ['developer'] },
 ]
 
@@ -56,14 +56,14 @@ const ROLE_LABEL: Record<string, string> = {
   sales_manager_smm: 'МП (СММ)',
   sales_manager_dev: 'МП (Разработка)',
   smm_specialist:    'SMM',
-  head_smm:          'Гл. SMM',
   smm_director:      'Рук. SMM',
-  project_manager:   'PM',
+  video_director:    'Рук. видео',
   designer:          'Дизайнер',
-  marketer:          'Маркетолог',
-  targetologist:     'Таргетолог',
   developer:         'Разработчик',
   videographer:      'Видеограф',
+  video_editor:      'Монтажёр',
+  organizer:         'Организатор',
+  storymaker:        'Сторисмейкер',
   employee:          'Сотрудник',
 }
 

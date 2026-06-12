@@ -8,7 +8,7 @@ import * as fs from 'fs/promises';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 
-const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'];
+const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'];
 const PM_ROLES_SET = new Set(PM_ROLES);
 
 @Injectable()

@@ -13,8 +13,7 @@ const VIEW_ROLES = [
   UserRole.FOUNDER,
   UserRole.CO_FOUNDER,
   UserRole.SMM_DIRECTOR,
-  UserRole.PROJECT_MANAGER,
-  UserRole.HEAD_SMM,
+  UserRole.VIDEO_DIRECTOR,
 ];
 
 @ApiTags('Risk Analytics')

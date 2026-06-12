@@ -14,8 +14,8 @@ import { generateProjectReport, generateEmployeeReport, generateSingleProjectRep
 
 export default function ReportsPage() {
   const user = useAuthStore(s => s.user)
-  const isHeadSMM = user?.role === 'head_smm' || user?.role === 'smm_director'
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'project_manager', 'head_smm'].includes(user?.role || '')
+  const isHeadSMM = user?.role === 'smm_director'
+  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
   const canDownloadReports = ['founder', 'co_founder', 'admin'].includes(user?.role || '')
 
   const [generating, setGenerating] = useState<string | null>(null)
@@ -132,7 +132,7 @@ export default function ReportsPage() {
 
   if (isLoading) return <PageLoader />
 
-  // head_smm sees only reports from SMM projects
+  // smm_director sees only reports from SMM projects
   const filteredReports = isHeadSMM
     ? (reports || []).filter((r: any) => r.project?.projectType === 'SMM' || !r.project)
     : (reports || [])

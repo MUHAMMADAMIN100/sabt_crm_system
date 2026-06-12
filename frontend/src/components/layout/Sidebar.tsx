@@ -49,7 +49,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/ai',            icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]
 
-  const hideTeamsRoles = ['smm_director', 'head_smm']
+  const hideTeamsRoles = ['smm_director', 'video_director']
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
   const filtered = navItems.filter(item => {
     if (item.to === '/teams' && hideTeamsRoles.includes(role || '')) return false
