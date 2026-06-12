@@ -38,6 +38,7 @@ import { RiskAnalyticsModule } from './modules/risk-analytics/risk-analytics.mod
 import { FinanceModule } from './modules/finance/finance.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { KpiModule } from './modules/kpi/kpi.module';
+import { WorkflowModule } from './modules/workflow/workflow.module';
 import { DbIndexesService } from './common/db-indexes.service';
 
 @Module({
@@ -107,6 +108,7 @@ import { DbIndexesService } from './common/db-indexes.service';
     FinanceModule,
     TeamsModule,
     KpiModule,
+    WorkflowModule,
   ],
 })
 export class AppModule {}

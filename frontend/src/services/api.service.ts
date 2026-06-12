@@ -334,3 +334,13 @@ export const riskApi = {
   employeeRisks: () => api.get('/risk-analytics/risks/employees').then(r => r.data),
   employeeRiskDetail: (id: string) => api.get(`/risk-analytics/risks/employees/${id}`).then(r => r.data),
 }
+
+// ─── Workflow — доска «Процесс работы» SMM-проекта ──────
+export const workflowApi = {
+  list: (projectId: string) => api.get(`/workflow/project/${projectId}`).then(r => r.data),
+  create: (projectId: string, data: any) => api.post(`/workflow/project/${projectId}`, data).then(r => r.data),
+  update: (id: string, data: any) => api.patch(`/workflow/${id}`, data).then(r => r.data),
+  move: (id: string, data: { stage: string; position?: number }) =>
+    api.patch(`/workflow/${id}/move`, data).then(r => r.data),
+  remove: (id: string) => api.delete(`/workflow/${id}`).then(r => r.data),
+}

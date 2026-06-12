@@ -166,6 +166,13 @@ export function useSocket(authMarker: string | null) {
       qc.refetchQueries({ queryKey: ['clients'], type: 'active' })
     })
 
+    // Доска «Процесс работы» проекта: карточку перетащили/создали/удалили —
+    // обновляем у всех, кто смотрит эту доску.
+    socket.on('workflow:changed', () => {
+      qc.invalidateQueries({ queryKey: ['workflow'] })
+      qc.refetchQueries({ queryKey: ['workflow'], type: 'active' })
+    })
+
     socket.on('disconnect', () => {})
 
     socketRef.current = socket
