@@ -5,16 +5,16 @@ import pdfFonts from 'pdfmake/build/vfs_fonts'
 ;(pdfMake as any).vfs = (pdfFonts as any).vfs || (pdfFonts as any).pdfMake?.vfs
 
 // Brand palette
-const PRIMARY = '#6B4FCF'
-const PRIMARY_DARK = '#4C2EAB'
+const PRIMARY = '#18181b'
+const PRIMARY_DARK = '#3f3f46'
 const ACCENT = '#10B981'
-const WARN = '#F59E0B'
+const WARN = '#8a8a93'
 const DANGER = '#EF4444'
-const PINK = '#EC4899'
-const INDIGO = '#6366F1'
-const SURFACE = '#F8FAFC'
-const TEXT = '#0F172A'
-const MUTED = '#64748B'
+const PINK = '#b4b4bb'
+const INDIGO = '#71717a'
+const SURFACE = '#fafafa'
+const TEXT = '#18181b'
+const MUTED = '#71717a'
 const WHITE = '#FFFFFF'
 
 const fmt = (n: number): string => Number(n || 0).toLocaleString('ru-RU')
@@ -53,13 +53,13 @@ function buildHeader(title: string, subtitle: string): any[] {
             stack: [
               { text: 'WeBrand', fontSize: 24, bold: true, color: WHITE, margin: [0, 0, 0, 4] },
               { text: title, fontSize: 16, bold: true, color: WHITE },
-              { text: subtitle, fontSize: 9, color: '#DDD6FE', margin: [0, 2, 0, 0] },
+              { text: subtitle, fontSize: 9, color: '#e4e4e7', margin: [0, 2, 0, 0] },
             ],
           },
           {
             stack: [
               { text: now, fontSize: 9, color: WHITE, alignment: 'right' },
-              { text: 'WeBrand', fontSize: 8, color: '#DDD6FE', alignment: 'right', margin: [0, 2, 0, 0] },
+              { text: 'WeBrand', fontSize: 8, color: '#e4e4e7', alignment: 'right', margin: [0, 2, 0, 0] },
             ],
           },
         ]],
@@ -157,8 +157,8 @@ function buildTable(opts: {
     layout: {
       hLineWidth: () => 0.5,
       vLineWidth: () => 0.5,
-      hLineColor: () => '#E2E8F0',
-      vLineColor: () => '#E2E8F0',
+      hLineColor: () => '#e4e4e7',
+      vLineColor: () => '#e4e4e7',
     },
     margin: [0, 0, 0, 10],
   }

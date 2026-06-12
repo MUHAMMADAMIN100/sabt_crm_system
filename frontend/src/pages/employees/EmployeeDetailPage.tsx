@@ -212,8 +212,8 @@ export default function EmployeeDetailPage() {
           <p className="text-xs text-surface-500 dark:text-surface-400">Просрочено</p>
         </div>
         <div className="card text-center">
-          <Camera size={18} className="text-pink-500 mx-auto mb-1" />
-          <p className="text-2xl font-bold text-pink-600 dark:text-pink-400">{totalStories}</p>
+          <Camera size={18} className="text-surface-500 mx-auto mb-1" />
+          <p className="text-2xl font-bold text-surface-600 dark:text-surface-400">{totalStories}</p>
           <p className="text-xs text-surface-500 dark:text-surface-400">Историй (месяц)</p>
         </div>
       </div>
@@ -273,10 +273,10 @@ export default function EmployeeDetailPage() {
             )}
             {emp.instagram && (
               <div className="flex items-center gap-3 p-2.5 bg-surface-50 dark:bg-surface-700/50 rounded-xl">
-                <AtSign size={14} className="text-pink-500 shrink-0" />
+                <AtSign size={14} className="text-surface-500 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-surface-400 dark:text-surface-500">Instagram</p>
-                  <a href={`https://instagram.com/${emp.instagram.replace('@', '')}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-pink-600 dark:text-pink-400 hover:underline">{emp.instagram}</a>
+                  <a href={`https://instagram.com/${emp.instagram.replace('@', '')}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-surface-600 dark:text-surface-400 hover:underline">{emp.instagram}</a>
                 </div>
               </div>
             )}
@@ -408,7 +408,7 @@ export default function EmployeeDetailPage() {
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
                         {task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${task.createdById === task.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${task.createdById === task.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'}`}>
                             {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] || '')}
                           </span>
                         )}
@@ -425,18 +425,18 @@ export default function EmployeeDetailPage() {
 
           {/* На проверке */}
           {reviewTasks.length > 0 && (
-            <div className="card border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10">
-              <h3 className="font-semibold mb-2 text-amber-600 dark:text-amber-400 text-sm flex items-center gap-2">
+            <div className="card border-surface-200 dark:border-surface-800 bg-surface-50/50 dark:bg-surface-900/10">
+              <h3 className="font-semibold mb-2 text-surface-600 dark:text-surface-400 text-sm flex items-center gap-2">
                 <CheckSquare size={15} /> На проверке ({reviewTasks.length})
               </h3>
               <div className="space-y-1.5">
                 {reviewTasks.map((task: any) => (
-                  <Link key={task.id} to={`/tasks/${task.id}`} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-amber-100/50 dark:hover:bg-amber-900/20 transition-colors">
+                  <Link key={task.id} to={`/tasks/${task.id}`} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-100/50 dark:hover:bg-surface-900/20 transition-colors">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
                         {task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${task.createdById === task.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${task.createdById === task.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'}`}>
                             {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] || '')}
                           </span>
                         )}
@@ -466,7 +466,7 @@ export default function EmployeeDetailPage() {
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
                           {task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${task.createdById === task.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${task.createdById === task.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'}`}>
                               {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] || '')}
                             </span>
                           )}
@@ -508,7 +508,7 @@ export default function EmployeeDetailPage() {
               id={`emp-${id}-stories-3m`}
               title={
                 <h3 className="font-semibold text-surface-700 dark:text-surface-300 text-sm flex items-center gap-2 w-full">
-                  <BookOpen size={15} className="text-pink-500" />
+                  <BookOpen size={15} className="text-surface-500" />
                   Истории по проектам
                   <span className="ml-auto text-xs text-surface-400 dark:text-surface-500 font-normal">последние 3 месяца</span>
                 </h3>
@@ -519,9 +519,9 @@ export default function EmployeeDetailPage() {
                 <p className="text-sm text-surface-400 dark:text-surface-500 py-3 text-center">Историй не найдено</p>
               ) : (
                 <>
-                  <div className="mb-3 p-3 bg-pink-50 dark:bg-pink-900/20 rounded-xl flex items-center justify-between">
+                  <div className="mb-3 p-3 bg-surface-50 dark:bg-surface-900/20 rounded-xl flex items-center justify-between">
                     <span className="text-sm text-surface-600 dark:text-surface-400">Всего историй</span>
-                    <span className="text-xl font-bold text-pink-600 dark:text-pink-400">{totalStoriesCount}</span>
+                    <span className="text-xl font-bold text-surface-600 dark:text-surface-400">{totalStoriesCount}</span>
                   </div>
                   <div className="space-y-2">
                     {storiesList.map(p => {
@@ -538,11 +538,11 @@ export default function EmployeeDetailPage() {
                           <div className="flex items-center gap-2 shrink-0">
                             <div className="w-20 bg-surface-100 dark:bg-surface-700 rounded-full h-1.5">
                               <div
-                                className="h-1.5 rounded-full bg-pink-500"
+                                className="h-1.5 rounded-full bg-surface-500"
                                 style={{ width: `${pct}%` }}
                               />
                             </div>
-                            <span className="text-sm font-semibold text-pink-600 dark:text-pink-400 w-8 text-right">{p.total}</span>
+                            <span className="text-sm font-semibold text-surface-600 dark:text-surface-400 w-8 text-right">{p.total}</span>
                           </div>
                         </div>
                       )

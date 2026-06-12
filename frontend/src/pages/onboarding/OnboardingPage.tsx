@@ -323,7 +323,7 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
                       <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">👤 {c.contactPerson}</p>
                     )}
                     {c.dealPotential ? (
-                      <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-medium">
                         {Number(c.dealPotential).toLocaleString('ru-RU')} смн
                       </p>
                     ) : null}
@@ -448,7 +448,7 @@ function ClientDetailView({
           onClick={onRemoveFromBoard}
           disabled={removeLoading}
           title="Убрать карточку с доски Онбординга. Клиент останется в Базе клиентов."
-          className="btn-secondary text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+          className="btn-secondary text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-900/20"
         >
           <EyeOff size={15} /> {removeLoading ? 'Убираю...' : 'Убрать'}
         </button>

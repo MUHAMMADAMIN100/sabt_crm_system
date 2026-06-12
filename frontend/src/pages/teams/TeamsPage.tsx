@@ -18,7 +18,7 @@ interface Team {
   memberCount?: number
 }
 
-const COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4', '#ec4899', '#14b8a6']
+const COLORS = ['#18181b', '#3f3f46', '#52525b', '#71717a', '#8a8a93', '#a1a1aa', '#b4b4bb', '#d4d4d8']
 
 export default function TeamsPage() {
   const qc = useQueryClient()
@@ -62,7 +62,7 @@ export default function TeamsPage() {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <UserCog size={22} className="text-purple-500" /> Команды
+            <UserCog size={22} className="text-surface-500" /> Команды
           </h1>
           <p className="text-sm text-gray-500">Рабочие группы сотрудников. Используются при выборе участников проекта.</p>
         </div>
@@ -71,7 +71,7 @@ export default function TeamsPage() {
             <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
             Показать выключенные
           </label>
-          <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm">
+          <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-surface-600 hover:bg-surface-700 text-white text-sm">
             <Plus size={14} /> Новая команда
           </button>
         </div>
@@ -87,13 +87,13 @@ export default function TeamsPage() {
               onClick={() => setDetailTeam(t)}
               className={clsx(
                 'rounded-xl border p-4 bg-white dark:bg-gray-900 shadow-sm cursor-pointer transition-all',
-                'hover:shadow-md hover:border-purple-300 dark:hover:border-purple-700',
+                'hover:shadow-md hover:border-surface-300 dark:hover:border-surface-700',
                 t.isActive ? 'border-gray-200 dark:border-gray-700' : 'border-gray-200 dark:border-gray-800 opacity-60',
               )}
             >
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: t.color || '#6B4FCF' }} />
+                  <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: t.color || '#18181b' }} />
                   <h3 className="font-semibold text-base truncate">{t.name}</h3>
                 </div>
                 {!t.isActive && (
@@ -110,7 +110,7 @@ export default function TeamsPage() {
                   <Users size={12} /> {t.memberCount ?? 0} {membersWord(t.memberCount ?? 0)}
                 </span>
                 {t.lead && (
-                  <span className="inline-flex items-center gap-1"><Crown size={11} className="text-amber-500" /> {t.lead.name}</span>
+                  <span className="inline-flex items-center gap-1"><Crown size={11} className="text-surface-500" /> {t.lead.name}</span>
                 )}
               </div>
 
@@ -266,7 +266,7 @@ function TeamForm({ initial, employees, onSubmit, onCancel, loading }: {
 
       <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
         <button type="button" onClick={onCancel} className="px-4 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700">Отмена</button>
-        <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg text-sm bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50">
+        <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg text-sm bg-surface-600 hover:bg-surface-700 text-white disabled:opacity-50">
           {loading ? 'Сохранение...' : 'Сохранить'}
         </button>
       </div>
@@ -340,7 +340,7 @@ function MembersManager({ team, allEmployees, onClose }: {
 
       <div className="text-xs text-gray-500 flex items-center justify-between">
         <span>Выбрано: <b>{selected.size}</b> из {allEmployees.length}</span>
-        <button onClick={() => setSelected(new Set())} className="text-purple-600 hover:underline" type="button">
+        <button onClick={() => setSelected(new Set())} className="text-surface-600 hover:underline" type="button">
           Очистить
         </button>
       </div>
@@ -359,13 +359,13 @@ function MembersManager({ team, allEmployees, onClose }: {
                 onClick={() => toggle(eid)}
                 className={clsx(
                   'flex items-center justify-between gap-2 px-3 py-2 cursor-pointer transition-colors',
-                  isSelected ? 'bg-purple-50 dark:bg-purple-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50',
+                  isSelected ? 'bg-surface-50 dark:bg-surface-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50',
                 )}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span className={clsx(
                     'w-5 h-5 rounded flex items-center justify-center shrink-0',
-                    isSelected ? 'bg-purple-600 text-white' : 'border border-gray-300 dark:border-gray-600',
+                    isSelected ? 'bg-surface-600 text-white' : 'border border-gray-300 dark:border-gray-600',
                   )}>
                     {isSelected && <Check size={12} />}
                   </span>
@@ -373,7 +373,7 @@ function MembersManager({ team, allEmployees, onClose }: {
                   {e.position && <span className="text-xs text-gray-400 truncate">— {e.position}</span>}
                 </div>
                 {inOtherTeam && (
-                  <span className="text-[10px] text-amber-600 dark:text-amber-400 shrink-0">в другой команде</span>
+                  <span className="text-[10px] text-surface-600 dark:text-surface-400 shrink-0">в другой команде</span>
                 )}
               </li>
             )
@@ -386,7 +386,7 @@ function MembersManager({ team, allEmployees, onClose }: {
           <X size={14} className="inline mr-1" /> Отмена
         </button>
         <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
-          className="px-4 py-2 rounded-lg text-sm bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50">
+          className="px-4 py-2 rounded-lg text-sm bg-surface-600 hover:bg-surface-700 text-white disabled:opacity-50">
           {saveMut.isPending ? 'Сохранение...' : 'Сохранить состав'}
         </button>
       </div>
@@ -416,7 +416,7 @@ function TeamDetail({ team, allEmployees, onEdit, onMembers, onDelete }: {
     <div className="space-y-5">
       {/* Шапка с цветом и описанием */}
       <div className="flex items-start gap-3">
-        <span className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center" style={{ backgroundColor: team.color || '#6B4FCF' }}>
+        <span className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center" style={{ backgroundColor: team.color || '#18181b' }}>
           <Users size={20} className="text-white" />
         </span>
         <div className="min-w-0 flex-1">
@@ -439,13 +439,13 @@ function TeamDetail({ team, allEmployees, onEdit, onMembers, onDelete }: {
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-3">
           <p className="text-xs text-gray-500">Участников</p>
-          <p className="text-xl font-bold text-purple-600">{members.length}</p>
+          <p className="text-xl font-bold text-surface-600">{members.length}</p>
         </div>
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-3">
           <p className="text-xs text-gray-500">Лидер</p>
           <p className="text-sm font-semibold mt-1 flex items-center gap-1">
             {lead
-              ? <><Crown size={13} className="text-amber-500" /> {lead.fullName || lead.name}</>
+              ? <><Crown size={13} className="text-surface-500" /> {lead.fullName || lead.name}</>
               : <span className="text-gray-400">не назначен</span>}
           </p>
         </div>
@@ -473,7 +473,7 @@ function TeamDetail({ team, allEmployees, onEdit, onMembers, onDelete }: {
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate flex items-center gap-1">
                       {e.fullName || e.name}
-                      {isLead && <Crown size={12} className="text-amber-500 shrink-0" />}
+                      {isLead && <Crown size={12} className="text-surface-500 shrink-0" />}
                     </p>
                     {e.position && <p className="text-xs text-gray-400 truncate">{e.position}</p>}
                   </div>
@@ -492,7 +492,7 @@ function TeamDetail({ team, allEmployees, onEdit, onMembers, onDelete }: {
         <button onClick={onMembers} className="px-3 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
           👥 Изменить состав
         </button>
-        <button onClick={onEdit} className="px-3 py-2 rounded-lg text-sm bg-purple-600 hover:bg-purple-700 text-white">
+        <button onClick={onEdit} className="px-3 py-2 rounded-lg text-sm bg-surface-600 hover:bg-surface-700 text-white">
           <Edit size={14} className="inline mr-1" /> Редактировать
         </button>
       </div>
@@ -515,7 +515,7 @@ function OrgChart({ teams, employees }: { teams: Team[]; employees: any[] }) {
   return (
     <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
       <h2 className="text-base font-semibold flex items-center gap-2 mb-5">
-        <Network size={18} className="text-purple-500" /> Структура компании
+        <Network size={18} className="text-surface-500" /> Структура компании
       </h2>
 
       {/* Уровень 1 — руководство */}
@@ -523,8 +523,8 @@ function OrgChart({ teams, employees }: { teams: Team[]; employees: any[] }) {
         <div className="flex flex-col items-center">
           <div className="flex flex-wrap justify-center gap-3">
             {leadership.map((e: any) => (
-              <div key={e.userId || e.id} className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl bg-gradient-to-b from-amber-100 to-amber-50 dark:from-amber-900/30 dark:to-amber-900/10 border border-amber-200 dark:border-amber-800">
-                <Crown size={16} className="text-amber-500" />
+              <div key={e.userId || e.id} className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl bg-gradient-to-b from-surface-100 to-surface-50 dark:from-surface-900/30 dark:to-surface-900/10 border border-surface-200 dark:border-surface-800">
+                <Crown size={16} className="text-surface-500" />
                 <p className="text-sm font-semibold">{e.fullName || e.name}</p>
                 <p className="text-[11px] text-gray-500">{e.position || 'Руководство'}</p>
               </div>
@@ -549,12 +549,12 @@ function OrgChart({ teams, employees }: { teams: Team[]; employees: any[] }) {
                 {/* Лидер команды */}
                 <div
                   className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl border-2 text-center"
-                  style={{ borderColor: team.color || '#6B4FCF' }}
+                  style={{ borderColor: team.color || '#18181b' }}
                 >
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: team.color || '#6B4FCF' }} />
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: team.color || '#18181b' }} />
                   <p className="text-sm font-bold">{team.name}</p>
                   {lead
-                    ? <p className="text-[11px] text-gray-500 flex items-center gap-1"><Crown size={10} className="text-amber-500" /> {lead.fullName || lead.name}</p>
+                    ? <p className="text-[11px] text-gray-500 flex items-center gap-1"><Crown size={10} className="text-surface-500" /> {lead.fullName || lead.name}</p>
                     : <p className="text-[11px] text-gray-400 italic">без лидера</p>}
                 </div>
                 {/* Линия к участникам */}

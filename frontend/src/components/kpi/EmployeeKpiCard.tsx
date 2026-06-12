@@ -81,9 +81,9 @@ const KEY_ICON: Record<string, any> = {
 }
 
 function colorByPercent(p: number): string {
-  if (p >= 100) return 'text-emerald-500'
-  if (p >= 70) return 'text-lime-500'
-  if (p >= 40) return 'text-amber-500'
+  if (p >= 100) return 'text-green-500'
+  if (p >= 70) return 'text-surface-500'
+  if (p >= 40) return 'text-surface-500'
   return 'text-red-500'
 }
 
@@ -203,9 +203,9 @@ export default function EmployeeKpiCard({
                   className={clsx(
                     'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors cursor-pointer',
                     it.done
-                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50'
+                      ? 'bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50'
                       : it.percent >= 50
-                        ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50'
+                        ? 'bg-surface-50 text-surface-700 hover:bg-surface-100 dark:bg-surface-900/30 dark:text-surface-400 dark:hover:bg-surface-900/50'
                         : 'bg-surface-100 text-surface-600 hover:bg-surface-200 dark:bg-surface-700 dark:text-surface-300 dark:hover:bg-surface-600',
                   )}
                 >
@@ -287,9 +287,9 @@ export default function EmployeeKpiCard({
                   className={clsx(
                     'h-full transition-[width] duration-300',
                     it.done
-                      ? 'bg-emerald-500'
-                      : it.percent >= 70 ? 'bg-lime-500'
-                      : it.percent >= 40 ? 'bg-amber-500'
+                      ? 'bg-green-500'
+                      : it.percent >= 70 ? 'bg-surface-500'
+                      : it.percent >= 40 ? 'bg-surface-500'
                       : 'bg-red-500',
                   )}
                   style={{ width: `${Math.min(100, it.percent)}%` }}

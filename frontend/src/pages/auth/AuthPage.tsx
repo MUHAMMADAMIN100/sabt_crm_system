@@ -159,15 +159,15 @@ export default function AuthPage() {
           <div className="flex items-end gap-0 leading-none select-none">
             <span
               className="font-black tracking-tight"
-              style={{ fontSize: 42, color: '#6B4FCF', fontFamily: "'Arial Black', Arial, sans-serif" }}
+              style={{ fontSize: 42, color: '#18181b', fontFamily: "'Arial Black', Arial, sans-serif" }}
             >
               sabt
             </span>
             <svg width="18" height="20" viewBox="0 0 12 14" fill="none" className="ml-1 mb-1.5">
               <path
                 d="M1 1L1 11L3.8 8.2L5.6 12.5L7 11.9L5.2 7.6L9 7.6L1 1Z"
-                fill="#6B4FCF"
-                stroke="#6B4FCF"
+                fill="#18181b"
+                stroke="#18181b"
                 strokeWidth="0.5"
                 strokeLinejoin="round"
               />

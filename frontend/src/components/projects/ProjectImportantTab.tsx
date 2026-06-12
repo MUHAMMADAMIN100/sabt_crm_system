@@ -156,7 +156,7 @@ function AnnouncementForm({ onClose, onSubmit, loading }: any) {
             <option value="normal">Обычное</option>
           </select>
         </div>
-        <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-3 text-xs text-amber-700 dark:text-amber-400">
+        <div className="bg-surface-50 dark:bg-surface-900/20 rounded-xl p-3 text-xs text-surface-700 dark:text-surface-400">
           Все участники проекта получат уведомление на почту, в Telegram и внутри системы.
         </div>
         <div className="flex gap-2 justify-end pt-2">

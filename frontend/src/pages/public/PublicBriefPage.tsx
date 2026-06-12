@@ -78,9 +78,9 @@ export default function PublicBriefPage() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-primary-50 dark:from-emerald-900/20 dark:via-surface-900 dark:to-primary-900/20 px-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 via-white to-primary-50 dark:from-green-900/20 dark:via-surface-900 dark:to-primary-900/20 px-4">
         <div className="text-center max-w-md">
-          <CheckCircle2 size={72} className="mx-auto text-emerald-500 mb-4" />
+          <CheckCircle2 size={72} className="mx-auto text-green-500 mb-4" />
           <h1 className="text-3xl font-bold text-surface-900 dark:text-surface-100 mb-3">
             Спасибо!
           </h1>
@@ -121,8 +121,8 @@ export default function PublicBriefPage() {
           </div>
           <div className="shrink-0 text-right">
             <span className={`text-xs font-semibold px-3 py-1 rounded-full inline-block ${
-              filledPercent === 100 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                : filledPercent >= 50 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+              filledPercent === 100 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                : filledPercent >= 50 ? 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-300'
                 : 'bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-400'
             }`}>
               {filledPercent}% заполнено
@@ -168,7 +168,7 @@ export default function PublicBriefPage() {
             </button>
           </div>
           {filledPercent < 10 && (
-            <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2 text-center">
+            <p className="text-[11px] text-surface-600 dark:text-surface-400 mt-2 text-center">
               Заполните хотя бы несколько полей перед отправкой
             </p>
           )}

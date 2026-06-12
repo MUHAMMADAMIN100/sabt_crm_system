@@ -80,13 +80,13 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               <span className="text-2xl font-extrabold tracking-tight text-white" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
                 sabt
               </span>
-              <span className="text-2xl font-extrabold tracking-tight text-primary-400" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
+              <span className="text-2xl font-extrabold tracking-tight text-surface-400" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
                 .
               </span>
             </div>
           ) : (
             <div className="hidden lg:flex w-full justify-center">
-              <span className="text-3xl font-black leading-none select-none text-primary-400" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
+              <span className="text-3xl font-black leading-none select-none text-white" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
                 S
               </span>
             </div>
@@ -109,8 +109,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 className={({ isActive }) =>
                   clsx(
                     'group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                    // Сайдбар всегда тёмный → активный пункт делаем
+                    // тема-независимым: белая плашка, чёрный текст.
                     isActive
-                      ? 'bg-primary-600 text-white shadow-sm'
+                      ? 'bg-white text-surface-900 shadow-sm'
                       : 'text-surface-300 hover:bg-white/5 hover:text-white',
                     !open && 'lg:justify-center lg:px-2',
                   )

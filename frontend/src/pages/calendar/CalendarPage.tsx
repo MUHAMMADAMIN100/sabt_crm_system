@@ -18,15 +18,15 @@ import clsx from 'clsx'
 const TYPE_COLORS: Record<string, string> = {
   project_start: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50',
   project_end:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50',
-  task:          'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/50',
-  client_meeting:'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/50',
+  task:          'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50',
+  client_meeting:'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50',
 }
 
 // Scope чипы для задач — нужны для визуальной идентификации в календаре.
 const SCOPE_COLORS: Record<string, string> = {
-  personal: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-900/50',
-  business: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/50',
-  general:  'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400 border-sky-200 dark:border-sky-900/50',
+  personal: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50',
+  business: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50',
+  general:  'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50',
 }
 
 const SCOPE_LABEL: Record<string, string> = {
@@ -497,7 +497,7 @@ export default function CalendarPage() {
                             e.progress >= 100
                               ? 'bg-green-500/20 text-green-700 dark:text-green-300'
                               : e.progress > 0
-                                ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                                ? 'bg-surface-500/20 text-surface-700 dark:text-surface-300'
                                 : 'bg-surface-400/20 text-surface-500 dark:text-surface-400',
                           )}>
                             {e.progress}%
@@ -589,13 +589,13 @@ export default function CalendarPage() {
       {/* ─── Status legend (compact) ─────────────────────────────── */}
       <div className="card p-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <span className="text-xs font-semibold text-surface-700 dark:text-surface-200">Легенда:</span>
-        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-900/50">
+        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50">
           🔒 Личная
         </span>
-        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/50">
+        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50">
           💼 Для бизнеса
         </span>
-        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400 border-sky-200 dark:border-sky-900/50">
+        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50">
           🌐 Общая
         </span>
         {!scopeFilter && (
@@ -692,9 +692,9 @@ export default function CalendarPage() {
               <div className={clsx(
                 'rounded-xl px-3 py-2 flex items-center gap-3 mb-3 text-sm',
                 ['done', 'approved', 'published'].includes(editingTaskFull.status)
-                  ? 'bg-emerald-50 dark:bg-emerald-900/20'
+                  ? 'bg-green-50 dark:bg-green-900/20'
                   : isApprovableStatus(editingTaskFull.status)
-                    ? 'bg-amber-50 dark:bg-amber-900/20'
+                    ? 'bg-surface-50 dark:bg-surface-900/20'
                     : 'bg-surface-50 dark:bg-surface-700/40',
               )}>
                 <label className="text-xs font-semibold text-surface-600 dark:text-surface-300 shrink-0">
@@ -716,7 +716,7 @@ export default function CalendarPage() {
                     type="button"
                     onClick={() => approveTaskMut.mutate(editingTaskFull.id)}
                     disabled={approveTaskMut.isPending}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-60 shrink-0"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold disabled:opacity-60 shrink-0"
                   >
                     {approveTaskMut.isPending ? '...' : 'Подтвердить'}
                   </button>
@@ -1389,8 +1389,8 @@ function FounderQuickTaskForm({
 
       {/* Подсказка для general */}
       {scope === 'general' && (
-        <div className="rounded-xl border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 p-3">
-          <p className="text-xs text-amber-800 dark:text-amber-300">
+        <div className="rounded-xl border border-surface-200 dark:border-surface-700/50 bg-surface-50 dark:bg-surface-900/20 p-3">
+          <p className="text-xs text-surface-800 dark:text-surface-300">
             🌐 <strong>Общая задача:</strong> уведомление получат <strong>все активные сотрудники</strong> компании
             по 3 каналам: in-app, email и Telegram. Задача будет видна всем в их календаре.
           </p>
@@ -1524,9 +1524,9 @@ function FounderQuickTaskForm({
  *  Заменяет переход на `/tasks/:id` для быстрого просмотра. */
 /** Цвет статуса задачи для крупного баннера в drawer-е. Wave 11 — 4 значения. */
 const STATUS_BANNER_COLORS: Record<string, string> = {
-  new:         'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
-  in_progress: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  done:        'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  new:         'bg-surface-100 text-surface-700 dark:bg-surface-800 dark:text-surface-200',
+  in_progress: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',
+  done:        'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   cancelled:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
@@ -1565,9 +1565,9 @@ function TaskDetailDrawer({
     low: 'Низкий', medium: 'Средний', high: 'Высокий', critical: 'Критический',
   }
   const priorityColors: Record<string, string> = {
-    low: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30',
-    medium: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30',
-    high: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30',
+    low: 'text-surface-600 bg-surface-50 dark:bg-surface-900/30',
+    medium: 'text-surface-600 bg-surface-50 dark:bg-surface-900/30',
+    high: 'text-surface-600 bg-surface-50 dark:bg-surface-900/30',
     critical: 'text-red-600 bg-red-50 dark:bg-red-900/30',
   }
   // Wave 11: 4-статусная модель.
@@ -1610,7 +1610,7 @@ function TaskDetailDrawer({
               {SCOPE_LABEL[event.scope] || event.scope}
             </span>
             {event.fromFounder && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 whitespace-nowrap">
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400 whitespace-nowrap">
                 👑 От основателя
               </span>
             )}
@@ -1639,7 +1639,7 @@ function TaskDetailDrawer({
                 <button
                   onClick={onApprove}
                   disabled={approving}
-                  className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-60"
+                  className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold disabled:opacity-60"
                 >
                   {approving ? 'Подтверждение…' : '✅ Подтвердить выполнение'}
                 </button>

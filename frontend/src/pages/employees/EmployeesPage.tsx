@@ -314,7 +314,7 @@ export default function EmployeesPage() {
                     <div className="flex items-center gap-1">
                       <span className="font-semibold text-surface-900 dark:text-surface-100">{emp.fullName}</span>
                       {emp.isSubAdmin && <ShieldCheck size={14} className="text-primary-500" aria-label="Помощник администратора" />}
-                      {emp.isStoryMaker && <Camera size={14} className="text-pink-500" aria-label="Сторисмейкер" />}
+                      {emp.isStoryMaker && <Camera size={14} className="text-surface-500" aria-label="Сторисмейкер" />}
                     </div>
                     <p className="text-sm text-surface-500 dark:text-surface-400">{emp.position}</p>
                     <span className="text-xs bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-2 py-0.5 rounded-full">{emp.department}</span>
@@ -327,10 +327,10 @@ export default function EmployeesPage() {
                         <button onClick={() => toggleSubAdmin.mutate(emp.id)} className={clsx('p-1.5 rounded-lg', emp.isSubAdmin ? 'bg-primary-50 dark:bg-primary-900/30' : 'hover:bg-surface-100 dark:hover:bg-surface-700')} title="Помощник админа">
                           <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400'} />
                         </button>
-                        <button onClick={() => toggleStoryMaker.mutate(emp.id)} className={clsx('p-1.5 rounded-lg', emp.isStoryMaker ? 'bg-pink-50 dark:bg-pink-900/30' : 'hover:bg-surface-100 dark:hover:bg-surface-700')} title="Сторисмейкер — доступ к историям всех SMM-проектов">
-                          <Camera size={14} className={emp.isStoryMaker ? 'text-pink-600 dark:text-pink-400' : 'text-surface-400'} />
+                        <button onClick={() => toggleStoryMaker.mutate(emp.id)} className={clsx('p-1.5 rounded-lg', emp.isStoryMaker ? 'bg-surface-50 dark:bg-surface-900/30' : 'hover:bg-surface-100 dark:hover:bg-surface-700')} title="Сторисмейкер — доступ к историям всех SMM-проектов">
+                          <Camera size={14} className={emp.isStoryMaker ? 'text-surface-600 dark:text-surface-400' : 'text-surface-400'} />
                         </button>
-                        <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500" title="Сбросить пароль">
+                        <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-surface-50 dark:hover:bg-surface-900/20 rounded-lg text-surface-500" title="Сбросить пароль">
                           <Key size={14} />
                         </button>
                         {emp.user?.isBlocked ? (
@@ -338,7 +338,7 @@ export default function EmployeesPage() {
                             <Unlock size={14} />
                           </button>
                         ) : (
-                          <button onClick={() => setBlockEmp(emp)} className="p-1.5 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg text-orange-500" title="Заблокировать">
+                          <button onClick={() => setBlockEmp(emp)} className="p-1.5 hover:bg-surface-50 dark:hover:bg-surface-900/20 rounded-lg text-surface-500" title="Заблокировать">
                             <Lock size={14} />
                           </button>
                         )}
@@ -356,7 +356,7 @@ export default function EmployeesPage() {
                   <a href={getTelegramUrl(emp.telegram)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-primary-500 hover:underline"><Send size={11} /><span>{emp.telegram}</span></a>
                 )}
                 {emp.instagram && (
-                  <a href={`https://instagram.com/${emp.instagram.replace('@','')}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-pink-500 hover:underline"><AtSignIcon /><span>{emp.instagram}</span></a>
+                  <a href={`https://instagram.com/${emp.instagram.replace('@','')}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-surface-500 hover:underline"><AtSignIcon /><span>{emp.instagram}</span></a>
                 )}
               </div>
               {/* Wave 13/14: KPI любого сотрудника. Видно только canManage-ролям.
@@ -404,7 +404,7 @@ export default function EmployeesPage() {
                       <div>
                         <span className="text-sm font-medium text-surface-900 dark:text-surface-100">{emp.fullName}</span>
                         {emp.isSubAdmin && <ShieldCheck size={12} className="inline ml-1 text-primary-500" />}
-                        {emp.isStoryMaker && <Camera size={12} className="inline ml-1 text-pink-500" aria-label="Сторисмейкер" />}
+                        {emp.isStoryMaker && <Camera size={12} className="inline ml-1 text-surface-500" aria-label="Сторисмейкер" />}
                       </div>
                     </div>
                   </td>
@@ -430,10 +430,10 @@ export default function EmployeesPage() {
                             <button onClick={() => toggleSubAdmin.mutate(emp.id)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg" title="Помощник админа">
                               <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600' : 'text-surface-400'} />
                             </button>
-                            <button onClick={() => toggleStoryMaker.mutate(emp.id)} className="p-1.5 hover:bg-pink-50 dark:hover:bg-pink-900/20 rounded-lg" title="Сторисмейкер — доступ к историям всех SMM-проектов">
-                              <Camera size={14} className={emp.isStoryMaker ? 'text-pink-600' : 'text-surface-400'} />
+                            <button onClick={() => toggleStoryMaker.mutate(emp.id)} className="p-1.5 hover:bg-surface-50 dark:hover:bg-surface-900/20 rounded-lg" title="Сторисмейкер — доступ к историям всех SMM-проектов">
+                              <Camera size={14} className={emp.isStoryMaker ? 'text-surface-600' : 'text-surface-400'} />
                             </button>
-                            <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500" title="Сбросить пароль">
+                            <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-surface-50 dark:hover:bg-surface-900/20 rounded-lg text-surface-500" title="Сбросить пароль">
                               <Key size={14} />
                             </button>
                             {emp.user?.isBlocked ? (
@@ -441,7 +441,7 @@ export default function EmployeesPage() {
                                 <Unlock size={14} />
                               </button>
                             ) : (
-                              <button onClick={() => setBlockEmp(emp)} className="p-1.5 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg text-orange-500" title="Заблокировать">
+                              <button onClick={() => setBlockEmp(emp)} className="p-1.5 hover:bg-surface-50 dark:hover:bg-surface-900/20 rounded-lg text-surface-500" title="Заблокировать">
                                 <Lock size={14} />
                               </button>
                             )}
@@ -471,9 +471,9 @@ export default function EmployeesPage() {
       {/* Block modal */}
       <Modal open={!!blockEmp} onClose={() => { setBlockEmp(null); setBlockReason('') }} title="Заблокировать сотрудника" size="sm">
         <div className="space-y-4">
-          <div className="flex items-center gap-3 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-xl">
-            <Lock size={18} className="text-orange-500 shrink-0" />
-            <p className="text-sm text-orange-800 dark:text-orange-300">
+          <div className="flex items-center gap-3 p-3 bg-surface-50 dark:bg-surface-900/20 rounded-xl">
+            <Lock size={18} className="text-surface-500 shrink-0" />
+            <p className="text-sm text-surface-800 dark:text-surface-300">
               <strong>{blockEmp?.fullName}</strong> не сможет войти в систему пока вы не разблокируете
             </p>
           </div>
@@ -492,7 +492,7 @@ export default function EmployeesPage() {
             <button
               onClick={() => blockEmp?.userId && blockMut.mutate({ userId: blockEmp.userId, reason: blockReason || undefined })}
               disabled={!blockEmp?.userId || blockMut.isPending}
-              className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-medium disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-surface-500 hover:bg-surface-600 text-white rounded-xl text-sm font-medium disabled:opacity-50"
             >
               <Lock size={15} /> Заблокировать
             </button>
@@ -512,9 +512,9 @@ export default function EmployeesPage() {
       {/* Reset password modal */}
       <Modal open={!!resetPwdEmp} onClose={() => { setResetPwdEmp(null); setCustomPwd('') }} title="Сбросить пароль" size="sm">
         <div className="space-y-4">
-          <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
-            <Key size={18} className="text-blue-500 shrink-0" />
-            <p className="text-sm text-blue-800 dark:text-blue-300">
+          <div className="flex items-center gap-3 p-3 bg-surface-50 dark:bg-surface-900/20 rounded-xl">
+            <Key size={18} className="text-surface-500 shrink-0" />
+            <p className="text-sm text-surface-800 dark:text-surface-300">
               Сбросить пароль для <strong>{resetPwdEmp?.fullName}</strong>?<br/>
               <span className="text-xs">Старый пароль перестанет работать</span>
             </p>
@@ -536,7 +536,7 @@ export default function EmployeesPage() {
             <button
               onClick={() => resetPwdEmp?.userId && resetPwdMut.mutate({ userId: resetPwdEmp.userId, password: customPwd || undefined })}
               disabled={!resetPwdEmp?.userId || resetPwdMut.isPending || (customPwd.length > 0 && customPwd.length < 8)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-medium disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-surface-500 hover:bg-surface-600 text-white rounded-xl text-sm font-medium disabled:opacity-50"
             >
               <Key size={15} /> Сбросить
             </button>
@@ -570,7 +570,7 @@ export default function EmployeesPage() {
                 </button>
               </div>
             </div>
-            <p className="text-xs text-orange-600 dark:text-orange-400 flex items-start gap-1">
+            <p className="text-xs text-surface-600 dark:text-surface-400 flex items-start gap-1">
               <span>⚠️</span>
               <span>Запишите или скопируйте пароль и передайте сотруднику. После закрытия окна вы больше не сможете его увидеть.</span>
             </p>

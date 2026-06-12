@@ -201,9 +201,9 @@ export default function ReportsPage() {
             </div>
 
             {/* Employees report */}
-            <div className="p-4 rounded-xl border border-surface-100 dark:border-surface-700 bg-gradient-to-br from-emerald-50/50 to-transparent dark:from-emerald-900/10">
+            <div className="p-4 rounded-xl border border-surface-100 dark:border-surface-700 bg-gradient-to-br from-green-50/50 to-transparent dark:from-green-900/10">
               <div className="flex items-center gap-2 mb-2">
-                <Users size={16} className="text-emerald-600 dark:text-emerald-400" />
+                <Users size={16} className="text-green-600 dark:text-green-400" />
                 <h3 className="font-semibold text-surface-900 dark:text-surface-100">По сотрудникам</h3>
               </div>
               <p className="text-xs text-surface-500 dark:text-surface-400 mb-3">
@@ -217,7 +217,7 @@ export default function ReportsPage() {
                       onClick={() => setEmployeesPeriod(p)}
                       className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                         employeesPeriod === p
-                          ? 'bg-emerald-600 text-white'
+                          ? 'bg-green-600 text-white'
                           : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300'
                       }`}
                     >{p === 'week' ? 'Неделя' : 'Месяц'}</button>
@@ -226,7 +226,7 @@ export default function ReportsPage() {
                 <button
                   onClick={() => { setReportSearch(''); setShowEmployeesModal(true) }}
                   disabled={generating === 'employees'}
-                  className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-colors disabled:opacity-50"
+                  className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors disabled:opacity-50"
                 >
                   <ExternalLink size={14} /> {generating === 'employees' ? 'Создаю...' : 'Открыть PDF'}
                 </button>
@@ -335,7 +335,7 @@ export default function ReportsPage() {
                   disabled={generating === 'projects'}
                   className="w-full p-2.5 rounded-lg border border-surface-100 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors text-left flex items-center gap-3 disabled:opacity-50"
                 >
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: p.color || '#6B4FCF' }}>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: p.color || '#18181b' }}>
                     <FolderKanban size={14} className="text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -356,14 +356,14 @@ export default function ReportsPage() {
           <button
             onClick={() => downloadEmployeeReport()}
             disabled={generating === 'employees'}
-            className="w-full p-3 rounded-xl border-2 border-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/10 hover:bg-emerald-100/50 dark:hover:bg-emerald-900/20 transition-colors text-left flex items-center gap-3 disabled:opacity-50"
+            className="w-full p-3 rounded-xl border-2 border-green-500 bg-green-50/50 dark:bg-green-900/10 hover:bg-green-100/50 dark:hover:bg-green-900/20 transition-colors text-left flex items-center gap-3 disabled:opacity-50"
           >
-            <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center"><Users size={16} /></div>
+            <div className="w-8 h-8 rounded-lg bg-green-600 text-white flex items-center justify-center"><Users size={16} /></div>
             <div className="flex-1">
               <p className="font-semibold text-surface-900 dark:text-surface-100">Все сотрудники (сводный)</p>
               <p className="text-xs text-surface-500 dark:text-surface-400">Общий отчёт со всей командой</p>
             </div>
-            <Download size={16} className="text-emerald-600" />
+            <Download size={16} className="text-green-600" />
           </button>
 
           <div className="relative">

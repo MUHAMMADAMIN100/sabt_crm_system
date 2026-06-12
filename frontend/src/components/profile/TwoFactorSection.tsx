@@ -93,7 +93,7 @@ export default function TwoFactorSection() {
       <div className="flex items-start justify-between gap-4 mb-4">
         <div className="flex items-start gap-3">
           {enabled ? (
-            <ShieldCheck className="w-6 h-6 text-emerald-500 mt-0.5" />
+            <ShieldCheck className="w-6 h-6 text-green-500 mt-0.5" />
           ) : (
             <Shield className="w-6 h-6 text-surface-400 mt-0.5" />
           )}
@@ -105,11 +105,11 @@ export default function TwoFactorSection() {
               При входе помимо пароля будет запрашиваться 6-значный код из приложения-аутентификатора (Google Authenticator, Authy, 1Password).
             </p>
             {enabled ? (
-              <span className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded-full">
+              <span className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/30 px-2 py-1 rounded-full">
                 <ShieldCheck className="w-3 h-3" /> включена
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 px-2 py-1 rounded-full">
+              <span className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-surface-700 dark:text-surface-300 bg-surface-50 dark:bg-surface-900/30 px-2 py-1 rounded-full">
                 <ShieldAlert className="w-3 h-3" /> отключена — настоятельно рекомендуем включить
               </span>
             )}

@@ -200,8 +200,8 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
     if (count >= target) return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
     // Partially done — between 1 and target-1
     const pct = target > 0 ? count / target : 0
-    if (pct >= 0.5) return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-    return 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400'
+    if (pct >= 0.5) return 'bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'
+    return 'bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'
   }
 
   const triggerAnim = useCallback((key: string, type: 'pop' | 'unpop') => {
@@ -233,8 +233,8 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
     if (index > count) return 'bg-surface-200 dark:bg-surface-600'
     if (count >= target) return 'bg-green-500'
     const pct = target > 0 ? count / target : 0
-    if (pct >= 0.5) return 'bg-yellow-400'
-    return 'bg-pink-400'
+    if (pct >= 0.5) return 'bg-surface-400'
+    return 'bg-surface-400'
   }
 
   // Project list view
@@ -291,7 +291,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
                       )}
                     </div>
                   ) : (
-                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: project.color || '#6B4FCF' }} />
+                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: project.color || '#18181b' }} />
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{project.name}</p>
@@ -315,8 +315,8 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
                           dotColor = 'bg-red-500'
                         } else if (i <= todayCount) {
                           if (todayCount >= dailyTarget) dotColor = 'bg-green-500'
-                          else if (todayCount / dailyTarget >= 0.5) dotColor = 'bg-yellow-400'
-                          else dotColor = 'bg-pink-400'
+                          else if (todayCount / dailyTarget >= 0.5) dotColor = 'bg-surface-400'
+                          else dotColor = 'bg-surface-400'
                         } else {
                           dotColor = 'bg-surface-300 dark:bg-surface-600'
                         }
@@ -335,8 +335,8 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
 
         {/* Legend */}
         <div className="flex gap-3 text-[10px] mt-3 pt-3 border-t border-surface-100 dark:border-surface-700">
-          <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-pink-400" /><span className="text-surface-400 dark:text-surface-500">1</span></div>
-          <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-yellow-400" /><span className="text-surface-400 dark:text-surface-500">2</span></div>
+          <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-surface-400" /><span className="text-surface-400 dark:text-surface-500">1</span></div>
+          <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-surface-400" /><span className="text-surface-400 dark:text-surface-500">2</span></div>
           <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-green-500" /><span className="text-surface-400 dark:text-surface-500">3</span></div>
         </div>
       </div>
@@ -358,7 +358,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: selectedProject.color || '#6B4FCF' }} />
+            <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: selectedProject.color || '#18181b' }} />
             <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate">{selectedProject.name}</h3>
             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 shrink-0">
               план: {dailyTarget}/день
@@ -464,8 +464,8 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
       {/* Legend */}
       <div className="flex flex-wrap gap-3 text-[10px] mt-2">
         <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-red-400" /><span className="text-surface-400">0 (нет)</span></div>
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-pink-400" /><span className="text-surface-400">&lt; половины</span></div>
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-yellow-400" /><span className="text-surface-400">≥ половины</span></div>
+        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-surface-400" /><span className="text-surface-400">&lt; половины</span></div>
+        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-surface-400" /><span className="text-surface-400">≥ половины</span></div>
         <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-green-500" /><span className="text-surface-400">план ({dailyTarget})</span></div>
       </div>
 

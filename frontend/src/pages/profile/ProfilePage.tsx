@@ -216,7 +216,7 @@ export default function ProfilePage() {
                 to={`/projects/${p.id}`}
                 className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors"
               >
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: p.color || '#6B4FCF' }}>
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: p.color || '#18181b' }}>
                   <FolderKanban size={14} className="text-white" />
                 </div>
                 <div className="flex-1 min-w-0">

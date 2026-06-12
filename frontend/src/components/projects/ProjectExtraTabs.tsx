@@ -31,14 +31,14 @@ export function ProjectOverviewTab({ project }: { project: any }) {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Stat icon={CheckSquare} label="Задач всего" value={tasks.length} />
-        <Stat icon={ListChecks}  label="Завершено"  value={done} accent="text-emerald-600" />
-        <Stat icon={Hourglass}   label="В работе"   value={inProgress} accent="text-blue-600" />
+        <Stat icon={ListChecks}  label="Завершено"  value={done} accent="text-green-600" />
+        <Stat icon={Hourglass}   label="В работе"   value={inProgress} accent="text-surface-600" />
         <Stat icon={AlertTriangle} label="Просрочено" value={overdue} accent={overdue > 0 ? 'text-red-600' : 'text-gray-500'} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
-          <h3 className="text-sm font-medium mb-3 flex items-center gap-2"><DollarSign size={14} className="text-emerald-500" /> Финансы</h3>
+          <h3 className="text-sm font-medium mb-3 flex items-center gap-2"><DollarSign size={14} className="text-green-500" /> Финансы</h3>
           <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
             <Row label="Контракт" value={fmt(project.totalContractValue)} />
             <Row label="Оплачено" value={fmt(project.paidAmount)} />
@@ -50,15 +50,15 @@ export function ProjectOverviewTab({ project }: { project: any }) {
         </div>
 
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
-          <h3 className="text-sm font-medium mb-3 flex items-center gap-2"><AlertTriangle size={14} className="text-amber-500" /> Риск</h3>
+          <h3 className="text-sm font-medium mb-3 flex items-center gap-2"><AlertTriangle size={14} className="text-surface-500" /> Риск</h3>
           {risk ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className={clsx(
                   'text-xs px-2 py-1 rounded-full font-medium',
                   risk.level === 'red'    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                  risk.level === 'yellow' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+                  risk.level === 'yellow' ? 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' :
+                  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
                 )}>
                   {risk.level.toUpperCase()} · скор {risk.score}
                 </span>
@@ -69,11 +69,11 @@ export function ProjectOverviewTab({ project }: { project: any }) {
               <ul className="text-xs space-y-1">
                 {(risk.factors || []).filter((f: any) => f.triggered).slice(0, 5).map((f: any) => (
                   <li key={f.key} className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> {f.label}
+                    <span className="w-1.5 h-1.5 rounded-full bg-surface-500" /> {f.label}
                   </li>
                 ))}
                 {(risk.factors || []).filter((f: any) => f.triggered).length === 0 && (
-                  <li className="text-emerald-600 dark:text-emerald-400">Все факторы в норме ✓</li>
+                  <li className="text-green-600 dark:text-green-400">Все факторы в норме ✓</li>
                 )}
               </ul>
             </div>
@@ -113,7 +113,7 @@ export function ProjectDeliverablesTab({ projectId, projectType }: { projectId: 
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Stat label="План"        value={totalPlanned} />
-        <Stat label="Факт"        value={totalActual} accent="text-emerald-600" />
+        <Stat label="Факт"        value={totalActual} accent="text-green-600" />
         <Stat label="Перерасход"  value={totalOveruse} accent={totalOveruse > 0 ? 'text-red-600' : 'text-gray-500'} />
         <Stat label="Выполнение"  value={`${totalPercent}%`} />
       </div>
@@ -137,11 +137,11 @@ export function ProjectDeliverablesTab({ projectId, projectType }: { projectId: 
               <tr key={r.contentType} className="border-t border-gray-200 dark:border-gray-700">
                 <td className="px-3 py-2 font-medium">{r.contentType}</td>
                 <td className="px-3 py-2 text-right">{r.planned}</td>
-                <td className="px-3 py-2 text-right text-emerald-600">{r.actual}</td>
+                <td className="px-3 py-2 text-right text-green-600">{r.actual}</td>
                 <td className="px-3 py-2 text-right">{r.tariffLimit ?? '—'}</td>
                 <td className="px-3 py-2 text-right">{r.remaining}</td>
                 <td className={clsx('px-3 py-2 text-right', r.overuse > 0 && 'text-red-600 font-medium')}>{r.overuse}</td>
-                <td className={clsx('px-3 py-2 text-right', r.underuse > 0 && 'text-amber-600 font-medium')}>{r.underuse}</td>
+                <td className={clsx('px-3 py-2 text-right', r.underuse > 0 && 'text-surface-600 font-medium')}>{r.underuse}</td>
                 <td className="px-3 py-2 text-right">{r.percent}%</td>
               </tr>
             ))}
@@ -171,24 +171,24 @@ export function ProjectTeamWorkloadTab({ project }: { project: any }) {
 
   return (
     <div className="space-y-4">
-      <h2 className="font-semibold text-base flex items-center gap-2"><Users size={16} className="text-purple-500" /> Нагрузка команды</h2>
+      <h2 className="font-semibold text-base flex items-center gap-2"><Users size={16} className="text-surface-500" /> Нагрузка команды</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {teamLoads.map((w: any) => (
           <div key={w.userId} className={clsx(
             'rounded-xl border p-4 bg-white dark:bg-gray-900',
             w.overload === 'red' ? 'border-red-200 dark:border-red-900/50' :
-            w.overload === 'yellow' ? 'border-amber-200 dark:border-amber-900/50' :
+            w.overload === 'yellow' ? 'border-surface-200 dark:border-surface-900/50' :
             'border-gray-200 dark:border-gray-700',
           )}>
             <div className="flex items-center justify-between mb-2">
-              <Link to={`/employees/${w.userId}`} className="font-medium text-sm hover:text-purple-600 inline-flex items-center gap-1">
+              <Link to={`/employees/${w.userId}`} className="font-medium text-sm hover:text-surface-600 inline-flex items-center gap-1">
                 {w.userName} <ExternalLink size={11} className="opacity-50" />
               </Link>
               <span className={clsx(
                 'text-xs px-2 py-0.5 rounded-full font-medium',
                 w.overload === 'red' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                w.overload === 'yellow' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+                w.overload === 'yellow' ? 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' :
+                'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
               )}>{w.overload}</span>
             </div>
             <div className="text-xs text-gray-500 mb-2">{w.role}</div>
@@ -231,17 +231,17 @@ export function ProjectQualityTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-5">
-      <h2 className="font-semibold text-base flex items-center gap-2"><TrendingUp size={16} className="text-emerald-500" /> Качество и правки</h2>
+      <h2 className="font-semibold text-base flex items-center gap-2"><TrendingUp size={16} className="text-green-500" /> Качество и правки</h2>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Stat label="Всего задач"  value={tasks.length} />
         <Stat label="С первого раза" value={`${firstTryRate}%`}
-          accent={firstTryRate >= 80 ? 'text-emerald-600' : firstTryRate >= 50 ? 'text-amber-600' : 'text-red-600'} />
+          accent={firstTryRate >= 80 ? 'text-green-600' : firstTryRate >= 50 ? 'text-surface-600' : 'text-red-600'} />
         <Stat label="С возвратами" value={`${reworkRate}%`}
-          accent={reworkRate <= 10 ? 'text-emerald-600' : reworkRate <= 30 ? 'text-amber-600' : 'text-red-600'} />
+          accent={reworkRate <= 10 ? 'text-green-600' : reworkRate <= 30 ? 'text-surface-600' : 'text-red-600'} />
         <Stat label="Средняя оценка"
           value={avgQuality != null ? `${avgQuality.toFixed(1)} / 10` : '—'}
-          accent={avgQuality == null ? '' : avgQuality >= 8 ? 'text-emerald-600' : avgQuality >= 6 ? 'text-amber-600' : 'text-red-600'} />
+          accent={avgQuality == null ? '' : avgQuality >= 8 ? 'text-green-600' : avgQuality >= 6 ? 'text-surface-600' : 'text-red-600'} />
       </div>
 
       {reworked.length > 0 && (
@@ -250,10 +250,10 @@ export function ProjectQualityTab({ projectId }: { projectId: string }) {
           <ul className="space-y-1.5">
             {reworked.slice(0, 20).map((t: any) => (
               <li key={t.id} className="flex items-center justify-between gap-3 text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-                <Link to={`/tasks/${t.id}`} className="hover:text-purple-600 truncate flex-1">{t.title}</Link>
+                <Link to={`/tasks/${t.id}`} className="hover:text-surface-600 truncate flex-1">{t.title}</Link>
                 <div className="flex items-center gap-3 text-xs text-gray-500 shrink-0">
                   {t.assignee?.name && <span>{t.assignee.name}</span>}
-                  <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                  <span className="px-2 py-0.5 rounded-full bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400">
                     Возвратов: {t.reworkCount}
                   </span>
                 </div>
@@ -283,11 +283,11 @@ export function ProjectActivityTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-3">
-      <h2 className="font-semibold text-base flex items-center gap-2"><CalIcon size={16} className="text-purple-500" /> Лента активности</h2>
+      <h2 className="font-semibold text-base flex items-center gap-2"><CalIcon size={16} className="text-surface-500" /> Лента активности</h2>
       <ul className="space-y-1">
         {items.map((a: any) => (
           <li key={a.id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 text-sm">
-            <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0" />
+            <span className="w-1.5 h-1.5 rounded-full bg-surface-500 shrink-0" />
             <span className="text-xs text-gray-500 shrink-0 w-32">
               {a.createdAt ? new Date(a.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
             </span>
@@ -307,7 +307,7 @@ export function ProjectActivityTab({ projectId }: { projectId: string }) {
 function Stat({ icon: Icon, label, value, accent }: { icon?: any; label: string; value: any; accent?: string }) {
   return (
     <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 text-center">
-      {Icon && <Icon size={16} className="mx-auto mb-1 text-purple-500" />}
+      {Icon && <Icon size={16} className="mx-auto mb-1 text-surface-500" />}
       <div className={clsx('text-xl font-bold', accent || 'text-gray-900 dark:text-gray-100')}>{value}</div>
       <div className="text-[11px] text-gray-500 mt-0.5">{label}</div>
     </div>
@@ -324,7 +324,7 @@ function Row({ label, value }: { label: string; value: any }) {
 }
 
 function Loading() {
-  return <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-purple-500" /></div>
+  return <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-surface-500" /></div>
 }
 
 function Empty({ title, description }: { title: string; description?: string }) {

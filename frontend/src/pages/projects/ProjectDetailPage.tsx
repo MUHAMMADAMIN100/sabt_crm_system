@@ -429,7 +429,7 @@ export default function ProjectDetailPage() {
           <p className="text-xs text-surface-500 dark:text-surface-400">{t('projects.participants')}</p>
         </div>
         <div className="card text-center">
-          <Calendar size={18} className="text-amber-500 mx-auto mb-1" />
+          <Calendar size={18} className="text-surface-500 mx-auto mb-1" />
           <p className="text-sm font-bold text-surface-900 dark:text-surface-100">{project.endDate ? format(new Date(project.endDate), 'dd.MM.yyyy') : '—'}</p>
           <p className="text-xs text-surface-500 dark:text-surface-400">{t('projects.deadline')}</p>
         </div>
@@ -448,7 +448,7 @@ export default function ProjectDetailPage() {
       {(canSeePayment || canEditBudget) && (project.budget > 0 || project.paidAmount > 0 || canEditBudget) && (
         <div className="card flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <DollarSign size={16} className="text-emerald-500" />
+            <DollarSign size={16} className="text-green-500" />
             <span className="text-sm font-semibold text-surface-800 dark:text-surface-200">Оплата проекта</span>
           </div>
           <div className="flex flex-wrap items-center gap-4 flex-1">
@@ -508,14 +508,14 @@ export default function ProjectDetailPage() {
             </div>
             <div className="text-center">
               <p className="text-xs text-surface-400 dark:text-surface-500">Остаток</p>
-              <p className={`text-sm font-bold ${((project.budget || 0) - (project.paidAmount || 0)) > 0 ? 'text-orange-500' : 'text-green-600 dark:text-green-400'}`}>
+              <p className={`text-sm font-bold ${((project.budget || 0) - (project.paidAmount || 0)) > 0 ? 'text-surface-500' : 'text-green-600 dark:text-green-400'}`}>
                 {((project.budget || 0) - (project.paidAmount || 0)).toLocaleString('ru-RU')} сомони
               </p>
             </div>
             <div className="flex-1 max-w-xs">
               <div className="w-full bg-surface-100 dark:bg-surface-700 rounded-full h-2">
                 <div
-                  className="h-2 rounded-full bg-emerald-500 transition-all"
+                  className="h-2 rounded-full bg-green-500 transition-all"
                   style={{ width: `${Math.min(100, Math.round(((project.paidAmount || 0) / (project.budget || 1)) * 100))}%` }}
                 />
               </div>
@@ -596,7 +596,7 @@ export default function ProjectDetailPage() {
                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${
                               task.createdById === task.assigneeId
                                 ? 'bg-surface-100 dark:bg-surface-700 text-surface-400 dark:text-surface-500'
-                                : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                                : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'
                             }`}>
                               {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] ? `от ${task.createdBy.name.trim().split(' ')[0]}` : `от ${task.createdBy.name.trim().split(' ')[0]}`)}
                             </span>
@@ -671,7 +671,7 @@ export default function ProjectDetailPage() {
               </div>
               {project.projectType && (
                 <div className="flex items-start gap-3">
-                  <Building2 size={16} className="text-purple-500 mt-0.5 shrink-0" />
+                  <Building2 size={16} className="text-surface-500 mt-0.5 shrink-0" />
                   <div>
                     <p className="text-xs text-surface-500 dark:text-surface-400">Тип проекта</p>
                     <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.projectType}</p>
@@ -726,7 +726,7 @@ export default function ProjectDetailPage() {
               </div>
               {isManagerPlus && project.budget != null && (
                 <div className="flex items-start gap-3">
-                  <div className="w-4 h-4 mt-0.5 shrink-0 text-amber-500 font-bold text-xs flex items-center">₸</div>
+                  <div className="w-4 h-4 mt-0.5 shrink-0 text-surface-500 font-bold text-xs flex items-center">₸</div>
                   <div>
                     <p className="text-xs text-surface-500 dark:text-surface-400">Бюджет</p>
                     <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{Number(project.budget).toLocaleString()} сомони</p>
@@ -798,7 +798,7 @@ export default function ProjectDetailPage() {
                 )}
                 {project.clientInfo.contactPerson && (
                   <div className="flex items-center gap-3">
-                    <User size={16} className="text-purple-500 shrink-0" />
+                    <User size={16} className="text-surface-500 shrink-0" />
                     <div>
                       <p className="text-xs text-surface-500 dark:text-surface-400">Контактное лицо</p>
                       <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.clientInfo.contactPerson}</p>
@@ -834,7 +834,7 @@ export default function ProjectDetailPage() {
                 )}
                 {project.clientInfo.instagram && (
                   <div className="flex items-center gap-3">
-                    <div className="w-4 h-4 shrink-0 text-pink-500 font-bold text-xs flex items-center justify-center">IG</div>
+                    <div className="w-4 h-4 shrink-0 text-surface-500 font-bold text-xs flex items-center justify-center">IG</div>
                     <div>
                       <p className="text-xs text-surface-500 dark:text-surface-400">Instagram</p>
                       <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.clientInfo.instagram}</p>
@@ -1175,7 +1175,7 @@ export default function ProjectDetailPage() {
             </div>
           </div>
           {!(project?.clientInfo as any)?.email && (
-            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-300">
+            <div className="p-3 rounded-xl bg-surface-50 dark:bg-surface-900/20 border border-surface-200 dark:border-surface-800 text-sm text-surface-800 dark:text-surface-300">
               ⚠️ У клиента не указан email. Откройте вкладку "О клиенте" и добавьте его.
             </div>
           )}
@@ -1282,11 +1282,11 @@ function SmmPlanFactCard({
   const pct = planElapsed > 0 ? Math.min(100, Math.round((totalActual / planElapsed) * 100)) : 0
 
   const cellColor = (count: number) => {
-    if (!storiesPerDay) return count > 0 ? 'bg-emerald-400 dark:bg-emerald-500' : 'bg-surface-100 dark:bg-surface-700'
+    if (!storiesPerDay) return count > 0 ? 'bg-green-400 dark:bg-green-500' : 'bg-surface-100 dark:bg-surface-700'
     if (count === 0) return 'bg-red-200 dark:bg-red-900/40'
-    if (count < storiesPerDay) return 'bg-amber-300 dark:bg-amber-500/60'
-    if (count === storiesPerDay) return 'bg-emerald-400 dark:bg-emerald-500'
-    return 'bg-emerald-600 dark:bg-emerald-400'
+    if (count < storiesPerDay) return 'bg-surface-300 dark:bg-surface-500/60'
+    if (count === storiesPerDay) return 'bg-green-400 dark:bg-green-500'
+    return 'bg-green-600 dark:bg-green-400'
   }
 
   const weekDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -1299,9 +1299,9 @@ function SmmPlanFactCard({
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="p-3 rounded-xl bg-pink-50 dark:bg-pink-900/20">
+        <div className="p-3 rounded-xl bg-surface-50 dark:bg-surface-900/20">
           <div className="flex items-center gap-2 mb-1">
-            <Camera size={14} className="text-pink-500" />
+            <Camera size={14} className="text-surface-500" />
             <p className="text-xs text-surface-500 dark:text-surface-400">План сторисов/день</p>
           </div>
           <p className="text-xl font-bold text-surface-900 dark:text-surface-100">{storiesPerDay || '—'}</p>
@@ -1313,25 +1313,25 @@ function SmmPlanFactCard({
           </div>
           <p className="text-xl font-bold text-surface-900 dark:text-surface-100">{layoutsPerMonth || '—'}</p>
         </div>
-        <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
+        <div className="p-3 rounded-xl bg-green-50 dark:bg-green-900/20">
           <div className="flex items-center gap-2 mb-1">
-            <CheckSquare size={14} className="text-emerald-500" />
+            <CheckSquare size={14} className="text-green-500" />
             <p className="text-xs text-surface-500 dark:text-surface-400">Сделано сторисов (месяц)</p>
           </div>
           <p className="text-xl font-bold text-surface-900 dark:text-surface-100">
             {totalActual} <span className="text-xs font-normal text-surface-500">/ {planMonth || '—'}</span>
           </p>
         </div>
-        <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20">
+        <div className="p-3 rounded-xl bg-surface-50 dark:bg-surface-900/20">
           <div className="flex items-center gap-2 mb-1">
-            <Calendar size={14} className="text-amber-600" />
+            <Calendar size={14} className="text-surface-600" />
             <p className="text-xs text-surface-500 dark:text-surface-400">Выполнение плана</p>
           </div>
           <div className="flex items-center gap-2">
             <p className={clsx(
               'text-xl font-bold',
-              pct >= 100 ? 'text-emerald-600 dark:text-emerald-400'
-              : pct >= 70 ? 'text-amber-600 dark:text-amber-400'
+              pct >= 100 ? 'text-green-600 dark:text-green-400'
+              : pct >= 70 ? 'text-surface-600 dark:text-surface-400'
               : 'text-red-500',
             )}>{pct}%</p>
           </div>
@@ -1350,9 +1350,9 @@ function SmmPlanFactCard({
           </p>
           <div className="flex items-center gap-2 text-[10px] text-surface-500 dark:text-surface-400">
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-200 dark:bg-red-900/40" />0</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-amber-300 dark:bg-amber-500/60" />&lt; плана</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-emerald-400 dark:bg-emerald-500" />план</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-emerald-600 dark:bg-emerald-400" />&gt; плана</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-surface-300 dark:bg-surface-500/60" />&lt; плана</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-400 dark:bg-green-500" />план</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-600 dark:bg-green-400" />&gt; плана</span>
           </div>
         </div>
         <div className="grid grid-cols-7 gap-1">

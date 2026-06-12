@@ -13,12 +13,12 @@ import { useAuthStore } from '@/store/auth.store'
 type Level = 'green' | 'yellow' | 'red'
 
 const LEVEL_CHIP: Record<Level, string> = {
-  green:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  yellow: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  green:  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  yellow: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',
   red:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
-const COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4']
+const COLORS = ['#18181b', '#52525b', '#8a8a93', '#a1a1aa', '#b4b4bb', '#d4d4d8']
 
 const fmtMoney = (v: any) => v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' сомони'
 
@@ -42,14 +42,14 @@ export function FounderAnalyticsSection() {
 
   return (
     <div className="space-y-5">
-      <h2 className="font-semibold text-base flex items-center gap-2"><Briefcase size={16} className="text-purple-500" /> Founder analytics</h2>
+      <h2 className="font-semibold text-base flex items-center gap-2"><Briefcase size={16} className="text-surface-500" /> Founder analytics</h2>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Tile label="Активных проектов" value={overview?.activeProjects ?? list.length} accent="text-purple-600" />
-        <Tile label="Контрактов всего"  value={fmtMoney(totalContract)} accent="text-blue-600" />
-        <Tile label="Получено"          value={fmtMoney(totalPaid)} accent="text-emerald-600" />
-        <Tile label="К оплате"          value={fmtMoney(totalOutstanding)} accent={totalOutstanding > 0 ? 'text-amber-600' : 'text-gray-500'} />
-        <Tile label="Маржа (план)"      value={fmtMoney(totalMargin)} accent="text-emerald-600" />
+        <Tile label="Активных проектов" value={overview?.activeProjects ?? list.length} accent="text-surface-600" />
+        <Tile label="Контрактов всего"  value={fmtMoney(totalContract)} accent="text-surface-600" />
+        <Tile label="Получено"          value={fmtMoney(totalPaid)} accent="text-green-600" />
+        <Tile label="К оплате"          value={fmtMoney(totalOutstanding)} accent={totalOutstanding > 0 ? 'text-surface-600' : 'text-gray-500'} />
+        <Tile label="Маржа (план)"      value={fmtMoney(totalMargin)} accent="text-green-600" />
         <Tile label="Просрочки оплат"   value={overdue} accent={overdue > 0 ? 'text-red-600' : 'text-gray-500'} />
         <Tile label="Завершено задач"   value={`${overview?.completionRate ?? 0}%`} />
         <Tile label="Просрочка задач"   value={overview?.overdueTasks ?? 0} accent="text-red-600" />
@@ -79,12 +79,12 @@ export function TeamAnalyticsSection() {
 
   return (
     <div className="space-y-5">
-      <h2 className="font-semibold text-base flex items-center gap-2"><Users size={16} className="text-purple-500" /> Team analytics</h2>
+      <h2 className="font-semibold text-base flex items-center gap-2"><Users size={16} className="text-surface-500" /> Team analytics</h2>
 
       <div className="grid grid-cols-3 gap-3">
         <Tile label="Перегружены (red)" value={overloaded} accent="text-red-600" />
-        <Tile label="Высокая нагрузка"  value={yellow} accent="text-amber-600" />
-        <Tile label="Норма"             value={team.length - overloaded - yellow} accent="text-emerald-600" />
+        <Tile label="Высокая нагрузка"  value={yellow} accent="text-surface-600" />
+        <Tile label="Норма"             value={team.length - overloaded - yellow} accent="text-green-600" />
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
@@ -103,7 +103,7 @@ export function TeamAnalyticsSection() {
           <tbody>
             {team.map((w: any) => (
               <tr key={w.userId} className="border-t border-gray-200 dark:border-gray-700">
-                <td className="px-3 py-2"><Link to={`/employees/${w.userId}`} className="hover:text-purple-600">{w.userName}</Link></td>
+                <td className="px-3 py-2"><Link to={`/employees/${w.userId}`} className="hover:text-surface-600">{w.userName}</Link></td>
                 <td className="px-3 py-2 text-xs text-gray-500">{w.role}</td>
                 <td className="px-3 py-2 text-right">{w.projectCount}</td>
                 <td className="px-3 py-2 text-right">{w.tasksInProgress}</td>
@@ -158,9 +158,9 @@ export function SmmAnalyticsSection() {
       <h2 className="font-semibold text-base flex items-center gap-2">📱 SMM analytics</h2>
 
       <div className="grid grid-cols-3 gap-3">
-        <Tile label="SMM-проектов" value={smmProjects.length} accent="text-purple-600" />
-        <Tile label="С тарифом"    value={withTariff.length} accent="text-emerald-600" />
-        <Tile label="Без тарифа"   value={withoutTariff.length} accent={withoutTariff.length > 0 ? 'text-amber-600' : 'text-gray-500'} />
+        <Tile label="SMM-проектов" value={smmProjects.length} accent="text-surface-600" />
+        <Tile label="С тарифом"    value={withTariff.length} accent="text-green-600" />
+        <Tile label="Без тарифа"   value={withoutTariff.length} accent={withoutTariff.length > 0 ? 'text-surface-600' : 'text-gray-500'} />
       </div>
 
       {smmProjects.length > 0 && (
@@ -177,8 +177,8 @@ export function SmmAnalyticsSection() {
             <tbody>
               {smmProjects.map((p: any) => (
                 <tr key={p.id} className="border-t border-gray-200 dark:border-gray-700">
-                  <td className="px-3 py-2"><Link to={`/projects/${p.id}`} className="hover:text-purple-600">{p.name}</Link></td>
-                  <td className="px-3 py-2 text-xs">{p.tariffNameSnapshot || <span className="text-amber-600">— без тарифа —</span>}</td>
+                  <td className="px-3 py-2"><Link to={`/projects/${p.id}`} className="hover:text-surface-600">{p.name}</Link></td>
+                  <td className="px-3 py-2 text-xs">{p.tariffNameSnapshot || <span className="text-surface-600">— без тарифа —</span>}</td>
                   <td className="px-3 py-2 text-right text-xs">{fmtMoney(p.monthlyFee)}</td>
                   <td className="px-3 py-2 text-xs">{p.paymentStatus || '—'}</td>
                 </tr>
@@ -211,7 +211,7 @@ export function FinanceAnalyticsSection() {
 
   return (
     <div className="space-y-5">
-      <h2 className="font-semibold text-base flex items-center gap-2"><DollarSign size={16} className="text-emerald-500" /> Finance analytics</h2>
+      <h2 className="font-semibold text-base flex items-center gap-2"><DollarSign size={16} className="text-green-500" /> Finance analytics</h2>
 
       {chartData.length > 0 ? (
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
@@ -250,9 +250,9 @@ export function FinanceAnalyticsSection() {
           <tbody>
             {sorted.map((p: any) => (
               <tr key={p.id} className="border-t border-gray-200 dark:border-gray-700">
-                <td className="px-3 py-2"><Link to={`/projects/${p.id}`} className="hover:text-purple-600">{p.name}</Link></td>
+                <td className="px-3 py-2"><Link to={`/projects/${p.id}`} className="hover:text-surface-600">{p.name}</Link></td>
                 <td className="px-3 py-2 text-right text-xs">{fmtMoney(p.totalContractValue)}</td>
-                <td className="px-3 py-2 text-right text-xs text-amber-600 dark:text-amber-400">
+                <td className="px-3 py-2 text-right text-xs text-surface-600 dark:text-surface-400">
                   {Number(p.discount) > 0
                     ? (p.discountType === 'percent'
                         ? `−${Number(p.discount).toLocaleString('ru-RU')}%`
@@ -289,16 +289,16 @@ export function RiskAnalyticsSection() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-base flex items-center gap-2"><AlertTriangle size={16} className="text-red-500" /> Risk analytics</h2>
-        <Link to="/risks" className="text-xs text-purple-600 hover:underline inline-flex items-center gap-1">Открыть полную страницу <ExternalLink size={12} /></Link>
+        <Link to="/risks" className="text-xs text-surface-600 hover:underline inline-flex items-center gap-1">Открыть полную страницу <ExternalLink size={12} /></Link>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <Tile label="Проектов red"     value={projStats.red}    accent="text-red-600" />
-        <Tile label="Проектов yellow"  value={projStats.yellow} accent="text-amber-600" />
-        <Tile label="Проектов green"   value={projStats.green}  accent="text-emerald-600" />
+        <Tile label="Проектов yellow"  value={projStats.yellow} accent="text-surface-600" />
+        <Tile label="Проектов green"   value={projStats.green}  accent="text-green-600" />
         <Tile label="Сотрудники red"   value={empStats.red}     accent="text-red-600" />
-        <Tile label="Сотрудники yellow" value={empStats.yellow}  accent="text-amber-600" />
-        <Tile label="Сотрудники green"  value={empStats.green}   accent="text-emerald-600" />
+        <Tile label="Сотрудники yellow" value={empStats.yellow}  accent="text-surface-600" />
+        <Tile label="Сотрудники green"  value={empStats.green}   accent="text-green-600" />
       </div>
 
       <section>
@@ -306,7 +306,7 @@ export function RiskAnalyticsSection() {
         <ul className="space-y-1.5">
           {(projectRisks ?? []).filter((r: any) => r.level !== 'green').slice(0, 10).map((r: any) => (
             <li key={r.projectId} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-              <Link to={`/projects/${r.projectId}`} className="hover:text-purple-600 truncate flex-1">{r.projectName}</Link>
+              <Link to={`/projects/${r.projectId}`} className="hover:text-surface-600 truncate flex-1">{r.projectName}</Link>
               <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', LEVEL_CHIP[r.level as Level])}>{r.level} · {r.score}</span>
             </li>
           ))}
@@ -354,12 +354,12 @@ export function TariffAnalyticsSection() {
 
   return (
     <div className="space-y-5">
-      <h2 className="font-semibold text-base flex items-center gap-2"><Tag size={16} className="text-purple-500" /> Tariff analytics</h2>
+      <h2 className="font-semibold text-base flex items-center gap-2"><Tag size={16} className="text-surface-500" /> Tariff analytics</h2>
 
       <div className="grid grid-cols-3 gap-3">
         <Tile label="Тарифов всего"   value={tariffs?.length ?? 0} />
-        <Tile label="Активных тарифов" value={(tariffs ?? []).filter((t: any) => t.isActive).length} accent="text-emerald-600" />
-        <Tile label="Используемых"     value={rows.length} accent="text-purple-600" />
+        <Tile label="Активных тарифов" value={(tariffs ?? []).filter((t: any) => t.isActive).length} accent="text-green-600" />
+        <Tile label="Используемых"     value={rows.length} accent="text-surface-600" />
       </div>
 
       {rows.length === 0 ? (
@@ -426,7 +426,7 @@ function Tile({ label, value, accent }: { label: string; value: any; accent?: st
 }
 
 function Loading() {
-  return <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-purple-500" /></div>
+  return <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-surface-500" /></div>
 }
 
 function Empty({ title, description }: { title: string; description?: string }) {

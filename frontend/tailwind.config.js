@@ -14,19 +14,20 @@ export default {
     },
     extend: {
       colors: {
-        // Primary — сдержанный slate-индиго (Linear/Vercel-style),
-        // вместо прежнего ярко-фиолетового. Все классы primary-* по всему
-        // приложению автоматически переедут на новые тона — менять JSX
-        // не нужно. При желании потом вынесем в CSS-vars для theming.
+        // Primary — строгий ч/б монохром через CSS-переменные (см.
+        // index.css :root / .dark). В светлой теме акцент — почти чёрный,
+        // в тёмной — серый, чтобы text-primary-* без dark:-вариантов
+        // оставался читаемым. Все классы primary-* по всему приложению
+        // подхватывают значения автоматически — JSX менять не нужно.
         primary: {
-          50:  '#eef2ff',
-          100: '#e0e7ff',
-          300: '#a5b4fc',
-          400: '#818cf8',
-          500: '#4f46e5',
-          600: '#4338ca',
-          700: '#3730a3',
-          900: '#1e1b4b',
+          50:  'rgb(var(--prim-50) / <alpha-value>)',
+          100: 'rgb(var(--prim-100) / <alpha-value>)',
+          300: 'rgb(var(--prim-300) / <alpha-value>)',
+          400: 'rgb(var(--prim-400) / <alpha-value>)',
+          500: 'rgb(var(--prim-500) / <alpha-value>)',
+          600: 'rgb(var(--prim-600) / <alpha-value>)',
+          700: 'rgb(var(--prim-700) / <alpha-value>)',
+          900: 'rgb(var(--prim-900) / <alpha-value>)',
         },
         surface: {
           50: '#fafafa',

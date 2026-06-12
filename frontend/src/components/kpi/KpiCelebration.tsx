@@ -21,82 +21,82 @@ const PRAISES: Record<string, { icon: string; title: string; subtitle: string; a
     icon: '🚀',
     title: 'Воронка в огне!',
     subtitle: 'Ты сделал все продвижения по воронке за сегодня. Так держать!',
-    accent: 'from-indigo-400 via-violet-500 to-purple-600',
+    accent: 'from-surface-400 via-surface-500 to-surface-600',
     ring: 'rgba(139,92,246,0.6)',
   },
   funnel_progress: {
     icon: '🚀',
     title: 'Воронка в огне!',
     subtitle: 'Ты сделал все продвижения по воронке за сегодня. Так держать!',
-    accent: 'from-indigo-400 via-violet-500 to-purple-600',
+    accent: 'from-surface-400 via-surface-500 to-surface-600',
     ring: 'rgba(139,92,246,0.6)',
   },
   sales_new_companies: {
     icon: '🌟',
     title: 'Ты — машина!',
     subtitle: 'Все новые компании добавлены. База растёт благодаря тебе.',
-    accent: 'from-amber-300 via-orange-400 to-rose-500',
+    accent: 'from-surface-300 via-surface-400 to-surface-500',
     ring: 'rgba(251,146,60,0.6)',
   },
   new_companies: {
     icon: '🌟',
     title: 'Ты — машина!',
     subtitle: 'Все новые компании добавлены. База растёт благодаря тебе.',
-    accent: 'from-amber-300 via-orange-400 to-rose-500',
+    accent: 'from-surface-300 via-surface-400 to-surface-500',
     ring: 'rgba(251,146,60,0.6)',
   },
   sales_cold_calls: {
     icon: '📞',
     title: 'Король холодных звонков!',
     subtitle: 'План по звонкам закрыт. Каждый звонок — шаг к новой сделке.',
-    accent: 'from-sky-300 via-blue-500 to-indigo-600',
+    accent: 'from-surface-300 via-surface-500 to-surface-600',
     ring: 'rgba(59,130,246,0.6)',
   },
   cold_calls: {
     icon: '📞',
     title: 'Король холодных звонков!',
     subtitle: 'План по звонкам закрыт. Каждый звонок — шаг к новой сделке.',
-    accent: 'from-sky-300 via-blue-500 to-indigo-600',
+    accent: 'from-surface-300 via-surface-500 to-surface-600',
     ring: 'rgba(59,130,246,0.6)',
   },
   sales_personal_emails: {
     icon: '💌',
     title: 'Мастер переписки!',
     subtitle: 'Все письма отправлены. Каждое — на вес золота.',
-    accent: 'from-pink-400 via-rose-500 to-fuchsia-600',
+    accent: 'from-surface-400 via-surface-500 to-surface-600',
     ring: 'rgba(244,114,182,0.6)',
   },
   personal_emails: {
     icon: '💌',
     title: 'Мастер переписки!',
     subtitle: 'Все письма отправлены. Каждое — на вес золота.',
-    accent: 'from-pink-400 via-rose-500 to-fuchsia-600',
+    accent: 'from-surface-400 via-surface-500 to-surface-600',
     ring: 'rgba(244,114,182,0.6)',
   },
   sales_meetings: {
     icon: '🤝',
     title: 'Встречи закрыты!',
     subtitle: 'Сделки уже совсем рядом. Так держать!',
-    accent: 'from-emerald-400 via-green-500 to-teal-600',
+    accent: 'from-green-400 via-green-500 to-surface-600',
     ring: 'rgba(52,211,153,0.6)',
   },
   meetings: {
     icon: '🤝',
     title: 'Встречи закрыты!',
     subtitle: 'Сделки уже совсем рядом. Так держать!',
-    accent: 'from-emerald-400 via-green-500 to-teal-600',
+    accent: 'from-green-400 via-green-500 to-surface-600',
     ring: 'rgba(52,211,153,0.6)',
   },
   __all__: {
     icon: '🏆',
     title: 'Сегодня ты — №1!',
     subtitle: 'ВСЕ KPI закрыты на 100%. Это уровень чемпиона!',
-    accent: 'from-yellow-300 via-amber-400 to-orange-500',
+    accent: 'from-surface-300 via-surface-400 to-surface-500',
     ring: 'rgba(250,204,21,0.7)',
   },
 }
 
-const FIREWORK_COLORS = ['#f87171', '#fbbf24', '#34d399', '#60a5fa', '#a78bfa', '#f472b6', '#fb7185', '#facc15', '#22d3ee']
+const FIREWORK_COLORS = ['#ffffff', '#e4e4e7', '#34d399', '#a1a1aa', '#22c55e', '#d4d4d8', '#b4b4bb', '#8a8a93', '#f4f4f5']
 const FIREWORK_BURSTS = 6        // сколько залпов
 const SPARKS_PER_BURST = 22      // искр в каждом залпе
 const CONFETTI_EMOJI = ['🎉', '🎊', '⭐', '✨', '💥', '🔥', '💪', '👑', '🏆', '🚀', '💎', '⚡', '🌟', '✊', '🙌']
@@ -227,7 +227,7 @@ export default function KpiCelebration({ open, name, metricKey, onClose }: KpiCe
           }}
         />
         {/* Затемнение поверх градиента */}
-        <div className="absolute inset-0 bg-slate-950/55" />
+        <div className="absolute inset-0 bg-surface-950/55" />
 
         {/* Слой 2 — фейерверк (залпы искр) */}
         {bursts.map(burst => (

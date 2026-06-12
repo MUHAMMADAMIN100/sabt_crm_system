@@ -16,7 +16,7 @@ import {
   PieChart, Pie, Cell, AreaChart, Area, Legend,
 } from 'recharts'
 
-const COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4']
+const COLORS = ['#18181b', '#52525b', '#8a8a93', '#a1a1aa', '#b4b4bb', '#d4d4d8']
 
 export default function AnalyticsPage() {
   const { t } = useTranslation()
@@ -156,7 +156,7 @@ export default function AnalyticsPage() {
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 11 }} unit="м" />
                 <Tooltip formatter={(v: any) => [`${v} мин`, 'Минуты']} />
-                <Bar dataKey="totalMinutes" fill="#6B4FCF" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="totalMinutes" fill="#18181b" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -241,7 +241,7 @@ export default function AnalyticsPage() {
                   <th className="text-left py-2 px-3 text-xs text-surface-500 dark:text-surface-400 font-semibold hidden md:table-cell">Отдел</th>
                   <th className="text-center py-2 px-3 text-xs text-surface-500 dark:text-surface-400 font-semibold">Активных задач</th>
                   <th className="text-center py-2 px-3 text-xs text-surface-500 dark:text-surface-400 font-semibold">
-                    <span className="flex items-center justify-center gap-1"><Zap size={11} className="text-amber-500" /> Критичных</span>
+                    <span className="flex items-center justify-center gap-1"><Zap size={11} className="text-surface-500" /> Критичных</span>
                   </th>
                   <th className="text-center py-2 px-3 text-xs text-surface-500 dark:text-surface-400 font-semibold">
                     <span className="flex items-center justify-center gap-1"><AlertTriangle size={11} className="text-red-500" /> Просрочено</span>
@@ -253,7 +253,7 @@ export default function AnalyticsPage() {
                 {filteredWorkload.map((e: any) => {
                   const maxTasks = Math.max(...filteredWorkload.map((w: any) => w.activeTasks), 1)
                   const pct = Math.round((e.activeTasks / maxTasks) * 100)
-                  const loadColor = e.activeTasks >= 10 ? 'bg-red-500' : e.activeTasks >= 5 ? 'bg-amber-500' : 'bg-emerald-500'
+                  const loadColor = e.activeTasks >= 10 ? 'bg-red-500' : e.activeTasks >= 5 ? 'bg-surface-500' : 'bg-green-500'
                   const isExpanded = expandedWorkload === e.id
                   const empTasks = tasksByEmployee[e.userId] || tasksByEmployee[e.id] || []
                   return (
@@ -272,11 +272,11 @@ export default function AnalyticsPage() {
                         </td>
                         <td className="py-2.5 px-3 hidden md:table-cell text-xs text-surface-500 dark:text-surface-400">{e.department || '—'}</td>
                         <td className="py-2.5 px-3 text-center">
-                          <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-white text-xs font-bold ${e.activeTasks >= 10 ? 'bg-red-500' : e.activeTasks >= 5 ? 'bg-amber-500' : 'bg-primary-600'}`}>
+                          <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-white text-xs font-bold ${e.activeTasks >= 10 ? 'bg-red-500' : e.activeTasks >= 5 ? 'bg-surface-500' : 'bg-primary-600'}`}>
                             {e.activeTasks}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-center text-xs font-semibold text-amber-600 dark:text-amber-400">
+                        <td className="py-2.5 px-3 text-center text-xs font-semibold text-surface-600 dark:text-surface-400">
                           {e.criticalTasks > 0 ? e.criticalTasks : <span className="text-surface-300 dark:text-surface-600">—</span>}
                         </td>
                         <td className="py-2.5 px-3 text-center text-xs font-semibold text-red-600 dark:text-red-400">
@@ -303,7 +303,7 @@ export default function AnalyticsPage() {
                                   const taskPct = task.estimatedHours > 0
                                     ? Math.min(100, Math.round((task.loggedHours / task.estimatedHours) * 100))
                                     : (statusPct[task.status] ?? 0)
-                                  const barColor = taskPct >= 100 ? 'bg-green-500' : taskPct >= 50 ? 'bg-primary-500' : 'bg-amber-400'
+                                  const barColor = taskPct >= 100 ? 'bg-green-500' : taskPct >= 50 ? 'bg-primary-500' : 'bg-surface-400'
                                   return (
                                     <div key={task.id} className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700/40">
                                       <div className="flex-1 min-w-0">
@@ -404,7 +404,7 @@ export default function AnalyticsPage() {
                                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                                       selfAssigned
                                         ? 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400'
-                                        : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                                        : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'
                                     }`}>
                                       {selfAssigned ? 'сам' : `от ${creatorName}`}
                                     </span>

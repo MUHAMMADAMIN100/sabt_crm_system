@@ -46,7 +46,7 @@ export default function StoryCalendar({ isAdmin = false }: { isAdmin?: boolean }
   const getDayColor = (day: Date) => {
     const total = getDayTotal(day)
     if (total === 0) return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-    if (total < MAX_STORIES) return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+    if (total < MAX_STORIES) return 'bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'
     return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
   }
 
@@ -124,7 +124,7 @@ export default function StoryCalendar({ isAdmin = false }: { isAdmin?: boolean }
       {/* Legend */}
       <div className="flex gap-3 mb-3 justify-center">
         <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-red-200 dark:bg-red-900/40" /><span className="text-[10px] text-surface-500 dark:text-surface-400">0</span></div>
-        <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-yellow-200 dark:bg-yellow-900/40" /><span className="text-[10px] text-surface-500 dark:text-surface-400">1-2</span></div>
+        <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-surface-200 dark:bg-surface-900/40" /><span className="text-[10px] text-surface-500 dark:text-surface-400">1-2</span></div>
         <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded bg-green-200 dark:bg-green-900/40" /><span className="text-[10px] text-surface-500 dark:text-surface-400">3+</span></div>
       </div>
 

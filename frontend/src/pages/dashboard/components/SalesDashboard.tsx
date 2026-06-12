@@ -286,8 +286,8 @@ export default function SalesDashboard() {
               </div>
               <span className={clsx(
                 'text-xs font-semibold tabular-nums shrink-0',
-                (kpi?.overallPercent ?? 0) >= 100 ? 'text-emerald-600' :
-                (kpi?.overallPercent ?? 0) >= 70  ? 'text-amber-600'   : 'text-red-600',
+                (kpi?.overallPercent ?? 0) >= 100 ? 'text-green-600' :
+                (kpi?.overallPercent ?? 0) >= 70  ? 'text-surface-600'   : 'text-red-600',
               )}>
                 {kpi ? `${kpi.overallPercent}% от плана` : 'загрузка…'}
               </span>
@@ -313,7 +313,7 @@ export default function SalesDashboard() {
                 kpi && 'hover:shadow-md hover:-translate-y-0.5 hover:border-primary-300 dark:hover:border-primary-700 cursor-pointer',
                 !kpi && 'opacity-60 cursor-not-allowed',
                 it.done
-                  ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-900/40'
+                  ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-900/40'
                   : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700',
               )}
             >
@@ -324,12 +324,12 @@ export default function SalesDashboard() {
               <div className="flex items-baseline gap-1">
                 <span className={clsx(
                   'text-xl font-bold tabular-nums',
-                  it.done ? 'text-emerald-600 dark:text-emerald-400' : 'text-surface-800 dark:text-surface-100',
+                  it.done ? 'text-green-600 dark:text-green-400' : 'text-surface-800 dark:text-surface-100',
                 )}>
                   {it.value}
                 </span>
                 <span className="text-xs text-surface-400">/ {it.target}</span>
-                {it.done && <span className="ml-auto text-[10px] font-semibold text-emerald-600">✓</span>}
+                {it.done && <span className="ml-auto text-[10px] font-semibold text-green-600">✓</span>}
               </div>
               <ProgressBar value={it.percent} />
             </button>
@@ -424,7 +424,7 @@ export default function SalesDashboard() {
                       onSave={(budget) => patch(p.id, { budget })}
                     />
                   </td>
-                  <td className="py-2 pr-3 text-right font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums whitespace-nowrap">
+                  <td className="py-2 pr-3 text-right font-semibold text-green-600 dark:text-green-400 tabular-nums whitespace-nowrap">
                     {isSmmSales ? (
                       <BudgetCell
                         value={Number(p.paidAmount || 0)}
@@ -437,10 +437,10 @@ export default function SalesDashboard() {
                   <td className={clsx(
                     'py-2 pr-3 text-right font-bold tabular-nums whitespace-nowrap',
                     p.remaining === 0
-                      ? 'text-emerald-600 dark:text-emerald-400'
+                      ? 'text-green-600 dark:text-green-400'
                       : p.isOverdue
                         ? 'text-red-600 dark:text-red-400'
-                        : 'text-amber-600 dark:text-amber-400',
+                        : 'text-surface-600 dark:text-surface-400',
                   )}>
                     {fmt(p.remaining)}
                   </td>
@@ -472,7 +472,7 @@ export default function SalesDashboard() {
                     ) : p.endDate ? (
                       <span className={clsx(
                         'text-xs',
-                        p.isOverdue ? 'text-red-500 font-semibold' : p.isUpcoming ? 'text-amber-600 dark:text-amber-400' : 'text-surface-500 dark:text-surface-400',
+                        p.isOverdue ? 'text-red-500 font-semibold' : p.isUpcoming ? 'text-surface-600 dark:text-surface-400' : 'text-surface-500 dark:text-surface-400',
                       )}>
                         {p.isOverdue && '🔴 '}{p.isUpcoming && '🟠 '}
                         {format(new Date(p.endDate), 'dd.MM.yy')}
@@ -492,7 +492,7 @@ export default function SalesDashboard() {
                         width="w-32"
                       />
                     ) : p.budget > 0 && p.remaining === 0 ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-400">
                         <CheckCircle2 size={12} /> Оплачено
                       </span>
                     ) : (

@@ -133,7 +133,7 @@ export default function TaskSlidePanel({ taskId, onClose }: Props) {
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                           task.createdById === task.assigneeId
                             ? 'bg-surface-100 dark:bg-surface-700 text-surface-400 dark:text-surface-500'
-                            : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                            : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'
                         }`}>
                           {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] ? `от ${task.createdBy.name.trim().split(' ')[0]}` : `от ${task.createdBy.name.trim().split(' ')[0]}`)}
                         </span>

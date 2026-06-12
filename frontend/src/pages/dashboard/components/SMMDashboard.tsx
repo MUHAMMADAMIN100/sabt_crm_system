@@ -59,7 +59,7 @@ export default function SMMDashboard() {
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-red-800 dark:text-red-300 truncate">{t.title}</p>
                       {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && t.createdBy?.name?.trim() && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400">
                           {t.createdBy?.name?.trim().split(' ')[0] || ''}
                         </span>
                       )}
@@ -76,10 +76,10 @@ export default function SMMDashboard() {
           )}
 
           {returnedTasks.length > 0 && (
-            <div className="card border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/10">
+            <div className="card border-surface-200 dark:border-surface-800 bg-surface-50 dark:bg-surface-900/10">
               <div className="flex items-center gap-2 mb-3">
-                <RotateCcw size={16} className="text-orange-500" />
-                <h3 className="font-bold text-orange-700 dark:text-orange-400 text-sm">
+                <RotateCcw size={16} className="text-surface-500" />
+                <h3 className="font-bold text-surface-700 dark:text-surface-400 text-sm">
                   Возвращено: {returnedTasks.length}
                 </h3>
               </div>
@@ -88,18 +88,18 @@ export default function SMMDashboard() {
                   <Link
                     key={t.id}
                     to={`/tasks/${t.id}`}
-                    className="block p-2 rounded-lg bg-orange-100 dark:bg-orange-900/20 hover:bg-orange-200 dark:hover:bg-orange-900/30 transition-colors"
+                    className="block p-2 rounded-lg bg-surface-100 dark:bg-surface-900/20 hover:bg-surface-200 dark:hover:bg-surface-900/30 transition-colors"
                   >
                     <div className="flex items-center gap-1.5">
-                      <p className="text-sm font-medium text-orange-800 dark:text-orange-300 truncate">{t.title}</p>
+                      <p className="text-sm font-medium text-surface-800 dark:text-surface-300 truncate">{t.title}</p>
                       {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && t.createdBy?.name?.trim() && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400">
                           {t.createdBy?.name?.trim().split(' ')[0] || ''}
                         </span>
                       )}
                     </div>
                     {t.returnReason && (
-                      <p className="text-xs text-orange-600 dark:text-orange-400 truncate">💬 {t.returnReason}</p>
+                      <p className="text-xs text-surface-600 dark:text-surface-400 truncate">💬 {t.returnReason}</p>
                     )}
                   </Link>
                 ))}
@@ -113,20 +113,20 @@ export default function SMMDashboard() {
       {reviewTasks.length > 0 && (
         <CollapsibleSection
           id="smm-review"
-          title={<h2 className="section-title flex items-center gap-2"><Clock size={16} className="text-amber-500" /> На проверке ({reviewTasks.length})</h2>}
-          className="border-amber-200 dark:border-amber-800"
+          title={<h2 className="section-title flex items-center gap-2"><Clock size={16} className="text-surface-500" /> На проверке ({reviewTasks.length})</h2>}
+          className="border-surface-200 dark:border-surface-800"
         >
           <div className="space-y-2">
             {reviewTasks.map((t: any) => (
               <Link
                 key={t.id}
                 to={`/tasks/${t.id}`}
-                className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/10"
+                className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-900/10"
               >
                 <div className="flex items-center gap-1.5 flex-1 min-w-0">
                   <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{t.title}</p>
                   {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && t.createdBy?.name?.trim() && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400">
                       {t.createdBy?.name?.trim().split(' ')[0] || ''}
                     </span>
                   )}
@@ -161,13 +161,13 @@ export default function SMMDashboard() {
                         {t.title}
                       </p>
                       {t.createdById && t.assigneeId && t.createdById !== t.assigneeId && t.createdBy?.name?.trim() && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400">
                           {t.createdBy?.name?.trim().split(' ')[0] || ''}
                         </span>
                       )}
                     </div>
                     {t.deadline && (
-                      <span className={`text-xs shrink-0 font-medium ${isUrgent ? 'text-orange-500' : 'text-surface-400 dark:text-surface-500'}`}>
+                      <span className={`text-xs shrink-0 font-medium ${isUrgent ? 'text-surface-500' : 'text-surface-400 dark:text-surface-500'}`}>
                         {format(new Date(t.deadline), 'dd.MM', { locale: ru })}
                       </span>
                     )}

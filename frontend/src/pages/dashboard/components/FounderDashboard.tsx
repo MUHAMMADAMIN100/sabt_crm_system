@@ -150,21 +150,21 @@ export default function FounderDashboard() {
           title="Сотрудников"
           value={overview?.totalEmployees ?? 0}
           icon={Users}
-          color="bg-amber-500"
+          color="bg-surface-500"
           sub={`${inactiveEmployees.length} неактивных`}
         />
         <StatCard
           title="Проектов в риске"
           value={atRiskProjects}
           icon={AlertTriangle}
-          color="bg-orange-500"
+          color="bg-surface-500"
           sub="по просрочкам"
         />
         <StatCard
           title="Среднее время закрытия"
           value={avgCompletion ? `${avgCompletion.avgDays}д` : '—'}
           icon={Clock}
-          color="bg-violet-500"
+          color="bg-surface-500"
           sub={avgCompletion ? `${avgCompletion.totalDone} задач закрыто` : 'нет данных'}
         />
       </div>
@@ -194,24 +194,24 @@ export default function FounderDashboard() {
         {!isAllTime && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="card flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
-                <DollarSign size={20} className="text-emerald-600 dark:text-emerald-400" />
+              <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
+                <DollarSign size={20} className="text-green-600 dark:text-green-400" />
               </div>
               <div>
                 <p className="text-xs text-surface-500 dark:text-surface-400">Получено за период</p>
-                <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">
+                <p className="text-xl font-bold text-green-700 dark:text-green-400">
                   {revenueForPeriod.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
                 </p>
                 <p className="text-xs text-surface-400 dark:text-surface-500">{payroll?.payments?.length || 0} платежей</p>
               </div>
             </div>
             <div className="card flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
-                <Users size={20} className="text-orange-600 dark:text-orange-400" />
+              <div className="w-10 h-10 rounded-xl bg-surface-100 dark:bg-surface-900/30 flex items-center justify-center shrink-0">
+                <Users size={20} className="text-surface-600 dark:text-surface-400" />
               </div>
               <div>
                 <p className="text-xs text-surface-500 dark:text-surface-400">Расход на ЗП за период</p>
-                <p className="text-xl font-bold text-orange-700 dark:text-orange-400">
+                <p className="text-xl font-bold text-surface-700 dark:text-surface-400">
                   {payrollForPeriod.toLocaleString('ru-RU')} <span className="text-sm font-normal">сомони</span>
                 </p>
                 <p className="text-xs text-surface-400 dark:text-surface-500">по истории зарплат</p>
@@ -238,8 +238,8 @@ export default function FounderDashboard() {
         {/* Lifetime / overall KPIs */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="card flex items-center gap-4 opacity-90">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
-              <DollarSign size={20} className="text-emerald-600 dark:text-emerald-400" />
+            <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
+              <DollarSign size={20} className="text-green-600 dark:text-green-400" />
             </div>
             <div>
               <p className="text-xs text-surface-500 dark:text-surface-400">Месячный ФОТ (текущий)</p>
@@ -250,8 +250,8 @@ export default function FounderDashboard() {
             </div>
           </div>
           <div className="card flex items-center gap-4 opacity-90">
-            <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-              <Briefcase size={20} className="text-blue-600 dark:text-blue-400" />
+            <div className="w-10 h-10 rounded-xl bg-surface-100 dark:bg-surface-900/30 flex items-center justify-center shrink-0">
+              <Briefcase size={20} className="text-surface-600 dark:text-surface-400" />
             </div>
             <div>
               <p className="text-xs text-surface-500 dark:text-surface-400">Бюджет всех проектов</p>
@@ -262,8 +262,8 @@ export default function FounderDashboard() {
             </div>
           </div>
           <div className="card flex items-center gap-4 opacity-90">
-            <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
-              <Activity size={20} className="text-purple-600 dark:text-purple-400" />
+            <div className="w-10 h-10 rounded-xl bg-surface-100 dark:bg-surface-900/30 flex items-center justify-center shrink-0">
+              <Activity size={20} className="text-surface-600 dark:text-surface-400" />
             </div>
             <div>
               <p className="text-xs text-surface-500 dark:text-surface-400">Всего получено (всё время)</p>
@@ -302,7 +302,7 @@ export default function FounderDashboard() {
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{t.title}</p>
                       {t.createdById && t.assigneeId && (t.createdById === t.assigneeId || t.createdBy?.name?.trim()) && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${t.createdById === t.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${t.createdById === t.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'}`}>
                           {t.createdById === t.assigneeId ? 'сам' : (t.createdBy?.name?.trim().split(' ')[0] || '')}
                         </span>
                       )}
@@ -329,7 +329,7 @@ export default function FounderDashboard() {
           {/* Inactive employees */}
           <div className="card">
             <h3 className="font-semibold text-sm text-surface-900 dark:text-surface-100 mb-3 flex items-center gap-2">
-              <UserX size={14} className="text-orange-500" /> Неактивные сегодня
+              <UserX size={14} className="text-surface-500" /> Неактивные сегодня
             </h3>
             {inactiveEmployees.length === 0 ? (
               <p className="text-xs text-green-600 dark:text-green-400">Все активны ✓</p>
@@ -342,7 +342,7 @@ export default function FounderDashboard() {
                       <p className="text-xs font-medium text-surface-800 dark:text-surface-200 truncate">{e.name}</p>
                       <p className="text-[10px] text-surface-400 dark:text-surface-500 truncate">{e.position}</p>
                     </div>
-                    <span className="text-[10px] text-orange-500 font-semibold">{e.activeTasks} задач</span>
+                    <span className="text-[10px] text-surface-500 font-semibold">{e.activeTasks} задач</span>
                   </Link>
                 ))}
               </div>
@@ -351,8 +351,8 @@ export default function FounderDashboard() {
 
           {/* Overloaded */}
           {overloadedPMs.length > 0 && (
-            <div className="card border-orange-100 dark:border-orange-900/30">
-              <h3 className="font-semibold text-sm text-orange-700 dark:text-orange-400 mb-3 flex items-center gap-2">
+            <div className="card border-surface-100 dark:border-surface-900/30">
+              <h3 className="font-semibold text-sm text-surface-700 dark:text-surface-400 mb-3 flex items-center gap-2">
                 <Activity size={14} /> Перегруженные
               </h3>
               <div className="space-y-2">
@@ -360,7 +360,7 @@ export default function FounderDashboard() {
                   <Link key={e.id} to={`/employees/${e.id}`} className="flex items-center gap-2 hover:opacity-80">
                     <Avatar name={e.name} src={e.avatar} size={24} />
                     <span className="text-xs text-surface-800 dark:text-surface-200 flex-1 truncate">{e.name}</span>
-                    <span className="text-xs font-bold text-orange-600">{e.activeTasks}</span>
+                    <span className="text-xs font-bold text-surface-600">{e.activeTasks}</span>
                   </Link>
                 ))}
               </div>
@@ -517,7 +517,7 @@ export default function FounderDashboard() {
             <tfoot>
               <tr className="border-t-2 border-surface-200 dark:border-surface-600">
                 <td colSpan={3} className="pt-3 font-semibold text-surface-700 dark:text-surface-300">Итого ФОТ (в месяц)</td>
-                <td className="pt-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                <td className="pt-3 text-right font-bold text-green-600 dark:text-green-400">
                   {monthlyPayroll.toLocaleString('ru-RU')} сомони
                 </td>
                 <td />
@@ -558,7 +558,7 @@ export default function FounderDashboard() {
                     </td>
                     <td className="py-2 text-right text-surface-500">{(p.budget || 0).toLocaleString('ru-RU')}</td>
                     <td className="py-2 text-right font-semibold text-green-600 dark:text-green-400">{(p.paidAmount || 0).toLocaleString('ru-RU')}</td>
-                    <td className={`py-2 text-right font-semibold ${remaining > 0 ? 'text-orange-500' : 'text-green-600 dark:text-green-400'}`}>
+                    <td className={`py-2 text-right font-semibold ${remaining > 0 ? 'text-surface-500' : 'text-green-600 dark:text-green-400'}`}>
                       {remaining.toLocaleString('ru-RU')}
                     </td>
                     <td className="py-2">
@@ -660,17 +660,17 @@ function IncomeExpenseChart({ title, perProject, sectionId }: { title: string; p
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
-              <p className="text-xs text-emerald-700 dark:text-emerald-400">Доход</p>
-              <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400">{fmt(totals.income)}</p>
+            <div className="p-3 rounded-xl bg-green-50 dark:bg-green-900/20">
+              <p className="text-xs text-green-700 dark:text-green-400">Доход</p>
+              <p className="text-lg font-bold text-green-700 dark:text-green-400">{fmt(totals.income)}</p>
             </div>
-            <div className="p-3 rounded-xl bg-orange-50 dark:bg-orange-900/20">
-              <p className="text-xs text-orange-700 dark:text-orange-400">Зарплаты</p>
-              <p className="text-lg font-bold text-orange-700 dark:text-orange-400">{fmt(totals.payroll)}</p>
+            <div className="p-3 rounded-xl bg-surface-50 dark:bg-surface-900/20">
+              <p className="text-xs text-surface-700 dark:text-surface-400">Зарплаты</p>
+              <p className="text-lg font-bold text-surface-700 dark:text-surface-400">{fmt(totals.payroll)}</p>
             </div>
-            <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-900/20">
-              <p className="text-xs text-purple-700 dark:text-purple-400">Реклама</p>
-              <p className="text-lg font-bold text-purple-700 dark:text-purple-400">{fmt(totals.ads)}</p>
+            <div className="p-3 rounded-xl bg-surface-50 dark:bg-surface-900/20">
+              <p className="text-xs text-surface-700 dark:text-surface-400">Реклама</p>
+              <p className="text-lg font-bold text-surface-700 dark:text-surface-400">{fmt(totals.ads)}</p>
             </div>
             <div className={clsx(
               'p-3 rounded-xl',
@@ -690,18 +690,18 @@ function IncomeExpenseChart({ title, perProject, sectionId }: { title: string; p
                 <XAxis
                   dataKey="monthLabel"
                   tick={{ fontSize: 11 }}
-                  label={{ value: 'Месяц', position: 'insideBottom', offset: -2, style: { fontSize: 10, fill: '#94a3b8' } }}
+                  label={{ value: 'Месяц', position: 'insideBottom', offset: -2, style: { fontSize: 10, fill: '#a1a1aa' } }}
                 />
                 <YAxis
                   tick={{ fontSize: 11 }}
                   tickFormatter={v => v >= 1000 ? `${Math.round(v/1000)}к` : v}
-                  label={{ value: 'Сомони', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }}
+                  label={{ value: 'Сомони', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#a1a1aa' } }}
                 />
                 <Tooltip formatter={(v: any) => `${fmt(Number(v))} сомони`} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Line type="monotone" dataKey="income" name="Доход" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                <Line type="monotone" dataKey="payroll" name="Зарплаты" stroke="#f97316" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                <Line type="monotone" dataKey="ads" name="Реклама" stroke="#a855f7" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="payroll" name="Зарплаты" stroke="#8a8a93" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="ads" name="Реклама" stroke="#71717a" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
               </LineChart>
             </ResponsiveContainer>
           )}

@@ -33,15 +33,15 @@ const SALES_GREETINGS = [
 const SMMDashboard = lazy(() => import('./components/SMMDashboard'))
 const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
 
-const PIE_COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7']
+const PIE_COLORS = ['#18181b', '#52525b', '#8a8a93', '#b4b4bb', '#d4d4d8']
 
 // ── Helpers for story dot colors ──────────────────────────────────
 function storyDotColor(index: number, count: number, target: number) {
   if (index > count) return 'bg-surface-200 dark:bg-surface-600'
   if (count >= target) return 'bg-green-500'
   const pct = target > 0 ? count / target : 0
-  if (pct >= 0.5) return 'bg-yellow-400'
-  return 'bg-pink-400'
+  if (pct >= 0.5) return 'bg-surface-400'
+  return 'bg-surface-400'
 }
 
 function projectDailyTarget(project: any): number {
@@ -89,7 +89,7 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
               <div key={project.id} className="flex items-center gap-2 group">
                 <div
                   className="w-2 h-2 rounded-full shrink-0 transition-transform duration-150 group-hover:scale-125"
-                  style={{ backgroundColor: project.color || '#6B4FCF' }}
+                  style={{ backgroundColor: project.color || '#18181b' }}
                 />
                 <p className="text-xs font-medium text-surface-800 dark:text-surface-200 flex-1 truncate">
                   {project.name}
@@ -108,7 +108,7 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
                   <span className="text-[10px] font-bold text-green-600 dark:text-green-400 shrink-0 w-7 text-right">✓</span>
                 ) : (
                   <span className={`text-[10px] font-semibold shrink-0 w-8 text-right ${
-                    count === 0 ? 'text-red-500 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'
+                    count === 0 ? 'text-red-500 dark:text-red-400' : 'text-surface-600 dark:text-surface-400'
                   }`}>{count}/{target}</span>
                 )}
               </div>
@@ -125,7 +125,7 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
             <div className="flex items-center gap-1.5">
               <span className={`text-xs font-bold ${
                 monthPct >= 80 ? 'text-green-600 dark:text-green-400'
-                : monthPct >= 50 ? 'text-yellow-600 dark:text-yellow-400'
+                : monthPct >= 50 ? 'text-surface-600 dark:text-surface-400'
                 : 'text-red-500 dark:text-red-400'
               }`}>{monthPct}%</span>
               <span className="text-xs text-surface-500 dark:text-surface-400">
@@ -350,7 +350,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title={t('dashboard.activeProjectsCount')} value={overview.activeProjects} icon={FolderKanban} color="bg-primary-600" sub={`${t('common.from')} ${overview.totalProjects} ${t('common.total')}`} />
           <StatCard title={t('dashboard.totalTasks')} value={overview.totalTasks} icon={CheckSquare} color="bg-green-500" sub={`${overview.completionRate}% ${t('common.completed')}`} />
-          <StatCard title={t('dashboard.employeesCount')} value={overview.totalEmployees} icon={Users} color="bg-amber-500" />
+          <StatCard title={t('dashboard.employeesCount')} value={overview.totalEmployees} icon={Users} color="bg-surface-500" />
         </div>
       )}
 
@@ -366,11 +366,11 @@ export default function DashboardPage() {
             <p className="text-sm text-surface-500 dark:text-surface-400 mt-1">В работе</p>
           </div>
           <div className="card text-center cursor-pointer hover:shadow-md transition-shadow">
-            <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">{projectsByStatus.completed}</p>
+            <p className="text-3xl font-bold text-surface-600 dark:text-surface-400">{projectsByStatus.completed}</p>
             <p className="text-sm text-surface-500 dark:text-surface-400 mt-1">Завершено</p>
           </div>
           <div className="card text-center cursor-pointer hover:shadow-md transition-shadow">
-            <p className="text-3xl font-bold text-amber-600 dark:text-amber-400">{projectsByStatus.on_hold}</p>
+            <p className="text-3xl font-bold text-surface-600 dark:text-surface-400">{projectsByStatus.on_hold}</p>
             <p className="text-sm text-surface-500 dark:text-surface-400 mt-1">На паузе</p>
           </div>
         </div>
@@ -404,7 +404,7 @@ export default function DashboardPage() {
                         )}
                       </div>
                     ) : (
-                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: p.color || '#6B4FCF' }} />
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: p.color || '#18181b' }} />
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate group-hover:text-primary-600 dark:group-hover:text-primary-400">{p.name}</p>
@@ -445,7 +445,7 @@ export default function DashboardPage() {
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${
                             task.createdById === task.assigneeId
                               ? 'bg-surface-100 dark:bg-surface-700 text-surface-400 dark:text-surface-500'
-                              : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                              : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'
                           }`}>
                             {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] ? `от ${task.createdBy.name.trim().split(' ')[0]}` : `от ${task.createdBy.name.trim().split(' ')[0]}`)}
                           </span>
@@ -493,14 +493,14 @@ export default function DashboardPage() {
           )}
 
           {urgentTasks.length > 0 && !isAdmin && (
-            <div className="card border-orange-100 dark:border-orange-900/30 bg-orange-50 dark:bg-orange-900/10">
+            <div className="card border-surface-100 dark:border-surface-900/30 bg-surface-50 dark:bg-surface-900/10">
               <div className="flex items-center gap-2 mb-3">
-                <AlertTriangle size={16} className="text-orange-500" />
-                <h3 className="font-semibold text-orange-800 dark:text-orange-300 text-sm">{t('dashboard.urgent')}</h3>
+                <AlertTriangle size={16} className="text-surface-500" />
+                <h3 className="font-semibold text-surface-800 dark:text-surface-300 text-sm">{t('dashboard.urgent')}</h3>
               </div>
               <div className="space-y-2">
                 {urgentTasks.slice(0, 3).map((ta: any) => (
-                  <Link key={ta.id} to={`/tasks/${ta.id}`} className="block text-sm text-orange-700 dark:text-orange-300 hover:underline truncate">
+                  <Link key={ta.id} to={`/tasks/${ta.id}`} className="block text-sm text-surface-700 dark:text-surface-300 hover:underline truncate">
                     • {ta.title}
                   </Link>
                 ))}
@@ -543,7 +543,7 @@ export default function DashboardPage() {
                         )}
                       </div>
                     ) : (
-                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.color || '#6B4FCF' }} />
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.color || '#18181b' }} />
                     )}
                     <span className="text-sm font-medium text-surface-800 dark:text-surface-200 truncate flex-1">{p.name}</span>
                     <span className="text-xs text-surface-500 dark:text-surface-400 shrink-0">{p.progress}%</span>

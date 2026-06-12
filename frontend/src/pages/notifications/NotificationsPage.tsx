@@ -38,14 +38,14 @@ const NOTIFICATION_ICONS: Record<string, any> = {
 
 const NOTIFICATION_COLORS: Record<string, string> = {
   task_overdue: 'text-red-500 bg-red-50 dark:bg-red-900/20',
-  deadline_approaching: 'text-orange-500 bg-orange-50 dark:bg-orange-900/20',
-  deadline_tomorrow: 'text-orange-500 bg-orange-50 dark:bg-orange-900/20',
-  task_returned: 'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20',
+  deadline_approaching: 'text-surface-500 bg-surface-50 dark:bg-surface-900/20',
+  deadline_tomorrow: 'text-surface-500 bg-surface-50 dark:bg-surface-900/20',
+  task_returned: 'text-surface-600 bg-surface-50 dark:bg-surface-900/20',
   inactivity_24h: 'text-gray-500 bg-gray-100 dark:bg-gray-800',
   payment_reminder: 'text-red-600 bg-red-50 dark:bg-red-900/20',
   project_overdue: 'text-red-600 bg-red-50 dark:bg-red-900/20',
   daily_uncompleted: 'text-red-600 bg-red-50 dark:bg-red-900/20',
-  manager_assigned: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20',
+  manager_assigned: 'text-surface-600 bg-surface-50 dark:bg-surface-900/20',
   manager_removed: 'text-gray-500 bg-gray-100 dark:bg-gray-800',
   project_assigned: 'text-primary-600 bg-primary-50 dark:bg-primary-900/20',
   member_removed: 'text-gray-500 bg-gray-100 dark:bg-gray-800',
@@ -132,7 +132,7 @@ export default function NotificationsPage() {
           <h1 className="page-title">{t('notifications.title')}</h1>
           {isFounder && (
             <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5 flex items-center gap-1">
-              <AlertTriangle size={11} className="text-orange-400" />
+              <AlertTriangle size={11} className="text-surface-400" />
               Показаны только критические уведомления
             </p>
           )}

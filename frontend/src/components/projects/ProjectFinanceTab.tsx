@@ -29,10 +29,10 @@ interface FinanceProject {
 }
 
 const PAYMENT_STATUS_LABEL: Record<string, { label: string; color: string }> = {
-  pending:        { label: 'Ожидает',        color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
-  invoice_sent:   { label: 'Счёт отправлен', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  partially_paid: { label: 'Частично',       color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  paid:           { label: 'Оплачено ✓',     color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  pending:        { label: 'Ожидает',        color: 'bg-surface-100 text-surface-700 dark:bg-surface-800 dark:text-surface-300' },
+  invoice_sent:   { label: 'Счёт отправлен', color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
+  partially_paid: { label: 'Частично',       color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
+  paid:           { label: 'Оплачено ✓',     color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
   overdue:        { label: 'Просрочено',     color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
   frozen:         { label: 'Заморожено',     color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
 }
@@ -139,7 +139,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-base flex items-center gap-2">
-            <DollarSign size={18} className="text-emerald-500" /> Финансы проекта
+            <DollarSign size={18} className="text-green-500" /> Финансы проекта
           </h2>
           {canEdit && (
             <button onClick={() => setEditMode(true)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
@@ -149,7 +149,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <FinanceCard label="Контракт (всего)" value={fmt(project.totalContractValue)} accent="text-purple-600" />
+          <FinanceCard label="Контракт (всего)" value={fmt(project.totalContractValue)} accent="text-surface-600" />
           {(() => {
             const dVal = Number((project as any).discount ?? 0)
             const dType = (project as any).discountType as string
@@ -169,18 +169,18 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
                 label="Скидка"
                 value={displayValue}
                 sub={sub}
-                accent={dVal > 0 ? 'text-amber-600' : 'text-gray-500'}
+                accent={dVal > 0 ? 'text-surface-600' : 'text-gray-500'}
               />
             )
           })()}
-          <FinanceCard label="Оплачено" value={fmt(project.paidAmount)} accent="text-emerald-600" />
+          <FinanceCard label="Оплачено" value={fmt(project.paidAmount)} accent="text-green-600" />
           <FinanceCard label="К оплате" value={fmt(project.outstandingAmount)} accent={outstanding > 0 ? 'text-red-600' : 'text-gray-500'} />
-          <FinanceCard label="Себестоимость" value={fmt(project.internalCostEstimate)} accent="text-amber-600" />
+          <FinanceCard label="Себестоимость" value={fmt(project.internalCostEstimate)} accent="text-surface-600" />
           <FinanceCard
             label="Маржа"
             value={fmt(project.marginEstimate)}
             sub={totalRaw > 0 ? `${marginPct}% от контракта` : undefined}
-            accent={margin > 0 ? 'text-emerald-600' : margin < 0 ? 'text-red-600' : 'text-gray-500'}
+            accent={margin > 0 ? 'text-green-600' : margin < 0 ? 'text-red-600' : 'text-gray-500'}
           />
           <FinanceCard
             label="Перерасход тарифа"
@@ -196,7 +196,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
               <span className="text-xs text-gray-500">{paidPct}%</span>
             </div>
             <div className="h-3 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-              <div className={clsx('h-full transition-all', paidPct >= 100 ? 'bg-emerald-500' : paidPct >= 50 ? 'bg-amber-500' : 'bg-red-500')} style={{ width: `${paidPct}%` }} />
+              <div className={clsx('h-full transition-all', paidPct >= 100 ? 'bg-green-500' : paidPct >= 50 ? 'bg-surface-500' : 'bg-red-500')} style={{ width: `${paidPct}%` }} />
             </div>
             <div className="flex justify-between text-xs text-gray-500 mt-2">
               <span>{fmt(project.paidAmount)} из {fmt(project.totalContractValue)}</span>
@@ -299,7 +299,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
 
       <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
         <button type="button" onClick={() => setEditMode(false)} className="px-4 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700">Отмена</button>
-        <button type="submit" disabled={updateMut.isPending} className="px-4 py-2 rounded-lg text-sm bg-emerald-600 hover:bg-emerald-700 text-white inline-flex items-center gap-1 disabled:opacity-50">
+        <button type="submit" disabled={updateMut.isPending} className="px-4 py-2 rounded-lg text-sm bg-green-600 hover:bg-green-700 text-white inline-flex items-center gap-1 disabled:opacity-50">
           <Save size={14} /> {updateMut.isPending ? 'Сохранение...' : 'Сохранить'}
         </button>
       </div>

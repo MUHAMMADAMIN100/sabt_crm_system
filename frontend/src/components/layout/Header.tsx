@@ -157,7 +157,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
               {searchResults.employees.map((emp: any) => (
                 <button key={emp.id} onClick={() => { handleResultClick(`/employees/${emp.id}`); setMobileSearchOpen(false) }}
                   className="w-full text-left px-3 py-2 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700 flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-xs text-amber-700 dark:text-amber-400 font-bold shrink-0">С</div>
+                  <div className="w-6 h-6 rounded-lg bg-surface-100 dark:bg-surface-900/30 flex items-center justify-center text-xs text-surface-700 dark:text-surface-400 font-bold shrink-0">С</div>
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{emp.fullName}</p>
                     <p className="text-xs text-surface-400 dark:text-surface-500 truncate">{emp.position} • {emp.department}</p>

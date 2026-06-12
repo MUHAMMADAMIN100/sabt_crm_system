@@ -338,15 +338,15 @@ export default function ProjectsPage() {
                   className={clsx(
                     'absolute top-3 right-3 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-surface-800',
                     p.hasActiveAd
-                      ? 'bg-emerald-500 animate-pulse shadow-[0_0_0_3px_rgba(16,185,129,0.2)]'
+                      ? 'bg-green-500 animate-pulse shadow-[0_0_0_3px_rgba(16,185,129,0.2)]'
                       : 'bg-red-500',
                   )}
                 />
               )}
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: p.color || '#eff2ff' }}>
-                    <FolderKanban size={18} style={{ color: p.color ? '#fff' : '#6B4FCF' }} />
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: p.color || '#f4f4f5' }}>
+                    <FolderKanban size={18} style={{ color: p.color ? '#fff' : '#18181b' }} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="font-semibold text-surface-900 dark:text-surface-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 text-sm truncate" title={p.name}>{p.name}</h3>
@@ -386,19 +386,19 @@ export default function ProjectsPage() {
                 <div className="flex items-center gap-1 mb-3 flex-wrap">
                   {(p as any).tariffNameSnapshot && (
                     <span title={`Тариф: ${(p as any).tariffNameSnapshot}`}
-                      className="text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1.5 py-0.5 rounded-full max-w-[120px] truncate">
+                      className="text-[10px] bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400 px-1.5 py-0.5 rounded-full max-w-[120px] truncate">
                       🏷 {(p as any).tariffNameSnapshot}
                     </span>
                   )}
                   {(p as any).teamNameSnapshot && (
                     <span title={`Команда: ${(p as any).teamNameSnapshot}`}
-                      className="text-[10px] bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 px-1.5 py-0.5 rounded-full max-w-[120px] truncate">
+                      className="text-[10px] bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400 px-1.5 py-0.5 rounded-full max-w-[120px] truncate">
                       👥 {(p as any).teamNameSnapshot}
                     </span>
                   )}
                   {p.projectType === 'SMM' && !(p as any).tariffId && (
                     <span title="SMM-проект без тарифа"
-                      className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
+                      className="text-[10px] bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400 px-1.5 py-0.5 rounded-full">
                       ⚠ без тарифа
                     </span>
                   )}
@@ -428,7 +428,7 @@ export default function ProjectsPage() {
               </div>
 
               {isSalesManagerView && p.nextPaymentDate && (
-                <div className="flex items-center gap-1 mt-2 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                <div className="flex items-center gap-1 mt-2 text-[11px] font-medium text-surface-600 dark:text-surface-400">
                   <Banknote size={12} />
                   <span>
                     Следующая оплата: {format(new Date(p.nextPaymentDate), 'dd.MM.yyyy')}
@@ -593,7 +593,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           startDate: initial.startDate ? new Date(initial.startDate).toISOString().split('T')[0] : '',
           endDate: initial.endDate ? new Date(initial.endDate).toISOString().split('T')[0] : '',
           status: initial.status || 'planning',
-          color: initial.color || '#6B4FCF',
+          color: initial.color || '#18181b',
           budget: initial.budget || '',
           projectType: initial.projectType || '',
           managerId: (initial as any).managerId || (initial as any).manager?.id || '',
@@ -609,7 +609,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
       } else {
         reset({
           name: '', description: '', startDate: '', endDate: '',
-          status: 'planning', color: '#6B4FCF', budget: '',
+          status: 'planning', color: '#18181b', budget: '',
           projectType: forcedProjectType || (isSalesDev ? 'Лендинг' : ''),
           managerId: '', salesManagerId: '',
           tariffId: '',
@@ -827,7 +827,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
               ))}
             </select>
             {teamId ? (
-              <p className="text-[11px] text-purple-600 dark:text-purple-400 mt-1">
+              <p className="text-[11px] text-surface-600 dark:text-surface-400 mt-1">
                 👥 В список участников ниже попадают только сотрудники из этой команды.
               </p>
             ) : (
@@ -869,7 +869,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 const selectedTariff = (tariffs || []).find((tt: any) => tt.id === tariffId)
                 if (!selectedTariff?.isCustom) return null
                 return (
-                  <div className="mt-3 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 p-3 text-xs text-violet-700 dark:text-violet-300 space-y-1">
+                  <div className="mt-3 rounded-xl border border-surface-200 dark:border-surface-800 bg-surface-50/50 dark:bg-surface-900/10 p-3 text-xs text-surface-700 dark:text-surface-300 space-y-1">
                     <p>
                       ⚙️ <b>Индивидуальный тариф.</b> Лимиты и стоимость задаются вручную для этого
                       конкретного проекта.
@@ -934,12 +934,12 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                             <span className="font-semibold">{subtotal.toLocaleString('ru-RU')} TJS</span>
                           </div>
                           {computedDiscount > 0 && (
-                            <div className="flex justify-between text-amber-600 dark:text-amber-400">
+                            <div className="flex justify-between text-surface-600 dark:text-surface-400">
                               <span>Скидка{discountType === 'percent' ? ` (${discountValue}%)` : ''}:</span>
                               <span className="font-semibold">−{computedDiscount.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} TJS</span>
                             </div>
                           )}
-                          <div className="flex justify-between text-emerald-600 dark:text-emerald-400 pt-1 border-t border-primary-200/50 dark:border-primary-800/50">
+                          <div className="flex justify-between text-green-600 dark:text-green-400 pt-1 border-t border-primary-200/50 dark:border-primary-800/50">
                             <span className="font-semibold">Итого со скидкой:</span>
                             <span className="font-bold">{finalTotal.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} TJS</span>
                           </div>
@@ -953,12 +953,12 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 )
               })()}
               {tariffId && !initial && (
-                <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
+                <p className="text-[11px] text-green-600 dark:text-green-400 mt-1">
                   ✨ После создания проекта будет автоматически сгенерирован контент-план из тарифа
                 </p>
               )}
               {!tariffId && (
-                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                <p className="text-[11px] text-surface-600 dark:text-surface-400 mt-1">
                   ⚠️ Без тарифа SMM-проект попадёт в риск-зону. Выберите тариф или создайте новый в разделе «SMM-тарифы».
                 </p>
               )}
@@ -979,7 +979,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                     8 разделов · {TOTAL_BRIEF_QUESTIONS} вопросов. Можно заполнить сейчас или позже в карточке проекта.
                   </p>
                   {briefFilled > 0 && (
-                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
+                    <p className="text-[11px] text-green-600 dark:text-green-400 mt-1">
                       ✓ Заполнено {briefFilled}% — будет сохранено вместе с проектом
                     </p>
                   )}
@@ -1230,15 +1230,15 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
               defaultOpen={tranches.length > 0}
               badge={tranches.length || undefined}
             >
-            <div className="border border-emerald-300/60 dark:border-emerald-800/60 rounded-xl p-4 bg-emerald-50/50 dark:bg-emerald-900/10 space-y-3">
+            <div className="border border-green-300/60 dark:border-green-800/60 rounded-xl p-4 bg-green-50/50 dark:bg-green-900/10 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Banknote size={16} className="text-emerald-600 dark:text-emerald-400" />
-                  <h3 className="font-semibold text-emerald-700 dark:text-emerald-300 text-sm">
+                  <Banknote size={16} className="text-green-600 dark:text-green-400" />
+                  <h3 className="font-semibold text-green-700 dark:text-green-300 text-sm">
                     Платежи (транши)
                   </h3>
                   {tranches.length > 0 && (
-                    <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                    <span className="text-xs text-green-600 dark:text-green-400">
                       · {tranches.length} {tranches.length === 1 ? 'платёж' : 'платежа'}
                     </span>
                   )}
@@ -1246,7 +1246,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 <button
                   type="button"
                   onClick={addTranche}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-green-600 hover:bg-green-700 text-white transition-colors"
                 >
                   <Plus size={13} /> Добавить
                 </button>
@@ -1323,9 +1323,9 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                   ))}
 
                   {/* Итог */}
-                  <div className="flex items-center justify-between px-2 pt-2 border-t border-emerald-200/60 dark:border-emerald-800/60">
-                    <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Итого:</span>
-                    <span className="text-sm font-bold text-emerald-700 dark:text-emerald-300">
+                  <div className="flex items-center justify-between px-2 pt-2 border-t border-green-200/60 dark:border-green-800/60">
+                    <span className="text-xs font-semibold text-green-700 dark:text-green-300">Итого:</span>
+                    <span className="text-sm font-bold text-green-700 dark:text-green-300">
                       {tranches.reduce((sum, t) => sum + (Number(t.amount) || 0), 0).toLocaleString('ru-RU')} TJS
                     </span>
                   </div>

@@ -68,7 +68,7 @@ export default function GlobalStoriesCalendar() {
       title={
         <div className="flex items-center justify-between flex-wrap gap-2 w-full">
           <h2 className="section-title flex items-center gap-2">
-            <Camera size={16} className="text-pink-500" /> Календарь историй (все проекты)
+            <Camera size={16} className="text-surface-500" /> Календарь историй (все проекты)
           </h2>
           <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
             <button
@@ -106,10 +106,10 @@ export default function GlobalStoriesCalendar() {
                 {/* Header */}
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color || '#6B4FCF' }} />
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color || '#18181b' }} />
                     <p className="text-xs font-semibold text-surface-900 dark:text-surface-100 truncate">{p.name}</p>
                   </div>
-                  <span className="text-[10px] font-bold text-pink-600 dark:text-pink-400 shrink-0">{projectTotal}</span>
+                  <span className="text-[10px] font-bold text-surface-600 dark:text-surface-400 shrink-0">{projectTotal}</span>
                 </div>
 
                 {/* Weekday header */}
@@ -138,11 +138,11 @@ export default function GlobalStoriesCalendar() {
                     if (future) {
                       bg = 'bg-surface-50 dark:bg-surface-800/50'
                     } else if (count >= target) {
-                      bg = 'bg-emerald-500'
+                      bg = 'bg-green-500'
                       textColor = 'text-white'
                     } else if (count > 0) {
                       const pct = count / target
-                      bg = pct >= 0.5 ? 'bg-yellow-400' : 'bg-pink-400'
+                      bg = pct >= 0.5 ? 'bg-surface-400' : 'bg-surface-400'
                       textColor = 'text-white'
                     } else {
                       bg = 'bg-red-400/70 dark:bg-red-500/40'
@@ -177,9 +177,9 @@ export default function GlobalStoriesCalendar() {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-3 mt-3 pt-3 border-t border-surface-100 dark:border-surface-700 text-[10px]">
-        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-emerald-500" /><span className="text-surface-500">план</span></div>
-        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-yellow-400" /><span className="text-surface-500">≥50%</span></div>
-        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-pink-400" /><span className="text-surface-500">&lt;50%</span></div>
+        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-green-500" /><span className="text-surface-500">план</span></div>
+        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-surface-400" /><span className="text-surface-500">≥50%</span></div>
+        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-surface-400" /><span className="text-surface-500">&lt;50%</span></div>
         <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-red-400/70" /><span className="text-surface-500">не сделано</span></div>
       </div>
     </CollapsibleSection>

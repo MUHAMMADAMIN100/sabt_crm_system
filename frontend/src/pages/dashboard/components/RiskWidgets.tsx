@@ -11,8 +11,8 @@ import { useAuthStore } from '@/store/auth.store'
 type Level = 'green' | 'yellow' | 'red'
 
 const LEVEL_CHIP: Record<Level, string> = {
-  green:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  yellow: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  green:  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  yellow: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',
   red:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
@@ -49,16 +49,16 @@ export function FounderWidgets() {
 
   return (
     <section className="space-y-3">
-      <h2 className="font-semibold text-base flex items-center gap-2"><Zap size={16} className="text-purple-500" /> Сводка для основателя</h2>
+      <h2 className="font-semibold text-base flex items-center gap-2"><Zap size={16} className="text-surface-500" /> Сводка для основателя</h2>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Tile label="Проекты RED" value={projectsAtRiskRed.length} accent="text-red-600" link="/risks?level=red" icon={AlertTriangle} />
-        <Tile label="Проекты YELLOW" value={projectsAtRiskYellow.length} accent="text-amber-600" link="/risks" icon={AlertCircle} />
+        <Tile label="Проекты YELLOW" value={projectsAtRiskYellow.length} accent="text-surface-600" link="/risks" icon={AlertCircle} />
         <Tile label="Просрочки оплат" value={overdueProjects.length} accent={overdueProjects.length > 0 ? 'text-red-600' : 'text-gray-500'} icon={DollarSign} />
-        <Tile label="Перерасход тарифа" value={overusedProjects.length} accent={overusedProjects.length > 0 ? 'text-amber-600' : 'text-gray-500'} icon={TrendingUp} />
-        <Tile label="Перегруженные PM" value={overloadedPmCount} accent={overloadedPmCount > 0 ? 'text-amber-600' : 'text-gray-500'} icon={Users} />
-        <Tile label="Слабая активность" value={lowActivityEmployees.length} accent={lowActivityEmployees.length > 0 ? 'text-amber-600' : 'text-gray-500'} icon={Hourglass} />
-        <Tile label="Выручка (получено)" value={fmtMoney(totalRevenue)} accent="text-emerald-600" />
-        <Tile label="Маржа (план)" value={fmtMoney(totalMargin)} accent="text-emerald-600" />
+        <Tile label="Перерасход тарифа" value={overusedProjects.length} accent={overusedProjects.length > 0 ? 'text-surface-600' : 'text-gray-500'} icon={TrendingUp} />
+        <Tile label="Перегруженные PM" value={overloadedPmCount} accent={overloadedPmCount > 0 ? 'text-surface-600' : 'text-gray-500'} icon={Users} />
+        <Tile label="Слабая активность" value={lowActivityEmployees.length} accent={lowActivityEmployees.length > 0 ? 'text-surface-600' : 'text-gray-500'} icon={Hourglass} />
+        <Tile label="Выручка (получено)" value={fmtMoney(totalRevenue)} accent="text-green-600" />
+        <Tile label="Маржа (план)" value={fmtMoney(totalMargin)} accent="text-green-600" />
       </div>
     </section>
   )
@@ -102,10 +102,10 @@ export function HeadSmmWidgets() {
 
   return (
     <section className="space-y-3">
-      <h2 className="font-semibold text-base flex items-center gap-2"><Zap size={16} className="text-purple-500" /> Сводка Head of SMM</h2>
+      <h2 className="font-semibold text-base flex items-center gap-2"><Zap size={16} className="text-surface-500" /> Сводка Head of SMM</h2>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Tile label="Возвратов задач" value={`${tasksWithRework} (${reworkRate}%)`} accent={reworkRate > 30 ? 'text-red-600' : reworkRate > 10 ? 'text-amber-600' : 'text-emerald-600'} />
-        <Tile label="Среднее качество" value={`${avgQuality} / 10`} accent="text-emerald-600" />
+        <Tile label="Возвратов задач" value={`${tasksWithRework} (${reworkRate}%)`} accent={reworkRate > 30 ? 'text-red-600' : reworkRate > 10 ? 'text-surface-600' : 'text-green-600'} />
+        <Tile label="Среднее качество" value={`${avgQuality} / 10`} accent="text-green-600" />
         <Tile label="Перегруз команды" value={overloadedTeam} accent={overloadedTeam > 0 ? 'text-red-600' : 'text-gray-500'} />
         <Tile label="Сложные проекты" value={complexProjects} accent={complexProjects > 0 ? 'text-red-600' : 'text-gray-500'} />
       </div>
@@ -117,7 +117,7 @@ export function HeadSmmWidgets() {
             <ul className="space-y-1 text-sm">
               {pmRated.slice(0, 5).map((p: any) => (
                 <li key={p.pmId} className="flex items-center justify-between">
-                  <Link to={`/employees/${p.pmId}`} className="hover:text-purple-600 truncate">{p.pmName}</Link>
+                  <Link to={`/employees/${p.pmId}`} className="hover:text-surface-600 truncate">{p.pmName}</Link>
                   <span className="text-xs text-gray-500 shrink-0">проверка {p.tasksOnReview} · доработка {p.tasksOnRework}</span>
                 </li>
               ))}
@@ -131,7 +131,7 @@ export function HeadSmmWidgets() {
             <ul className="space-y-1 text-sm">
               {smmRanked.slice(0, 5).map((w: any) => (
                 <li key={w.userId} className="flex items-center justify-between">
-                  <Link to={`/employees/${w.userId}`} className="hover:text-purple-600 truncate">{w.userName}</Link>
+                  <Link to={`/employees/${w.userId}`} className="hover:text-surface-600 truncate">{w.userName}</Link>
                   <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', LEVEL_CHIP[w.overload as Level])}>
                     {w.overload}
                   </span>
@@ -143,12 +143,12 @@ export function HeadSmmWidgets() {
       </div>
 
       {(employeeRisks ?? []).filter((e: any) => e.level !== 'green').length > 0 && (
-        <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10 p-3">
-          <h3 className="text-sm font-medium mb-1 text-amber-700 dark:text-amber-400">Сотрудники в зоне риска</h3>
+        <div className="rounded-xl border border-surface-200 dark:border-surface-900/50 bg-surface-50 dark:bg-surface-900/10 p-3">
+          <h3 className="text-sm font-medium mb-1 text-surface-700 dark:text-surface-400">Сотрудники в зоне риска</h3>
           <ul className="text-xs space-y-0.5 mt-2">
             {(employeeRisks ?? []).filter((e: any) => e.level !== 'green').slice(0, 5).map((e: any) => (
               <li key={e.userId} className="flex items-center justify-between">
-                <Link to={`/employees/${e.userId}`} className="hover:text-purple-600">{e.userName}</Link>
+                <Link to={`/employees/${e.userId}`} className="hover:text-surface-600">{e.userName}</Link>
                 <span>{e.level} · {e.score}</span>
               </li>
             ))}
@@ -200,23 +200,23 @@ export function PmWidgets() {
 
   return (
     <section className="space-y-3">
-      <h2 className="font-semibold text-base flex items-center gap-2"><Briefcase size={16} className="text-purple-500" /> Сводка PM</h2>
+      <h2 className="font-semibold text-base flex items-center gap-2"><Briefcase size={16} className="text-surface-500" /> Сводка PM</h2>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Tile label="Мои проекты"  value={myProjects.length} icon={Briefcase} link="/projects" />
         <Tile label="Мои SMM"      value={mySMMSpecialists.size} icon={Users} />
-        <Tile label="На проверке"  value={onReview} accent={onReview > 10 ? 'text-red-600' : onReview > 5 ? 'text-amber-600' : 'text-gray-700'} icon={ListChecks} />
-        <Tile label="На доработке" value={onRework} accent={onRework > 5 ? 'text-amber-600' : 'text-gray-700'} icon={AlertCircle} />
-        <Tile label="План на 7 дней" value={weekTasks.length} accent="text-blue-600" />
-        <Tile label="Проектов в риске" value={myRisks.length} accent={myRisks.length > 0 ? 'text-red-600' : 'text-emerald-600'} link="/risks" />
+        <Tile label="На проверке"  value={onReview} accent={onReview > 10 ? 'text-red-600' : onReview > 5 ? 'text-surface-600' : 'text-gray-700'} icon={ListChecks} />
+        <Tile label="На доработке" value={onRework} accent={onRework > 5 ? 'text-surface-600' : 'text-gray-700'} icon={AlertCircle} />
+        <Tile label="План на 7 дней" value={weekTasks.length} accent="text-surface-600" />
+        <Tile label="Проектов в риске" value={myRisks.length} accent={myRisks.length > 0 ? 'text-red-600' : 'text-green-600'} link="/risks" />
       </div>
 
       {myRisks.length > 0 && (
-        <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10 p-3">
-          <h3 className="text-sm font-medium mb-2 text-amber-700 dark:text-amber-400">Мои проекты в риске</h3>
+        <div className="rounded-xl border border-surface-200 dark:border-surface-900/50 bg-surface-50 dark:bg-surface-900/10 p-3">
+          <h3 className="text-sm font-medium mb-2 text-surface-700 dark:text-surface-400">Мои проекты в риске</h3>
           <ul className="text-sm space-y-1">
             {myRisks.map((r: any) => (
               <li key={r.projectId} className="flex items-center justify-between">
-                <Link to={`/projects/${r.projectId}`} className="hover:text-purple-600">{r.projectName}</Link>
+                <Link to={`/projects/${r.projectId}`} className="hover:text-surface-600">{r.projectName}</Link>
                 <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', LEVEL_CHIP[r.level as Level])}>
                   {r.level} · {r.score}
                 </span>
@@ -236,10 +236,10 @@ function Tile({ label, value, accent, icon: Icon, link }: {
   label: string; value: any; accent?: string; icon?: any; link?: string
 }) {
   const inner = (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 transition-colors hover:border-purple-300">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 transition-colors hover:border-surface-300">
       <div className="flex items-center justify-between mb-1">
         <div className="text-[11px] text-gray-500">{label}</div>
-        {Icon && <Icon size={14} className="text-purple-500" />}
+        {Icon && <Icon size={14} className="text-surface-500" />}
         {link && !Icon && <ExternalLink size={11} className="text-gray-400" />}
       </div>
       <div className={clsx('text-xl font-bold', accent || 'text-gray-900 dark:text-gray-100')}>{value}</div>

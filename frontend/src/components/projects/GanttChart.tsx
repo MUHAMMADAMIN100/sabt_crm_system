@@ -25,12 +25,12 @@ interface Props {
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; bar: string }> = {
-  new:         { bg: 'bg-slate-100 dark:bg-slate-800',  text: 'text-slate-600 dark:text-slate-300',  bar: 'bg-slate-400' },
-  in_progress: { bg: 'bg-blue-50 dark:bg-blue-900/20',  text: 'text-blue-600 dark:text-blue-400',   bar: 'bg-blue-500' },
-  review:      { bg: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-amber-600 dark:text-amber-400', bar: 'bg-amber-500' },
-  done:        { bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-600 dark:text-green-400', bar: 'bg-emerald-500' },
+  new:         { bg: 'bg-surface-100 dark:bg-surface-800',  text: 'text-surface-600 dark:text-surface-300',  bar: 'bg-surface-400' },
+  in_progress: { bg: 'bg-surface-50 dark:bg-surface-900/20',  text: 'text-surface-600 dark:text-surface-400',   bar: 'bg-surface-500' },
+  review:      { bg: 'bg-surface-50 dark:bg-surface-900/20', text: 'text-surface-600 dark:text-surface-400', bar: 'bg-surface-500' },
+  done:        { bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-600 dark:text-green-400', bar: 'bg-green-500' },
   cancelled:   { bg: 'bg-red-50 dark:bg-red-900/20',    text: 'text-red-600 dark:text-red-400',     bar: 'bg-red-400' },
-  returned:    { bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-600 dark:text-orange-400', bar: 'bg-orange-500' },
+  returned:    { bg: 'bg-surface-50 dark:bg-surface-900/20', text: 'text-surface-600 dark:text-surface-400', bar: 'bg-surface-500' },
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -161,7 +161,7 @@ export default function GanttChart({ tasks, projectStart, projectEnd }: Props) {
         <span className="text-xs font-semibold text-surface-500 dark:text-surface-400">Статусы:</span>
         {Object.entries(STATUS_LABEL).filter(([k]) => k !== 'cancelled' && k !== 'returned').map(([k, v]) => (
           <div key={k} className="flex items-center gap-1.5">
-            <div className={`w-3.5 h-2.5 rounded-sm ${STATUS_COLORS[k]?.bar || 'bg-slate-400'}`} />
+            <div className={`w-3.5 h-2.5 rounded-sm ${STATUS_COLORS[k]?.bar || 'bg-surface-400'}`} />
             <span className="text-xs text-surface-600 dark:text-surface-400">{v}</span>
           </div>
         ))}

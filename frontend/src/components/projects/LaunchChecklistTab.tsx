@@ -45,7 +45,7 @@ export default function LaunchChecklistTab({ projectId }: { projectId: string })
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="animate-spin text-purple-500" />
+        <Loader2 className="animate-spin text-surface-500" />
       </div>
     )
   }
@@ -53,9 +53,9 @@ export default function LaunchChecklistTab({ projectId }: { projectId: string })
   if (!data) return null
 
   const barColor = data.percent === 100
-    ? 'bg-emerald-500'
+    ? 'bg-green-500'
     : data.percent >= 70
-    ? 'bg-amber-500'
+    ? 'bg-surface-500'
     : 'bg-red-500'
 
   return (
@@ -90,16 +90,16 @@ export default function LaunchChecklistTab({ projectId }: { projectId: string })
               className={clsx(
                 'flex items-center gap-3 px-4 py-3 rounded-lg border transition-colors',
                 item.done
-                  ? 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-900/10'
+                  ? 'border-green-200 dark:border-green-900/50 bg-green-50 dark:bg-green-900/10'
                   : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900',
-                interactive ? 'cursor-pointer hover:border-purple-400' : '',
+                interactive ? 'cursor-pointer hover:border-surface-400' : '',
               )}
               onClick={() => interactive && !toggleMut.isPending && toggleMut.mutate({ item: item.key, value: !item.done })}
             >
               <span className={clsx(
                 'w-6 h-6 rounded-full flex items-center justify-center shrink-0',
                 item.done
-                  ? 'bg-emerald-500 text-white'
+                  ? 'bg-green-500 text-white'
                   : 'bg-gray-100 dark:bg-gray-800 text-gray-400',
               )}>
                 {item.done ? <Check size={14} /> : <Circle size={10} />}
@@ -110,7 +110,7 @@ export default function LaunchChecklistTab({ projectId }: { projectId: string })
               <span className={clsx(
                 'text-[10px] px-2 py-0.5 rounded-full',
                 item.manual
-                  ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                  ? 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400'
                   : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
               )}>
                 {item.manual ? 'вручную' : 'авто'}

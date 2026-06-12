@@ -124,7 +124,7 @@ export default function TariffsPage() {
         {canEdit && (
           <button
             onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-600 hover:bg-surface-700 text-white text-sm font-medium"
           >
             <Plus size={16} /> Новый тариф
           </button>
@@ -230,7 +230,7 @@ function TariffCard({ tariff, canEdit, canSeeFinance, onEdit, onClone, onToggle,
         <span className={clsx(
           'shrink-0 text-xs px-2 py-1 rounded-full font-medium',
           tariff.isActive
-            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
             : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
         )}>
           {tariff.isActive ? 'активный' : 'выкл'}
@@ -238,7 +238,7 @@ function TariffCard({ tariff, canEdit, canSeeFinance, onEdit, onClone, onToggle,
       </div>
 
       {canSeeFinance ? (
-        <div className="text-2xl font-bold text-purple-600 mb-4">
+        <div className="text-2xl font-bold text-surface-600 mb-4">
           {fmtMoney(tariff.monthlyPrice)} <span className="text-xs font-normal text-gray-500">/ мес</span>
         </div>
       ) : (
@@ -388,7 +388,7 @@ function TariffForm({ initial, canSeeFinance, onSubmit, onCancel, loading }: {
 
       <div className="flex justify-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
         <button type="button" onClick={onCancel} className="px-4 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700">Отмена</button>
-        <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg text-sm bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50">
+        <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg text-sm bg-surface-600 hover:bg-surface-700 text-white disabled:opacity-50">
           {loading ? 'Сохранение...' : 'Сохранить'}
         </button>
       </div>

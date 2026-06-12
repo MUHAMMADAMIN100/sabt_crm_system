@@ -31,8 +31,8 @@ export function downloadSmmBrief(project: { name: string; smmData?: Record<strin
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
     font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-    background: #f1f5f9;
-    color: #1e293b;
+    background: #f4f4f5;
+    color: #27272a;
     line-height: 1.55;
   }
   body { padding: 24px; }
@@ -45,7 +45,7 @@ export function downloadSmmBrief(project: { name: string; smmData?: Record<strin
     box-shadow: 0 4px 24px rgba(15, 23, 42, 0.08);
   }
   .hero {
-    background: linear-gradient(135deg, #6B4FCF 0%, #7c3aed 60%, #4f46e5 100%);
+    background: linear-gradient(135deg, #18181b 0%, #52525b 60%, #3f3f46 100%);
     color: #fff;
     padding: 40px 48px 36px;
     position: relative;
@@ -79,51 +79,51 @@ export function downloadSmmBrief(project: { name: string; smmData?: Record<strin
   .meta {
     display: flex; flex-wrap: wrap; gap: 12px 32px;
     padding: 20px 48px;
-    border-bottom: 1px solid #e2e8f0;
-    background: #f8fafc;
+    border-bottom: 1px solid #e4e4e7;
+    background: #fafafa;
     font-size: 13px;
   }
   .meta .item { display: inline-flex; align-items: center; gap: 8px; }
-  .meta .label { color: #94a3b8; text-transform: uppercase; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; }
-  .meta .value { color: #1e293b; font-weight: 600; }
+  .meta .label { color: #a1a1aa; text-transform: uppercase; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; }
+  .meta .value { color: #27272a; font-weight: 600; }
   .content { padding: 32px 48px 48px; }
   .content h2 {
     font-size: 13px; text-transform: uppercase; letter-spacing: 1px;
-    color: #6B4FCF; font-weight: 700; margin-bottom: 16px;
+    color: #18181b; font-weight: 700; margin-bottom: 16px;
     display: flex; align-items: center; gap: 8px;
   }
   .content h2::before {
-    content: ''; width: 4px; height: 16px; background: #6B4FCF; border-radius: 2px;
+    content: ''; width: 4px; height: 16px; background: #18181b; border-radius: 2px;
   }
   table {
     width: 100%; border-collapse: collapse;
-    background: #f8fafc; border-radius: 10px; overflow: hidden;
+    background: #fafafa; border-radius: 10px; overflow: hidden;
   }
   td {
     padding: 14px 18px;
     vertical-align: top;
     font-size: 14px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e4e4e7;
   }
   tr:last-child td { border-bottom: 0; }
   td.q {
     width: 44%;
-    color: #64748b;
+    color: #71717a;
     font-weight: 500;
-    border-right: 1px solid #e2e8f0;
+    border-right: 1px solid #e4e4e7;
     background: #fff;
   }
-  td.a { color: #1e293b; font-weight: 500; }
-  td.a.empty { color: #cbd5e1; font-style: italic; }
+  td.a { color: #27272a; font-weight: 500; }
+  td.a.empty { color: #d4d4d8; font-style: italic; }
   .footer {
     padding: 24px 48px;
-    background: #f8fafc;
-    border-top: 1px solid #e2e8f0;
+    background: #fafafa;
+    border-top: 1px solid #e4e4e7;
     text-align: center;
-    color: #94a3b8;
+    color: #a1a1aa;
     font-size: 12px;
   }
-  .footer b { color: #6B4FCF; }
+  .footer b { color: #18181b; }
   @media print {
     body { background: #fff; padding: 0; }
     .doc { box-shadow: none; border-radius: 0; }
@@ -131,12 +131,12 @@ export function downloadSmmBrief(project: { name: string; smmData?: Record<strin
   }
   .print-btn {
     position: fixed; bottom: 24px; right: 24px;
-    padding: 12px 22px; background: #6B4FCF; color: #fff;
+    padding: 12px 22px; background: #18181b; color: #fff;
     border: 0; border-radius: 10px; font-size: 14px; font-weight: 600;
     cursor: pointer; box-shadow: 0 4px 12px rgba(107,79,207,0.4);
     display: inline-flex; align-items: center; gap: 8px;
   }
-  .print-btn:hover { background: #5a3fb5; }
+  .print-btn:hover { background: #3f3f46; }
 </style>
 </head>
 <body>

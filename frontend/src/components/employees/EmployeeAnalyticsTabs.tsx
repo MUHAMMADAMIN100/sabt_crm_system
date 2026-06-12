@@ -9,8 +9,8 @@ import { riskApi, tasksApi, activityLogApi } from '@/services/api.service'
 type Level = 'green' | 'yellow' | 'red'
 
 const LEVEL_CHIP: Record<Level, string> = {
-  green:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  yellow: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  green:  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  yellow: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',
   red:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 const LEVEL_ICON: Record<Level, any> = {
@@ -35,7 +35,7 @@ export function EmployeeWorkloadTab({ userId }: { userId: string }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold flex items-center gap-2"><ActivityIcon size={16} className="text-purple-500" /> Нагрузка</h3>
+        <h3 className="font-semibold flex items-center gap-2"><ActivityIcon size={16} className="text-surface-500" /> Нагрузка</h3>
         <span className={clsx('text-xs px-2 py-1 rounded-full font-medium', LEVEL_CHIP[w.overload as Level])}>
           {w.overload === 'red' ? '🔥 Перегружен' : w.overload === 'yellow' ? '⚠️ Высокая' : '✓ Норма'}
         </span>
@@ -94,21 +94,21 @@ export function EmployeeQualityTab({ userId }: { userId: string }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Всего задач"        value={tasks.length} />
         <Stat label="Завершено"          value={finished.length} />
-        <Stat label="С первого раза"     value={`${firstTryRate}%`} accent={firstTryRate >= 80 ? 'text-emerald-600' : firstTryRate >= 50 ? 'text-amber-600' : 'text-red-600'} />
-        <Stat label="Возвращений на доработку" value={`${reworkRate}%`} accent={reworkRate <= 10 ? 'text-emerald-600' : reworkRate <= 30 ? 'text-amber-600' : 'text-red-600'} />
+        <Stat label="С первого раза"     value={`${firstTryRate}%`} accent={firstTryRate >= 80 ? 'text-green-600' : firstTryRate >= 50 ? 'text-surface-600' : 'text-red-600'} />
+        <Stat label="Возвращений на доработку" value={`${reworkRate}%`} accent={reworkRate <= 10 ? 'text-green-600' : reworkRate <= 30 ? 'text-surface-600' : 'text-red-600'} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Stat
           label="Средняя оценка качества"
           value={avgQuality != null ? `${avgQuality.toFixed(1)} / 10` : '—'}
-          accent={avgQuality == null ? '' : avgQuality >= 8 ? 'text-emerald-600' : avgQuality >= 6 ? 'text-amber-600' : 'text-red-600'}
+          accent={avgQuality == null ? '' : avgQuality >= 8 ? 'text-green-600' : avgQuality >= 6 ? 'text-surface-600' : 'text-red-600'}
           sub={`по ${withQuality.length} задачам с оценкой`}
         />
         <Stat
           label="Скорость (actual / estimated)"
           value={speedRatio != null ? speedRatio.toFixed(2) : '—'}
-          accent={speedRatio == null ? '' : speedRatio <= 1.0 ? 'text-emerald-600' : speedRatio <= 1.3 ? 'text-amber-600' : 'text-red-600'}
+          accent={speedRatio == null ? '' : speedRatio <= 1.0 ? 'text-green-600' : speedRatio <= 1.3 ? 'text-surface-600' : 'text-red-600'}
           sub={speedRatio != null ? (speedRatio < 1 ? 'быстрее плана' : speedRatio === 1 ? 'точно по плану' : 'медленнее плана') : `по ${withBoth.length} замеренным задачам`}
         />
       </div>
@@ -144,13 +144,13 @@ export function EmployeeRiskTab({ userId }: { userId: string }) {
       <div className={clsx(
         'rounded-xl border p-5 flex items-start justify-between',
         data.level === 'red'    && 'border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/10',
-        data.level === 'yellow' && 'border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10',
-        data.level === 'green'  && 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-900/10',
+        data.level === 'yellow' && 'border-surface-200 dark:border-surface-900/50 bg-surface-50 dark:bg-surface-900/10',
+        data.level === 'green'  && 'border-green-200 dark:border-green-900/50 bg-green-50 dark:bg-green-900/10',
       )}>
         <div className="flex items-center gap-3">
           <Icon size={28} className={
             data.level === 'red' ? 'text-red-500' :
-            data.level === 'yellow' ? 'text-amber-500' : 'text-emerald-500'
+            data.level === 'yellow' ? 'text-surface-500' : 'text-green-500'
           } />
           <div>
             <div className="text-sm font-medium">
@@ -170,10 +170,10 @@ export function EmployeeRiskTab({ userId }: { userId: string }) {
           <h4 className="text-sm font-medium mb-2">Активные триггеры</h4>
           <ul className="space-y-1.5">
             {triggered.map((f: any) => (
-              <li key={f.key} className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/50">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              <li key={f.key} className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-surface-50 dark:bg-surface-900/10 border border-surface-200 dark:border-surface-900/50">
+                <span className="w-1.5 h-1.5 rounded-full bg-surface-500" />
                 <span className="flex-1">{f.label}{f.detail ? ` — ${f.detail}` : ''}</span>
-                <span className="text-xs text-amber-700 dark:text-amber-400">+{f.weight}</span>
+                <span className="text-xs text-surface-700 dark:text-surface-400">+{f.weight}</span>
               </li>
             ))}
           </ul>
@@ -186,7 +186,7 @@ export function EmployeeRiskTab({ userId }: { userId: string }) {
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-sm">
             {passed.map((f: any) => (
               <li key={f.key} className="flex items-center gap-2 text-gray-500">
-                <CheckCircle2 size={14} className="text-emerald-500" /> {f.label}
+                <CheckCircle2 size={14} className="text-green-500" /> {f.label}
               </li>
             ))}
           </ul>
@@ -218,7 +218,7 @@ export function EmployeeActivityTab({ userId }: { userId: string }) {
         {items.map((a: any) => (
           <li key={a.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 text-sm">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0" />
+              <span className="w-1.5 h-1.5 rounded-full bg-surface-500 shrink-0" />
               <span className="text-xs text-gray-500 shrink-0 w-32">
                 {a.createdAt ? new Date(a.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
               </span>
@@ -253,7 +253,7 @@ function Stat({ icon: Icon, label, value, sub, accent }: { icon?: any; label: st
 }
 
 function Loading() {
-  return <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-purple-500" /></div>
+  return <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-surface-500" /></div>
 }
 
 function Empty({ title, description }: { title: string; description?: string }) {

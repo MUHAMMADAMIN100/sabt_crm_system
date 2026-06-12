@@ -54,7 +54,7 @@ function renderInline(text: string, keyPrefix = ''): React.ReactNode[] {
       out.push(
         <code
           key={`${keyPrefix}c${i++}`}
-          className="px-1 py-0.5 rounded bg-surface-100 dark:bg-surface-800 text-[0.9em] font-mono text-pink-600 dark:text-pink-400"
+          className="px-1 py-0.5 rounded bg-surface-100 dark:bg-surface-800 text-[0.9em] font-mono text-surface-600 dark:text-surface-400"
         >
           {m[6]}
         </code>,

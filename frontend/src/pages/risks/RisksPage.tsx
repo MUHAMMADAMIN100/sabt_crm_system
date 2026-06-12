@@ -49,8 +49,8 @@ interface PmWorkload {
 }
 
 const LEVEL_CHIP: Record<Level, string> = {
-  green:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  yellow: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  green:  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  yellow: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',
   red:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
@@ -141,7 +141,7 @@ export default function RisksPage() {
 
       <section>
         <div className="flex items-center gap-2 mb-3">
-          <Activity size={18} className="text-purple-500" />
+          <Activity size={18} className="text-surface-500" />
           <h2 className="font-semibold">Нагрузка PM-ов</h2>
         </div>
         {(pmWorkloads ?? []).length === 0 ? (
@@ -175,8 +175,8 @@ function SummaryCard({ title, stats, icon: Icon }: { title: string; stats: Recor
       </div>
       <div className="grid grid-cols-3 gap-2 text-center">
         <Tile value={stats.red} label="Red" cls="bg-red-50 dark:bg-red-900/10 text-red-700 dark:text-red-400" />
-        <Tile value={stats.yellow} label="Yellow" cls="bg-amber-50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400" />
-        <Tile value={stats.green} label="Green" cls="bg-emerald-50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400" />
+        <Tile value={stats.yellow} label="Yellow" cls="bg-surface-50 dark:bg-surface-900/10 text-surface-700 dark:text-surface-400" />
+        <Tile value={stats.green} label="Green" cls="bg-green-50 dark:bg-green-900/10 text-green-700 dark:text-green-400" />
       </div>
     </div>
   )
@@ -203,7 +203,7 @@ function Section({ title, icon: Icon, filter, onFilterChange, stats, children }:
     <section>
       <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <Icon size={18} className="text-purple-500" />
+          <Icon size={18} className="text-surface-500" />
           <h2 className="font-semibold">{title}</h2>
         </div>
         <div className="flex items-center gap-1 text-xs">
@@ -225,7 +225,7 @@ function FilterChip({ active, onClick, label }: { active: boolean; onClick: () =
       className={clsx(
         'px-2.5 py-1 rounded-full transition-colors',
         active
-          ? 'bg-purple-600 text-white'
+          ? 'bg-surface-600 text-white'
           : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700',
       )}
     >{label}</button>
@@ -239,19 +239,19 @@ function ProjectRiskRow({ risk }: { risk: ProjectRisk }) {
     <div className={clsx(
       'rounded-lg border p-3 bg-white dark:bg-gray-900',
       risk.level === 'red'    ? 'border-red-200 dark:border-red-900/50' :
-      risk.level === 'yellow' ? 'border-amber-200 dark:border-amber-900/50' :
+      risk.level === 'yellow' ? 'border-surface-200 dark:border-surface-900/50' :
       'border-gray-200 dark:border-gray-700',
     )}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <Icon size={20} className={
             risk.level === 'red' ? 'text-red-500' :
-            risk.level === 'yellow' ? 'text-amber-500' : 'text-emerald-500'
+            risk.level === 'yellow' ? 'text-surface-500' : 'text-green-500'
           } />
           <div className="min-w-0">
             <Link
               to={`/projects/${risk.projectId}`}
-              className="font-medium text-sm hover:text-purple-600 inline-flex items-center gap-1"
+              className="font-medium text-sm hover:text-surface-600 inline-flex items-center gap-1"
             >
               {risk.projectName}
               <ExternalLink size={12} className="opacity-50" />
@@ -270,7 +270,7 @@ function ProjectRiskRow({ risk }: { risk: ProjectRisk }) {
       {triggered.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2">
           {triggered.map(f => (
-            <span key={f.key} className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+            <span key={f.key} className="text-[11px] px-2 py-0.5 rounded-full bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400">
               {f.label}{f.detail ? ` (${f.detail})` : ''} +{f.weight}
             </span>
           ))}
@@ -287,19 +287,19 @@ function EmployeeRiskRow({ risk }: { risk: EmployeeRisk }) {
     <div className={clsx(
       'rounded-lg border p-3 bg-white dark:bg-gray-900',
       risk.level === 'red'    ? 'border-red-200 dark:border-red-900/50' :
-      risk.level === 'yellow' ? 'border-amber-200 dark:border-amber-900/50' :
+      risk.level === 'yellow' ? 'border-surface-200 dark:border-surface-900/50' :
       'border-gray-200 dark:border-gray-700',
     )}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <Icon size={20} className={
             risk.level === 'red' ? 'text-red-500' :
-            risk.level === 'yellow' ? 'text-amber-500' : 'text-emerald-500'
+            risk.level === 'yellow' ? 'text-surface-500' : 'text-green-500'
           } />
           <div className="min-w-0">
             <Link
               to={`/employees/${risk.userId}`}
-              className="font-medium text-sm hover:text-purple-600 inline-flex items-center gap-1"
+              className="font-medium text-sm hover:text-surface-600 inline-flex items-center gap-1"
             >
               {risk.userName}
               <ExternalLink size={12} className="opacity-50" />
@@ -314,7 +314,7 @@ function EmployeeRiskRow({ risk }: { risk: EmployeeRisk }) {
       {triggered.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2">
           {triggered.map(f => (
-            <span key={f.key} className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+            <span key={f.key} className="text-[11px] px-2 py-0.5 rounded-full bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400">
               {f.label}{f.detail ? ` (${f.detail})` : ''}
             </span>
           ))}
@@ -329,7 +329,7 @@ function PmWorkloadCard({ pm }: { pm: PmWorkload }) {
   return (
     <div className={clsx(
       'rounded-xl border p-4 bg-white dark:bg-gray-900',
-      overloaded ? 'border-amber-200 dark:border-amber-900/50' : 'border-gray-200 dark:border-gray-700',
+      overloaded ? 'border-surface-200 dark:border-surface-900/50' : 'border-gray-200 dark:border-gray-700',
     )}>
       <div className="font-medium text-sm mb-3">{pm.pmName}</div>
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
@@ -338,7 +338,7 @@ function PmWorkloadCard({ pm }: { pm: PmWorkload }) {
         <dt className="text-gray-500">SMM в команде</dt>
         <dd className="font-medium text-right">{pm.smmSpecialistCount}</dd>
         <dt className="text-gray-500">На проверке</dt>
-        <dd className={clsx('font-medium text-right', pm.tasksOnReview > 10 && 'text-amber-600')}>{pm.tasksOnReview}</dd>
+        <dd className={clsx('font-medium text-right', pm.tasksOnReview > 10 && 'text-surface-600')}>{pm.tasksOnReview}</dd>
         <dt className="text-gray-500">На доработке</dt>
         <dd className="font-medium text-right">{pm.tasksOnRework}</dd>
         <dt className="text-gray-500">Проектов в риске</dt>

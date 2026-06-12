@@ -34,9 +34,9 @@ const AVAILABLE_TAGS = [
 // 🟡 нейтральные / в процессе (refactor/optimization/frontend/backend/...),
 // 🔴 проблемные / срочные (bug/urgent/blocked/tech-debt).
 const GREEN_TAG  = 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50'
-const AMBER_TAG  = 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/50'
+const AMBER_TAG  = 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50'
 const RED_TAG    = 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50'
-const SLATE_TAG  = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600'
+const SLATE_TAG  = 'bg-surface-100 text-surface-700 dark:bg-surface-800 dark:text-surface-300 border-surface-200 dark:border-surface-600'
 
 const TAG_COLORS: Record<string, string> = {
   // 🟢 фичи и позитив
@@ -524,12 +524,12 @@ export default function TaskDetailPage() {
 
       {/* Alerts */}
       {isReturned && task.returnReason && (
-        <div className="card border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/10">
+        <div className="card border-surface-200 dark:border-surface-800 bg-surface-50 dark:bg-surface-900/10">
           <div className="flex items-start gap-2">
-            <RotateCcw size={16} className="text-orange-500 shrink-0 mt-0.5" />
+            <RotateCcw size={16} className="text-surface-500 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-orange-700 dark:text-orange-400">Задача возвращена в работу</p>
-              <p className="text-sm text-orange-600 dark:text-orange-300 mt-0.5">{task.returnReason}</p>
+              <p className="text-sm font-semibold text-surface-700 dark:text-surface-400">Задача возвращена в работу</p>
+              <p className="text-sm text-surface-600 dark:text-surface-300 mt-0.5">{task.returnReason}</p>
             </div>
           </div>
         </div>
@@ -537,8 +537,8 @@ export default function TaskDetailPage() {
 
       {/* PM actions: approve / return */}
       {!simplifiedView && isPM && isOnReview && (
-        <div className="card border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10">
-          <p className="text-sm font-semibold text-amber-700 dark:text-amber-400 mb-3">
+        <div className="card border-surface-200 dark:border-surface-800 bg-surface-50 dark:bg-surface-900/10">
+          <p className="text-sm font-semibold text-surface-700 dark:text-surface-400 mb-3">
             Задача ожидает проверки
           </p>
           {resultCount > 0 && (
@@ -556,7 +556,7 @@ export default function TaskDetailPage() {
             </button>
             <button
               onClick={() => setShowReturnModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-surface-500 text-white rounded-xl text-sm font-medium hover:bg-surface-600 transition-colors"
             >
               <RotateCcw size={16} /> Вернуть в работу
             </button>
@@ -585,7 +585,7 @@ export default function TaskDetailPage() {
                 className={clsx(
                   'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
                   hasResult
-                    ? 'bg-amber-500 text-white hover:bg-amber-600'
+                    ? 'bg-surface-500 text-white hover:bg-surface-600'
                     : 'bg-surface-200 dark:bg-surface-700 text-surface-400 cursor-not-allowed'
                 )}
               >
@@ -596,7 +596,7 @@ export default function TaskDetailPage() {
               <button
                 onClick={() => updateTask.mutate({ status: 'in_progress' })}
                 disabled={updateTask.isPending}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl text-sm font-medium hover:bg-blue-600 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-surface-500 text-white rounded-xl text-sm font-medium hover:bg-surface-600 transition-colors"
               >
                 Взять в работу
               </button>
@@ -944,7 +944,7 @@ export default function TaskDetailPage() {
             <button
               onClick={() => returnTask.mutate()}
               disabled={returnTask.isPending}
-              className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-surface-500 text-white rounded-xl text-sm font-medium hover:bg-surface-600 disabled:opacity-50"
             >
               <RotateCcw size={15} /> Вернуть
             </button>
@@ -967,7 +967,7 @@ export default function TaskDetailPage() {
 /** Time tracking — прогресс часов «Затрачено / Запланировано». */
 function TimeTrackingBlock({ estimated, logged }: { estimated: number; logged: number }) {
   const pct = estimated > 0 ? Math.min(200, Math.round((logged / estimated) * 100)) : 0
-  const color = pct > 100 ? 'bg-red-500' : pct > 80 ? 'bg-amber-500' : 'bg-emerald-500'
+  const color = pct > 100 ? 'bg-red-500' : pct > 80 ? 'bg-surface-500' : 'bg-green-500'
   return (
     <div className="pt-2 border-t border-surface-100 dark:border-surface-700/50">
       <div className="flex items-center justify-between mb-1">
@@ -1376,7 +1376,7 @@ function AcceptanceCriteriaBlock({
       {total > 0 && (
         <div className="h-1.5 rounded-full bg-surface-100 dark:bg-surface-700 overflow-hidden">
           <div
-            className={clsx('h-full transition-all', pct === 100 ? 'bg-emerald-500' : 'bg-primary-500')}
+            className={clsx('h-full transition-all', pct === 100 ? 'bg-green-500' : 'bg-primary-500')}
             style={{ width: `${pct}%` }}
           />
         </div>
@@ -1393,7 +1393,7 @@ function AcceptanceCriteriaBlock({
               )}
             >
               {c.done
-                ? <CheckSquare size={15} className="text-emerald-500" />
+                ? <CheckSquare size={15} className="text-green-500" />
                 : <Square size={15} className="text-surface-400" />}
             </button>
             {editingId === c.id ? (
@@ -1408,7 +1408,7 @@ function AcceptanceCriteriaBlock({
                   autoFocus
                   className="input py-0.5 px-2 text-sm flex-1"
                 />
-                <button onClick={() => saveEdit(c.id)} className="p-0.5 text-emerald-600"><Check size={13} /></button>
+                <button onClick={() => saveEdit(c.id)} className="p-0.5 text-green-600"><Check size={13} /></button>
               </div>
             ) : (
               <>
@@ -1635,7 +1635,7 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
         <span className={clsx(
           'text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0',
           allDone
-            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
             : 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-300',
         )}>
           {doneCount}/{total}
@@ -1645,7 +1645,7 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
       {/* Progress bar */}
       <div className="h-1.5 rounded-full bg-surface-100 dark:bg-surface-700 overflow-hidden">
         <div
-          className={clsx('h-full transition-all duration-300', allDone ? 'bg-emerald-500' : 'bg-primary-500')}
+          className={clsx('h-full transition-all duration-300', allDone ? 'bg-green-500' : 'bg-primary-500')}
           style={{ width: `${percent}%` }}
         />
       </div>
@@ -1700,14 +1700,14 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
                     <button
                       onClick={() => markDoneMut.mutate()}
                       disabled={markDoneMut.isPending}
-                      className="mt-2 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium disabled:opacity-50"
+                      className="mt-2 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium disabled:opacity-50"
                     >
                       <CheckCircle size={13} />
                       {markDoneMut.isPending ? 'Сохраняю...' : 'Я сделал свою часть'}
                     </button>
                   )}
                   {isMe && !a.isDone && !isCurrent && (
-                    <div className="mt-2 text-[11px] text-amber-600 dark:text-amber-400 text-center">
+                    <div className="mt-2 text-[11px] text-surface-600 dark:text-surface-400 text-center">
                       ⏳ Ждите своей очереди
                     </div>
                   )}
@@ -1718,7 +1718,7 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
                   className={clsx(
                     'absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center ring-4',
                     a.isDone
-                      ? 'bg-emerald-500 text-white ring-white dark:ring-surface-900'
+                      ? 'bg-green-500 text-white ring-white dark:ring-surface-900'
                       : isCurrent
                         ? 'bg-primary-500 text-white ring-white dark:ring-surface-900 animate-pulse'
                         : 'bg-surface-200 dark:bg-surface-700 ring-white dark:ring-surface-900',
@@ -1734,7 +1734,7 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
       </div>
 
       {me && me.isDone && !allDone && (
-        <div className="text-[11px] text-emerald-600 dark:text-emerald-400 text-center pt-1">
+        <div className="text-[11px] text-green-600 dark:text-green-400 text-center pt-1">
           ✓ Ваша часть готова. Ждём остальных.
         </div>
       )}

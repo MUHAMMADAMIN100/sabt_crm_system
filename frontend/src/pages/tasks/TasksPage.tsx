@@ -508,7 +508,7 @@ export default function TasksPage() {
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${
                             task.createdById === task.assigneeId
                               ? 'bg-surface-100 dark:bg-surface-700 text-surface-400 dark:text-surface-500'
-                              : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                              : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'
                           }`}>
                             {task.createdById === task.assigneeId ? 'сам' : (task.createdBy?.name?.trim().split(' ')[0] ? `от ${task.createdBy.name.trim().split(' ')[0]}` : `от ${task.createdBy.name.trim().split(' ')[0]}`)}
                           </span>
@@ -669,7 +669,7 @@ function AssigneesStack({ task, currentUserId }: { task: any; currentUserId?: st
         <div className="relative">
           <Avatar name={a.user?.name} src={a.user?.avatar} size={22} />
           {a.isDone && (
-            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-surface-800" />
+            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 ring-2 ring-white dark:ring-surface-800" />
           )}
         </div>
         {a.userId === currentUserId ? (
@@ -689,7 +689,7 @@ function AssigneesStack({ task, currentUserId }: { task: any; currentUserId?: st
           <div key={a.userId} className="relative">
             <Avatar name={a.user?.name} src={a.user?.avatar} size={22} />
             {a.isDone && (
-              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-surface-800" />
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 ring-2 ring-white dark:ring-surface-800" />
             )}
           </div>
         ))}
@@ -699,7 +699,7 @@ function AssigneesStack({ task, currentUserId }: { task: any; currentUserId?: st
           </div>
         )}
       </div>
-      <span className={clsx('text-xs', doneCount === list.length ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-surface-500 dark:text-surface-400')}>
+      <span className={clsx('text-xs', doneCount === list.length ? 'text-green-600 dark:text-green-400 font-medium' : 'text-surface-500 dark:text-surface-400')}>
         {doneCount}/{list.length} {doneCount === list.length ? '✓' : ''}
       </span>
     </div>

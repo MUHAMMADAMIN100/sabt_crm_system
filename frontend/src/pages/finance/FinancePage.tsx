@@ -38,12 +38,12 @@ const CATEGORIES: { id: string; label: string }[] = [
 ]
 
 const STATUS_INFO: Record<string, { label: string; color: string }> = {
-  completed: { label: 'Проведено', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-  pending:   { label: 'Ожидание',  color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  completed: { label: 'Проведено', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  pending:   { label: 'Ожидание',  color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
   cancelled: { label: 'Отменено',  color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
 }
 
-const CATEGORY_COLORS = ['#6B4FCF', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4', '#ec4899', '#64748b']
+const CATEGORY_COLORS = ['#18181b', '#3f3f46', '#52525b', '#71717a', '#8a8a93', '#a1a1aa', '#b4b4bb', '#d4d4d8']
 const MONTH_LABELS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
 const fmtMoney = (v: any) => {
@@ -186,15 +186,15 @@ export default function FinancePage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Wallet size={22} className="text-emerald-500" /> Финансы</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Wallet size={22} className="text-green-500" /> Финансы</h1>
           <p className="text-sm text-gray-500">Учёт доходов и расходов по 3 счетам компании.</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <button onClick={() => setView('overview')} className={clsx('px-3 py-1.5 text-sm inline-flex items-center gap-1', view === 'overview' ? 'bg-purple-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800')}>
+            <button onClick={() => setView('overview')} className={clsx('px-3 py-1.5 text-sm inline-flex items-center gap-1', view === 'overview' ? 'bg-surface-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800')}>
               <BarChart3 size={14} /> Обзор
             </button>
-            <button onClick={() => setView('transactions')} className={clsx('px-3 py-1.5 text-sm inline-flex items-center gap-1', view === 'transactions' ? 'bg-purple-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800')}>
+            <button onClick={() => setView('transactions')} className={clsx('px-3 py-1.5 text-sm inline-flex items-center gap-1', view === 'transactions' ? 'bg-surface-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800')}>
               <ListOrdered size={14} /> Транзакции
             </button>
           </div>
@@ -215,8 +215,8 @@ export default function FinancePage() {
               className={clsx(
                 'rounded-xl border p-4 text-left transition-colors',
                 isActive
-                  ? 'border-purple-500 ring-2 ring-purple-200 dark:ring-purple-900/50'
-                  : 'border-gray-200 dark:border-gray-700 hover:border-purple-300',
+                  ? 'border-surface-500 ring-2 ring-surface-200 dark:ring-surface-900/50'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-surface-300',
                 'bg-white dark:bg-gray-900',
               )}
             >
@@ -228,7 +228,7 @@ export default function FinancePage() {
                 {fmtMoney(data?.balance ?? 0)}
               </div>
               <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
-                <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-medium">
+                <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 font-medium">
                   +{fmtMoney(data?.income ?? 0)}
                 </span>
                 <span className="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-medium">
@@ -243,9 +243,9 @@ export default function FinancePage() {
       {/* Metrics tiles */}
       {accountSummary && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Tile label="Доход"      value={fmtMoney(accountSummary.income)}  accent="text-emerald-600" />
+          <Tile label="Доход"      value={fmtMoney(accountSummary.income)}  accent="text-green-600" />
           <Tile label="Расход"     value={fmtMoney(accountSummary.expense)} accent="text-red-600" />
-          <Tile label="Чистый итог" value={fmtMoney(accountSummary.balance)} accent={Number(accountSummary.balance) >= 0 ? 'text-emerald-600' : 'text-red-600'} />
+          <Tile label="Чистый итог" value={fmtMoney(accountSummary.balance)} accent={Number(accountSummary.balance) >= 0 ? 'text-green-600' : 'text-red-600'} />
           <Tile label="Транзакций" value={accountSummary.count ?? 0} />
         </div>
       )}
@@ -337,7 +337,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={() => onCreate('income')} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm">
+        <button onClick={() => onCreate('income')} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm">
           <ArrowUpRight size={14} /> + Доход
         </button>
         <button onClick={() => onCreate('expense')} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm">
@@ -354,7 +354,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
           className={clsx(
             'inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm border',
             panelTab === 'employees'
-              ? 'bg-purple-600 border-purple-600 text-white'
+              ? 'bg-surface-600 border-surface-600 text-white'
               : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800',
           )}
         >
@@ -365,7 +365,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
           className={clsx(
             'inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm border',
             panelTab === 'projects'
-              ? 'bg-purple-600 border-purple-600 text-white'
+              ? 'bg-surface-600 border-surface-600 text-white'
               : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800',
           )}
         >
@@ -405,7 +405,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
                       description: `Аванс — ${e.fullName}`,
                       employee: e,
                     })}
-                    className="px-2 py-1 rounded-md text-[11px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-200 shrink-0"
+                    className="px-2 py-1 rounded-md text-[11px] font-medium bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 hover:bg-surface-200 shrink-0"
                   >Аванс</button>
                 </div>
               ))}
@@ -441,7 +441,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
                         description: `Оплата по проекту — ${p.name}`,
                         amount: tariffSum || undefined,
                       })}
-                      className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 hover:bg-emerald-200 shrink-0"
+                      className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-200 shrink-0"
                     >Платёж</button>
                   </div>
                 )
@@ -546,14 +546,14 @@ function TransactionsSection({
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Поиск..." className="w-full pl-7 pr-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm" />
         </div>
-        <button onClick={onAdd} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm">
+        <button onClick={onAdd} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface-600 hover:bg-surface-700 text-white text-sm">
           <Plus size={14} /> Добавить
         </button>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
         {loading ? (
-          <div className="flex items-center justify-center py-10"><Loader2 className="animate-spin text-purple-500" /></div>
+          <div className="flex items-center justify-center py-10"><Loader2 className="animate-spin text-surface-500" /></div>
         ) : items.length === 0 ? (
           <EmptyState title="Транзакций нет" description="Добавьте первую через кнопку «+ Добавить»." />
         ) : (
@@ -589,7 +589,7 @@ function TransactionsSection({
                   <td className="px-3 py-2 text-xs whitespace-nowrap">
                     {Array.isArray(tx.splits) && tx.splits.length > 1 ? (
                       <span
-                        className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 cursor-help"
+                        className="px-2 py-0.5 rounded-full bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-300 cursor-help"
                         title={tx.splits.map((s: any) =>
                           `${ACCOUNTS.find(a => a.id === s.account)?.label ?? s.account}: ${fmtMoney(s.amount)}`,
                         ).join('\n')}
@@ -608,7 +608,7 @@ function TransactionsSection({
                     </span>
                   </td>
                   <td className={clsx('px-3 py-2 text-right font-semibold whitespace-nowrap',
-                    tx.type === 'income' ? 'text-emerald-600' : 'text-red-600')}>
+                    tx.type === 'income' ? 'text-green-600' : 'text-red-600')}>
                     {tx.type === 'income' ? '+' : '−'}{fmtMoney(tx.amount)}
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -693,7 +693,7 @@ function CategorySelect({ value, onChange, categories = [] }: { value: string; o
           placeholder="Название новой категории"
           className="input flex-1"
         />
-        <button type="button" onClick={confirm} className="px-3 py-2 rounded-lg bg-purple-600 text-white text-sm shrink-0">
+        <button type="button" onClick={confirm} className="px-3 py-2 rounded-lg bg-surface-600 text-white text-sm shrink-0">
           Добавить
         </button>
         <button type="button" onClick={() => { setName(''); setAdding(false) }} className="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm shrink-0">
@@ -790,7 +790,7 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], categorie
       {/* Доход / Расход */}
       <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
         <button type="button" onClick={() => setType('income')}
-          className={clsx('px-4 py-1.5 text-sm inline-flex items-center gap-1', type === 'income' ? 'bg-emerald-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800')}>
+          className={clsx('px-4 py-1.5 text-sm inline-flex items-center gap-1', type === 'income' ? 'bg-green-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800')}>
           <ArrowUpRight size={14} /> Доход
         </button>
         <button type="button" onClick={() => setType('expense')}
@@ -814,8 +814,8 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], categorie
                 className={clsx(
                   'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
                   !splitMode && account === a.id
-                    ? 'bg-purple-600 text-white border-purple-600'
-                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-purple-300',
+                    ? 'bg-surface-600 text-white border-surface-600'
+                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-surface-300',
                 )}
               >
                 {a.label}
@@ -827,8 +827,8 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], categorie
               className={clsx(
                 'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
                 splitMode
-                  ? 'bg-purple-600 text-white border-purple-600'
-                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-purple-300',
+                  ? 'bg-surface-600 text-white border-surface-600'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-surface-300',
               )}
             >
               Разделить оплату
@@ -836,7 +836,7 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], categorie
           </div>
 
           {splitMode && (
-            <div className="space-y-2 rounded-xl border border-purple-200 dark:border-purple-900/50 bg-purple-50/40 dark:bg-purple-900/10 p-3 mt-2">
+            <div className="space-y-2 rounded-xl border border-surface-200 dark:border-surface-900/50 bg-surface-50/40 dark:bg-surface-900/10 p-3 mt-2">
               {splits.map((sp, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <input
@@ -868,12 +868,12 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], categorie
                 </div>
               ))}
               <div className="flex items-center justify-between pt-1">
-                <button type="button" onClick={addSplit} className="text-xs font-medium text-purple-600 hover:underline">
+                <button type="button" onClick={addSplit} className="text-xs font-medium text-surface-600 hover:underline">
                   + Ещё счёт
                 </button>
                 <span className={clsx(
                   'text-xs tabular-nums font-medium',
-                  Math.abs(splitsDelta) < 0.01 ? 'text-emerald-600' : 'text-red-600',
+                  Math.abs(splitsDelta) < 0.01 ? 'text-green-600' : 'text-red-600',
                 )}>
                   Σ {splitsSum.toLocaleString('ru-RU')} / {watchedAmount.toLocaleString('ru-RU')}
                   {Math.abs(splitsDelta) >= 0.01 && ` (Δ ${splitsDelta > 0 ? '+' : ''}${splitsDelta})`}
@@ -978,7 +978,7 @@ function TxForm({ initial, defaultType, defaultAccount, projects = [], categorie
         </button>
         <button type="submit" disabled={loading}
           className={clsx('px-4 py-2 rounded-lg text-sm text-white disabled:opacity-50',
-            type === 'income' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700')}>
+            type === 'income' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700')}>
           {loading ? 'Сохранение...' : (initial ? 'Сохранить' : 'Добавить')}
         </button>
       </div>

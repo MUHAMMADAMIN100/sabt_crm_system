@@ -119,8 +119,8 @@ export default function ProjectAdsTab({ projectId }: Props) {
           <Megaphone size={18} className="text-primary-500" />
           <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">Рекламные кампании</h2>
           {active.length > 0 && (
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
               {active.length} активн.
             </span>
           )}
@@ -180,12 +180,12 @@ function AdSection({ title, ads, canManage, onEdit, onDelete, accent }: any) {
           return (
             <div key={a.id} className={clsx(
               'card p-4 relative overflow-hidden',
-              accent === 'active' && 'border-emerald-300 dark:border-emerald-700',
-              accent === 'upcoming' && 'border-amber-200 dark:border-amber-700',
+              accent === 'active' && 'border-green-300 dark:border-green-700',
+              accent === 'upcoming' && 'border-surface-200 dark:border-surface-700',
               accent === 'ended' && 'opacity-70',
             )}>
               {accent === 'active' && (
-                <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
+                <div className="absolute top-0 left-0 w-1 h-full bg-green-500" />
               )}
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="flex-1 min-w-0">
@@ -193,7 +193,7 @@ function AdSection({ title, ads, canManage, onEdit, onDelete, accent }: any) {
                   <div className="flex items-center gap-2 mt-1 text-xs text-surface-500 dark:text-surface-400">
                     <span>{ch?.icon} {ch?.label || a.channel}</span>
                     {a.budget && <span>· 💰 {Number(a.budget).toLocaleString('ru-RU')} сомони</span>}
-                    {a.budgetSource === 'company' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">из компании</span>}
+                    {a.budgetSource === 'company' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400 font-medium">из компании</span>}
                   </div>
                 </div>
                 {canManage && (

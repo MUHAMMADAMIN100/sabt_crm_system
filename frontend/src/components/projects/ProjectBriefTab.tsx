@@ -138,8 +138,8 @@ export default function ProjectBriefTab({ project }: Props) {
         <div className="flex flex-col items-end gap-2 shrink-0">
           <span className={clsx(
             'text-xs font-semibold px-3 py-1 rounded-full',
-            filledPercent === 100 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-              : filledPercent >= 50 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+            filledPercent === 100 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+              : filledPercent >= 50 ? 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-300'
               : 'bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-400',
           )}>
             {filledPercent === 100 ? <span className="inline-flex items-center gap-1"><CheckCircle2 size={12} /> Заполнен 100%</span>

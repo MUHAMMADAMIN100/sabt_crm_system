@@ -211,7 +211,7 @@ export default function TaskForm({
                 Сначала выберите проект
               </div>
             ) : filteredEmployees.length === 0 ? (
-              <p className="text-xs text-amber-600 dark:text-amber-400">Сначала добавьте сотрудника как участника проекта</p>
+              <p className="text-xs text-surface-600 dark:text-surface-400">Сначала добавьте сотрудника как участника проекта</p>
             ) : (
               <AssigneeGroupedList
                 employees={filteredEmployees}
@@ -384,7 +384,7 @@ function AssigneeQueueEditor({ queue, employees, setQueue }: {
               <ArrowDown size={13} />
             </button>
             <button type="button" onClick={() => duplicate(uid)}
-              className="p-1 rounded hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
+              className="p-1 rounded hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600 dark:text-green-400"
               title="Повторить (добавить ещё одним шагом в конце)">
               <Plus size={13} />
             </button>

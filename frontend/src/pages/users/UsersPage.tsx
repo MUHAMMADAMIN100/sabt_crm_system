@@ -87,7 +87,7 @@ export default function UsersPage() {
         <h1 className="page-title">Пользователи</h1>
         <button
           onClick={() => setShowCleanupConfirm(true)}
-          className="btn-secondary text-xs flex items-center gap-1.5 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+          className="btn-secondary text-xs flex items-center gap-1.5 text-surface-600 dark:text-surface-400 border-surface-200 dark:border-surface-800 hover:bg-surface-50 dark:hover:bg-surface-900/20"
           title="Удалить пользователей без профиля сотрудника"
         >
           <ShieldOff size={14} /> Очистить призраков

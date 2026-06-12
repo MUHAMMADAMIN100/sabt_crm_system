@@ -100,7 +100,7 @@ export default function PMDashboard() {
       {/* Summary row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="card text-center">
-          <p className="text-3xl font-bold text-amber-500">{reviewTasks?.length ?? 0}</p>
+          <p className="text-3xl font-bold text-surface-500">{reviewTasks?.length ?? 0}</p>
           <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">На проверке</p>
         </div>
         <div className="card text-center">
@@ -108,7 +108,7 @@ export default function PMDashboard() {
           <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">Просрочено</p>
         </div>
         <div className="card text-center">
-          <p className="text-3xl font-bold text-orange-500">{urgentSoon.length}</p>
+          <p className="text-3xl font-bold text-surface-500">{urgentSoon.length}</p>
           <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">Сгорят сегодня</p>
         </div>
         <div className="card text-center">
@@ -121,21 +121,21 @@ export default function PMDashboard() {
         {/* Tasks on review */}
         <CollapsibleSection
           id="pm-review"
-          title={<h2 className="section-title flex items-center gap-2"><Eye size={16} className="text-amber-500" /> Ожидают проверки</h2>}
+          title={<h2 className="section-title flex items-center gap-2"><Eye size={16} className="text-surface-500" /> Ожидают проверки</h2>}
         >
           {!reviewTasks?.length ? (
             <p className="text-sm text-surface-400 py-4 text-center">Нет задач на проверке</p>
           ) : (
             <div className="space-y-3">
               {reviewTasks.slice(0, 8).map((t: any) => (
-                <div key={t.id} className="flex items-start gap-3 p-2 rounded-lg bg-amber-50 dark:bg-amber-900/10">
+                <div key={t.id} className="flex items-start gap-3 p-2 rounded-lg bg-surface-50 dark:bg-surface-900/10">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <Link to={`/tasks/${t.id}`} className="text-sm font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 truncate">
                         {t.title}
                       </Link>
                       {t.createdById && t.assigneeId && (t.createdById === t.assigneeId || t.createdBy?.name?.trim()) && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${t.createdById === t.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${t.createdById === t.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'}`}>
                           {t.createdById === t.assigneeId ? 'сам' : (t.createdBy?.name?.trim().split(' ')[0] || '')}
                         </span>
                       )}
@@ -185,7 +185,7 @@ export default function PMDashboard() {
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{t.title}</p>
                       {t.createdById && t.assigneeId && (t.createdById === t.assigneeId || t.createdBy?.name?.trim()) && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${t.createdById === t.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${t.createdById === t.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'}`}>
                           {t.createdById === t.assigneeId ? 'сам' : (t.createdBy?.name?.trim().split(' ')[0] || '')}
                         </span>
                       )}
@@ -207,7 +207,7 @@ export default function PMDashboard() {
       {/* Team workload */}
       <CollapsibleSection
         id="pm-workload"
-        title={<h2 className="section-title flex items-center gap-2"><AlertTriangle size={16} className="text-orange-500" /> Нагрузка команды</h2>}
+        title={<h2 className="section-title flex items-center gap-2"><AlertTriangle size={16} className="text-surface-500" /> Нагрузка команды</h2>}
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {(workload || []).map((e: any) => (
@@ -222,7 +222,7 @@ export default function PMDashboard() {
                 <p className="text-[10px] text-surface-400 truncate">{e.position}</p>
               </div>
               <div className="text-right shrink-0">
-                <p className={`text-sm font-bold ${e.activeTasks >= 8 ? 'text-red-500' : e.activeTasks >= 5 ? 'text-orange-500' : 'text-green-600 dark:text-green-400'}`}>
+                <p className={`text-sm font-bold ${e.activeTasks >= 8 ? 'text-red-500' : e.activeTasks >= 5 ? 'text-surface-500' : 'text-green-600 dark:text-green-400'}`}>
                   {e.activeTasks}
                 </p>
                 <p className="text-[10px] text-surface-400">задач</p>

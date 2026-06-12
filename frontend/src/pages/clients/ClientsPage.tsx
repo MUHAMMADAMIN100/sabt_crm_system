@@ -27,11 +27,11 @@ const ONBOARDING_STAGE_LABELS: Record<string, string> = {
 }
 
 const STATUS_OPTIONS: { value: string; label: string; color: string }[] = [
-  { value: 'new',         label: 'Новый',              color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
-  { value: 'waiting',     label: 'Ожидание ответа',    color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  { value: 'negotiating', label: 'В переговорах',      color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  { value: 'proposal',    label: 'Предложение',        color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
-  { value: 'won',         label: 'Клиент ✓',           color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  { value: 'new',         label: 'Новый',              color: 'bg-surface-100 text-surface-700 dark:bg-surface-800 dark:text-surface-300' },
+  { value: 'waiting',     label: 'Ожидание ответа',    color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
+  { value: 'negotiating', label: 'В переговорах',      color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
+  { value: 'proposal',    label: 'Предложение',        color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
+  { value: 'won',         label: 'Клиент ✓',           color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
   { value: 'lost',        label: 'Отказ',              color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
   { value: 'on_hold',     label: 'На паузе',           color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
 ]
@@ -39,16 +39,16 @@ const STATUS_OPTIONS: { value: string; label: string; color: string }[] = [
 type InterestIcon = typeof Circle
 const INTEREST_OPTIONS: { value: string; label: string; Icon: InterestIcon; color: string }[] = [
   { value: '',     label: 'Все',      Icon: Circle,    color: '' },
-  { value: 'cold', label: 'Холодный', Icon: Snowflake, color: 'text-sky-500' },
-  { value: 'warm', label: 'Тёплый',   Icon: Sun,       color: 'text-amber-500' },
+  { value: 'cold', label: 'Холодный', Icon: Snowflake, color: 'text-surface-500' },
+  { value: 'warm', label: 'Тёплый',   Icon: Sun,       color: 'text-surface-500' },
   { value: 'hot',  label: 'Горячий',  Icon: Flame,     color: 'text-red-500' },
 ]
 
 // Chip styles for interest filter — visual states
 const INTEREST_CHIPS: { value: string; label: string; Icon: InterestIcon; bg: string; bgActive: string }[] = [
   { value: 'hot',  label: 'Горячие',  Icon: Flame,     bg: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',           bgActive: 'bg-red-500 text-white' },
-  { value: 'warm', label: 'Тёплые',   Icon: Sun,       bg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',   bgActive: 'bg-amber-500 text-white' },
-  { value: 'cold', label: 'Холодные', Icon: Snowflake, bg: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',           bgActive: 'bg-sky-500 text-white' },
+  { value: 'warm', label: 'Тёплые',   Icon: Sun,       bg: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',   bgActive: 'bg-surface-500 text-white' },
+  { value: 'cold', label: 'Холодные', Icon: Snowflake, bg: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',           bgActive: 'bg-surface-500 text-white' },
 ]
 
 const CHANNEL_OPTIONS = ['WhatsApp', 'Telegram', 'Instagram', 'Звонок', 'Email', 'Личная встреча']
@@ -530,14 +530,14 @@ export default function ClientsPage() {
                           <span className={clsx(
                             'inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-medium',
                             l.direction === 'smm'
-                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                              ? 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400'
+                              : 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',
                           )}>
                             {l.direction === 'smm' ? 'СММ' : 'Разработка'}
                           </span>
                         )}
                         {l.onboardingStage && (
-                          <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                             {ONBOARDING_STAGE_LABELS[l.onboardingStage] || l.onboardingStage}
                           </span>
                         )}
@@ -579,10 +579,10 @@ export default function ClientsPage() {
                       {l.nextContactAt ? (
                         <span className={clsx(
                           'text-xs inline-flex items-center gap-1',
-                          nextIsOverdue ? 'text-red-500 font-semibold' : nextIsSoon ? 'text-amber-600 dark:text-amber-400' : 'text-surface-500 dark:text-surface-400',
+                          nextIsOverdue ? 'text-red-500 font-semibold' : nextIsSoon ? 'text-surface-600 dark:text-surface-400' : 'text-surface-500 dark:text-surface-400',
                         )}>
                           {nextIsOverdue && <AlertCircle size={12} className="text-red-500" />}
-                          {nextIsSoon && !nextIsOverdue && <AlertCircle size={12} className="text-amber-500" />}
+                          {nextIsSoon && !nextIsOverdue && <AlertCircle size={12} className="text-surface-500" />}
                           {format(new Date(l.nextContactAt), 'dd.MM.yy HH:mm')}
                         </span>
                       ) : <span className="text-surface-400">—</span>}
@@ -713,7 +713,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
       type="button"
       onClick={onAddToOnboarding}
       disabled={loading}
-      className="px-3 py-1.5 rounded-md text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors flex items-center gap-1"
+      className="px-3 py-1.5 rounded-md text-xs font-medium text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors flex items-center gap-1"
     >
       <Plus size={14} /> В онбординг
     </button>
@@ -722,7 +722,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
       type="button"
       onClick={handleSubmit(submitWithOnb)}
       disabled={loading}
-      className="px-3 py-1.5 rounded-md text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors flex items-center gap-1"
+      className="px-3 py-1.5 rounded-md text-xs font-medium text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors flex items-center gap-1"
     >
       <Plus size={14} /> В онбординг
     </button>

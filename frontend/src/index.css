@@ -6,6 +6,32 @@
   :root {
     --sidebar-width: 260px;
     --header-height: 60px;
+
+    /* ── Монохромная primary-палитра (светлая тема) ──
+       Акцент — почти чёрный. RGB-триплеты, чтобы работали
+       alpha-утилиты вида bg-primary-600/20. */
+    --prim-50:  246 246 247;
+    --prim-100: 235 235 238;
+    --prim-300: 178 178 186;
+    --prim-400: 139 139 147;
+    --prim-500: 63 63 70;
+    --prim-600: 24 24 27;
+    --prim-700: 9 9 11;
+    --prim-900: 19 19 22;
+  }
+
+  /* В тёмной теме акцент — серый: чёрные кнопки на чёрном фоне
+     невидимы, а text-primary-* без dark:-вариантов должен читаться.
+     700 СВЕТЛЕЕ 600 — hover в тёмной теме осветляет, не топит. */
+  .dark {
+    --prim-50:  39 39 45;
+    --prim-100: 46 46 52;
+    --prim-300: 196 196 203;
+    --prim-400: 163 163 171;
+    --prim-500: 130 130 139;
+    --prim-600: 88 88 96;
+    --prim-700: 108 108 117;
+    --prim-900: 13 13 15;
   }
 
   * { box-sizing: border-box; }
@@ -283,10 +309,10 @@ aside {
 @keyframes pageIn    { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes countUp   { from { opacity: 0; transform: translateY(8px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes bounceSoft { 0% { opacity: 0; transform: scale(0.7); } 60% { transform: scale(1.1); } 100% { opacity: 1; transform: scale(1); } }
-@keyframes notificationPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(107,79,207,0.4); } 50% { box-shadow: 0 0 0 6px rgba(107,79,207,0); } }
+@keyframes notificationPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(24,24,27,0.35); } 50% { box-shadow: 0 0 0 6px rgba(24,24,27,0); } }
 @keyframes wiggle    { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
 @keyframes shake     { 10%, 90% { transform: translateX(-1px); } 20%, 80% { transform: translateX(2px); } 30%, 50%, 70% { transform: translateX(-4px); } 40%, 60% { transform: translateX(4px); } }
-@keyframes glowPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(107,79,207,0); } 50% { box-shadow: 0 0 0 4px rgba(107,79,207,0.18); } }
+@keyframes glowPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(24,24,27,0); } 50% { box-shadow: 0 0 0 4px rgba(24,24,27,0.14); } }
 @keyframes pulseDot  { 0%, 100% { opacity: 0.4; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1); } }
 @keyframes float     { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @keyframes backdropIn { from { opacity: 0; backdrop-filter: blur(0); } to { opacity: 1; backdrop-filter: blur(8px); } }
@@ -343,7 +369,7 @@ aside {
 .hover-glow {
   @apply transition-shadow duration-200;
 }
-.hover-glow:hover { box-shadow: 0 0 0 3px rgba(107, 79, 207, 0.15); }
+.hover-glow:hover { box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.12); }
 
 /* Карточка с hover-эффектом — только смена границы, без подпрыгивания. */
 .card-hoverable {
@@ -434,15 +460,15 @@ aside {
 /* ====================== AUTH PAGE ANIMATIONS ====================== */
 
 .auth-page-bg {
-  background: radial-gradient(ellipse at 20% 50%, rgba(107, 79, 207, 0.08) 0%, transparent 50%),
-              radial-gradient(ellipse at 80% 20%, rgba(107, 79, 207, 0.06) 0%, transparent 50%),
-              radial-gradient(ellipse at 60% 80%, rgba(107, 79, 207, 0.05) 0%, transparent 50%);
-  background-color: #f8fafc;
+  background: radial-gradient(ellipse at 20% 50%, rgba(24, 24, 27, 0.05) 0%, transparent 50%),
+              radial-gradient(ellipse at 80% 20%, rgba(24, 24, 27, 0.04) 0%, transparent 50%),
+              radial-gradient(ellipse at 60% 80%, rgba(24, 24, 27, 0.03) 0%, transparent 50%);
+  background-color: #fafafa;
 }
 .dark .auth-page-bg {
-  background: radial-gradient(ellipse at 20% 50%, rgba(107, 79, 207, 0.10) 0%, transparent 50%),
-              radial-gradient(ellipse at 80% 20%, rgba(107, 79, 207, 0.07) 0%, transparent 50%),
-              radial-gradient(ellipse at 60% 80%, rgba(107, 79, 207, 0.05) 0%, transparent 50%);
+  background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.04) 0%, transparent 50%),
+              radial-gradient(ellipse at 80% 20%, rgba(255, 255, 255, 0.03) 0%, transparent 50%),
+              radial-gradient(ellipse at 60% 80%, rgba(255, 255, 255, 0.02) 0%, transparent 50%);
   background-color: #09090b;
 }
 
@@ -456,8 +482,8 @@ aside {
 }
 
 @keyframes logoPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(107, 79, 207, 0.45); }
-  50%       { box-shadow: 0 0 0 12px rgba(107, 79, 207, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(24, 24, 27, 0.35); }
+  50%       { box-shadow: 0 0 0 12px rgba(24, 24, 27, 0); }
 }
 .auth-logo-pulse {
   animation: logoPulse 2.5s ease-in-out infinite;
@@ -485,12 +511,12 @@ aside {
   font-size: 0.7rem;
 }
 
-/* ====================== STATUS & PRIORITY — TRAFFIC LIGHT ======================
- * Унифицированная светофорная палитра по всему проекту:
- *   🟢 ЗЕЛЁНЫЙ — успех / выполнено / активно
- *   🟡 ЖЁЛТЫЙ — в работе / на проверке / внимание
+/* ====================== STATUS & PRIORITY — МОНОХРОМ ======================
+ * Строгая ч/б схема. Цвет несёт только критичный сигнал:
+ *   🟢 ЗЕЛЁНЫЙ — успех / выполнено
  *   🔴 КРАСНЫЙ — критично / отменено / возвращено / просрочено
- *   ⚪ СЕРЫЙ  — нейтральные состояния (новая, планируется, архив)
+ *   ⚫ ТЁМНО-СЕРЫЙ — в работе / на проверке (активные состояния)
+ *   ⚪ СВЕТЛО-СЕРЫЙ — нейтральные (новая, планируется, архив)
  */
 
 /* 🟢 ЗЕЛЁНЫЙ — успех */
@@ -501,16 +527,16 @@ aside {
 .status-published  { @apply bg-green-100 text-green-700; }
 .status-accepted   { @apply bg-green-100 text-green-700; }
 
-/* 🟡 ЖЁЛТЫЙ — в работе / внимание */
-.status-in_progress      { @apply bg-amber-100 text-amber-700; }
-.status-review           { @apply bg-amber-100 text-amber-700; }
-.status-on_pm_review     { @apply bg-amber-100 text-amber-700; }
-.status-on_review        { @apply bg-amber-100 text-amber-700; }
-.status-on_client_approval { @apply bg-amber-100 text-amber-700; }
-.status-on_hold          { @apply bg-amber-100 text-amber-700; }
-.status-preparing        { @apply bg-amber-100 text-amber-700; }
-.status-in_production    { @apply bg-amber-100 text-amber-700; }
-.status-on_approval      { @apply bg-amber-100 text-amber-700; }
+/* ⚫ ТЁМНО-СЕРЫЙ — в работе / внимание (бывший жёлтый) */
+.status-in_progress      { @apply bg-surface-800 text-white; }
+.status-review           { @apply bg-surface-200 text-surface-800; }
+.status-on_pm_review     { @apply bg-surface-200 text-surface-800; }
+.status-on_review        { @apply bg-surface-200 text-surface-800; }
+.status-on_client_approval { @apply bg-surface-200 text-surface-800; }
+.status-on_hold          { @apply bg-surface-200 text-surface-800; }
+.status-preparing        { @apply bg-surface-200 text-surface-800; }
+.status-in_production    { @apply bg-surface-200 text-surface-800; }
+.status-on_approval      { @apply bg-surface-200 text-surface-800; }
 
 /* 🔴 КРАСНЫЙ — критично */
 .status-cancelled  { @apply bg-red-100 text-red-700; }
@@ -522,13 +548,13 @@ aside {
 .status-frozen     { @apply bg-red-100 text-red-700; }
 .status-inactive   { @apply bg-red-100 text-red-700; }
 
-/* ⚪ СЕРЫЙ — нейтрально */
-.status-new        { @apply bg-slate-100 text-slate-700; }
-.status-planning   { @apply bg-slate-100 text-slate-700; }
-.status-planned    { @apply bg-slate-100 text-slate-700; }
-.status-archived   { @apply bg-slate-100 text-slate-600; }
-.status-pending    { @apply bg-slate-100 text-slate-700; }
-.status-rescheduled { @apply bg-slate-100 text-slate-700; }
+/* ⚪ СВЕТЛО-СЕРЫЙ — нейтрально */
+.status-new        { @apply bg-surface-100 text-surface-700; }
+.status-planning   { @apply bg-surface-100 text-surface-700; }
+.status-planned    { @apply bg-surface-100 text-surface-700; }
+.status-archived   { @apply bg-surface-100 text-surface-600; }
+.status-pending    { @apply bg-surface-100 text-surface-700; }
+.status-rescheduled { @apply bg-surface-100 text-surface-700; }
 
 /* Dark mode — 🟢 ЗЕЛЁНЫЙ */
 .dark .status-done       { @apply bg-green-900/30 text-green-400; }
@@ -538,16 +564,16 @@ aside {
 .dark .status-published  { @apply bg-green-900/30 text-green-400; }
 .dark .status-accepted   { @apply bg-green-900/30 text-green-400; }
 
-/* Dark mode — 🟡 ЖЁЛТЫЙ */
-.dark .status-in_progress      { @apply bg-amber-900/30 text-amber-400; }
-.dark .status-review           { @apply bg-amber-900/30 text-amber-400; }
-.dark .status-on_pm_review     { @apply bg-amber-900/30 text-amber-400; }
-.dark .status-on_review        { @apply bg-amber-900/30 text-amber-400; }
-.dark .status-on_client_approval { @apply bg-amber-900/30 text-amber-400; }
-.dark .status-on_hold          { @apply bg-amber-900/30 text-amber-400; }
-.dark .status-preparing        { @apply bg-amber-900/30 text-amber-400; }
-.dark .status-in_production    { @apply bg-amber-900/30 text-amber-400; }
-.dark .status-on_approval      { @apply bg-amber-900/30 text-amber-400; }
+/* Dark mode — ⚫ ТЁМНО-СЕРЫЙ (бывший жёлтый) */
+.dark .status-in_progress      { @apply bg-surface-100 text-surface-900; }
+.dark .status-review           { @apply bg-surface-700 text-surface-200; }
+.dark .status-on_pm_review     { @apply bg-surface-700 text-surface-200; }
+.dark .status-on_review        { @apply bg-surface-700 text-surface-200; }
+.dark .status-on_client_approval { @apply bg-surface-700 text-surface-200; }
+.dark .status-on_hold          { @apply bg-surface-700 text-surface-200; }
+.dark .status-preparing        { @apply bg-surface-700 text-surface-200; }
+.dark .status-in_production    { @apply bg-surface-700 text-surface-200; }
+.dark .status-on_approval      { @apply bg-surface-700 text-surface-200; }
 
 /* Dark mode — 🔴 КРАСНЫЙ */
 .dark .status-cancelled  { @apply bg-red-900/30 text-red-400; }
@@ -559,22 +585,23 @@ aside {
 .dark .status-frozen     { @apply bg-red-900/30 text-red-400; }
 .dark .status-inactive   { @apply bg-red-900/30 text-red-400; }
 
-/* Dark mode — ⚪ СЕРЫЙ */
-.dark .status-new        { @apply bg-slate-800 text-slate-300; }
-.dark .status-planning   { @apply bg-slate-800 text-slate-300; }
-.dark .status-planned    { @apply bg-slate-800 text-slate-300; }
-.dark .status-archived   { @apply bg-slate-800 text-slate-400; }
-.dark .status-pending    { @apply bg-slate-800 text-slate-300; }
-.dark .status-rescheduled { @apply bg-slate-800 text-slate-300; }
+/* Dark mode — ⚪ СВЕТЛО-СЕРЫЙ */
+.dark .status-new        { @apply bg-surface-800 text-surface-300; }
+.dark .status-planning   { @apply bg-surface-800 text-surface-300; }
+.dark .status-planned    { @apply bg-surface-800 text-surface-300; }
+.dark .status-archived   { @apply bg-surface-800 text-surface-400; }
+.dark .status-pending    { @apply bg-surface-800 text-surface-300; }
+.dark .status-rescheduled { @apply bg-surface-800 text-surface-300; }
 
-/* Priorities — светофор: low=🟢, medium=🟡, high=🔴, critical=🔴 (bolder) */
-.priority-low      { @apply bg-green-100 text-green-700; }
-.priority-medium   { @apply bg-amber-100 text-amber-700; }
+/* Priorities — монохром + красный только для high/critical:
+   low/medium — оттенки серого, high — красный, critical — красный жирный. */
+.priority-low      { @apply bg-surface-100 text-surface-600; }
+.priority-medium   { @apply bg-surface-200 text-surface-800; }
 .priority-high     { @apply bg-red-100 text-red-700; }
 .priority-critical { @apply bg-red-200 text-red-800 font-bold; }
 
-.dark .priority-low      { @apply bg-green-900/30 text-green-400; }
-.dark .priority-medium   { @apply bg-amber-900/30 text-amber-400; }
+.dark .priority-low      { @apply bg-surface-800 text-surface-400; }
+.dark .priority-medium   { @apply bg-surface-700 text-surface-200; }
 .dark .priority-high     { @apply bg-red-900/30 text-red-400; }
 .dark .priority-critical { @apply bg-red-800/40 text-red-300; }
 

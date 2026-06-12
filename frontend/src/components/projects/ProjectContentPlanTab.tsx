@@ -41,13 +41,13 @@ const TYPE_OPTIONS = [
 ]
 
 const STATUS_OPTIONS = [
-  { value: 'planned',       label: 'Запланировано',  color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
-  { value: 'preparing',     label: 'Готовится',      color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  { value: 'in_production', label: 'В производстве', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
-  { value: 'on_review',     label: 'На проверке',    color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  { value: 'on_approval',   label: 'У клиента',      color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
-  { value: 'approved',      label: 'Утверждено ✓',   color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-  { value: 'published',     label: 'Опубликовано',   color: 'bg-emerald-200 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300' },
+  { value: 'planned',       label: 'Запланировано',  color: 'bg-surface-100 text-surface-700 dark:bg-surface-800 dark:text-surface-300' },
+  { value: 'preparing',     label: 'Готовится',      color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
+  { value: 'in_production', label: 'В производстве', color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
+  { value: 'on_review',     label: 'На проверке',    color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
+  { value: 'on_approval',   label: 'У клиента',      color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
+  { value: 'approved',      label: 'Утверждено ✓',   color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  { value: 'published',     label: 'Опубликовано',   color: 'bg-green-200 text-green-800 dark:bg-green-900/50 dark:text-green-300' },
   { value: 'cancelled',     label: 'Отменено',       color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
 ]
 
@@ -153,14 +153,14 @@ export default function ProjectContentPlanTab({ projectId }: { projectId: string
     return sorted
   }, [items])
 
-  if (isLoading) return <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-purple-500" /></div>
+  if (isLoading) return <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-surface-500" /></div>
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="font-semibold text-base">Контент-план</h2>
         {canEdit && (
-          <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm">
+          <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-600 hover:bg-surface-700 text-white text-sm">
             <Plus size={16} /> Добавить позицию
           </button>
         )}
@@ -230,7 +230,7 @@ export default function ProjectContentPlanTab({ projectId }: { projectId: string
                     <td className="px-3 py-2 text-xs">{item.assignee?.name ?? '—'}</td>
                     <td className="px-3 py-2">
                       {item.fileLink ? (
-                        <a href={item.fileLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-purple-600 hover:underline">
+                        <a href={item.fileLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-surface-600 hover:underline">
                           <ExternalLink size={12} /> Открыть
                         </a>
                       ) : '—'}
@@ -401,7 +401,7 @@ function ItemForm({ initial, employees, onSubmit, onCancel, loading }: {
 
       <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
         <button type="button" onClick={onCancel} className="px-4 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700">Отмена</button>
-        <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg text-sm bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50">
+        <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg text-sm bg-surface-600 hover:bg-surface-700 text-white disabled:opacity-50">
           {loading ? 'Сохранение...' : 'Сохранить'}
         </button>
       </div>
