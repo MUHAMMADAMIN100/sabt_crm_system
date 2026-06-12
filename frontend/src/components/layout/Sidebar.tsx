@@ -5,7 +5,7 @@ import { hasPermissionAny, getUserPositionLabel, type Permission } from '@/lib/p
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
-  FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserCog, UserPlus,
+  FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserPlus,
   Shield, LogOut, RotateCcw,
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -45,15 +45,12 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/tariffs',       icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/risks',         icon: ShieldAlert,     label: 'Риски',             permission: 'risks.view' },
     { to: '/finance',       icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
-    { to: '/teams',         icon: UserCog,         label: 'Команды',           permission: 'teams.manage' },
     { to: '/security-log',  icon: Shield,          label: 'Журнал безопасности', permission: 'security-log.view' },
     { to: '/ai',            icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]
 
-  const hideTeamsRoles = ['smm_director', 'video_director']
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
   const filtered = navItems.filter(item => {
-    if (item.to === '/teams' && hideTeamsRoles.includes(role || '')) return false
     // Аналитика и Отчёты — не зона работы менеджеров продаж.
     if (isSalesManager && (item.to === '/reports' || item.to === '/analytics')) return false
     // Онбординг: у sales_manager_smm встроен переключателем в Базу клиентов —

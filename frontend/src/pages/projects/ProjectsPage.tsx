@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { projectsApi, employeesApi, smmTariffsApi, riskApi, teamsApi } from '@/services/api.service'
+import { projectsApi, employeesApi, smmTariffsApi, riskApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar, Pagination } from '@/components/ui'
@@ -382,18 +382,12 @@ export default function ProjectsPage() {
               </div>
 
               {/* Метки: тариф / команда / без тарифа — в отдельной строке */}
-              {((p as any).tariffNameSnapshot || (p as any).teamNameSnapshot || (p.projectType === 'SMM' && !(p as any).tariffId)) && (
+              {((p as any).tariffNameSnapshot || (p.projectType === 'SMM' && !(p as any).tariffId)) && (
                 <div className="flex items-center gap-1 mb-3 flex-wrap">
                   {(p as any).tariffNameSnapshot && (
                     <span title={`Тариф: ${(p as any).tariffNameSnapshot}`}
                       className="text-[10px] bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400 px-1.5 py-0.5 rounded-full max-w-[120px] truncate">
                       🏷 {(p as any).tariffNameSnapshot}
-                    </span>
-                  )}
-                  {(p as any).teamNameSnapshot && (
-                    <span title={`Команда: ${(p as any).teamNameSnapshot}`}
-                      className="text-[10px] bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400 px-1.5 py-0.5 rounded-full max-w-[120px] truncate">
-                      👥 {(p as any).teamNameSnapshot}
                     </span>
                   )}
                   {p.projectType === 'SMM' && !(p as any).tariffId && (
@@ -510,6 +504,9 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     .includes(formUser?.role || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
+  // Анкета SMM-проекта свёрнута по умолчанию — длинная; разворачивается
+  // кликом по заголовку. При редактировании с заполненной анкетой — открыта.
+  const [smmFormOpen, setSmmFormOpen] = useState(false)
   // Бриф клиента (заполнение прямо в форме создания SMM-проекта).
   // Если не пуст — отправляется вторым запросом после успешного create.
   const [briefDraft, setBriefDraft] = useState<BriefDraft>({
@@ -529,8 +526,6 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const dropRef = useRef<HTMLDivElement>(null)
   const projectType = watch('projectType')
   const tariffId = watch('tariffId')
-  const teamId = watch('teamId')
-  const showAllMembers = watch('showAllMembers') as unknown as boolean
   const discountValue = Number(watch('discount') || 0)
   const discountType = (watch('discountType') as string) || 'fixed'
 
@@ -571,12 +566,6 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     setValue('endDate', format(end, 'yyyy-MM-dd'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchedStartDate])
-
-  // Загружаем команды — для селектора команды и фильтрации участников
-  const { data: teams } = useQuery({
-    queryKey: ['teams'],
-    queryFn: () => teamsApi.list(),
-  })
 
   // Загружаем существующие платежи проекта (только при редактировании)
   const { data: existingPayments } = useQuery({
@@ -630,12 +619,11 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           managerId: (initial as any).managerId || (initial as any).manager?.id || '',
           salesManagerId: (initial as any).salesManagerId || (initial as any).salesManager?.id || '',
           tariffId: (initial as any).tariffId || '',
-          teamId: (initial as any).teamId || '',
-          showAllMembers: false,
           discount: (initial as any).discount ?? '',
           discountType: (initial as any).discountType ?? 'fixed',
         })
         if (initial.smmData) setSmmAnswers(initial.smmData)
+        setSmmFormOpen(Object.keys(initial.smmData || {}).length > 0)
         setSelectedMembers(initial.members?.map((m: any) => m.id) || [])
       } else {
         reset({
@@ -644,13 +632,12 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           projectType: forcedProjectType || (isSalesDev ? 'Лендинг' : ''),
           managerId: '', salesManagerId: '',
           tariffId: '',
-          teamId: '',
-          showAllMembers: false,
           discount: '',
           discountType: 'fixed',
         })
         setSmmAnswers({})
         setShowSmmForm(false)
+        setSmmFormOpen(false)
         setSelectedMembers([])
         setTranches([])
       }
@@ -704,9 +691,6 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
       formattedData.tariffId = data.tariffId || null
     }
     // Team — пустая строка означает "отвязать"
-    if ('teamId' in data) {
-      formattedData.teamId = data.teamId || null
-    }
     // Скидка — отправляем только если поле непустое (на стороне finance role)
     if (canSeeFinance && data.discount !== undefined && data.discount !== '') {
       formattedData.discount = Number(data.discount) || 0
@@ -843,31 +827,8 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           </CollapsibleField>
           )}
 
-          {/* Команда — скрыта для МП-dev (упрощённая форма без команды). */}
-          {!isSalesDev && (
-          <CollapsibleField
-            className="sm:col-span-2"
-            label="Команда"
-            defaultOpen={!!(initial as any)?.teamId}
-            hint={(initial as any)?.teamId ? 'выбрана' : ''}
-          >
-            <select {...register('teamId')} className="input">
-              <option value="">— Без команды —</option>
-              {(teams || []).map((t: any) => (
-                <option key={t.id} value={t.id}>{t.name}{t.memberCount ? ` (${t.memberCount})` : ''}</option>
-              ))}
-            </select>
-            {teamId ? (
-              <p className="text-[11px] text-surface-600 dark:text-surface-400 mt-1">
-                👥 В список участников ниже попадают только сотрудники из этой команды.
-              </p>
-            ) : (
-              <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-1">
-                Если команда не выбрана — в списке доступны все сотрудники.
-              </p>
-            )}
-          </CollapsibleField>
-          )}
+          {/* Поле «Команда» удалено (12.06.2026) — фича команд больше
+              не используется в проектах. */}
 
           {/* SMM-тариф (только для SMM-проектов). При СОЗДАНИИ — обязателен:
               все тарифы действуют 1 месяц, от тарифа автозаполняются даты
@@ -1035,14 +996,25 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             </div>
           )}
 
-          {/* SMM Questionnaire — appears right after type select */}
+          {/* SMM Questionnaire — appears right after type select.
+              Сворачиваемая: клик по заголовку открывает/закрывает. */}
           {showSmmForm && (
             <div className="sm:col-span-2 border border-primary-300 dark:border-primary-700 rounded-xl p-4 bg-primary-50 dark:bg-primary-900/10 space-y-4">
-              <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSmmFormOpen(o => !o)}
+                className="w-full flex items-center gap-2 text-left"
+              >
                 <span className="text-lg">📋</span>
                 <h3 className="font-semibold text-primary-700 dark:text-primary-300 text-sm">Анкета SMM-проекта</h3>
-                <span className="text-xs text-primary-600 dark:text-primary-400">Заполните для лучшего понимания проекта</span>
-              </div>
+                <span className="text-xs text-primary-600 dark:text-primary-400 flex-1">
+                  {smmFormOpen
+                    ? 'Заполните для лучшего понимания проекта'
+                    : `свёрнута · ${Object.values(smmAnswers).filter(v => String(v || '').trim()).length} заполнено — нажмите, чтобы развернуть`}
+                </span>
+                <span className={clsx('text-surface-400 transition-transform', smmFormOpen && 'rotate-180')}>▾</span>
+              </button>
+              {smmFormOpen && (
               <div className="space-y-3">
                 {SMM_QUESTIONS.map(q => (
                   <div key={q.key}>
@@ -1081,8 +1053,9 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                       />
                     )}
                   </div>
-                ))}
+                )) }
               </div>
+              )}
             </div>
           )}
 
@@ -1184,28 +1157,11 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                       />
                     </div>
                   </div>
-                  {/* Wave: фильтрация по команде + escape-hatch «показать всех» */}
-                  {teamId && (
-                    <div className="px-3 py-1.5 bg-surface-50 dark:bg-surface-900/40 border-b border-surface-100 dark:border-surface-700">
-                      <label className="inline-flex items-center gap-2 text-xs cursor-pointer text-surface-600 dark:text-surface-400">
-                        <input type="checkbox" {...register('showAllMembers')} />
-                        Показать сотрудников из других команд тоже
-                      </label>
-                    </div>
-                  )}
                   <div className="max-h-44 overflow-y-auto">
                     {employees
                       .filter((e: any) => {
                         const name = (e.fullName || e.name || '').toLowerCase()
                         if (memberSearch && !name.includes(memberSearch.toLowerCase())) return false
-                        // Если выбрана команда и не включён «показать всех» — фильтруем
-                        if (teamId && !showAllMembers) {
-                          const eid = e.userId || e.id
-                          const isAlreadySelected = selectedMembers.includes(eid)
-                          // Уже выбранных не прячем (на случай редактирования старого проекта)
-                          if (isAlreadySelected) return true
-                          return e.teamId === teamId
-                        }
                         return true
                       })
                       .map((e: any) => {
