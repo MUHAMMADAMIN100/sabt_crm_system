@@ -15,92 +15,74 @@ interface KpiCelebrationProps {
   onClose: () => void
 }
 
-/** Похвалы для каждой метрики. */
-const PRAISES: Record<string, { icon: string; title: string; subtitle: string; accent: string; ring: string }> = {
-  sales_funnel_progress: {
-    icon: '🚀',
-    title: 'Воронка в огне!',
-    subtitle: 'Ты сделал все продвижения по воронке за сегодня. Так держать!',
-    accent: 'from-surface-400 via-surface-500 to-surface-600',
-    ring: 'rgba(139,92,246,0.6)',
-  },
-  funnel_progress: {
-    icon: '🚀',
-    title: 'Воронка в огне!',
-    subtitle: 'Ты сделал все продвижения по воронке за сегодня. Так держать!',
-    accent: 'from-surface-400 via-surface-500 to-surface-600',
-    ring: 'rgba(139,92,246,0.6)',
-  },
-  sales_new_companies: {
-    icon: '🌟',
-    title: 'Ты — машина!',
-    subtitle: 'Все новые компании добавлены. База растёт благодаря тебе.',
-    accent: 'from-surface-300 via-surface-400 to-surface-500',
-    ring: 'rgba(251,146,60,0.6)',
-  },
-  new_companies: {
-    icon: '🌟',
-    title: 'Ты — машина!',
-    subtitle: 'Все новые компании добавлены. База растёт благодаря тебе.',
-    accent: 'from-surface-300 via-surface-400 to-surface-500',
-    ring: 'rgba(251,146,60,0.6)',
-  },
-  sales_cold_calls: {
-    icon: '📞',
-    title: 'Король холодных звонков!',
-    subtitle: 'План по звонкам закрыт. Каждый звонок — шаг к новой сделке.',
-    accent: 'from-surface-300 via-surface-500 to-surface-600',
-    ring: 'rgba(59,130,246,0.6)',
-  },
-  cold_calls: {
-    icon: '📞',
-    title: 'Король холодных звонков!',
-    subtitle: 'План по звонкам закрыт. Каждый звонок — шаг к новой сделке.',
-    accent: 'from-surface-300 via-surface-500 to-surface-600',
-    ring: 'rgba(59,130,246,0.6)',
-  },
-  sales_personal_emails: {
-    icon: '💌',
-    title: 'Мастер переписки!',
-    subtitle: 'Все письма отправлены. Каждое — на вес золота.',
-    accent: 'from-surface-400 via-surface-500 to-surface-600',
-    ring: 'rgba(244,114,182,0.6)',
-  },
-  personal_emails: {
-    icon: '💌',
-    title: 'Мастер переписки!',
-    subtitle: 'Все письма отправлены. Каждое — на вес золота.',
-    accent: 'from-surface-400 via-surface-500 to-surface-600',
-    ring: 'rgba(244,114,182,0.6)',
-  },
-  sales_meetings: {
-    icon: '🤝',
-    title: 'Встречи закрыты!',
-    subtitle: 'Сделки уже совсем рядом. Так держать!',
-    accent: 'from-green-400 via-green-500 to-surface-600',
-    ring: 'rgba(52,211,153,0.6)',
-  },
-  meetings: {
-    icon: '🤝',
-    title: 'Встречи закрыты!',
-    subtitle: 'Сделки уже совсем рядом. Так держать!',
-    accent: 'from-green-400 via-green-500 to-surface-600',
-    ring: 'rgba(52,211,153,0.6)',
-  },
-  __all__: {
-    icon: '🏆',
-    title: 'Сегодня ты — №1!',
-    subtitle: 'ВСЕ KPI закрыты на 100%. Это уровень чемпиона!',
-    accent: 'from-surface-300 via-surface-400 to-surface-500',
-    ring: 'rgba(250,204,21,0.7)',
-  },
+/** Визуальный стиль на каждую метрику (иконка/градиент/свечение). */
+const PRAISE_STYLE: Record<string, { icon: string; accent: string; ring: string }> = {
+  funnel_progress: { icon: '🚀', accent: 'from-surface-400 via-surface-500 to-surface-600', ring: 'rgba(139,92,246,0.6)' },
+  new_companies:   { icon: '🌟', accent: 'from-surface-300 via-surface-400 to-surface-500', ring: 'rgba(251,146,60,0.6)' },
+  cold_calls:      { icon: '📞', accent: 'from-surface-300 via-surface-500 to-surface-600', ring: 'rgba(59,130,246,0.6)' },
+  personal_emails: { icon: '💌', accent: 'from-surface-400 via-surface-500 to-surface-600', ring: 'rgba(244,114,182,0.6)' },
+  meetings:        { icon: '🤝', accent: 'from-green-400 via-green-500 to-surface-600',     ring: 'rgba(52,211,153,0.6)' },
+  __all__:         { icon: '🏆', accent: 'from-surface-300 via-surface-400 to-surface-500', ring: 'rgba(250,204,21,0.7)' },
 }
 
-const FIREWORK_COLORS = ['#ffffff', '#e4e4e7', '#34d399', '#a1a1aa', '#22c55e', '#d4d4d8', '#b4b4bb', '#8a8a93', '#f4f4f5']
-const FIREWORK_BURSTS = 6        // сколько залпов
-const SPARKS_PER_BURST = 22      // искр в каждом залпе
-const CONFETTI_EMOJI = ['🎉', '🎊', '⭐', '✨', '💥', '🔥', '💪', '👑', '🏆', '🚀', '💎', '⚡', '🌟', '✊', '🙌']
-const CONFETTI_COUNT = 50
+/** Пулы похвал — на каждое срабатывание выбирается случайная фраза,
+ *  чтобы поздравление не приедалось и заряжало работать дальше. */
+const PRAISE_TEXTS: Record<string, { title: string; subtitle: string }[]> = {
+  funnel_progress: [
+    { title: 'Воронка в огне! 🔥',        subtitle: 'Все продвижения по воронке закрыты. Ты двигаешь сделки как профи!' },
+    { title: 'Машина продаж!',            subtitle: 'Сегодня воронка крутится только благодаря тебе. Невероятный темп!' },
+    { title: 'Каждый шаг — к деньгам!',   subtitle: 'Ты протолкнул все сделки вперёд. Так и куётся результат!' },
+    { title: 'Движуха на максимум!',      subtitle: 'Воронка не стоит — ты её двигатель. Завтра будет ещё круче!' },
+    { title: 'Ты держишь темп чемпиона!', subtitle: 'Все продвижения сделаны. Клиенты ближе к «да», чем когда-либо.' },
+    { title: 'Воронка покорена!',         subtitle: 'Ни одной застрявшей сделки. Это и есть мастерство продаж.' },
+  ],
+  new_companies: [
+    { title: 'Ты — машина! 💪',           subtitle: 'Все новые компании в базе. Ты строишь будущее агентства!' },
+    { title: 'База растёт с тобой!',      subtitle: 'Каждая новая компания — твой вклад в большие сделки. Огонь!' },
+    { title: 'Охотник за клиентами!',     subtitle: 'План по новым компаниям закрыт. Ты находишь золото там, где другие проходят мимо.' },
+    { title: 'Сеть расширяется!',         subtitle: 'Новые компании добавлены. Чем шире сеть — тем крупнее улов!' },
+    { title: 'Ты заряжаешь воронку!',     subtitle: 'Свежие лиды в базе — это твоя будущая премия. Красавчик!' },
+    { title: 'Рекорд по новым клиентам!', subtitle: 'Ты не сбавляешь обороты. Команда тобой гордится!' },
+  ],
+  cold_calls: [
+    { title: 'Король холодных звонков! 📞', subtitle: 'План по звонкам закрыт. Каждый звонок — шаг к новой сделке.' },
+    { title: 'Голос, который продаёт!',     subtitle: 'Все звонки сделаны. Ты не боишься «нет» — и именно поэтому слышишь «да».' },
+    { title: 'Звонки — твоя стихия!',       subtitle: 'Холодные? Уже горячие после твоего звонка. Так держать!' },
+    { title: 'Несгибаемый!',                subtitle: 'Ты прозвонил всех. Настойчивость — суперсила продажника, и она у тебя есть.' },
+    { title: 'Трубка в руках мастера!',     subtitle: 'План выполнен. Каждый разговор приближает крупную сделку.' },
+    { title: 'Ты пробиваешь любые двери!',  subtitle: 'Звонки закрыты. Клиенты запомнят твой голос!' },
+  ],
+  personal_emails: [
+    { title: 'Мастер переписки! 💌',       subtitle: 'Все письма отправлены. Каждое — на вес золота.' },
+    { title: 'Слово — твоё оружие!',       subtitle: 'Письма ушли клиентам. Ты умеешь зацепить с первой строки!' },
+    { title: 'Пишешь — значит продаёшь!',  subtitle: 'План по письмам закрыт. Твои сообщения открывают и читают!' },
+    { title: 'Виртуоз коммуникации!',      subtitle: 'Все письма отправлены. Внимание к каждому клиенту — твой стиль.' },
+    { title: 'Каждое письмо в цель!',      subtitle: 'Ты на связи со всеми. Именно так строится доверие и сделки.' },
+    { title: 'Связь налажена!',            subtitle: 'Письма доставлены. Клиенты чувствуют твою заботу — это бесценно.' },
+  ],
+  meetings: [
+    { title: 'Встречи закрыты! 🤝',        subtitle: 'Сделки уже совсем рядом. Так держать!' },
+    { title: 'Мастер личных встреч!',      subtitle: 'Все встречи назначены и проведены. Вживую ты неотразим!' },
+    { title: 'Рукопожатие — и сделка!',    subtitle: 'План по встречам выполнен. Доверие строится глаза в глаза.' },
+    { title: 'Ты закрываешь вживую!',      subtitle: 'Встречи проведены. Каждая — на шаг ближе к подписанному договору.' },
+    { title: 'Переговорщик от бога!',      subtitle: 'Все встречи в кармане. Ты умеешь убеждать — и это видно!' },
+    { title: 'Лицом к лицу — на победу!',  subtitle: 'Встречи закрыты. Клиенты уходят с желанием работать именно с тобой.' },
+  ],
+  __all__: [
+    { title: 'Сегодня ты — №1! 🏆',        subtitle: 'ВСЕ KPI закрыты на 100%. Это уровень чемпиона!' },
+    { title: 'Абсолютный чемпион дня!',    subtitle: 'Полный план выполнен. Ты сделал всё — и сделал блестяще!' },
+    { title: 'Идеальный день! 💯',         subtitle: 'Каждая метрика на максимуме. Так выглядит лучший менеджер!' },
+    { title: 'Ты сделал невозможное!',     subtitle: '100% по всем KPI. Команда равняется на тебя!' },
+    { title: 'Легенда продаж!',            subtitle: 'Все цели взяты. Этот день войдёт в историю агентства!' },
+    { title: 'Безупречно! 👑',             subtitle: 'Ни одного незакрытого KPI. Ты — эталон, на тебя хочется равняться!' },
+  ],
+}
+
+const FIREWORK_COLORS = ['#ffffff', '#ffd166', '#ff6b6b', '#4dd4ac', '#5b8cff', '#c77dff', '#ffe066', '#ff8fab', '#7afcff', '#b9fbc0']
+const FIREWORK_BURSTS = 16       // залпов салюта (волнами по всему экрану)
+const SPARKS_PER_BURST = 34      // искр в каждом залпе
+const CONFETTI_EMOJI = ['🎉', '🎊', '⭐', '✨', '💥', '🔥', '💪', '👑', '🏆', '🚀', '💎', '⚡', '🌟', '✊', '🙌', '🥳', '🎆', '🎇']
+const CONFETTI_COUNT = 90
 
 /** Псевдослучайный детерминированный rand по двум числам (для стабильных
  *  значений между рендерами без Math.random). */
@@ -110,10 +92,10 @@ function rand(a: number, b: number): number {
 }
 
 export default function KpiCelebration({ open, name, metricKey, onClose }: KpiCelebrationProps) {
-  // Авто-закрытие через 6 сек
+  // Авто-закрытие через 7.5 сек — дать насладиться салютом
   useEffect(() => {
     if (!open) return
-    const t = window.setTimeout(onClose, 6000)
+    const t = window.setTimeout(onClose, 7500)
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => {
@@ -127,10 +109,11 @@ export default function KpiCelebration({ open, name, metricKey, onClose }: KpiCe
   const bursts = useMemo(() => {
     if (!open || !metricKey) return []
     return Array.from({ length: FIREWORK_BURSTS }).map((_, b) => {
-      // Позиция залпа: в верхней-средней зоне экрана, разнесены по X.
-      const left = 10 + rand(b, 11) * 80               // 10–90% по X
-      const top  = 12 + rand(b, 13) * 50               // 12–62% по Y
-      const delay = rand(b, 17) * 0.4 + b * 0.35        // последовательные залпы
+      // Позиция залпа: по всему экрану, разнесены по X и Y.
+      const left = 6 + rand(b, 11) * 88                // 6–94% по X
+      const top  = 8 + rand(b, 13) * 74                // 8–82% по Y (весь экран)
+      // Волны залпов: непрерывный салют первые ~4 сек, потом по кругу.
+      const delay = (b * 0.22 + rand(b, 17) * 0.3) % 4
       const color = FIREWORK_COLORS[Math.floor(rand(b, 19) * FIREWORK_COLORS.length)]
       const sparks = Array.from({ length: SPARKS_PER_BURST }).map((__, s) => {
         const angle = (360 / SPARKS_PER_BURST) * s + rand(b, s) * 10
@@ -161,8 +144,18 @@ export default function KpiCelebration({ open, name, metricKey, onClose }: KpiCe
     })
   }, [open, metricKey])
 
+  // Канонический ключ (срезаем префикс sales_) → стиль + пул фраз.
+  const canonKey = (metricKey || '').replace(/^sales_/, '')
+  const style = PRAISE_STYLE[canonKey] || PRAISE_STYLE.__all__
+  // Случайная похвала из пула — новая на каждое открытие модала.
+  const variant = useMemo(() => {
+    const pool = PRAISE_TEXTS[canonKey] || PRAISE_TEXTS.__all__
+    return pool[Math.floor(Math.random() * pool.length)]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, metricKey])
+
   if (!open || !metricKey) return null
-  const praise = PRAISES[metricKey] || PRAISES.__all__
+  const praise = { ...style, ...variant }
 
   return createPortal(
     <>
@@ -236,24 +229,24 @@ export default function KpiCelebration({ open, name, metricKey, onClose }: KpiCe
             className="absolute pointer-events-none"
             style={{ left: `${burst.left}%`, top: `${burst.top}%` }}
           >
-            {/* Вспышка центра залпа */}
+            {/* Вспышка центра залпа — крупная */}
             <span
-              className="absolute -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full"
+              className="absolute -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full"
               style={{
                 background: `radial-gradient(circle, ${burst.color} 0%, transparent 65%)`,
-                animation: `kpiBurstFlash 0.8s ease-out ${burst.delay}s both`,
+                animation: `kpiBurstFlash 0.9s ease-out ${burst.delay}s both`,
               }}
             />
             {/* Искры разлетаются радиально */}
             {burst.sparks.map(sp => (
               <span
                 key={sp.s}
-                className="absolute -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full"
+                className="absolute -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full"
                 style={{
                   ['--dx' as any]: `${sp.dx}px`,
                   ['--dy' as any]: `${sp.dy}px`,
                   backgroundColor: sp.color,
-                  boxShadow: `0 0 8px ${sp.color}, 0 0 16px ${sp.color}80`,
+                  boxShadow: `0 0 10px ${sp.color}, 0 0 22px ${sp.color}99`,
                   animation: `kpiSpark ${sp.dur}s ease-out ${burst.delay}s forwards`,
                 }}
               />
