@@ -107,6 +107,10 @@ function buildLight(theme: ThemeColors): Record<string, string> {
     // Сайдбар — тёмная панель из Фона (НЕ из Текста), чтобы смена
     // Текста его не трогала. Всегда тёмный, того же оттенка что Фон.
     '--sidebar-bg': rgbStr(mix(B, BLACK, 0.90)),
+    // Текст сайдбара ← Text, но осветлённый — чтобы следовал роли
+    // «Текст» по оттенку и всегда читался на тёмной панели.
+    '--sidebar-fg': rgbStr(mix(T, WHITE, 0.62)),
+    '--sidebar-fg-dim': rgbStr(mix(T, WHITE, 0.42)),
     ...accentVars(theme),
   }
 }
@@ -137,6 +141,9 @@ function buildDark(theme: ThemeColors): Record<string, string> {
     '--surf-950': rgbStr(mix(B, BLACK, 0.90)),
     // Сайдбар — из Фона (НЕ из Текста), всегда тёмная панель.
     '--sidebar-bg': rgbStr(mix(B, BLACK, 0.92)),
+    // Текст сайдбара ← Text, осветлённый для читаемости на тёмном.
+    '--sidebar-fg': rgbStr(mix(T, WHITE, 0.62)),
+    '--sidebar-fg-dim': rgbStr(mix(T, WHITE, 0.42)),
     ...accentVars(theme),
   }
 }

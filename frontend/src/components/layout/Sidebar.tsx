@@ -78,16 +78,16 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         <div className="flex items-center min-w-0 flex-1">
           {open ? (
             <div className="flex items-baseline gap-0.5 select-none">
-              <span className="text-2xl font-extrabold tracking-tight text-white" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
+              <span className="text-2xl font-extrabold tracking-tight text-[rgb(var(--sidebar-fg))]" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
                 sabt
               </span>
-              <span className="text-2xl font-extrabold tracking-tight text-surface-400" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
+              <span className="text-2xl font-extrabold tracking-tight text-[rgb(var(--sidebar-fg-dim))]" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
                 .
               </span>
             </div>
           ) : (
             <div className="hidden lg:flex w-full justify-center">
-              <span className="text-3xl font-black leading-none select-none text-white" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
+              <span className="text-3xl font-black leading-none select-none text-[rgb(var(--sidebar-fg))]" style={{ fontFamily: "'Arial Black', Arial, sans-serif" }}>
                 S
               </span>
             </div>
@@ -114,7 +114,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                     // темы (главный акцент перекрашивается вместе со всем).
                     isActive
                       ? 'bg-primary-600 text-white shadow-sm'
-                      : 'text-surface-300 hover:bg-surface-50/5 hover:text-white',
+                      : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
                     !open && 'lg:justify-center lg:px-2',
                   )
                 }
@@ -147,8 +147,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 'min-w-0 transition-all duration-300 overflow-hidden',
                 open ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0',
               )}>
-                <p className="text-xs font-semibold text-white truncate leading-tight">{user.name}</p>
-                <p className="text-[10px] text-surface-400 truncate leading-tight">
+                <p className="text-xs font-semibold text-[rgb(var(--sidebar-fg))] truncate leading-tight">{user.name}</p>
+                <p className="text-[10px] text-[rgb(var(--sidebar-fg-dim))] truncate leading-tight">
                   {getUserPositionLabel(user)}
                 </p>
               </div>
