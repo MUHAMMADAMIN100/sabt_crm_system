@@ -138,10 +138,10 @@ export default function TariffsPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Поиск по названию..."
-            className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
+            className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 text-sm"
           />
         </div>
-        <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm cursor-pointer">
+        <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 text-sm cursor-pointer">
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Показать выключенные
         </label>
@@ -215,7 +215,7 @@ function TariffCard({ tariff, canEdit, canSeeFinance, onEdit, onClone, onToggle,
 }) {
   return (
     <div className={clsx(
-      'rounded-xl border p-5 bg-white dark:bg-gray-900 shadow-sm',
+      'rounded-xl border p-5 bg-surface-50 dark:bg-gray-900 shadow-sm',
       tariff.isActive
         ? 'border-gray-200 dark:border-gray-700'
         : 'border-gray-200 dark:border-gray-800 opacity-60',
@@ -325,7 +325,7 @@ function TariffForm({ initial, canSeeFinance, onSubmit, onCancel, loading }: {
       <FormField label="Название" required error={errors.name?.message as string}>
         <input
           {...register('name', { required: 'Введите название' })}
-          className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+          className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900"
         />
       </FormField>
 
@@ -333,14 +333,14 @@ function TariffForm({ initial, canSeeFinance, onSubmit, onCancel, loading }: {
         <textarea
           {...register('description')}
           rows={2}
-          className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+          className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900"
         />
       </CollapsibleField>
 
       <div className="grid grid-cols-2 gap-3">
         {canSeeFinance ? (
           <FormField label="Цена / мес (сомони)" required>
-            <input type="number" step="0.01" {...register('monthlyPrice')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" />
+            <input type="number" step="0.01" {...register('monthlyPrice')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900" />
           </FormField>
         ) : (
           <div className="text-xs text-gray-500 italic flex items-center">
@@ -348,7 +348,7 @@ function TariffForm({ initial, canSeeFinance, onSubmit, onCancel, loading }: {
           </div>
         )}
         <FormField label="Длительность (дней)">
-          <input type="number" {...register('durationDays')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" />
+          <input type="number" {...register('durationDays')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900" />
         </FormField>
       </div>
 
@@ -358,10 +358,10 @@ function TariffForm({ initial, canSeeFinance, onSubmit, onCancel, loading }: {
         hint="Stories / Reels / Posts / Дизайны"
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <FormField label="Stories"><input type="number" {...register('storiesPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-          <FormField label="Reels"><input type="number" {...register('reelsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-          <FormField label="Posts"><input type="number" {...register('postsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-          <FormField label="Дизайны"><input type="number" {...register('designsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
+          <FormField label="Stories"><input type="number" {...register('storiesPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900" /></FormField>
+          <FormField label="Reels"><input type="number" {...register('reelsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900" /></FormField>
+          <FormField label="Posts"><input type="number" {...register('postsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900" /></FormField>
+          <FormField label="Дизайны"><input type="number" {...register('designsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900" /></FormField>
         </div>
       </CollapsibleField>
 
@@ -371,9 +371,9 @@ function TariffForm({ initial, canSeeFinance, onSubmit, onCancel, loading }: {
         hint="Съёмки / Отчёты / Правки"
       >
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <FormField label="Съёмок / мес"><input type="number" {...register('shootingDaysPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-          <FormField label="Отчётов / мес"><input type="number" {...register('reportsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
-          <FormField label="Лимит правок"><input type="number" {...register('revisionLimit')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" /></FormField>
+          <FormField label="Съёмок / мес"><input type="number" {...register('shootingDaysPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900" /></FormField>
+          <FormField label="Отчётов / мес"><input type="number" {...register('reportsPerMonth')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900" /></FormField>
+          <FormField label="Лимит правок"><input type="number" {...register('revisionLimit')} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900" /></FormField>
         </div>
       </CollapsibleField>
 

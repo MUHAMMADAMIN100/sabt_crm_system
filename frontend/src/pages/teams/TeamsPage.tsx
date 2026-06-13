@@ -86,7 +86,7 @@ export default function TeamsPage() {
               key={t.id}
               onClick={() => setDetailTeam(t)}
               className={clsx(
-                'rounded-xl border p-4 bg-white dark:bg-gray-900 shadow-sm cursor-pointer transition-all',
+                'rounded-xl border p-4 bg-surface-50 dark:bg-gray-900 shadow-sm cursor-pointer transition-all',
                 'hover:shadow-md hover:border-surface-300 dark:hover:border-surface-700',
                 t.isActive ? 'border-gray-200 dark:border-gray-700' : 'border-gray-200 dark:border-gray-800 opacity-60',
               )}
@@ -335,7 +335,7 @@ function MembersManager({ team, allEmployees, onClose }: {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
         <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Поиск по имени..." className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm" />
+          placeholder="Поиск по имени..." className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 text-sm" />
       </div>
 
       <div className="text-xs text-gray-500 flex items-center justify-between">
@@ -513,7 +513,7 @@ function OrgChart({ teams, employees }: { teams: Team[]; employees: any[] }) {
   const activeTeams = teams.filter(t => t.isActive)
 
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-5">
       <h2 className="text-base font-semibold flex items-center gap-2 mb-5">
         <Network size={18} className="text-surface-500" /> Структура компании
       </h2>

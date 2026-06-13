@@ -166,7 +166,7 @@ function countByLevel(rows: { level: Level }[]) {
 function SummaryCard({ title, stats, icon: Icon }: { title: string; stats: Record<Level, number>; icon: any }) {
   const total = stats.green + stats.yellow + stats.red
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-5">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2 text-sm font-medium text-gray-500">
           <Icon size={16} /> {title}
@@ -237,7 +237,7 @@ function ProjectRiskRow({ risk }: { risk: ProjectRisk }) {
   const triggered = risk.factors.filter(f => f.triggered)
   return (
     <div className={clsx(
-      'rounded-lg border p-3 bg-white dark:bg-gray-900',
+      'rounded-lg border p-3 bg-surface-50 dark:bg-gray-900',
       risk.level === 'red'    ? 'border-red-200 dark:border-red-900/50' :
       risk.level === 'yellow' ? 'border-surface-200 dark:border-surface-900/50' :
       'border-gray-200 dark:border-gray-700',
@@ -285,7 +285,7 @@ function EmployeeRiskRow({ risk }: { risk: EmployeeRisk }) {
   const triggered = risk.factors.filter(f => f.triggered)
   return (
     <div className={clsx(
-      'rounded-lg border p-3 bg-white dark:bg-gray-900',
+      'rounded-lg border p-3 bg-surface-50 dark:bg-gray-900',
       risk.level === 'red'    ? 'border-red-200 dark:border-red-900/50' :
       risk.level === 'yellow' ? 'border-surface-200 dark:border-surface-900/50' :
       'border-gray-200 dark:border-gray-700',
@@ -328,7 +328,7 @@ function PmWorkloadCard({ pm }: { pm: PmWorkload }) {
   const overloaded = pm.tasksOnReview > 10 || pm.projectCount > 8 || pm.projectsAtRisk > 0
   return (
     <div className={clsx(
-      'rounded-xl border p-4 bg-white dark:bg-gray-900',
+      'rounded-xl border p-4 bg-surface-50 dark:bg-gray-900',
       overloaded ? 'border-surface-200 dark:border-surface-900/50' : 'border-gray-200 dark:border-gray-700',
     )}>
       <div className="font-medium text-sm mb-3">{pm.pmName}</div>

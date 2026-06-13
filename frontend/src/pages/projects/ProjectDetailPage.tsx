@@ -637,7 +637,7 @@ export default function ProjectDetailPage() {
                           value={task.status}
                           onChange={(e) => updateTask.mutate({ taskId: task.id, data: { status: e.target.value } })}
                           onClick={(e) => e.stopPropagation()}
-                          className="mt-2 w-full text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1.5 bg-white dark:bg-surface-800"
+                          className="mt-2 w-full text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1.5 bg-surface-50 dark:bg-surface-800"
                         >
                           {ALL_TASK_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>)}
                         </select>

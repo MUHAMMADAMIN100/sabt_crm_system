@@ -242,7 +242,7 @@ export function EmployeeActivityTab({ userId }: { userId: string }) {
 // ═══════════════════════════════════════════════════════════════════
 function Stat({ icon: Icon, label, value, sub, accent }: { icon?: any; label: string; value: any; sub?: string; accent?: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
       <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
         {Icon && <Icon size={12} />} {label}
       </div>

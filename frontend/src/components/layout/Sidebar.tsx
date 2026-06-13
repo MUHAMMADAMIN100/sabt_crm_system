@@ -65,7 +65,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     <aside
       className={clsx(
         'fixed left-0 top-0 z-30 flex flex-col h-full',
-        'bg-[#0f0f12] text-surface-200',
+        // Фон сайдбара — тёмный край surface-масштаба: всегда тёмный и
+        // при этом следует выбранной теме (Text-цвет задаёт оттенок).
+        'bg-surface-950 text-surface-200',
         'border-r border-black/40',
         'overflow-hidden',
         open ? 'w-[260px]' : 'w-0 lg:w-[72px]',
@@ -91,7 +93,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             </div>
           )}
         </div>
-        <button onClick={onClose} className="lg:hidden p-1 rounded-lg hover:bg-white/10 transition-colors shrink-0">
+        <button onClick={onClose} className="lg:hidden p-1 rounded-lg hover:bg-surface-50/10 transition-colors shrink-0">
           <X size={18} className="text-white/70" />
         </button>
       </div>
@@ -108,11 +110,11 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 className={({ isActive }) =>
                   clsx(
                     'group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                    // Сайдбар всегда тёмный → активный пункт делаем
-                    // тема-независимым: белая плашка, чёрный текст.
+                    // Активный пункт — заливка выбранным Primary-цветом
+                    // темы (главный акцент перекрашивается вместе со всем).
                     isActive
-                      ? 'bg-white text-surface-900 shadow-sm'
-                      : 'text-surface-300 hover:bg-white/5 hover:text-white',
+                      ? 'bg-primary-600 text-white shadow-sm'
+                      : 'text-surface-300 hover:bg-surface-50/5 hover:text-white',
                     !open && 'lg:justify-center lg:px-2',
                   )
                 }
@@ -138,7 +140,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             <NavLink
               to="/profile"
               onClick={handleNavClick}
-              className="flex items-center gap-2 min-w-0 flex-1 p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+              className="flex items-center gap-2 min-w-0 flex-1 p-1.5 rounded-lg hover:bg-surface-50/5 transition-colors"
             >
               <Avatar name={user.name} src={user.avatar} size={32} />
               <div className={clsx(
@@ -156,7 +158,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 <button
                   onClick={() => window.location.reload()}
                   title="Обновить"
-                  className="p-1.5 rounded-md text-surface-400 hover:text-white hover:bg-white/5 transition-colors"
+                  className="p-1.5 rounded-md text-surface-400 hover:text-white hover:bg-surface-50/5 transition-colors"
                 >
                   <RotateCcw size={14} />
                 </button>

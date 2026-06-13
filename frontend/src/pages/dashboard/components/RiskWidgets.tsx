@@ -111,7 +111,7 @@ export function HeadSmmWidgets() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-2">Рейтинг PM (свободные сверху)</h3>
           {pmRated.length === 0 ? <p className="text-xs text-gray-500">Нет данных</p> : (
             <ul className="space-y-1 text-sm">
@@ -125,7 +125,7 @@ export function HeadSmmWidgets() {
           )}
         </div>
 
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-2">Рейтинг SMM (по загрузке)</h3>
           {smmRanked.length === 0 ? <p className="text-xs text-gray-500">Нет данных</p> : (
             <ul className="space-y-1 text-sm">
@@ -236,7 +236,7 @@ function Tile({ label, value, accent, icon: Icon, link }: {
   label: string; value: any; accent?: string; icon?: any; link?: string
 }) {
   const inner = (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 transition-colors hover:border-surface-300">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-3 transition-colors hover:border-surface-300">
       <div className="flex items-center justify-between mb-1">
         <div className="text-[11px] text-gray-500">{label}</div>
         {Icon && <Icon size={14} className="text-surface-500" />}

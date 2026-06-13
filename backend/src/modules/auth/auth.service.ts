@@ -475,13 +475,14 @@ export class AuthService {
     };
   }
 
-  /** Персональный акцентный цвет интерфейса. Валидируем по белому
-   *  списку; null/'' /'black' — сброс к дефолтному ч/б монохрому. */
+  /** Персональная тема интерфейса в realtimecolors-формате:
+   *  5 hex-цветов через дефис (text-background-primary-secondary-accent),
+   *  напр. "18181b-fafafa-4f46e5-71717a-22c55e". null/'' — сброс к дефолту.
+   *  Валидируем строго по regex, чтобы в БД не попал мусор. */
   async setThemeColor(userId: string, themeColor: string | null) {
-    const ALLOWED = ['black', 'violet', 'blue', 'green', 'red', 'orange', 'teal', 'pink'];
-    const value = themeColor && ALLOWED.includes(themeColor) && themeColor !== 'black'
-      ? themeColor
-      : null;
+    const raw = (themeColor || '').trim().toLowerCase();
+    const valid = /^[0-9a-f]{6}(-[0-9a-f]{6}){4}$/.test(raw);
+    const value = valid ? raw : null;
     await this.userRepo.update(userId, { themeColor: value });
     return { themeColor: value };
   }

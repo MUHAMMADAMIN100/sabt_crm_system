@@ -217,7 +217,7 @@ export default function FinancePage() {
                 isActive
                   ? 'border-surface-500 ring-2 ring-surface-200 dark:ring-surface-900/50'
                   : 'border-gray-200 dark:border-gray-700 hover:border-surface-300',
-                'bg-white dark:bg-gray-900',
+                'bg-surface-50 dark:bg-gray-900',
               )}
             >
               <div className="text-xs text-gray-500 mb-1">{a.label}</div>
@@ -311,7 +311,7 @@ export default function FinancePage() {
 // ─── Tile ─────────────────────────────────────────────────────────────
 function Tile({ label, value, accent }: { label: string; value: any; accent?: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
       <div className="text-xs text-gray-500 mb-1">{label}</div>
       <div className={clsx('text-xl font-bold', accent || 'text-gray-900 dark:text-gray-100')}>{value}</div>
     </div>
@@ -377,7 +377,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
 
       {/* Раскрываемая панель «Сотрудники» */}
       {panelTab === 'employees' && (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-3">👥 Сотрудники</h3>
           {activeEmployees.length === 0 ? (
             <div className="text-center py-6 text-sm text-gray-500">Нет сотрудников</div>
@@ -418,7 +418,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
 
       {/* Раскрываемая панель «Проекты» */}
       {panelTab === 'projects' && (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-3">📁 Проекты</h3>
           {activeProjects.length === 0 ? (
             <div className="text-center py-6 text-sm text-gray-500">Нет активных проектов</div>
@@ -454,7 +454,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-3">Динамика 6 месяцев</h3>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -469,7 +469,7 @@ function OverviewSection({ monthly, byCategory, employees, projects, onCreate, o
           </ResponsiveContainer>
         </div>
 
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-3">Расходы по категориям</h3>
           {byCategory.length === 0 ? (
             <div className="text-center py-12 text-sm text-gray-500">Нет данных</div>
@@ -520,24 +520,24 @@ function TransactionsSection({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
+        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 text-sm">
           <option value="">Все типы</option>
           <option value="income">Доход</option>
           <option value="expense">Расход</option>
         </select>
-        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
+        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 text-sm">
           <option value="">Все категории</option>
           {Array.from(new Set([...CATEGORIES.map(c => c.id), ...categories])).map((id: any) => (
             <option key={id} value={id}>{CATEGORIES.find(c => c.id === id)?.label ?? id}</option>
           ))}
         </select>
-        <select value={filterPeriod} onChange={e => setFilterPeriod(e.target.value as any)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
+        <select value={filterPeriod} onChange={e => setFilterPeriod(e.target.value as any)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 text-sm">
           <option value="all">Весь период</option>
           <option value="week">Эта неделя</option>
           <option value="month">Этот месяц</option>
           <option value="year">Этот год</option>
         </select>
-        <select value={sort} onChange={e => setSort(e.target.value as any)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
+        <select value={sort} onChange={e => setSort(e.target.value as any)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 text-sm">
           <option value="date_desc">Дата ↓</option>
           <option value="date_asc">Дата ↑</option>
           <option value="amount_desc">Сумма ↓</option>
@@ -546,7 +546,7 @@ function TransactionsSection({
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Поиск..." className="w-full pl-7 pr-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm" />
+            placeholder="Поиск..." className="w-full pl-7 pr-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 text-sm" />
         </div>
         <button onClick={onAdd} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface-600 hover:bg-surface-700 text-white text-sm">
           <Plus size={14} /> Добавить

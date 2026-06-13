@@ -219,7 +219,7 @@ export default function AiChatPage() {
               'max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
               msg.role === 'user'
                 ? 'bg-primary-600 text-white rounded-br-md'
-                : 'bg-white dark:bg-surface-800 border border-surface-100 dark:border-surface-700 text-surface-800 dark:text-surface-200 rounded-bl-md shadow-sm'
+                : 'bg-surface-50 dark:bg-surface-800 border border-surface-100 dark:border-surface-700 text-surface-800 dark:text-surface-200 rounded-bl-md shadow-sm'
             )}>
               {msg.role === 'assistant' ? (
                 <div dangerouslySetInnerHTML={{ __html: renderContent(msg.content) }} />
@@ -240,7 +240,7 @@ export default function AiChatPage() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center shrink-0">
               <Bot size={16} className="text-white" />
             </div>
-            <div className="bg-white dark:bg-surface-800 border border-surface-100 dark:border-surface-700 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
+            <div className="bg-surface-50 dark:bg-surface-800 border border-surface-100 dark:border-surface-700 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
               <div className="flex items-center gap-2 text-sm text-surface-500 dark:text-surface-400">
                 <Loader2 size={14} className="animate-spin" />
                 Анализирую данные...
@@ -254,7 +254,7 @@ export default function AiChatPage() {
 
       {/* Input */}
       <div className="border-t border-surface-100 dark:border-surface-700 pt-3">
-        <div className="flex items-end gap-2 bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-2xl px-4 py-2 shadow-sm focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent transition-all">
+        <div className="flex items-end gap-2 bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-2xl px-4 py-2 shadow-sm focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent transition-all">
           <textarea
             ref={inputRef}
             value={input}

@@ -175,7 +175,7 @@ export default function AuthPage() {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-surface-800 rounded-3xl shadow-modal border border-surface-100 dark:border-surface-700 p-8">
+        <div className="bg-surface-50 dark:bg-surface-800 rounded-3xl shadow-modal border border-surface-100 dark:border-surface-700 p-8">
           {/* Только вход. Регистрация убрана — новых сотрудников добавляет
               администратор / основатель / сооснователь через раздел
               «Сотрудники». */}

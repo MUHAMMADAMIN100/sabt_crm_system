@@ -361,7 +361,7 @@ export default function ClientsPage() {
                 'p-2 transition-colors',
                 viewMode === 'list'
                   ? 'bg-primary-600 text-white'
-                  : 'bg-white dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200',
+                  : 'bg-surface-50 dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200',
               )}
             >
               <List size={16} />
@@ -373,7 +373,7 @@ export default function ClientsPage() {
                 'p-2 transition-colors',
                 viewMode === 'kanban'
                   ? 'bg-primary-600 text-white'
-                  : 'bg-white dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200',
+                  : 'bg-surface-50 dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200',
               )}
             >
               <LayoutGrid size={16} />
@@ -407,7 +407,7 @@ export default function ClientsPage() {
             'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
             !status
               ? 'bg-primary-600 text-white'
-              : 'bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
+              : 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
           )}
         >
           Все
@@ -441,7 +441,7 @@ export default function ClientsPage() {
             'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
             !interest
               ? 'bg-primary-600 text-white'
-              : 'bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
+              : 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
           )}
         >
           <Circle size={12} /> Все

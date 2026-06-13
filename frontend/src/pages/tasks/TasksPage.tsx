@@ -268,8 +268,8 @@ export default function TasksPage() {
             <Filter size={15} /> <span className="hidden sm:inline">{t('common.filters')}</span>
           </button>
           <div className="flex gap-1 bg-surface-100 dark:bg-surface-700 p-1 rounded-xl">
-            <button onClick={() => setView('list')} className={clsx('p-1.5 rounded-lg', view === 'list' ? 'bg-white dark:bg-surface-600 shadow-sm' : 'text-surface-500 dark:text-surface-400')}><List size={16} /></button>
-            <button onClick={() => setView('grid')} className={clsx('p-1.5 rounded-lg', view === 'grid' ? 'bg-white dark:bg-surface-600 shadow-sm' : 'text-surface-500 dark:text-surface-400')}><LayoutGrid size={16} /></button>
+            <button onClick={() => setView('list')} className={clsx('p-1.5 rounded-lg', view === 'list' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm' : 'text-surface-500 dark:text-surface-400')}><List size={16} /></button>
+            <button onClick={() => setView('grid')} className={clsx('p-1.5 rounded-lg', view === 'grid' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm' : 'text-surface-500 dark:text-surface-400')}><LayoutGrid size={16} /></button>
           </div>
           <button onClick={() => { setEditingTask(null); setShowCreate(true) }} className="btn-primary">
             <Plus size={16} /> <span className="hidden sm:inline">{t('tasks.task')}</span>
@@ -530,7 +530,7 @@ export default function TasksPage() {
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       {canChangeStatus ? (
                         <select value={task.status} onChange={e => updateStatusMut.mutate({ id: task.id, status: e.target.value })}
-                          className="text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-white dark:bg-surface-800 dark:text-surface-200">
+                          className="text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-surface-50 dark:bg-surface-800 dark:text-surface-200">
                           {ALL_STATUSES.map(s => (
                             <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>
                           ))}

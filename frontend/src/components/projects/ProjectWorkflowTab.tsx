@@ -179,7 +179,7 @@ export default function ProjectWorkflowTab({ project }: Props) {
         onDragEnd={() => { setDragId(null); setDragOverStage(null) }}
         onClick={() => setEditCard(c)}
         className={clsx(
-          'bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 space-y-2',
+          'bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 space-y-2',
           'cursor-grab active:cursor-grabbing hover:border-surface-400 dark:hover:border-surface-500 transition-colors',
           dragId === c.id && 'opacity-50',
         )}

@@ -363,7 +363,7 @@ function AssigneeQueueEditor({ queue, employees, setQueue }: {
         {queue.map((uid, idx) => (
           <li
             key={`${uid}-${idx}`}
-            className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700"
+            className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700"
           >
             <span className="w-5 h-5 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
               {idx + 1}

@@ -106,7 +106,7 @@ export default function PublicBriefPage() {
   return (
     <div className="min-h-screen bg-surface-50 dark:bg-surface-900">
       {/* Шапка */}
-      <header className="bg-white dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 sticky top-0 z-10">
+      <header className="bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-baseline gap-1 select-none">

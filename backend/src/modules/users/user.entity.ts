@@ -72,10 +72,12 @@ export class User {
   @Column({ type: 'varchar', length: 50, nullable: true })
   secondaryRole: UserRole | null;
 
-  /** Персональный акцентный цвет интерфейса (black/violet/blue/green/
-   *  red/orange/teal/pink). NULL — дефолтный ч/б монохром. Каждый
-   *  сотрудник выбирает себе сам в Профиле; ни на кого больше не влияет. */
-  @Column({ type: 'varchar', length: 30, nullable: true })
+  /** Персональная тема интерфейса в формате realtimecolors —
+   *  5 hex-цветов через дефис: text-background-primary-secondary-accent
+   *  (например "18181b-fafafa-4f46e5-71717a-22c55e"). NULL — дефолт.
+   *  Из этих 5 цветов фронт генерирует весь surface-масштаб и красит
+   *  ВЕСЬ интерфейс. Персонально на сотрудника, ни на кого не влияет. */
+  @Column({ type: 'varchar', length: 64, nullable: true })
   themeColor: string | null;
 
   @Column({ default: true })

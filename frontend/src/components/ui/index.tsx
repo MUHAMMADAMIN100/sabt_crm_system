@@ -103,7 +103,7 @@ export function Modal({ open, onClose, title, children, size = 'md', titleAction
       {/* Panel — спокойный fade + лёгкий slide-up без overshoot. */}
       <div
         className={clsx(
-          'relative bg-white dark:bg-surface-800 w-full',
+          'relative bg-surface-50 dark:bg-surface-800 w-full',
           'rounded-t-xl sm:rounded-xl border border-surface-200 dark:border-surface-700',
           'shadow-[0_12px_32px_-8px_rgba(15,15,18,0.18)]',
           'max-h-[90vh] sm:max-h-[85vh] flex flex-col',
@@ -220,7 +220,7 @@ export function PageLoader() {
   return (
     <div className="flex flex-col items-center justify-center h-64 gap-4">
       <div className="w-20 h-20 rounded-2xl animate-pulse flex items-center justify-center relative shadow-lg
-                      bg-white dark:bg-primary-600">
+                      bg-surface-50 dark:bg-primary-600">
         <span
           className="text-[52px] font-black leading-none select-none text-primary-600 dark:text-white"
           style={{ fontFamily: 'Arial Black, sans-serif' }}

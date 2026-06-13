@@ -90,7 +90,7 @@ export default function Layout() {
   }, [])
 
   return (
-    <div className="flex h-screen bg-[#f5f5f7] dark:bg-surface-900 overflow-hidden">
+    <div className="flex h-screen bg-surface-100 dark:bg-surface-900 overflow-hidden">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div

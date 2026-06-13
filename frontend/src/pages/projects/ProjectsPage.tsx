@@ -279,25 +279,25 @@ export default function ProjectsPage() {
 
         {/* Wave 16: расширенные фильтры (TZ п.13) */}
         <div className="flex flex-wrap items-center gap-2">
-          <select value={filterTariff} onChange={e => setFilterTariff(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-xs">
+          <select value={filterTariff} onChange={e => setFilterTariff(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 text-xs">
             <option value="">Все тарифы</option>
             {(tariffsList ?? []).map((t: any) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
-          <select value={filterPm} onChange={e => setFilterPm(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-xs">
+          <select value={filterPm} onChange={e => setFilterPm(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 text-xs">
             <option value="">Все PM</option>
             {pmList.map((e: any) => (
               <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>
             ))}
           </select>
-          <select value={filterRisk} onChange={e => setFilterRisk(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-xs">
+          <select value={filterRisk} onChange={e => setFilterRisk(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 text-xs">
             <option value="">Любой риск</option>
             <option value="red">🔥 Red</option>
             <option value="yellow">⚠️ Yellow</option>
             <option value="green">✓ Green</option>
           </select>
-          <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-xs">
+          <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 text-xs">
             <option value="">Все оплаты</option>
             <option value="pending">Ожидает</option>
             <option value="invoice_sent">Счёт отправлен</option>
@@ -306,7 +306,7 @@ export default function ProjectsPage() {
             <option value="overdue">Просрочено</option>
             <option value="frozen">Заморожено</option>
           </select>
-          <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-xs cursor-pointer">
+          <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 text-xs cursor-pointer">
             <input type="checkbox" checked={filterOveruse} onChange={e => setFilterOveruse(e.target.checked)} />
             Только с перерасходом
           </label>
@@ -988,7 +988,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 <button
                   type="button"
                   onClick={() => setShowBriefModal(true)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-primary-700 bg-white border border-primary-300 hover:bg-primary-50 dark:bg-surface-800 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-900/30 transition-colors shrink-0"
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-primary-700 bg-surface-50 border border-primary-300 hover:bg-primary-50 dark:bg-surface-800 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-900/30 transition-colors shrink-0"
                 >
                   {briefFilled > 0 ? '✏️ Редактировать бриф' : '📋 Заполнить бриф'}
                 </button>
@@ -1143,7 +1143,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             {/* Dropdown */}
             {memberDropOpen && (
               <div className="relative z-50">
-                <div className="absolute top-1 left-0 right-0 bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-600 rounded-xl shadow-lg overflow-hidden">
+                <div className="absolute top-1 left-0 right-0 bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-600 rounded-xl shadow-lg overflow-hidden">
                   <div className="p-2 border-b border-surface-100 dark:border-surface-700">
                     <div className="relative">
                       <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-surface-400" />
@@ -1257,7 +1257,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                   {tranches.map((tr, idx) => (
                     <div
                       key={tr.id || `new-${idx}`}
-                      className="grid grid-cols-12 gap-2 items-start p-2 rounded-lg bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700"
+                      className="grid grid-cols-12 gap-2 items-start p-2 rounded-lg bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700"
                     >
                       <div className="col-span-12 sm:col-span-4">
                         <label className="text-[10px] uppercase font-semibold text-surface-500 dark:text-surface-400">

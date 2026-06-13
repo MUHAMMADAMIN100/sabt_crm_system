@@ -311,7 +311,7 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
                     onDragEnd={() => setDraggedId(null)}
                     onClick={() => { setDetailId(c.id); setEditMode(false) }}
                     className={clsx(
-                      'bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 cursor-pointer transition-all duration-200 ease-out animate-fade-in',
+                      'bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 cursor-pointer transition-all duration-200 ease-out animate-fade-in',
                       'hover:shadow-md hover:border-primary-300 dark:hover:border-primary-700 hover:-translate-y-0.5',
                       'active:scale-[0.98]',
                       draggedId === c.id && 'opacity-50 scale-95 rotate-2',

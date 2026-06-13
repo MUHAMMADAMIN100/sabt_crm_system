@@ -116,7 +116,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   ]
 
   const searchResultsDropdown = searchOpen && searchResults && (
-    <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 z-50 max-h-[60vh] sm:max-h-[400px] overflow-y-auto animate-fade-in">
+    <div className="absolute top-full left-0 right-0 mt-1 bg-surface-50 dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 z-50 max-h-[60vh] sm:max-h-[400px] overflow-y-auto animate-fade-in">
       {!hasResults ? (
         <p className="text-sm text-surface-400 dark:text-surface-500 p-4 text-center">{t('common.noData')}</p>
       ) : (
@@ -172,7 +172,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   )
 
   return (
-    <header className="h-[56px] bg-white dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 flex items-center px-3 sm:px-4 gap-2 sm:gap-3 shrink-0 sticky-top relative z-40">
+    <header className="h-[56px] bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 flex items-center px-3 sm:px-4 gap-2 sm:gap-3 shrink-0 sticky-top relative z-40">
       <button onClick={onMenuClick} className="p-2 rounded-md hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
         <Menu size={18} />
       </button>
@@ -218,7 +218,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
             )}
           </button>
           {notifOpen && (
-            <div className="absolute right-0 top-full mt-1 w-[340px] sm:w-[380px] max-w-[calc(100vw-1rem)] bg-white dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 z-50 animate-slide-down flex flex-col max-h-[70vh] origin-top-right">
+            <div className="absolute right-0 top-full mt-1 w-[340px] sm:w-[380px] max-w-[calc(100vw-1rem)] bg-surface-50 dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 z-50 animate-slide-down flex flex-col max-h-[70vh] origin-top-right">
               <div className="flex items-center justify-between px-4 py-3 border-b border-surface-100 dark:border-surface-700 shrink-0">
                 <h3 className="font-semibold text-sm text-surface-900 dark:text-surface-100">Уведомления</h3>
                 {(allNotifications ?? []).some((n: any) => !n.isRead) && (
@@ -293,7 +293,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
             <Globe size={18} />
           </button>
           {langMenuOpen && (
-            <div className="absolute right-0 top-full mt-1 w-40 bg-white dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 py-1 z-50 animate-fade-in">
+            <div className="absolute right-0 top-full mt-1 w-40 bg-surface-50 dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 py-1 z-50 animate-fade-in">
               {languages.map((lang) => (
                 <button key={lang.code} onClick={() => { setLocale(lang.code as any); setLangMenuOpen(false) }}
                   className={clsx('w-full px-4 py-2 text-sm text-left hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors',
@@ -319,7 +319,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           <ChevronDown size={14} className="text-surface-400 hidden sm:block" />
         </button>
         {userMenuOpen && (
-          <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 py-1 z-50 animate-fade-in">
+          <div className="absolute right-0 top-full mt-1 w-48 bg-surface-50 dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 py-1 z-50 animate-fade-in">
             <button onClick={() => { navigate('/profile'); setUserMenuOpen(false) }}
               className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700">
               <User size={15} /> {t('auth.profile')}
@@ -334,7 +334,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
       </div>
       {/* Mobile search overlay */}
       {mobileSearchOpen && (
-        <div className="fixed inset-0 z-50 bg-white dark:bg-surface-900 sm:hidden animate-fade-in">
+        <div className="fixed inset-0 z-50 bg-surface-50 dark:bg-surface-900 sm:hidden animate-fade-in">
           <div className="flex items-center gap-2 p-3 border-b border-surface-100 dark:border-surface-700">
             <button onClick={() => { setMobileSearchOpen(false); setSearchQuery(''); setSearchOpen(false) }} className="p-2 rounded-xl text-surface-600 dark:text-surface-300">
               <X size={20} />

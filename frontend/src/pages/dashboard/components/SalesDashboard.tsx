@@ -60,7 +60,7 @@ function InlineEditCell({
           onChange={e => { setDraft(e.target.value); onSave(e.target.value); setEditing(false) }}
           onBlur={() => setEditing(false)}
           onKeyDown={e => { if (e.key === 'Escape') setEditing(false) }}
-          className={clsx('px-1.5 py-0.5 text-sm rounded border border-primary-400 bg-white dark:bg-surface-800', width)}
+          className={clsx('px-1.5 py-0.5 text-sm rounded border border-primary-400 bg-surface-50 dark:bg-surface-800', width)}
         >
           {options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
@@ -88,7 +88,7 @@ function InlineEditCell({
           if (e.key === 'Enter') { e.preventDefault(); commit() }
           if (e.key === 'Escape') setEditing(false)
         }}
-        className={clsx('px-1.5 py-0.5 text-sm rounded border border-primary-400 bg-white dark:bg-surface-800', width)}
+        className={clsx('px-1.5 py-0.5 text-sm rounded border border-primary-400 bg-surface-50 dark:bg-surface-800', width)}
       />
     )
   }
@@ -138,7 +138,7 @@ function BudgetCell({ value, onSave }: { value: number; onSave: (b: number) => v
             if (e.key === 'Enter') { e.preventDefault(); commit() }
             if (e.key === 'Escape') setEditing(false)
           }}
-          className="w-full px-1.5 py-0.5 text-right text-sm rounded border border-primary-400 bg-white dark:bg-surface-800 tabular-nums"
+          className="w-full px-1.5 py-0.5 text-right text-sm rounded border border-primary-400 bg-surface-50 dark:bg-surface-800 tabular-nums"
         />
       ) : (
         <button

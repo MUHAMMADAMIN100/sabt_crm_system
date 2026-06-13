@@ -123,7 +123,7 @@ export function TeamAnalyticsSection() {
           <h3 className="text-sm font-medium mb-2">Нагрузка PM-ов</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {pmWorkloads.map((p: any) => (
-              <div key={p.pmId} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
+              <div key={p.pmId} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-3">
                 <div className="font-medium text-sm mb-1">{p.pmName}</div>
                 <div className="text-xs text-gray-500 grid grid-cols-2 gap-x-3 gap-y-0.5">
                   <span>Проектов: {p.projectCount}</span>
@@ -215,7 +215,7 @@ export function FinanceAnalyticsSection() {
       <h2 className="font-semibold text-base flex items-center gap-2"><DollarSign size={16} className="text-green-500" /> Finance analytics</h2>
 
       {chartData.length > 0 ? (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-3">Топ-10 проектов по марже</h3>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
@@ -306,7 +306,7 @@ export function RiskAnalyticsSection() {
         <h3 className="text-sm font-medium mb-2">Топ-10 рисковых проектов</h3>
         <ul className="space-y-1.5">
           {(projectRisks ?? []).filter((r: any) => r.level !== 'green').slice(0, 10).map((r: any) => (
-            <li key={r.projectId} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+            <li key={r.projectId} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900">
               <Link to={`/projects/${r.projectId}`} className="hover:text-surface-600 truncate flex-1">{r.projectName}</Link>
               <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', LEVEL_CHIP[r.level as Level])}>{r.level} · {r.score}</span>
             </li>
@@ -368,7 +368,7 @@ export function TariffAnalyticsSection() {
         <Empty title="Нет проектов с тарифами" description="Привяжите тарифы к SMM-проектам — здесь появится распределение." />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
             <h3 className="text-sm font-medium mb-3">Проекты по тарифам</h3>
             <ResponsiveContainer width="100%" height={240}>
               <PieChart>
@@ -420,7 +420,7 @@ function countLevels(rows: { level: string }[]) {
 
 function Tile({ label, value, accent }: { label: string; value: any; accent?: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 text-center">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-3 text-center">
       <div className={clsx('text-xl font-bold', accent || 'text-gray-900 dark:text-gray-100')}>{value}</div>
       <div className="text-[11px] text-gray-500 mt-0.5">{label}</div>
     </div>

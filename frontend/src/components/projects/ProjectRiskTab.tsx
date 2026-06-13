@@ -113,7 +113,7 @@ export default function ProjectRiskTab({ projectId, projectType }: { projectId: 
                   <div className="font-medium text-sm">{f.label}</div>
                   {f.detail && <div className="text-xs text-gray-500 mt-0.5">{f.detail}</div>}
                 </div>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-white dark:bg-gray-900 border border-surface-300 dark:border-surface-800 font-medium text-surface-700 dark:text-surface-400">
+                <span className="text-xs px-2 py-0.5 rounded-full bg-surface-50 dark:bg-gray-900 border border-surface-300 dark:border-surface-800 font-medium text-surface-700 dark:text-surface-400">
                   +{f.weight}
                 </span>
               </li>
@@ -175,7 +175,7 @@ function PlanFactBar({ row }: { row: PlanFactRow }) {
     : 'bg-surface-500'
 
   return (
-    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3">
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <span className="text-base">{icon}</span>

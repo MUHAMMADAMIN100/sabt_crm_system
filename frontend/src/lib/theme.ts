@@ -1,98 +1,205 @@
 import { create } from 'zustand'
 
 /**
- * Персональный акцентный цвет интерфейса.
+ * Персональная тема интерфейса в модели realtimecolors — 5 ролей цвета:
+ *   text · background · primary · secondary · accent
  *
- * Вся палитра системы сидит на CSS-переменных --prim-* (см. index.css).
- * Выбор цвета вешает класс accent-<key> на <html> — переменные
- * мгновенно подменяются, и ВСЁ, что использует primary-* (кнопки,
- * ссылки, сайдбар, фокусы, календарь, бейджи), перекрашивается без
- * перезагрузки. «black» — дефолтный ч/б монохром (класс не вешается).
+ * Из этих 5 цветов генерируется ВЕСЬ набор CSS-переменных:
+ *   --surf-50..950  — нейтральный масштаб, интерполяция Background↔Text
+ *                     (фоны, границы, текст, ховеры, сайдбар, карточки);
+ *   --prim-50..900  — масштаб из Primary (кнопки, ссылки, активные пункты,
+ *                     фокусы, прогресс-бары);
+ *   --secondary, --accent — доп. цвета (графики, вторичные кнопки).
  *
- * Выбор хранится в users.themeColor (ездит за сотрудником между
- * устройствами) + кэш в localStorage, чтобы не мигало при загрузке.
+ * Переменные ставятся инлайном на <html> → перебивают и :root, и .dark,
+ * поэтому интерфейс перекрашивается МГНОВЕННО и ЦЕЛИКОМ в обеих темах.
+ * Хранится в users.themeColor (формат "text-bg-primary-secondary-accent"
+ * из hex без #), ездит за сотрудником между устройствами, персонально.
  */
-export type AccentKey = 'black' | 'violet' | 'blue' | 'green' | 'red' | 'orange' | 'teal' | 'pink'
 
-export const ACCENTS: { key: AccentKey; label: string; swatch: string }[] = [
-  { key: 'black',  label: 'Чёрный',     swatch: '#18181b' },
-  { key: 'violet', label: 'Фиолетовый', swatch: '#4f46e5' },
-  { key: 'blue',   label: 'Синий',      swatch: '#2563eb' },
-  { key: 'green',  label: 'Зелёный',    swatch: '#059669' },
-  { key: 'red',    label: 'Красный',    swatch: '#dc2626' },
-  { key: 'orange', label: 'Оранжевый',  swatch: '#ea580c' },
-  { key: 'teal',   label: 'Бирюзовый',  swatch: '#0d9488' },
-  { key: 'pink',   label: 'Розовый',    swatch: '#db2777' },
+export interface ThemeColors {
+  text: string
+  background: string
+  primary: string
+  secondary: string
+  accent: string
+}
+
+/** Дефолт = текущий ч/б монохром. */
+export const DEFAULT_THEME: ThemeColors = {
+  text: '#18181b',
+  background: '#fafafa',
+  primary: '#18181b',
+  secondary: '#71717a',
+  accent: '#3f3f46',
+}
+
+/** Быстрые пресеты-старты (можно потом докрутить пикером). */
+export const THEME_PRESETS: { name: string; colors: ThemeColors }[] = [
+  { name: 'Монохром',   colors: DEFAULT_THEME },
+  { name: 'Фиолетовый', colors: { text: '#1e1b2e', background: '#faf9ff', primary: '#6d4fcf', secondary: '#8b7fb8', accent: '#a855f7' } },
+  { name: 'Синий',      colors: { text: '#0f172a', background: '#f8fafc', primary: '#2563eb', secondary: '#64748b', accent: '#0ea5e9' } },
+  { name: 'Зелёный',    colors: { text: '#0f1f17', background: '#f6fdf9', primary: '#059669', secondary: '#5f897a', accent: '#10b981' } },
+  { name: 'Красный',    colors: { text: '#1f1414', background: '#fef7f7', primary: '#dc2626', secondary: '#9b6b6b', accent: '#f97316' } },
+  { name: 'Оранжевый',  colors: { text: '#1f1710', background: '#fffbf5', primary: '#ea580c', secondary: '#9c7a5c', accent: '#f59e0b' } },
+  { name: 'Бирюзовый',  colors: { text: '#0d1f1d', background: '#f3fdfb', primary: '#0d9488', secondary: '#5f8a85', accent: '#06b6d4' } },
+  { name: 'Розовый',    colors: { text: '#23131c', background: '#fff7fb', primary: '#db2777', secondary: '#a06b86', accent: '#ec4899' } },
+  { name: 'Тёмный',     colors: { text: '#e7e7ea', background: '#18181b', primary: '#818cf8', secondary: '#9ca3af', accent: '#34d399' } },
 ]
 
-const ACCENT_CLASSES = ACCENTS.filter(a => a.key !== 'black').map(a => `accent-${a.key}`)
+// ─── Цветовая математика ──────────────────────────────────────────────
+type RGB = [number, number, number]
 
-export function normalizeAccent(v?: string | null): AccentKey {
-  return (ACCENTS.some(a => a.key === v) ? v : 'black') as AccentKey
+function hexToRgb(hex: string): RGB {
+  let h = (hex || '').replace('#', '').trim()
+  if (h.length === 3) h = h.split('').map(c => c + c).join('')
+  const int = parseInt(h || '000000', 16)
+  return [(int >> 16) & 255, (int >> 8) & 255, int & 255]
+}
+const clamp = (x: number) => Math.max(0, Math.min(255, Math.round(x)))
+function mix(a: RGB, b: RGB, t: number): RGB {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t].map(clamp) as RGB
+}
+const rgbStr = (c: RGB) => `${c[0]} ${c[1]} ${c[2]}`
+const WHITE: RGB = [255, 255, 255]
+const BLACK: RGB = [0, 0, 0]
+
+// Шаги нейтрального масштаба: доля смешивания Background(0)→Text(1).
+const SURF_STOPS: [number, number][] = [
+  [50, 0.0], [100, 0.05], [200, 0.12], [300, 0.22], [400, 0.40],
+  [500, 0.54], [600, 0.66], [700, 0.76], [800, 0.85], [900, 0.93], [950, 1.0],
+]
+// Шаги primary: <500 светлее (к белому), >600 темнее (к чёрному).
+const PRIM_LIGHT: [number, number][] = [[50, 0.90], [100, 0.82], [300, 0.52], [400, 0.30], [500, 0.12]]
+const PRIM_DARK: [number, number][]  = [[700, 0.15], [900, 0.45]]
+
+/** Полный набор CSS-переменных из 5 цветов темы. */
+function buildVars(theme: ThemeColors): Record<string, string> {
+  const text = hexToRgb(theme.text)
+  const bg = hexToRgb(theme.background)
+  const primary = hexToRgb(theme.primary)
+  const vars: Record<string, string> = {}
+
+  for (const [step, t] of SURF_STOPS) vars[`--surf-${step}`] = rgbStr(mix(bg, text, t))
+  for (const [step, t] of PRIM_LIGHT) vars[`--prim-${step}`] = rgbStr(mix(primary, WHITE, t))
+  vars['--prim-600'] = rgbStr(primary)
+  for (const [step, t] of PRIM_DARK) vars[`--prim-${step}`] = rgbStr(mix(primary, BLACK, t))
+
+  vars['--secondary'] = rgbStr(hexToRgb(theme.secondary))
+  vars['--accent'] = rgbStr(hexToRgb(theme.accent))
+  return vars
 }
 
-/** Вешает/снимает класс акцента на <html>. */
-function applyAccentDom(key: AccentKey) {
+const ALL_VAR_KEYS = [
+  ...SURF_STOPS.map(([s]) => `--surf-${s}`),
+  ...PRIM_LIGHT.map(([s]) => `--prim-${s}`), '--prim-600', ...PRIM_DARK.map(([s]) => `--prim-${s}`),
+  '--secondary', '--accent',
+]
+
+function applyVars(theme: ThemeColors) {
+  const vars = buildVars(theme)
   const el = document.documentElement
-  el.classList.remove(...ACCENT_CLASSES)
-  if (key !== 'black') el.classList.add(`accent-${key}`)
+  for (const [k, v] of Object.entries(vars)) el.style.setProperty(k, v)
+}
+function clearVars() {
+  const el = document.documentElement
+  for (const k of ALL_VAR_KEYS) el.style.removeProperty(k)
 }
 
-interface ThemeState {
-  accent: AccentKey
-  /** Мгновенно применяет цвет (DOM + localStorage + подписчики). */
-  setAccent: (key: AccentKey) => void
+// ─── Сериализация (формат realtimecolors: 5 hex через дефис) ──────────
+export function serializeTheme(t: ThemeColors): string {
+  const h = (s: string) => s.replace('#', '').toLowerCase()
+  return [t.text, t.background, t.primary, t.secondary, t.accent].map(h).join('-')
 }
+export function parseTheme(str?: string | null): ThemeColors | null {
+  if (!str || !/^[0-9a-f]{6}(-[0-9a-f]{6}){4}$/i.test(str.trim())) return null
+  const [text, background, primary, secondary, accent] = str.trim().split('-').map(h => `#${h}`)
+  return { text, background, primary, secondary, accent }
+}
+
+// ─── Zustand-стор ─────────────────────────────────────────────────────
+interface ThemeState {
+  theme: ThemeColors
+  /** true если применена кастомная тема (не дефолт). Когда false —
+   *  цвета берёт из CSS (включая .dark серый primary). */
+  isCustom: boolean
+  /** Применяет кастомную тему мгновенно (DOM + localStorage + стор). */
+  setTheme: (theme: ThemeColors) => void
+  /** Сброс к дефолтному ч/б монохрому. */
+  reset: () => void
+}
+
+const STORAGE_KEY = 'theme-colors'
 
 export const useThemeStore = create<ThemeState>(set => ({
-  accent: 'black',
-  setAccent: (key) => {
-    try { localStorage.setItem('accent-color', key) } catch {}
-    applyAccentDom(key)
-    set({ accent: key })
+  theme: DEFAULT_THEME,
+  isCustom: false,
+  setTheme: (theme) => {
+    applyVars(theme)
+    try { localStorage.setItem(STORAGE_KEY, serializeTheme(theme)) } catch {}
+    set({ theme, isCustom: true })
+  },
+  reset: () => {
+    clearVars()
+    try { localStorage.removeItem(STORAGE_KEY) } catch {}
+    set({ theme: DEFAULT_THEME, isCustom: false })
   },
 }))
 
-/** Вызывается один раз при старте приложения (до первого рендера) —
- *  применяет закэшированный цвет, чтобы интерфейс не мигал дефолтным. */
-export function initAccentFromStorage() {
-  let cached: AccentKey = 'black'
-  try { cached = normalizeAccent(localStorage.getItem('accent-color')) } catch {}
-  applyAccentDom(cached)
-  useThemeStore.setState({ accent: cached })
-}
-
-/** Синхронизация с сервером: вызывается после /auth/me. */
-export function syncAccentFromServer(themeColor?: string | null) {
-  const key = normalizeAccent(themeColor)
-  if (useThemeStore.getState().accent !== key) {
-    useThemeStore.getState().setAccent(key)
+/** Бутстрап до первого рендера — применяем закэшированную тему,
+ *  чтобы интерфейс не мигал дефолтным. */
+export function initThemeFromStorage() {
+  let cached: ThemeColors | null = null
+  try { cached = parseTheme(localStorage.getItem(STORAGE_KEY)) } catch {}
+  if (cached) {
+    applyVars(cached)
+    useThemeStore.setState({ theme: cached, isCustom: true })
   }
 }
 
-/** Сброс при выходе — следующий вошедший не наследует чужой цвет. */
-export function resetAccent() {
-  try { localStorage.removeItem('accent-color') } catch {}
-  applyAccentDom('black')
-  useThemeStore.setState({ accent: 'black' })
+/** Синхронизация с сервером после /auth/me — сервер источник истины. */
+export function syncThemeFromServer(themeColor?: string | null) {
+  const parsed = parseTheme(themeColor)
+  if (parsed) {
+    const cur = useThemeStore.getState()
+    if (!cur.isCustom || serializeTheme(cur.theme) !== serializeTheme(parsed)) {
+      useThemeStore.getState().setTheme(parsed)
+    }
+  } else {
+    // На сервере темы нет → сброс (если локально была кастомная).
+    if (useThemeStore.getState().isCustom) useThemeStore.getState().reset()
+  }
 }
 
-// ─── Палитры графиков по акценту ──────────────────────────────────────
-const MONO_CHART = ['#18181b', '#52525b', '#8a8a93', '#a1a1aa', '#b4b4bb', '#d4d4d8']
-const CHART_PALETTES: Record<AccentKey, string[]> = {
-  black:  MONO_CHART,
-  violet: ['#4f46e5', '#818cf8', '#312e81', '#a5b4fc', '#71717a', '#d4d4d8'],
-  blue:   ['#2563eb', '#60a5fa', '#1e3a8a', '#93c5fd', '#71717a', '#d4d4d8'],
-  green:  ['#059669', '#34d399', '#064e3b', '#6ee7b7', '#71717a', '#d4d4d8'],
-  red:    ['#dc2626', '#f87171', '#7f1d1d', '#fca5a5', '#71717a', '#d4d4d8'],
-  orange: ['#ea580c', '#fb923c', '#7c2d12', '#fdba74', '#71717a', '#d4d4d8'],
-  teal:   ['#0d9488', '#2dd4bf', '#134e4a', '#5eead4', '#71717a', '#d4d4d8'],
-  pink:   ['#db2777', '#f472b6', '#831843', '#f9a8d4', '#71717a', '#d4d4d8'],
+/** Сброс при выходе — следующий вошедший не наследует чужую тему. */
+export function resetTheme() {
+  useThemeStore.getState().reset()
 }
 
-/** Палитра графиков текущего акцента — реактивная (графики
- *  перекрашиваются мгновенно при смене цвета). */
+// ─── Палитра графиков из темы ─────────────────────────────────────────
+function buildChartColors(t: ThemeColors): string[] {
+  const primary = hexToRgb(t.primary)
+  const accent = hexToRgb(t.accent)
+  const secondary = hexToRgb(t.secondary)
+  const text = hexToRgb(t.text)
+  const toHex = (c: RGB) => '#' + c.map(x => clamp(x).toString(16).padStart(2, '0')).join('')
+  // База: primary, accent, secondary + их осветлённые варианты — даёт
+  // 6 различимых серий в гамме выбранной темы.
+  return [
+    toHex(primary),
+    toHex(accent),
+    toHex(secondary),
+    toHex(mix(primary, WHITE, 0.4)),
+    toHex(mix(accent, WHITE, 0.4)),
+    toHex(mix(text, WHITE, 0.45)),
+  ]
+}
+
+/** Реактивная палитра графиков — перерисовываются при смене темы. */
 export function useChartColors(): string[] {
-  const accent = useThemeStore(s => s.accent)
-  return CHART_PALETTES[accent]
+  const theme = useThemeStore(s => s.theme)
+  const isCustom = useThemeStore(s => s.isCustom)
+  // Дефолт (не кастом) — прежняя серая рампа (нейтральна к ч/б).
+  if (!isCustom) return ['#18181b', '#52525b', '#8a8a93', '#a1a1aa', '#b4b4bb', '#d4d4d8']
+  return buildChartColors(theme)
 }

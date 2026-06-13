@@ -443,7 +443,7 @@ export default function CalendarPage() {
                 className={clsx(
                   'min-h-[120px] rounded-2xl border p-3 transition-all group overflow-hidden flex flex-col',
                   inMonth
-                    ? 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-700'
+                    ? 'bg-surface-50 dark:bg-surface-800 border-surface-200 dark:border-surface-700'
                     : 'bg-primary-50/40 dark:bg-primary-900/10 border-primary-100/60 dark:border-primary-900/30',
                   today && 'bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800',
                   canCreate && inMonth && 'cursor-pointer hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-sm',
@@ -704,7 +704,7 @@ export default function CalendarPage() {
                   value={editingTaskFull.status}
                   onChange={(e) => statusMut.mutate({ id: editingTaskFull.id, status: e.target.value })}
                   disabled={statusMut.isPending}
-                  className="text-sm bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-md px-2 py-1 flex-1 min-w-0"
+                  className="text-sm bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-md px-2 py-1 flex-1 min-w-0"
                 >
                   <option value="new">Новая</option>
                   <option value="in_progress">В работе</option>
@@ -915,7 +915,7 @@ function WeekView({
     <div className="card p-0 overflow-x-auto">
       <div className="min-w-[720px]">
         {/* Заголовок — день недели + число (как в референсе) */}
-        <div className="grid border-b border-surface-200 dark:border-surface-700 sticky top-0 z-10 bg-white dark:bg-surface-900" style={cols}>
+        <div className="grid border-b border-surface-200 dark:border-surface-700 sticky top-0 z-10 bg-surface-50 dark:bg-surface-900" style={cols}>
           <div className="text-[10px] text-surface-400 dark:text-surface-500 px-2 py-2 uppercase tracking-wide flex items-end justify-end">
             GMT+5
           </div>
@@ -1414,7 +1414,7 @@ function FounderQuickTaskForm({
                   <select
                     value={s.assigneeId || ''}
                     onChange={e => setSubtaskAssignee(s.id, e.target.value)}
-                    className="text-xs bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded px-1.5 py-1 max-w-[140px] shrink-0"
+                    className="text-xs bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded px-1.5 py-1 max-w-[140px] shrink-0"
                     title={s.assigneeId ? `Исполнитель: ${empName(s.assigneeId)}` : 'Без исполнителя'}
                   >
                     <option value="">— исполнитель —</option>
@@ -1593,7 +1593,7 @@ function TaskDetailDrawer({
         role="dialog"
         aria-modal="true"
         className={clsx(
-          'fixed top-0 right-0 z-[110] h-full bg-white dark:bg-surface-900 shadow-2xl border-l border-surface-200 dark:border-surface-700',
+          'fixed top-0 right-0 z-[110] h-full bg-surface-50 dark:bg-surface-900 shadow-2xl border-l border-surface-200 dark:border-surface-700',
           'w-full sm:w-[440px] lg:w-[520px] xl:w-[600px]',
           'flex flex-col',
           'transform transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
@@ -1601,7 +1601,7 @@ function TaskDetailDrawer({
         )}
       >
         {/* Header — фиксирован сверху естественным flex'ом */}
-        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-surface-100 dark:border-surface-700 bg-white dark:bg-surface-900">
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-surface-100 dark:border-surface-700 bg-surface-50 dark:bg-surface-900">
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
             <span className={clsx(
               'inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap',
@@ -1698,7 +1698,7 @@ function TaskDetailDrawer({
         </div>
 
         {/* Footer actions — естественный flex bottom без absolute */}
-        <div className="shrink-0 px-5 py-3 border-t border-surface-100 dark:border-surface-700 bg-white dark:bg-surface-900 flex gap-2">
+        <div className="shrink-0 px-5 py-3 border-t border-surface-100 dark:border-surface-700 bg-surface-50 dark:bg-surface-900 flex gap-2">
           {event.taskId && (
             <a
               href={`/tasks/${event.taskId}`}

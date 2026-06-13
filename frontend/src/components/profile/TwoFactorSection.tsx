@@ -89,7 +89,7 @@ export default function TwoFactorSection() {
   }
 
   return (
-    <div className="bg-white dark:bg-surface-800 rounded-2xl border border-surface-200 dark:border-surface-700 p-6">
+    <div className="bg-surface-50 dark:bg-surface-800 rounded-2xl border border-surface-200 dark:border-surface-700 p-6">
       <div className="flex items-start justify-between gap-4 mb-4">
         <div className="flex items-start gap-3">
           {enabled ? (
@@ -135,12 +135,12 @@ export default function TwoFactorSection() {
             1. Отсканируйте QR-код в приложении Google Authenticator / Authy / 1Password:
           </p>
           <div className="flex flex-col sm:flex-row gap-4 items-start">
-            <img src={qrUrl} alt="QR-код 2FA" className="w-44 h-44 bg-white p-2 rounded-lg border" />
+            <img src={qrUrl} alt="QR-код 2FA" className="w-44 h-44 bg-surface-50 p-2 rounded-lg border" />
             <div className="flex-1 min-w-0">
               <p className="text-xs text-surface-500 mb-2">
                 Если не удаётся отсканировать — введите вручную секрет:
               </p>
-              <code className="block text-xs bg-white dark:bg-surface-800 px-2 py-1.5 rounded border break-all font-mono">
+              <code className="block text-xs bg-surface-50 dark:bg-surface-800 px-2 py-1.5 rounded border break-all font-mono">
                 {secret}
               </code>
               <p className="text-sm text-surface-700 dark:text-surface-300 mt-4 mb-2">

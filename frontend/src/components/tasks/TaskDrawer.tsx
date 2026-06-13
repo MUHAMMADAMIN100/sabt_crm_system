@@ -114,7 +114,7 @@ export default function TaskDrawer({
         className={clsx(
           // Прижато к правому краю: top 0, bottom 0, right 0, без gap'ов.
           'fixed top-0 right-0 bottom-0 z-[9999]',
-          'bg-white dark:bg-surface-900',
+          'bg-surface-50 dark:bg-surface-900',
           // Округление только слева (справа упирается в край экрана).
           'rounded-l-3xl overflow-hidden',
           'shadow-[-24px_0_60px_-12px_rgba(15,23,42,0.35)]',
@@ -179,7 +179,7 @@ export default function TaskDrawer({
                     <select
                       value={task.status}
                       onChange={(e) => statusMut.mutate(e.target.value)}
-                      className="text-sm border border-surface-200 dark:border-surface-600 rounded-lg px-2.5 py-1 bg-white dark:bg-surface-900 focus:outline-none focus:ring-2 focus:ring-primary-200"
+                      className="text-sm border border-surface-200 dark:border-surface-600 rounded-lg px-2.5 py-1 bg-surface-50 dark:bg-surface-900 focus:outline-none focus:ring-2 focus:ring-primary-200"
                     >
                       {ALL_STATUSES.map(s => (
                         <option key={s} value={s}>{labels[s]}</option>
@@ -270,7 +270,7 @@ export default function TaskDrawer({
                     value={draft}
                     onChange={e => setDraft(e.target.value)}
                     placeholder="Написать комментарий…"
-                    className="flex-1 text-sm rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"
+                    className="flex-1 text-sm rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900 px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"
                   />
                   <button
                     type="submit"
@@ -291,7 +291,7 @@ export default function TaskDrawer({
             <Link
               to={`/tasks/${task.id}`}
               onClick={onClose}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 hover:bg-surface-100 dark:hover:bg-surface-800 text-sm font-medium text-surface-700 dark:text-surface-200 transition-colors"
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900 hover:bg-surface-100 dark:hover:bg-surface-800 text-sm font-medium text-surface-700 dark:text-surface-200 transition-colors"
             >
               <ExternalLink size={14} /> Открыть полностью
             </Link>

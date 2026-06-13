@@ -260,8 +260,8 @@ export default function EmployeesPage() {
         <h1 className="page-title">{t('employees.title')}</h1>
         <div className="flex gap-2">
           <div className="flex gap-1 bg-surface-100 dark:bg-surface-700 p-1 rounded-xl">
-            <button onClick={() => setView('cards')} className={clsx('p-1.5 rounded-lg', view==='cards' ? 'bg-white dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><LayoutGrid size={16}/></button>
-            <button onClick={() => setView('table')} className={clsx('p-1.5 rounded-lg', view==='table' ? 'bg-white dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><List size={16}/></button>
+            <button onClick={() => setView('cards')} className={clsx('p-1.5 rounded-lg', view==='cards' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><LayoutGrid size={16}/></button>
+            <button onClick={() => setView('table')} className={clsx('p-1.5 rounded-lg', view==='table' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><List size={16}/></button>
           </div>
           {isAdmin && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} /> {t('employees.add')}</button>}
         </div>

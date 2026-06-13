@@ -47,7 +47,7 @@ export default function DeleteWithReasonDialog({
             value={reason}
             onChange={e => setReason(e.target.value)}
             placeholder="Например: дубликат задачи / отменено клиентом / создано по ошибке"
-            className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-sm resize-none"
+            className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 text-sm resize-none"
           />
         </div>
 

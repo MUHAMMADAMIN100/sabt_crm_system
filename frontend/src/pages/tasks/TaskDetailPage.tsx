@@ -1669,7 +1669,7 @@ function MultiAssigneesBlock({ task, currentUserId }: { task: any; currentUserId
                       ? 'bg-surface-50 dark:bg-surface-800/40 border-surface-100 dark:border-surface-700'
                       : isCurrent
                         ? 'bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800'
-                        : 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-700',
+                        : 'bg-surface-50 dark:bg-surface-800 border-surface-200 dark:border-surface-700',
                   )}
                 >
                   <div className="flex items-center gap-2">

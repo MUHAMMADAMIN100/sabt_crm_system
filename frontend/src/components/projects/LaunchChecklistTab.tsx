@@ -60,7 +60,7 @@ export default function LaunchChecklistTab({ projectId }: { projectId: string })
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-5">
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="font-semibold text-base">Готовность к запуску</h3>
@@ -91,7 +91,7 @@ export default function LaunchChecklistTab({ projectId }: { projectId: string })
                 'flex items-center gap-3 px-4 py-3 rounded-lg border transition-colors',
                 item.done
                   ? 'border-green-200 dark:border-green-900/50 bg-green-50 dark:bg-green-900/10'
-                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900',
+                  : 'border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900',
                 interactive ? 'cursor-pointer hover:border-surface-400' : '',
               )}
               onClick={() => interactive && !toggleMut.isPending && toggleMut.mutate({ item: item.key, value: !item.done })}

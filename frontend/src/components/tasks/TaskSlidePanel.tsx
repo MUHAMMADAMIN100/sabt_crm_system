@@ -63,7 +63,7 @@ export default function TaskSlidePanel({ taskId, onClose }: Props) {
 
       {/* Slide panel */}
       <div
-        className="fixed top-0 right-0 h-full w-full max-w-md bg-white dark:bg-surface-900 shadow-2xl z-50 flex flex-col animate-slide-in-right"
+        className="fixed top-0 right-0 h-full w-full max-w-md bg-surface-50 dark:bg-surface-900 shadow-2xl z-50 flex flex-col animate-slide-in-right"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-surface-100 dark:border-surface-700 shrink-0">

@@ -190,7 +190,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
         </div>
 
         {totalRaw > 0 && (
-          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium">Прогресс оплаты</span>
               <span className="text-xs text-gray-500">{paidPct}%</span>
@@ -205,7 +205,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
           </div>
         )}
 
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-3">Параметры биллинга</h3>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <Row label="Статус оплаты">
@@ -309,7 +309,7 @@ export default function ProjectFinanceTab({ project }: { project: FinanceProject
 
 function FinanceCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
       <div className="text-xs text-gray-500 mb-1">{label}</div>
       <div className={clsx('text-xl font-bold', accent || 'text-gray-900 dark:text-gray-100')}>{value}</div>
       {sub && <div className="text-xs text-gray-500 mt-1">{sub}</div>}

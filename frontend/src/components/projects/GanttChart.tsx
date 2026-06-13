@@ -178,7 +178,7 @@ export default function GanttChart({ tasks, projectStart, projectEnd }: Props) {
 
       <div className="flex overflow-hidden">
         {/* Task labels column */}
-        <div className="shrink-0 border-r border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 z-10" style={{ width: labelWidth }}>
+        <div className="shrink-0 border-r border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 z-10" style={{ width: labelWidth }}>
           {/* Month header placeholder */}
           <div className="h-7 border-b border-surface-100 dark:border-surface-700" />
           {/* Day header placeholder */}

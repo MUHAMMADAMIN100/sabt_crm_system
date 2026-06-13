@@ -88,7 +88,7 @@ function Popover({
   return createPortal(
     <div
       ref={popRef}
-      className="fixed z-[200] bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl shadow-xl animate-fade-in"
+      className="fixed z-[200] bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl shadow-xl animate-fade-in"
       style={{
         top: pos?.top ?? -9999,
         left: pos?.left ?? -9999,

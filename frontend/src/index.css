@@ -9,7 +9,8 @@
 
     /* ── Монохромная primary-палитра (светлая тема) ──
        Акцент — почти чёрный. RGB-триплеты, чтобы работали
-       alpha-утилиты вида bg-primary-600/20. */
+       alpha-утилиты вида bg-primary-600/20. Персональная тема
+       (lib/theme.ts) переопределяет эти переменные инлайном на <html>. */
     --prim-50:  246 246 247;
     --prim-100: 235 235 238;
     --prim-300: 178 178 186;
@@ -18,6 +19,25 @@
     --prim-600: 24 24 27;
     --prim-700: 9 9 11;
     --prim-900: 19 19 22;
+
+    /* ── Нейтральный surface-масштаб (zinc) — дефолт ──
+       Используется всем интерфейсом (фоны, границы, текст, ховеры).
+       Персональная тема интерполирует его между Background↔Text. */
+    --surf-50:  250 250 250;
+    --surf-100: 244 244 245;
+    --surf-200: 228 228 231;
+    --surf-300: 212 212 216;
+    --surf-400: 161 161 170;
+    --surf-500: 113 113 122;
+    --surf-600: 82 82 91;
+    --surf-700: 63 63 70;
+    --surf-800: 39 39 42;
+    --surf-900: 24 24 27;
+    --surf-950: 9 9 11;
+
+    /* Доп. цвета темы (secondary/accent) — для графиков/вторичных кнопок. */
+    --secondary: 113 113 122;
+    --accent: 24 24 27;
   }
 
   /* В тёмной теме акцент — серый: чёрные кнопки на чёрном фоне
@@ -91,7 +111,7 @@
   /* Card в спокойном корпоративном стиле (по референсу GRANT CHINA):
      тонкий border, очень мягкая тень, белый фон. */
   .card {
-    @apply bg-white rounded-xl border border-surface-200/80 p-4 sm:p-5;
+    @apply bg-surface-50 rounded-xl border border-surface-200/80 p-4 sm:p-5;
     box-shadow: 0 1px 2px rgba(15, 15, 18, 0.04);
     @apply transition-all duration-200 ease-out;
   }
@@ -118,7 +138,7 @@
     transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 150ms ease;
   }
   .btn-primary   { @apply btn bg-primary-600 text-white hover:bg-primary-700; }
-  .btn-secondary { @apply btn bg-white border border-surface-200 text-surface-700 hover:bg-surface-50 hover:border-surface-300; }
+  .btn-secondary { @apply btn bg-surface-50 border border-surface-200 text-surface-700 hover:bg-surface-50 hover:border-surface-300; }
   .dark .btn-secondary { @apply bg-surface-800 border-surface-700 text-surface-200 hover:bg-surface-700 hover:border-surface-600; }
   .btn-danger    { @apply btn bg-red-600 text-white hover:bg-red-700; }
   .btn-ghost     { @apply btn text-surface-600 hover:bg-surface-100 hover:text-surface-900; }
@@ -126,7 +146,7 @@
 
   /* Инпут — флэт, тонкая граница, focus-ring без translate-Y. */
   .input {
-    @apply w-full px-3 py-2 bg-white border border-surface-200 rounded-lg text-sm text-surface-900
+    @apply w-full px-3 py-2 bg-surface-50 border border-surface-200 rounded-lg text-sm text-surface-900
            placeholder:text-surface-400 min-h-[36px]
            focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20;
     transition: border-color 120ms ease, box-shadow 150ms ease, background-color 120ms ease;
@@ -223,7 +243,7 @@ body,
 .btn-danger,
 .sidebar-link,
 nav, header, main,
-[class*="bg-white"],
+[class*="bg-surface-50"],
 [class*="bg-surface"],
 [class*="dark:bg-surface"],
 [class*="border-surface"] {
@@ -634,7 +654,7 @@ aside {
 }
 /* Контейнер всей правой колонки — без card-shadow, без border-box */
 .notion-panel {
-  @apply bg-white dark:bg-surface-800 rounded-2xl px-4 py-2 border border-surface-100 dark:border-surface-700/60;
+  @apply bg-surface-50 dark:bg-surface-800 rounded-2xl px-4 py-2 border border-surface-100 dark:border-surface-700/60;
 }
 
 /* ====================== DRAG & DROP ====================== */
@@ -841,45 +861,3 @@ aside {
   .page-title { @apply text-xl; }
 }
 
-/* ====================== PERSONAL ACCENT THEMES ======================
- * Персональный цвет интерфейса: класс accent-<key> на <html> подменяет
- * --prim-* переменные — вся система перекрашивается мгновенно
- * (см. lib/theme.ts; выбор — в Профиле, хранится в users.themeColor).
- * Блоки стоят ПОСЛЕ .dark { --prim-* }: при равной специфичности
- * побеждает поздний — значит цветной акцент работает в обеих темах.
- * Без класса — дефолтный ч/б монохром. */
-.accent-violet {
-  --prim-50: 238 242 255; --prim-100: 224 231 255; --prim-300: 165 180 252;
-  --prim-400: 129 140 248; --prim-500: 99 102 241; --prim-600: 79 70 229;
-  --prim-700: 67 56 202; --prim-900: 49 46 129;
-}
-.accent-blue {
-  --prim-50: 239 246 255; --prim-100: 219 234 254; --prim-300: 147 197 253;
-  --prim-400: 96 165 250; --prim-500: 59 130 246; --prim-600: 37 99 235;
-  --prim-700: 29 78 216; --prim-900: 30 58 138;
-}
-.accent-green {
-  --prim-50: 236 253 245; --prim-100: 209 250 229; --prim-300: 110 231 183;
-  --prim-400: 52 211 153; --prim-500: 16 185 129; --prim-600: 5 150 105;
-  --prim-700: 4 120 87; --prim-900: 6 78 59;
-}
-.accent-red {
-  --prim-50: 254 242 242; --prim-100: 254 226 226; --prim-300: 252 165 165;
-  --prim-400: 248 113 113; --prim-500: 239 68 68; --prim-600: 220 38 38;
-  --prim-700: 185 28 28; --prim-900: 127 29 29;
-}
-.accent-orange {
-  --prim-50: 255 247 237; --prim-100: 255 237 213; --prim-300: 253 186 116;
-  --prim-400: 251 146 60; --prim-500: 249 115 22; --prim-600: 234 88 12;
-  --prim-700: 194 65 12; --prim-900: 124 45 18;
-}
-.accent-teal {
-  --prim-50: 240 253 250; --prim-100: 204 251 241; --prim-300: 94 234 212;
-  --prim-400: 45 212 191; --prim-500: 20 184 166; --prim-600: 13 148 136;
-  --prim-700: 15 118 110; --prim-900: 19 78 74;
-}
-.accent-pink {
-  --prim-50: 253 242 248; --prim-100: 252 231 243; --prim-300: 249 168 212;
-  --prim-400: 244 114 182; --prim-500: 236 72 153; --prim-600: 219 39 119;
-  --prim-700: 190 24 93; --prim-900: 131 24 67;
-}

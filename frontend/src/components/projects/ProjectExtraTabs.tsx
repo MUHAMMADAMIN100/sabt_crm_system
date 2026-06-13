@@ -37,7 +37,7 @@ export function ProjectOverviewTab({ project }: { project: any }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-3 flex items-center gap-2"><DollarSign size={14} className="text-green-500" /> Финансы</h3>
           <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
             <Row label="Контракт" value={fmt(project.totalContractValue)} />
@@ -49,7 +49,7 @@ export function ProjectOverviewTab({ project }: { project: any }) {
           </dl>
         </div>
 
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-4">
           <h3 className="text-sm font-medium mb-3 flex items-center gap-2"><AlertTriangle size={14} className="text-surface-500" /> Риск</h3>
           {risk ? (
             <div className="space-y-2">
@@ -175,7 +175,7 @@ export function ProjectTeamWorkloadTab({ project }: { project: any }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {teamLoads.map((w: any) => (
           <div key={w.userId} className={clsx(
-            'rounded-xl border p-4 bg-white dark:bg-gray-900',
+            'rounded-xl border p-4 bg-surface-50 dark:bg-gray-900',
             w.overload === 'red' ? 'border-red-200 dark:border-red-900/50' :
             w.overload === 'yellow' ? 'border-surface-200 dark:border-surface-900/50' :
             'border-gray-200 dark:border-gray-700',
@@ -249,7 +249,7 @@ export function ProjectQualityTab({ projectId }: { projectId: string }) {
           <h3 className="text-sm font-medium mb-2">Задачи с возвратами ({reworked.length})</h3>
           <ul className="space-y-1.5">
             {reworked.slice(0, 20).map((t: any) => (
-              <li key={t.id} className="flex items-center justify-between gap-3 text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+              <li key={t.id} className="flex items-center justify-between gap-3 text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900">
                 <Link to={`/tasks/${t.id}`} className="hover:text-surface-600 truncate flex-1">{t.title}</Link>
                 <div className="flex items-center gap-3 text-xs text-gray-500 shrink-0">
                   {t.assignee?.name && <span>{t.assignee.name}</span>}
@@ -306,7 +306,7 @@ export function ProjectActivityTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════════════════════════════════
 function Stat({ icon: Icon, label, value, accent }: { icon?: any; label: string; value: any; accent?: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 text-center">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 p-3 text-center">
       {Icon && <Icon size={16} className="mx-auto mb-1 text-surface-500" />}
       <div className={clsx('text-xl font-bold', accent || 'text-gray-900 dark:text-gray-100')}>{value}</div>
       <div className="text-[11px] text-gray-500 mt-0.5">{label}</div>

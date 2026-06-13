@@ -350,8 +350,8 @@ export default function KpiCelebration({ open, name, metricKey, onClose }: KpiCe
             onClick={onClose}
             className={clsx(
               'pointer-events-auto mt-10 px-10 py-4 rounded-2xl text-xl font-bold text-white',
-              'bg-white/15 backdrop-blur-md border-2 border-white/40',
-              'hover:bg-white/25 hover:scale-105 active:scale-95 transition-all',
+              'bg-surface-50/15 backdrop-blur-md border-2 border-white/40',
+              'hover:bg-surface-50/25 hover:scale-105 active:scale-95 transition-all',
             )}
             style={{
               animation: 'kpiTextRise 0.6s ease-out 1s both, kpiBtnPulse 2s ease-out 1.5s infinite',
