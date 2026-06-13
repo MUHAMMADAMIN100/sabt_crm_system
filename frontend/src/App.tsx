@@ -46,6 +46,7 @@ class ChunkErrorBoundary extends React.Component<
 const AuthPage          = lazy(() => import('@/pages/auth/AuthPage'))
 const DashboardPage     = lazy(() => import('@/pages/dashboard/DashboardPage'))
 const ProjectsPage      = lazy(() => import('@/pages/projects/ProjectsPage'))
+const ProjectsBoardPage = lazy(() => import('@/pages/workflow/ProjectsBoardPage'))
 const ProjectDetailPage = lazy(() => import('@/pages/projects/ProjectDetailPage'))
 const TasksPage         = lazy(() => import('@/pages/tasks/TasksPage'))
 const TaskDetailPage    = lazy(() => import('@/pages/tasks/TaskDetailPage'))
@@ -119,6 +120,7 @@ export default function App() {
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<DashboardPage />} />
           <Route path="projects" element={<RoleGuard><ProjectsPage /></RoleGuard>} />
+          <Route path="workflow-board" element={<RoleGuard><ProjectsBoardPage /></RoleGuard>} />
           <Route path="projects/:id" element={<RoleGuard><ProjectDetailPage /></RoleGuard>} />
           <Route path="tasks" element={<RoleGuard><TasksPage /></RoleGuard>} />
           <Route path="tasks/:id" element={<RoleGuard><TaskDetailPage /></RoleGuard>} />

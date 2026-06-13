@@ -15,7 +15,7 @@ interface Props {
 }
 
 /** Колонки доски — порядок = порядок на экране. */
-const STAGES: { key: string; label: string }[] = [
+export const STAGES: { key: string; label: string }[] = [
   { key: 'content_plan',     label: 'Контент-план' },
   { key: 'organization',     label: 'Организация' },
   { key: 'shooting',         label: 'Съёмка' },
@@ -28,7 +28,7 @@ const STAGES: { key: string; label: string }[] = [
   { key: 'ads',              label: 'Реклама' },
 ]
 
-const CONTENT_TYPES: { value: string; label: string }[] = [
+export const CONTENT_TYPES: { value: string; label: string }[] = [
   { value: 'reel',     label: 'Reels' },
   { value: 'post',     label: 'Пост' },
   { value: 'carousel', label: 'Карусель' },
@@ -37,11 +37,11 @@ const CONTENT_TYPES: { value: string; label: string }[] = [
   { value: 'video',    label: 'Видео' },
   { value: 'other',    label: 'Другое' },
 ]
-const typeLabel = (v?: string | null) =>
+export const typeLabel = (v?: string | null) =>
   CONTENT_TYPES.find(t => t.value === v)?.label || null
 
 /** Короткий лейбл роли для подписи исполнителя — «Анора (СММ)». */
-const shortRole = (role?: string | null): string => {
+export const shortRole = (role?: string | null): string => {
   const map: Record<string, string> = {
     smm_specialist: 'СММ',
     smm_director: 'Рук. SMM',

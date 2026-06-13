@@ -3,7 +3,7 @@ import {
   OnModuleInit, Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { WorkflowCard, WORKFLOW_STAGES } from './workflow-card.entity';
 import { Project } from '../projects/project.entity';
 import { AppGateway } from '../gateway/app.gateway';
@@ -13,6 +13,10 @@ interface Viewer { id: string; role: string }
 /** Роли, которые могут редактировать доску любого SMM-проекта.
  *  Остальным нужно быть менеджером или участником проекта. */
 const PRIVILEGED = ['admin', 'founder', 'co_founder', 'smm_director'];
+
+/** Роли, видящие ВСЕ SMM-проекты на глобальной доске. Остальные —
+ *  только проекты, где они менеджер или участник. */
+const SEE_ALL = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'];
 
 @Injectable()
 export class WorkflowService implements OnModuleInit {
@@ -81,6 +85,37 @@ export class WorkflowService implements OnModuleInit {
       relations: ['assignee'],
       order: { stage: 'ASC', position: 'ASC', createdAt: 'ASC' },
     }).then(cards => cards.map(c => this.toDto(c)));
+  }
+
+  /** Глобальная доска — карточки со ВСЕХ доступных SMM-проектов, с
+   *  именем проекта на каждой. SEE_ALL роли видят все SMM-проекты,
+   *  остальные — только где они менеджер/участник. */
+  async listAll(viewer: Viewer) {
+    const qb = this.projectRepo.createQueryBuilder('p')
+      .select(['p.id', 'p.name'])
+      .where('p."isArchived" = false')
+      .andWhere(`p."projectType" = 'SMM'`);
+    if (!SEE_ALL.includes(viewer.role)) {
+      qb.andWhere(
+        `(p."managerId" = :uid OR p.id IN (
+          SELECT pm."projectsId" FROM project_members pm WHERE pm."usersId" = :uid
+        ))`,
+        { uid: viewer.id },
+      );
+    }
+    const projects = await qb.getMany();
+    if (projects.length === 0) return [];
+    const nameMap = new Map(projects.map(p => [p.id, p.name]));
+
+    const cards = await this.repo.find({
+      where: { projectId: In(projects.map(p => p.id)) },
+      relations: ['assignee'],
+      order: { stage: 'ASC', position: 'ASC', createdAt: 'ASC' },
+    });
+    return cards.map(c => ({
+      ...this.toDto(c),
+      project: { id: c.projectId, name: nameMap.get(c.projectId) || '' },
+    }));
   }
 
   private toDto(c: WorkflowCard) {

@@ -339,6 +339,7 @@ export const riskApi = {
 // ─── Workflow — доска «Процесс работы» SMM-проекта ──────
 export const workflowApi = {
   list: (projectId: string) => api.get(`/workflow/project/${projectId}`).then(r => r.data),
+  listAll: () => api.get('/workflow/all').then(r => r.data),
   create: (projectId: string, data: any) => api.post(`/workflow/project/${projectId}`, data).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/workflow/${id}`, data).then(r => r.data),
   move: (id: string, data: { stage: string; position?: number }) =>

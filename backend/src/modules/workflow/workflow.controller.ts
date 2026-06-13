@@ -13,6 +13,12 @@ import { WorkflowService } from './workflow.service';
 export class WorkflowController {
   constructor(private service: WorkflowService) {}
 
+  /** Глобальная доска — карточки со всех доступных SMM-проектов. */
+  @Get('all')
+  listAll(@Request() req) {
+    return this.service.listAll(req.user);
+  }
+
   @Get('project/:projectId')
   list(@Param('projectId') projectId: string) {
     return this.service.list(projectId);

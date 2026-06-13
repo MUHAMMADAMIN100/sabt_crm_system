@@ -312,6 +312,16 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
   'security-log.view': '/security-log',
 }
 
+/** Роли, видящие глобальную «Доску проектов» — SMM-производство +
+ *  руководители + топ. Менеджерам продаж и разработчику не нужна. */
+export const WORKFLOW_BOARD_ROLES = [
+  'admin', 'founder', 'co_founder', 'smm_director', 'video_director',
+  'smm_specialist', 'designer', 'videographer', 'video_editor', 'organizer', 'storymaker',
+]
+export function canSeeWorkflowBoard(role?: string | null, secondaryRole?: string | null): boolean {
+  return WORKFLOW_BOARD_ROLES.includes(role || '') || WORKFLOW_BOARD_ROLES.includes(secondaryRole || '')
+}
+
 export function canAccessRoute(
   role: UserRole | undefined,
   route: string,
@@ -323,6 +333,8 @@ export function canAccessRoute(
   if (['/profile', '/notifications', '/'].includes(route)) return true
   // Онбординг — только менеджеры по продажам.
   if (route === '/onboarding') return role === 'sales_manager_smm' || role === 'sales_manager_dev'
+  // Глобальная доска проектов — SMM-производство/руководители/топ.
+  if (route === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole)
 
   // Detail pages — allow if user can view the parent
   if (route.startsWith('/projects/')) return hasPermissionAny(role, secondaryRole, 'projects.view')

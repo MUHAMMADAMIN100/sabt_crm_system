@@ -1,12 +1,12 @@
 import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermissionAny, getUserPositionLabel, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserPlus,
-  Shield, LogOut, RotateCcw,
+  Shield, LogOut, RotateCcw, Trello,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -32,6 +32,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const navItems: { to: string; icon: any; label: string; permission: Permission; exact?: boolean }[] = [
     { to: '/',              icon: LayoutDashboard, label: t('nav.dashboard'),  permission: 'dashboard',         exact: true },
     { to: '/projects',      icon: FolderKanban,    label: t('nav.projects'),   permission: 'projects.view' },
+    { to: '/workflow-board', icon: Trello,         label: 'Доска проектов',    permission: 'projects.view' },
     ...(isTopExec ? [] : [
       { to: '/tasks',       icon: CheckSquare,     label: t('nav.tasks'),      permission: 'tasks.view' as Permission },
     ]),
@@ -57,6 +58,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     // отдельный пункт скрываем. У sales_manager_dev — отдельный пункт сайдбара
     // (по запросу пользователя). Остальным ролям пункт не нужен.
     if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
+    // Доска проектов — отдельный список ролей (SMM-производство/руководители/топ).
+    if (item.to === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole)
     // Права = объединение основной и дополнительной ролей.
     return hasPermissionAny(role, secondaryRole, item.permission)
   })
