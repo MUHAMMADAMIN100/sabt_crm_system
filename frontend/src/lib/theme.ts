@@ -68,64 +68,93 @@ const BLACK: RGB = [0, 0, 0]
 const PRIM_LIGHT: [number, number][] = [[50, 0.90], [100, 0.82], [300, 0.52], [400, 0.30], [500, 0.12]]
 const PRIM_DARK: [number, number][]  = [[700, 0.15], [900, 0.45]]
 
-/**
- * Полный набор CSS-переменных из 5 цветов темы.
- *
- * НЕЗАВИСИМОСТЬ: surface-масштаб разбит на 3 непересекающихся под-
- * диапазона, у каждого свой источник — поэтому изменение одной роли
- * НЕ задевает зоны других:
- *   surf-50..300  ← Background (фоны карточек/страниц, границы);
- *   surf-400..600 ← Secondary  (приглушённый/вторичный текст, иконки);
- *   surf-700..950 ← Text       (основной текст, заголовки, сайдбар).
- * primary-* ← Primary, --accent ← Accent — тоже изолированы.
- */
-function buildVars(theme: ThemeColors): Record<string, string> {
-  const T = hexToRgb(theme.text)
-  const B = hexToRgb(theme.background)
-  const S = hexToRgb(theme.secondary)
+/** primary/secondary/accent — одинаковы в обоих режимах (роль выбрана
+ *  пользователем явно). */
+function accentVars(theme: ThemeColors): Record<string, string> {
   const primary = hexToRgb(theme.primary)
   const vars: Record<string, string> = {}
-
-  // ── Поверхности и границы ← Background (затемняем по шагам) ──
-  vars['--surf-50']  = rgbStr(B)
-  vars['--surf-100'] = rgbStr(mix(B, BLACK, 0.04))
-  vars['--surf-200'] = rgbStr(mix(B, BLACK, 0.10))
-  vars['--surf-300'] = rgbStr(mix(B, BLACK, 0.18))
-  // ── Приглушённый/вторичный текст, иконки ← Secondary ──
-  vars['--surf-400'] = rgbStr(mix(S, WHITE, 0.18))
-  vars['--surf-500'] = rgbStr(S)
-  vars['--surf-600'] = rgbStr(mix(S, BLACK, 0.16))
-  // ── Основной текст, заголовки, сайдбар ← Text (светлее для верхних) ──
-  vars['--surf-700'] = rgbStr(mix(T, WHITE, 0.22))
-  vars['--surf-800'] = rgbStr(mix(T, WHITE, 0.10))
-  vars['--surf-900'] = rgbStr(T)
-  vars['--surf-950'] = rgbStr(mix(T, BLACK, 0.12))
-
-  // ── Primary-масштаб ← Primary ──
   for (const [step, t] of PRIM_LIGHT) vars[`--prim-${step}`] = rgbStr(mix(primary, WHITE, t))
   vars['--prim-600'] = rgbStr(primary)
   for (const [step, t] of PRIM_DARK) vars[`--prim-${step}`] = rgbStr(mix(primary, BLACK, t))
-
-  vars['--secondary'] = rgbStr(S)
+  vars['--secondary'] = rgbStr(hexToRgb(theme.secondary))
   vars['--accent'] = rgbStr(hexToRgb(theme.accent))
   return vars
 }
 
-const SURF_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]
-const ALL_VAR_KEYS = [
-  ...SURF_STEPS.map(s => `--surf-${s}`),
-  ...PRIM_LIGHT.map(([s]) => `--prim-${s}`), '--prim-600', ...PRIM_DARK.map(([s]) => `--prim-${s}`),
-  '--secondary', '--accent',
-]
+/**
+ * СВЕТЛЫЙ режим. surface-масштаб разбит на 3 непересекающихся диапазона,
+ * у каждого свой источник — роли изолированы:
+ *   surf-50..300  ← Background (фоны/карточки/границы — светлые);
+ *   surf-400..600 ← Secondary  (приглушённый текст, иконки);
+ *   surf-700..950 ← Text       (основной текст, заголовки, сайдбар — тёмные).
+ */
+function buildLight(theme: ThemeColors): Record<string, string> {
+  const T = hexToRgb(theme.text)
+  const B = hexToRgb(theme.background)
+  const S = hexToRgb(theme.secondary)
+  return {
+    '--surf-50':  rgbStr(B),
+    '--surf-100': rgbStr(mix(B, BLACK, 0.04)),
+    '--surf-200': rgbStr(mix(B, BLACK, 0.10)),
+    '--surf-300': rgbStr(mix(B, BLACK, 0.18)),
+    '--surf-400': rgbStr(mix(S, WHITE, 0.18)),
+    '--surf-500': rgbStr(S),
+    '--surf-600': rgbStr(mix(S, BLACK, 0.16)),
+    '--surf-700': rgbStr(mix(T, WHITE, 0.22)),
+    '--surf-800': rgbStr(mix(T, WHITE, 0.10)),
+    '--surf-900': rgbStr(T),
+    '--surf-950': rgbStr(mix(T, BLACK, 0.12)),
+    ...accentVars(theme),
+  }
+}
 
+/**
+ * ТЁМНЫЙ режим. Компоненты берут фон из ВЕРХНИХ шагов (800/900), а текст
+ * из НИЖНИХ (100/200) — поэтому здесь масштаб инвертирован, НО роли те же:
+ *   surf-700..950 ← Background (тёмные фоны — затемнённый Фон, тот же оттенок);
+ *   surf-400..600 ← Secondary  (приглушённый текст);
+ *   surf-50..300  ← Text       (светлый текст — осветлённый Текст).
+ * Так «Фон» всегда красит фоны, «Текст» всегда текст — в обеих темах.
+ */
+function buildDark(theme: ThemeColors): Record<string, string> {
+  const T = hexToRgb(theme.text)
+  const B = hexToRgb(theme.background)
+  const S = hexToRgb(theme.secondary)
+  return {
+    '--surf-50':  rgbStr(mix(T, WHITE, 0.92)),
+    '--surf-100': rgbStr(mix(T, WHITE, 0.84)),
+    '--surf-200': rgbStr(mix(T, WHITE, 0.70)),
+    '--surf-300': rgbStr(mix(T, WHITE, 0.52)),
+    '--surf-400': rgbStr(mix(S, WHITE, 0.24)),
+    '--surf-500': rgbStr(S),
+    '--surf-600': rgbStr(mix(S, BLACK, 0.18)),
+    '--surf-700': rgbStr(mix(B, BLACK, 0.58)),
+    '--surf-800': rgbStr(mix(B, BLACK, 0.72)),
+    '--surf-900': rgbStr(mix(B, BLACK, 0.82)),
+    '--surf-950': rgbStr(mix(B, BLACK, 0.90)),
+    ...accentVars(theme),
+  }
+}
+
+const STYLE_ID = 'theme-vars'
+const block = (sel: string, vars: Record<string, string>) =>
+  `${sel}{${Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(';')}}`
+
+/** Вставляем/обновляем <style> с двумя блоками (светлый+тёмный) и
+ *  включаем класс theme-on на <html>. Селекторы html.theme-on /
+ *  html.dark.theme-on перебивают дефолтные :root / .dark. */
 function applyVars(theme: ThemeColors) {
-  const vars = buildVars(theme)
-  const el = document.documentElement
-  for (const [k, v] of Object.entries(vars)) el.style.setProperty(k, v)
+  let el = document.getElementById(STYLE_ID) as HTMLStyleElement | null
+  if (!el) { el = document.createElement('style'); el.id = STYLE_ID; document.head.appendChild(el) }
+  el.textContent =
+    block('html.theme-on', buildLight(theme)) +
+    block('html.dark.theme-on', buildDark(theme))
+  document.documentElement.classList.add('theme-on')
 }
 function clearVars() {
-  const el = document.documentElement
-  for (const k of ALL_VAR_KEYS) el.style.removeProperty(k)
+  const el = document.getElementById(STYLE_ID)
+  if (el) el.textContent = ''
+  document.documentElement.classList.remove('theme-on')
 }
 
 // ─── Сериализация (формат realtimecolors: 5 hex через дефис) ──────────
