@@ -10,11 +10,11 @@ import {
 
 /** 5 ролей цвета (модель realtimecolors). Порядок — как в редакторе. */
 const ROLES: { key: keyof ThemeColors; label: string; hint: string }[] = [
-  { key: 'text',       label: 'Текст',     hint: 'Текст и тёмные элементы' },
-  { key: 'background', label: 'Фон',       hint: 'Фон страниц и карточек' },
+  { key: 'text',       label: 'Текст',     hint: 'Текст, заголовки, сайдбар' },
+  { key: 'background', label: 'Фон',       hint: 'Фон страниц, карточек, границы' },
   { key: 'primary',    label: 'Основной',  hint: 'Кнопки, ссылки, активные пункты' },
-  { key: 'secondary',  label: 'Вторичный', hint: 'Вторичные элементы, графики' },
-  { key: 'accent',     label: 'Акцент',    hint: 'Выделения, графики' },
+  { key: 'secondary',  label: 'Вторичный', hint: 'Приглушённый текст, иконки' },
+  { key: 'accent',     label: 'Акцент',    hint: 'Графики, выделения' },
 ]
 
 /**

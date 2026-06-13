@@ -64,34 +64,56 @@ const rgbStr = (c: RGB) => `${c[0]} ${c[1]} ${c[2]}`
 const WHITE: RGB = [255, 255, 255]
 const BLACK: RGB = [0, 0, 0]
 
-// Шаги нейтрального масштаба: доля смешивания Background(0)→Text(1).
-const SURF_STOPS: [number, number][] = [
-  [50, 0.0], [100, 0.05], [200, 0.12], [300, 0.22], [400, 0.40],
-  [500, 0.54], [600, 0.66], [700, 0.76], [800, 0.85], [900, 0.93], [950, 1.0],
-]
 // Шаги primary: <500 светлее (к белому), >600 темнее (к чёрному).
 const PRIM_LIGHT: [number, number][] = [[50, 0.90], [100, 0.82], [300, 0.52], [400, 0.30], [500, 0.12]]
 const PRIM_DARK: [number, number][]  = [[700, 0.15], [900, 0.45]]
 
-/** Полный набор CSS-переменных из 5 цветов темы. */
+/**
+ * Полный набор CSS-переменных из 5 цветов темы.
+ *
+ * НЕЗАВИСИМОСТЬ: surface-масштаб разбит на 3 непересекающихся под-
+ * диапазона, у каждого свой источник — поэтому изменение одной роли
+ * НЕ задевает зоны других:
+ *   surf-50..300  ← Background (фоны карточек/страниц, границы);
+ *   surf-400..600 ← Secondary  (приглушённый/вторичный текст, иконки);
+ *   surf-700..950 ← Text       (основной текст, заголовки, сайдбар).
+ * primary-* ← Primary, --accent ← Accent — тоже изолированы.
+ */
 function buildVars(theme: ThemeColors): Record<string, string> {
-  const text = hexToRgb(theme.text)
-  const bg = hexToRgb(theme.background)
+  const T = hexToRgb(theme.text)
+  const B = hexToRgb(theme.background)
+  const S = hexToRgb(theme.secondary)
   const primary = hexToRgb(theme.primary)
   const vars: Record<string, string> = {}
 
-  for (const [step, t] of SURF_STOPS) vars[`--surf-${step}`] = rgbStr(mix(bg, text, t))
+  // ── Поверхности и границы ← Background (затемняем по шагам) ──
+  vars['--surf-50']  = rgbStr(B)
+  vars['--surf-100'] = rgbStr(mix(B, BLACK, 0.04))
+  vars['--surf-200'] = rgbStr(mix(B, BLACK, 0.10))
+  vars['--surf-300'] = rgbStr(mix(B, BLACK, 0.18))
+  // ── Приглушённый/вторичный текст, иконки ← Secondary ──
+  vars['--surf-400'] = rgbStr(mix(S, WHITE, 0.18))
+  vars['--surf-500'] = rgbStr(S)
+  vars['--surf-600'] = rgbStr(mix(S, BLACK, 0.16))
+  // ── Основной текст, заголовки, сайдбар ← Text (светлее для верхних) ──
+  vars['--surf-700'] = rgbStr(mix(T, WHITE, 0.22))
+  vars['--surf-800'] = rgbStr(mix(T, WHITE, 0.10))
+  vars['--surf-900'] = rgbStr(T)
+  vars['--surf-950'] = rgbStr(mix(T, BLACK, 0.12))
+
+  // ── Primary-масштаб ← Primary ──
   for (const [step, t] of PRIM_LIGHT) vars[`--prim-${step}`] = rgbStr(mix(primary, WHITE, t))
   vars['--prim-600'] = rgbStr(primary)
   for (const [step, t] of PRIM_DARK) vars[`--prim-${step}`] = rgbStr(mix(primary, BLACK, t))
 
-  vars['--secondary'] = rgbStr(hexToRgb(theme.secondary))
+  vars['--secondary'] = rgbStr(S)
   vars['--accent'] = rgbStr(hexToRgb(theme.accent))
   return vars
 }
 
+const SURF_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]
 const ALL_VAR_KEYS = [
-  ...SURF_STOPS.map(([s]) => `--surf-${s}`),
+  ...SURF_STEPS.map(s => `--surf-${s}`),
   ...PRIM_LIGHT.map(([s]) => `--prim-${s}`), '--prim-600', ...PRIM_DARK.map(([s]) => `--prim-${s}`),
   '--secondary', '--accent',
 ]
