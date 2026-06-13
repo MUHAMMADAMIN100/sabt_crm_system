@@ -27,10 +27,10 @@ const ONBOARDING_STAGE_LABELS: Record<string, string> = {
 }
 
 const STATUS_OPTIONS: { value: string; label: string; color: string }[] = [
-  { value: 'new',         label: 'Новый',              color: 'bg-surface-100 text-surface-700 dark:bg-surface-800 dark:text-surface-300' },
-  { value: 'waiting',     label: 'Ожидание ответа',    color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
-  { value: 'negotiating', label: 'В переговорах',      color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
-  { value: 'proposal',    label: 'Предложение',        color: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400' },
+  { value: 'new',         label: 'Новый',              color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  { value: 'waiting',     label: 'Ожидание ответа',    color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  { value: 'negotiating', label: 'В переговорах',      color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' },
+  { value: 'proposal',    label: 'Предложение',        color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' },
   { value: 'won',         label: 'Клиент ✓',           color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
   { value: 'lost',        label: 'Отказ',              color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
   { value: 'on_hold',     label: 'На паузе',           color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
