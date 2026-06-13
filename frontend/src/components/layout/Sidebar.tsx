@@ -65,9 +65,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     <aside
       className={clsx(
         'fixed left-0 top-0 z-30 flex flex-col h-full',
-        // Фон сайдбара — тёмный край surface-масштаба: всегда тёмный и
-        // при этом следует выбранной теме (Text-цвет задаёт оттенок).
-        'bg-surface-950 text-surface-200',
+        // Фон сайдбара — отдельная переменная из роли «Фон» (НЕ «Текст»):
+        // всегда тёмная панель, смена цвета текста её не трогает.
+        'bg-[rgb(var(--sidebar-bg))] text-surface-200',
         'border-r border-black/40',
         'overflow-hidden',
         open ? 'w-[260px]' : 'w-0 lg:w-[72px]',

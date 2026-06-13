@@ -104,6 +104,9 @@ function buildLight(theme: ThemeColors): Record<string, string> {
     '--surf-800': rgbStr(mix(T, WHITE, 0.10)),
     '--surf-900': rgbStr(T),
     '--surf-950': rgbStr(mix(T, BLACK, 0.12)),
+    // Сайдбар — тёмная панель из Фона (НЕ из Текста), чтобы смена
+    // Текста его не трогала. Всегда тёмный, того же оттенка что Фон.
+    '--sidebar-bg': rgbStr(mix(B, BLACK, 0.90)),
     ...accentVars(theme),
   }
 }
@@ -132,6 +135,8 @@ function buildDark(theme: ThemeColors): Record<string, string> {
     '--surf-800': rgbStr(mix(B, BLACK, 0.72)),
     '--surf-900': rgbStr(mix(B, BLACK, 0.82)),
     '--surf-950': rgbStr(mix(B, BLACK, 0.90)),
+    // Сайдбар — из Фона (НЕ из Текста), всегда тёмная панель.
+    '--sidebar-bg': rgbStr(mix(B, BLACK, 0.92)),
     ...accentVars(theme),
   }
 }
