@@ -68,7 +68,16 @@ export class CalendarService {
         SELECT 1 FROM content_plan_items cpi
         WHERE cpi."taskId" = t.id AND cpi."contentType" = 'story'
       )`)
-      .andWhere(`t.title NOT ILIKE 'История:%'`);
+      .andWhere(`t.title NOT ILIKE 'История:%'`)
+      // Авто-задачи клиентов из Базы клиентов («Новый лид: …», «Встреча
+      // с клиентом: …» и т.п.) НЕ показываем в Календаре — встречи идут
+      // отдельными событиями client_meeting (из nextContactAt).
+      //   1) задача связана с лидом через client_leads.meetingTaskId;
+      //   2) фолбэк по заголовку для «осиротевших» старых задач.
+      .andWhere(`NOT EXISTS (
+        SELECT 1 FROM client_leads cl WHERE cl."meetingTaskId" = t.id
+      )`)
+      .andWhere(`t.title NOT ILIKE 'Новый лид:%'`);
 
     if (employeeId) taskQb.andWhere('t.assigneeId = :employeeId', { employeeId });
     if (projectId) taskQb.andWhere('t.projectId = :projectId', { projectId });
