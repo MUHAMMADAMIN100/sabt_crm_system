@@ -156,6 +156,7 @@ export class CalendarService {
       const iso = new Date(c.nextContactAt).toISOString();
       return {
         id: `client-meeting-${c.id}`,
+        clientId: c.id, // для drag-обновления и карточки клиента в календаре
         title: `Встреча: ${c.name}`,
         description: c.nextStep || null,
         date: iso,

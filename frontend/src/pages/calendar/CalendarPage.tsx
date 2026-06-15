@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { calendarApi, projectsApi, tasksApi, employeesApi } from '@/services/api.service'
+import { calendarApi, projectsApi, tasksApi, employeesApi, clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal } from '@/components/ui'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
@@ -44,6 +44,8 @@ export default function CalendarPage() {
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('')
   // Side modal для просмотра деталей задачи при клике на event.
   const [detailEventId, setDetailEventId] = useState<string | null>(null)
+  // Карточка клиента прямо в календаре (клик по встрече).
+  const [clientCardId, setClientCardId] = useState<string | null>(null)
   // Edit-режим для founder: клик по своей задаче в календаре открывает
   // ту же FounderQuickTaskForm в режиме редактирования.
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
@@ -196,6 +198,34 @@ export default function CalendarPage() {
     },
   })
 
+  // Перенос встречи клиента: меняем nextContactAt в карточке клиента.
+  // База клиентов и KPI встреч обновятся; календарь — оптимистично.
+  const moveMeeting = useMutation({
+    mutationFn: ({ id, nextContactAt }: { id: string; nextContactAt: string }) =>
+      clientsApi.update(id, { nextContactAt }),
+    onMutate: async ({ id, nextContactAt }) => {
+      await qc.cancelQueries({ queryKey: ['calendar'] })
+      const previous = qc.getQueryData(['calendar', from, to, scopeFilter])
+      qc.setQueryData(['calendar', from, to, scopeFilter], (old: any[]) => {
+        if (!Array.isArray(old)) return old
+        return old.map((e: any) =>
+          e.clientId === id ? { ...e, date: nextContactAt, startDate: nextContactAt } : e,
+        )
+      })
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      qc.setQueryData(['calendar', from, to, scopeFilter], ctx?.previous)
+      toast.error('Не удалось перенести встречу')
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['calendar'] })
+      qc.invalidateQueries({ queryKey: ['clients'] })
+      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
+      toast.success('Встреча перенесена')
+    },
+  })
+
   // Personal view: пользователь видит на календаре ТОЛЬКО свои задачи
   // (где он исполнитель или создатель). Без старт/конец проектов и без чужих
   // задач команды. См. оригинальный комментарий выше.
@@ -254,6 +284,11 @@ export default function CalendarPage() {
   // Открытие события: МП по СММ — переход на подробную страницу задачи;
   // своя задача founder'а → edit-форма; иначе → side drawer.
   const openEvent = (e: any) => {
+    if (e.type === 'client_meeting' && e.clientId) {
+      // Карточка клиента прямо в календаре — без перехода на Базу клиентов.
+      setClientCardId(e.clientId)
+      return
+    }
     if (e.type === 'task') {
       if (user?.role === 'sales_manager_smm' && e.taskId) {
         navigate(`/tasks/${e.taskId}`)
@@ -272,13 +307,15 @@ export default function CalendarPage() {
   const [dragOverDay, setDragOverDay] = useState<string | null>(null)
 
   const handleDragStart = (e: React.DragEvent, event: any) => {
-    if (event.type !== 'task' || !event.taskId) {
+    const canDrag = (event.type === 'task' && event.taskId)
+      || (event.type === 'client_meeting' && event.clientId)
+    if (!canDrag) {
       e.preventDefault()
       return
     }
     setDraggingEventId(event.id)
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', event.taskId)
+    e.dataTransfer.setData('text/plain', event.id)
   }
   const handleDragEnd = () => {
     setDraggingEventId(null)
@@ -296,20 +333,26 @@ export default function CalendarPage() {
   const handleDayDrop = (e: React.DragEvent, day: Date) => {
     e.preventDefault()
     setDragOverDay(null)
-    const taskId = e.dataTransfer.getData('text/plain')
-    if (!taskId) return
-    const evt = projectEvents.find((ev: any) => ev.taskId === taskId)
+    const eventId = e.dataTransfer.getData('text/plain')
+    setDraggingEventId(null)
+    if (!eventId) return
+    const evt = projectEvents.find((ev: any) => ev.id === eventId)
     if (!evt) return
-    // Сохраняем время дедлайна — меняем только дату.
     const oldDate = new Date(evt.date)
-    const newDeadline = new Date(day)
-    newDeadline.setHours(oldDate.getHours(), oldDate.getMinutes(), 0, 0)
-    if (isSameDay(oldDate, day)) {
-      setDraggingEventId(null)
+    if (isSameDay(oldDate, day)) return
+    // Сохраняем ВРЕМЯ — меняем только дату.
+    const newDate = new Date(day)
+    newDate.setHours(oldDate.getHours(), oldDate.getMinutes(), 0, 0)
+
+    if (evt.type === 'client_meeting' && evt.clientId) {
+      // Перенос встречи → пишем новую дату/время в карточку клиента
+      // (nextContactAt). База клиентов и календарь обновятся.
+      moveMeeting.mutate({ id: evt.clientId, nextContactAt: newDate.toISOString() })
       return
     }
-    updateTask.mutate({ id: taskId, data: { deadline: newDeadline.toISOString() } })
-    setDraggingEventId(null)
+    if (evt.type === 'task' && evt.taskId) {
+      updateTask.mutate({ id: evt.taskId, data: { deadline: newDate.toISOString() } })
+    }
   }
 
   const detailEvent = detailEventId
@@ -441,7 +484,7 @@ export default function CalendarPage() {
                 onDragLeave={() => handleDayDragLeave(day)}
                 onDrop={(e) => handleDayDrop(e, day)}
                 className={clsx(
-                  'min-h-[120px] rounded-2xl border p-3 transition-all group overflow-hidden flex flex-col',
+                  'min-h-[120px] rounded-2xl border p-3 transition-all group flex flex-col',
                   inMonth
                     ? 'bg-surface-50 dark:bg-surface-800 border-surface-200 dark:border-surface-700'
                     : 'bg-primary-50/40 dark:bg-primary-900/10 border-primary-100/60 dark:border-primary-900/30',
@@ -467,11 +510,15 @@ export default function CalendarPage() {
                   )}
                 </div>
                 <div className="space-y-1 mt-1">
-                  {dayEvents.slice(0, 3).map((e: any) => {
+                  {/* Показываем ВСЕ события дня (без «+N ещё»). Ячейка
+                      растягивается по высоте под содержимое. */}
+                  {dayEvents.map((e: any) => {
                     const colorClass = e.type === 'task' && e.scope
                       ? SCOPE_COLORS[e.scope] || TYPE_COLORS.task
                       : (TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')
-                    const isDraggable = e.type === 'task' && !!e.taskId
+                    // Перетаскивать можно задачи и встречи клиентов.
+                    const isDraggable = (e.type === 'task' && !!e.taskId)
+                      || (e.type === 'client_meeting' && !!e.clientId)
                     return (
                       <button
                         key={e.id}
@@ -506,15 +553,6 @@ export default function CalendarPage() {
                       </button>
                     )
                   })}
-                  {dayEvents.length > 3 && (
-                    <button
-                      type="button"
-                      onClick={ev => { ev.stopPropagation(); setDayModalDate(day) }}
-                      className="text-[10px] font-medium text-primary-600 dark:text-primary-400 hover:underline px-1 text-left w-full"
-                    >
-                      +{dayEvents.length - 3} ещё
-                    </button>
-                  )}
                 </div>
               </div>
             )
@@ -834,7 +872,67 @@ export default function CalendarPage() {
           </div>
         </Modal>
       )}
+
+      {/* Карточка клиента прямо в календаре (клик по встрече). */}
+      {clientCardId && (
+        <ClientCardModal
+          clientId={clientCardId}
+          onClose={() => setClientCardId(null)}
+          onOpenFull={() => { const id = clientCardId; setClientCardId(null); navigate(`/clients?id=${id}`) }}
+        />
+      )}
     </div>
+  )
+}
+
+// ─── Карточка клиента в календаре (по клику на встречу) ──────────────
+function ClientCardModal({ clientId, onClose, onOpenFull }: {
+  clientId: string
+  onClose: () => void
+  onOpenFull: () => void
+}) {
+  const { data: c, isLoading } = useQuery({
+    queryKey: ['client', clientId],
+    queryFn: () => clientsApi.get(clientId),
+  })
+
+  const STATUS_LABELS: Record<string, string> = {
+    new: 'Новый', waiting: 'Ожидание ответа', negotiating: 'В переговорах',
+    proposal: 'Предложение', won: 'Клиент', lost: 'Отказ', on_hold: 'На паузе',
+  }
+  const row = (label: string, value: any) => value ? (
+    <div className="flex gap-3 py-1.5 border-b border-surface-100 dark:border-surface-700/60 last:border-0">
+      <span className="text-xs text-surface-400 dark:text-surface-500 w-32 shrink-0">{label}</span>
+      <span className="text-sm text-surface-800 dark:text-surface-200 flex-1 break-words">{value}</span>
+    </div>
+  ) : null
+
+  return (
+    <Modal open onClose={onClose} title="Карточка клиента" size="md">
+      {isLoading ? (
+        <p className="text-sm text-surface-400 py-6 text-center">Загрузка…</p>
+      ) : !c ? (
+        <p className="text-sm text-surface-400 py-6 text-center">Клиент не найден</p>
+      ) : (
+        <div className="space-y-1">
+          <h3 className="text-lg font-bold text-surface-900 dark:text-surface-100 mb-2">{c.name}</h3>
+          {row('Сфера', c.sphere)}
+          {row('Адрес', c.address)}
+          {row('ЛПР', c.contactPerson)}
+          {row('Телефон', c.contactPhone)}
+          {row('Instagram', c.contactInstagram)}
+          {row('Email', c.contactEmail)}
+          {row('Статус', STATUS_LABELS[c.status] || c.status)}
+          {row('Потенциал', c.dealPotential ? `${Number(c.dealPotential).toLocaleString('ru-RU')} сомони` : null)}
+          {row('Встреча', c.nextContactAt ? format(new Date(c.nextContactAt), 'd MMMM yyyy, HH:mm', { locale: ru }) : null)}
+          {row('Следующий шаг', c.nextStep)}
+          <div className="flex justify-end gap-2 pt-4">
+            <button type="button" onClick={onClose} className="btn-secondary text-sm">Закрыть</button>
+            <button type="button" onClick={onOpenFull} className="btn-primary text-sm">Открыть в Базе клиентов</button>
+          </div>
+        </div>
+      )}
+    </Modal>
   )
 }
 
