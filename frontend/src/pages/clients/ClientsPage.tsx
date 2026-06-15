@@ -51,6 +51,8 @@ const INTEREST_CHIPS: { value: string; label: string; Icon: InterestIcon; bg: st
   { value: 'cold', label: 'Холодные', Icon: Snowflake, bg: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',           bgActive: 'bg-surface-500 text-white' },
 ]
 
+/** Города для селекта «Адрес». «Другое» открывает поле ручного ввода. */
+const ADDRESS_OPTIONS = ['Душанбе']
 const CHANNEL_OPTIONS = ['WhatsApp', 'Telegram', 'Instagram', 'Звонок', 'Email', 'Личная встреча']
 const SOURCE_OPTIONS = ['Instagram', 'Рекомендация', 'Холодный обзвон', 'Сайт', 'Реклама', 'Другое']
 const SPHERE_SUGGESTIONS = ['Ресторан', 'Кафе', 'Клиника', 'Школа', 'Салон красоты', 'Отель', 'Магазин', 'Блогер', 'Модель', 'SMM', 'Разработка', 'Другое']
@@ -618,6 +620,7 @@ export default function ClientsPage() {
 
       {(showCreate || editLead) && (
         <ClientForm
+          key={editLead?.id || 'new'}
           initial={editLead}
           onClose={() => { setShowCreate(false); setEditLead(null) }}
           onSubmit={(data: any) => {
@@ -675,7 +678,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
   }
   const legacy = parseLegacyContactInfo(initial?.contactInfo)
 
-  const { register, handleSubmit, watch, control } = useForm({ defaultValues: {
+  const { register, handleSubmit, watch, control, setValue } = useForm({ defaultValues: {
     name: initial?.name || '',
     sphere: initial?.sphere || '',
     problem: initial?.problem || '',
@@ -701,6 +704,14 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
   } })
 
   const currentStatus = watch('status')
+
+  // Адрес: селект «Душанбе / Другое». «Другое» открывает ручной ввод.
+  // Режим вычисляем из исходного значения: известный город → он сам,
+  // непустое неизвестное → «Другое» (ручной ввод со старым значением).
+  const addressVal = watch('address') || ''
+  const [addrOther, setAddrOther] = useState<boolean>(
+    !!(initial?.address && !ADDRESS_OPTIONS.includes(initial.address)),
+  )
 
   const normalize = (data: any) => ({
     ...data,
@@ -767,7 +778,27 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
             defaultOpen={!!initial?.address}
             hint={initial?.address || ''}
           >
-            <input {...register('address')} className="input" placeholder="г. Душанбе, ул. ..." />
+            <select
+              className="input"
+              value={addrOther ? 'Другое' : (ADDRESS_OPTIONS.includes(addressVal) ? addressVal : '')}
+              onChange={e => {
+                const v = e.target.value
+                if (v === 'Другое') { setAddrOther(true); setValue('address', '') }
+                else { setAddrOther(false); setValue('address', v) }
+              }}
+            >
+              <option value="">— Выберите —</option>
+              {ADDRESS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="Другое">Другое</option>
+            </select>
+            {addrOther && (
+              <input
+                {...register('address')}
+                className="input mt-2"
+                placeholder="Введите город / адрес"
+                autoFocus
+              />
+            )}
           </CollapsibleField>
           <div className="sm:col-span-2">
             <label className="label">Проблема / что нужно</label>
