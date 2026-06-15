@@ -55,6 +55,15 @@ const CHANNEL_OPTIONS = ['WhatsApp', 'Telegram', 'Instagram', 'Звонок', 'E
 const SOURCE_OPTIONS = ['Instagram', 'Рекомендация', 'Холодный обзвон', 'Сайт', 'Реклама', 'Другое']
 const SPHERE_SUGGESTIONS = ['Ресторан', 'Кафе', 'Клиника', 'Школа', 'Салон красоты', 'Отель', 'Магазин', 'Блогер', 'Модель', 'SMM', 'Разработка', 'Другое']
 
+/** true, если дата (локально) — сегодня. Нужно для оптимистичного
+ *  bump KPI «Встречи»: метрика привязана к ДНЮ встречи, поэтому
+ *  сегодняшний KPI трогаем только когда встреча назначена на сегодня. */
+function isTodayLocal(iso?: string | null): boolean {
+  if (!iso) return false
+  const d = new Date(iso); const n = new Date()
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()
+}
+
 /** Оптимистично прибавляет delta к value метрики с заданным ключом
  *  в KPI-объекте {items: [{key, value, target, percent, done}, ...]}.
  *  WebSocket потом перетрёт точным значением с сервера. */
@@ -173,8 +182,9 @@ export default function ClientsPage() {
         qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'personal_emails', +1))
         qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'personal_emails', +1))
       }
-      // Если сразу указали nextContactAt — +1 к встречам.
-      if (newLead?.nextContactAt) {
+      // +1 к встречам ТОЛЬКО если встреча назначена на сегодня — KPI
+      // встреч привязан к ДАТЕ встречи, а не к дате создания записи.
+      if (isTodayLocal(newLead?.nextContactAt)) {
         qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'meetings', +1))
         qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'meetings', +1))
       }
@@ -233,12 +243,13 @@ export default function ClientsPage() {
         }
       }
 
-      // 2) nextContactAt: появилось → +1 к meetings, исчезло → -1.
+      // 2) nextContactAt: KPI встреч считается на ДЕНЬ встречи. Сегодняшний
+      //    KPI трогаем только по признаку «встреча сегодня» (было/стало).
       if (data?.nextContactAt !== undefined) {
-        const had = !!lead?.nextContactAt
-        const now = !!data.nextContactAt
-        if (had !== now) {
-          const delta = now ? +1 : -1
+        const wasToday = isTodayLocal(lead?.nextContactAt)
+        const nowToday = isTodayLocal(data?.nextContactAt)
+        if (wasToday !== nowToday) {
+          const delta = nowToday ? +1 : -1
           qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'meetings', delta))
           qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'meetings', delta))
         }
@@ -682,8 +693,10 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
     emailStatus: initial?.emailStatus || '',
     nextStep: initial?.nextStep || '',
     lastContactAt: initial?.lastContactAt ? String(initial.lastContactAt).slice(0, 10) : '',
-    // datetime-local требует формат YYYY-MM-DDTHH:mm — обрезаем ISO до минут.
-    nextContactAt: initial?.nextContactAt ? String(initial.nextContactAt).slice(0, 16) : '',
+    // nextContactAt в БД — UTC (timestamptz). Пикеру нужно ЛОКАЛЬНОЕ
+    // настенное время YYYY-MM-DDTHH:mm, поэтому конвертируем UTC→локаль
+    // через date-fns (иначе показывало бы время на −5ч от заданного).
+    nextContactAt: initial?.nextContactAt ? format(new Date(initial.nextContactAt), "yyyy-MM-dd'T'HH:mm") : '',
     rejectionReason: initial?.rejectionReason || '',
   } })
 

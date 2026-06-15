@@ -463,14 +463,12 @@ export class KpiService {
       }
 
       // ─── Sales: встречи / созвоны ──────────────────────────────────────
+      // Встречи привязаны к ДНЮ встречи: nextContactAt в окне периода
+      // (раньше был «горизонт +14 дней» — убран).
       case 'sales_meetings': {
-        const horizon = new Date(periodTo);
-        if (horizon.getTime() - periodFrom.getTime() < 14 * 86400_000) {
-          horizon.setTime(periodFrom.getTime() + 14 * 86400_000);
-        }
         const qb = this.leadRepo.createQueryBuilder('c')
           .where('c.ownerId = :uid', { uid: userId })
-          .andWhere('c.nextContactAt BETWEEN :now AND :horizon', { now: periodFrom, horizon })
+          .andWhere('c.nextContactAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
           .orderBy('c.nextContactAt', 'ASC');
         const leads = await applyDirection(qb).getMany();
         return leads.map(l => ({

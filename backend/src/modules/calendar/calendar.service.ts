@@ -149,16 +149,17 @@ export class CalendarService {
     const [tasks, projects] = await Promise.all([taskQb.getMany(), projectQb.getMany()]);
 
     const clientMeetingEvents = leads.map(c => {
-      const dt = new Date(c.nextContactAt);
-      const dateStr = dt.toISOString().split('T')[0];
+      // ВАЖНО: отдаём ПОЛНЫЙ ISO-timestamp (как у задач t.deadline), а не
+      // дату-строку. Фронт делает new Date(e.date) → переводит в локальное
+      // время (UTC+5) и для раскладки по дню, и для показа часа встречи.
+      // Дата-строка теряла время и ломала час в календаре.
+      const iso = new Date(c.nextContactAt).toISOString();
       return {
         id: `client-meeting-${c.id}`,
         title: `Встреча: ${c.name}`,
         description: c.nextStep || null,
-        date: dateStr,
-        startDate: dateStr,
-        // Полное время — фронт показывает час встречи.
-        dateTime: c.nextContactAt,
+        date: iso,
+        startDate: iso,
         type: 'client_meeting',
         status: c.status,
         assigneeName: c.owner?.name,

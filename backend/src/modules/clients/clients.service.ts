@@ -400,7 +400,7 @@ export class ClientsService implements OnModuleInit {
    *  - новые компании в базе (createdAt в окне)
    *  - холодные звонки (channel ∈ call/whatsapp/telegram, updatedAt в окне)
    *  - персональные письма (channel=email или есть contactEmail, lastContactAt)
-   *  - встречи / созвоны (nextContactAt в ближайшем горизонте)
+   *  - встречи / созвоны (nextContactAt в окне периода = в день встречи)
    */
   async kpi(ownerId: string, direction?: ClientLeadDirection, from?: string, to?: string) {
     // Окно по умолчанию — сегодняшний день. Если переданы from/to (YYYY-MM-DD),
@@ -414,13 +414,6 @@ export class ClientsService implements OnModuleInit {
     periodFrom.setHours(0, 0, 0, 0);
     const periodTo = to ? parseLocalDate(to) : new Date(today.getFullYear(), today.getMonth(), today.getDate());
     periodTo.setHours(23, 59, 59, 999);
-    // Встречи смотрим вперёд: от выбранного начала окна до конца окна или
-    // ближайших 14 дней — что наступит позже.
-    const horizon = new Date(periodTo);
-    if (horizon.getTime() - periodFrom.getTime() < 14 * 86400_000) {
-      horizon.setTime(periodFrom.getTime() + 14 * 86400_000);
-    }
-
     const base = () => {
       const qb = this.repo.createQueryBuilder('c').where('c.ownerId = :oid', { oid: ownerId });
       if (direction) qb.andWhere('(c.direction = :dir OR c.direction IS NULL)', { dir: direction });
@@ -453,8 +446,12 @@ export class ClientsService implements OnModuleInit {
       .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 
+    // Встречи засчитываются в KPI того ДНЯ, на который они назначены:
+    // nextContactAt попадает в выбранное окно [periodFrom, periodTo].
+    // (Раньше был «горизонт +14 дней» — будущие встречи капали в KPI
+    //  сегодняшнего дня; теперь привязка строго к дате встречи.)
     const meetings = await safeCount(() => base()
-      .andWhere('c.nextContactAt BETWEEN :now AND :horizon', { now: periodFrom, horizon })
+      .andWhere('c.nextContactAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 
     // Главная метрика: чистый прогресс по воронке.
