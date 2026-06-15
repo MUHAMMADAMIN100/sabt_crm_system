@@ -160,10 +160,14 @@ export function useSocket(authMarker: string | null) {
       qc.invalidateQueries({ queryKey: ['kpi-user'] })
       qc.invalidateQueries({ queryKey: ['kpi-all'] })
       qc.invalidateQueries({ queryKey: ['kpi-details'] })
+      // Встречи клиентов отображаются в Календаре — обновляем и его,
+      // чтобы назначенная встреча появилась без F5.
+      qc.invalidateQueries({ queryKey: ['calendar'] })
       qc.refetchQueries({ queryKey: ['sales-kpi'], type: 'active' })
       qc.refetchQueries({ queryKey: ['kpi-user'], type: 'active' })
       qc.refetchQueries({ queryKey: ['kpi-all'], type: 'active' })
       qc.refetchQueries({ queryKey: ['clients'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['calendar'], type: 'active' })
     })
 
     // Доска «Процесс работы» проекта: карточку перетащили/создали/удалили —

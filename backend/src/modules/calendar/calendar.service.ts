@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
+import { ClientLead } from '../clients/client-lead.entity';
 import { getSalesSegment } from '../../common/sales-segment';
 
 /** Прогресс задачи в % для отображения на карточке календаря.
@@ -30,6 +31,7 @@ export class CalendarService {
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
+    @InjectRepository(ClientLead) private leadRepo: Repository<ClientLead>,
   ) {}
 
   async getEvents(
@@ -115,13 +117,57 @@ export class CalendarService {
     // (они не относятся к scope задачи).
     const hideProjectEvents = !!scope;
 
-    // Раньше тут было отдельное выборка client_leads → события 'client_meeting'.
-    // Сейчас встречи отображаются как обычные ЛИЧНЫЕ задачи (scope='personal'),
-    // которые автоматически создаются ClientsService при установке nextContactAt.
-    // Это убирает дубль (один и тот же ивент дважды) и заодно даёт встречам
-    // место и во вкладке «Задачи» под фильтром «Мои».
+    // Встречи клиентов (nextContactAt). У менеджеров продаж клиенты НЕ
+    // создают задач (чтобы не плодить ложные просрочки в «Задачах»),
+    // поэтому встречи берём напрямую из client_leads и показываем в
+    // календаре по дате/времени, которые поставил менеджер.
+    //   • МП видит свои встречи (ownerId = он);
+    //   • топ (admin/founder/co_founder) видит все;
+    //   • остальным ролям встречи клиентов не показываем.
+    // Закрытые сделки (won/lost) и записи без даты — пропускаем.
+    const role = viewerRole || '';
+    const isTop = ['admin', 'founder', 'co_founder'].includes(role);
+    const showClientMeetings = !scope || scope === 'personal';
+    let leads: ClientLead[] = [];
+    if (showClientMeetings && (salesSegment || isTop)) {
+      const leadQb = this.leadRepo
+        .createQueryBuilder('c')
+        .leftJoinAndSelect('c.owner', 'owner')
+        .where('c.nextContactAt IS NOT NULL')
+        .andWhere('c.nextContactAt BETWEEN :from AND :to', { from, to })
+        .andWhere(`c.status NOT IN ('won', 'lost')`);
+      if (salesSegment) {
+        // МП — только свои лиды (+ совместимость со старыми без owner — нет).
+        leadQb.andWhere('c.ownerId = :leadViewer', { leadViewer: viewerId ?? null });
+      } else {
+        // Топ — фильтр по конкретному менеджеру, если выбран employeeId.
+        if (employeeId) leadQb.andWhere('c.ownerId = :empId', { empId: employeeId });
+      }
+      leads = await leadQb.getMany();
+    }
 
     const [tasks, projects] = await Promise.all([taskQb.getMany(), projectQb.getMany()]);
+
+    const clientMeetingEvents = leads.map(c => {
+      const dt = new Date(c.nextContactAt);
+      const dateStr = dt.toISOString().split('T')[0];
+      return {
+        id: `client-meeting-${c.id}`,
+        title: `Встреча: ${c.name}`,
+        description: c.nextStep || null,
+        date: dateStr,
+        startDate: dateStr,
+        // Полное время — фронт показывает час встречи.
+        dateTime: c.nextContactAt,
+        type: 'client_meeting',
+        status: c.status,
+        assigneeName: c.owner?.name,
+        assigneeId: c.ownerId,
+        createdById: c.ownerId,
+        scope: 'personal',
+        link: `/clients?id=${c.id}`,
+      };
+    });
 
     const taskEvents = tasks.map(t => ({
       id: `task-${t.id}`,
@@ -173,6 +219,7 @@ export class CalendarService {
 
     return [
       ...taskEvents,
+      ...clientMeetingEvents,
       ...projectStartEvents,
       ...projectEndEvents,
     ].sort(
