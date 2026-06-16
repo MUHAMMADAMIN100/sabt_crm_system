@@ -230,19 +230,15 @@ export default function ClientsPage() {
       // WebSocket leads:changed потом перетрёт точной серверной цифрой.
       const lead = (previous as any[] | undefined)?.find(l => l.id === id)
 
-      // 1) callType: переход → 'cold' = +1, обратно = -1.
+      // 1) callType: ПЕРЕХОД в «cold» = +1 холодный звонок (событие).
+      // Учёт событийный — уход из «cold» НЕ снимает звонок (он состоялся).
       const beforeCall = String(lead?.callType || '').toLowerCase()
       const afterCall = data?.callType !== undefined
         ? String(data.callType || '').toLowerCase()
         : beforeCall
-      if (beforeCall !== afterCall) {
-        const becameCold = afterCall === 'cold' && beforeCall !== 'cold'
-        const leftCold = beforeCall === 'cold' && afterCall !== 'cold'
-        if (becameCold || leftCold) {
-          const delta = becameCold ? +1 : -1
-          qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'cold_calls', delta))
-          qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'cold_calls', delta))
-        }
+      if (afterCall === 'cold' && beforeCall !== 'cold') {
+        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'cold_calls', +1))
+        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'cold_calls', +1))
       }
 
       // 2) nextContactAt: KPI встреч считается на ДЕНЬ встречи. Сегодняшний

@@ -425,8 +425,29 @@ export class KpiService {
       }
 
       // ─── Sales: холодные звонки ────────────────────────────────────────
-      // По полю callType='cold' (новый явный селект в форме клиента).
+      // СОБЫТИЙНЫЙ учёт: каждая отметка «Холодный» = событие в lead_actions.
+      // Fallback на состояние (callType='cold') если событий ещё нет.
       case 'sales_cold_calls': {
+        const rows = await this.leadRepo.manager.query(
+          `SELECT la.id, la.created_at AS date, la.lead_id,
+                  cl.name, cl.channel, cl."contactPhone", cl."contactInstagram", cl."contactPerson"
+           FROM lead_actions la
+           LEFT JOIN client_leads cl ON cl.id = la.lead_id
+           WHERE la.user_id = $1 AND la.kind = 'cold_call'
+             AND la.created_at BETWEEN $2 AND $3
+           ORDER BY la.created_at DESC`,
+          [userId, periodFrom, periodTo],
+        ).catch(() => [] as any[]);
+        if (rows.length > 0) {
+          return rows.map((r: any) => ({
+            id: r.lead_id || r.id,
+            title: r.name || 'Лид удалён',
+            subtitle: [r.channel, r.contactPhone || r.contactInstagram || r.contactPerson]
+              .filter(Boolean).join(' · ') || null,
+            date: r.date ? new Date(r.date).toISOString() : null,
+            link: r.lead_id ? `/clients?id=${r.lead_id}` : undefined,
+          }));
+        }
         const qb = this.leadRepo.createQueryBuilder('c')
           .where('c.ownerId = :uid', { uid: userId })
           .andWhere(`LOWER(COALESCE(c."callType", '')) = 'cold'`)

@@ -115,6 +115,26 @@ export class ClientsService implements OnModuleInit {
       this.logger.warn(`ALTER TABLE client_leads callType failed: ${e?.message || e}`);
     }
     try {
+      // lead_actions — журнал действий менеджера-СОБЫТИЙ (а не состояний).
+      // kind='cold_call' пишется при отметке «Тип звонка = Холодный».
+      // KPI «Холодные звонки» считает события за период — поэтому каждая
+      // отметка надёжно +1, и звонок не «исчезает», если позже сменить
+      // тип звонка у лида.
+      await this.repo.manager.query(`
+        CREATE TABLE IF NOT EXISTS lead_actions (
+          id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id    uuid NOT NULL,
+          lead_id    uuid,
+          kind       varchar NOT NULL,
+          created_at timestamp with time zone NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_lead_actions_user_kind_date
+          ON lead_actions(user_id, kind, created_at);
+      `);
+    } catch (e: any) {
+      this.logger.error(`CREATE TABLE lead_actions failed: ${e?.message || e}`);
+    }
+    try {
       // emailStatus — точный признак отправленного письма. KPI
       // «Персональные письма» теперь = count(emailStatus='sent' AND
       // updatedAt в окне). Раньше была эвристика «есть email +
@@ -308,6 +328,11 @@ export class ClientsService implements OnModuleInit {
   ) {
     const lead = this.repo.create({ ...dto, ownerId: dto.ownerId ?? ownerId });
     const saved = await this.repo.save(lead);
+    // KPI «Холодные звонки»: если лид создаётся сразу с «Тип звонка =
+    // Холодный» — логируем событие холодного звонка.
+    if (String(saved.callType || '').toLowerCase() === 'cold' && saved.ownerId) {
+      await this.logColdCall(saved.ownerId, saved.id);
+    }
     // Если при создании указана дата встречи — авто-генерируем личную задачу.
     await this.syncMeetingTask(saved);
     // KPI: если лид создаётся СРАЗУ с продвинутым статусом или onboardingStage
@@ -325,6 +350,19 @@ export class ClientsService implements OnModuleInit {
     // Real-time: всем онлайн-юзерам обновить кэши лидов/KPI.
     try { this.gateway.broadcast('leads:changed', { leadId: saved.id, ownerId: saved.ownerId }); } catch {}
     return this.findOne(saved.id);
+  }
+
+  /** Лог события «холодный звонок» (kind='cold_call') в lead_actions.
+   *  KPI «Холодные звонки» считает эти события за период. Best-effort. */
+  private async logColdCall(userId: string, leadId: string): Promise<void> {
+    try {
+      await this.repo.manager.query(
+        `INSERT INTO lead_actions (user_id, lead_id, kind) VALUES ($1, $2, 'cold_call')`,
+        [userId, leadId],
+      );
+    } catch (e: any) {
+      this.logger.warn(`logColdCall failed: ${e?.message || e}`);
+    }
   }
 
   async update(id: string, dto: Partial<ClientLead>) {
@@ -354,6 +392,15 @@ export class ClientsService implements OnModuleInit {
       throw new ForbiddenException('Вы можете редактировать только своих лидов');
     }
     const updated = await this.update(id, dto);
+    // KPI «Холодные звонки»: событие при ПЕРЕХОДЕ «Тип звонка» → Холодный
+    // (был не-cold, стал cold). Считаем по событиям, не по состоянию —
+    // звонок не пропадёт при последующей смене типа и каждый новый
+    // холодный звонок надёжно даёт +1.
+    const beforeCold = String(before.callType || '').toLowerCase() === 'cold';
+    const afterCold = String(updated.callType || '').toLowerCase() === 'cold';
+    if (!beforeCold && afterCold) {
+      await this.logColdCall(user.id, id);
+    }
     // KPI: лог прогрессий вперёд по status / onboardingStage.
     await this.maybeLogProgress(
       { status: before.status, onboardingStage: before.onboardingStage, name: before.name, ownerId: before.ownerId },
@@ -428,14 +475,25 @@ export class ClientsService implements OnModuleInit {
       .andWhere('c.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
 
-    // «Холодные звонки» — теперь считаются по ЯВНОМУ полю callType='cold',
-    // которое менеджер выбирает в форме клиента селектом «Тип звонка»
-    // (Холодный / Нейтральный / Горячий). Это точная цифра, а не эвристика
-    // по каналу. updatedAt в окне — значит менеджер «трогал» лида в периоде.
-    const coldCalls = await safeCount(() => base()
+    // «Холодные звонки» — СОБЫТИЙНЫЙ учёт: каждая отметка «Тип звонка =
+    // Холодный» пишет событие в lead_actions. KPI = число событий за
+    // период. Это надёжнее состояния: каждый звонок +1, звонок не
+    // «исчезает» при последующей смене типа звонка у лида.
+    // Fallback: если событий 0 (старые данные до релиза) — берём прежний
+    // счёт по состоянию, чтобы цифра не «обнулилась» на деплое.
+    const coldCallEvents = await safeCount(async () => {
+      const rows = await this.repo.manager.query(
+        `SELECT COUNT(*)::int AS c FROM lead_actions
+         WHERE user_id = $1 AND kind = 'cold_call' AND created_at BETWEEN $2 AND $3`,
+        [ownerId, periodFrom, periodTo],
+      );
+      return Number(rows?.[0]?.c || 0);
+    });
+    const coldCallsState = await safeCount(() => base()
       .andWhere(`LOWER(COALESCE(c."callType", '')) = 'cold'`)
       .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
       .getCount());
+    const coldCalls = coldCallEvents > 0 ? coldCallEvents : coldCallsState;
 
     // «Персональные письма» — теперь считаются по ЯВНОМУ полю
     // emailStatus='sent' («Написал»), которое менеджер выбирает в форме
