@@ -121,15 +121,10 @@ export default function ClientsPage() {
   const isBoss = role === 'admin' || role === 'founder' || role === 'co_founder'
   const PAGE_SIZE = (isSalesManager || isTopExec) ? 10 : 5
 
-  // «Позвонить»: множественный выбор лидов (для руководителя) +
-  // фильтр «только отмеченные к звонку».
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // «Позвонить»: руководитель отмечает лида галочкой — звонок назначается
+  // менеджеру-владельцу СРАЗУ (без отдельной кнопки), плюс фильтр
+  // «только отмеченные к звонку».
   const [onlyCallRequested, setOnlyCallRequested] = useState(false)
-  const toggleSelected = (id: string) => setSelectedIds(prev => {
-    const next = new Set(prev)
-    if (next.has(id)) next.delete(id); else next.add(id)
-    return next
-  })
 
   const { data: leads, isLoading } = useQuery({
     queryKey: ['clients', debouncedSearch, status, interest, sphere],
@@ -366,7 +361,6 @@ export default function ClientsPage() {
     onError: () => { qc.invalidateQueries({ queryKey: ['clients'] }); toast.error('Не удалось обновить') },
     onSuccess: (server: any, { flag }) => {
       qc.invalidateQueries({ queryKey: ['clients'] })
-      setSelectedIds(new Set())
       if (!flag) { toast.success('Отметка снята'); return }
       const d = server?.byDirection || {}
       const parts: string[] = []
@@ -577,16 +571,17 @@ export default function ClientsPage() {
                   <th className="px-2 py-3 w-8 text-center">
                     <input
                       type="checkbox"
-                      title="Выбрать всех на странице"
-                      checked={displayLeads.length > 0 && displayLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).every((l: any) => selectedIds.has(l.id))}
+                      title="Назначить звонок всем на странице"
+                      disabled={callRequestMut.isPending}
+                      checked={(() => {
+                        const rows = displayLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+                        return rows.length > 0 && rows.every((l: any) => l.callRequested)
+                      })()}
                       onChange={e => {
-                        const pageRows = displayLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-                        setSelectedIds(prev => {
-                          const next = new Set(prev)
-                          if (e.target.checked) pageRows.forEach((l: any) => next.add(l.id))
-                          else pageRows.forEach((l: any) => next.delete(l.id))
-                          return next
-                        })
+                        const ids = displayLeads
+                          .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+                          .map((l: any) => l.id)
+                        if (ids.length) callRequestMut.mutate({ ids, flag: e.target.checked })
                       }}
                     />
                   </th>
@@ -620,8 +615,10 @@ export default function ClientsPage() {
                       <td className="px-2 py-3 text-center align-top" onClick={e => e.stopPropagation()}>
                         <input
                           type="checkbox"
-                          checked={selectedIds.has(l.id)}
-                          onChange={() => toggleSelected(l.id)}
+                          title={l.callRequested ? 'Снять отметку «Позвонить»' : 'Назначить звонок менеджеру'}
+                          checked={!!l.callRequested}
+                          disabled={callRequestMut.isPending}
+                          onChange={() => callRequestMut.mutate({ ids: [l.id], flag: !l.callRequested })}
                         />
                       </td>
                     )}
@@ -725,33 +722,6 @@ export default function ClientsPage() {
         </>
       )}
       </>
-      )}
-
-      {/* Панель массовых действий для руководителя: назначить/снять звонки. */}
-      {isBoss && selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl bg-surface-900 text-white dark:bg-surface-800 border border-surface-700">
-          <span className="text-sm font-medium">Выбрано: {selectedIds.size}</span>
-          <button
-            onClick={() => callRequestMut.mutate({ ids: [...selectedIds], flag: true })}
-            disabled={callRequestMut.isPending}
-            className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white transition-colors"
-          >
-            📞 Назначить звонок
-          </button>
-          <button
-            onClick={() => callRequestMut.mutate({ ids: [...selectedIds], flag: false })}
-            disabled={callRequestMut.isPending}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/10 hover:bg-white/20 text-white transition-colors"
-          >
-            Снять
-          </button>
-          <button
-            onClick={() => setSelectedIds(new Set())}
-            className="px-2 py-1.5 rounded-lg text-sm text-surface-300 hover:text-white transition-colors"
-          >
-            Отмена
-          </button>
-        </div>
       )}
 
       {(showCreate || editLead) && (
