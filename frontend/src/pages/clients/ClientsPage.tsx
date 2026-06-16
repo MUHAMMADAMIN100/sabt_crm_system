@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, PageLoader, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Edit, Trash2, List, LayoutGrid, Phone, Instagram, Mail, Calendar as CalendarIcon, Flame, Snowflake, Sun, User as UserIcon, AlertCircle, Circle } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, List, LayoutGrid, Phone, Instagram, Mail, Calendar as CalendarIcon, Flame, Snowflake, Sun, User as UserIcon, AlertCircle, Circle, Check } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker, DateTimePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
@@ -567,25 +567,6 @@ export default function ClientsPage() {
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-surface-100 dark:border-surface-700 text-left">
-                {isBoss && (
-                  <th className="px-2 py-3 w-8 text-center">
-                    <input
-                      type="checkbox"
-                      title="Назначить звонок всем на странице"
-                      disabled={callRequestMut.isPending}
-                      checked={(() => {
-                        const rows = displayLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-                        return rows.length > 0 && rows.every((l: any) => l.callRequested)
-                      })()}
-                      onChange={e => {
-                        const ids = displayLeads
-                          .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-                          .map((l: any) => l.id)
-                        if (ids.length) callRequestMut.mutate({ ids, flag: e.target.checked })
-                      }}
-                    />
-                  </th>
-                )}
                 <th className="px-2 sm:px-3 py-3 text-xs font-semibold text-surface-400 dark:text-surface-500 w-10 text-center">#</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400">Название / Сфера</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden md:table-cell">ЛПР / Контакт</th>
@@ -593,7 +574,34 @@ export default function ClientsPage() {
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden lg:table-cell">Интерес</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 text-right hidden lg:table-cell">Потенциал</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden md:table-cell">Следующий контакт</th>
-                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 text-right">Действия</th>
+                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    {isBoss && (() => {
+                      const rows = displayLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+                      const allChecked = rows.length > 0 && rows.every((l: any) => l.callRequested)
+                      return (
+                        <button
+                          type="button"
+                          title="Назначить звонок всем на странице"
+                          disabled={callRequestMut.isPending}
+                          onClick={() => {
+                            const ids = rows.map((l: any) => l.id)
+                            if (ids.length) callRequestMut.mutate({ ids, flag: !allChecked })
+                          }}
+                          className={clsx(
+                            'inline-flex items-center justify-center w-[18px] h-[18px] rounded-md border-2 transition-all duration-150 disabled:opacity-50',
+                            allChecked
+                              ? 'bg-amber-500 border-amber-500 text-white'
+                              : 'border-surface-300 dark:border-surface-600 hover:border-amber-400 text-transparent',
+                          )}
+                        >
+                          <Check size={12} strokeWidth={3.5} />
+                        </button>
+                      )
+                    })()}
+                    <span>Действия</span>
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -611,17 +619,6 @@ export default function ClientsPage() {
                       l.callRequested && 'bg-amber-100/80 dark:bg-amber-900/25 border-l-4 border-l-amber-500 hover:bg-amber-100 dark:hover:bg-amber-900/30',
                     )}
                   >
-                    {isBoss && (
-                      <td className="px-2 py-3 text-center align-top" onClick={e => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          title={l.callRequested ? 'Снять отметку «Позвонить»' : 'Назначить звонок менеджеру'}
-                          checked={!!l.callRequested}
-                          disabled={callRequestMut.isPending}
-                          onChange={() => callRequestMut.mutate({ ids: [l.id], flag: !l.callRequested })}
-                        />
-                      </td>
-                    )}
                     <td className="px-2 sm:px-3 py-3 text-center text-xs text-surface-400 dark:text-surface-500 tabular-nums font-medium align-top">
                       {(page - 1) * PAGE_SIZE + idx + 1}
                     </td>
@@ -698,7 +695,24 @@ export default function ClientsPage() {
                       ) : <span className="text-surface-400">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      <div className="flex gap-1 justify-end items-center">
+                      <div className="flex gap-1.5 justify-end items-center">
+                        {isBoss && (
+                          <button
+                            type="button"
+                            onClick={() => callRequestMut.mutate({ ids: [l.id], flag: !l.callRequested })}
+                            disabled={callRequestMut.isPending}
+                            aria-pressed={!!l.callRequested}
+                            title={l.callRequested ? 'Снять отметку «Позвонить»' : 'Назначить звонок менеджеру'}
+                            className={clsx(
+                              'inline-flex items-center justify-center w-[18px] h-[18px] rounded-md border-2 transition-all duration-150 mr-1 disabled:opacity-50',
+                              l.callRequested
+                                ? 'bg-amber-500 border-amber-500 text-white shadow-sm shadow-amber-500/30'
+                                : 'border-surface-300 dark:border-surface-600 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-transparent',
+                            )}
+                          >
+                            <Check size={12} strokeWidth={3.5} />
+                          </button>
+                        )}
                         {l.callRequested && (
                           <button
                             onClick={() => callRequestMut.mutate({ ids: [l.id], flag: false })}
