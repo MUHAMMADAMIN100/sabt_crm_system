@@ -136,6 +136,19 @@ export class ClientLead {
   @Column({ type: 'text', nullable: true })
   rejectionReason: string;
 
+  /** «Позвонить» — флаг от руководителя: основатель/сооснователь/админ
+   *  отмечает лида в Базе клиентов → у менеджера-владельца появляется
+   *  задача обзвонить. Менеджер снимает флаг после звонка. */
+  @Column({ default: false })
+  callRequested: boolean;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  callRequestedAt: Date | null;
+
+  /** Имя руководителя, поставившего отметку (для подписи у менеджера). */
+  @Column({ nullable: true })
+  callRequestedByName: string | null;
+
   /** Кто создал / ведёт лид (обычно менеджер по продажам) */
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'ownerId' })

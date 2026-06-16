@@ -230,6 +230,9 @@ export const clientsApi = {
   create: (data: any) => api.post('/clients', data).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/clients/${id}`, data).then(r => r.data),
   remove: (id: string) => api.delete(`/clients/${id}`).then(r => r.data),
+  /** «Позвонить»: руководитель отмечает/снимает лидов для обзвона. */
+  callRequest: (ids: string[], flag: boolean) =>
+    api.post('/clients/call-request', { ids, flag }).then(r => r.data),
 }
 
 // ─── Stories ─────────────────────────────────────────────

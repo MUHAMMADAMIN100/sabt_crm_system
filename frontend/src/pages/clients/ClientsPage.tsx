@@ -117,7 +117,19 @@ export default function ClientsPage() {
   const role = useAuthStore(s => s.user?.role)
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
   const isTopExec = role === 'founder' || role === 'co_founder' || role === 'admin'
+  // Руководитель (может назначать звонки менеджерам через чекбоксы).
+  const isBoss = role === 'admin' || role === 'founder' || role === 'co_founder'
   const PAGE_SIZE = (isSalesManager || isTopExec) ? 10 : 5
+
+  // «Позвонить»: множественный выбор лидов (для руководителя) +
+  // фильтр «только отмеченные к звонку».
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [onlyCallRequested, setOnlyCallRequested] = useState(false)
+  const toggleSelected = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
 
   const { data: leads, isLoading } = useQuery({
     queryKey: ['clients', debouncedSearch, status, interest, sphere],
@@ -127,6 +139,12 @@ export default function ClientsPage() {
     // обновлении фильтров.
     placeholderData: keepPreviousData,
   })
+
+  // Список под рендер: при фильтре «К звонку» оставляем только отмеченных.
+  const displayLeads = onlyCallRequested
+    ? (leads || []).filter((l: any) => l.callRequested)
+    : (leads || [])
+  const callRequestedCount = (leads || []).filter((l: any) => l.callRequested).length
 
   const { data: stats } = useQuery({
     queryKey: ['clients-stats'],
@@ -142,6 +160,15 @@ export default function ClientsPage() {
   // показываем toast, query тоже чистим.
   const location = useLocation()
   const navigate = useNavigate()
+  // Deep-link из уведомления «📞 Звонки от руководителя» → сразу фильтр.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('callRequested') === '1') {
+      setOnlyCallRequested(true)
+      navigate(location.pathname, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search])
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const leadId = params.get('id')
@@ -326,6 +353,24 @@ export default function ClientsPage() {
     },
   })
 
+  // «Позвонить»: назначить/снять отметку обзвона.
+  const callRequestMut = useMutation({
+    mutationFn: ({ ids, flag }: { ids: string[]; flag: boolean }) => clientsApi.callRequest(ids, flag),
+    onMutate: async ({ ids, flag }) => {
+      await qc.cancelQueries({ queryKey: ['clients'] })
+      const idSet = new Set(ids)
+      qc.setQueriesData({ queryKey: ['clients'] }, (old: any) =>
+        Array.isArray(old) ? old.map((l: any) => idSet.has(l.id) ? { ...l, callRequested: flag } : l) : old,
+      )
+    },
+    onError: () => { qc.invalidateQueries({ queryKey: ['clients'] }); toast.error('Не удалось обновить') },
+    onSuccess: (_d, { flag, ids }) => {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+      setSelectedIds(new Set())
+      toast.success(flag ? `Назначено звонков: ${ids.length}` : 'Отметка снята')
+    },
+  })
+
   // Reset page when filters change
   const filterKey = `${search}|${status}|${interest}|${sphere}`
   useMemo(() => setPage(1), [filterKey])
@@ -475,6 +520,20 @@ export default function ClientsPage() {
             </button>
           )
         })}
+        {/* «📞 К звонку» — отмеченные руководителем для обзвона. */}
+        {callRequestedCount > 0 && (
+          <button
+            onClick={() => setOnlyCallRequested(v => !v)}
+            className={clsx(
+              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+              onlyCallRequested
+                ? 'bg-red-500 text-white shadow-sm'
+                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+            )}
+          >
+            📞 К звонку · {callRequestedCount}
+          </button>
+        )}
       </div>
 
       {/* Search + sphere row */}
@@ -507,6 +566,24 @@ export default function ClientsPage() {
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-surface-100 dark:border-surface-700 text-left">
+                {isBoss && (
+                  <th className="px-2 py-3 w-8 text-center">
+                    <input
+                      type="checkbox"
+                      title="Выбрать всех на странице"
+                      checked={displayLeads.length > 0 && displayLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).every((l: any) => selectedIds.has(l.id))}
+                      onChange={e => {
+                        const pageRows = displayLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+                        setSelectedIds(prev => {
+                          const next = new Set(prev)
+                          if (e.target.checked) pageRows.forEach((l: any) => next.add(l.id))
+                          else pageRows.forEach((l: any) => next.delete(l.id))
+                          return next
+                        })
+                      }}
+                    />
+                  </th>
+                )}
                 <th className="px-2 sm:px-3 py-3 text-xs font-semibold text-surface-400 dark:text-surface-500 w-10 text-center">#</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400">Название / Сфера</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden md:table-cell">ЛПР / Контакт</th>
@@ -518,7 +595,7 @@ export default function ClientsPage() {
               </tr>
             </thead>
             <tbody>
-              {leads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((l: any, idx: number) => {
+              {displayLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((l: any, idx: number) => {
                 const statusOpt = STATUS_OPTIONS.find(s => s.value === l.status)
                 const interestOpt = INTEREST_OPTIONS.find(i => i.value === l.interest)
                 const nextIsSoon = l.nextContactAt && new Date(l.nextContactAt) <= new Date(Date.now() + 2 * 86400000)
@@ -527,8 +604,20 @@ export default function ClientsPage() {
                   <tr
                     key={l.id}
                     onClick={() => setEditLead(l)}
-                    className="border-b border-surface-50 dark:border-surface-700/50 hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors cursor-pointer"
+                    className={clsx(
+                      'border-b border-surface-50 dark:border-surface-700/50 hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors cursor-pointer',
+                      l.callRequested && 'bg-red-50/60 dark:bg-red-900/10',
+                    )}
                   >
+                    {isBoss && (
+                      <td className="px-2 py-3 text-center align-top" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(l.id)}
+                          onChange={() => toggleSelected(l.id)}
+                        />
+                      </td>
+                    )}
                     <td className="px-2 sm:px-3 py-3 text-center text-xs text-surface-400 dark:text-surface-500 tabular-nums font-medium align-top">
                       {(page - 1) * PAGE_SIZE + idx + 1}
                     </td>
@@ -548,6 +637,14 @@ export default function ClientsPage() {
                         {l.onboardingStage && (
                           <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                             {ONBOARDING_STAGE_LABELS[l.onboardingStage] || l.onboardingStage}
+                          </span>
+                        )}
+                        {l.callRequested && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                            title={l.callRequestedByName ? `Отметил: ${l.callRequestedByName}` : 'Назначен звонок'}
+                          >
+                            📞 Позвонить
                           </span>
                         )}
                       </div>
@@ -597,7 +694,16 @@ export default function ClientsPage() {
                       ) : <span className="text-surface-400">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      <div className="flex gap-1 justify-end">
+                      <div className="flex gap-1 justify-end items-center">
+                        {l.callRequested && (
+                          <button
+                            onClick={() => callRequestMut.mutate({ ids: [l.id], flag: false })}
+                            className="px-2 py-1 rounded-lg text-[11px] font-medium text-green-700 bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400"
+                            title="Снять отметку «Позвонить»"
+                          >
+                            ✓ Позвонил
+                          </button>
+                        )}
                         <button onClick={() => setEditLead(l)} className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500"><Edit size={14} /></button>
                         <button onClick={() => setDeleteId(l.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 size={14} /></button>
                       </div>
@@ -608,10 +714,37 @@ export default function ClientsPage() {
             </tbody>
           </table>
         </div>
-        <Pagination page={page} total={leads.length} pageSize={PAGE_SIZE} onChange={setPage} />
+        <Pagination page={page} total={displayLeads.length} pageSize={PAGE_SIZE} onChange={setPage} />
         </>
       )}
       </>
+      )}
+
+      {/* Панель массовых действий для руководителя: назначить/снять звонки. */}
+      {isBoss && selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl bg-surface-900 text-white dark:bg-surface-800 border border-surface-700">
+          <span className="text-sm font-medium">Выбрано: {selectedIds.size}</span>
+          <button
+            onClick={() => callRequestMut.mutate({ ids: [...selectedIds], flag: true })}
+            disabled={callRequestMut.isPending}
+            className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors"
+          >
+            📞 Назначить звонок
+          </button>
+          <button
+            onClick={() => callRequestMut.mutate({ ids: [...selectedIds], flag: false })}
+            disabled={callRequestMut.isPending}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/10 hover:bg-white/20 text-white transition-colors"
+          >
+            Снять
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="px-2 py-1.5 rounded-lg text-sm text-surface-300 hover:text-white transition-colors"
+          >
+            Отмена
+          </button>
+        </div>
       )}
 
       {(showCreate || editLead) && (

@@ -8,6 +8,8 @@ import { Employee } from '../employees/employee.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction, ActivityLog } from '../activity-log/activity-log.entity';
 import { AppGateway } from '../gateway/app.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification.entity';
 
 /** Роли менеджеров продаж — для bulk-KPI и фильтров. */
 const SALES_MANAGER_ROLES = [UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV];
@@ -64,6 +66,7 @@ export class ClientsService implements OnModuleInit {
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     private activityLog: ActivityLogService,
     private gateway: AppGateway,
+    private notificationsService: NotificationsService,
   ) {}
 
   /** На старте гарантируем оба пути учёта прогрессий по воронке:
@@ -144,6 +147,20 @@ export class ClientsService implements OnModuleInit {
       );
     } catch (e: any) {
       this.logger.warn(`ALTER TABLE client_leads emailStatus failed: ${e?.message || e}`);
+    }
+    try {
+      // «Позвонить» — отметка руководителя для менеджера-владельца.
+      await this.repo.manager.query(
+        `ALTER TABLE client_leads ADD COLUMN IF NOT EXISTS "callRequested" boolean NOT NULL DEFAULT false`,
+      );
+      await this.repo.manager.query(
+        `ALTER TABLE client_leads ADD COLUMN IF NOT EXISTS "callRequestedAt" timestamp with time zone`,
+      );
+      await this.repo.manager.query(
+        `ALTER TABLE client_leads ADD COLUMN IF NOT EXISTS "callRequestedByName" varchar`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`ALTER TABLE client_leads callRequested failed: ${e?.message || e}`);
     }
   }
 
@@ -411,6 +428,52 @@ export class ClientsService implements OnModuleInit {
     // Real-time: KPI «Холодные звонки» и др. пересчитаются у всех онлайн-юзеров.
     try { this.gateway.broadcast('leads:changed', { leadId: id, ownerId: updated.ownerId }); } catch {}
     return updated;
+  }
+
+  /** «Позвонить»: руководитель отмечает лидов → у менеджера-владельца
+   *  задача обзвонить. Ставить (flag=true) могут admin/founder/co_founder;
+   *  снимать (flag=false) — они же ИЛИ владелец лида (после звонка). */
+  async setCallRequest(
+    ids: string[],
+    flag: boolean,
+    actor: { id: string; role: string; name?: string },
+  ) {
+    const isBoss = ['admin', 'founder', 'co_founder'].includes(actor.role);
+    if (flag && !isBoss) {
+      throw new ForbiddenException('Назначать звонки может только руководитель');
+    }
+    const list = await this.repo.find({ where: { id: In(ids || []) } });
+    const ownersToNotify = new Set<string>();
+    for (const lead of list) {
+      // Снимать может руководитель или владелец лида.
+      if (!flag && !isBoss && lead.ownerId !== actor.id) continue;
+      lead.callRequested = flag;
+      lead.callRequestedAt = flag ? new Date() : null;
+      lead.callRequestedByName = flag ? (actor.name || 'Руководитель') : null;
+      await this.repo.update(lead.id, {
+        callRequested: lead.callRequested,
+        callRequestedAt: lead.callRequestedAt,
+        callRequestedByName: lead.callRequestedByName,
+      });
+      if (flag && lead.ownerId) ownersToNotify.add(lead.ownerId);
+    }
+
+    // Уведомляем менеджеров-владельцев о новых звонках от руководителя.
+    if (flag) {
+      for (const ownerId of ownersToNotify) {
+        const cnt = list.filter(l => l.ownerId === ownerId).length;
+        await this.notificationsService.create({
+          userId: ownerId,
+          type: NotificationType.STATUS_CHANGE,
+          title: '📞 Звонки от руководителя',
+          message: `${actor.name || 'Руководитель'} отметил${(actor.name || '').endsWith('а') ? 'а' : ''} ${cnt} ${cnt === 1 ? 'клиента' : 'клиентов'} для обзвона.`,
+          link: '/clients?callRequested=1',
+        }).catch(() => {});
+      }
+    }
+
+    try { this.gateway.broadcast('leads:changed', {}); } catch {}
+    return { ok: true, updated: list.length };
   }
 
   async remove(id: string) {

@@ -9,6 +9,7 @@ import { ActivityLogModule } from '../activity-log/activity-log.module';
 import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { GatewayModule } from '../gateway/gateway.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   // Task entity подключён сюда, чтобы ClientsService мог авто-создавать
@@ -22,6 +23,7 @@ import { GatewayModule } from '../gateway/gateway.module';
     TypeOrmModule.forFeature([ClientLead, Task, ActivityLog, User, Employee]),
     ActivityLogModule,
     GatewayModule,
+    NotificationsModule,
   ],
   controllers: [ClientsController],
   providers: [ClientsService],

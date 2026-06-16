@@ -110,6 +110,13 @@ export class ClientsController {
     );
   }
 
+  /** «Позвонить»: руководитель отмечает лидов для обзвона менеджером
+   *  (flag=true), снимает отметку — руководитель или владелец (flag=false). */
+  @Post('call-request')
+  callRequest(@Body() body: { ids: string[]; flag: boolean }, @Request() req) {
+    return this.service.setCallRequest(body?.ids || [], !!body?.flag, req.user);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateClientDto, @Request() req) {
     // Направление лида менять через update нельзя — оно фиксируется при создании.
