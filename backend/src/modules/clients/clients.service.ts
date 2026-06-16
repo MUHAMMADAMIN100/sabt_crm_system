@@ -444,6 +444,10 @@ export class ClientsService implements OnModuleInit {
     }
     const list = await this.repo.find({ where: { id: In(ids || []) } });
     const ownersToNotify = new Set<string>();
+    // Разбивка по направлению — чтобы вернуть боссу, какой менеджер получит
+    // звонки (СММ-клиента видит СММ-менеджер, Разработку — менеджер разработки).
+    const byDirection = { smm: 0, development: 0, none: 0 };
+    let updated = 0;
     for (const lead of list) {
       // Снимать может руководитель или владелец лида.
       if (!flag && !isBoss && lead.ownerId !== actor.id) continue;
@@ -455,6 +459,12 @@ export class ClientsService implements OnModuleInit {
         callRequestedAt: lead.callRequestedAt,
         callRequestedByName: lead.callRequestedByName,
       });
+      updated++;
+      if (flag) {
+        if (lead.direction === ClientLeadDirection.SMM) byDirection.smm++;
+        else if (lead.direction === ClientLeadDirection.DEVELOPMENT) byDirection.development++;
+        else byDirection.none++;
+      }
       if (flag && lead.ownerId) ownersToNotify.add(lead.ownerId);
     }
 
@@ -473,7 +483,10 @@ export class ClientsService implements OnModuleInit {
     }
 
     try { this.gateway.broadcast('leads:changed', {}); } catch {}
-    return { ok: true, updated: list.length };
+    this.logger.log(
+      `setCallRequest by ${actor.role} ${actor.name || ''}: flag=${flag} ids=${(ids || []).length} updated=${updated} byDir=${JSON.stringify(byDirection)}`,
+    );
+    return { ok: true, updated, byDirection };
   }
 
   async remove(id: string) {

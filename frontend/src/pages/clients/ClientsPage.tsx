@@ -364,10 +364,17 @@ export default function ClientsPage() {
       )
     },
     onError: () => { qc.invalidateQueries({ queryKey: ['clients'] }); toast.error('Не удалось обновить') },
-    onSuccess: (_d, { flag, ids }) => {
+    onSuccess: (server: any, { flag }) => {
       qc.invalidateQueries({ queryKey: ['clients'] })
       setSelectedIds(new Set())
-      toast.success(flag ? `Назначено звонков: ${ids.length}` : 'Отметка снята')
+      if (!flag) { toast.success('Отметка снята'); return }
+      const d = server?.byDirection || {}
+      const parts: string[] = []
+      if (d.smm) parts.push(`СММ: ${d.smm}`)
+      if (d.development) parts.push(`Разработка: ${d.development}`)
+      if (d.none) parts.push(`без направления: ${d.none}`)
+      const breakdown = parts.length ? ` (${parts.join(', ')})` : ''
+      toast.success(`Назначено звонков: ${server?.updated ?? 0}${breakdown}`)
     },
   })
 
@@ -527,8 +534,8 @@ export default function ClientsPage() {
             className={clsx(
               'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
               onlyCallRequested
-                ? 'bg-red-500 text-white shadow-sm'
-                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                ? 'bg-amber-500 text-white shadow-sm'
+                : 'bg-amber-200 text-amber-900 dark:bg-amber-800/40 dark:text-amber-200',
             )}
           >
             📞 К звонку · {callRequestedCount}
@@ -606,7 +613,7 @@ export default function ClientsPage() {
                     onClick={() => setEditLead(l)}
                     className={clsx(
                       'border-b border-surface-50 dark:border-surface-700/50 hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors cursor-pointer',
-                      l.callRequested && 'bg-red-50/60 dark:bg-red-900/10',
+                      l.callRequested && 'bg-amber-100/80 dark:bg-amber-900/25 border-l-4 border-l-amber-500 hover:bg-amber-100 dark:hover:bg-amber-900/30',
                     )}
                   >
                     {isBoss && (
@@ -641,7 +648,7 @@ export default function ClientsPage() {
                         )}
                         {l.callRequested && (
                           <span
-                            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-amber-200 text-amber-900 dark:bg-amber-800/50 dark:text-amber-200"
                             title={l.callRequestedByName ? `Отметил: ${l.callRequestedByName}` : 'Назначен звонок'}
                           >
                             📞 Позвонить
@@ -727,7 +734,7 @@ export default function ClientsPage() {
           <button
             onClick={() => callRequestMut.mutate({ ids: [...selectedIds], flag: true })}
             disabled={callRequestMut.isPending}
-            className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors"
+            className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white transition-colors"
           >
             📞 Назначить звонок
           </button>
