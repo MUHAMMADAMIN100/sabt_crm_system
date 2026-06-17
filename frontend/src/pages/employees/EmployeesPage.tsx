@@ -307,7 +307,7 @@ export default function EmployeesPage() {
       {!employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'cards' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {pagedEmployees.map((emp: any) => (
-            <div key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className="card group cursor-pointer hover:shadow-md transition-shadow">
+            <div key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className="card group cursor-pointer hover:shadow-md transition-shadow flex flex-col h-full">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <Avatar name={emp.fullName} src={emp.avatar} size={44} />
@@ -370,7 +370,7 @@ export default function EmployeesPage() {
                   <EmployeeKpiCard userId={emp.userId} compact period={kpiPeriod} />
                 </div>
               )}
-              <div className="flex items-center justify-between mt-3 pt-3 border-t border-surface-50 dark:border-surface-700">
+              <div className="flex items-center justify-between mt-auto pt-3 border-t border-surface-50 dark:border-surface-700">
                 {emp.user?.isBlocked ? (
                   <span className="badge bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 flex items-center gap-1">
                     <Ban size={11} /> Заблокирован
