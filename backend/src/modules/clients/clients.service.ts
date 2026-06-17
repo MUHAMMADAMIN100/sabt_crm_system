@@ -20,6 +20,17 @@ const ROLE_TO_DIRECTION: Record<string, ClientLeadDirection> = {
   [UserRole.SALES_MANAGER_DEV]: ClientLeadDirection.DEVELOPMENT,
 };
 
+/** Дневные цели KPI менеджера продаж (план на ОДИН день). При выборе периода
+ *  (неделя/месяц) цель умножается на число дней в диапазоне — см. kpi():
+ *  встречи 2/день → 60 за месяц (~30 дней), 14 за неделю. */
+const SALES_DAILY_TARGETS = {
+  funnel_progress: 20,
+  new_companies:   15,
+  cold_calls:      20,
+  personal_emails: 10,
+  meetings:        2,
+};
+
 /** Порядок продвижения лида по статусу — для подсчёта «прогрессий вперёд». */
 const STATUS_ORDER: Record<string, number> = {
   new:         0,
@@ -622,12 +633,15 @@ export class ClientsService implements OnModuleInit {
     );
     const progressCount = progressFromTable > 0 ? progressFromTable : progressFromActivity;
 
+    // Число дней в выбранном периоде: сегодня → 1, неделя → 7, месяц → ~30.
+    // Цель = дневная цель × дни (план встреч 2/день = 60 за месяц).
+    const days = Math.max(1, Math.round((periodTo.getTime() - periodFrom.getTime()) / 86400000));
     const items = [
-      { key: 'funnel_progress', label: 'Продвижения по воронке',  target: 20, value: progressCount },
-      { key: 'new_companies',   label: 'Новые компании в базе',   target: 30, value: newCompanies },
-      { key: 'cold_calls',      label: 'Холодные звонки',         target: 10, value: coldCalls },
-      { key: 'personal_emails', label: 'Персональные письма',     target: 10, value: personalEmails },
-      { key: 'meetings',        label: 'Встречи / созвоны',       target: 2,  value: meetings },
+      { key: 'funnel_progress', label: 'Продвижения по воронке',  target: SALES_DAILY_TARGETS.funnel_progress * days, value: progressCount },
+      { key: 'new_companies',   label: 'Новые компании в базе',   target: SALES_DAILY_TARGETS.new_companies   * days, value: newCompanies },
+      { key: 'cold_calls',      label: 'Холодные звонки',         target: SALES_DAILY_TARGETS.cold_calls      * days, value: coldCalls },
+      { key: 'personal_emails', label: 'Персональные письма',     target: SALES_DAILY_TARGETS.personal_emails * days, value: personalEmails },
+      { key: 'meetings',        label: 'Встречи / созвоны',       target: SALES_DAILY_TARGETS.meetings        * days, value: meetings },
     ].map(i => ({
       ...i,
       percent: i.target > 0 ? Math.min(100, Math.round((i.value / i.target) * 100)) : 0,

@@ -297,8 +297,8 @@ export default function SalesDashboard() {
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {(kpi?.items ?? [
-            { key: 'new_companies',   label: 'Новые компании в базе', target: 30, value: 0, percent: 0, done: false },
-            { key: 'cold_calls',      label: 'Холодные звонки',       target: 10, value: 0, percent: 0, done: false },
+            { key: 'new_companies',   label: 'Новые компании в базе', target: 15, value: 0, percent: 0, done: false },
+            { key: 'cold_calls',      label: 'Холодные звонки',       target: 20, value: 0, percent: 0, done: false },
             { key: 'personal_emails', label: 'Персональные письма',   target: 10, value: 0, percent: 0, done: false },
             { key: 'meetings',        label: 'Встречи / созвоны',     target: 2,  value: 0, percent: 0, done: false },
           ]).map((it: any) => (
