@@ -13,7 +13,6 @@ import { format, formatDistanceToNow } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
-import SMM_QUESTIONS from '@/config/smm-questions'
 import type { Project, Employee } from '@/types/entities'
 import BriefFormBody, { BriefDraft } from '@/components/projects/BriefFormBody'
 import { briefFilledPercent, TOTAL_BRIEF_QUESTIONS } from '@/lib/briefSchema'
@@ -504,15 +503,14 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     .includes(formUser?.role || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
-  // Анкета SMM-проекта свёрнута по умолчанию — длинная; разворачивается
-  // кликом по заголовку. При редактировании с заполненной анкетой — открыта.
-  const [smmFormOpen, setSmmFormOpen] = useState(false)
   // Бриф клиента (заполнение прямо в форме создания SMM-проекта).
   // Если не пуст — отправляется вторым запросом после успешного create.
   const [briefDraft, setBriefDraft] = useState<BriefDraft>({
-    tariff: '', clientSignature: '', managerSignature: '', answers: {},
+    tariff: '', clientSignature: '', managerSignature: '', clientPhone: '', answers: {},
   })
-  const [showBriefModal, setShowBriefModal] = useState(false)
+  // Бриф — встроенный сворачиваемый блок (развернуть/свернуть). По умолчанию
+  // свёрнут; кнопка «Сохранить» внизу брифа снова его сворачивает.
+  const [briefOpen, setBriefOpen] = useState(false)
   const briefFilled = briefFilledPercent({ answers: briefDraft.answers })
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
   const [memberDropOpen, setMemberDropOpen] = useState(false)
@@ -551,7 +549,9 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     const end = new Date(start)
     end.setMonth(end.getMonth() + 1)
     setValue('endDate', format(end, 'yyyy-MM-dd'))
-    if (!selected.isCustom && Number(selected.designsPerMonth) >= 0) {
+    // «Макетов в месяц» — из тарифа (designsPerMonth), для ЛЮБОГО тарифа,
+    // включая индивидуальный. «Историй в день» не трогаем — вручную.
+    if (Number(selected.designsPerMonth) >= 0) {
       setSmmAnswers(prev => ({ ...prev, layoutsPerMonth: String(selected.designsPerMonth ?? 0) }))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -623,7 +623,6 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           discountType: (initial as any).discountType ?? 'fixed',
         })
         if (initial.smmData) setSmmAnswers(initial.smmData)
-        setSmmFormOpen(Object.keys(initial.smmData || {}).length > 0)
         setSelectedMembers(initial.members?.map((m: any) => m.id) || [])
       } else {
         reset({
@@ -637,7 +636,8 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
         })
         setSmmAnswers({})
         setShowSmmForm(false)
-        setSmmFormOpen(false)
+        setBriefDraft({ tariff: '', clientSignature: '', managerSignature: '', clientPhone: '', answers: {} })
+        setBriefOpen(false)
         setSelectedMembers([])
         setTranches([])
       }
@@ -676,11 +676,16 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     }
     if (data.projectType === 'SMM' && Object.keys(smmAnswers).length > 0) {
       formattedData.smmData = smmAnswers
-      // Client info from SMM answers
-      formattedData.clientInfo = {
-        name: smmAnswers.companyName || '',
-        contactPerson: smmAnswers.contactPerson || '',
-        phone: smmAnswers.contactPhone || '',
+    }
+    // Данные клиента: Анкета SMM убрана — берём из брифа (название компании q1,
+    // контактное лицо q2, телефон клиента). Legacy smmData (при редактировании
+    // старых проектов) остаётся приоритетным источником.
+    if (data.projectType === 'SMM') {
+      const name = smmAnswers.companyName || briefDraft.answers?.q1 || briefDraft.clientSignature || ''
+      const contactPerson = smmAnswers.contactPerson || briefDraft.answers?.q2 || briefDraft.clientSignature || ''
+      const phone = smmAnswers.contactPhone || briefDraft.clientPhone || ''
+      if (name || contactPerson || phone) {
+        formattedData.clientInfo = { name, contactPerson, phone }
       }
     }
     // Tariff applies only to SMM projects. Empty string → undefined to detach.
@@ -716,6 +721,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
         tariff: briefDraft.tariff || null,
         clientSignature: briefDraft.clientSignature,
         managerSignature: briefDraft.managerSignature,
+        clientPhone: briefDraft.clientPhone || '',
         answers: briefDraft.answers,
       }
     }
@@ -966,95 +972,54 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             </div>
           )}
 
-          {/* Бриф клиента — показывается только при создании SMM-проекта,
-              в режиме редактирования не показываем (там есть отдельная вкладка). */}
+          {/* Бриф клиента — встроенный сворачиваемый блок. Только при создании
+              SMM-проекта; в режиме редактирования бриф — в отдельной вкладке.
+              Кнопка «Сохранить» внизу сворачивает бриф (сам бриф сохраняется
+              вместе с проектом). Анкета SMM убрана — данные берём из брифа. */}
           {projectType === 'SMM' && !initial && (
-            <div className="sm:col-span-2 border border-primary-200 dark:border-primary-800 rounded-xl p-4 bg-primary-50/30 dark:bg-primary-900/10">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div className="min-w-0">
-                  <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100 flex items-center gap-2">
-                    <FileText size={14} className="text-primary-600" />
+            <div className="sm:col-span-2 border border-primary-200 dark:border-primary-800 rounded-xl p-4 bg-primary-50/30 dark:bg-primary-900/10 space-y-4">
+              <button
+                type="button"
+                onClick={() => setBriefOpen(o => !o)}
+                className="w-full flex items-start gap-2 text-left"
+              >
+                <FileText size={16} className="text-primary-600 shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
                     Бриф клиента
                   </h3>
                   <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-0.5">
-                    8 разделов · {TOTAL_BRIEF_QUESTIONS} вопросов. Можно заполнить сейчас или позже в карточке проекта.
+                    8 разделов · {TOTAL_BRIEF_QUESTIONS} вопросов.{' '}
+                    {briefOpen
+                      ? 'Заполните сейчас или позже в карточке проекта.'
+                      : briefFilled > 0
+                        ? `заполнено ${briefFilled}% — нажмите, чтобы развернуть`
+                        : 'нажмите, чтобы развернуть и заполнить'}
                   </p>
-                  {briefFilled > 0 && (
+                  {briefFilled > 0 && !briefOpen && (
                     <p className="text-[11px] text-green-600 dark:text-green-400 mt-1">
-                      ✓ Заполнено {briefFilled}% — будет сохранено вместе с проектом
+                      ✓ Будет сохранено вместе с проектом
                     </p>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowBriefModal(true)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-primary-700 bg-surface-50 border border-primary-300 hover:bg-primary-50 dark:bg-surface-800 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-900/30 transition-colors shrink-0"
-                >
-                  {briefFilled > 0 ? '✏️ Редактировать бриф' : '📋 Заполнить бриф'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* SMM Questionnaire — appears right after type select.
-              Сворачиваемая: клик по заголовку открывает/закрывает. */}
-          {showSmmForm && (
-            <div className="sm:col-span-2 border border-primary-300 dark:border-primary-700 rounded-xl p-4 bg-primary-50 dark:bg-primary-900/10 space-y-4">
-              <button
-                type="button"
-                onClick={() => setSmmFormOpen(o => !o)}
-                className="w-full flex items-center gap-2 text-left"
-              >
-                <span className="text-lg">📋</span>
-                <h3 className="font-semibold text-primary-700 dark:text-primary-300 text-sm">Анкета SMM-проекта</h3>
-                <span className="text-xs text-primary-600 dark:text-primary-400 flex-1">
-                  {smmFormOpen
-                    ? 'Заполните для лучшего понимания проекта'
-                    : `свёрнута · ${Object.values(smmAnswers).filter(v => String(v || '').trim()).length} заполнено — нажмите, чтобы развернуть`}
-                </span>
-                <span className={clsx('text-surface-400 transition-transform', smmFormOpen && 'rotate-180')}>▾</span>
+                <span className={clsx('text-surface-400 transition-transform shrink-0', briefOpen && 'rotate-180')}>▾</span>
               </button>
-              {smmFormOpen && (
-              <div className="space-y-3">
-                {SMM_QUESTIONS.map(q => (
-                  <div key={q.key}>
-                    <label className="text-xs font-medium text-surface-700 dark:text-surface-300 block mb-1">{q.label}</label>
-                    {q.type === 'textarea' ? (
-                      <textarea
-                        value={smmAnswers[q.key] || ''}
-                        onChange={e => setSmmAnswers(prev => ({ ...prev, [q.key]: e.target.value }))}
-                        className="input resize-none text-sm"
-                        rows={2}
-                        placeholder="Введите ответ..."
-                      />
-                    ) : q.type === 'radio' ? (
-                      <div className="flex gap-4">
-                        {q.options?.map(opt => (
-                          <label key={opt} className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="radio"
-                              name={q.key}
-                              value={opt}
-                              checked={smmAnswers[q.key] === opt}
-                              onChange={() => setSmmAnswers(prev => ({ ...prev, [q.key]: opt }))}
-                              className="w-3.5 h-3.5 text-primary-600"
-                            />
-                            <span className="text-xs text-surface-700 dark:text-surface-300">{opt}</span>
-                          </label>
-                        ))}
-                      </div>
-                    ) : (
-                      <input
-                        type="text"
-                        value={smmAnswers[q.key] || ''}
-                        onChange={e => setSmmAnswers(prev => ({ ...prev, [q.key]: e.target.value }))}
-                        className="input text-sm"
-                        placeholder="Введите ответ..."
-                      />
-                    )}
+              {briefOpen && (
+                <div className="space-y-3">
+                  <BriefFormBody value={briefDraft} onChange={setBriefDraft} />
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <p className="text-[11px] text-surface-500 dark:text-surface-400">
+                      Сохранится автоматически после создания проекта.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setBriefOpen(false)}
+                      className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors"
+                    >
+                      Сохранить
+                    </button>
                   </div>
-                )) }
-              </div>
+                </div>
               )}
             </div>
           )}
@@ -1349,41 +1314,6 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           </button>
         </div>
       </form>
-
-      {/* Inner modal: бриф клиента при создании проекта */}
-      <Modal
-        open={showBriefModal}
-        onClose={() => setShowBriefModal(false)}
-        title={`Бриф клиента ${briefFilled > 0 ? `· заполнено ${briefFilled}%` : ''}`}
-        size="xl"
-      >
-        <div className="max-h-[70vh] overflow-y-auto pr-1">
-          <BriefFormBody value={briefDraft} onChange={setBriefDraft} />
-        </div>
-        <div className="flex items-center justify-between gap-2 pt-3 border-t border-surface-100 dark:border-surface-700 mt-3">
-          <p className="text-[11px] text-surface-500 dark:text-surface-400">
-            Сохранится автоматически после создания проекта.
-          </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setBriefDraft({ tariff: '', clientSignature: '', managerSignature: '', answers: {} })
-              }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 transition-colors"
-            >
-              Очистить
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowBriefModal(false)}
-              className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors"
-            >
-              Готово
-            </button>
-          </div>
-        </div>
-      </Modal>
     </Modal>
   )
 }

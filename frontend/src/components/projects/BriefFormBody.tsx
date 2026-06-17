@@ -6,6 +6,8 @@ export interface BriefDraft {
   tariff: string
   clientSignature: string
   managerSignature: string
+  /** Телефон клиента — заполняет клиент в публичном брифе. */
+  clientPhone?: string
   answers: Record<string, string>
 }
 
@@ -20,6 +22,9 @@ interface Props {
   /** Загружать ли тарифы через API. Для публичной страницы клиента
    *  передаём готовый список — иначе требуется auth. */
   tariffs?: Array<{ id?: string; name: string }>
+  /** Скрыть селект тарифа — для клиентского (публичного) брифа: клиент
+   *  не выбирает тариф, это делает менеджер внутри системы. */
+  hideTariff?: boolean
 }
 
 /**
@@ -30,7 +35,7 @@ interface Props {
  *  - PublicBriefPage (страница для клиента, доступная по ссылке)
  */
 export default function BriefFormBody({
-  value, onChange, disabled = false, headerExtra, tariffs: tariffsProp,
+  value, onChange, disabled = false, headerExtra, tariffs: tariffsProp, hideTariff = false,
 }: Props) {
   const { data: loadedTariffs } = useQuery({
     queryKey: ['smm-tariffs', { isActive: true }],
@@ -44,27 +49,30 @@ export default function BriefFormBody({
 
   return (
     <div className="space-y-4">
-      {/* Шапка: переданный extra (название/дата) + селект тарифа */}
-      {(headerExtra || true) && (
+      {/* Шапка: переданный extra (название/дата) + селект тарифа.
+          На клиентском (публичном) брифе тариф скрыт — клиент его не выбирает. */}
+      {(headerExtra || !hideTariff) && (
         <div className="card grid grid-cols-1 sm:grid-cols-3 gap-3">
           {headerExtra}
-          <div>
-            <label className="label text-xs">Тариф</label>
-            <select
-              className="input"
-              value={value.tariff}
-              onChange={e => onChange({ ...value, tariff: e.target.value })}
-              disabled={disabled}
-            >
-              <option value="">— Не выбран —</option>
-              {tariffs.map((t: any) => (
-                <option key={t.id || t.name} value={t.name}>{t.name}</option>
-              ))}
-              {value.tariff && !tariffs.some((t: any) => t.name === value.tariff) && (
-                <option value={value.tariff}>{value.tariff} (архивный)</option>
-              )}
-            </select>
-          </div>
+          {!hideTariff && (
+            <div>
+              <label className="label text-xs">Тариф</label>
+              <select
+                className="input"
+                value={value.tariff}
+                onChange={e => onChange({ ...value, tariff: e.target.value })}
+                disabled={disabled}
+              >
+                <option value="">— Не выбран —</option>
+                {tariffs.map((t: any) => (
+                  <option key={t.id || t.name} value={t.name}>{t.name}</option>
+                ))}
+                {value.tariff && !tariffs.some((t: any) => t.name === value.tariff) && (
+                  <option value={value.tariff}>{value.tariff} (архивный)</option>
+                )}
+              </select>
+            </div>
+          )}
         </div>
       )}
 
@@ -107,8 +115,8 @@ export default function BriefFormBody({
         </div>
       ))}
 
-      {/* Подписи */}
-      <div className="card grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* Подписи + телефон клиента */}
+      <div className="card grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className="label text-xs">Клиент</label>
           <input
@@ -117,6 +125,17 @@ export default function BriefFormBody({
             onChange={e => onChange({ ...value, clientSignature: e.target.value })}
             disabled={disabled}
             placeholder="ФИО клиента"
+          />
+        </div>
+        <div>
+          <label className="label text-xs">Телефон клиента</label>
+          <input
+            className="input"
+            type="tel"
+            value={value.clientPhone || ''}
+            onChange={e => onChange({ ...value, clientPhone: e.target.value })}
+            disabled={disabled}
+            placeholder="+992 ..."
           />
         </div>
         <div>

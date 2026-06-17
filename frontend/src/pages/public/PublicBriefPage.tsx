@@ -27,6 +27,7 @@ export default function PublicBriefPage() {
     tariff: data?.brief?.tariff || '',
     clientSignature: data?.brief?.clientSignature || '',
     managerSignature: data?.brief?.managerSignature || '',
+    clientPhone: data?.brief?.clientPhone || '',
     answers: (data?.brief?.answers as Record<string, string>) || {},
   }), [data?.brief])
 
@@ -39,6 +40,7 @@ export default function PublicBriefPage() {
       tariff: draft.tariff || null,
       clientSignature: draft.clientSignature,
       managerSignature: draft.managerSignature,
+      clientPhone: draft.clientPhone || '',
       answers: draft.answers,
     }),
     onSuccess: () => {
@@ -149,8 +151,8 @@ export default function PublicBriefPage() {
           </div>
         </div>
 
-        {/* Форма */}
-        <BriefFormBody value={draft} onChange={setDraft} tariffs={[]} />
+        {/* Форма — у клиента селект тарифа скрыт (выбирает менеджер в системе). */}
+        <BriefFormBody value={draft} onChange={setDraft} tariffs={[]} hideTariff />
 
         {/* Submit */}
         <div className="card mt-5 sticky bottom-4 shadow-xl border-primary-200 dark:border-primary-800">

@@ -33,6 +33,7 @@ export default function ProjectBriefTab({ project }: Props) {
     tariff: project?.brief?.tariff || '',
     clientSignature: project?.brief?.clientSignature || '',
     managerSignature: project?.brief?.managerSignature || '',
+    clientPhone: project?.brief?.clientPhone || '',
     answers: (project?.brief?.answers as Record<string, string>) || {},
   }), [project?.brief])
 
@@ -50,6 +51,7 @@ export default function ProjectBriefTab({ project }: Props) {
         tariff: draft.tariff || null,
         clientSignature: draft.clientSignature,
         managerSignature: draft.managerSignature,
+        clientPhone: draft.clientPhone || '',
         answers: draft.answers,
       })
     },
@@ -79,7 +81,7 @@ export default function ProjectBriefTab({ project }: Props) {
       }
       // Локальный draft тоже принудительно очищаем (на случай если бэк
       // вернул project без поля brief, а не явный null).
-      setDraft({ tariff: '', clientSignature: '', managerSignature: '', answers: {} })
+      setDraft({ tariff: '', clientSignature: '', managerSignature: '', clientPhone: '', answers: {} })
       setConfirmClear(false)
       toast.success('Бриф очищен')
     },
