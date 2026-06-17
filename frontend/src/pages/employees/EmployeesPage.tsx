@@ -312,10 +312,10 @@ export default function EmployeesPage() {
                 <div className="flex items-center gap-3">
                   <Avatar name={emp.fullName} src={emp.avatar} size={44} />
                   <div>
-                    <div className="flex items-center gap-1">
-                      <span className="font-semibold text-surface-900 dark:text-surface-100">{emp.fullName}</span>
-                      {emp.isSubAdmin && <ShieldCheck size={14} className="text-primary-500" aria-label="Помощник администратора" />}
-                      {emp.isStoryMaker && <Camera size={14} className="text-surface-500" aria-label="Сторисмейкер" />}
+                    <div className="flex items-center gap-1 min-h-[2.75rem]">
+                      <span className="font-semibold text-surface-900 dark:text-surface-100 line-clamp-2">{emp.fullName}</span>
+                      {emp.isSubAdmin && <ShieldCheck size={14} className="text-primary-500 shrink-0" aria-label="Помощник администратора" />}
+                      {emp.isStoryMaker && <Camera size={14} className="text-surface-500 shrink-0" aria-label="Сторисмейкер" />}
                     </div>
                     <p className="text-sm text-surface-500 dark:text-surface-400">{emp.position}{emp.user?.secondaryRole ? ` / ${getRoleLabel(emp.user.secondaryRole)}` : ''}</p>
                     <span className="text-xs bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-2 py-0.5 rounded-full">{emp.department}</span>
@@ -350,7 +350,7 @@ export default function EmployeesPage() {
                   </div>
                 )}
               </div>
-              <div className="mt-3 space-y-1">
+              <div className="mt-3 space-y-1 min-h-[76px]">
                 <div className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400"><Mail size={11} /><span>{emp.email}</span></div>
                 {emp.phone && <div className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400"><Phone size={11} /><span>{emp.phone}</span></div>}
                 {emp.telegram && (
