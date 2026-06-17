@@ -447,19 +447,10 @@ export class ClientsService implements OnModuleInit {
     // Разбивка по направлению — чтобы вернуть боссу, какой менеджер получит
     // звонки (СММ-клиента видит СММ-менеджер, Разработку — менеджер разработки).
     const byDirection = { smm: 0, development: 0, none: 0 };
-    let updated = 0;
-    for (const lead of list) {
-      // Снимать может руководитель или владелец лида.
-      if (!flag && !isBoss && lead.ownerId !== actor.id) continue;
-      lead.callRequested = flag;
-      lead.callRequestedAt = flag ? new Date() : null;
-      lead.callRequestedByName = flag ? (actor.name || 'Руководитель') : null;
-      await this.repo.update(lead.id, {
-        callRequested: lead.callRequested,
-        callRequestedAt: lead.callRequestedAt,
-        callRequestedByName: lead.callRequestedByName,
-      });
-      updated++;
+    // Снимать отметку может руководитель или владелец лида; ставить — только босс.
+    const eligible = list.filter(lead => (flag ? isBoss : (isBoss || lead.ownerId === actor.id)));
+    const eligibleIds = eligible.map(l => l.id);
+    for (const lead of eligible) {
       if (flag) {
         if (lead.direction === ClientLeadDirection.SMM) byDirection.smm++;
         else if (lead.direction === ClientLeadDirection.DEVELOPMENT) byDirection.development++;
@@ -467,11 +458,31 @@ export class ClientsService implements OnModuleInit {
       }
       if (flag && lead.ownerId) ownersToNotify.add(lead.ownerId);
     }
+    // ВАЖНО: обновляем колонки звонка raw-запросом и НЕ трогаем updatedAt —
+    // иначе лид всплыл бы наверх списка (сортировка по updatedAt DESC), а нужно,
+    // чтобы клиент оставался на своей странице. Полный список отмеченных
+    // открывается фильтром «К звонку» на фронте.
+    if (eligibleIds.length) {
+      await this.repo.query(
+        `UPDATE client_leads
+           SET "callRequested" = $1,
+               "callRequestedAt" = $2,
+               "callRequestedByName" = $3
+         WHERE id = ANY($4::uuid[])`,
+        [
+          flag,
+          flag ? new Date() : null,
+          flag ? (actor.name || 'Руководитель') : null,
+          eligibleIds,
+        ],
+      );
+    }
+    const updated = eligibleIds.length;
 
     // Уведомляем менеджеров-владельцев о новых звонках от руководителя.
     if (flag) {
       for (const ownerId of ownersToNotify) {
-        const cnt = list.filter(l => l.ownerId === ownerId).length;
+        const cnt = eligible.filter(l => l.ownerId === ownerId).length;
         await this.notificationsService.create({
           userId: ownerId,
           type: NotificationType.STATUS_CHANGE,
