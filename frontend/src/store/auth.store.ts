@@ -18,6 +18,10 @@ export type UserRole =
   | 'video_editor'
   | 'organizer'
   | 'storymaker'
+  | 'scriptwriter'
+  | 'qa'
+  | 'publisher'
+  | 'targetologist'
   | 'employee'
 
 export interface User {

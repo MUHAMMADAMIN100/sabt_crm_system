@@ -21,6 +21,10 @@ const ROLE_LABELS: Record<string, string> = {
   video_editor: 'Монтажёр',
   organizer: 'Организатор',
   storymaker: 'Сторисмейкер',
+  scriptwriter: 'Сценарист / SMM-менеджер',
+  qa: 'Контролёр качества',
+  publisher: 'Публикатор',
+  targetologist: 'Таргетолог',
   employee: 'Сотрудник',
 }
 
@@ -242,6 +246,46 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
     'ai.chat',
   ],
+  // Сценарист / SMM-менеджер — владелец Контент-плана workflow-доски.
+  scriptwriter: [
+    'dashboard', 'projects.view',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    'calendar.view',
+    'reports.view', 'reports.create',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'ai.chat',
+  ],
+  // Контролёр качества — этап «Внутренняя проверка».
+  qa: [
+    'dashboard', 'projects.view',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    'calendar.view',
+    'reports.view', 'reports.create',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
+  ],
+  // Публикатор — сбор материалов и публикация.
+  publisher: [
+    'dashboard', 'projects.view',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    'calendar.view',
+    'reports.view', 'reports.create',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'ai.chat',
+  ],
+  // Таргетолог — запуск рекламы (этап «Реклама»).
+  targetologist: [
+    'dashboard', 'projects.view',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    'calendar.view',
+    'reports.view', 'reports.create',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
+  ],
   employee: [
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
@@ -317,6 +361,7 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
 export const WORKFLOW_BOARD_ROLES = [
   'admin', 'founder', 'co_founder', 'smm_director', 'video_director',
   'smm_specialist', 'designer', 'videographer', 'video_editor', 'organizer', 'storymaker',
+  'scriptwriter', 'qa', 'publisher', 'targetologist',
 ]
 export function canSeeWorkflowBoard(role?: string | null, secondaryRole?: string | null): boolean {
   return WORKFLOW_BOARD_ROLES.includes(role || '') || WORKFLOW_BOARD_ROLES.includes(secondaryRole || '')

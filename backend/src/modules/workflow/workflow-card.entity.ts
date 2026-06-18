@@ -63,6 +63,92 @@ export class WorkflowCard {
   @Column({ type: 'uuid', nullable: true })
   createdById: string | null;
 
+  // ─── Workflow-движок (ТЗ §6/§9): тип маршрута, под-карточки, статусы ───
+
+  /** Тип единицы контента / маршрут:
+   *   'reels'  — рилс: content_plan→organization→shooting→editing→(join)→…
+   *   'static' — статичный макет: content_plan→design→…
+   *   'cover'  — под-карточка «Обложка/заставка» рилса (живёт в DESIGN,
+   *              привязана к родительскому рилсу через parentCardId).
+   *  null — старые карточки до внедрения движка (ведут себя как раньше). */
+  @Column({ type: 'varchar', nullable: true })
+  type: 'reels' | 'static' | 'cover' | null;
+
+  /** Для type='cover' — id родительского рилса. */
+  @Column({ type: 'uuid', nullable: true })
+  parentCardId: string | null;
+
+  /** Статус единицы: active | rework | waiting_cover | published | done. */
+  @Column({ type: 'varchar', default: 'active' })
+  status: string;
+
+  /** Рилсу нужна обложка / заставка (по умолчанию обе вкл). */
+  @Column({ type: 'boolean', default: true })
+  needsCover: boolean;
+
+  @Column({ type: 'boolean', default: true })
+  needsIntro: boolean;
+
+  /** Готовность веток join-гейта (монтаж + дизайн обложки). */
+  @Column({ type: 'boolean', default: false })
+  editingDone: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  designDone: boolean;
+
+  /** Ссылки на материалы по этапам. */
+  @Column({ type: 'text', nullable: true })
+  rawFootageUrl: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  finalCutUrl: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  finalAssetUrl: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  coverUrl: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  introUrl: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  publishedUrl: string | null;
+
+  /** Целевая дата публикации — основа обратного планирования дедлайнов. */
+  @Column({ type: 'date', nullable: true })
+  publishDate: string | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  publishedAt: Date | null;
+
+  /** Организация съёмки (только рилсы). */
+  @Column({ type: 'date', nullable: true })
+  shootDate: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  shootTime: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  shootLocation: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  shootSessionId: string | null;
+
+  /** Комментарии возврата на доработку / правок клиента. */
+  @Column({ type: 'text', nullable: true })
+  reworkComment: string | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  sentToClientAt: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  clientComment: string | null;
+
+  /** Дедлайны этапов от publishDate (§11): { organization: 'YYYY-MM-DD', ... }. */
+  @Column({ type: 'jsonb', nullable: true })
+  stageDeadlines: Record<string, string> | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

@@ -27,6 +27,10 @@ const ROLE_LABELS: Record<string, string> = {
   video_editor: 'Монтажёр',
   organizer: 'Организатор',
   storymaker: 'Сторисмейкер',
+  scriptwriter: 'Сценарист / SMM-менеджер',
+  qa: 'Контролёр качества',
+  publisher: 'Публикатор',
+  targetologist: 'Таргетолог',
   employee: 'Сотрудник',
 };
 
@@ -423,6 +427,12 @@ export class EmployeesService implements OnModuleInit {
       || (norm.includes('smm') && (norm.includes('главн') || norm.includes('head') || norm.includes('руковод')))) return UserRole.SMM_DIRECTOR;
     if (norm.includes('видео') && norm.includes('руковод')) return UserRole.VIDEO_DIRECTOR;
     if (norm.includes('сторисмейкер') || norm.includes('storymaker')) return UserRole.STORYMAKER;
+    // Workflow-роли SMM-доски. Сценарист содержит «smm» в названии —
+    // проверяем ДО общего smm-фолбэка ниже.
+    if (norm.includes('сценарист') || norm.includes('scriptwriter')) return UserRole.SCRIPTWRITER;
+    if (norm.includes('контролёр') || norm.includes('контролер') || norm.includes('качества') || norm === 'qa') return UserRole.QA;
+    if (norm.includes('публикатор') || norm.includes('publisher')) return UserRole.PUBLISHER;
+    if (norm.includes('таргетолог') || norm.includes('targetolog')) return UserRole.TARGETOLOGIST;
     if (norm.includes('smm')) return UserRole.SMM_SPECIALIST;
     if (norm.includes('дизайнер') || norm.includes('designer')) return UserRole.DESIGNER;
     if (norm.includes('монтаж') || norm.includes('editor')) return UserRole.VIDEO_EDITOR;

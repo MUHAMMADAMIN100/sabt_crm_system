@@ -5,18 +5,79 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { WorkflowCard, WORKFLOW_STAGES } from './workflow-card.entity';
+import { ShootSession } from './shoot-session.entity';
+import { UnitEvent } from './unit-event.entity';
 import { Project } from '../projects/project.entity';
+import { User } from '../users/user.entity';
 import { AppGateway } from '../gateway/app.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification.entity';
+import { TelegramService } from '../telegram/telegram.service';
 
 interface Viewer { id: string; role: string }
+interface Actor { id: string; name: string; role: string; secondaryRole: string | null }
 
 /** Роли, которые могут редактировать доску любого SMM-проекта.
  *  Остальным нужно быть менеджером или участником проекта. */
 const PRIVILEGED = ['admin', 'founder', 'co_founder', 'smm_director'];
 
-/** Роли, видящие ВСЕ SMM-проекты на глобальной доске. Остальные —
- *  только проекты, где они менеджер или участник. */
+/** Роли, видящие ВСЕ SMM-проекты на глобальной доске. */
 const SEE_ALL = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'];
+
+/** Полный доступ к действиям движка (ADMIN-уровень из ТЗ §12). */
+const ALL_ACCESS = ['admin', 'founder', 'co_founder'];
+
+/** Человекочитаемые названия этапов (для журнала и уведомлений). */
+const STAGE_LABELS: Record<string, string> = {
+  content_plan: 'Контент-план',
+  organization: 'Организация',
+  shooting: 'Съёмка',
+  editing: 'Монтаж',
+  design: 'Дизайн',
+  internal_review: 'Внутренняя проверка',
+  client_approval: 'Согласование с клиентом',
+  ready_to_publish: 'Готово к публикации',
+  published: 'Опубликовано',
+  ads: 'Реклама',
+};
+
+/** Роль-владелец этапа — кого уведомлять при входе карточки на этап. */
+const STAGE_ROLES: Record<string, string[]> = {
+  content_plan: ['scriptwriter'],
+  organization: ['organizer'],
+  shooting: ['video_director', 'videographer'],
+  editing: ['video_editor'],
+  design: ['designer'],
+  internal_review: ['qa'],
+  client_approval: ['smm_director'],
+  ready_to_publish: ['publisher'],
+  published: [],
+  ads: ['targetologist'],
+};
+
+/** RBAC: какая роль может выполнить действие выхода этапа (ТЗ §12).
+ *  ALL_ACCESS (admin/founder/co_founder) могут всё. */
+const ACTION_ROLES: Record<string, string[]> = {
+  confirm_plan: ['scriptwriter'],
+  confirm_shoot: ['organizer'],
+  assign_videographer: ['video_director'],
+  shoot_done: ['videographer', 'video_director'],
+  editing_done: ['video_editor'],
+  cover_done: ['designer'],
+  layout_done: ['designer'],
+  qa_accept: ['qa'],
+  qa_rework: ['qa'],
+  mark_sent_to_client: ['smm_director'],
+  client_approve: ['smm_director'],
+  client_revisions: ['smm_director'],
+  publish: ['publisher'],
+};
+
+/** Обратное планирование дедлайнов от publishDate (ТЗ §11), дни до публикации. */
+const DEADLINE_OFFSETS: Record<string, Record<string, number>> = {
+  reels: { organization: 12, shooting: 9, editing: 5, design: 5, internal_review: 3, client_approval: 2, ready_to_publish: 1 },
+  static: { design: 5, internal_review: 3, client_approval: 2, ready_to_publish: 1 },
+};
 
 @Injectable()
 export class WorkflowService implements OnModuleInit {
@@ -24,12 +85,16 @@ export class WorkflowService implements OnModuleInit {
 
   constructor(
     @InjectRepository(WorkflowCard) private repo: Repository<WorkflowCard>,
+    @InjectRepository(ShootSession) private shootRepo: Repository<ShootSession>,
+    @InjectRepository(UnitEvent) private eventRepo: Repository<UnitEvent>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
+    @InjectRepository(User) private userRepo: Repository<User>,
     private gateway: AppGateway,
+    private notifications: NotificationsService,
+    private telegram: TelegramService,
   ) {}
 
-  /** Идемпотентное создание таблицы — рантайм-замена миграции
-   *  (тот же паттерн, что lead_progress в ClientsService). */
+  /** Идемпотентное создание/миграция таблиц — рантайм-замена миграции. */
   async onModuleInit() {
     try {
       await this.repo.manager.query(`
@@ -50,14 +115,70 @@ export class WorkflowService implements OnModuleInit {
         CREATE INDEX IF NOT EXISTS idx_workflow_cards_project
           ON workflow_cards ("projectId", stage, position);
       `);
+      // Новые колонки движка (ТЗ §6) — идемпотентно.
+      const cols = [
+        `ADD COLUMN IF NOT EXISTS type varchar`,
+        `ADD COLUMN IF NOT EXISTS "parentCardId" uuid`,
+        `ADD COLUMN IF NOT EXISTS status varchar NOT NULL DEFAULT 'active'`,
+        `ADD COLUMN IF NOT EXISTS "needsCover" boolean NOT NULL DEFAULT true`,
+        `ADD COLUMN IF NOT EXISTS "needsIntro" boolean NOT NULL DEFAULT true`,
+        `ADD COLUMN IF NOT EXISTS "editingDone" boolean NOT NULL DEFAULT false`,
+        `ADD COLUMN IF NOT EXISTS "designDone" boolean NOT NULL DEFAULT false`,
+        `ADD COLUMN IF NOT EXISTS "rawFootageUrl" text`,
+        `ADD COLUMN IF NOT EXISTS "finalCutUrl" text`,
+        `ADD COLUMN IF NOT EXISTS "finalAssetUrl" text`,
+        `ADD COLUMN IF NOT EXISTS "coverUrl" text`,
+        `ADD COLUMN IF NOT EXISTS "introUrl" text`,
+        `ADD COLUMN IF NOT EXISTS "publishedUrl" text`,
+        `ADD COLUMN IF NOT EXISTS "publishDate" date`,
+        `ADD COLUMN IF NOT EXISTS "publishedAt" timestamptz`,
+        `ADD COLUMN IF NOT EXISTS "shootDate" date`,
+        `ADD COLUMN IF NOT EXISTS "shootTime" varchar`,
+        `ADD COLUMN IF NOT EXISTS "shootLocation" varchar`,
+        `ADD COLUMN IF NOT EXISTS "shootSessionId" uuid`,
+        `ADD COLUMN IF NOT EXISTS "reworkComment" text`,
+        `ADD COLUMN IF NOT EXISTS "sentToClientAt" timestamptz`,
+        `ADD COLUMN IF NOT EXISTS "clientComment" text`,
+        `ADD COLUMN IF NOT EXISTS "stageDeadlines" jsonb`,
+      ];
+      for (const c of cols) {
+        await this.repo.manager.query(`ALTER TABLE workflow_cards ${c}`);
+      }
+      await this.repo.manager.query(`
+        CREATE TABLE IF NOT EXISTS shoot_sessions (
+          id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          "projectId"   uuid NOT NULL,
+          title         varchar,
+          date          date,
+          time          varchar,
+          location      varchar,
+          note          text,
+          "createdById" uuid,
+          "createdAt"   timestamp NOT NULL DEFAULT NOW(),
+          "updatedAt"   timestamp NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS unit_events (
+          id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          "cardId"    uuid NOT NULL,
+          action      varchar NOT NULL,
+          "fromStage" varchar,
+          "toStage"   varchar,
+          "actorId"   uuid,
+          "actorName" varchar,
+          message     text,
+          comment     text,
+          meta        jsonb,
+          "createdAt" timestamp NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_unit_events_card ON unit_events ("cardId", "createdAt");
+      `);
     } catch (e: any) {
-      this.logger.warn(`CREATE TABLE workflow_cards failed: ${e?.message || e}`);
+      this.logger.warn(`workflow_cards migration failed: ${e?.message || e}`);
     }
   }
 
-  /** Может ли пользователь редактировать доску проекта:
-   *  привилегированная роль, менеджер проекта (назначаемый — любой
-   *  роли) или участник проекта. */
+  // ─── Доступ ───────────────────────────────────────────────────────────
+
   private async assertCanEdit(projectId: string, viewer: Viewer): Promise<Project> {
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Проект не найден');
@@ -71,14 +192,32 @@ export class WorkflowService implements OnModuleInit {
     throw new ForbiddenException('Нет доступа к доске этого проекта');
   }
 
-  private broadcast(projectId: string) {
-    try {
-      this.gateway.broadcast('workflow:changed', { projectId });
-    } catch { /* best-effort */ }
+  /** Загружает актёра с обеими ролями и именем (для RBAC и журнала). */
+  private async loadActor(userId: string): Promise<Actor> {
+    const u = await this.userRepo.findOne({ where: { id: userId } });
+    return {
+      id: userId,
+      name: u?.name || 'Сотрудник',
+      role: u?.role || '',
+      secondaryRole: u?.secondaryRole || null,
+    };
   }
 
-  /** Карточки проекта, сгруппированные по этапам делает фронт —
-   *  отдаём плоский отсортированный список с исполнителями. */
+  /** RBAC действия выхода этапа (ТЗ §12). */
+  private assertCanAct(action: string, actor: Actor) {
+    if (ALL_ACCESS.includes(actor.role)) return;
+    const allowed = ACTION_ROLES[action] || [];
+    if (allowed.includes(actor.role)) return;
+    if (actor.secondaryRole && allowed.includes(actor.secondaryRole)) return;
+    throw new ForbiddenException('У вас нет прав на это действие для текущего этапа');
+  }
+
+  private broadcast(projectId: string) {
+    try { this.gateway.broadcast('workflow:changed', { projectId }); } catch { /* best-effort */ }
+  }
+
+  // ─── Чтение ───────────────────────────────────────────────────────────
+
   async list(projectId: string) {
     return this.repo.find({
       where: { projectId },
@@ -87,9 +226,6 @@ export class WorkflowService implements OnModuleInit {
     }).then(cards => cards.map(c => this.toDto(c)));
   }
 
-  /** Глобальная доска — карточки со ВСЕХ доступных SMM-проектов, с
-   *  именем проекта на каждой. SEE_ALL роли видят все SMM-проекты,
-   *  остальные — только где они менеджер/участник. */
   async listAll(viewer: Viewer) {
     const qb = this.projectRepo.createQueryBuilder('p')
       .select(['p.id', 'p.name'])
@@ -118,6 +254,14 @@ export class WorkflowService implements OnModuleInit {
     }));
   }
 
+  /** История событий карточки (ТЗ §9.7 — журнал в «Готово к публикации»). */
+  async events(cardId: string) {
+    return this.eventRepo.find({
+      where: { cardId },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
   private toDto(c: WorkflowCard) {
     return {
       id: c.id,
@@ -136,17 +280,44 @@ export class WorkflowService implements OnModuleInit {
         role: c.assignee.role,
         secondaryRole: c.assignee.secondaryRole || null,
       } : null,
+      // Поля движка
+      type: c.type,
+      parentCardId: c.parentCardId,
+      status: c.status,
+      needsCover: c.needsCover,
+      needsIntro: c.needsIntro,
+      editingDone: c.editingDone,
+      designDone: c.designDone,
+      rawFootageUrl: c.rawFootageUrl,
+      finalCutUrl: c.finalCutUrl,
+      finalAssetUrl: c.finalAssetUrl,
+      coverUrl: c.coverUrl,
+      introUrl: c.introUrl,
+      publishedUrl: c.publishedUrl,
+      publishDate: c.publishDate,
+      publishedAt: c.publishedAt,
+      shootDate: c.shootDate,
+      shootTime: c.shootTime,
+      shootLocation: c.shootLocation,
+      shootSessionId: c.shootSessionId,
+      reworkComment: c.reworkComment,
+      sentToClientAt: c.sentToClientAt,
+      clientComment: c.clientComment,
+      stageDeadlines: c.stageDeadlines,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
     };
   }
+
+  // ─── CRUD ─────────────────────────────────────────────────────────────
 
   async create(projectId: string, dto: any, viewer: Viewer) {
     await this.assertCanEdit(projectId, viewer);
     const title = String(dto?.title || '').trim();
     if (!title) throw new BadRequestException('Заголовок обязателен');
     const stage = WORKFLOW_STAGES.includes(dto?.stage) ? dto.stage : 'content_plan';
-    // Новая карточка — в конец колонки.
+    const type: 'reels' | 'static' | null =
+      dto?.type === 'reels' || dto?.type === 'static' ? dto.type : null;
     const [{ max }] = await this.repo.manager.query(
       `SELECT COALESCE(MAX(position), -1)::int AS max
        FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
@@ -162,6 +333,11 @@ export class WorkflowService implements OnModuleInit {
       stage,
       position: Number(max) + 1,
       createdById: viewer.id,
+      type,
+      publishDate: dto?.publishDate || null,
+      needsCover: dto?.needsCover !== undefined ? !!dto.needsCover : true,
+      needsIntro: dto?.needsIntro !== undefined ? !!dto.needsIntro : true,
+      status: 'active',
     });
     const saved = await this.repo.save(card);
     this.broadcast(projectId);
@@ -182,16 +358,24 @@ export class WorkflowService implements OnModuleInit {
     if (dto.description !== undefined) patch.description = dto.description ? String(dto.description).slice(0, 5000) : null;
     if (dto.contentType !== undefined) patch.contentType = dto.contentType ? String(dto.contentType).slice(0, 30) : null;
     if (dto.deadline !== undefined) patch.deadline = dto.deadline || null;
+    if (dto.publishDate !== undefined) patch.publishDate = dto.publishDate || null;
+    if (dto.type !== undefined && (dto.type === 'reels' || dto.type === 'static')) patch.type = dto.type;
+    if (dto.needsCover !== undefined) patch.needsCover = !!dto.needsCover;
+    if (dto.needsIntro !== undefined) patch.needsIntro = !!dto.needsIntro;
+    const assigneeChanged = dto.assigneeId !== undefined && (dto.assigneeId || null) !== card.assigneeId;
     if (dto.assigneeId !== undefined) patch.assigneeId = dto.assigneeId || null;
     await this.repo.update(id, patch);
+    // R15: уведомление при назначении исполнителя.
+    if (assigneeChanged && patch.assigneeId) {
+      const actor = await this.loadActor(viewer.id);
+      await this.logEvent(id, 'assign', { actor, message: `Назначен исполнитель`, meta: { assigneeId: patch.assigneeId } });
+      await this.notify([patch.assigneeId], '🎬 Назначение', `Вам назначена карточка «${card.title}»`, card.projectId);
+    }
     this.broadcast(card.projectId);
     return this.repo.findOne({ where: { id }, relations: ['assignee'] })
       .then(c => this.toDto(c!));
   }
 
-  /** Перенос карточки: смена этапа и/или позиции внутри колонки.
-   *  position — целевой индекс (0 = верх). Остальные карточки целевой
-   *  колонки перенумеровываются. */
   async move(id: string, dto: { stage?: string; position?: number }, viewer: Viewer) {
     const card = await this.repo.findOne({ where: { id } });
     if (!card) throw new NotFoundException('Карточка не найдена');
@@ -201,7 +385,6 @@ export class WorkflowService implements OnModuleInit {
       ? dto.stage
       : card.stage;
 
-    // Карточки целевой колонки без переносимой, в текущем порядке.
     const siblings = await this.repo.find({
       where: { projectId: card.projectId, stage: targetStage },
       order: { position: 'ASC', createdAt: 'ASC' },
@@ -213,7 +396,6 @@ export class WorkflowService implements OnModuleInit {
       : Math.max(0, Math.min(Number(rawPos) || 0, siblings.length));
     siblings.splice(idx, 0, card);
 
-    // Bulk-перенумерация: одна транзакция, чтобы не было дублей позиций.
     await this.repo.manager.transaction(async tx => {
       for (let i = 0; i < siblings.length; i++) {
         await tx.update(WorkflowCard, siblings[i].id, {
@@ -232,7 +414,332 @@ export class WorkflowService implements OnModuleInit {
     if (!card) throw new NotFoundException('Карточка не найдена');
     await this.assertCanEdit(card.projectId, viewer);
     await this.repo.delete(id);
+    // Заодно удаляем дочернюю карточку обложки рилса, если есть.
+    await this.repo.delete({ parentCardId: id });
     this.broadcast(card.projectId);
     return { ok: true };
+  }
+
+  // ─── Движок переходов (ТЗ §10) ────────────────────────────────────────
+
+  /** Единая точка переходов: POST /workflow/:id/transition { action, payload }.
+   *  Проверяет права, обязательные поля, выполняет побочные эффекты,
+   *  пишет UnitEvent, шлёт уведомления. */
+  async transition(id: string, action: string, payload: any, viewer: Viewer) {
+    const card = await this.repo.findOne({ where: { id } });
+    if (!card) throw new NotFoundException('Карточка не найдена');
+    await this.assertCanEdit(card.projectId, viewer);
+    const actor = await this.loadActor(viewer.id);
+    this.assertCanAct(action, actor);
+
+    switch (action) {
+      case 'confirm_plan':        await this.confirmPlan(card, payload, actor); break;
+      case 'confirm_shoot':       await this.confirmShoot(card, payload, actor); break;
+      case 'assign_videographer': await this.assignVideographer(card, payload, actor); break;
+      case 'shoot_done':          await this.shootDone(card, payload, actor); break;
+      case 'editing_done':        await this.editingDone(card, payload, actor); break;
+      case 'cover_done':          await this.coverDone(card, payload, actor); break;
+      case 'layout_done':         await this.layoutDone(card, payload, actor); break;
+      case 'qa_accept':           await this.qaAccept(card, actor); break;
+      case 'qa_rework':           await this.qaRework(card, payload, actor); break;
+      case 'mark_sent_to_client': await this.markSentToClient(card, actor); break;
+      case 'client_approve':      await this.clientApprove(card, actor); break;
+      case 'client_revisions':    await this.clientRevisions(card, payload, actor); break;
+      case 'publish':             await this.publish(card, payload, actor); break;
+      default: throw new BadRequestException(`Неизвестное действие: ${action}`);
+    }
+
+    this.broadcast(card.projectId);
+    return this.repo.findOne({ where: { id }, relations: ['assignee'] }).then(c => this.toDto(c!));
+  }
+
+  // R1/R2: «Подтвердить план»
+  private async confirmPlan(card: WorkflowCard, _payload: any, actor: Actor) {
+    if (card.stage !== 'content_plan') throw new BadRequestException('Подтвердить план можно только из Контент-плана');
+    const type = card.type || (card.contentType === 'reel' ? 'reels' : 'static');
+    const deadlines = card.publishDate ? this.computeStageDeadlines(card.publishDate, type) : null;
+    await this.repo.update(card.id, { type, stageDeadlines: deadlines, status: 'active' });
+    card.type = type as any;
+    card.stageDeadlines = deadlines;
+
+    if (type === 'static') {
+      // R1 → сразу в Дизайн.
+      await this.moveToStage(card, 'design', actor, { message: 'План подтверждён → Дизайн' });
+    } else {
+      // R2 → Организация + создаём карточку обложки/заставки в Дизайне.
+      await this.moveToStage(card, 'organization', actor, { message: 'План подтверждён → Организация' });
+      await this.createCoverCard(card, actor);
+    }
+  }
+
+  /** Создаёт под-карточку «Обложка/заставка» рилса в колонке Дизайн. */
+  private async createCoverCard(reel: WorkflowCard, actor: Actor) {
+    const [{ max }] = await this.repo.manager.query(
+      `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = 'design'`,
+      [reel.projectId],
+    );
+    const cover = this.repo.create({
+      projectId: reel.projectId,
+      title: `Обложка/заставка: ${reel.title}`,
+      type: 'cover',
+      parentCardId: reel.id,
+      stage: 'design',
+      position: Number(max) + 1,
+      status: 'active',
+      needsCover: true,
+      needsIntro: reel.needsIntro,
+      publishDate: reel.publishDate,
+      deadline: reel.stageDeadlines?.design || reel.deadline || null,
+      createdById: actor.id,
+    });
+    const saved = await this.repo.save(cover);
+    await this.logEvent(saved.id, 'stage_enter', { toStage: 'design', actor, message: 'Создана карточка обложки/заставки' });
+    await this.notifyStageRole(reel.projectId, 'design', `🎨 Обложка/заставка: ${reel.title}`, 'Создана карточка обложки/заставки рилса');
+  }
+
+  // R3: «Подтвердить съёмку» (Организация → Съёмка)
+  private async confirmShoot(card: WorkflowCard, payload: any, actor: Actor) {
+    if (card.stage !== 'organization') throw new BadRequestException('Доступно только на этапе Организация');
+    const shootDate = payload?.shootDate || card.shootDate;
+    if (!shootDate) throw new BadRequestException('Укажите дату съёмки');
+    await this.repo.update(card.id, {
+      shootDate,
+      shootTime: payload?.shootTime ?? card.shootTime ?? null,
+      shootLocation: payload?.shootLocation ?? card.shootLocation ?? null,
+    });
+    card.shootDate = shootDate;
+    await this.moveToStage(card, 'shooting', actor, { message: `Съёмка назначена на ${shootDate}` });
+  }
+
+  // R4: назначение видеографа (без смены этапа)
+  private async assignVideographer(card: WorkflowCard, payload: any, actor: Actor) {
+    if (card.stage !== 'shooting') throw new BadRequestException('Доступно только на этапе Съёмка');
+    const assigneeId = payload?.assigneeId;
+    if (!assigneeId) throw new BadRequestException('Выберите видеографа');
+    await this.repo.update(card.id, { assigneeId });
+    await this.logEvent(card.id, 'assign', { actor, message: 'Назначен видеограф', meta: { assigneeId } });
+    await this.notify([assigneeId], '🎥 Съёмка', `Вам назначена съёмка: «${card.title}»`, card.projectId);
+  }
+
+  // R5: «Съёмка завершена» (Съёмка → Монтаж)
+  private async shootDone(card: WorkflowCard, payload: any, actor: Actor) {
+    if (card.stage !== 'shooting') throw new BadRequestException('Доступно только на этапе Съёмка');
+    const rawFootageUrl = payload?.rawFootageUrl || card.rawFootageUrl;
+    if (!rawFootageUrl) throw new BadRequestException('Прикрепите ссылку на исходники');
+    await this.repo.update(card.id, { rawFootageUrl });
+    card.rawFootageUrl = rawFootageUrl;
+    await this.moveToStage(card, 'editing', actor, { message: 'Съёмка завершена → Монтаж' });
+  }
+
+  // R6: «Монтаж готов» → editingDone + join-гейт
+  private async editingDone(card: WorkflowCard, payload: any, actor: Actor) {
+    if (card.stage !== 'editing') throw new BadRequestException('Доступно только на этапе Монтаж');
+    const finalCutUrl = payload?.finalCutUrl || card.finalCutUrl;
+    if (!finalCutUrl) throw new BadRequestException('Прикрепите ссылку на монтаж');
+    await this.repo.update(card.id, { finalCutUrl, editingDone: true });
+    card.finalCutUrl = finalCutUrl;
+    card.editingDone = true;
+    await this.logEvent(card.id, 'editing_done', { actor, message: 'Монтаж готов' });
+    await this.runJoinCheck(card.id, actor);
+  }
+
+  // R7: обложка/заставка «Готово» (карточка type='cover') → designDone у родителя
+  private async coverDone(card: WorkflowCard, payload: any, actor: Actor) {
+    if (card.type !== 'cover') throw new BadRequestException('Это действие — для карточки обложки/заставки');
+    const coverUrl = payload?.coverUrl || card.coverUrl;
+    if (!coverUrl) throw new BadRequestException('Прикрепите ссылку на обложку');
+    const introUrl = payload?.introUrl || card.introUrl;
+    if (card.needsIntro && !introUrl) throw new BadRequestException('Прикрепите ссылку на заставку (intro)');
+    await this.repo.update(card.id, { coverUrl, introUrl: introUrl || null, status: 'done' });
+    await this.logEvent(card.id, 'cover_done', { actor, message: 'Обложка/заставка готова' });
+    if (card.parentCardId) {
+      await this.repo.update(card.parentCardId, { designDone: true });
+      await this.runJoinCheck(card.parentCardId, actor);
+    }
+  }
+
+  // R8: «Макет готов» (static) → Внутренняя проверка
+  private async layoutDone(card: WorkflowCard, payload: any, actor: Actor) {
+    if (card.stage !== 'design' || card.type === 'cover') throw new BadRequestException('Доступно только для макета на этапе Дизайн');
+    const finalAssetUrl = payload?.finalAssetUrl || card.finalAssetUrl;
+    if (!finalAssetUrl) throw new BadRequestException('Прикрепите ссылку на макет');
+    await this.repo.update(card.id, { finalAssetUrl, designDone: true });
+    card.finalAssetUrl = finalAssetUrl;
+    await this.moveToStage(card, 'internal_review', actor, { message: 'Макет готов → Внутренняя проверка' });
+  }
+
+  /** Join-гейт (ТЗ §8): когда готовы и монтаж, и обложка — рилс уходит
+   *  на Внутреннюю проверку. Иначе «ждёт обложку» и стоит в Монтаже. */
+  private async runJoinCheck(reelId: string, actor: Actor) {
+    const reel = await this.repo.findOne({ where: { id: reelId } });
+    if (!reel) return;
+    if (reel.editingDone && reel.designDone) {
+      await this.repo.update(reel.id, { status: 'active' });
+      reel.status = 'active';
+      await this.moveToStage(reel, 'internal_review', actor, { message: 'Монтаж и обложка готовы → Внутренняя проверка' });
+    } else if (reel.editingDone && !reel.designDone) {
+      await this.repo.update(reel.id, { status: 'waiting_cover' });
+      await this.logEvent(reel.id, 'waiting_cover', { actor, message: 'Ждёт обложку/заставку' });
+    }
+  }
+
+  // R9: QA «Принято» → Согласование
+  private async qaAccept(card: WorkflowCard, actor: Actor) {
+    if (card.stage !== 'internal_review') throw new BadRequestException('Доступно только на Внутренней проверке');
+    await this.repo.update(card.id, { status: 'active' });
+    await this.moveToStage(card, 'client_approval', actor, { message: 'Принято QA → Согласование с клиентом' });
+  }
+
+  // R10: QA «На доработку» → возврат на ответственный этап
+  private async qaRework(card: WorkflowCard, payload: any, actor: Actor) {
+    if (card.stage !== 'internal_review') throw new BadRequestException('Доступно только на Внутренней проверке');
+    const comment = String(payload?.comment || '').trim();
+    if (!comment) throw new BadRequestException('Комментарий обязателен');
+    const isReels = (card.type || 'static') === 'reels';
+    const back = isReels ? 'editing' : 'design';
+    const reset = isReels ? { editingDone: false } : { designDone: false };
+    await this.repo.update(card.id, { status: 'rework', reworkComment: comment, ...reset });
+    card.status = 'rework';
+    await this.logEvent(card.id, 'qa_rework', { actor, message: 'На доработку (QA)', comment });
+    await this.moveToStage(card, back, actor, { message: `На доработку: ${comment}` });
+  }
+
+  // «Отправлено клиенту» — фиксируем время (без смены этапа)
+  private async markSentToClient(card: WorkflowCard, actor: Actor) {
+    if (card.stage !== 'client_approval') throw new BadRequestException('Доступно только на Согласовании');
+    await this.repo.update(card.id, { sentToClientAt: new Date() });
+    await this.logEvent(card.id, 'sent_to_client', { actor, message: 'Отправлено клиенту' });
+  }
+
+  // R11: «Клиент согласовал» → Готово к публикации
+  private async clientApprove(card: WorkflowCard, actor: Actor) {
+    if (card.stage !== 'client_approval') throw new BadRequestException('Доступно только на Согласовании');
+    await this.repo.update(card.id, { status: 'active' });
+    await this.moveToStage(card, 'ready_to_publish', actor, { message: 'Клиент согласовал → Готово к публикации' });
+  }
+
+  // R12: «Правки клиента» → возврат на ответственный этап
+  private async clientRevisions(card: WorkflowCard, payload: any, actor: Actor) {
+    if (card.stage !== 'client_approval') throw new BadRequestException('Доступно только на Согласовании');
+    const comment = String(payload?.comment || '').trim();
+    if (!comment) throw new BadRequestException('Комментарий обязателен');
+    const isReels = (card.type || 'static') === 'reels';
+    const back = isReels ? 'editing' : 'design';
+    const reset = isReels ? { editingDone: false } : { designDone: false };
+    await this.repo.update(card.id, { status: 'rework', clientComment: comment, ...reset });
+    await this.logEvent(card.id, 'client_revisions', { actor, message: 'Правки клиента', comment });
+    await this.moveToStage(card, back, actor, { message: `Правки клиента: ${comment}` });
+  }
+
+  // R13: «Опубликовано» → Опубликовано
+  private async publish(card: WorkflowCard, payload: any, actor: Actor) {
+    if (card.stage !== 'ready_to_publish') throw new BadRequestException('Доступно только на «Готово к публикации»');
+    const publishedUrl = payload?.publishedUrl || card.publishedUrl;
+    if (!publishedUrl) throw new BadRequestException('Прикрепите ссылку на публикацию');
+    const now = new Date();
+    await this.repo.update(card.id, { publishedUrl, publishedAt: now, status: 'published' });
+    card.publishedUrl = publishedUrl;
+    await this.moveToStage(card, 'published', actor, { message: 'Опубликовано' });
+  }
+
+  // ─── Вспомогательное ──────────────────────────────────────────────────
+
+  /** Перенос карточки на этап: ставит в конец колонки, обновляет дедлайн
+   *  по stageDeadlines, пишет журнал и шлёт уведомление роли этапа. */
+  private async moveToStage(card: WorkflowCard, newStage: string, actor: Actor, opts: { message?: string } = {}) {
+    const [{ max }] = await this.repo.manager.query(
+      `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
+      [card.projectId, newStage],
+    );
+    const deadline = card.stageDeadlines?.[newStage] || card.deadline || null;
+    const fromStage = card.stage;
+    await this.repo.update(card.id, { stage: newStage, position: Number(max) + 1, deadline });
+    await this.logEvent(card.id, 'stage_enter', {
+      fromStage, toStage: newStage, actor,
+      message: opts.message || `Этап: ${STAGE_LABELS[newStage] || newStage}`,
+    });
+    // R15: уведомление роли нового этапа + текущему исполнителю.
+    await this.notifyStageRole(card.projectId, newStage, `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» на этапе «${STAGE_LABELS[newStage] || newStage}»`);
+    if (card.assigneeId) {
+      await this.notify([card.assigneeId], `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» перешла на новый этап`, card.projectId);
+    }
+  }
+
+  private async logEvent(cardId: string, action: string, data: {
+    fromStage?: string | null; toStage?: string | null; actor?: Actor;
+    message?: string; comment?: string; meta?: Record<string, any>;
+  }) {
+    try {
+      await this.eventRepo.save(this.eventRepo.create({
+        cardId,
+        action,
+        fromStage: data.fromStage ?? null,
+        toStage: data.toStage ?? null,
+        actorId: data.actor?.id ?? null,
+        actorName: data.actor?.name ?? null,
+        message: data.message ?? null,
+        comment: data.comment ?? null,
+        meta: data.meta ?? null,
+      }));
+    } catch (e: any) {
+      this.logger.warn(`logEvent failed: ${e?.message || e}`);
+    }
+  }
+
+  /** Уведомить пользователей проекта с ролью-владельцем этапа. */
+  private async notifyStageRole(projectId: string, stage: string, title: string, message: string) {
+    const roles = STAGE_ROLES[stage] || [];
+    if (roles.length === 0) return;
+    const ids = await this.findProjectUsersByRole(projectId, roles);
+    await this.notify(ids, title, message, projectId);
+  }
+
+  /** Активные пользователи проекта (участник или менеджер) с одной из ролей. */
+  private async findProjectUsersByRole(projectId: string, roles: string[]): Promise<string[]> {
+    const rows = await this.userRepo.manager.query(
+      `SELECT u.id FROM users u
+       WHERE u."isActive" = true AND u."isBlocked" = false
+         AND (u.role = ANY($2) OR u."secondaryRole" = ANY($2))
+         AND (
+           EXISTS (SELECT 1 FROM project_members pm WHERE pm."projectsId" = $1 AND pm."usersId" = u.id)
+           OR EXISTS (SELECT 1 FROM projects p WHERE p.id = $1 AND p."managerId" = u.id)
+         )`,
+      [projectId, roles],
+    );
+    return rows.map((r: any) => r.id);
+  }
+
+  /** Уведомление в приложении (колокол) + Telegram (ТЗ §6 R15). */
+  private async notify(userIds: string[], title: string, message: string, projectId: string) {
+    const unique = [...new Set(userIds.filter(Boolean))];
+    for (const uid of unique) {
+      await this.notifications.create({
+        userId: uid,
+        type: NotificationType.STATUS_CHANGE,
+        title,
+        message,
+        link: '/workflow-board',
+      } as any).catch(() => {});
+      this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}`).catch(() => {});
+    }
+  }
+
+  /** Дедлайны этапов от publishDate (ТЗ §11). */
+  private computeStageDeadlines(publishDate: string, type: string): Record<string, string> {
+    const offsets = DEADLINE_OFFSETS[type] || DEADLINE_OFFSETS.static;
+    const out: Record<string, string> = {};
+    for (const [stage, days] of Object.entries(offsets)) {
+      out[stage] = this.dateMinusDays(publishDate, days);
+    }
+    return out;
+  }
+
+  private dateMinusDays(isoDate: string, days: number): string {
+    const d = new Date(`${isoDate}T00:00:00`);
+    d.setDate(d.getDate() - days);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
 }

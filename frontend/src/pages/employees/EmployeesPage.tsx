@@ -637,6 +637,10 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
       'Монтажёр': 'video_editor',
       'Организатор': 'organizer',
       'Сторисмейкер': 'storymaker',
+      'Сценарист / SMM-менеджер': 'scriptwriter',
+      'Контролёр качества': 'qa',
+      'Публикатор': 'publisher',
+      'Таргетолог': 'targetologist',
       'Менеджер продаж (СММ)': 'sales_manager_smm',
       'Менеджер продаж (Разработка)': 'sales_manager_dev',
       'Разработчик': 'developer',
@@ -688,6 +692,10 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
                 'Монтажёр',
                 'Организатор',
                 'Сторисмейкер',
+                'Сценарист / SMM-менеджер',
+                'Контролёр качества',
+                'Публикатор',
+                'Таргетолог',
                 'Менеджер продаж (СММ)',
                 'Менеджер продаж (Разработка)',
                 'Разработчик',
@@ -716,6 +724,10 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
               <option value="video_editor">Монтажёр</option>
               <option value="organizer">Организатор</option>
               <option value="storymaker">Сторисмейкер</option>
+              <option value="scriptwriter">Сценарист / SMM-менеджер</option>
+              <option value="qa">Контролёр качества</option>
+              <option value="publisher">Публикатор</option>
+              <option value="targetologist">Таргетолог</option>
               <option value="developer">Разработчик</option>
               <option value="smm_director">Руководитель SMM</option>
               <option value="video_director">Руководитель по видеографии</option>

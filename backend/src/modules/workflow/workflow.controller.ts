@@ -34,6 +34,18 @@ export class WorkflowController {
     return this.service.move(id, dto, req.user);
   }
 
+  /** Движок переходов: действие выхода этапа (ТЗ §10). */
+  @Post(':id/transition')
+  transition(@Param('id') id: string, @Body() body: { action: string; payload?: any }, @Request() req) {
+    return this.service.transition(id, body?.action, body?.payload || {}, req.user);
+  }
+
+  /** Журнал событий карточки (история для «Готово к публикации»). */
+  @Get(':id/events')
+  events(@Param('id') id: string) {
+    return this.service.events(id);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: any, @Request() req) {
     return this.service.update(id, dto, req.user);

@@ -36,6 +36,15 @@ export enum UserRole {
   /** Сторисмейкер — исполнитель, ведёт истории SMM-проектов
    *  (права как у smm_specialist по историям). */
   STORYMAKER      = 'storymaker',
+  /** Сценарист / SMM-менеджер — владелец Контент-плана (темы, сценарии,
+   *  даты публикации). Workflow-доска SMM. */
+  SCRIPTWRITER    = 'scriptwriter',
+  /** Контролёр качества — этап «Внутренняя проверка» на workflow-доске. */
+  QA              = 'qa',
+  /** Публикатор — сбор материалов и публикация (этап «Готово к публикации»). */
+  PUBLISHER       = 'publisher',
+  /** Таргетолог — запуск рекламы (этап «Реклама»). */
+  TARGETOLOGIST   = 'targetologist',
   EMPLOYEE        = 'employee',
 }
 
