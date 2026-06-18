@@ -208,7 +208,7 @@ export function useIsPM() {
 }
 
 export function useIsWorker() {
-  return useAuthStore(s => ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'employee'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'scriptwriter', 'qa', 'publisher', 'targetologist', 'employee'].includes(s.user?.role || ''))
 }
 
 export function useCanManageTasks() {

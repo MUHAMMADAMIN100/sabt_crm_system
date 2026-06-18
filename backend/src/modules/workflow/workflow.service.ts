@@ -567,13 +567,14 @@ export class WorkflowService implements OnModuleInit {
       }
     });
 
-    // B6: вход в «Рекламу» — журнал + уведомление таргетолога этапа.
+    // B6: вход в «Рекламу» — пишем журнал. Уведомление таргетолога идёт из
+    // ProjectAdsService.create() (единственный путь в «Рекламу» — форма
+    // кампании), поэтому здесь notifyStageRole не дублируем.
     if (enteringAds) {
       const actor = await this.loadActor(viewer.id);
       await this.logEvent(id, 'stage_enter', {
         fromStage: card.stage, toStage: 'ads', actor, message: 'Перенос в «Реклама»',
       });
-      await this.notifyStageRole(card.projectId, 'ads', '📣 Реклама', `Карточка «${card.title}» перенесена в «Реклама»`);
     }
 
     this.broadcast(card.projectId);
