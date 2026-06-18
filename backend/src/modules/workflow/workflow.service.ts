@@ -524,6 +524,13 @@ export class WorkflowService implements OnModuleInit {
       ? dto.stage
       : card.stage;
 
+    // ТЗ §10/§14: свободный drag разрешён только внутри колонки (reorder)
+    // и в «Реклама». Прочие межэтапные переходы — только через transition()
+    // (с проверкой роли и обязательных полей). Блокируем обход через API.
+    if (targetStage !== card.stage && targetStage !== 'ads') {
+      throw new BadRequestException('Переходы между этапами выполняются через действия в карточке');
+    }
+
     const siblings = await this.repo.find({
       where: { projectId: card.projectId, stage: targetStage },
       order: { position: 'ASC', createdAt: 'ASC' },

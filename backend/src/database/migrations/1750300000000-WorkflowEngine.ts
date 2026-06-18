@@ -10,6 +10,25 @@ export class WorkflowEngine1750300000000 implements MigrationInterface {
   name = 'WorkflowEngine1750300000000';
 
   async up(queryRunner: QueryRunner): Promise<void> {
+    // Базовая таблица доски (на чистой БД миграция идёт до onModuleInit).
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS workflow_cards (
+        id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "projectId"   uuid NOT NULL,
+        title         varchar NOT NULL,
+        description   text,
+        "contentType" varchar,
+        deadline      date,
+        "assigneeId"  uuid,
+        stage         varchar NOT NULL DEFAULT 'content_plan',
+        position      int NOT NULL DEFAULT 0,
+        "createdById" uuid,
+        "createdAt"   timestamp NOT NULL DEFAULT NOW(),
+        "updatedAt"   timestamp NOT NULL DEFAULT NOW()
+      )`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_workflow_cards_project ON workflow_cards ("projectId", stage, position)`,
+    );
     const cols = [
       `ADD COLUMN IF NOT EXISTS type varchar`,
       `ADD COLUMN IF NOT EXISTS "parentCardId" uuid`,
@@ -68,9 +87,16 @@ export class WorkflowEngine1750300000000 implements MigrationInterface {
     await queryRunner.query(
       `CREATE INDEX IF NOT EXISTS idx_unit_events_card ON unit_events ("cardId", "createdAt")`,
     );
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS workflow_settings (
+        id          varchar PRIMARY KEY,
+        data        jsonb,
+        "updatedAt" timestamp NOT NULL DEFAULT NOW()
+      )`);
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE IF EXISTS workflow_settings`);
     await queryRunner.query(`DROP TABLE IF EXISTS unit_events`);
     await queryRunner.query(`DROP TABLE IF EXISTS shoot_sessions`);
     const drop = [
