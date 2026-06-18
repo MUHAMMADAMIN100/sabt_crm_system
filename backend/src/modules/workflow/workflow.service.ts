@@ -9,6 +9,7 @@ import { ShootSession } from './shoot-session.entity';
 import { UnitEvent } from './unit-event.entity';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
+import { SmmTariff } from '../smm-tariffs/smm-tariff.entity';
 import { AppGateway } from '../gateway/app.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
@@ -89,6 +90,7 @@ export class WorkflowService implements OnModuleInit {
     @InjectRepository(UnitEvent) private eventRepo: Repository<UnitEvent>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(SmmTariff) private tariffRepo: Repository<SmmTariff>,
     private gateway: AppGateway,
     private notifications: NotificationsService,
     private telegram: TelegramService,
@@ -343,6 +345,66 @@ export class WorkflowService implements OnModuleInit {
     this.broadcast(projectId);
     return this.repo.findOne({ where: { id: saved.id }, relations: ['assignee'] })
       .then(c => this.toDto(c!));
+  }
+
+  /** M3: автогенерация плана месяца из тарифа — создаёт пустые слоты
+   *  рилсов (reelsPerMonth) и макетов (designsPerMonth) в Контент-плане
+   *  с равномерно распределёнными датами публикации. */
+  async generatePlan(projectId: string, month: string | undefined, viewer: Viewer) {
+    const project = await this.assertCanEdit(projectId, viewer);
+    if (!project.tariffId) throw new BadRequestException('У проекта не привязан тариф');
+    const tariff = await this.tariffRepo.findOne({ where: { id: project.tariffId } });
+    if (!tariff) throw new BadRequestException('Тариф проекта не найден');
+
+    const reels = Math.max(0, Number(tariff.reelsPerMonth) || 0);
+    const statics = Math.max(0, Number(tariff.designsPerMonth) || 0);
+    if (reels + statics === 0) throw new BadRequestException('В тарифе нет рилсов и макетов');
+
+    // Месяц: 'YYYY-MM' или текущий.
+    const now = new Date();
+    let year = now.getFullYear();
+    let mon0 = now.getMonth();
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      const [y, m] = month.split('-').map(Number);
+      year = y; mon0 = m - 1;
+    }
+    const daysInMonth = new Date(year, mon0 + 1, 0).getDate();
+    const dist = (count: number) => {
+      const out: string[] = [];
+      for (let i = 0; i < count; i++) {
+        const day = Math.min(daysInMonth, Math.max(1, Math.round(((i + 1) * daysInMonth) / (count + 1))));
+        out.push(`${year}-${String(mon0 + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+      }
+      return out;
+    };
+    const reelDates = dist(reels);
+    const staticDates = dist(statics);
+
+    const [{ max }] = await this.repo.manager.query(
+      `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = 'content_plan'`,
+      [projectId],
+    );
+    let pos = Number(max) + 1;
+    const toCreate: Partial<WorkflowCard>[] = [];
+    for (let i = 0; i < reels; i++) {
+      toCreate.push({
+        projectId, stage: 'content_plan', position: pos++, status: 'active',
+        type: 'reels', needsCover: true, needsIntro: true,
+        title: `Рилс #${i + 1}`, contentType: 'reel',
+        publishDate: reelDates[i], createdById: viewer.id,
+      });
+    }
+    for (let i = 0; i < statics; i++) {
+      toCreate.push({
+        projectId, stage: 'content_plan', position: pos++, status: 'active',
+        type: 'static', needsCover: false, needsIntro: false,
+        title: `Макет #${i + 1}`, contentType: 'design',
+        publishDate: staticDates[i], createdById: viewer.id,
+      });
+    }
+    await this.repo.save(toCreate.map(c => this.repo.create(c)));
+    this.broadcast(projectId);
+    return { created: toCreate.length, reels, statics };
   }
 
   async update(id: string, dto: any, viewer: Viewer) {

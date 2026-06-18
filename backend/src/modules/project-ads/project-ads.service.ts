@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProjectAd, BudgetSource } from './project-ad.entity';
@@ -21,7 +21,9 @@ const CHANNEL_LABELS: Record<string, string> = {
 };
 
 @Injectable()
-export class ProjectAdsService {
+export class ProjectAdsService implements OnModuleInit {
+  private readonly logger = new Logger(ProjectAdsService.name);
+
   constructor(
     @InjectRepository(ProjectAd) private repo: Repository<ProjectAd>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
@@ -31,6 +33,20 @@ export class ProjectAdsService {
     private mailService: MailService,
     private telegramService: TelegramService,
   ) {}
+
+  /** Идемпотентно — новые колонки кампании (ТЗ §9.9 M7). */
+  async onModuleInit() {
+    const cols = [
+      `ADD COLUMN IF NOT EXISTS "dailyBudget" numeric(15,2)`,
+      `ADD COLUMN IF NOT EXISTS status varchar NOT NULL DEFAULT 'planned'`,
+      `ADD COLUMN IF NOT EXISTS "targetologistId" uuid`,
+      `ADD COLUMN IF NOT EXISTS "cardId" uuid`,
+    ];
+    for (const c of cols) {
+      try { await this.repo.manager.query(`ALTER TABLE project_ads ${c}`); }
+      catch (e: any) { this.logger.warn(`project_ads ${c} failed: ${e?.message || e}`); }
+    }
+  }
 
   findByProject(projectId: string) {
     return this.repo.find({

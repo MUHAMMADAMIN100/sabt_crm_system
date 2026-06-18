@@ -1,14 +1,28 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
-import { workflowApi, projectsApi } from '@/services/api.service'
+import { workflowApi, projectsApi, projectAdsApi } from '@/services/api.service'
 import { Modal, ConfirmDialog, Avatar, PageLoader } from '@/components/ui'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { STAGES, CONTENT_TYPES, typeLabel, shortRole } from '@/components/projects/ProjectWorkflowTab'
-import { Plus, Trash2, LayoutGrid } from 'lucide-react'
+import { Plus, Trash2, LayoutGrid, Sparkles, Megaphone, History } from 'lucide-react'
 import { format, parseISO, startOfDay } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { useAuthStore } from '@/store/auth.store'
+
+/** Роли-владельцы этапа — для фильтра поля «Исполнитель» (ТЗ §12). */
+const STAGE_ROLE_FILTER: Record<string, string[]> = {
+  content_plan: ['scriptwriter'],
+  organization: ['organizer'],
+  shooting: ['videographer', 'video_director'],
+  editing: ['video_editor'],
+  design: ['designer'],
+  internal_review: ['qa'],
+  client_approval: ['smm_director'],
+  ready_to_publish: ['publisher'],
+  ads: ['targetologist'],
+}
 
 /**
  * Глобальная «Доска проектов» — производственный канбан со всех SMM-
@@ -35,25 +49,48 @@ export default function ProjectsBoardPage() {
     [projects],
   )
 
+  const currentUserId = useAuthStore(s => s.user?.id)
   const [projectFilter, setProjectFilter] = useState<string>('')
+  const [typeFilter, setTypeFilter] = useState<string>('')   // '', reels, static, cover
+  const [stageFilter, setStageFilter] = useState<string>('') // '' = все этапы
+  const [mineOnly, setMineOnly] = useState(false)
 
   const visibleCards = useMemo(
-    () => (cards || []).filter((c: any) => !projectFilter || c.projectId === projectFilter),
-    [cards, projectFilter],
+    () => (cards || []).filter((c: any) => {
+      if (projectFilter && c.projectId !== projectFilter) return false
+      if (typeFilter && (c.type || 'static') !== typeFilter) return false
+      if (mineOnly && c.assigneeId !== currentUserId) return false
+      return true
+    }),
+    [cards, projectFilter, typeFilter, mineOnly, currentUserId],
   )
 
   const byStage = useMemo(() => {
     const map: Record<string, any[]> = {}
     for (const s of STAGES) map[s.key] = []
     for (const c of visibleCards) (map[c.stage] || (map[c.stage] = [])).push(c)
-    for (const k of Object.keys(map)) map[k].sort((a, b) => a.position - b.position)
+    for (const k of Object.keys(map)) {
+      // «Опубликовано» — по дате публикации по убыванию (ТЗ §9.8/§14).
+      if (k === 'published') {
+        map[k].sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime())
+      } else {
+        map[k].sort((a, b) => a.position - b.position)
+      }
+    }
     return map
   }, [visibleCards])
+
+  // Колонки под фильтр этапа.
+  const visibleStages = useMemo(
+    () => (stageFilter ? STAGES.filter(s => s.key === stageFilter) : STAGES),
+    [stageFilter],
+  )
 
   // ── Модалки ─────────────────────────────────────────────────────────
   const [editCard, setEditCard] = useState<any>(null)
   const [createStage, setCreateStage] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [adCard, setAdCard] = useState<any>(null)   // карточка для формы рекламы (M7)
   const showModal = !!editCard || !!createStage
   const closeModal = () => { setEditCard(null); setCreateStage(null) }
 
@@ -87,6 +124,13 @@ export default function ProjectsBoardPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось выполнить действие'),
   })
 
+  // M3: автогенерация плана месяца из тарифа для выбранного проекта.
+  const generateMut = useMutation({
+    mutationFn: (projectId: string) => workflowApi.generatePlan(projectId),
+    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey }); toast.success(`Создано слотов: ${r?.created ?? 0} (рилсы ${r?.reels ?? 0}, макеты ${r?.statics ?? 0})`) },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось сгенерировать план'),
+  })
+
   // ── Drag-and-drop ───────────────────────────────────────────────────
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOverStage, setDragOverStage] = useState<string | null>(null)
@@ -113,7 +157,13 @@ export default function ProjectsBoardPage() {
     const card = (cards || []).find((c: any) => c.id === dragId)
     setDragId(null)
     if (!card || card.stage === stage) return
-    moveMut.mutate({ id: dragId, stage, position: (byStage[stage]?.length ?? 0) })
+    // ТЗ §10/§14: свободный drag разрешён только в «Рекламу». Остальные
+    // переходы — через кнопки действий в карточке.
+    if (stage === 'ads') {
+      setAdCard(card)
+      return
+    }
+    toast.error('Переходы между этапами — через кнопки в карточке. Перетаскивание разрешено только в «Рекламу».')
   }
 
   const today = startOfDay(new Date())
@@ -156,13 +206,20 @@ export default function ProjectsBoardPage() {
           {!c.type && tl && (
             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-200">{tl}</span>
           )}
-          {deadline && (isOverdue ? (
+          {c.publishedAt ? (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+              Опубл.: {format(parseISO(c.publishedAt), 'dd.MM.yyyy')}
+            </span>
+          ) : deadline && (isOverdue ? (
             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
               Просрочено: {format(deadline, 'dd.MM.yyyy')}
             </span>
           ) : (
             <span className="text-[10px] text-surface-500 dark:text-surface-400">до {format(deadline, 'dd.MM.yyyy')}</span>
           ))}
+          {c.publishDate && !c.publishedAt && (
+            <span className="text-[10px] text-surface-400 dark:text-surface-500">пуб. {format(parseISO(c.publishDate), 'dd.MM')}</span>
+          )}
         </div>
         {c.assignee && (
           <div className="flex items-center gap-1.5 pt-0.5">
@@ -185,26 +242,43 @@ export default function ProjectsBoardPage() {
           <LayoutGrid size={20} className="text-primary-600" />
           <h1 className="page-title">Доска проектов</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={projectFilter}
-            onChange={e => setProjectFilter(e.target.value)}
-            className="input py-1.5 text-sm max-w-[220px]"
-          >
+        <div className="flex items-center gap-2 flex-wrap">
+          <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="input py-1.5 text-sm max-w-[200px]">
             <option value="">Все проекты</option>
             {smmProjects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
+          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="input py-1.5 text-sm">
+            <option value="">Все типы</option>
+            <option value="reels">Рилсы</option>
+            <option value="static">Макеты</option>
+            <option value="cover">Обложки</option>
+          </select>
+          <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} className="input py-1.5 text-sm">
+            <option value="">Все этапы</option>
+            {STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
+          <button type="button" onClick={() => setMineOnly(v => !v)}
+            className={clsx('px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+              mineOnly ? 'bg-primary-600 text-white' : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600')}>
+            Мои карточки
+          </button>
+          <button type="button" disabled={!projectFilter || generateMut.isPending}
+            onClick={() => projectFilter && generateMut.mutate(projectFilter)}
+            title={projectFilter ? 'Создать слоты рилсов и макетов из тарифа проекта' : 'Сначала выберите проект'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors disabled:opacity-50">
+            <Sparkles size={14} /> Сгенерировать план
+          </button>
           <button type="button" onClick={() => setCreateStage('content_plan')} className="btn-primary text-sm whitespace-nowrap">
             <Plus size={14} /> Добавить карточку
           </button>
         </div>
       </div>
       <p className="text-xs text-surface-500 dark:text-surface-400">
-        Общий производственный канбан всех SMM-проектов · перетаскивайте карточки между этапами · клик — редактирование
+        Производственный канбан SMM-проектов · переходы — через кнопки в карточке · перетаскивание разрешено только в «Реклама» · клик — открыть карточку
       </p>
 
       <div className="flex gap-3 overflow-x-auto pb-3 hide-scrollbar items-start">
-        {STAGES.map(stage => {
+        {visibleStages.map(stage => {
           const items = byStage[stage.key] || []
           return (
             <div
@@ -265,7 +339,128 @@ export default function ProjectsBoardPage() {
         onConfirm={() => deleteId && deleteMut.mutate(deleteId)}
         onClose={() => setDeleteId(null)}
       />
+
+      {adCard && (
+        <AdCampaignModal
+          card={adCard}
+          project={smmProjects.find((p: any) => p.id === adCard.projectId)}
+          onClose={() => setAdCard(null)}
+          onSaved={() => { setAdCard(null); qc.invalidateQueries({ queryKey }) }}
+        />
+      )}
     </div>
+  )
+}
+
+// ─── M7: форма рекламной кампании (открывается при drag в «Реклама») ───
+function AdCampaignModal({ card, project, onClose, onSaved }: {
+  card: any
+  project: any
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const targetologists = useMemo(() => {
+    if (!project) return []
+    const seen = new Set<string>()
+    const list: any[] = []
+    for (const m of [...(project.members || []), project.manager].filter(Boolean)) {
+      if (m?.id && !seen.has(m.id)) {
+        seen.add(m.id)
+        if (m.role === 'targetologist' || m.secondaryRole === 'targetologist' || ['admin', 'founder', 'co_founder'].includes(m.role)) list.push(m)
+      }
+    }
+    return list
+  }, [project])
+
+  const { register, handleSubmit, control, formState: { errors } } = useForm({
+    defaultValues: {
+      title: card.title || '', channel: 'instagram',
+      totalBudget: '', dailyBudget: '',
+      startDate: '', endDate: '', targetologistId: '',
+    },
+  })
+
+  const saveMut = useMutation({
+    mutationFn: async (data: any) => {
+      await projectAdsApi.create(card.projectId, {
+        title: data.title,
+        channel: data.channel,
+        budget: data.totalBudget ? Number(data.totalBudget) : null,
+        dailyBudget: data.dailyBudget ? Number(data.dailyBudget) : null,
+        budgetSource: 'client',
+        status: 'planned',
+        targetologistId: data.targetologistId || null,
+        cardId: card.id,
+        startDate: data.startDate, endDate: data.endDate,
+      })
+      // Карточка уезжает в колонку «Реклама».
+      await workflowApi.move(card.id, { stage: 'ads' }).catch(() => {})
+    },
+    onSuccess: () => { toast.success('Кампания создана (PLANNED)'); onSaved() },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось создать кампанию'),
+  })
+
+  return (
+    <Modal open onClose={onClose} title={`Запустить рекламу — ${card.title}`}>
+      <form onSubmit={handleSubmit((d: any) => saveMut.mutate(d))} className="space-y-4">
+        <div>
+          <label className="label">Название кампании *</label>
+          <input {...register('title', { required: true })} className="input" />
+          {errors.title && <p className="text-xs text-red-500 mt-1">Обязательное поле</p>}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label">Площадка</label>
+            <select {...register('channel')} className="input">
+              <option value="instagram">Instagram</option>
+              <option value="tiktok">TikTok</option>
+              <option value="facebook">Facebook</option>
+              <option value="youtube">YouTube</option>
+              <option value="telegram">Telegram</option>
+              <option value="google">Google Ads</option>
+              <option value="other">Другое</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Таргетолог</label>
+            <select {...register('targetologistId')} className="input">
+              <option value="">— Не назначен —</option>
+              {targetologists.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label">Дневной бюджет (сомони)</label>
+            <input type="number" min={0} {...register('dailyBudget')} className="input" placeholder="0" />
+          </div>
+          <div>
+            <label className="label">Общий бюджет (сомони)</label>
+            <input type="number" min={0} {...register('totalBudget')} className="input" placeholder="0" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label">Начало *</label>
+            <Controller name="startDate" control={control} rules={{ required: true }}
+              render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
+            {errors.startDate && <p className="text-xs text-red-500 mt-1">Укажите дату</p>}
+          </div>
+          <div>
+            <label className="label">Конец *</label>
+            <Controller name="endDate" control={control} rules={{ required: true }}
+              render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
+            {errors.endDate && <p className="text-xs text-red-500 mt-1">Укажите дату</p>}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="btn-secondary text-sm">Отмена</button>
+          <button type="submit" disabled={saveMut.isPending} className="btn-primary text-sm">
+            <Megaphone size={14} /> {saveMut.isPending ? 'Создаю…' : 'Создать кампанию'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
@@ -300,16 +495,24 @@ function CardFormModal({ open, card, stage, projects, loading, transitioning, on
 
   const selectedProjectId = watch('projectId')
   const watchedType = watch('type')
-  // Исполнители — участники выбранного проекта + его менеджер.
+  // Исполнители — участники проекта + менеджер, отфильтрованные по роли,
+  // валидной для текущего этапа (ТЗ §12 / M4). Уже назначенный — всегда виден.
   const assignees = useMemo(() => {
     const proj = projects.find((p: any) => p.id === selectedProjectId)
     if (!proj) return []
     const seen = new Set<string>()
     const list: any[] = []
     for (const m of proj.members || []) if (m?.id && !seen.has(m.id)) { seen.add(m.id); list.push(m) }
-    if (proj.manager?.id && !seen.has(proj.manager.id)) list.push(proj.manager)
-    return list
-  }, [projects, selectedProjectId])
+    if (proj.manager?.id && !seen.has(proj.manager.id)) { seen.add(proj.manager.id); list.push(proj.manager) }
+    const stageRoles = STAGE_ROLE_FILTER[effectiveStage] || []
+    if (stageRoles.length === 0) return list
+    const ok = (m: any) =>
+      ['admin', 'founder', 'co_founder'].includes(m.role)
+      || stageRoles.includes(m.role)
+      || (m.secondaryRole && stageRoles.includes(m.secondaryRole))
+      || m.id === card?.assigneeId
+    return list.filter(ok)
+  }, [projects, selectedProjectId, effectiveStage, card?.assigneeId])
 
   const stageLabel = STAGES.find(s => s.key === effectiveStage)?.label
 
@@ -406,11 +609,61 @@ function CardFormModal({ open, card, stage, projects, loading, transitioning, on
         </div>
       </form>
 
+      {/* Финальные материалы — в одном месте (ТЗ §9.7). */}
+      {card && (card.finalCutUrl || card.finalAssetUrl || card.coverUrl || card.introUrl || card.rawFootageUrl || card.publishedUrl) && (
+        <div className="mt-4 pt-4 border-t border-surface-200 dark:border-surface-700 space-y-1">
+          <p className="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wide">Материалы</p>
+          {[
+            ['Исходники', card.rawFootageUrl],
+            ['Монтаж', card.finalCutUrl],
+            ['Макет', card.finalAssetUrl],
+            ['Обложка', card.coverUrl],
+            ['Заставка', card.introUrl],
+            ['Публикация', card.publishedUrl],
+          ].filter(([, v]) => v).map(([label, v]: any) => (
+            <a key={label} href={v} target="_blank" rel="noreferrer" className="block text-xs text-primary-600 dark:text-primary-400 hover:underline truncate">
+              {label}: {v}
+            </a>
+          ))}
+        </div>
+      )}
+
       {/* Действия этапа (движок переходов) — только для существующей карточки. */}
       {card && onTransition && (
         <StageActions card={card} disabled={!!transitioning} assignees={assignees} onTransition={onTransition} />
       )}
+
+      {/* История событий карточки (журнал, ТЗ §9.7). */}
+      {card && <CardHistory cardId={card.id} />}
     </Modal>
+  )
+}
+
+// ─── История карточки (журнал событий) ────────────────────────────────
+function CardHistory({ cardId }: { cardId: string }) {
+  const { data: events } = useQuery({
+    queryKey: ['workflow-events', cardId],
+    queryFn: () => workflowApi.events(cardId),
+  })
+  if (!events || events.length === 0) return null
+  return (
+    <div className="mt-4 pt-4 border-t border-surface-200 dark:border-surface-700">
+      <p className="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-2 inline-flex items-center gap-1.5">
+        <History size={13} /> История
+      </p>
+      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+        {events.map((e: any) => (
+          <div key={e.id} className="text-[11px] text-surface-600 dark:text-surface-300 flex items-start gap-2">
+            <span className="text-surface-400 dark:text-surface-500 tabular-nums shrink-0">{format(parseISO(e.createdAt), 'dd.MM HH:mm')}</span>
+            <span>
+              {e.message || e.action}
+              {e.comment && <span className="text-amber-600 dark:text-amber-400"> — {e.comment}</span>}
+              {e.actorName && <span className="text-surface-400"> · {e.actorName}</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

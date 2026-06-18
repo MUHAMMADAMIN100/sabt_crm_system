@@ -29,6 +29,12 @@ export class WorkflowController {
     return this.service.create(projectId, dto, req.user);
   }
 
+  /** M3: сгенерировать план месяца из тарифа (рилсы + макеты). */
+  @Post('project/:projectId/generate-plan')
+  generatePlan(@Param('projectId') projectId: string, @Body() body: { month?: string }, @Request() req) {
+    return this.service.generatePlan(projectId, body?.month, req.user);
+  }
+
   @Patch(':id/move')
   move(@Param('id') id: string, @Body() dto: any, @Request() req) {
     return this.service.move(id, dto, req.user);
