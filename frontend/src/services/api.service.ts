@@ -348,4 +348,9 @@ export const workflowApi = {
   move: (id: string, data: { stage: string; position?: number }) =>
     api.patch(`/workflow/${id}/move`, data).then(r => r.data),
   remove: (id: string) => api.delete(`/workflow/${id}`).then(r => r.data),
+  /** Движок переходов: действие выхода этапа (ТЗ §10). */
+  transition: (id: string, action: string, payload?: any) =>
+    api.post(`/workflow/${id}/transition`, { action, payload }).then(r => r.data),
+  /** История событий карточки. */
+  events: (id: string) => api.get(`/workflow/${id}/events`).then(r => r.data),
 }
