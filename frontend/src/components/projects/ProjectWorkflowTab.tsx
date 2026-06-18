@@ -3,12 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowApi } from '@/services/api.service'
 import { ConfirmDialog, Avatar } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
-import { Plus } from 'lucide-react'
+import { Plus, Clapperboard, SlidersHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import {
   STAGES, CONTENT_TYPES, typeLabel, shortRole,
   CardFormModal, AdCampaignModal, WorkflowCardBadges,
+  ShootSessionModal, DeadlineSettingsModal,
 } from './workflowShared'
 
 // Реэкспорт констант — их импортируют другие модули (ProjectsBoardPage и т.д.).
@@ -54,6 +55,9 @@ export default function ProjectWorkflowTab({ project }: Props) {
   const [createStage, setCreateStage] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [adCard, setAdCard] = useState<any>(null)
+  const [shootOpen, setShootOpen] = useState(false)
+  const [deadlinesOpen, setDeadlinesOpen] = useState(false)
+  const isBoss = ['admin', 'founder', 'co_founder', 'smm_director'].includes(user?.role || '')
   const showModal = !!editCard || !!createStage
   const closeModal = () => { setEditCard(null); setCreateStage(null) }
 
@@ -131,9 +135,21 @@ export default function ProjectWorkflowTab({ project }: Props) {
         <p className="text-xs text-surface-500 dark:text-surface-400">
           Переходы — через кнопки в карточке · перетаскивание только в «Реклама» · клик — открыть карточку
         </p>
-        <button type="button" onClick={() => setCreateStage('content_plan')} className="btn-primary text-xs">
-          <Plus size={14} /> Добавить карточку
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button type="button" onClick={() => setShootOpen(true)} title="Сгруппировать рилсы в одну съёмку"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
+            <Clapperboard size={14} /> Съёмочная группа
+          </button>
+          {isBoss && (
+            <button type="button" onClick={() => setDeadlinesOpen(true)} title="Настроить отступы дедлайнов"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
+              <SlidersHorizontal size={14} /> Дедлайны
+            </button>
+          )}
+          <button type="button" onClick={() => setCreateStage('content_plan')} className="btn-primary text-xs">
+            <Plus size={14} /> Добавить карточку
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-3 overflow-x-auto pb-3 hide-scrollbar items-start">
@@ -208,6 +224,17 @@ export default function ProjectWorkflowTab({ project }: Props) {
           onSaved={() => { setAdCard(null); qc.invalidateQueries({ queryKey }) }}
         />
       )}
+
+      {shootOpen && (
+        <ShootSessionModal
+          projectId={projectId}
+          cards={cards || []}
+          onClose={() => setShootOpen(false)}
+          onSaved={() => { setShootOpen(false); qc.invalidateQueries({ queryKey }) }}
+        />
+      )}
+
+      {deadlinesOpen && <DeadlineSettingsModal onClose={() => setDeadlinesOpen(false)} />}
     </div>
   )
 }

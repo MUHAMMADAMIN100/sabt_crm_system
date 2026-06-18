@@ -35,6 +35,12 @@ export class WorkflowController {
     return this.service.generatePlan(projectId, body?.month, req.user);
   }
 
+  /** §9.1/§9.2: сгруппировать рилсы в съёмку + пакетно подтвердить съёмку. */
+  @Post('project/:projectId/shoot-session')
+  createShootSession(@Param('projectId') projectId: string, @Body() body: any, @Request() req) {
+    return this.service.createShootSession(projectId, body || {}, req.user);
+  }
+
   @Patch(':id/move')
   move(@Param('id') id: string, @Body() dto: any, @Request() req) {
     return this.service.move(id, dto, req.user);
@@ -50,6 +56,17 @@ export class WorkflowController {
   @Get(':id/events')
   events(@Param('id') id: string) {
     return this.service.events(id);
+  }
+
+  /** §11: настройка отступов дедлайнов (дни до публикации). */
+  @Get('settings/deadlines')
+  getDeadlines() {
+    return this.service.getDeadlineOffsets();
+  }
+
+  @Patch('settings/deadlines')
+  setDeadlines(@Body() body: any, @Request() req) {
+    return this.service.updateDeadlineOffsets(body || {}, req.user);
   }
 
   @Patch(':id')

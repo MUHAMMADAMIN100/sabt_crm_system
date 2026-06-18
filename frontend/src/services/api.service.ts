@@ -356,4 +356,10 @@ export const workflowApi = {
     api.post(`/workflow/${id}/transition`, { action, payload }).then(r => r.data),
   /** История событий карточки. */
   events: (id: string) => api.get(`/workflow/${id}/events`).then(r => r.data),
+  /** §9.1/§9.2: сгруппировать рилсы в съёмку + пакетно подтвердить. */
+  createShootSession: (projectId: string, data: any) =>
+    api.post(`/workflow/project/${projectId}/shoot-session`, data).then(r => r.data),
+  /** §11: настройка отступов дедлайнов. */
+  getDeadlineSettings: () => api.get('/workflow/settings/deadlines').then(r => r.data),
+  updateDeadlineSettings: (data: any) => api.patch('/workflow/settings/deadlines', data).then(r => r.data),
 }

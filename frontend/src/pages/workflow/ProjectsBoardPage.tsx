@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowApi, projectsApi } from '@/services/api.service'
 import { ConfirmDialog, Avatar, PageLoader } from '@/components/ui'
-import { Plus, LayoutGrid, Sparkles } from 'lucide-react'
+import { Plus, LayoutGrid, Sparkles, Clapperboard, SlidersHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
 import {
   STAGES, shortRole, CardFormModal, AdCampaignModal, WorkflowCardBadges,
+  ShootSessionModal, DeadlineSettingsModal,
 } from '@/components/projects/workflowShared'
 
 /**
@@ -75,6 +76,9 @@ export default function ProjectsBoardPage() {
   const [createStage, setCreateStage] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [adCard, setAdCard] = useState<any>(null)
+  const [shootOpen, setShootOpen] = useState(false)
+  const [deadlinesOpen, setDeadlinesOpen] = useState(false)
+  const isBoss = ['admin', 'founder', 'co_founder', 'smm_director'].includes(user?.role || '')
   const showModal = !!editCard || !!createStage
   const closeModal = () => { setEditCard(null); setCreateStage(null) }
 
@@ -187,6 +191,18 @@ export default function ProjectsBoardPage() {
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors disabled:opacity-50">
             <Sparkles size={14} /> Сгенерировать план
           </button>
+          <button type="button" disabled={!projectFilter}
+            onClick={() => projectFilter && setShootOpen(true)}
+            title={projectFilter ? 'Сгруппировать рилсы в одну съёмку' : 'Сначала выберите проект'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors disabled:opacity-50">
+            <Clapperboard size={14} /> Съёмочная группа
+          </button>
+          {isBoss && (
+            <button type="button" onClick={() => setDeadlinesOpen(true)} title="Настроить отступы дедлайнов"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
+              <SlidersHorizontal size={14} /> Дедлайны
+            </button>
+          )}
           <button type="button" onClick={() => setCreateStage('content_plan')} className="btn-primary text-sm whitespace-nowrap">
             <Plus size={14} /> Добавить карточку
           </button>
@@ -268,6 +284,17 @@ export default function ProjectsBoardPage() {
           onSaved={() => { setAdCard(null); qc.invalidateQueries({ queryKey }) }}
         />
       )}
+
+      {shootOpen && projectFilter && (
+        <ShootSessionModal
+          projectId={projectFilter}
+          cards={cards || []}
+          onClose={() => setShootOpen(false)}
+          onSaved={() => { setShootOpen(false); qc.invalidateQueries({ queryKey }) }}
+        />
+      )}
+
+      {deadlinesOpen && <DeadlineSettingsModal onClose={() => setDeadlinesOpen(false)} />}
     </div>
   )
 }

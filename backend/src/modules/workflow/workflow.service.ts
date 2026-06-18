@@ -173,10 +173,46 @@ export class WorkflowService implements OnModuleInit {
           "createdAt" timestamp NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS idx_unit_events_card ON unit_events ("cardId", "createdAt");
+        CREATE TABLE IF NOT EXISTS workflow_settings (
+          id          varchar PRIMARY KEY,
+          data        jsonb,
+          "updatedAt" timestamp NOT NULL DEFAULT NOW()
+        );
       `);
     } catch (e: any) {
       this.logger.warn(`workflow_cards migration failed: ${e?.message || e}`);
     }
+  }
+
+  /** Отступы дедлайнов: системная настройка (ТЗ §11), фолбэк — дефолты. */
+  async getDeadlineOffsets(): Promise<Record<string, Record<string, number>>> {
+    try {
+      const rows = await this.repo.manager.query(
+        `SELECT data FROM workflow_settings WHERE id = 'deadline_offsets' LIMIT 1`,
+      );
+      const data = rows?.[0]?.data;
+      if (data && data.reels && data.static) return data;
+    } catch { /* fallback */ }
+    return DEADLINE_OFFSETS;
+  }
+
+  async updateDeadlineOffsets(
+    dto: { reels?: Record<string, number>; static?: Record<string, number> },
+    viewer: Viewer,
+  ) {
+    if (!['admin', 'founder', 'co_founder', 'smm_director'].includes(viewer.role)) {
+      throw new ForbiddenException('Настраивать дедлайны может только руководитель');
+    }
+    const merged = {
+      reels: { ...DEADLINE_OFFSETS.reels, ...(dto.reels || {}) },
+      static: { ...DEADLINE_OFFSETS.static, ...(dto.static || {}) },
+    };
+    await this.repo.manager.query(
+      `INSERT INTO workflow_settings (id, data, "updatedAt") VALUES ('deadline_offsets', $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET data = $1, "updatedAt" = NOW()`,
+      [merged],
+    );
+    return merged;
   }
 
   // ─── Доступ ───────────────────────────────────────────────────────────
@@ -407,6 +443,47 @@ export class WorkflowService implements OnModuleInit {
     return { created: toCreate.length, reels, statics };
   }
 
+  /** §9.1/§9.2: «Сгруппировать в съёмку» + пакетное «Подтвердить съёмку».
+   *  Создаёт ShootSession и для всех выбранных рилсов на этапе Организация
+   *  фиксирует дату/место/время и переводит их на Съёмку одним действием. */
+  async createShootSession(
+    projectId: string,
+    dto: { date?: string; time?: string; location?: string; title?: string; cardIds?: string[] },
+    viewer: Viewer,
+  ) {
+    await this.assertCanEdit(projectId, viewer);
+    const actor = await this.loadActor(viewer.id);
+    this.assertCanAct('confirm_shoot', actor);
+    if (!dto?.date) throw new BadRequestException('Укажите дату съёмки');
+    const ids = (dto.cardIds || []).filter(Boolean);
+    if (ids.length === 0) throw new BadRequestException('Выберите хотя бы одну карточку');
+
+    const session = await this.shootRepo.save(this.shootRepo.create({
+      projectId,
+      title: dto.title || null,
+      date: dto.date,
+      time: dto.time || null,
+      location: dto.location || null,
+      createdById: viewer.id,
+    }));
+
+    const cards = await this.repo.find({ where: { id: In(ids), projectId } });
+    let moved = 0;
+    for (const card of cards) {
+      if (card.stage !== 'organization' || (card.type || '') !== 'reels') continue;
+      await this.repo.update(card.id, {
+        shootSessionId: session.id,
+        shootDate: dto.date,
+        shootTime: dto.time || null,
+        shootLocation: dto.location || null,
+      });
+      await this.moveToStage(card, 'shooting', actor, { message: `Съёмка (группа) на ${dto.date}` });
+      moved++;
+    }
+    this.broadcast(projectId);
+    return { ok: true, sessionId: session.id, moved };
+  }
+
   async update(id: string, dto: any, viewer: Viewer) {
     const card = await this.repo.findOne({ where: { id } });
     if (!card) throw new NotFoundException('Карточка не найдена');
@@ -519,7 +596,8 @@ export class WorkflowService implements OnModuleInit {
   private async confirmPlan(card: WorkflowCard, _payload: any, actor: Actor) {
     if (card.stage !== 'content_plan') throw new BadRequestException('Подтвердить план можно только из Контент-плана');
     const type = card.type || (card.contentType === 'reel' ? 'reels' : 'static');
-    const deadlines = card.publishDate ? this.computeStageDeadlines(card.publishDate, type) : null;
+    const offsets = await this.getDeadlineOffsets();
+    const deadlines = card.publishDate ? this.computeStageDeadlines(card.publishDate, type, offsets) : null;
     await this.repo.update(card.id, { type, stageDeadlines: deadlines, status: 'active' });
     card.type = type as any;
     card.stageDeadlines = deadlines;
@@ -787,8 +865,12 @@ export class WorkflowService implements OnModuleInit {
   }
 
   /** Дедлайны этапов от publishDate (ТЗ §11). */
-  private computeStageDeadlines(publishDate: string, type: string): Record<string, string> {
-    const offsets = DEADLINE_OFFSETS[type] || DEADLINE_OFFSETS.static;
+  private computeStageDeadlines(
+    publishDate: string,
+    type: string,
+    offsetsAll: Record<string, Record<string, number>> = DEADLINE_OFFSETS,
+  ): Record<string, string> {
+    const offsets = offsetsAll[type] || offsetsAll.static || DEADLINE_OFFSETS.static;
     const out: Record<string, string> = {};
     for (const [stage, days] of Object.entries(offsets)) {
       out[stage] = this.dateMinusDays(publishDate, days);

@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { workflowApi, projectAdsApi } from '@/services/api.service'
 import { Modal } from '@/components/ui'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { getRoleLabel } from '@/lib/permissions'
-import { Trash2, Megaphone, History } from 'lucide-react'
+import { Trash2, Megaphone, History, Clapperboard } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -483,6 +483,127 @@ export function CardHistory({ cardId }: { cardId: string }) {
     </div>
   )
 }
+
+// ─── §9.1/§9.2: группировка съёмки + пакетное «Подтвердить съёмку» ─────
+export function ShootSessionModal({ projectId, cards, onClose, onSaved }: {
+  projectId: string
+  cards: any[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  // Кандидаты: рилсы на этапе «Организация» этого проекта.
+  const candidates = useMemo(
+    () => (cards || []).filter((c: any) => c.projectId === projectId && c.stage === 'organization' && (c.type || '') === 'reels'),
+    [cards, projectId],
+  )
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [f, setF] = useState<Record<string, string>>({})
+  const toggle = (id: string) => setPicked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  const saveMut = useMutation({
+    mutationFn: () => workflowApi.createShootSession(projectId, {
+      date: f.date, time: f.time, location: f.location, title: f.title,
+      cardIds: [...picked],
+    }),
+    onSuccess: (r: any) => { toast.success(`Съёмка назначена · карточек: ${r?.moved ?? 0}`); onSaved() },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось создать съёмку'),
+  })
+
+  return (
+    <Modal open onClose={onClose} title="Съёмочная группа">
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div><label className="label text-xs">Дата съёмки *</label><input className="input" value={f.date || ''} onChange={e => setF(p => ({ ...p, date: e.target.value }))} placeholder="2026-06-20" /></div>
+          <div><label className="label text-xs">Время</label><input className="input" value={f.time || ''} onChange={e => setF(p => ({ ...p, time: e.target.value }))} placeholder="14:00" /></div>
+          <div><label className="label text-xs">Место</label><input className="input" value={f.location || ''} onChange={e => setF(p => ({ ...p, location: e.target.value }))} placeholder="Студия" /></div>
+        </div>
+        <div>
+          <p className="label text-xs mb-1">Рилсы на этапе «Организация» ({candidates.length})</p>
+          {candidates.length === 0
+            ? <p className="text-xs text-surface-400">Нет рилсов на этапе «Организация» в этом проекте.</p>
+            : (
+              <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                {candidates.map((c: any) => (
+                  <label key={c.id} className="flex items-center gap-2 text-sm text-surface-700 dark:text-surface-300 cursor-pointer">
+                    <input type="checkbox" className="w-4 h-4" checked={picked.has(c.id)} onChange={() => toggle(c.id)} />
+                    {c.title}
+                  </label>
+                ))}
+              </div>
+            )}
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="btn-secondary text-sm">Отмена</button>
+          <button type="button" disabled={saveMut.isPending || picked.size === 0 || !f.date}
+            onClick={() => saveMut.mutate()} className="btn-primary text-sm">
+            <Clapperboard size={14} /> {saveMut.isPending ? 'Назначаю…' : `Подтвердить съёмку (${picked.size})`}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── §11: настройка отступов дедлайнов (дни до публикации) ─────────────
+const DEADLINE_STAGE_LABELS: { key: string; label: string }[] = [
+  { key: 'organization', label: 'Организация' },
+  { key: 'shooting', label: 'Съёмка' },
+  { key: 'editing', label: 'Монтаж' },
+  { key: 'design', label: 'Дизайн' },
+  { key: 'internal_review', label: 'Внутр. проверка' },
+  { key: 'client_approval', label: 'Согласование' },
+  { key: 'ready_to_publish', label: 'Готово к публ.' },
+]
+export function DeadlineSettingsModal({ onClose }: { onClose: () => void }) {
+  const { data } = useQuery({ queryKey: ['workflow-deadlines'], queryFn: () => workflowApi.getDeadlineSettings() })
+  const [reels, setReels] = useState<Record<string, string>>({})
+  const [stat, setStat] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (!data) return
+    const r: Record<string, string> = {}; const s: Record<string, string> = {}
+    for (const k of Object.keys(data.reels || {})) r[k] = String(data.reels[k])
+    for (const k of Object.keys(data.static || {})) s[k] = String(data.static[k])
+    setReels(r); setStat(s)
+  }, [data])
+  const saveMut = useMutation({
+    mutationFn: () => workflowApi.updateDeadlineSettings({
+      reels: Object.fromEntries(Object.entries(reels).map(([k, v]) => [k, Number(v) || 0])),
+      static: Object.fromEntries(Object.entries(stat).map(([k, v]) => [k, Number(v) || 0])),
+    }),
+    onSuccess: () => { toast.success('Дедлайны сохранены'); onClose() },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось сохранить'),
+  })
+  return (
+    <Modal open onClose={onClose} title="Отступы дедлайнов (дни до публикации)">
+      <div className="space-y-3">
+        <p className="text-xs text-surface-500 dark:text-surface-400">За сколько дней до публикации должен завершиться каждый этап. Применяется при подтверждении плана.</p>
+        <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center text-sm">
+          <span className="text-xs font-semibold text-surface-400">Этап</span>
+          <span className="text-xs font-semibold text-surface-400 w-16 text-center">Рилс</span>
+          <span className="text-xs font-semibold text-surface-400 w-16 text-center">Макет</span>
+          {DEADLINE_STAGE_LABELS.map(s => (
+            <Frag key={s.key}>
+              <span className="text-surface-700 dark:text-surface-300">{s.label}</span>
+              <input type="number" min={0} className="input w-16 text-center py-1"
+                value={reels[s.key] ?? ''} onChange={e => setReels(p => ({ ...p, [s.key]: e.target.value }))}
+                disabled={!(s.key in (data?.reels || {}))} />
+              <input type="number" min={0} className="input w-16 text-center py-1"
+                value={stat[s.key] ?? ''} onChange={e => setStat(p => ({ ...p, [s.key]: e.target.value }))}
+                disabled={!(s.key in (data?.static || {}))} />
+            </Frag>
+          ))}
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="btn-secondary text-sm">Отмена</button>
+          <button type="button" disabled={saveMut.isPending} onClick={() => saveMut.mutate()} className="btn-primary text-sm">
+            {saveMut.isPending ? 'Сохранение…' : 'Сохранить'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+function Frag({ children }: { children: React.ReactNode }) { return <>{children}</> }
 
 // ─── M7: форма рекламной кампании ─────────────────────────────────────
 export function AdCampaignModal({ card, project, onClose, onSaved }: {
