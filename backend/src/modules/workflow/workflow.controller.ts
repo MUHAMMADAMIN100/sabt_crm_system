@@ -20,8 +20,8 @@ export class WorkflowController {
   }
 
   @Get('project/:projectId')
-  list(@Param('projectId') projectId: string) {
-    return this.service.list(projectId);
+  list(@Param('projectId') projectId: string, @Request() req) {
+    return this.service.list(projectId, req.user);
   }
 
   @Post('project/:projectId')
@@ -54,8 +54,8 @@ export class WorkflowController {
 
   /** Журнал событий карточки (история для «Готово к публикации»). */
   @Get(':id/events')
-  events(@Param('id') id: string) {
-    return this.service.events(id);
+  events(@Param('id') id: string, @Request() req) {
+    return this.service.events(id, req.user);
   }
 
   /** §11: настройка отступов дедлайнов (дни до публикации). */

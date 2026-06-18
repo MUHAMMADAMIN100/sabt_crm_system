@@ -17,8 +17,8 @@ export class ProjectAdsController {
   constructor(private service: ProjectAdsService) {}
 
   @Get()
-  findAll(@Param('projectId') projectId: string) {
-    return this.service.findByProject(projectId);
+  findAll(@Param('projectId') projectId: string, @Request() req) {
+    return this.service.findByProject(projectId, req.user);
   }
 
   @Post()
@@ -28,18 +28,18 @@ export class ProjectAdsController {
     @Body() dto: CreateProjectAdDto,
     @Request() req,
   ) {
-    return this.service.create(projectId, dto as any, req.user.id);
+    return this.service.create(projectId, dto as any, req.user);
   }
 
   @Patch(':id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.TARGETOLOGIST)
-  update(@Param('id') id: string, @Body() dto: UpdateProjectAdDto) {
-    return this.service.update(id, dto as any);
+  update(@Param('id') id: string, @Body() dto: UpdateProjectAdDto, @Request() req) {
+    return this.service.update(id, dto as any, req.user);
   }
 
   @Delete(':id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.TARGETOLOGIST)
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  remove(@Param('id') id: string, @Request() req) {
+    return this.service.remove(id, req.user);
   }
 }

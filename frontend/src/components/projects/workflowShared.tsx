@@ -646,9 +646,15 @@ export function AdCampaignModal({ card, project, onClose, onSaved }: {
         cardId: card.id,
         startDate: data.startDate, endDate: data.endDate,
       })
-      await workflowApi.move(card.id, { stage: 'ads' }).catch(() => {})
+      // Переносим карточку в «Реклама»; если не вышло — не глотаем, сообщим.
+      const moveFailed = await workflowApi.move(card.id, { stage: 'ads' }).then(() => false).catch(() => true)
+      return { moveFailed }
     },
-    onSuccess: () => { toast.success('Кампания создана (PLANNED)'); onSaved() },
+    onSuccess: (r: any) => {
+      if (r?.moveFailed) toast('Кампания создана (PLANNED), но карточка осталась на месте — перенос в «Реклама» недоступен с этого этапа', { icon: '⚠️' })
+      else toast.success('Кампания создана (PLANNED)')
+      onSaved()
+    },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось создать кампанию'),
   })
 

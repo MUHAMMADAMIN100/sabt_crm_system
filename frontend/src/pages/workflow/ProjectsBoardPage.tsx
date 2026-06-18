@@ -125,7 +125,13 @@ export default function ProjectsBoardPage() {
     const card = (cards || []).find((c: any) => c.id === dragId)
     setDragId(null)
     if (!card || card.stage === stage) return
-    if (stage === 'ads') { setAdCard(card); return }
+    if (stage === 'ads') {
+      if (card.type === 'cover' || !['published', 'ready_to_publish'].includes(card.stage)) {
+        toast.error('Запустить рекламу можно для опубликованной или готовой к публикации карточки')
+        return
+      }
+      setAdCard(card); return
+    }
     toast.error('Переходы между этапами — через кнопки в карточке. Перетаскивание разрешено только в «Реклама».')
   }
 

@@ -256,7 +256,9 @@ export class WorkflowService implements OnModuleInit {
 
   // ─── Чтение ───────────────────────────────────────────────────────────
 
-  async list(projectId: string) {
+  async list(projectId: string, viewer: Viewer) {
+    // B1: доска проекта видна только участнику/менеджеру/привилегированной роли.
+    await this.assertCanEdit(projectId, viewer);
     return this.repo.find({
       where: { projectId },
       relations: ['assignee'],
@@ -293,7 +295,11 @@ export class WorkflowService implements OnModuleInit {
   }
 
   /** История событий карточки (ТЗ §9.7 — журнал в «Готово к публикации»). */
-  async events(cardId: string) {
+  async events(cardId: string, viewer: Viewer) {
+    // B2: журнал доступен только тем, у кого есть доступ к проекту карточки.
+    const card = await this.repo.findOne({ where: { id: cardId } });
+    if (!card) throw new NotFoundException('Карточка не найдена');
+    await this.assertCanEdit(card.projectId, viewer);
     return this.eventRepo.find({
       where: { cardId },
       order: { createdAt: 'ASC' },
@@ -458,6 +464,14 @@ export class WorkflowService implements OnModuleInit {
     const ids = (dto.cardIds || []).filter(Boolean);
     if (ids.length === 0) throw new BadRequestException('Выберите хотя бы одну карточку');
 
+    // Сначала отбираем подходящие карточки (рилсы на этапе Организация),
+    // чтобы не создавать пустую сессию-«сироту».
+    const cards = await this.repo.find({ where: { id: In(ids), projectId } });
+    const eligible = cards.filter(c => c.stage === 'organization' && this.isReelsCard(c));
+    if (eligible.length === 0) {
+      throw new BadRequestException('Нет подходящих рилсов на этапе «Организация» среди выбранных');
+    }
+
     const session = await this.shootRepo.save(this.shootRepo.create({
       projectId,
       title: dto.title || null,
@@ -467,10 +481,7 @@ export class WorkflowService implements OnModuleInit {
       createdById: viewer.id,
     }));
 
-    const cards = await this.repo.find({ where: { id: In(ids), projectId } });
-    let moved = 0;
-    for (const card of cards) {
-      if (card.stage !== 'organization' || (card.type || '') !== 'reels') continue;
+    for (const card of eligible) {
       await this.repo.update(card.id, {
         shootSessionId: session.id,
         shootDate: dto.date,
@@ -478,10 +489,9 @@ export class WorkflowService implements OnModuleInit {
         shootLocation: dto.location || null,
       });
       await this.moveToStage(card, 'shooting', actor, { message: `Съёмка (группа) на ${dto.date}` });
-      moved++;
     }
     this.broadcast(projectId);
-    return { ok: true, sessionId: session.id, moved };
+    return { ok: true, sessionId: session.id, moved: eligible.length };
   }
 
   async update(id: string, dto: any, viewer: Viewer) {
@@ -527,8 +537,14 @@ export class WorkflowService implements OnModuleInit {
     // ТЗ §10/§14: свободный drag разрешён только внутри колонки (reorder)
     // и в «Реклама». Прочие межэтапные переходы — только через transition()
     // (с проверкой роли и обязательных полей). Блокируем обход через API.
+    const enteringAds = targetStage === 'ads' && card.stage !== 'ads';
     if (targetStage !== card.stage && targetStage !== 'ads') {
       throw new BadRequestException('Переходы между этапами выполняются через действия в карточке');
+    }
+    // В «Рекламу» можно перенести только опубликованную/готовую к публикации
+    // карточку (ТЗ §9.9: вход из PUBLISHED или READY_TO_PUBLISH).
+    if (enteringAds && !['published', 'ready_to_publish'].includes(card.stage)) {
+      throw new BadRequestException('В «Рекламу» можно перенести только опубликованную или готовую к публикации карточку');
     }
 
     const siblings = await this.repo.find({
@@ -550,6 +566,15 @@ export class WorkflowService implements OnModuleInit {
         });
       }
     });
+
+    // B6: вход в «Рекламу» — журнал + уведомление таргетолога этапа.
+    if (enteringAds) {
+      const actor = await this.loadActor(viewer.id);
+      await this.logEvent(id, 'stage_enter', {
+        fromStage: card.stage, toStage: 'ads', actor, message: 'Перенос в «Реклама»',
+      });
+      await this.notifyStageRole(card.projectId, 'ads', '📣 Реклама', `Карточка «${card.title}» перенесена в «Реклама»`);
+    }
 
     this.broadcast(card.projectId);
     return { ok: true };
@@ -613,9 +638,15 @@ export class WorkflowService implements OnModuleInit {
       // R1 → сразу в Дизайн.
       await this.moveToStage(card, 'design', actor, { message: 'План подтверждён → Дизайн' });
     } else {
-      // R2 → Организация + создаём карточку обложки/заставки в Дизайне.
+      // R2 → Организация. Карточку обложки создаём только если рилсу нужна
+      // обложка/заставка; иначе ветка дизайна считается готовой сразу
+      // (join-гейт зависит только от монтажа).
       await this.moveToStage(card, 'organization', actor, { message: 'План подтверждён → Организация' });
-      await this.createCoverCard(card, actor);
+      if (card.needsCover || card.needsIntro) {
+        await this.createCoverCard(card, actor);
+      } else {
+        await this.repo.update(card.id, { designDone: true });
+      }
     }
   }
 
@@ -742,7 +773,7 @@ export class WorkflowService implements OnModuleInit {
     if (card.stage !== 'internal_review') throw new BadRequestException('Доступно только на Внутренней проверке');
     const comment = String(payload?.comment || '').trim();
     if (!comment) throw new BadRequestException('Комментарий обязателен');
-    const isReels = (card.type || 'static') === 'reels';
+    const isReels = this.isReelsCard(card);
     const back = isReels ? 'editing' : 'design';
     const reset = isReels ? { editingDone: false } : { designDone: false };
     await this.repo.update(card.id, { status: 'rework', reworkComment: comment, ...reset });
@@ -770,12 +801,17 @@ export class WorkflowService implements OnModuleInit {
     if (card.stage !== 'client_approval') throw new BadRequestException('Доступно только на Согласовании');
     const comment = String(payload?.comment || '').trim();
     if (!comment) throw new BadRequestException('Комментарий обязателен');
-    const isReels = (card.type || 'static') === 'reels';
+    const isReels = this.isReelsCard(card);
     const back = isReels ? 'editing' : 'design';
     const reset = isReels ? { editingDone: false } : { designDone: false };
     await this.repo.update(card.id, { status: 'rework', clientComment: comment, ...reset });
     await this.logEvent(card.id, 'client_revisions', { actor, message: 'Правки клиента', comment });
     await this.moveToStage(card, back, actor, { message: `Правки клиента: ${comment}` });
+  }
+
+  /** Рилс ли это (с учётом легаси-карточек без type, но с contentType='reel'). */
+  private isReelsCard(card: WorkflowCard): boolean {
+    return card.type === 'reels' || (card.type == null && card.contentType === 'reel');
   }
 
   // R13: «Опубликовано» → Опубликовано

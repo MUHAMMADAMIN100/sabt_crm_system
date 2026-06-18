@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProjectAd, BudgetSource } from './project-ad.entity';
@@ -48,7 +48,25 @@ export class ProjectAdsService implements OnModuleInit {
     }
   }
 
-  findByProject(projectId: string) {
+  /** B3: доступ к рекламе проекта — привилегированная роль, менеджер проекта
+   *  или участник проекта. Иначе 403 (кросс-проектный доступ закрыт). */
+  private async assertProjectAccess(projectId: string, user?: { id: string; role: string }) {
+    if (!user) throw new ForbiddenException('Нет доступа');
+    const PRIVILEGED = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'];
+    if (PRIVILEGED.includes(user.role)) return;
+    const project = await this.projectRepo.findOne({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Проект не найден');
+    if (project.managerId === user.id) return;
+    const rows = await this.repo.manager.query(
+      `SELECT 1 FROM project_members WHERE "projectsId" = $1 AND "usersId" = $2 LIMIT 1`,
+      [projectId, user.id],
+    );
+    if (rows.length > 0) return;
+    throw new ForbiddenException('Нет доступа к рекламе этого проекта');
+  }
+
+  async findByProject(projectId: string, user?: { id: string; role: string }) {
+    await this.assertProjectAccess(projectId, user);
     return this.repo.find({
       where: { projectId },
       relations: ['createdBy'],
@@ -73,7 +91,9 @@ export class ProjectAdsService implements OnModuleInit {
       .execute();
   }
 
-  async create(projectId: string, dto: Partial<ProjectAd>, createdById?: string) {
+  async create(projectId: string, dto: Partial<ProjectAd>, user?: { id: string; role: string }) {
+    await this.assertProjectAccess(projectId, user);
+    const createdById = user?.id;
     const ad = this.repo.create({ ...dto, projectId, createdById });
     const saved = await this.repo.save(ad);
 
@@ -84,9 +104,33 @@ export class ProjectAdsService implements OnModuleInit {
 
     // Notify the project manager (if not the creator themselves)
     await this.notifyManagerAboutNewAd(saved, createdById);
+    // B7: уведомляем назначенного таргетолога о новой PLANNED-кампании.
+    await this.notifyTargetologist(saved, createdById);
 
     this.gateway.broadcast('projects:changed', {});
     return saved;
+  }
+
+  /** Уведомление таргетолога о назначенной рекламной кампании (in-app + Telegram). */
+  private async notifyTargetologist(ad: ProjectAd, createdById?: string) {
+    try {
+      const targetId = (ad as any).targetologistId;
+      if (!targetId || targetId === createdById) return;
+      const project = await this.projectRepo.findOne({ where: { id: ad.projectId } });
+      const channel = CHANNEL_LABELS[ad.channel] || ad.channel;
+      const total = ad.budget ? `${Number(ad.budget).toLocaleString('ru-RU')} сомони` : '—';
+      const daily = (ad as any).dailyBudget ? `${Number((ad as any).dailyBudget).toLocaleString('ru-RU')}/день` : '';
+      const period = `${new Date(ad.startDate).toLocaleDateString('ru-RU')} → ${new Date(ad.endDate).toLocaleDateString('ru-RU')}`;
+      const msg = `Кампания «${ad.title}» · ${channel} · ${total}${daily ? ` (${daily})` : ''} · ${period}`;
+      await this.notificationsService.create({
+        userId: targetId,
+        type: NotificationType.NEW_TASK,
+        title: `🎯 Реклама назначена${project ? `: ${project.name}` : ''}`,
+        message: msg,
+        link: `/projects/${ad.projectId}`,
+      }).catch(() => {});
+      await this.telegramService.sendToUser(targetId, `🎯 <b>Реклама назначена</b>\n${msg}`).catch(() => {});
+    } catch { /* best-effort */ }
   }
 
   private async notifyManagerAboutNewAd(ad: ProjectAd, createdById?: string) {
@@ -157,8 +201,9 @@ export class ProjectAdsService implements OnModuleInit {
     } catch {}
   }
 
-  async update(id: string, dto: Partial<ProjectAd>) {
+  async update(id: string, dto: Partial<ProjectAd>, user?: { id: string; role: string }) {
     const old = await this.findOne(id);
+    await this.assertProjectAccess(old.projectId, user);
     const oldCompanyBudget = old.budgetSource === BudgetSource.COMPANY ? Number(old.budget || 0) : 0;
 
     await this.repo.update(id, dto);
@@ -175,8 +220,9 @@ export class ProjectAdsService implements OnModuleInit {
     return updated;
   }
 
-  async remove(id: string) {
+  async remove(id: string, user?: { id: string; role: string }) {
     const ad = await this.findOne(id);
+    await this.assertProjectAccess(ad.projectId, user);
 
     // If company-paid, subtract budget from project
     if (ad.budgetSource === BudgetSource.COMPANY && ad.budget) {
