@@ -993,6 +993,21 @@ export class WorkflowService implements OnModuleInit {
     await this.notify(ids, title, message, projectId);
   }
 
+  /** Все активные пользователи с одной из ролей (основной или второй) —
+   *  для выпадающих списков исполнителей на доске (видеографы/дизайнеры). */
+  async assignees(roles: string[]) {
+    const clean = (roles || []).filter(Boolean);
+    if (clean.length === 0) return [];
+    return this.userRepo.manager.query(
+      `SELECT id, name, role, "secondaryRole" AS "secondaryRole", avatar
+       FROM users
+       WHERE "isActive" = true AND "isBlocked" = false
+         AND (role = ANY($1) OR "secondaryRole" = ANY($1))
+       ORDER BY name ASC`,
+      [clean],
+    );
+  }
+
   /** Активные пользователи проекта (участник или менеджер) с одной из ролей. */
   private async findProjectUsersByRole(projectId: string, roles: string[]): Promise<string[]> {
     const rows = await this.userRepo.manager.query(

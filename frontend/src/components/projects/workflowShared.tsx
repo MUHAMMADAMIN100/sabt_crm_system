@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { workflowApi, projectAdsApi, smmTariffsApi } from '@/services/api.service'
 import { Modal } from '@/components/ui'
@@ -772,11 +772,15 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
   const setItem = (list: any[], setList: any, idx: number, patch: any) =>
     setList(list.map((it: any, i: number) => i === idx ? { ...it, ...patch } : it))
 
-  const saveMut = useMutation({
-    mutationFn: () => workflowApi.saveContentPlan(projectId, { reels, macros }),
-    onSuccess: () => { toast.success('Контент-план сохранён'); onSaved() },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось сохранить'),
-  })
+  const qc = useQueryClient()
+  // Мгновенно закрываем + сохраняем в фоне; доска обновится по invalidate.
+  const onSave = () => {
+    toast.success('Контент-план сохранён')
+    onClose()
+    workflowApi.saveContentPlan(projectId, { reels, macros })
+      .catch((e: any) => toast.error(e?.response?.data?.message || 'Не удалось сохранить'))
+      .finally(() => qc.invalidateQueries({ queryKey: ['workflow'] }))
+  }
 
   const renderBlocks = (kind: 'reel' | 'macro', list: any[], setList: any) => list.map((it: any, idx: number) => {
     const key = `${kind}-${idx}`
@@ -827,9 +831,9 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
       </div>
       <div className="flex justify-end gap-2 pt-3 border-t border-surface-100 dark:border-surface-700 mt-3">
         <button type="button" onClick={onClose} className="btn-secondary text-sm">Отмена</button>
-        <button type="button" disabled={!projectId || saveMut.isPending || (reels.length + macros.length === 0)}
-          onClick={() => saveMut.mutate()} className="btn-primary text-sm">
-          {saveMut.isPending ? 'Сохранение…' : 'Сохранить'}
+        <button type="button" disabled={!projectId || (reels.length + macros.length === 0)}
+          onClick={onSave} className="btn-primary text-sm">
+          Сохранить
         </button>
       </div>
     </Modal>
@@ -843,31 +847,49 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
   onClose: () => void
   onSaved: () => void
 }) {
+  const qc = useQueryClient()
   const [items, setItems] = useState<any[]>(card.items || [])
   const stage = card.stage
   const isReels = card.kind === 'reels'
 
-  const people = useMemo(() => {
-    const seen = new Set<string>(); const list: any[] = []
-    for (const m of [...(project?.members || []), project?.manager].filter(Boolean)) {
-      if (m?.id && !seen.has(m.id)) { seen.add(m.id); list.push(m) }
-    }
-    return list
-  }, [project])
+  // Список ВСЕХ видеографов/дизайнеров из системы (не только участники проекта).
   const assignRoles = isReels ? ['videographer', 'video_director'] : ['designer']
-  const opts = people.filter((m: any) => assignRoles.includes(m.role) || (m.secondaryRole && assignRoles.includes(m.secondaryRole)))
+  const { data: opts = [] } = useQuery({
+    queryKey: ['workflow-assignees', assignRoles.join(',')],
+    queryFn: () => workflowApi.assignees(assignRoles),
+  })
   const setItem = (idx: number, patch: any) => setItems(items.map((it, i) => i === idx ? { ...it, ...patch } : it))
 
-  const saveMut = useMutation({
-    mutationFn: () => workflowApi.updateItems(card.id, items),
-    onSuccess: () => { toast.success('Сохранено'); onSaved() },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
-  })
-  const doneMut = useMutation({
-    mutationFn: async () => { await workflowApi.updateItems(card.id, items); await workflowApi.transition(card.id, 'org_confirm', {}) },
-    onSuccess: () => { toast.success('Готово'); onSaved() },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
-  })
+  // Оптимистичное обновление обеих досок (префикс ['workflow']).
+  const optimistic = (patch: (c: any) => any) =>
+    qc.setQueriesData({ queryKey: ['workflow'] }, (old: any) =>
+      Array.isArray(old) ? old.map((c: any) => c.id === card.id ? patch(c) : c) : old)
+
+  // Сохранить: мгновенно закрываем + обновляем доску, запрос идёт в фоне.
+  const onSave = () => {
+    optimistic(c => ({ ...c, items }))
+    toast.success('Сохранено')
+    onClose()
+    workflowApi.updateItems(card.id, items)
+      .catch((e: any) => toast.error(e?.response?.data?.message || 'Не удалось сохранить'))
+      .finally(() => qc.invalidateQueries({ queryKey: ['workflow'] }))
+  }
+  const onDone = () => {
+    const next = isReels ? 'shooting' : 'design'
+    optimistic(c => ({ ...c, items, stage: next, position: 9999 }))
+    toast.success('Готово')
+    onClose()
+    ;(async () => {
+      try {
+        await workflowApi.updateItems(card.id, items)
+        await workflowApi.transition(card.id, 'org_confirm', {})
+      } catch (e: any) {
+        toast.error(e?.response?.data?.message || 'Не удалось выполнить')
+      } finally {
+        qc.invalidateQueries({ queryKey: ['workflow'] })
+      }
+    })()
+  }
 
   const stageLabel = STAGES.find(s => s.key === stage)?.label || stage
   return (
@@ -892,7 +914,7 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
                 </div>
                 {isReels && (
                   <>
-                    <div><label className="label text-xs">Дата съёмки</label><input className="input" value={it.shootDate || ''} onChange={e => setItem(idx, { shootDate: e.target.value })} placeholder="2026-06-20" /></div>
+                    <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} onChange={(v: string) => setItem(idx, { shootDate: v })} /></div>
                     <div><label className="label text-xs">Время</label><input className="input" value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} placeholder="14:00" /></div>
                     <div><label className="label text-xs">Место</label><input className="input" value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} placeholder="Студия" /></div>
                   </>
@@ -901,7 +923,7 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
             )}
             {stage === 'shooting' && isReels && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div><label className="label text-xs">Дата съёмки</label><input className="input" value={it.shootDate || ''} onChange={e => setItem(idx, { shootDate: e.target.value })} /></div>
+                <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} onChange={(v: string) => setItem(idx, { shootDate: v })} /></div>
                 <div><label className="label text-xs">Время</label><input className="input" value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} /></div>
                 <div><label className="label text-xs">Место</label><input className="input" value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} /></div>
               </div>
@@ -912,10 +934,10 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
       <div className="flex justify-between gap-2 pt-3 border-t border-surface-100 dark:border-surface-700 mt-3">
         <button type="button" onClick={onClose} className="btn-secondary text-sm">Закрыть</button>
         <div className="flex gap-2">
-          <button type="button" disabled={saveMut.isPending} onClick={() => saveMut.mutate()} className="btn-secondary text-sm">Сохранить</button>
+          <button type="button" onClick={onSave} className="btn-secondary text-sm">Сохранить</button>
           {stage === 'organization' && (
-            <button type="button" disabled={doneMut.isPending} onClick={() => doneMut.mutate()} className="btn-primary text-sm">
-              {doneMut.isPending ? '…' : (isReels ? 'Готово → Съёмка' : 'Готово → Дизайн')}
+            <button type="button" onClick={onDone} className="btn-primary text-sm">
+              {isReels ? 'Готово → Съёмка' : 'Готово → Дизайн'}
             </button>
           )}
         </div>

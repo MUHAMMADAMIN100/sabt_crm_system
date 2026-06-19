@@ -368,4 +368,7 @@ export const workflowApi = {
   /** Обновить элементы групповой карточки. */
   updateItems: (id: string, items: any[]) =>
     api.patch(`/workflow/${id}/items`, { items }).then(r => r.data),
+  /** Все исполнители по ролям (видеографы/дизайнеры) для селекта. */
+  assignees: (roles: string[]) =>
+    api.get('/workflow/assignees', { params: { roles: roles.join(',') } }).then(r => r.data),
 }

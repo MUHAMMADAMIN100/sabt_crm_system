@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Delete, Param, Body, Request, UseGuards,
+  Controller, Get, Post, Patch, Delete, Param, Body, Query, Request, UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { WorkflowService } from './workflow.service';
@@ -17,6 +17,12 @@ export class WorkflowController {
   @Get('all')
   listAll(@Request() req) {
     return this.service.listAll(req.user);
+  }
+
+  /** Все исполнители по ролям (для селекта видеографов/дизайнеров). */
+  @Get('assignees')
+  assignees(@Query('roles') roles?: string) {
+    return this.service.assignees((roles || '').split(',').map(s => s.trim()).filter(Boolean));
   }
 
   @Get('project/:projectId')
