@@ -60,6 +60,7 @@ const STAGE_ROLES: Record<string, string[]> = {
  *  ALL_ACCESS (admin/founder/co_founder) могут всё. */
 const ACTION_ROLES: Record<string, string[]> = {
   confirm_plan: ['scriptwriter'],
+  org_confirm: ['organizer'],
   confirm_shoot: ['organizer'],
   assign_videographer: ['video_director'],
   shoot_done: ['videographer', 'video_director'],
@@ -142,6 +143,9 @@ export class WorkflowService implements OnModuleInit {
         `ADD COLUMN IF NOT EXISTS "sentToClientAt" timestamptz`,
         `ADD COLUMN IF NOT EXISTS "clientComment" text`,
         `ADD COLUMN IF NOT EXISTS "stageDeadlines" jsonb`,
+        `ADD COLUMN IF NOT EXISTS kind varchar`,
+        `ADD COLUMN IF NOT EXISTS items jsonb`,
+        `ADD COLUMN IF NOT EXISTS confirmed boolean NOT NULL DEFAULT false`,
       ];
       for (const c of cols) {
         await this.repo.manager.query(`ALTER TABLE workflow_cards ${c}`);
@@ -348,6 +352,9 @@ export class WorkflowService implements OnModuleInit {
       sentToClientAt: c.sentToClientAt,
       clientComment: c.clientComment,
       stageDeadlines: c.stageDeadlines,
+      kind: c.kind,
+      items: c.items,
+      confirmed: c.confirmed,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
     };
@@ -494,6 +501,102 @@ export class WorkflowService implements OnModuleInit {
     return { ok: true, sessionId: session.id, moved: eligible.length };
   }
 
+  /** Контент-план как групповая карточка: КП-инструкция остаётся в content_plan,
+   *  рилсы/макеты уходят рабочими карточками «Рилсы» (→Съёмка) и «Макеты»
+   *  (→Дизайн) в «Организацию». */
+  async saveContentPlan(
+    projectId: string,
+    dto: { reels?: any[]; macros?: any[] },
+    viewer: Viewer,
+  ) {
+    await this.assertCanEdit(projectId, viewer);
+    const crypto = require('crypto');
+    const norm = (arr: any[] | undefined, itemKind: 'reel' | 'macro') =>
+      (Array.isArray(arr) ? arr : []).map(it => ({
+        id: it.id || crypto.randomUUID(),
+        itemKind,
+        title: String(it.title || '').slice(0, 300),
+        publishDate: it.publishDate || null,
+        description: it.description ? String(it.description).slice(0, 5000) : null,
+        assigneeId: it.assigneeId || null,
+        shootDate: it.shootDate || null,
+        shootTime: it.shootTime || null,
+        shootLocation: it.shootLocation || null,
+      }));
+    const reels = norm(dto.reels, 'reel');
+    const macros = norm(dto.macros, 'macro');
+
+    // 1) КП-карточка (одна на проект) — инструкция в content_plan.
+    const kp = await this.repo.findOne({ where: { projectId, kind: 'kp' } });
+    const kpData: any = { title: 'Контент-план', kind: 'kp', stage: 'content_plan', confirmed: true, status: 'active', items: [...reels, ...macros] };
+    if (kp) {
+      await this.repo.update(kp.id, kpData);
+    } else {
+      const [{ max }] = await this.repo.manager.query(
+        `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = 'content_plan'`,
+        [projectId],
+      );
+      await this.repo.save(this.repo.create({ projectId, position: Number(max) + 1, createdById: viewer.id, ...kpData }));
+    }
+
+    // 2) Рабочие карточки «Рилсы» и «Макеты» в «Организации».
+    await this.upsertGroupCard(projectId, 'reels', 'Рилсы', reels, viewer);
+    await this.upsertGroupCard(projectId, 'macros', 'Макеты', macros, viewer);
+
+    this.broadcast(projectId);
+    return { ok: true, reels: reels.length, macros: macros.length };
+  }
+
+  /** Создаёт/обновляет групповую карточку. При обновлении мерджит items по id,
+   *  сохраняя уже заполненные на этапах поля (исполнитель/дата/время/место). */
+  private async upsertGroupCard(
+    projectId: string,
+    kind: 'reels' | 'macros',
+    title: string,
+    items: any[],
+    viewer: Viewer,
+  ) {
+    const existing = await this.repo.findOne({ where: { projectId, kind } });
+    if (items.length === 0) {
+      // В тарифе нет таких единиц — старую карточку (если была) убираем.
+      if (existing) await this.repo.delete(existing.id);
+      return;
+    }
+    if (existing) {
+      const prevById = new Map((existing.items || []).map((it: any) => [it.id, it]));
+      const merged = items.map(it => {
+        const prev: any = prevById.get(it.id);
+        return prev ? {
+          ...it,
+          assigneeId: prev.assigneeId ?? it.assigneeId,
+          shootDate: prev.shootDate ?? it.shootDate,
+          shootTime: prev.shootTime ?? it.shootTime,
+          shootLocation: prev.shootLocation ?? it.shootLocation,
+        } : it;
+      });
+      await this.repo.update(existing.id, { items: merged, title });
+    } else {
+      const [{ max }] = await this.repo.manager.query(
+        `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = 'organization'`,
+        [projectId],
+      );
+      await this.repo.save(this.repo.create({
+        projectId, kind, title, stage: 'organization',
+        position: Number(max) + 1, createdById: viewer.id, status: 'active', items,
+      }));
+    }
+  }
+
+  /** Обновление элементов групповой карточки (заполнение полей на этапах). */
+  async updateItems(cardId: string, items: any[], viewer: Viewer) {
+    const card = await this.repo.findOne({ where: { id: cardId } });
+    if (!card) throw new NotFoundException('Карточка не найдена');
+    await this.assertCanEdit(card.projectId, viewer);
+    await this.repo.update(cardId, { items: Array.isArray(items) ? items : [] });
+    this.broadcast(card.projectId);
+    return this.repo.findOne({ where: { id: cardId }, relations: ['assignee'] }).then(c => this.toDto(c!));
+  }
+
   async update(id: string, dto: any, viewer: Viewer) {
     const card = await this.repo.findOne({ where: { id } });
     if (!card) throw new NotFoundException('Карточка не найдена');
@@ -606,6 +709,7 @@ export class WorkflowService implements OnModuleInit {
 
     switch (action) {
       case 'confirm_plan':        await this.confirmPlan(card, payload, actor); break;
+      case 'org_confirm':         await this.orgConfirm(card, actor); break;
       case 'confirm_shoot':       await this.confirmShoot(card, payload, actor); break;
       case 'assign_videographer': await this.assignVideographer(card, payload, actor); break;
       case 'shoot_done':          await this.shootDone(card, payload, actor); break;
@@ -674,6 +778,16 @@ export class WorkflowService implements OnModuleInit {
     const saved = await this.repo.save(cover);
     await this.logEvent(saved.id, 'stage_enter', { toStage: 'design', actor, message: 'Создана карточка обложки/заставки' });
     await this.notifyStageRole(reel.projectId, 'design', `🎨 Обложка/заставка: ${reel.title}`, 'Создана карточка обложки/заставки рилса');
+  }
+
+  // Групповая «Организация» → «Готово»: рилсы → Съёмка, макеты → Дизайн.
+  private async orgConfirm(card: WorkflowCard, actor: Actor) {
+    if (card.stage !== 'organization') throw new BadRequestException('Доступно только на этапе Организация');
+    if (card.kind === 'macros') {
+      await this.moveToStage(card, 'design', actor, { message: 'Исполнители назначены → Дизайн' });
+    } else {
+      await this.moveToStage(card, 'shooting', actor, { message: 'Видеографы назначены → Съёмка' });
+    }
   }
 
   // R3: «Подтвердить съёмку» (Организация → Съёмка)

@@ -149,6 +149,28 @@ export class WorkflowCard {
   @Column({ type: 'jsonb', nullable: true })
   stageDeadlines: Record<string, string> | null;
 
+  // ─── Контент-план как групповая карточка (новая модель) ───────────────
+
+  /** Вид карточки:
+   *   'kp'     — карточка-инструкция «Контент-план» проекта (остаётся в
+   *              content_plan, не перетаскивается; внутри все рилсы+макеты).
+   *   'reels'  — рабочая карточка «Рилсы» (внутри items всех рилсов проекта).
+   *   'macros' — рабочая карточка «Макеты» (внутри items всех макетов).
+   *   null     — обычная одиночная карточка (легаси/прочее). */
+  @Column({ type: 'varchar', nullable: true })
+  kind: 'kp' | 'reels' | 'macros' | null;
+
+  /** Элементы группы (JSONB). Каждый item:
+   *   { id, itemKind: 'reel'|'macro', title, publishDate, description,
+   *     assigneeId, shootDate, shootTime, shootLocation }.
+   *  Для kp — все (рилсы+макеты), для reels/macros — свои. */
+  @Column({ type: 'jsonb', nullable: true })
+  items: any[] | null;
+
+  /** КП подтверждён (нажали «Сохранить») — зелёная точка на карточке. */
+  @Column({ type: 'boolean', default: false })
+  confirmed: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

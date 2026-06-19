@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
-import { workflowApi, projectAdsApi } from '@/services/api.service'
+import { workflowApi, projectAdsApi, smmTariffsApi } from '@/services/api.service'
 import { Modal } from '@/components/ui'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { getRoleLabel } from '@/lib/permissions'
@@ -102,6 +102,19 @@ export function WorkflowCardBadges({ card }: { card: any }) {
   const tl = typeLabel(card.contentType)
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
+      {card.kind === 'kp' && (
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-200">
+          {card.confirmed && <span className="w-2 h-2 rounded-full bg-green-500 inline-block" title="Сохранён" />}
+          Контент-план
+        </span>
+      )}
+      {(card.kind === 'reels' || card.kind === 'macros') && (
+        <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded',
+          card.kind === 'reels' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+            : 'bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-200')}>
+          {card.kind === 'reels' ? 'Рилсы' : 'Макеты'} · {(card.items || []).length}
+        </span>
+      )}
       {card.type && (
         <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded',
           card.type === 'reels' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
@@ -718,6 +731,194 @@ export function AdCampaignModal({ card, project, onClose, onSaved }: {
           </button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+// ─── Контент-план: форма КП (блоки рилсов/макетов по тарифу) ──────────
+export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSaved }: {
+  projects: any[]
+  card: any | null
+  fixedProjectId?: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const editing = !!card
+  const { data: tariffs } = useQuery({ queryKey: ['smm-tariffs', { isActive: true }], queryFn: () => smmTariffsApi.list({ isActive: true }) })
+  const [projectId, setProjectId] = useState(card?.projectId || fixedProjectId || '')
+  const [reels, setReels] = useState<any[]>([])
+  const [macros, setMacros] = useState<any[]>([])
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (!card?.items) return
+    setReels(card.items.filter((i: any) => i.itemKind === 'reel'))
+    setMacros(card.items.filter((i: any) => i.itemKind === 'macro'))
+  }, [card])
+
+  const project = projects.find((p: any) => p.id === projectId)
+  const tariff = (tariffs || []).find((t: any) => t.id === project?.tariffId)
+  const tariffLabel = tariff ? `${tariff.reelsPerMonth} рилс · ${tariff.designsPerMonth} макет` : (projectId ? 'без тарифа' : '')
+
+  // Префилл по тарифу при создании (не при редактировании существующего КП).
+  useEffect(() => {
+    if (editing) return
+    if (!tariff) { setReels([]); setMacros([]); return }
+    setReels(Array.from({ length: Number(tariff.reelsPerMonth) || 0 }, () => ({ title: '', publishDate: '', description: '' })))
+    setMacros(Array.from({ length: Number(tariff.designsPerMonth) || 0 }, () => ({ title: '', publishDate: '', description: '' })))
+  }, [tariff?.id, editing])
+
+  const setItem = (list: any[], setList: any, idx: number, patch: any) =>
+    setList(list.map((it: any, i: number) => i === idx ? { ...it, ...patch } : it))
+
+  const saveMut = useMutation({
+    mutationFn: () => workflowApi.saveContentPlan(projectId, { reels, macros }),
+    onSuccess: () => { toast.success('Контент-план сохранён'); onSaved() },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось сохранить'),
+  })
+
+  const renderBlocks = (kind: 'reel' | 'macro', list: any[], setList: any) => list.map((it: any, idx: number) => {
+    const key = `${kind}-${idx}`
+    const isOpen = open[key] ?? false
+    return (
+      <div key={key} className="border border-surface-200 dark:border-surface-700 rounded-lg">
+        <button type="button" onClick={() => setOpen(p => ({ ...p, [key]: !isOpen }))}
+          className="w-full flex items-center justify-between px-3 py-2 text-left">
+          <span className="text-sm font-medium text-surface-800 dark:text-surface-200">
+            {kind === 'reel' ? 'Рилс' : 'Макет'} {idx + 1}{it.title ? ` — ${it.title}` : ''}
+          </span>
+          <span className={clsx('text-surface-400 transition-transform shrink-0', isOpen && 'rotate-180')}>▾</span>
+        </button>
+        {isOpen && (
+          <div className="px-3 pb-3 space-y-2">
+            <div><label className="label text-xs">Тема</label><input className="input" value={it.title || ''} onChange={e => setItem(list, setList, idx, { title: e.target.value })} /></div>
+            <div><label className="label text-xs">Дата публикации</label><DatePicker value={it.publishDate || ''} onChange={(v: string) => setItem(list, setList, idx, { publishDate: v })} /></div>
+            <div><label className="label text-xs">Описание</label><textarea className="input min-h-[60px]" value={it.description || ''} onChange={e => setItem(list, setList, idx, { description: e.target.value })} /></div>
+          </div>
+        )}
+      </div>
+    )
+  })
+
+  return (
+    <Modal open onClose={onClose} title={editing ? 'Контент-план' : 'Новый контент-план'} size="xl">
+      <div className="space-y-4 max-h-[68vh] overflow-y-auto pr-1">
+        <div>
+          <label className="label">Проект *</label>
+          <select className="input" value={projectId} disabled={editing || !!fixedProjectId} onChange={e => setProjectId(e.target.value)}>
+            <option value="">— Выберите проект —</option>
+            {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          {projectId && <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-1">Тариф: {tariffLabel}</p>}
+        </div>
+        {projectId && (
+          <>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400">Рилсы ({reels.length})</p>
+              {reels.length ? renderBlocks('reel', reels, setReels) : <p className="text-xs text-surface-400">Нет рилсов в тарифе</p>}
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400">Макеты ({macros.length})</p>
+              {macros.length ? renderBlocks('macro', macros, setMacros) : <p className="text-xs text-surface-400">Нет макетов в тарифе</p>}
+            </div>
+          </>
+        )}
+      </div>
+      <div className="flex justify-end gap-2 pt-3 border-t border-surface-100 dark:border-surface-700 mt-3">
+        <button type="button" onClick={onClose} className="btn-secondary text-sm">Отмена</button>
+        <button type="button" disabled={!projectId || saveMut.isPending || (reels.length + macros.length === 0)}
+          onClick={() => saveMut.mutate()} className="btn-primary text-sm">
+          {saveMut.isPending ? 'Сохранение…' : 'Сохранить'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Групповая карточка «Рилсы»/«Макеты»: элементы по этапам ──────────
+export function GroupCardModal({ card, project, onClose, onSaved }: {
+  card: any
+  project: any
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [items, setItems] = useState<any[]>(card.items || [])
+  const stage = card.stage
+  const isReels = card.kind === 'reels'
+
+  const people = useMemo(() => {
+    const seen = new Set<string>(); const list: any[] = []
+    for (const m of [...(project?.members || []), project?.manager].filter(Boolean)) {
+      if (m?.id && !seen.has(m.id)) { seen.add(m.id); list.push(m) }
+    }
+    return list
+  }, [project])
+  const assignRoles = isReels ? ['videographer', 'video_director'] : ['designer']
+  const opts = people.filter((m: any) => assignRoles.includes(m.role) || (m.secondaryRole && assignRoles.includes(m.secondaryRole)))
+  const setItem = (idx: number, patch: any) => setItems(items.map((it, i) => i === idx ? { ...it, ...patch } : it))
+
+  const saveMut = useMutation({
+    mutationFn: () => workflowApi.updateItems(card.id, items),
+    onSuccess: () => { toast.success('Сохранено'); onSaved() },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
+  })
+  const doneMut = useMutation({
+    mutationFn: async () => { await workflowApi.updateItems(card.id, items); await workflowApi.transition(card.id, 'org_confirm', {}) },
+    onSuccess: () => { toast.success('Готово'); onSaved() },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
+  })
+
+  const stageLabel = STAGES.find(s => s.key === stage)?.label || stage
+  return (
+    <Modal open onClose={onClose} title={`${card.title} — ${stageLabel}`} size="xl">
+      <div className="space-y-3 max-h-[68vh] overflow-y-auto pr-1">
+        {items.length === 0 && <p className="text-sm text-surface-400">Нет элементов.</p>}
+        {items.map((it, idx) => (
+          <div key={it.id || idx} className="border border-surface-200 dark:border-surface-700 rounded-lg p-3 space-y-2">
+            <p className="text-sm font-semibold text-surface-800 dark:text-surface-200">
+              {isReels ? 'Рилс' : 'Макет'} {idx + 1}{it.title ? ` — ${it.title}` : ''}
+              {it.publishDate && <span className="text-[11px] text-surface-400 ml-2">пуб. {it.publishDate}</span>}
+            </p>
+            {it.description && <p className="text-[11px] text-surface-500 dark:text-surface-400">{it.description}</p>}
+            {stage === 'organization' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="label text-xs">{isReels ? 'Видеограф' : 'Дизайнер'}</label>
+                  <select className="input" value={it.assigneeId || ''} onChange={e => setItem(idx, { assigneeId: e.target.value })}>
+                    <option value="">— Не назначен —</option>
+                    {opts.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                </div>
+                {isReels && (
+                  <>
+                    <div><label className="label text-xs">Дата съёмки</label><input className="input" value={it.shootDate || ''} onChange={e => setItem(idx, { shootDate: e.target.value })} placeholder="2026-06-20" /></div>
+                    <div><label className="label text-xs">Время</label><input className="input" value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} placeholder="14:00" /></div>
+                    <div><label className="label text-xs">Место</label><input className="input" value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} placeholder="Студия" /></div>
+                  </>
+                )}
+              </div>
+            )}
+            {stage === 'shooting' && isReels && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div><label className="label text-xs">Дата съёмки</label><input className="input" value={it.shootDate || ''} onChange={e => setItem(idx, { shootDate: e.target.value })} /></div>
+                <div><label className="label text-xs">Время</label><input className="input" value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} /></div>
+                <div><label className="label text-xs">Место</label><input className="input" value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} /></div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between gap-2 pt-3 border-t border-surface-100 dark:border-surface-700 mt-3">
+        <button type="button" onClick={onClose} className="btn-secondary text-sm">Закрыть</button>
+        <div className="flex gap-2">
+          <button type="button" disabled={saveMut.isPending} onClick={() => saveMut.mutate()} className="btn-secondary text-sm">Сохранить</button>
+          {stage === 'organization' && (
+            <button type="button" disabled={doneMut.isPending} onClick={() => doneMut.mutate()} className="btn-primary text-sm">
+              {doneMut.isPending ? '…' : (isReels ? 'Готово → Съёмка' : 'Готово → Дизайн')}
+            </button>
+          )}
+        </div>
+      </div>
     </Modal>
   )
 }

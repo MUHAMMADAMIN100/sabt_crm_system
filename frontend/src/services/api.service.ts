@@ -362,4 +362,10 @@ export const workflowApi = {
   /** §11: настройка отступов дедлайнов. */
   getDeadlineSettings: () => api.get('/workflow/settings/deadlines').then(r => r.data),
   updateDeadlineSettings: (data: any) => api.patch('/workflow/settings/deadlines', data).then(r => r.data),
+  /** Контент-план: сохранить КП → карточки «Рилсы»/«Макеты». */
+  saveContentPlan: (projectId: string, data: { reels?: any[]; macros?: any[] }) =>
+    api.post(`/workflow/project/${projectId}/content-plan`, data).then(r => r.data),
+  /** Обновить элементы групповой карточки. */
+  updateItems: (id: string, items: any[]) =>
+    api.patch(`/workflow/${id}/items`, { items }).then(r => r.data),
 }

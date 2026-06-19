@@ -35,6 +35,18 @@ export class WorkflowController {
     return this.service.generatePlan(projectId, body?.month, req.user);
   }
 
+  /** Контент-план: сохранить КП → создать карточки «Рилсы»/«Макеты». */
+  @Post('project/:projectId/content-plan')
+  saveContentPlan(@Param('projectId') projectId: string, @Body() body: { reels?: any[]; macros?: any[] }, @Request() req) {
+    return this.service.saveContentPlan(projectId, body || {}, req.user);
+  }
+
+  /** Обновить элементы групповой карточки (заполнение полей на этапах). */
+  @Patch(':id/items')
+  updateItems(@Param('id') id: string, @Body() body: { items?: any[] }, @Request() req) {
+    return this.service.updateItems(id, body?.items || [], req.user);
+  }
+
   /** §9.1/§9.2: сгруппировать рилсы в съёмку + пакетно подтвердить съёмку. */
   @Post('project/:projectId/shoot-session')
   createShootSession(@Param('projectId') projectId: string, @Body() body: any, @Request() req) {
