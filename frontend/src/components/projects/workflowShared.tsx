@@ -915,7 +915,7 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
                 {isReels && (
                   <>
                     <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} onChange={(v: string) => setItem(idx, { shootDate: v })} /></div>
-                    <div><label className="label text-xs">Время</label><input className="input" value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} placeholder="14:00" /></div>
+                    <div><label className="label text-xs">Время</label><input type="time" className="input" value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} /></div>
                     <div><label className="label text-xs">Место</label><input className="input" value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} placeholder="Студия" /></div>
                   </>
                 )}
@@ -924,7 +924,7 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
             {stage === 'shooting' && isReels && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} onChange={(v: string) => setItem(idx, { shootDate: v })} /></div>
-                <div><label className="label text-xs">Время</label><input className="input" value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} /></div>
+                <div><label className="label text-xs">Время</label><input type="time" className="input" value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} /></div>
                 <div><label className="label text-xs">Место</label><input className="input" value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} /></div>
               </div>
             )}
