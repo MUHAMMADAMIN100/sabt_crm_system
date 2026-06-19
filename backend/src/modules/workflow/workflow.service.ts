@@ -406,7 +406,8 @@ export class WorkflowService implements OnModuleInit {
     if (!tariff) throw new BadRequestException('Тариф проекта не найден');
 
     const reels = Math.max(0, Number(tariff.reelsPerMonth) || 0);
-    const statics = Math.max(0, Number(tariff.designsPerMonth) || 0);
+    // Макет = Post → берём из postsPerMonth.
+    const statics = Math.max(0, Number(tariff.postsPerMonth) || 0);
     if (reels + statics === 0) throw new BadRequestException('В тарифе нет рилсов и макетов');
 
     // Месяц: 'YYYY-MM' или текущий.

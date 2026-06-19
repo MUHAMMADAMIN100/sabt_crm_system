@@ -758,14 +758,15 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
 
   const project = projects.find((p: any) => p.id === projectId)
   const tariff = (tariffs || []).find((t: any) => t.id === project?.tariffId)
-  const tariffLabel = tariff ? `${tariff.reelsPerMonth} рилс · ${tariff.designsPerMonth} макет` : (projectId ? 'без тарифа' : '')
+  // Макет = Post → количество макетов берём из postsPerMonth.
+  const tariffLabel = tariff ? `${tariff.reelsPerMonth} рилс · ${tariff.postsPerMonth} макет` : (projectId ? 'без тарифа' : '')
 
   // Префилл по тарифу при создании (не при редактировании существующего КП).
   useEffect(() => {
     if (editing) return
     if (!tariff) { setReels([]); setMacros([]); return }
     setReels(Array.from({ length: Number(tariff.reelsPerMonth) || 0 }, () => ({ title: '', publishDate: '', description: '' })))
-    setMacros(Array.from({ length: Number(tariff.designsPerMonth) || 0 }, () => ({ title: '', publishDate: '', description: '' })))
+    setMacros(Array.from({ length: Number(tariff.postsPerMonth) || 0 }, () => ({ title: '', publishDate: '', description: '' })))
   }, [tariff?.id, editing])
 
   const setItem = (list: any[], setList: any, idx: number, patch: any) =>

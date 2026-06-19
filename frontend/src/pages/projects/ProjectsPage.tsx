@@ -549,10 +549,10 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     const end = new Date(start)
     end.setMonth(end.getMonth() + 1)
     setValue('endDate', format(end, 'yyyy-MM-dd'))
-    // «Макетов в месяц» — из тарифа (designsPerMonth), для ЛЮБОГО тарифа,
-    // включая индивидуальный. «Историй в день» не трогаем — вручную.
-    if (Number(selected.designsPerMonth) >= 0) {
-      setSmmAnswers(prev => ({ ...prev, layoutsPerMonth: String(selected.designsPerMonth ?? 0) }))
+    // «Макетов в месяц» — из тарифа. Макет = Post → берём postsPerMonth,
+    // для ЛЮБОГО тарифа. «Историй в день» не трогаем — вручную.
+    if (Number(selected.postsPerMonth) >= 0) {
+      setSmmAnswers(prev => ({ ...prev, layoutsPerMonth: String(selected.postsPerMonth ?? 0) }))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tariffId, tariffs, projectType, initial])
