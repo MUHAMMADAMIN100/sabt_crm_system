@@ -616,12 +616,15 @@ export class WorkflowService implements OnModuleInit {
       });
       await this.repo.update(existing.id, { items: merged, title });
     } else {
+      // Рилсы → «Организация» (нужен организационный момент: дата/место съёмки).
+      // Макеты → сразу «Дизайн» (организация не нужна, сразу выбор дизайнера).
+      const initialStage = kind === 'macros' ? 'design' : 'organization';
       const [{ max }] = await this.repo.manager.query(
-        `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = 'organization'`,
-        [projectId],
+        `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
+        [projectId, initialStage],
       );
       await this.repo.save(this.repo.create({
-        projectId, kind, title, stage: 'organization',
+        projectId, kind, title, stage: initialStage,
         position: Number(max) + 1, createdById: viewer.id, status: 'active', items,
       }));
     }

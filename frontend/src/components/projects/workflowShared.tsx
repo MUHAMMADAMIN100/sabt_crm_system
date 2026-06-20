@@ -160,7 +160,7 @@ export function WorkflowCardBadges({ card }: { card: any }) {
           {pct}%
         </span>
       )}
-      {card.createdBy?.name && (
+      {card.kind === 'kp' && card.createdBy?.name && (
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 text-surface-500 dark:bg-surface-700 dark:text-surface-400" title="Создал / заполнил · дата создания">
           ✎ {card.createdBy.name}{card.createdAt ? ` · ${format(new Date(card.createdAt), 'dd.MM.yyyy')}` : ''}
         </span>
@@ -977,7 +977,11 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
               <p className="text-sm font-semibold text-surface-800 dark:text-surface-200">
                 {typeWord} {idx + 1}{it.title ? ` ${it.title}` : ''}
               </p>
-              {it.publishDate && <span className="text-[11px] text-surface-400 shrink-0">{fmtDate(it.publishDate)}</span>}
+              {it.publishDate && (
+                <span className="text-[11px] text-surface-400 shrink-0 text-right">
+                  Дата публикации<br />{fmtDate(it.publishDate)}
+                </span>
+              )}
             </div>
             {it.description && <p className="text-sm text-surface-600 dark:text-surface-300 leading-relaxed">{it.description}</p>}
             {(showAssignee || showShoot) && (
