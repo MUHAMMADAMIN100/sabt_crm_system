@@ -265,7 +265,7 @@ export class WorkflowService implements OnModuleInit {
     await this.assertCanEdit(projectId, viewer);
     return this.repo.find({
       where: { projectId },
-      relations: ['assignee'],
+      relations: ['assignee', 'createdBy'],
       order: { stage: 'ASC', position: 'ASC', createdAt: 'ASC' },
     }).then(cards => cards.map(c => this.toDto(c)));
   }
@@ -289,7 +289,7 @@ export class WorkflowService implements OnModuleInit {
 
     const cards = await this.repo.find({
       where: { projectId: In(projects.map(p => p.id)) },
-      relations: ['assignee'],
+      relations: ['assignee', 'createdBy'],
       order: { stage: 'ASC', position: 'ASC', createdAt: 'ASC' },
     });
     return cards.map(c => ({
@@ -328,6 +328,8 @@ export class WorkflowService implements OnModuleInit {
         role: c.assignee.role,
         secondaryRole: c.assignee.secondaryRole || null,
       } : null,
+      createdById: c.createdById,
+      createdBy: c.createdBy ? { id: c.createdBy.id, name: c.createdBy.name, avatar: c.createdBy.avatar || null } : null,
       // Поля движка
       type: c.type,
       parentCardId: c.parentCardId,
@@ -595,7 +597,7 @@ export class WorkflowService implements OnModuleInit {
     await this.assertCanEdit(card.projectId, viewer);
     await this.repo.update(cardId, { items: Array.isArray(items) ? items : [] });
     this.broadcast(card.projectId);
-    return this.repo.findOne({ where: { id: cardId }, relations: ['assignee'] }).then(c => this.toDto(c!));
+    return this.repo.findOne({ where: { id: cardId }, relations: ['assignee', 'createdBy'] }).then(c => this.toDto(c!));
   }
 
   async update(id: string, dto: any, viewer: Viewer) {
@@ -625,7 +627,7 @@ export class WorkflowService implements OnModuleInit {
       await this.notify([patch.assigneeId], '🎬 Назначение', `Вам назначена карточка «${card.title}»`, card.projectId);
     }
     this.broadcast(card.projectId);
-    return this.repo.findOne({ where: { id }, relations: ['assignee'] })
+    return this.repo.findOne({ where: { id }, relations: ['assignee', 'createdBy'] })
       .then(c => this.toDto(c!));
   }
 
@@ -727,7 +729,7 @@ export class WorkflowService implements OnModuleInit {
     }
 
     this.broadcast(card.projectId);
-    return this.repo.findOne({ where: { id }, relations: ['assignee'] }).then(c => this.toDto(c!));
+    return this.repo.findOne({ where: { id }, relations: ['assignee', 'createdBy'] }).then(c => this.toDto(c!));
   }
 
   // R1/R2: «Подтвердить план»
@@ -781,14 +783,72 @@ export class WorkflowService implements OnModuleInit {
     await this.notifyStageRole(reel.projectId, 'design', `🎨 Обложка/заставка: ${reel.title}`, 'Создана карточка обложки/заставки рилса');
   }
 
-  // Групповая «Организация» → «Готово»: рилсы → Съёмка, макеты → Дизайн.
+  // Групповая «Организация» → «Готово»: выносим ВСЕ элементы как отдельные
+  // карточки на следующий этап (рилсы → Съёмка, макеты → Дизайн).
   private async orgConfirm(card: WorkflowCard, actor: Actor) {
     if (card.stage !== 'organization') throw new BadRequestException('Доступно только на этапе Организация');
-    if (card.kind === 'macros') {
-      await this.moveToStage(card, 'design', actor, { message: 'Исполнители назначены → Дизайн' });
-    } else {
-      await this.moveToStage(card, 'shooting', actor, { message: 'Видеографы назначены → Съёмка' });
-    }
+    const items = card.items || [];
+    for (const item of items) await this.spawnIndividualCard(card, item, actor);
+    await this.repo.delete(card.id);
+  }
+
+  /** Вынести ОДИН элемент группы как самостоятельную карточку на след. этап
+   *  (рилс → Съёмка, макет → Дизайн). Остальные элементы остаются в группе;
+   *  если группа опустела — удаляем её. Так каждый элемент идёт независимо. */
+  async advanceItem(cardId: string, itemId: string, viewer: Viewer) {
+    const card = await this.repo.findOne({ where: { id: cardId } });
+    if (!card) throw new NotFoundException('Карточка не найдена');
+    if (card.kind !== 'reels' && card.kind !== 'macros') throw new BadRequestException('Не групповая карточка');
+    await this.assertCanEdit(card.projectId, viewer);
+    const actor = await this.loadActor(viewer.id);
+    const items = card.items || [];
+    const item = items.find((i: any) => i.id === itemId);
+    if (!item) throw new NotFoundException('Элемент не найден');
+    await this.spawnIndividualCard(card, item, actor);
+    const rest = items.filter((i: any) => i.id !== itemId);
+    if (rest.length === 0) await this.repo.delete(card.id);
+    else await this.repo.update(card.id, { items: rest });
+    this.broadcast(card.projectId);
+    return { ok: true, remaining: rest.length };
+  }
+
+  /** Создаёт отдельную карточку из элемента группы и двигает её на след. этап. */
+  private async spawnIndividualCard(group: WorkflowCard, item: any, actor: Actor) {
+    const isReel = group.kind === 'reels';
+    const type = isReel ? 'reels' : 'static';
+    const stage = isReel ? 'shooting' : 'design';
+    const offsets = await this.getDeadlineOffsets();
+    const deadlines = item.publishDate ? this.computeStageDeadlines(item.publishDate, type, offsets) : null;
+    const [{ max }] = await this.repo.manager.query(
+      `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
+      [group.projectId, stage],
+    );
+    const saved = await this.repo.save(this.repo.create({
+      projectId: group.projectId,
+      title: item.title || (isReel ? 'Reels' : 'Макет'),
+      description: item.description || null,
+      contentType: isReel ? 'reel' : 'design',
+      type,
+      stage,
+      position: Number(max) + 1,
+      status: 'active',
+      publishDate: item.publishDate || null,
+      deadline: deadlines?.[stage] || null,
+      stageDeadlines: deadlines,
+      assigneeId: item.assigneeId || null,
+      shootDate: item.shootDate || null,
+      shootTime: item.shootTime || null,
+      shootLocation: item.shootLocation || null,
+      // Новая модель без отдельной обложки: ветка дизайна считается готовой,
+      // join-гейт для рилса зависит только от монтажа.
+      needsCover: false,
+      needsIntro: false,
+      designDone: true,
+      createdById: group.createdById || actor.id,
+    }));
+    await this.logEvent(saved.id, 'stage_enter', { toStage: stage, actor, message: `Из контент-плана → ${STAGE_LABELS[stage] || stage}` });
+    await this.notifyStageRole(group.projectId, stage, `➡️ ${STAGE_LABELS[stage] || stage}`, `«${saved.title}» на этапе «${STAGE_LABELS[stage] || stage}»`);
+    if (saved.assigneeId) await this.notify([saved.assigneeId], `🎬 Назначение`, `Вам назначена карточка «${saved.title}»`, group.projectId);
   }
 
   // R3: «Подтвердить съёмку» (Организация → Съёмка)

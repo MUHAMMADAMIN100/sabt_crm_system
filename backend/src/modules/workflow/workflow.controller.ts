@@ -53,6 +53,12 @@ export class WorkflowController {
     return this.service.updateItems(id, body?.items || [], req.user);
   }
 
+  /** Вынести один элемент группы как отдельную карточку на следующий этап. */
+  @Post(':id/item/:itemId/advance')
+  advanceItem(@Param('id') id: string, @Param('itemId') itemId: string, @Request() req) {
+    return this.service.advanceItem(id, itemId, req.user);
+  }
+
   /** §9.1/§9.2: сгруппировать рилсы в съёмку + пакетно подтвердить съёмку. */
   @Post('project/:projectId/shoot-session')
   createShootSession(@Param('projectId') projectId: string, @Body() body: any, @Request() req) {

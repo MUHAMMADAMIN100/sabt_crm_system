@@ -63,6 +63,11 @@ export class WorkflowCard {
   @Column({ type: 'uuid', nullable: true })
   createdById: string | null;
 
+  /** Кто создал/заполнил карточку (для отображения на карточке). */
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'createdById' })
+  createdBy: User | null;
+
   // ─── Workflow-движок (ТЗ §6/§9): тип маршрута, под-карточки, статусы ───
 
   /** Тип единицы контента / маршрут:

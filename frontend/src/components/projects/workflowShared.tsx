@@ -95,11 +95,31 @@ export function canDoAction(action: string, role?: string | null, secondaryRole?
 }
 
 /** Бейджи карточки: тип, ожидание, доработка, дедлайн/публикация. */
+// Цвета типов: Reels — синий, Макет — оранжевый (ТЗ — точь в точь образцы).
+const REELS_CHIP = 'bg-blue-100 text-blue-700 border border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
+const MACRO_CHIP = 'bg-orange-100 text-orange-700 border border-orange-300 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800'
+
+/** % заполнения карточки КП/группы (для красной метки незаполненного). */
+function fillPercent(card: any): number {
+  const items: any[] = card.items || []
+  if (items.length === 0) return 100
+  const fields = card.kind === 'reels'
+    ? ['title', 'publishDate', 'description', 'assigneeId', 'shootDate']
+    : card.kind === 'macros'
+      ? ['title', 'publishDate', 'description', 'assigneeId']
+      : ['title', 'publishDate', 'description'] // kp
+  let total = 0, filled = 0
+  for (const it of items) for (const f of fields) { total++; if (String(it?.[f] ?? '').trim()) filled++ }
+  return total ? Math.round((filled / total) * 100) : 100
+}
+
 export function WorkflowCardBadges({ card }: { card: any }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }, [])
   const deadline = card.deadline ? parseISO(card.deadline) : null
   const isOverdue = !!deadline && deadline < today && card.stage !== 'published' && card.stage !== 'ads'
   const tl = typeLabel(card.contentType)
+  const isGroup = card.kind === 'kp' || card.kind === 'reels' || card.kind === 'macros'
+  const pct = isGroup ? fillPercent(card) : 100
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       {card.kind === 'kp' && (
@@ -109,18 +129,26 @@ export function WorkflowCardBadges({ card }: { card: any }) {
         </span>
       )}
       {(card.kind === 'reels' || card.kind === 'macros') && (
-        <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded',
-          card.kind === 'reels' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
-            : 'bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-200')}>
-          {card.kind === 'reels' ? 'Рилсы' : 'Макеты'} · {(card.items || []).length}
+        <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded', card.kind === 'reels' ? REELS_CHIP : MACRO_CHIP)}>
+          {card.kind === 'reels' ? 'Reels' : 'Макеты'} · {(card.items || []).length}
         </span>
       )}
       {card.type && (
         <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded',
-          card.type === 'reels' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+          card.type === 'reels' ? REELS_CHIP
             : card.type === 'cover' ? 'bg-surface-200 text-surface-700 dark:bg-surface-700 dark:text-surface-200'
-            : 'bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-200')}>
-          {card.type === 'reels' ? 'Рилс' : card.type === 'cover' ? 'Обложка' : 'Макет'}
+            : MACRO_CHIP)}>
+          {card.type === 'reels' ? 'Reels' : card.type === 'cover' ? 'Обложка' : 'Макет'}
+        </span>
+      )}
+      {isGroup && pct < 100 && (
+        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400" title="Заполнено не полностью">
+          {pct}%
+        </span>
+      )}
+      {card.createdBy?.name && (
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 text-surface-500 dark:bg-surface-700 dark:text-surface-400" title="Создал / заполнил">
+          ✎ {card.createdBy.name}
         </span>
       )}
       {card.status === 'waiting_cover' && (
@@ -788,11 +816,14 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
     return (
       <div key={key} className="border border-surface-200 dark:border-surface-700 rounded-lg">
         <button type="button" onClick={() => setOpen(p => ({ ...p, [key]: !isOpen }))}
-          className="w-full flex items-center justify-between px-3 py-2 text-left">
+          className="w-full flex items-center justify-between px-3 py-2 text-left rounded-lg hover:bg-surface-50 dark:hover:bg-surface-700/40 transition-colors">
           <span className="text-sm font-medium text-surface-800 dark:text-surface-200">
-            {kind === 'reel' ? 'Рилс' : 'Макет'} {idx + 1}{it.title ? ` — ${it.title}` : ''}
+            {kind === 'reel' ? 'Reels' : 'Макет'} {idx + 1}{it.title ? ` — ${it.title}` : ''}
           </span>
-          <span className={clsx('text-surface-400 transition-transform shrink-0', isOpen && 'rotate-180')}>▾</span>
+          <span className="inline-flex items-center gap-1.5 shrink-0">
+            <span className="text-[10px] text-surface-400">{isOpen ? 'свернуть' : 'редактировать'}</span>
+            <span className={clsx('text-surface-400 transition-transform', isOpen && 'rotate-180')}>▾</span>
+          </span>
         </button>
         {isOpen && (
           <div className="px-3 pb-3 space-y-2">
@@ -891,6 +922,28 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
     })()
   }
 
+  // Вынести ОДИН элемент на следующий этап независимо от других.
+  const advanceOne = (it: any) => {
+    const rest = items.filter(x => x.id !== it.id)
+    setItems(rest)
+    optimistic(c => ({ ...c, items: (c.items || []).filter((x: any) => x.id !== it.id) }))
+    toast.success('Готово')
+    if (rest.length === 0) onClose()
+    ;(async () => {
+      try {
+        await workflowApi.updateItems(card.id, items)
+        await workflowApi.advanceItem(card.id, it.id)
+      } catch (e: any) {
+        toast.error(e?.response?.data?.message || 'Не удалось')
+      } finally {
+        qc.invalidateQueries({ queryKey: ['workflow'] })
+      }
+    })()
+  }
+  const assigneeName = (id?: string) => (opts as any[]).find((m: any) => m.id === id)?.name
+  const fmtDate = (d?: string) => { try { return d ? format(parseISO(d), 'dd/MM/yyyy') : '' } catch { return d || '' } }
+  const typeWord = isReels ? 'Reels' : 'Макет'
+
   const stageLabel = STAGES.find(s => s.key === stage)?.label || stage
   return (
     <Modal open onClose={onClose} title={`${card.title} — ${stageLabel}`} size="xl">
@@ -898,11 +951,14 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
         {items.length === 0 && <p className="text-sm text-surface-400">Нет элементов.</p>}
         {items.map((it, idx) => (
           <div key={it.id || idx} className="border border-surface-200 dark:border-surface-700 rounded-lg p-3 space-y-2">
-            <p className="text-sm font-semibold text-surface-800 dark:text-surface-200">
-              {isReels ? 'Рилс' : 'Макет'} {idx + 1}{it.title ? ` — ${it.title}` : ''}
-              {it.publishDate && <span className="text-[11px] text-surface-400 ml-2">пуб. {it.publishDate}</span>}
-            </p>
-            {it.description && <p className="text-[11px] text-surface-500 dark:text-surface-400">{it.description}</p>}
+            {/* Заголовок + дата публикации в правом верхнем углу (дд/мм/гггг) */}
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-semibold text-surface-800 dark:text-surface-200">
+                {typeWord} {idx + 1}{it.title ? ` ${it.title}` : ''}
+              </p>
+              {it.publishDate && <span className="text-[11px] text-surface-400 shrink-0">{fmtDate(it.publishDate)}</span>}
+            </div>
+            {it.description && <p className="text-sm text-surface-600 dark:text-surface-300 leading-relaxed">{it.description}</p>}
             {stage === 'organization' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
@@ -928,6 +984,18 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
                 <div><label className="label text-xs">Место</label><input className="input" value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} /></div>
               </div>
             )}
+            {/* Имя исполнителя + кнопка «Готово» для этого элемента (независимо) */}
+            {stage === 'organization' && (
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <span className="text-[11px] text-surface-500 dark:text-surface-400">
+                  {assigneeName(it.assigneeId) ? `Исполнитель: ${assigneeName(it.assigneeId)}` : 'Исполнитель не назначен'}
+                </span>
+                <button type="button" onClick={() => advanceOne(it)}
+                  className="px-3 py-1 rounded-lg text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors">
+                  Готово {isReels ? '→ Съёмка' : '→ Дизайн'}
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -935,9 +1003,9 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
         <button type="button" onClick={onClose} className="btn-secondary text-sm">Закрыть</button>
         <div className="flex gap-2">
           <button type="button" onClick={onSave} className="btn-secondary text-sm">Сохранить</button>
-          {stage === 'organization' && (
+          {stage === 'organization' && items.length > 0 && (
             <button type="button" onClick={onDone} className="btn-primary text-sm">
-              {isReels ? 'Готово → Съёмка' : 'Готово → Дизайн'}
+              {isReels ? 'Все готово → Съёмка' : 'Все готово → Дизайн'}
             </button>
           )}
         </div>

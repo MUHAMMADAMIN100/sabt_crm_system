@@ -371,4 +371,7 @@ export const workflowApi = {
   /** Все исполнители по ролям (видеографы/дизайнеры) для селекта. */
   assignees: (roles: string[]) =>
     api.get('/workflow/assignees', { params: { roles: roles.join(',') } }).then(r => r.data),
+  /** Вынести один элемент группы как отдельную карточку на следующий этап. */
+  advanceItem: (cardId: string, itemId: string) =>
+    api.post(`/workflow/${cardId}/item/${itemId}/advance`, {}).then(r => r.data),
 }
