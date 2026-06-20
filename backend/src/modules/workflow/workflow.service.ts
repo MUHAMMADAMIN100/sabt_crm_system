@@ -56,6 +56,21 @@ const STAGE_ROLES: Record<string, string[]> = {
   ads: ['targetologist'],
 };
 
+/** Маршрут групповой карточки (Рилсы/Макеты) по этапам. Группа едет целиком;
+ *  каждый элемент можно вынести отдельно (advanceItem) на тот же next-этап. */
+const GROUP_NEXT: Record<string, Record<string, string>> = {
+  reels: {
+    organization: 'shooting', shooting: 'editing', editing: 'internal_review',
+    internal_review: 'client_approval', client_approval: 'ready_to_publish',
+    ready_to_publish: 'published',
+  },
+  macros: {
+    organization: 'design', design: 'internal_review',
+    internal_review: 'client_approval', client_approval: 'ready_to_publish',
+    ready_to_publish: 'published',
+  },
+};
+
 /** RBAC: какая роль может выполнить действие выхода этапа (ТЗ §12).
  *  ALL_ACCESS (admin/founder/co_founder) могут всё. */
 const ACTION_ROLES: Record<string, string[]> = {
@@ -252,6 +267,16 @@ export class WorkflowService implements OnModuleInit {
     if (allowed.includes(actor.role)) return;
     if (actor.secondaryRole && allowed.includes(actor.secondaryRole)) return;
     throw new ForbiddenException('У вас нет прав на это действие для текущего этапа');
+  }
+
+  /** RBAC по роли-владельцу ТЕКУЩЕГО этапа (для групповых действий, где этап
+   *  меняется: организатор на «Организации», дизайнер на «Дизайне» и т.д.). */
+  private assertStageRole(stage: string, actor: Actor) {
+    if (ALL_ACCESS.includes(actor.role)) return;
+    const roles = STAGE_ROLES[stage] || [];
+    if (roles.includes(actor.role)) return;
+    if (actor.secondaryRole && roles.includes(actor.secondaryRole)) return;
+    throw new ForbiddenException('Нет прав для действия на этом этапе');
   }
 
   private broadcast(projectId: string) {
@@ -708,7 +733,10 @@ export class WorkflowService implements OnModuleInit {
     if (!card) throw new NotFoundException('Карточка не найдена');
     await this.assertCanEdit(card.projectId, viewer);
     const actor = await this.loadActor(viewer.id);
-    this.assertCanAct(action, actor);
+    // org_confirm проверяется по роли ТЕКУЩЕГО этапа (этап меняется), остальные —
+    // по фиксированной карте действий.
+    if (action === 'org_confirm') this.assertStageRole(card.stage, actor);
+    else this.assertCanAct(action, actor);
 
     switch (action) {
       case 'confirm_plan':        await this.confirmPlan(card, payload, actor); break;
@@ -783,28 +811,29 @@ export class WorkflowService implements OnModuleInit {
     await this.notifyStageRole(reel.projectId, 'design', `🎨 Обложка/заставка: ${reel.title}`, 'Создана карточка обложки/заставки рилса');
   }
 
-  // Групповая «Организация» → «Готово»: выносим ВСЕ элементы как отдельные
-  // карточки на следующий этап (рилсы → Съёмка, макеты → Дизайн).
+  // Групповая «Готово» (все элементы вместе) → следующий этап маршрута группы.
   private async orgConfirm(card: WorkflowCard, actor: Actor) {
-    if (card.stage !== 'organization') throw new BadRequestException('Доступно только на этапе Организация');
-    const items = card.items || [];
-    for (const item of items) await this.spawnIndividualCard(card, item, actor);
-    await this.repo.delete(card.id);
+    const next = GROUP_NEXT[card.kind || '']?.[card.stage];
+    if (!next) throw new BadRequestException('Нет следующего этапа для этой карточки');
+    await this.moveToStage(card, next, actor, { message: `Группа → ${STAGE_LABELS[next] || next}` });
   }
 
-  /** Вынести ОДИН элемент группы как самостоятельную карточку на след. этап
-   *  (рилс → Съёмка, макет → Дизайн). Остальные элементы остаются в группе;
-   *  если группа опустела — удаляем её. Так каждый элемент идёт независимо. */
+  /** Вынести ОДИН элемент группы как самостоятельную карточку на следующий
+   *  этап маршрута (зависит от текущего этапа группы). Остальные остаются в
+   *  группе; если группа опустела — удаляем. Так элемент идёт независимо. */
   async advanceItem(cardId: string, itemId: string, viewer: Viewer) {
     const card = await this.repo.findOne({ where: { id: cardId } });
     if (!card) throw new NotFoundException('Карточка не найдена');
     if (card.kind !== 'reels' && card.kind !== 'macros') throw new BadRequestException('Не групповая карточка');
     await this.assertCanEdit(card.projectId, viewer);
     const actor = await this.loadActor(viewer.id);
+    this.assertStageRole(card.stage, actor);
+    const next = GROUP_NEXT[card.kind]?.[card.stage];
+    if (!next) throw new BadRequestException('Нет следующего этапа');
     const items = card.items || [];
     const item = items.find((i: any) => i.id === itemId);
     if (!item) throw new NotFoundException('Элемент не найден');
-    await this.spawnIndividualCard(card, item, actor);
+    await this.spawnIndividualCard(card, item, next, actor);
     const rest = items.filter((i: any) => i.id !== itemId);
     if (rest.length === 0) await this.repo.delete(card.id);
     else await this.repo.update(card.id, { items: rest });
@@ -812,11 +841,10 @@ export class WorkflowService implements OnModuleInit {
     return { ok: true, remaining: rest.length };
   }
 
-  /** Создаёт отдельную карточку из элемента группы и двигает её на след. этап. */
-  private async spawnIndividualCard(group: WorkflowCard, item: any, actor: Actor) {
+  /** Создаёт отдельную карточку из элемента группы на заданном этапе. */
+  private async spawnIndividualCard(group: WorkflowCard, item: any, stage: string, actor: Actor) {
     const isReel = group.kind === 'reels';
     const type = isReel ? 'reels' : 'static';
-    const stage = isReel ? 'shooting' : 'design';
     const offsets = await this.getDeadlineOffsets();
     const deadlines = item.publishDate ? this.computeStageDeadlines(item.publishDate, type, offsets) : null;
     const [{ max }] = await this.repo.manager.query(

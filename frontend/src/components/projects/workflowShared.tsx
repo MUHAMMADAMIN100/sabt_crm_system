@@ -69,6 +69,20 @@ export const STAGE_ROLE_FILTER: Record<string, string[]> = {
   ads: ['targetologist'],
 }
 
+/** Маршрут групповой карточки по этапам (для подписей кнопок «→ …»). */
+export const GROUP_NEXT_FE: Record<string, Record<string, string>> = {
+  reels: {
+    organization: 'shooting', shooting: 'editing', editing: 'internal_review',
+    internal_review: 'client_approval', client_approval: 'ready_to_publish',
+    ready_to_publish: 'published',
+  },
+  macros: {
+    organization: 'design', design: 'internal_review',
+    internal_review: 'client_approval', client_approval: 'ready_to_publish',
+    ready_to_publish: 'published',
+  },
+}
+
 /** Действие выхода этапа → допустимые роли (ТЗ §12). */
 export const ACTION_ROLES: Record<string, string[]> = {
   confirm_plan: ['scriptwriter'],
@@ -883,12 +897,19 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
   const stage = card.stage
   const isReels = card.kind === 'reels'
 
-  // Список ВСЕХ видеографов/дизайнеров из системы (не только участники проекта).
-  const assignRoles = isReels ? ['videographer', 'video_director'] : ['designer']
+  // Роль-исполнитель зависит от текущего этапа: видеограф (съёмка/организация),
+  // монтажёр (монтаж), дизайнер (дизайн/организация макетов).
+  const assignRoles = !isReels ? ['designer'] : (stage === 'editing' ? ['video_editor'] : ['videographer', 'video_director'])
+  const assignLabel = !isReels ? 'Дизайнер' : (stage === 'editing' ? 'Монтажёр' : 'Видеограф')
   const { data: opts = [] } = useQuery({
     queryKey: ['workflow-assignees', assignRoles.join(',')],
     queryFn: () => workflowApi.assignees(assignRoles),
   })
+  // Следующий этап маршрута группы (для подписей кнопок).
+  const nextKey = GROUP_NEXT_FE[isReels ? 'reels' : 'macros'][stage]
+  const nextLabel = STAGES.find(s => s.key === nextKey)?.label || ''
+  const showAssignee = ['organization', 'shooting', 'editing', 'design'].includes(stage)
+  const showShoot = isReels && ['organization', 'shooting'].includes(stage)
   const setItem = (idx: number, patch: any) => setItems(items.map((it, i) => i === idx ? { ...it, ...patch } : it))
 
   // Оптимистичное обновление обеих досок (префикс ['workflow']).
@@ -906,8 +927,8 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
       .finally(() => qc.invalidateQueries({ queryKey: ['workflow'] }))
   }
   const onDone = () => {
-    const next = isReels ? 'shooting' : 'design'
-    optimistic(c => ({ ...c, items, stage: next, position: 9999 }))
+    if (!nextKey) return
+    optimistic(c => ({ ...c, items, stage: nextKey, position: 9999 }))
     toast.success('Готово')
     onClose()
     ;(async () => {
@@ -959,16 +980,18 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
               {it.publishDate && <span className="text-[11px] text-surface-400 shrink-0">{fmtDate(it.publishDate)}</span>}
             </div>
             {it.description && <p className="text-sm text-surface-600 dark:text-surface-300 leading-relaxed">{it.description}</p>}
-            {stage === 'organization' && (
+            {(showAssignee || showShoot) && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="label text-xs">{isReels ? 'Видеограф' : 'Дизайнер'}</label>
-                  <select className="input" value={it.assigneeId || ''} onChange={e => setItem(idx, { assigneeId: e.target.value })}>
-                    <option value="">— Не назначен —</option>
-                    {opts.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                </div>
-                {isReels && (
+                {showAssignee && (
+                  <div>
+                    <label className="label text-xs">{assignLabel}</label>
+                    <select className="input" value={it.assigneeId || ''} onChange={e => setItem(idx, { assigneeId: e.target.value })}>
+                      <option value="">— Не назначен —</option>
+                      {opts.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                {showShoot && (
                   <>
                     <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} onChange={(v: string) => setItem(idx, { shootDate: v })} /></div>
                     <div><label className="label text-xs">Время</label><input type="time" className="input" value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} /></div>
@@ -977,22 +1000,15 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
                 )}
               </div>
             )}
-            {stage === 'shooting' && isReels && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} onChange={(v: string) => setItem(idx, { shootDate: v })} /></div>
-                <div><label className="label text-xs">Время</label><input type="time" className="input" value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} /></div>
-                <div><label className="label text-xs">Место</label><input className="input" value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} /></div>
-              </div>
-            )}
             {/* Имя исполнителя + кнопка «Готово» для этого элемента (независимо) */}
-            {stage === 'organization' && (
+            {nextKey && (
               <div className="flex items-center justify-between gap-2 pt-1">
                 <span className="text-[11px] text-surface-500 dark:text-surface-400">
                   {assigneeName(it.assigneeId) ? `Исполнитель: ${assigneeName(it.assigneeId)}` : 'Исполнитель не назначен'}
                 </span>
                 <button type="button" onClick={() => advanceOne(it)}
                   className="px-3 py-1 rounded-lg text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors">
-                  Готово {isReels ? '→ Съёмка' : '→ Дизайн'}
+                  Готово → {nextLabel}
                 </button>
               </div>
             )}
@@ -1003,9 +1019,9 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
         <button type="button" onClick={onClose} className="btn-secondary text-sm">Закрыть</button>
         <div className="flex gap-2">
           <button type="button" onClick={onSave} className="btn-secondary text-sm">Сохранить</button>
-          {stage === 'organization' && items.length > 0 && (
+          {nextKey && items.length > 0 && (
             <button type="button" onClick={onDone} className="btn-primary text-sm">
-              {isReels ? 'Все готово → Съёмка' : 'Все готово → Дизайн'}
+              Все готово → {nextLabel}
             </button>
           )}
         </div>
