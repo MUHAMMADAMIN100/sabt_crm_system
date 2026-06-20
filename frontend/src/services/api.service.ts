@@ -374,4 +374,6 @@ export const workflowApi = {
   /** Вынести один элемент группы как отдельную карточку на следующий этап. */
   advanceItem: (cardId: string, itemId: string) =>
     api.post(`/workflow/${cardId}/item/${itemId}/advance`, {}).then(r => r.data),
+  /** Очистить всю доску (для тестов) — только руководитель. */
+  clearAll: () => api.post('/workflow/clear', {}).then(r => r.data),
 }

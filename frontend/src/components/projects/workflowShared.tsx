@@ -161,8 +161,8 @@ export function WorkflowCardBadges({ card }: { card: any }) {
         </span>
       )}
       {card.createdBy?.name && (
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 text-surface-500 dark:bg-surface-700 dark:text-surface-400" title="Создал / заполнил">
-          ✎ {card.createdBy.name}
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 text-surface-500 dark:bg-surface-700 dark:text-surface-400" title="Создал / заполнил · дата создания">
+          ✎ {card.createdBy.name}{card.createdAt ? ` · ${format(new Date(card.createdAt), 'dd.MM.yyyy')}` : ''}
         </span>
       )}
       {card.status === 'waiting_cover' && (

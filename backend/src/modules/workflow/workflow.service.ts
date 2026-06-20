@@ -323,6 +323,18 @@ export class WorkflowService implements OnModuleInit {
     }));
   }
 
+  /** Очистить ВСЮ доску (для тестов) — только admin/founder/co_founder. */
+  async clearAll(viewer: Viewer) {
+    if (!['admin', 'founder', 'co_founder'].includes(viewer.role)) {
+      throw new ForbiddenException('Очистить доску может только руководитель');
+    }
+    await this.repo.manager.query('DELETE FROM workflow_cards');
+    await this.repo.manager.query('DELETE FROM unit_events').catch(() => {});
+    await this.repo.manager.query('DELETE FROM shoot_sessions').catch(() => {});
+    try { this.gateway.broadcast('workflow:changed', {}); } catch { /* best-effort */ }
+    return { ok: true };
+  }
+
   /** История событий карточки (ТЗ §9.7 — журнал в «Готово к публикации»). */
   async events(cardId: string, viewer: Viewer) {
     // B2: журнал доступен только тем, у кого есть доступ к проекту карточки.

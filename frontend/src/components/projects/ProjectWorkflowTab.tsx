@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowApi } from '@/services/api.service'
 import { ConfirmDialog, Avatar } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
-import { Plus, Clapperboard, SlidersHorizontal } from 'lucide-react'
+import { Plus, Clapperboard, SlidersHorizontal, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import {
@@ -124,12 +124,19 @@ export default function ProjectWorkflowTab({ project }: Props) {
       onDragEnd={() => { setDragId(null); setDragOverStage(null) }}
       onClick={() => openCard(c)}
       className={clsx(
-        'bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 space-y-2',
+        'relative group bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 space-y-2',
         'cursor-grab active:cursor-grabbing hover:border-surface-400 dark:hover:border-surface-500 transition-colors',
         dragId === c.id && 'opacity-50',
       )}
     >
-      <p className="text-sm font-semibold text-surface-900 dark:text-surface-100 leading-snug">{c.title}</p>
+      {(c.createdById === user?.id || isBoss) && (
+        <button type="button" title="Удалить карточку"
+          onClick={e => { e.stopPropagation(); setDeleteId(c.id) }}
+          className="absolute top-1.5 right-1.5 p-1 rounded-md text-surface-400 opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition-all">
+          <Trash2 size={14} />
+        </button>
+      )}
+      <p className="text-sm font-semibold text-surface-900 dark:text-surface-100 leading-snug pr-6">{c.title}</p>
       <WorkflowCardBadges card={c} />
       {c.assignee && (
         <div className="flex items-center gap-1.5 pt-0.5">

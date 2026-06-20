@@ -25,6 +25,12 @@ export class WorkflowController {
     return this.service.assignees((roles || '').split(',').map(s => s.trim()).filter(Boolean));
   }
 
+  /** Очистить всю доску (для тестов) — только руководитель. */
+  @Post('clear')
+  clearAll(@Request() req) {
+    return this.service.clearAll(req.user);
+  }
+
   @Get('project/:projectId')
   list(@Param('projectId') projectId: string, @Request() req) {
     return this.service.list(projectId, req.user);

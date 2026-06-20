@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowApi, projectsApi } from '@/services/api.service'
 import { ConfirmDialog, Avatar, PageLoader } from '@/components/ui'
-import { Plus, LayoutGrid, Sparkles, Clapperboard, SlidersHorizontal } from 'lucide-react'
+import { Plus, LayoutGrid, SlidersHorizontal, Trash2, Eraser } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
 import {
   STAGES, shortRole, CardFormModal, AdCampaignModal, WorkflowCardBadges,
-  ShootSessionModal, DeadlineSettingsModal, ContentPlanModal, GroupCardModal,
+  DeadlineSettingsModal, ContentPlanModal, GroupCardModal,
 } from '@/components/projects/workflowShared'
 
 /**
@@ -37,19 +37,11 @@ export default function ProjectsBoardPage() {
   )
 
   const currentUserId = user?.id
-  const [projectFilter, setProjectFilter] = useState<string>('')
-  const [typeFilter, setTypeFilter] = useState<string>('')
-  const [stageFilter, setStageFilter] = useState<string>('')
   const [mineOnly, setMineOnly] = useState(false)
 
   const visibleCards = useMemo(
-    () => (cards || []).filter((c: any) => {
-      if (projectFilter && c.projectId !== projectFilter) return false
-      if (typeFilter && (c.type || 'static') !== typeFilter) return false
-      if (mineOnly && c.assigneeId !== currentUserId) return false
-      return true
-    }),
-    [cards, projectFilter, typeFilter, mineOnly, currentUserId],
+    () => (cards || []).filter((c: any) => !mineOnly || c.assigneeId === currentUserId),
+    [cards, mineOnly, currentUserId],
   )
 
   const byStage = useMemo(() => {
@@ -66,18 +58,15 @@ export default function ProjectsBoardPage() {
     return map
   }, [visibleCards])
 
-  const visibleStages = useMemo(
-    () => (stageFilter ? STAGES.filter(s => s.key === stageFilter) : STAGES),
-    [stageFilter],
-  )
+  const visibleStages = STAGES
 
   // ── Модалки ─────────────────────────────────────────────────────────
   const [editCard, setEditCard] = useState<any>(null)
   const [createStage, setCreateStage] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [adCard, setAdCard] = useState<any>(null)
-  const [shootOpen, setShootOpen] = useState(false)
   const [deadlinesOpen, setDeadlinesOpen] = useState(false)
+  const [clearConfirm, setClearConfirm] = useState(false)
   const [kp, setKp] = useState<any>(null)          // 'new' | КП-карточка | null
   const [groupCard, setGroupCard] = useState<any>(null)
   const isBoss = ['admin', 'founder', 'co_founder', 'smm_director'].includes(user?.role || '')
@@ -117,10 +106,10 @@ export default function ProjectsBoardPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey }); closeModal(); toast.success('Готово') },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось выполнить действие'),
   })
-  const generateMut = useMutation({
-    mutationFn: (projectId: string) => workflowApi.generatePlan(projectId),
-    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey }); toast.success(`Создано слотов: ${r?.created ?? 0} (рилсы ${r?.reels ?? 0}, макеты ${r?.statics ?? 0})`) },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось сгенерировать план'),
+  const clearMut = useMutation({
+    mutationFn: () => workflowApi.clearAll(),
+    onSuccess: () => { qc.invalidateQueries({ queryKey }); setClearConfirm(false); toast.success('Доска очищена') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось очистить') ,
   })
 
   // ── Drag-and-drop ───────────────────────────────────────────────────
@@ -151,12 +140,19 @@ export default function ProjectsBoardPage() {
       onDragEnd={() => { setDragId(null); setDragOverStage(null) }}
       onClick={() => openCard(c)}
       className={clsx(
-        'bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 space-y-2',
+        'relative group bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 space-y-2',
         'cursor-grab active:cursor-grabbing hover:border-surface-400 dark:hover:border-surface-500 transition-colors',
         dragId === c.id && 'opacity-50',
       )}
     >
-      <p className="text-sm font-semibold text-surface-900 dark:text-surface-100 leading-snug">{c.title}</p>
+      {(c.createdById === currentUserId || isBoss) && (
+        <button type="button" title="Удалить карточку"
+          onClick={e => { e.stopPropagation(); setDeleteId(c.id) }}
+          className="absolute top-1.5 right-1.5 p-1 rounded-md text-surface-400 opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition-all">
+          <Trash2 size={14} />
+        </button>
+      )}
+      <p className="text-sm font-semibold text-surface-900 dark:text-surface-100 leading-snug pr-6">{c.title}</p>
       <p className="text-[11px] text-primary-600 dark:text-primary-400 font-medium truncate">{c.project?.name || '—'}</p>
       <WorkflowCardBadges card={c} />
       {c.assignee && (
@@ -180,41 +176,21 @@ export default function ProjectsBoardPage() {
           <h1 className="page-title">Доска проектов</h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="input py-1.5 text-sm max-w-[200px]">
-            <option value="">Все проекты</option>
-            {smmProjects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="input py-1.5 text-sm">
-            <option value="">Все типы</option>
-            <option value="reels">Рилсы</option>
-            <option value="static">Макеты</option>
-            <option value="cover">Обложки</option>
-          </select>
-          <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} className="input py-1.5 text-sm">
-            <option value="">Все этапы</option>
-            {STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
           <button type="button" onClick={() => setMineOnly(v => !v)}
             className={clsx('px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
               mineOnly ? 'bg-primary-600 text-white' : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600')}>
             Мои карточки
           </button>
-          <button type="button" disabled={!projectFilter || generateMut.isPending}
-            onClick={() => projectFilter && generateMut.mutate(projectFilter)}
-            title={projectFilter ? 'Создать слоты рилсов и макетов из тарифа проекта' : 'Сначала выберите проект'}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors disabled:opacity-50">
-            <Sparkles size={14} /> Сгенерировать план
-          </button>
-          <button type="button" disabled={!projectFilter}
-            onClick={() => projectFilter && setShootOpen(true)}
-            title={projectFilter ? 'Сгруппировать рилсы в одну съёмку' : 'Сначала выберите проект'}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors disabled:opacity-50">
-            <Clapperboard size={14} /> Съёмочная группа
-          </button>
           {isBoss && (
             <button type="button" onClick={() => setDeadlinesOpen(true)} title="Настроить отступы дедлайнов"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
               <SlidersHorizontal size={14} /> Дедлайны
+            </button>
+          )}
+          {isBoss && (
+            <button type="button" onClick={() => setClearConfirm(true)} title="Удалить все карточки доски (для теста)"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 transition-colors">
+              <Eraser size={14} /> Очистить доску
             </button>
           )}
           <button type="button" onClick={() => setKp('new')} className="btn-primary text-sm whitespace-nowrap">
@@ -299,16 +275,16 @@ export default function ProjectsBoardPage() {
         />
       )}
 
-      {shootOpen && projectFilter && (
-        <ShootSessionModal
-          projectId={projectFilter}
-          cards={cards || []}
-          onClose={() => setShootOpen(false)}
-          onSaved={() => { setShootOpen(false); qc.invalidateQueries({ queryKey }) }}
-        />
-      )}
-
       {deadlinesOpen && <DeadlineSettingsModal onClose={() => setDeadlinesOpen(false)} />}
+
+      <ConfirmDialog
+        open={clearConfirm}
+        title="Очистить всю доску?"
+        message="Будут удалены ВСЕ карточки доски (все проекты). Действие необратимо — только для теста."
+        danger
+        onConfirm={() => clearMut.mutate()}
+        onClose={() => setClearConfirm(false)}
+      />
 
       {kp && (
         <ContentPlanModal
