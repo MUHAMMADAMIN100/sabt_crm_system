@@ -237,23 +237,21 @@ export function CardFormModal({
   const projList = singleProject ? [project] : (projects || [])
   const activeProjectId = singleProject ? project.id : selectedProjectId
 
-  // Исполнители — участники проекта + менеджер, отфильтрованные по роли этапа.
+  // Исполнители — ВСЕ пользователи с ролью, валидной для этапа (не только
+  // участники проекта), как в групповой форме. + текущий назначенный.
+  const stageRoles = STAGE_ROLE_FILTER[effectiveStage] || []
+  const { data: roleUsers = [] } = useQuery({
+    queryKey: ['workflow-assignees', stageRoles.join(',')],
+    queryFn: () => workflowApi.assignees(stageRoles),
+    enabled: stageRoles.length > 0,
+  })
   const assignees = useMemo(() => {
-    const proj = projList.find((p: any) => p.id === activeProjectId)
-    if (!proj) return []
-    const seen = new Set<string>()
-    const list: any[] = []
-    for (const m of proj.members || []) if (m?.id && !seen.has(m.id)) { seen.add(m.id); list.push(m) }
-    if (proj.manager?.id && !seen.has(proj.manager.id)) { seen.add(proj.manager.id); list.push(proj.manager) }
-    const stageRoles = STAGE_ROLE_FILTER[effectiveStage] || []
-    if (stageRoles.length === 0) return list
-    const ok = (m: any) =>
-      ['admin', 'founder', 'co_founder'].includes(m.role)
-      || stageRoles.includes(m.role)
-      || (m.secondaryRole && stageRoles.includes(m.secondaryRole))
-      || m.id === card?.assigneeId
-    return list.filter(ok)
-  }, [projList, activeProjectId, effectiveStage, card?.assigneeId])
+    const list: any[] = [...(roleUsers as any[])]
+    if (card?.assigneeId && card?.assignee && !list.some((m: any) => m.id === card.assigneeId)) {
+      list.push(card.assignee)
+    }
+    return list
+  }, [roleUsers, card?.assigneeId, card?.assignee])
 
   const stageLabel = STAGES.find(s => s.key === effectiveStage)?.label
 
