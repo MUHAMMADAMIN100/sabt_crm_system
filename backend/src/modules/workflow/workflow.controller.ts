@@ -25,6 +25,12 @@ export class WorkflowController {
     return this.service.assignees((roles || '').split(',').map(s => s.trim()).filter(Boolean));
   }
 
+  /** Карточки текущего исполнителя — для кабинета сотрудника. */
+  @Get('my')
+  myCards(@Request() req) {
+    return this.service.myCards(req.user);
+  }
+
   /** Очистить всю доску (для тестов) — только руководитель. */
   @Post('clear')
   clearAll(@Request() req) {

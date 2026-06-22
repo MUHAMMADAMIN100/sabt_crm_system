@@ -108,6 +108,14 @@ export function canDoAction(action: string, role?: string | null, secondaryRole?
   return allowed.includes(role || '') || (!!secondaryRole && allowed.includes(secondaryRole))
 }
 
+/** Роли, которым разрешено РЕДАКТИРОВАТЬ данные доски (создавать/менять/
+ *  удалять/назначать). Остальные — только смена статуса своих карточек. */
+export const MANAGE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'organizer']
+export function canManageBoard(actor?: { role?: string | null; secondaryRole?: string | null } | null): boolean {
+  if (!actor) return false
+  return MANAGE_ROLES.includes(actor.role || '') || MANAGE_ROLES.includes(actor.secondaryRole || '')
+}
+
 /**
  * Предсказание результата перехода для ОПТИМИСТИЧНОГО обновления доски —
  * зеркалит движок workflow.service. patch применяется к карточке в кэше
@@ -324,9 +332,15 @@ export function CardFormModal({
   }, [roleUsers, card?.assigneeId, card?.assignee])
 
   const stageLabel = STAGES.find(s => s.key === effectiveStage)?.label
+  const canManage = canManageBoard(actor)
 
   return (
     <Modal open={open} onClose={onClose} title={card ? `Карточка — ${stageLabel}` : `Новая карточка — ${stageLabel}`}>
+      {!canManage && (
+        <p className="mb-3 text-[11px] text-surface-500 dark:text-surface-400 bg-surface-100 dark:bg-surface-700/50 rounded-lg px-3 py-2">
+          Просмотр карточки. Менять данные может только руководитель — вы можете лишь выполнить действие этапа ниже.
+        </p>
+      )}
       <form
         onSubmit={handleSubmit((data: any) => onSubmit(activeProjectId, {
           title: data.title,
@@ -338,6 +352,7 @@ export function CardFormModal({
         }))}
         className="space-y-4"
       >
+        <fieldset disabled={!canManage} className="space-y-4 border-0 p-0 m-0 min-w-0 disabled:opacity-100">
         {!singleProject && (
           <div>
             <label className="label">Проект *</label>
@@ -397,13 +412,14 @@ export function CardFormModal({
           <label className="label">Описание / сценарий</label>
           <textarea {...register('description')} className="input min-h-[70px]" rows={3} />
         </div>
+        </fieldset>
         <div className="flex items-center justify-between gap-2 pt-1">
-          {onDelete
+          {canManage && onDelete
             ? <button type="button" onClick={onDelete} className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700"><Trash2 size={13} /> Удалить</button>
             : <span />}
           <div className="flex gap-2">
-            <button type="button" onClick={onClose} className="btn-secondary text-sm">Отмена</button>
-            <button type="submit" disabled={loading} className="btn-primary text-sm">{loading ? 'Сохранение…' : 'Сохранить'}</button>
+            <button type="button" onClick={onClose} className="btn-secondary text-sm">{canManage ? 'Отмена' : 'Закрыть'}</button>
+            {canManage && <button type="submit" disabled={loading} className="btn-primary text-sm">{loading ? 'Сохранение…' : 'Сохранить'}</button>}
           </div>
         </div>
       </form>
@@ -946,9 +962,10 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
 }
 
 // ─── Групповая карточка «Рилсы»/«Макеты»: элементы по этапам ──────────
-export function GroupCardModal({ card, project, onClose, onSaved }: {
+export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
   card: any
   project: any
+  actor?: { role?: string | null; secondaryRole?: string | null }
   onClose: () => void
   onSaved: () => void
 }) {
@@ -956,6 +973,7 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
   const [items, setItems] = useState<any[]>(card.items || [])
   const stage = card.stage
   const isReels = card.kind === 'reels'
+  const canManage = canManageBoard(actor)
 
   // Роль-исполнитель зависит от текущего этапа: видеограф (съёмка/организация),
   // монтажёр (монтаж), дизайнер (дизайн/организация макетов).
@@ -1058,7 +1076,7 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
                 {showAssignee && (
                   <div>
                     <label className="label text-xs">{assignLabel} *</label>
-                    <select className="input" value={it.assigneeId || ''}
+                    <select className="input" value={it.assigneeId || ''} disabled={!canManage}
                       onChange={e => {
                         const m = (opts as any[]).find((o: any) => o.id === e.target.value)
                         setItem(idx, { assigneeId: e.target.value, assigneeName: m?.name || '' })
@@ -1070,9 +1088,9 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
                 )}
                 {showShoot && (
                   <>
-                    <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} onChange={(v: string) => setItem(idx, { shootDate: v })} /></div>
-                    <div><label className="label text-xs">Время</label><input type="time" className="input" value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} /></div>
-                    <div><label className="label text-xs">Место</label><input className="input" value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} placeholder="Студия" /></div>
+                    <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} disabled={!canManage} onChange={(v: string) => setItem(idx, { shootDate: v })} /></div>
+                    <div><label className="label text-xs">Время</label><input type="time" className="input" disabled={!canManage} value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} /></div>
+                    <div><label className="label text-xs">Место</label><input className="input" disabled={!canManage} value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} placeholder="Студия" /></div>
                   </>
                 )}
               </div>
@@ -1081,7 +1099,7 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
             {nextKey && (
               <div className="flex items-center justify-between gap-2 pt-1">
                 <span className="text-[11px] text-surface-500 dark:text-surface-400">
-                  {assigneeName(it.assigneeId) ? `Исполнитель: ${assigneeName(it.assigneeId)}` : 'Исполнитель не назначен'}
+                  {(assigneeName(it.assigneeId) || it.assigneeName) ? `Исполнитель: ${assigneeName(it.assigneeId) || it.assigneeName}` : 'Исполнитель не назначен'}
                 </span>
                 <button type="button" onClick={() => advanceOne(it)}
                   className="px-3 py-1 rounded-lg text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors">
@@ -1095,7 +1113,7 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
       <div className="flex justify-between gap-2 pt-3 border-t border-surface-100 dark:border-surface-700 mt-3">
         <button type="button" onClick={onClose} className="btn-secondary text-sm">Закрыть</button>
         <div className="flex gap-2">
-          <button type="button" onClick={onSave} className="btn-secondary text-sm">Сохранить</button>
+          {canManage && <button type="button" onClick={onSave} className="btn-secondary text-sm">Сохранить</button>}
           {nextKey && items.length > 0 && (
             <button type="button" onClick={onDone} className="btn-primary text-sm">
               Все готово → {nextLabel}

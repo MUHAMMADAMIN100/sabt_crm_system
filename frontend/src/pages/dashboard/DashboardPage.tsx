@@ -33,6 +33,7 @@ const SALES_GREETINGS = [
 ]
 const SMMDashboard = lazy(() => import('./components/SMMDashboard'))
 const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
+const MyWorkflowCards = lazy(() => import('./components/MyWorkflowCards'))
 
 
 // ── Helpers for story dot colors ──────────────────────────────────
@@ -223,6 +224,9 @@ export default function DashboardPage() {
             {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
           </p>
         </div>
+        <Suspense fallback={null}>
+          <MyWorkflowCards />
+        </Suspense>
         <Suspense fallback={<PageLoader />}>
           <SMMDashboard />
         </Suspense>

@@ -10,7 +10,7 @@ import {
   STAGES, CONTENT_TYPES, typeLabel, shortRole,
   CardFormModal, AdCampaignModal, WorkflowCardBadges,
   ShootSessionModal, DeadlineSettingsModal, ContentPlanModal, GroupCardModal,
-  predictTransition,
+  predictTransition, canManageBoard,
 } from './workflowShared'
 
 // Реэкспорт констант — их импортируют другие модули (ProjectsBoardPage и т.д.).
@@ -61,11 +61,12 @@ export default function ProjectWorkflowTab({ project }: Props) {
   const [kp, setKp] = useState<any>(null)
   const [groupCard, setGroupCard] = useState<any>(null)
   const isBoss = ['admin', 'founder', 'co_founder', 'smm_director'].includes(user?.role || '')
+  const canManage = canManageBoard(actor)
   const showModal = !!editCard || !!createStage
   const closeModal = () => { setEditCard(null); setCreateStage(null) }
   const openCard = (c: any) => {
-    if (c.kind === 'kp') setKp(c)
-    else if (c.kind === 'reels' || c.kind === 'macros') setGroupCard(c)
+    if (c.kind === 'kp') { if (canManage) setKp(c); return }
+    if (c.kind === 'reels' || c.kind === 'macros') setGroupCard(c)
     else setEditCard(c)
   }
 
@@ -142,17 +143,18 @@ export default function ProjectWorkflowTab({ project }: Props) {
   const renderCard = (c: any) => (
     <div
       key={c.id}
-      draggable={c.kind !== 'kp'}
+      draggable={c.kind !== 'kp' && canManage}
       onDragStart={() => setDragId(c.id)}
       onDragEnd={() => { setDragId(null); setDragOverStage(null) }}
       onClick={() => openCard(c)}
       className={clsx(
         'relative group bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-3 space-y-2',
-        'cursor-grab active:cursor-grabbing hover:border-surface-400 dark:hover:border-surface-500 transition-colors',
+        canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
+        'hover:border-surface-400 dark:hover:border-surface-500 transition-colors',
         dragId === c.id && 'opacity-50',
       )}
     >
-      {(c.createdById === user?.id || isBoss) && (
+      {canManage && (
         <button type="button" title="Удалить карточку"
           onClick={e => { e.stopPropagation(); setDeleteId(c.id) }}
           className="absolute top-1.5 right-1.5 p-1 rounded-md text-surface-400 opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition-all">
@@ -179,19 +181,23 @@ export default function ProjectWorkflowTab({ project }: Props) {
           Переходы — через кнопки в карточке · перетаскивание только в «Реклама» · клик — открыть карточку
         </p>
         <div className="flex items-center gap-2 flex-wrap">
-          <button type="button" onClick={() => setShootOpen(true)} title="Сгруппировать рилсы в одну съёмку"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
-            <Clapperboard size={14} /> Съёмочная группа
-          </button>
+          {canManage && (
+            <button type="button" onClick={() => setShootOpen(true)} title="Сгруппировать рилсы в одну съёмку"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
+              <Clapperboard size={14} /> Съёмочная группа
+            </button>
+          )}
           {isBoss && (
             <button type="button" onClick={() => setDeadlinesOpen(true)} title="Настроить отступы дедлайнов"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
               <SlidersHorizontal size={14} /> Дедлайны
             </button>
           )}
-          <button type="button" onClick={() => setKp('new')} className="btn-primary text-xs">
-            <Plus size={14} /> Контент-план
-          </button>
+          {canManage && (
+            <button type="button" onClick={() => setKp('new')} className="btn-primary text-xs">
+              <Plus size={14} /> Контент-план
+            </button>
+          )}
         </div>
       </div>
 
@@ -215,10 +221,12 @@ export default function ProjectWorkflowTab({ project }: Props) {
                 <span className="text-xs font-semibold text-surface-700 dark:text-surface-200 truncate">{stage.label}</span>
                 <span className="flex items-center gap-1">
                   <span className="text-[10px] font-semibold w-5 h-5 rounded-full bg-surface-200 dark:bg-surface-700 text-surface-600 dark:text-surface-300 inline-flex items-center justify-center">{items.length}</span>
-                  <button type="button" title="Добавить в эту колонку" onClick={() => stage.key === 'content_plan' ? setKp('new') : setCreateStage(stage.key)}
-                    className="w-5 h-5 inline-flex items-center justify-center rounded text-surface-400 hover:text-surface-700 hover:bg-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-200 transition-colors">
-                    <Plus size={12} />
-                  </button>
+                  {canManage && (
+                    <button type="button" title="Добавить в эту колонку" onClick={() => stage.key === 'content_plan' ? setKp('new') : setCreateStage(stage.key)}
+                      className="w-5 h-5 inline-flex items-center justify-center rounded text-surface-400 hover:text-surface-700 hover:bg-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-200 transition-colors">
+                      <Plus size={12} />
+                    </button>
+                  )}
                 </span>
               </div>
               <div className="space-y-2 min-h-[60px]">
@@ -293,6 +301,7 @@ export default function ProjectWorkflowTab({ project }: Props) {
         <GroupCardModal
           card={groupCard}
           project={project}
+          actor={actor}
           onClose={() => setGroupCard(null)}
           onSaved={() => { setGroupCard(null); qc.invalidateQueries({ queryKey }) }}
         />

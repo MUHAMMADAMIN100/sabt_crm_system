@@ -343,6 +343,8 @@ export const riskApi = {
 export const workflowApi = {
   list: (projectId: string) => api.get(`/workflow/project/${projectId}`).then(r => r.data),
   listAll: () => api.get('/workflow/all').then(r => r.data),
+  /** Карточки, где текущий пользователь — исполнитель (кабинет сотрудника). */
+  myCards: () => api.get('/workflow/my').then(r => r.data),
   create: (projectId: string, data: any) => api.post(`/workflow/project/${projectId}`, data).then(r => r.data),
   /** M3: сгенерировать план месяца из тарифа (рилсы + макеты). */
   generatePlan: (projectId: string, month?: string) =>

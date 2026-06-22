@@ -14,6 +14,7 @@ import { AppGateway } from '../gateway/app.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { TelegramService } from '../telegram/telegram.service';
+import { MailService } from '../mail/mail.service';
 
 interface Viewer { id: string; role: string }
 interface Actor { id: string; name: string; role: string; secondaryRole: string | null }
@@ -27,6 +28,11 @@ const SEE_ALL = ['admin', 'founder', 'co_founder', 'smm_director', 'video_direct
 
 /** Полный доступ к действиям движка (ADMIN-уровень из ТЗ §12). */
 const ALL_ACCESS = ['admin', 'founder', 'co_founder'];
+
+/** Роли, которым разрешено РЕДАКТИРОВАТЬ данные доски (создавать/менять/
+ *  удалять карточки, назначать исполнителей, заполнять КП и съёмку).
+ *  Остальные роли — только смена статуса своих карточек. */
+const MANAGE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'organizer'];
 
 /** Человекочитаемые названия этапов (для журнала и уведомлений). */
 const STAGE_LABELS: Record<string, string> = {
@@ -110,6 +116,7 @@ export class WorkflowService implements OnModuleInit {
     private gateway: AppGateway,
     private notifications: NotificationsService,
     private telegram: TelegramService,
+    private mail: MailService,
   ) {}
 
   /** Идемпотентное создание/миграция таблиц — рантайм-замена миграции. */
@@ -249,6 +256,28 @@ export class WorkflowService implements OnModuleInit {
     throw new ForbiddenException('Нет доступа к доске этого проекта');
   }
 
+  /** RBAC редактирования: менять данные доски могут только руководитель SMM,
+   *  организатор и ADMIN-уровень (admin/founder/co_founder). Проверяем обе
+   *  роли (основную и вторую). */
+  private async assertCanManage(viewer: Viewer): Promise<void> {
+    if (MANAGE_ROLES.includes(viewer.role)) return;
+    const u = await this.userRepo.findOne({ where: { id: viewer.id } });
+    if (u?.secondaryRole && MANAGE_ROLES.includes(u.secondaryRole)) return;
+    throw new ForbiddenException('Изменять доску может только руководитель SMM или организатор');
+  }
+
+  /** Доступ к карточке для статус-действий: ADMIN-уровень, исполнитель самой
+   *  карточки (в т.ч. среди элементов группы), управляющие роли или
+   *  участник/менеджер проекта. Сами права на действие проверяет
+   *  assertCanAct / assertStageRole. */
+  private async assertCanAccessCard(card: WorkflowCard, viewer: Viewer): Promise<void> {
+    if (PRIVILEGED.includes(viewer.role) || MANAGE_ROLES.includes(viewer.role)) return;
+    if (card.assigneeId && card.assigneeId === viewer.id) return;
+    const items = (card.items || []) as any[];
+    if (Array.isArray(items) && items.some(it => it?.assigneeId === viewer.id)) return;
+    await this.assertCanEdit(card.projectId, viewer);
+  }
+
   /** Загружает актёра с обеими ролями и именем (для RBAC и журнала). */
   private async loadActor(userId: string): Promise<Actor> {
     const u = await this.userRepo.findOne({ where: { id: userId } });
@@ -340,7 +369,7 @@ export class WorkflowService implements OnModuleInit {
     // B2: журнал доступен только тем, у кого есть доступ к проекту карточки.
     const card = await this.repo.findOne({ where: { id: cardId } });
     if (!card) throw new NotFoundException('Карточка не найдена');
-    await this.assertCanEdit(card.projectId, viewer);
+    await this.assertCanAccessCard(card, viewer);
     return this.eventRepo.find({
       where: { cardId },
       order: { createdAt: 'ASC' },
@@ -402,7 +431,7 @@ export class WorkflowService implements OnModuleInit {
   // ─── CRUD ─────────────────────────────────────────────────────────────
 
   async create(projectId: string, dto: any, viewer: Viewer) {
-    await this.assertCanEdit(projectId, viewer);
+    await this.assertCanManage(viewer);
     const title = String(dto?.title || '').trim();
     if (!title) throw new BadRequestException('Заголовок обязателен');
     const stage = WORKFLOW_STAGES.includes(dto?.stage) ? dto.stage : 'content_plan';
@@ -439,7 +468,9 @@ export class WorkflowService implements OnModuleInit {
    *  рилсов (reelsPerMonth) и макетов (designsPerMonth) в Контент-плане
    *  с равномерно распределёнными датами публикации. */
   async generatePlan(projectId: string, month: string | undefined, viewer: Viewer) {
-    const project = await this.assertCanEdit(projectId, viewer);
+    await this.assertCanManage(viewer);
+    const project = await this.projectRepo.findOne({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Проект не найден');
     if (!project.tariffId) throw new BadRequestException('У проекта не привязан тариф');
     const tariff = await this.tariffRepo.findOne({ where: { id: project.tariffId } });
     if (!tariff) throw new BadRequestException('Тариф проекта не найден');
@@ -504,7 +535,7 @@ export class WorkflowService implements OnModuleInit {
     dto: { date?: string; time?: string; location?: string; title?: string; cardIds?: string[] },
     viewer: Viewer,
   ) {
-    await this.assertCanEdit(projectId, viewer);
+    await this.assertCanManage(viewer);
     const actor = await this.loadActor(viewer.id);
     this.assertCanAct('confirm_shoot', actor);
     if (!dto?.date) throw new BadRequestException('Укажите дату съёмки');
@@ -549,7 +580,7 @@ export class WorkflowService implements OnModuleInit {
     dto: { reels?: any[]; macros?: any[] },
     viewer: Viewer,
   ) {
-    await this.assertCanEdit(projectId, viewer);
+    await this.assertCanManage(viewer);
     const crypto = require('crypto');
     const norm = (arr: any[] | undefined, itemKind: 'reel' | 'macro') =>
       (Array.isArray(arr) ? arr : []).map(it => ({
@@ -636,16 +667,51 @@ export class WorkflowService implements OnModuleInit {
   async updateItems(cardId: string, items: any[], viewer: Viewer) {
     const card = await this.repo.findOne({ where: { id: cardId } });
     if (!card) throw new NotFoundException('Карточка не найдена');
-    await this.assertCanEdit(card.projectId, viewer);
-    await this.repo.update(cardId, { items: Array.isArray(items) ? items : [] });
+    await this.assertCanManage(viewer);
+    const list = Array.isArray(items) ? items : [];
+    const prevById = new Map((card.items || []).map((it: any) => [it.id, it]));
+    await this.repo.update(cardId, { items: list });
+    // Email/TG/in-app вновь назначенным исполнителям элементов.
+    const actor = await this.loadActor(viewer.id);
+    for (const it of list) {
+      const prev: any = prevById.get(it.id);
+      if (it.assigneeId && (!prev || prev.assigneeId !== it.assigneeId)) {
+        await this.notifyAssigned([it.assigneeId], it.title || card.title, card.projectId, actor.name);
+      }
+    }
     this.broadcast(card.projectId);
     return this.repo.findOne({ where: { id: cardId }, relations: ['assignee', 'createdBy'] }).then(c => this.toDto(c!));
+  }
+
+  /** Карточки текущего исполнителя — для кабинета сотрудника. Одиночные, где
+   *  он assignee, + групповые, где он назначен среди элементов. */
+  async myCards(viewer: Viewer) {
+    const uid = viewer.id;
+    const cards = await this.repo.find({
+      relations: ['assignee', 'createdBy'],
+      order: { stage: 'ASC', position: 'ASC', createdAt: 'ASC' },
+    });
+    const mine = cards.filter(c => {
+      if (c.assigneeId === uid) return true;
+      const items = (c.items || []) as any[];
+      if ((c.kind === 'reels' || c.kind === 'macros') && Array.isArray(items)) {
+        return items.some(it => it?.assigneeId === uid);
+      }
+      return false;
+    });
+    if (mine.length === 0) return [];
+    const projects = await this.projectRepo.find({ where: { id: In([...new Set(mine.map(c => c.projectId))]) } });
+    const nameMap = new Map(projects.map(p => [p.id, p.name]));
+    return mine.map(c => ({
+      ...this.toDto(c),
+      project: { id: c.projectId, name: nameMap.get(c.projectId) || '' },
+    }));
   }
 
   async update(id: string, dto: any, viewer: Viewer) {
     const card = await this.repo.findOne({ where: { id } });
     if (!card) throw new NotFoundException('Карточка не найдена');
-    await this.assertCanEdit(card.projectId, viewer);
+    await this.assertCanManage(viewer);
     const patch: Partial<WorkflowCard> = {};
     if (dto.title !== undefined) {
       const t = String(dto.title || '').trim();
@@ -662,11 +728,11 @@ export class WorkflowService implements OnModuleInit {
     const assigneeChanged = dto.assigneeId !== undefined && (dto.assigneeId || null) !== card.assigneeId;
     if (dto.assigneeId !== undefined) patch.assigneeId = dto.assigneeId || null;
     await this.repo.update(id, patch);
-    // R15: уведомление при назначении исполнителя.
+    // R15: уведомление при назначении исполнителя — in-app + Telegram + Email.
     if (assigneeChanged && patch.assigneeId) {
       const actor = await this.loadActor(viewer.id);
       await this.logEvent(id, 'assign', { actor, message: `Назначен исполнитель`, meta: { assigneeId: patch.assigneeId } });
-      await this.notify([patch.assigneeId], '🎬 Назначение', `Вам назначена карточка «${card.title}»`, card.projectId);
+      await this.notifyAssigned([patch.assigneeId], card.title, card.projectId, actor.name);
     }
     this.broadcast(card.projectId);
     return this.repo.findOne({ where: { id }, relations: ['assignee', 'createdBy'] })
@@ -676,7 +742,7 @@ export class WorkflowService implements OnModuleInit {
   async move(id: string, dto: { stage?: string; position?: number }, viewer: Viewer) {
     const card = await this.repo.findOne({ where: { id } });
     if (!card) throw new NotFoundException('Карточка не найдена');
-    await this.assertCanEdit(card.projectId, viewer);
+    await this.assertCanManage(viewer);
 
     const targetStage = dto.stage && WORKFLOW_STAGES.includes(dto.stage as any)
       ? dto.stage
@@ -732,7 +798,7 @@ export class WorkflowService implements OnModuleInit {
   async remove(id: string, viewer: Viewer) {
     const card = await this.repo.findOne({ where: { id } });
     if (!card) throw new NotFoundException('Карточка не найдена');
-    await this.assertCanEdit(card.projectId, viewer);
+    await this.assertCanManage(viewer);
     await this.repo.delete(id);
     // Заодно удаляем дочернюю карточку обложки рилса, если есть.
     await this.repo.delete({ parentCardId: id });
@@ -748,7 +814,7 @@ export class WorkflowService implements OnModuleInit {
   async transition(id: string, action: string, payload: any, viewer: Viewer) {
     const card = await this.repo.findOne({ where: { id } });
     if (!card) throw new NotFoundException('Карточка не найдена');
-    await this.assertCanEdit(card.projectId, viewer);
+    await this.assertCanAccessCard(card, viewer);
     const actor = await this.loadActor(viewer.id);
     // org_confirm проверяется по роли ТЕКУЩЕГО этапа (этап меняется), остальные —
     // по фиксированной карте действий.
@@ -842,7 +908,7 @@ export class WorkflowService implements OnModuleInit {
     const card = await this.repo.findOne({ where: { id: cardId } });
     if (!card) throw new NotFoundException('Карточка не найдена');
     if (card.kind !== 'reels' && card.kind !== 'macros') throw new BadRequestException('Не групповая карточка');
-    await this.assertCanEdit(card.projectId, viewer);
+    await this.assertCanAccessCard(card, viewer);
     const actor = await this.loadActor(viewer.id);
     this.assertStageRole(card.stage, actor);
     const next = GROUP_NEXT[card.kind]?.[card.stage];
@@ -893,7 +959,7 @@ export class WorkflowService implements OnModuleInit {
     }));
     await this.logEvent(saved.id, 'stage_enter', { toStage: stage, actor, message: `Из контент-плана → ${STAGE_LABELS[stage] || stage}` });
     await this.notifyStageRole(group.projectId, stage, `➡️ ${STAGE_LABELS[stage] || stage}`, `«${saved.title}» на этапе «${STAGE_LABELS[stage] || stage}»`);
-    if (saved.assigneeId) await this.notify([saved.assigneeId], `🎬 Назначение`, `Вам назначена карточка «${saved.title}»`, group.projectId);
+    if (saved.assigneeId) await this.notifyAssigned([saved.assigneeId], saved.title, group.projectId, actor.name);
   }
 
   // R3: «Подтвердить съёмку» (Организация → Съёмка)
@@ -1140,6 +1206,32 @@ export class WorkflowService implements OnModuleInit {
         link: '/workflow-board',
       } as any).catch(() => {});
       this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}`).catch(() => {});
+    }
+  }
+
+  /** Уведомление о НАЗНАЧЕНИИ на карточку — 3 канала: in-app + Telegram + Email.
+   *  Email шлём только при назначении (не на каждом переходе этапа). */
+  private async notifyAssigned(userIds: string[], cardTitle: string, projectId: string, actorName?: string) {
+    const unique = [...new Set(userIds.filter(Boolean))];
+    if (unique.length === 0) return;
+    const project = await this.projectRepo.findOne({ where: { id: projectId } }).catch(() => null);
+    const projectName = project?.name || 'проект';
+    const title = '🎬 Назначение на карточку';
+    const message = `Вам назначена карточка «${cardTitle}» в проекте «${projectName}»`;
+    for (const uid of unique) {
+      await this.notifications.create({
+        userId: uid,
+        type: NotificationType.STATUS_CHANGE,
+        title,
+        message,
+        link: '/workflow-board',
+      } as any).catch(() => {});
+      this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}`).catch(() => {});
+      const u = await this.userRepo.findOne({ where: { id: uid } }).catch(() => null);
+      if (u?.email) {
+        const body = `Вам назначена карточка <strong>«${cardTitle}»</strong> в проекте <strong>«${projectName}»</strong>${actorName ? ` (назначил: ${actorName})` : ''}.<br>Откройте «Доску проектов», чтобы приступить к задаче.`;
+        this.mail.sendGenericNotification(u.email, u.name || 'Сотрудник', '🎬 Вам назначена карточка', body).catch(() => {});
+      }
     }
   }
 
