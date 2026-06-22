@@ -781,12 +781,14 @@ aside {
   box-shadow: 0 0 0 2px theme('colors.primary.300');
 }
 
-/* ── Выбранный день — заливка bg-primary, белый текст, БЕЗ outline. */
+/* ── Выбранный день — только бордер, без заливки (box-shadow inset, чтобы
+   не менять размер клетки 36×36). */
 .rdp-custom .rdp-selected .rdp-day_button,
 .rdp-custom .rdp-day_selected .rdp-day_button {
-  background-color: theme('colors.primary.600') !important;
-  color: white !important;
-  font-weight: 600;
+  background-color: transparent !important;
+  color: theme('colors.primary.600') !important;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 2px theme('colors.primary.600');
 }
 
 /* ── Сегодняшний день — без фона, только акцентный цвет шрифта. */
@@ -842,6 +844,11 @@ aside {
 .dark .rdp-custom .rdp-month_caption { @apply text-surface-100; }
 .dark .rdp-custom .rdp-dropdown_root select { @apply text-surface-200; }
 .dark .rdp-custom .rdp-day_button:hover:not([disabled]) { @apply bg-surface-700; }
+.dark .rdp-custom .rdp-selected .rdp-day_button,
+.dark .rdp-custom .rdp-day_selected .rdp-day_button {
+  color: theme('colors.primary.300') !important;
+  box-shadow: inset 0 0 0 2px theme('colors.primary.400');
+}
 .dark .rdp-custom .rdp-range_middle .rdp-day_button { @apply bg-primary-900/30 text-primary-300; }
 .dark .rdp-custom .rdp-outside .rdp-day_button { @apply text-surface-600; }
 .dark .rdp-custom .rdp-nav button:hover { @apply bg-surface-700 text-surface-200; }
