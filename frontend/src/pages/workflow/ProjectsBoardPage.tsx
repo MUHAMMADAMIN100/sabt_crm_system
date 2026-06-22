@@ -8,7 +8,7 @@ import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
 import {
   STAGES, shortRole, CardFormModal, AdCampaignModal, WorkflowCardBadges,
-  DeadlineSettingsModal, ContentPlanModal, GroupCardModal,
+  DeadlineSettingsModal, ContentPlanModal, GroupCardModal, predictTransition,
 } from '@/components/projects/workflowShared'
 
 /**
@@ -103,8 +103,30 @@ export default function ProjectsBoardPage() {
   })
   const transitionMut = useMutation({
     mutationFn: ({ id, action, payload }: any) => workflowApi.transition(id, action, payload),
-    onSuccess: () => { qc.invalidateQueries({ queryKey }); closeModal(); toast.success('Готово') },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось выполнить действие'),
+    // Оптимизм: сразу двигаем карточку по предсказанному маршруту и закрываем
+    // модалку (кроме действий без смены этапа — там модалка остаётся открытой).
+    onMutate: async ({ id, action, payload }: any) => {
+      const current = (cards || []).find((c: any) => c.id === id)
+      const { patch, keepOpen } = predictTransition(current, action, payload)
+      await qc.cancelQueries({ queryKey })
+      const previous = qc.getQueryData(queryKey)
+      if (patch) {
+        qc.setQueryData(queryKey, (old: any[] = []) =>
+          old.map((c: any) => c.id === id ? { ...c, ...patch, ...(patch.stage ? { position: 9999 } : {}) } : c))
+        if (keepOpen) setEditCard((prev: any) => prev && prev.id === id ? { ...prev, ...patch } : prev)
+      }
+      if (!keepOpen) closeModal()
+      toast.success('Готово')
+      return { previous }
+    },
+    onError: (e: any, _v: any, ctx: any) => {
+      if (ctx?.previous) qc.setQueryData(queryKey, ctx.previous)
+      toast.error(e?.response?.data?.message || 'Не удалось выполнить действие')
+    },
+    onSettled: (_d: any, _e: any, vars: any) => {
+      qc.invalidateQueries({ queryKey })
+      if (vars?.id) qc.invalidateQueries({ queryKey: ['workflow-events', vars.id] })
+    },
   })
   const clearMut = useMutation({
     mutationFn: () => workflowApi.clearAll(),

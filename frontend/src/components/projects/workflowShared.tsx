@@ -108,6 +108,51 @@ export function canDoAction(action: string, role?: string | null, secondaryRole?
   return allowed.includes(role || '') || (!!secondaryRole && allowed.includes(secondaryRole))
 }
 
+/**
+ * Предсказание результата перехода для ОПТИМИСТИЧНОГО обновления доски —
+ * зеркалит движок workflow.service. patch применяется к карточке в кэше
+ * сразу, до ответа сервера; keepOpen=true — модалку не закрываем (действие
+ * без смены этапа, напр. «Отправлено клиенту»). nowIso передаём, чтобы не
+ * звать Date в общем коде лишний раз.
+ */
+export function predictTransition(
+  card: any, action: string, payload: any,
+): { patch: Record<string, any> | null; keepOpen: boolean } {
+  const isReels = card?.type === 'reels' || (card?.type == null && card?.contentType === 'reel')
+  const nowIso = new Date().toISOString()
+  switch (action) {
+    case 'confirm_plan':
+      return { patch: { stage: (card?.type === 'reels' || card?.contentType === 'reel') ? 'organization' : 'design' }, keepOpen: false }
+    case 'confirm_shoot':
+      return { patch: { stage: 'shooting', shootDate: payload?.shootDate || card?.shootDate || null }, keepOpen: false }
+    case 'shoot_done':
+      return { patch: { stage: 'editing' }, keepOpen: false }
+    case 'editing_done':
+      // join-гейт: если ветка дизайна ещё не готова — остаёмся в Монтаже («ждёт обложку»).
+      return card?.designDone === false
+        ? { patch: { status: 'waiting_cover', editingDone: true }, keepOpen: true }
+        : { patch: { stage: 'internal_review', editingDone: true, status: 'active' }, keepOpen: false }
+    case 'cover_done':
+      return { patch: { status: 'done' }, keepOpen: false }
+    case 'layout_done':
+      return { patch: { stage: 'internal_review' }, keepOpen: false }
+    case 'qa_accept':
+      return { patch: { stage: 'client_approval', status: 'active' }, keepOpen: false }
+    case 'qa_rework':
+      return { patch: { stage: isReels ? 'editing' : 'design', status: 'rework' }, keepOpen: false }
+    case 'mark_sent_to_client':
+      return { patch: { sentToClientAt: nowIso }, keepOpen: true }
+    case 'client_approve':
+      return { patch: { stage: 'ready_to_publish', status: 'active' }, keepOpen: false }
+    case 'client_revisions':
+      return { patch: { stage: isReels ? 'editing' : 'design', status: 'rework' }, keepOpen: false }
+    case 'publish':
+      return { patch: { stage: 'published', status: 'published', publishedAt: nowIso, publishedUrl: payload?.publishedUrl || card?.publishedUrl || null }, keepOpen: false }
+    default:
+      return { patch: null, keepOpen: false }
+  }
+}
+
 /** Бейджи карточки: тип, ожидание, доработка, дедлайн/публикация. */
 // Цвета типов: Reels — синий, Макет — оранжевый (ТЗ — точь в точь образцы).
 const REELS_CHIP = 'bg-blue-100 text-blue-700 border border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
@@ -464,16 +509,7 @@ export function StageActions({ card, disabled, assignees, actor, onTransition }:
     case 'shooting':
       return (
         <Wrap>
-          <div>
-            <label className="label text-xs">Назначить видеографа</label>
-            <select className="input" value={f.assigneeId || ''} onChange={e => set('assigneeId', e.target.value)}>
-              <option value="">— Выберите —</option>
-              {assignees.map((m: any) => <option key={m.id} value={m.id}>{m.name}{m.role ? ` (${shortRole(m.role)})` : ''}</option>)}
-            </select>
-            <div className="mt-2">{btn('assign_videographer', { assigneeId: f.assigneeId }, 'Назначить видеографа')}</div>
-          </div>
-          <hr className="border-surface-100 dark:border-surface-700" />
-          {field('rawFootageUrl', 'Ссылка на исходники', 'https://…')}
+          {field('rawFootageUrl', 'Ссылка на исходники (необязательно)', 'https://…')}
           {btn('shoot_done', { rawFootageUrl: f.rawFootageUrl }, '✓ Съёмка завершена → Монтаж')}
         </Wrap>
       )
@@ -481,7 +517,7 @@ export function StageActions({ card, disabled, assignees, actor, onTransition }:
       return (
         <Wrap>
           {card.status === 'waiting_cover' && <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400">⏳ Монтаж готов, ждём обложку/заставку.</p>}
-          {field('finalCutUrl', 'Ссылка на монтаж', 'https://…')}
+          {field('finalCutUrl', 'Ссылка на монтаж (необязательно)', 'https://…')}
           {btn('editing_done', { finalCutUrl: f.finalCutUrl }, '✓ Монтаж готов')}
         </Wrap>
       )
@@ -504,8 +540,12 @@ export function StageActions({ card, disabled, assignees, actor, onTransition }:
     case 'client_approval':
       return (
         <Wrap>
-          <div className="flex gap-2 flex-wrap">
-            {btn('mark_sent_to_client', {}, 'Отправлено клиенту')}
+          <div className="flex gap-2 flex-wrap items-center">
+            {card.sentToClientAt
+              ? <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400">
+                  ✓ Отправлено клиенту{card.sentToClientAt ? ` · ${format(parseISO(card.sentToClientAt), 'dd.MM HH:mm')}` : ''}
+                </span>
+              : btn('mark_sent_to_client', {}, 'Отправлено клиенту')}
             {btn('client_approve', {}, '✓ Клиент согласовал')}
           </div>
           <hr className="border-surface-100 dark:border-surface-700" />

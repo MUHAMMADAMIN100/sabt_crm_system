@@ -920,22 +920,22 @@ export class WorkflowService implements OnModuleInit {
     await this.notify([assigneeId], '🎥 Съёмка', `Вам назначена съёмка: «${card.title}»`, card.projectId);
   }
 
-  // R5: «Съёмка завершена» (Съёмка → Монтаж)
+  // R5: «Съёмка завершена» (Съёмка → Монтаж). Ссылка на исходники — необязательна.
   private async shootDone(card: WorkflowCard, payload: any, actor: Actor) {
     if (card.stage !== 'shooting') throw new BadRequestException('Доступно только на этапе Съёмка');
     const rawFootageUrl = payload?.rawFootageUrl || card.rawFootageUrl;
-    if (!rawFootageUrl) throw new BadRequestException('Прикрепите ссылку на исходники');
-    await this.repo.update(card.id, { rawFootageUrl });
-    card.rawFootageUrl = rawFootageUrl;
+    if (rawFootageUrl) {
+      await this.repo.update(card.id, { rawFootageUrl });
+      card.rawFootageUrl = rawFootageUrl;
+    }
     await this.moveToStage(card, 'editing', actor, { message: 'Съёмка завершена → Монтаж' });
   }
 
-  // R6: «Монтаж готов» → editingDone + join-гейт
+  // R6: «Монтаж готов» → editingDone + join-гейт. Ссылка на монтаж — необязательна.
   private async editingDone(card: WorkflowCard, payload: any, actor: Actor) {
     if (card.stage !== 'editing') throw new BadRequestException('Доступно только на этапе Монтаж');
     const finalCutUrl = payload?.finalCutUrl || card.finalCutUrl;
-    if (!finalCutUrl) throw new BadRequestException('Прикрепите ссылку на монтаж');
-    await this.repo.update(card.id, { finalCutUrl, editingDone: true });
+    await this.repo.update(card.id, { finalCutUrl: finalCutUrl || null, editingDone: true });
     card.finalCutUrl = finalCutUrl;
     card.editingDone = true;
     await this.logEvent(card.id, 'editing_done', { actor, message: 'Монтаж готов' });
