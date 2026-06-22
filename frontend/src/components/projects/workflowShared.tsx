@@ -883,6 +883,7 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
   const setItem = (list: any[], setList: any, idx: number, patch: any) =>
     setList(list.map((it: any, i: number) => i === idx ? { ...it, ...patch } : it))
 
+  const todayIso = format(new Date(), 'yyyy-MM-dd')
   // Занятые дни для подсветки в календаре: рилсы — голубой, макеты —
   // оранжевый. Исключаем дату самого редактируемого элемента.
   const occupiedMarks = (excludeKind: 'reel' | 'macro', excludeIdx: number) => [
@@ -918,7 +919,7 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
         {isOpen && (
           <div className="px-3 pb-3 space-y-2">
             <div><label className="label text-xs">Тема</label><input className="input" value={it.title || ''} onChange={e => setItem(list, setList, idx, { title: e.target.value })} /></div>
-            <div><label className="label text-xs">Дата публикации</label><DatePicker value={it.publishDate || ''} onChange={(v: string) => setItem(list, setList, idx, { publishDate: v })} marks={occupiedMarks(kind, idx)} /></div>
+            <div><label className="label text-xs">Дата публикации</label><DatePicker value={it.publishDate || ''} minDate={todayIso} onChange={(v: string) => setItem(list, setList, idx, { publishDate: v })} marks={occupiedMarks(kind, idx)} /></div>
             <div><label className="label text-xs">Описание</label><textarea className="input min-h-[60px]" value={it.description || ''} onChange={e => setItem(list, setList, idx, { description: e.target.value })} /></div>
           </div>
         )}
@@ -1051,6 +1052,7 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
   const assigneeName = (id?: string) => (opts as any[]).find((m: any) => m.id === id)?.name
   const fmtDate = (d?: string) => { try { return d ? format(parseISO(d), 'dd/MM/yyyy') : '' } catch { return d || '' } }
   const typeWord = isReels ? 'Reels' : 'Макет'
+  const todayIso = format(new Date(), 'yyyy-MM-dd')
 
   const stageLabel = STAGES.find(s => s.key === stage)?.label || stage
   return (
@@ -1088,7 +1090,7 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
                 )}
                 {showShoot && (
                   <>
-                    <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} disabled={!canManage} onChange={(v: string) => setItem(idx, { shootDate: v })} /></div>
+                    <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} disabled={!canManage} minDate={todayIso} maxDate={it.publishDate || undefined} onChange={(v: string) => setItem(idx, { shootDate: v })} /></div>
                     <div><label className="label text-xs">Время</label><input type="time" className="input" disabled={!canManage} value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} /></div>
                     <div><label className="label text-xs">Место</label><input className="input" disabled={!canManage} value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} placeholder="Студия" /></div>
                   </>

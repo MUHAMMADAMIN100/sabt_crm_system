@@ -105,7 +105,7 @@ function Popover({
 
 export function DatePicker({
   value, onChange, placeholder = 'Выберите дату', className, disabled,
-  clearable = true, allowFuture = true, startYear = 1940, marks,
+  clearable = true, allowFuture = true, startYear = 1940, marks, minDate, maxDate,
 }: {
   /** ISO YYYY-MM-DD или пустая строка. */
   value: string
@@ -122,6 +122,10 @@ export function DatePicker({
   /** «Занятые» дни — подсветка цветом типа: рилс — голубой, макет —
    *  оранжевый. Помогает выбрать свободный день публикации. */
   marks?: { date: string; kind: 'reel' | 'macro' }[]
+  /** Минимально/максимально допустимая дата (ISO YYYY-MM-DD). Дни вне
+   *  диапазона гасятся и недоступны для выбора. */
+  minDate?: string
+  maxDate?: string
 }) {
   const [open, setOpen] = useState(false)
   const anchorRef = useRef<HTMLDivElement>(null)
@@ -129,6 +133,19 @@ export function DatePicker({
 
   const reelDays = (marks || []).filter(m => m.kind === 'reel').map(m => parseLocalDate(m.date))
   const macroDays = (marks || []).filter(m => m.kind === 'macro').map(m => parseLocalDate(m.date))
+
+  // Ограничения диапазона: дни до minDate и после maxDate — недоступны.
+  const minD = minDate ? parseLocalDate(minDate) : undefined
+  const maxD = maxDate ? parseLocalDate(maxDate) : undefined
+  const disabledMatchers: any[] = []
+  if (!allowFuture) disabledMatchers.push({ after: new Date() })
+  if (minD) disabledMatchers.push({ before: minD })
+  if (maxD) disabledMatchers.push({ after: maxD })
+  const disabledProp = disabledMatchers.length ? disabledMatchers : undefined
+
+  // «Сегодня» показываем только если сегодня попадает в допустимый диапазон.
+  const todayStart = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d })()
+  const todayInRange = (!minD || todayStart >= minD) && (!maxD || todayStart <= maxD)
 
   const handleSelect = (d: Date | undefined) => {
     if (!d) return
@@ -168,7 +185,7 @@ export function DatePicker({
           locale={ru as any}
           weekStartsOn={1}
           showOutsideDays
-          disabled={allowFuture ? undefined : { after: new Date() }}
+          disabled={disabledProp}
           className={dayPickerClass}
           captionLayout="dropdown"
           startMonth={new Date(startYear, 0)}
@@ -195,11 +212,13 @@ export function DatePicker({
           </div>
         )}
         <div className="flex gap-2 px-3 py-2 border-t border-surface-100 dark:border-surface-700 text-xs">
-          <button
-            type="button"
-            onClick={() => { onChange(format(new Date(), 'yyyy-MM-dd')); setOpen(false) }}
-            className="text-primary-600 hover:underline"
-          >Сегодня</button>
+          {todayInRange && (
+            <button
+              type="button"
+              onClick={() => { onChange(format(new Date(), 'yyyy-MM-dd')); setOpen(false) }}
+              className="text-primary-600 hover:underline"
+            >Сегодня</button>
+          )}
           {clearable && value && (
             <button
               type="button"
