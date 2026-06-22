@@ -105,7 +105,7 @@ function Popover({
 
 export function DatePicker({
   value, onChange, placeholder = 'Выберите дату', className, disabled,
-  clearable = true, allowFuture = true, startYear = 1940,
+  clearable = true, allowFuture = true, startYear = 1940, marks,
 }: {
   /** ISO YYYY-MM-DD или пустая строка. */
   value: string
@@ -119,10 +119,16 @@ export function DatePicker({
    *  исторические даты были доступны; нативный select сам скроллится
    *  к выбранному году, длинный список не мешает. */
   startYear?: number
+  /** «Занятые» дни — подсветка цветом типа: рилс — голубой, макет —
+   *  оранжевый. Помогает выбрать свободный день публикации. */
+  marks?: { date: string; kind: 'reel' | 'macro' }[]
 }) {
   const [open, setOpen] = useState(false)
   const anchorRef = useRef<HTMLDivElement>(null)
   const date = value ? parseLocalDate(value) : undefined
+
+  const reelDays = (marks || []).filter(m => m.kind === 'reel').map(m => parseLocalDate(m.date))
+  const macroDays = (marks || []).filter(m => m.kind === 'macro').map(m => parseLocalDate(m.date))
 
   const handleSelect = (d: Date | undefined) => {
     if (!d) return
@@ -167,7 +173,27 @@ export function DatePicker({
           captionLayout="dropdown"
           startMonth={new Date(startYear, 0)}
           endMonth={new Date(2035, 11)}
+          modifiers={{ reelMark: reelDays, macroMark: macroDays }}
+          modifiersStyles={{
+            reelMark: { backgroundColor: '#dbeafe', color: '#1d4ed8', fontWeight: 700, borderRadius: 6 },
+            macroMark: { backgroundColor: '#ffedd5', color: '#c2410c', fontWeight: 700, borderRadius: 6 },
+          }}
         />
+        {(reelDays.length > 0 || macroDays.length > 0) && (
+          <div className="flex items-center gap-3 px-3 pt-2 text-[11px] text-surface-500 dark:text-surface-400">
+            {reelDays.length > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#dbeafe', border: '1px solid #93c5fd' }} /> рилс
+              </span>
+            )}
+            {macroDays.length > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#ffedd5', border: '1px solid #fdba74' }} /> макет
+              </span>
+            )}
+            <span className="text-surface-400">— занятые дни</span>
+          </div>
+        )}
         <div className="flex gap-2 px-3 py-2 border-t border-surface-100 dark:border-surface-700 text-xs">
           <button
             type="button"

@@ -5,7 +5,7 @@ import { workflowApi, projectAdsApi, smmTariffsApi } from '@/services/api.servic
 import { Modal } from '@/components/ui'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { getRoleLabel } from '@/lib/permissions'
-import { Trash2, Megaphone, History, Clapperboard } from 'lucide-react'
+import { Trash2, Megaphone, History, Clapperboard, Users } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -133,8 +133,15 @@ export function WorkflowCardBadges({ card }: { card: any }) {
   const isOverdue = !!deadline && deadline < today && card.stage !== 'published' && card.stage !== 'ads'
   const tl = typeLabel(card.contentType)
   const isGroup = card.kind === 'kp' || card.kind === 'reels' || card.kind === 'macros'
+  const isWorkGroup = card.kind === 'reels' || card.kind === 'macros'
   const pct = isGroup ? fillPercent(card) : 100
+  // Исполнители групповой карточки: уникальные имена + счётчик назначенных.
+  const groupItems: any[] = isWorkGroup ? (card.items || []) : []
+  const execNames = Array.from(new Set(groupItems.map(it => it.assigneeName).filter(Boolean))) as string[]
+  const assignedCount = groupItems.filter(it => it.assigneeId).length
+  const totalItems = groupItems.length
   return (
+    <>
     <div className="flex items-center gap-1.5 flex-wrap">
       {card.kind === 'kp' && (
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-200">
@@ -189,6 +196,24 @@ export function WorkflowCardBadges({ card }: { card: any }) {
         <span className="text-[10px] text-surface-400 dark:text-surface-500">пуб. {format(parseISO(card.publishDate), 'dd.MM')}</span>
       )}
     </div>
+    {isWorkGroup && totalItems > 0 && (
+      <div className="flex items-center gap-1 flex-wrap text-[11px] text-surface-500 dark:text-surface-400 pt-0.5">
+        <Users size={12} className="shrink-0" />
+        {execNames.length > 0 ? (
+          <>
+            {execNames.map(n => (
+              <span key={n} className="px-1.5 py-0.5 rounded bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-300">{n}</span>
+            ))}
+            <span className="ml-auto tabular-nums">{assignedCount}/{totalItems}</span>
+          </>
+        ) : assignedCount > 0 ? (
+          <span>Назначено: {assignedCount}/{totalItems}</span>
+        ) : (
+          <span>Исполнители не назначены</span>
+        )}
+      </div>
+    )}
+    </>
   )
 }
 
@@ -812,6 +837,13 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
   const setItem = (list: any[], setList: any, idx: number, patch: any) =>
     setList(list.map((it: any, i: number) => i === idx ? { ...it, ...patch } : it))
 
+  // Занятые дни для подсветки в календаре: рилсы — голубой, макеты —
+  // оранжевый. Исключаем дату самого редактируемого элемента.
+  const occupiedMarks = (excludeKind: 'reel' | 'macro', excludeIdx: number) => [
+    ...reels.map((r: any, i: number) => ({ date: r.publishDate, kind: 'reel' as const, skip: excludeKind === 'reel' && i === excludeIdx })),
+    ...macros.map((m: any, i: number) => ({ date: m.publishDate, kind: 'macro' as const, skip: excludeKind === 'macro' && i === excludeIdx })),
+  ].filter(m => m.date && !m.skip).map(({ date, kind }) => ({ date, kind }))
+
   const qc = useQueryClient()
   // Мгновенно закрываем + сохраняем в фоне; доска обновится по invalidate.
   const onSave = () => {
@@ -840,7 +872,7 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
         {isOpen && (
           <div className="px-3 pb-3 space-y-2">
             <div><label className="label text-xs">Тема</label><input className="input" value={it.title || ''} onChange={e => setItem(list, setList, idx, { title: e.target.value })} /></div>
-            <div><label className="label text-xs">Дата публикации</label><DatePicker value={it.publishDate || ''} onChange={(v: string) => setItem(list, setList, idx, { publishDate: v })} /></div>
+            <div><label className="label text-xs">Дата публикации</label><DatePicker value={it.publishDate || ''} onChange={(v: string) => setItem(list, setList, idx, { publishDate: v })} marks={occupiedMarks(kind, idx)} /></div>
             <div><label className="label text-xs">Описание</label><textarea className="input min-h-[60px]" value={it.description || ''} onChange={e => setItem(list, setList, idx, { description: e.target.value })} /></div>
           </div>
         )}
@@ -987,7 +1019,11 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
                 {showAssignee && (
                   <div>
                     <label className="label text-xs">{assignLabel}</label>
-                    <select className="input" value={it.assigneeId || ''} onChange={e => setItem(idx, { assigneeId: e.target.value })}>
+                    <select className="input" value={it.assigneeId || ''}
+                      onChange={e => {
+                        const m = (opts as any[]).find((o: any) => o.id === e.target.value)
+                        setItem(idx, { assigneeId: e.target.value, assigneeName: m?.name || '' })
+                      }}>
                       <option value="">— Не назначен —</option>
                       {opts.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
                     </select>

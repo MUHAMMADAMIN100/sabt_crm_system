@@ -559,6 +559,7 @@ export class WorkflowService implements OnModuleInit {
         publishDate: it.publishDate || null,
         description: it.description ? String(it.description).slice(0, 5000) : null,
         assigneeId: it.assigneeId || null,
+        assigneeName: it.assigneeName || null,
         shootDate: it.shootDate || null,
         shootTime: it.shootTime || null,
         shootLocation: it.shootLocation || null,
@@ -609,6 +610,7 @@ export class WorkflowService implements OnModuleInit {
         return prev ? {
           ...it,
           assigneeId: prev.assigneeId ?? it.assigneeId,
+          assigneeName: prev.assigneeName ?? it.assigneeName,
           shootDate: prev.shootDate ?? it.shootDate,
           shootTime: prev.shootTime ?? it.shootTime,
           shootLocation: prev.shootLocation ?? it.shootLocation,
