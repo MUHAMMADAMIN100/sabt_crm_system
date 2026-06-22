@@ -331,7 +331,6 @@ export function CardFormModal({
         onSubmit={handleSubmit((data: any) => onSubmit(activeProjectId, {
           title: data.title,
           description: data.description || null,
-          contentType: data.contentType || null,
           deadline: data.deadline || null,
           assigneeId: data.assigneeId || null,
           publishDate: data.publishDate || null,
@@ -373,19 +372,10 @@ export function CardFormModal({
           <input {...register('title', { required: true })} className="input" placeholder="Например: Reels — рецепт фирменного плова" />
           {errors.title && <p className="text-xs text-red-500 mt-1">Обязательное поле</p>}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="label">Тип контента</label>
-            <select {...register('contentType')} className="input">
-              <option value="">— Не указан —</option>
-              {CONTENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Дата публикации</label>
-            <Controller name="publishDate" control={control}
-              render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
-          </div>
+        <div>
+          <label className="label">Дата публикации</label>
+          <Controller name="publishDate" control={control}
+            render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
@@ -998,6 +988,11 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
   }
   const onDone = () => {
     if (!nextKey) return
+    // Исполнитель обязателен на этапах с выбором (видеограф/монтажёр/дизайнер).
+    if (showAssignee && items.some(it => !it.assigneeId)) {
+      toast.error(`Назначьте: ${assignLabel} — у всех элементов`)
+      return
+    }
     optimistic(c => ({ ...c, items, stage: nextKey, position: 9999 }))
     toast.success('Готово')
     onClose()
@@ -1015,6 +1010,10 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
 
   // Вынести ОДИН элемент на следующий этап независимо от других.
   const advanceOne = (it: any) => {
+    if (showAssignee && !it.assigneeId) {
+      toast.error(`Назначьте: ${assignLabel}`)
+      return
+    }
     const rest = items.filter(x => x.id !== it.id)
     setItems(rest)
     optimistic(c => ({ ...c, items: (c.items || []).filter((x: any) => x.id !== it.id) }))
@@ -1058,7 +1057,7 @@ export function GroupCardModal({ card, project, onClose, onSaved }: {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {showAssignee && (
                   <div>
-                    <label className="label text-xs">{assignLabel}</label>
+                    <label className="label text-xs">{assignLabel} *</label>
                     <select className="input" value={it.assigneeId || ''}
                       onChange={e => {
                         const m = (opts as any[]).find((o: any) => o.id === e.target.value)
