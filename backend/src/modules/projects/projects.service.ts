@@ -674,9 +674,9 @@ export class ProjectsService implements OnModuleInit {
       }).catch(() => null);
       const isStoryMaker = !!emp?.isStoryMaker;
 
-      if (role === 'smm_director') {
-        // Руководитель SMM видит ВСЕ SMM-проекты компании (как founder, но
-        // только в SMM-сегменте). Не-SMM проекты ему не показываем.
+      if (role === 'smm_director' || role === 'organizer') {
+        // Руководитель SMM и организатор видят ВСЕ SMM-проекты компании
+        // (управляющие роли производства). Не-SMM проекты им не показываем.
         qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
       } else if (getSalesSegment(role)) {
         // Менеджер продаж видит только проекты своего направления.

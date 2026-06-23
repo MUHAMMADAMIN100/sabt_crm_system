@@ -23,8 +23,9 @@ interface Actor { id: string; name: string; role: string; secondaryRole: string 
  *  Остальным нужно быть менеджером или участником проекта. */
 const PRIVILEGED = ['admin', 'founder', 'co_founder', 'smm_director'];
 
-/** Роли, видящие ВСЕ SMM-проекты на глобальной доске. */
-const SEE_ALL = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'];
+/** Роли, видящие ВСЕ SMM-проекты на глобальной доске. Организатор —
+ *  управляющая роль производства, видит и редактирует всю доску. */
+const SEE_ALL = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'organizer'];
 
 /** Полный доступ к действиям движка (ADMIN-уровень из ТЗ §12). */
 const ALL_ACCESS = ['admin', 'founder', 'co_founder'];
