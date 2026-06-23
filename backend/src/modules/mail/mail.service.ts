@@ -201,6 +201,59 @@ export class MailService {
     }
   }
 
+  /** Назначение на производственную карточку доски (рилс/макет) — со всеми
+   *  данными: тип, проект, дедлайн, дата публикации, съёмка, описание. */
+  async sendCardAssigned(
+    to: string,
+    recipientName: string,
+    payload: {
+      title: string;
+      projectName?: string;
+      typeLabel?: string | null;
+      description?: string | null;
+      deadline?: string | null;
+      publishDate?: string | null;
+      shoot?: string | null;
+      assignedBy?: string | null;
+    },
+  ) {
+    const rows = [
+      payload.typeLabel ? this.row('🎬 Тип:', payload.typeLabel) : '',
+      payload.projectName ? this.row('📁 Проект:', payload.projectName) : '',
+      payload.deadline ? this.row('📅 Дедлайн:', payload.deadline) : '',
+      payload.publishDate ? this.row('🗓 Публикация:', payload.publishDate) : '',
+      payload.shoot ? this.row('🎥 Съёмка:', payload.shoot) : '',
+      payload.description ? this.row('📝 Описание:', payload.description) : '',
+      payload.assignedBy ? this.row('👤 Назначил:', payload.assignedBy) : '',
+    ].join('');
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        ${this.header('Вам назначена карточка')}
+        <div style="padding:32px 40px;">
+          <p style="color:#334155;font-size:15px;margin:0 0 24px;">
+            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Вам назначена карточка в производстве (Доска проектов).
+          </p>
+          <div style="background:#f1f5f9;border-radius:10px;padding:20px 24px;margin-bottom:24px;">
+            <table style="width:100%;border-collapse:collapse;">
+              ${this.row('✅ Карточка:', payload.title)}
+              ${rows}
+            </table>
+          </div>
+          <a href="${this.appUrl}/workflow-board"
+             style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
+            Открыть доску →
+          </a>
+        </div>
+        ${this.footer()}
+      </div>`;
+    try {
+      await this.sendViaBrevo(to, recipientName, `🎬 Новая карточка: ${payload.title}`, html);
+    } catch (err) {
+      this.logger.error(`Failed to send card-assigned email to ${to}: ${err.message}`);
+    }
+  }
+
   async sendCommentNotification(
     to: string,
     recipientName: string,

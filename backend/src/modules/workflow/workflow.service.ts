@@ -710,7 +710,11 @@ export class WorkflowService implements OnModuleInit {
       const prevIds = idsOf(prev);
       const added = idsOf(it).filter(id => !prevIds.includes(id));
       if (added.length) {
-        await this.notifyAssigned(added, it.title || card.title, card.projectId, actor.name);
+        await this.notifyAssigned(added, {
+          title: it.title || card.title, projectId: card.projectId, type: card.kind,
+          description: it.description, publishDate: it.publishDate,
+          shootDate: it.shootDate, shootTime: it.shootTime, shootLocation: it.shootLocation,
+        }, actor.name);
       }
     }
     this.broadcast(card.projectId);
@@ -759,7 +763,12 @@ export class WorkflowService implements OnModuleInit {
     if (assigneeChanged && patch.assigneeId) {
       const actor = await this.loadActor(viewer.id);
       await this.logEvent(id, 'assign', { actor, message: `Назначен исполнитель`, meta: { assigneeId: patch.assigneeId } });
-      await this.notifyAssigned([patch.assigneeId], card.title, card.projectId, actor.name);
+      const m: any = { ...card, ...patch };
+      await this.notifyAssigned([patch.assigneeId], {
+        title: m.title, projectId: m.projectId, type: m.type,
+        description: m.description, deadline: m.deadline, publishDate: m.publishDate,
+        shootDate: m.shootDate, shootTime: m.shootTime, shootLocation: m.shootLocation,
+      }, actor.name);
     }
     this.broadcast(card.projectId);
     return this.repo.findOne({ where: { id }, relations: ['assignee', 'createdBy'] })
@@ -992,7 +1001,11 @@ export class WorkflowService implements OnModuleInit {
     }));
     await this.logEvent(saved.id, 'stage_enter', { toStage: stage, actor, message: `Из контент-плана → ${STAGE_LABELS[stage] || stage}` });
     await this.notifyStageRole(group.projectId, stage, `➡️ ${STAGE_LABELS[stage] || stage}`, `«${saved.title}» на этапе «${STAGE_LABELS[stage] || stage}»`);
-    if (assigneeIds.length) await this.notifyAssigned(assigneeIds, saved.title, group.projectId, actor.name);
+    if (assigneeIds.length) await this.notifyAssigned(assigneeIds, {
+      title: saved.title, projectId: group.projectId, type: saved.type,
+      description: saved.description, deadline: saved.deadline, publishDate: saved.publishDate,
+      shootDate: saved.shootDate, shootTime: saved.shootTime, shootLocation: saved.shootLocation,
+    }, actor.name);
   }
 
   // R3: «Подтвердить съёмку» (Организация → Съёмка)
@@ -1242,15 +1255,69 @@ export class WorkflowService implements OnModuleInit {
     }
   }
 
-  /** Уведомление о НАЗНАЧЕНИИ на карточку — 3 канала: in-app + Telegram + Email.
-   *  Email шлём только при назначении (не на каждом переходе этапа). */
-  private async notifyAssigned(userIds: string[], cardTitle: string, projectId: string, actorName?: string) {
+  /** Уведомление о НАЗНАЧЕНИИ на карточку — 3 канала (in-app + Telegram +
+   *  Email) с ПОЛНЫМИ данными карточки: тип, проект, дедлайн, дата публикации,
+   *  съёмка, описание. Email — только при назначении (не на каждом переходе). */
+  private async notifyAssigned(
+    userIds: string[],
+    details: {
+      title: string;
+      projectId: string;
+      type?: string | null;
+      description?: string | null;
+      deadline?: string | null;
+      publishDate?: string | null;
+      shootDate?: string | null;
+      shootTime?: string | null;
+      shootLocation?: string | null;
+    },
+    actorName?: string,
+  ) {
     const unique = [...new Set(userIds.filter(Boolean))];
     if (unique.length === 0) return;
-    const project = await this.projectRepo.findOne({ where: { id: projectId } }).catch(() => null);
+    const project = await this.projectRepo.findOne({ where: { id: details.projectId } }).catch(() => null);
     const projectName = project?.name || 'проект';
-    const title = '🎬 Назначение на карточку';
-    const message = `Вам назначена карточка «${cardTitle}» в проекте «${projectName}»`;
+
+    const fmtDate = (d?: string | null) => {
+      if (!d) return '';
+      const s = String(d).slice(0, 10);
+      const [y, m, day] = s.split('-');
+      return (y && m && day) ? `${day}.${m}.${y}` : s;
+    };
+    const typeLabel = details.type === 'reels' ? 'Рилс'
+      : (details.type === 'static' || details.type === 'macros') ? 'Макет' : null;
+    const deadline = fmtDate(details.deadline);
+    const publishDate = fmtDate(details.publishDate);
+    const shootDate = fmtDate(details.shootDate);
+    const shoot = shootDate
+      ? `${shootDate}${details.shootTime ? `, ${details.shootTime}` : ''}${details.shootLocation ? ` · ${details.shootLocation}` : ''}`
+      : '';
+
+    const title = '🎬 Вам назначена карточка';
+
+    // CRM-колокольчик — сводка ключевых полей.
+    const lines = [
+      typeLabel ? `${typeLabel}: ${details.title}` : details.title,
+      `Проект: ${projectName}`,
+      deadline ? `Дедлайн: ${deadline}` : '',
+      publishDate ? `Публикация: ${publishDate}` : '',
+      shoot ? `Съёмка: ${shoot}` : '',
+      details.description ? `Описание: ${details.description}` : '',
+    ].filter(Boolean);
+    const message = lines.join('\n');
+
+    // Telegram — подробное сообщение.
+    const tg = [
+      `<b>${title}</b>`,
+      `📌 <b>${details.title}</b>${typeLabel ? ` (${typeLabel})` : ''}`,
+      `📁 Проект: ${projectName}`,
+      deadline ? `📅 Дедлайн: ${deadline}` : '',
+      publishDate ? `🗓 Публикация: ${publishDate}` : '',
+      shoot ? `🎥 Съёмка: ${shoot}` : '',
+      details.description ? `📝 ${details.description}` : '',
+      actorName ? `👤 Назначил: ${actorName}` : '',
+    ].filter(Boolean).join('\n');
+
     for (const uid of unique) {
       await this.notifications.create({
         userId: uid,
@@ -1259,11 +1326,19 @@ export class WorkflowService implements OnModuleInit {
         message,
         link: '/workflow-board',
       } as any).catch(() => {});
-      this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}`).catch(() => {});
+      this.telegram.sendToUser(uid, tg).catch(() => {});
       const u = await this.userRepo.findOne({ where: { id: uid } }).catch(() => null);
       if (u?.email) {
-        const body = `Вам назначена карточка <strong>«${cardTitle}»</strong> в проекте <strong>«${projectName}»</strong>${actorName ? ` (назначил: ${actorName})` : ''}.<br>Откройте «Доску проектов», чтобы приступить к задаче.`;
-        this.mail.sendGenericNotification(u.email, u.name || 'Сотрудник', '🎬 Вам назначена карточка', body).catch(() => {});
+        this.mail.sendCardAssigned(u.email, u.name || 'Сотрудник', {
+          title: details.title,
+          projectName,
+          typeLabel,
+          description: details.description || null,
+          deadline: deadline || null,
+          publishDate: publishDate || null,
+          shoot: shoot || null,
+          assignedBy: actorName || null,
+        }).catch(() => {});
       }
     }
   }
