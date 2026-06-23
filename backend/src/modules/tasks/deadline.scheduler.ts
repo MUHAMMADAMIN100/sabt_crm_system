@@ -146,10 +146,11 @@ export class DeadlineScheduler implements OnModuleInit {
     })
     const overdue = overdueRaw.filter(t => (t as any).originStage !== 'kp_creation')
 
-    // Lookup founder/co-founder once (for escalation). Notify all if there are many.
-    const founders = await this.userRepo.find({ where: [
-      { role: UserRole.FOUNDER, isActive: true },
-      { role: UserRole.CO_FOUNDER, isActive: true },
+    // Получатели эскалации просрочек: руководитель СММ + организатор
+    // (основателя/сооснователя по требованию исключили).
+    const escalationRecipients = await this.userRepo.find({ where: [
+      { role: UserRole.SMM_DIRECTOR, isActive: true },
+      { role: UserRole.ORGANIZER, isActive: true },
     ] })
 
     let sent = 0
@@ -232,27 +233,27 @@ export class DeadlineScheduler implements OnModuleInit {
         }
       }
 
-      // ── Escalate to FOUNDER after 3 days overdue ────────────────
+      // ── Эскалация (≥3 дней) руководителю СММ + организатору ─────
       if (daysOverdue >= 3 && daysOverdue <= 14) {
-        for (const founder of founders) {
-          if (founder.id === task.assigneeId || founder.id === pmId) continue
+        for (const recipient of escalationRecipients) {
+          if (recipient.id === task.assigneeId || recipient.id === pmId) continue
           await this.notificationsService.create({
-            userId: founder.id,
+            userId: recipient.id,
             type: NotificationType.TASK_OVERDUE,
             title: '⚠️ Серьёзная просрочка',
             message: `${assigneeName} — "${task.title}" (${projectName}) · ${daysOverdue} ${daysWord} · ${STATUS_LABELS[task.status]}`,
             link: taskLink,
             data: { assigneeName, projectName, daysOverdue, taskId: task.id, status: task.status, priority: task.priority, loggedHours, escalation: true },
           })
-          if (founder.email) {
+          if (recipient.email) {
             await this.mailService.sendOverdueTask(
-              founder.email, founder.name,
+              recipient.email, recipient.name,
               task.title, task.id, projectName, deadlineStr, daysOverdue, 'founder',
               assigneeName, task.status, task.priority, loggedHours,
             )
           }
           await this.telegramService.sendToUser(
-            founder.id,
+            recipient.id,
             `⚠️ <b>Серьёзная просрочка</b>\n\n` +
             `👤 Исполнитель: <b>${assigneeName}</b>\n${detailBlock}\n\n👉 ${this.telegramService.appUrl}${taskLink}`,
           )
@@ -263,7 +264,7 @@ export class DeadlineScheduler implements OnModuleInit {
       sent++
     }
 
-    this.logger.log(`Sent ${sent} overdue notifications, ${escalated} escalated to founder`)
+    this.logger.log(`Sent ${sent} overdue notifications, ${escalated} escalated to SMM-lead/organizer`)
   }
 
   // ── 3. Inactivity check (every 2 hours) ───────────────────────────────────
@@ -761,14 +762,14 @@ export class DeadlineScheduler implements OnModuleInit {
       ).catch(() => {})
     }
 
-    // ── 2. Send consolidated team digest to every admin/founder/PM
+    // ── 2. Сводный недельный отчёт — админу/смм-руку/видео-руку/организатору
+    // (основателя/сооснователя по требованию исключили).
     const supervisors = await this.userRepo.find({
       where: [
         { role: UserRole.ADMIN, isActive: true },
-        { role: UserRole.FOUNDER, isActive: true },
-        { role: UserRole.CO_FOUNDER, isActive: true },
         { role: UserRole.SMM_DIRECTOR, isActive: true },
         { role: UserRole.VIDEO_DIRECTOR, isActive: true },
+        { role: UserRole.ORGANIZER, isActive: true },
       ],
     })
 
@@ -848,11 +849,12 @@ export class DeadlineScheduler implements OnModuleInit {
       return
     }
 
-    // Get founders and co-founders to notify
+    // Кому слать о днях рождения: руководитель СММ + организатор
+    // (основателя/сооснователя по требованию исключили).
     const leaders = await this.userRepo.find({
       where: [
-        { role: 'founder' as any, isActive: true },
-        { role: 'co_founder' as any, isActive: true },
+        { role: UserRole.SMM_DIRECTOR, isActive: true },
+        { role: UserRole.ORGANIZER, isActive: true },
       ],
     })
 

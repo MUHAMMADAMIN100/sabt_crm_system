@@ -40,13 +40,14 @@ export class RiskAlertsService {
     ]);
   }
 
-  /** Список всех founder/co_founder/admin — для рассылки админских алертов. */
+  /** Получатели операционных алертов. Основатель/сооснователь исключены
+   *  по требованию — алёрты идут руководителю СММ, организатору и админу. */
   private async getTopAdmins(): Promise<User[]> {
     return this.userRepo.find({
       where: [
-        { role: UserRole.FOUNDER, isActive: true, isBlocked: false },
-        { role: UserRole.CO_FOUNDER, isActive: true, isBlocked: false },
         { role: UserRole.ADMIN, isActive: true, isBlocked: false },
+        { role: UserRole.SMM_DIRECTOR, isActive: true, isBlocked: false },
+        { role: UserRole.ORGANIZER, isActive: true, isBlocked: false },
       ],
     });
   }
