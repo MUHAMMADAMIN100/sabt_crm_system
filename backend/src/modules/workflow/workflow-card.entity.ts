@@ -52,6 +52,11 @@ export class WorkflowCard {
   @Column({ type: 'uuid', nullable: true })
   assigneeId: string | null;
 
+  /** Несколько исполнителей (напр. несколько видеографов на рилс).
+   *  assigneeId — основной (первый из списка) для совместимости/аватара. */
+  @Column({ type: 'jsonb', nullable: true })
+  assigneeIds: string[] | null;
+
   /** Этап (колонка доски). */
   @Column({ default: 'content_plan' })
   stage: string;

@@ -169,6 +169,7 @@ export class WorkflowService implements OnModuleInit {
         `ADD COLUMN IF NOT EXISTS kind varchar`,
         `ADD COLUMN IF NOT EXISTS items jsonb`,
         `ADD COLUMN IF NOT EXISTS confirmed boolean NOT NULL DEFAULT false`,
+        `ADD COLUMN IF NOT EXISTS "assigneeIds" jsonb`,
       ];
       for (const c of cols) {
         await this.repo.manager.query(`ALTER TABLE workflow_cards ${c}`);
@@ -273,10 +274,22 @@ export class WorkflowService implements OnModuleInit {
    *  assertCanAct / assertStageRole. */
   private async assertCanAccessCard(card: WorkflowCard, viewer: Viewer): Promise<void> {
     if (PRIVILEGED.includes(viewer.role) || MANAGE_ROLES.includes(viewer.role)) return;
-    if (card.assigneeId && card.assigneeId === viewer.id) return;
-    const items = (card.items || []) as any[];
-    if (Array.isArray(items) && items.some(it => it?.assigneeId === viewer.id)) return;
+    if (this.isAssignee(card, viewer.id)) return;
     await this.assertCanEdit(card.projectId, viewer);
+  }
+
+  /** Является ли пользователь исполнителем карточки — учитывая нескольких
+   *  исполнителей (assigneeIds) и назначения внутри элементов группы. */
+  private isAssignee(card: WorkflowCard, uid: string): boolean {
+    if (card.assigneeId === uid) return true;
+    if (Array.isArray(card.assigneeIds) && card.assigneeIds.includes(uid)) return true;
+    const items = (card.items || []) as any[];
+    if (Array.isArray(items)) {
+      return items.some(it =>
+        it?.assigneeId === uid ||
+        (Array.isArray(it?.assigneeIds) && it.assigneeIds.includes(uid)));
+    }
+    return false;
   }
 
   /** Загружает актёра с обеими ролями и именем (для RBAC и журнала). */
@@ -326,19 +339,11 @@ export class WorkflowService implements OnModuleInit {
   }
 
   async listAll(viewer: Viewer) {
-    const qb = this.projectRepo.createQueryBuilder('p')
-      .select(['p.id', 'p.name'])
+    const projects = await this.projectRepo.createQueryBuilder('p')
+      .select(['p.id', 'p.name', 'p.managerId'])
       .where('p."isArchived" = false')
-      .andWhere(`p."projectType" = 'SMM'`);
-    if (!SEE_ALL.includes(viewer.role)) {
-      qb.andWhere(
-        `(p."managerId" = :uid OR p.id IN (
-          SELECT pm."projectsId" FROM project_members pm WHERE pm."usersId" = :uid
-        ))`,
-        { uid: viewer.id },
-      );
-    }
-    const projects = await qb.getMany();
+      .andWhere(`p."projectType" = 'SMM'`)
+      .getMany();
     if (projects.length === 0) return [];
     const nameMap = new Map(projects.map(p => [p.id, p.name]));
 
@@ -347,7 +352,24 @@ export class WorkflowService implements OnModuleInit {
       relations: ['assignee', 'createdBy'],
       order: { stage: 'ASC', position: 'ASC', createdAt: 'ASC' },
     });
-    return cards.map(c => ({
+
+    let visible = cards;
+    if (!SEE_ALL.includes(viewer.role)) {
+      // Не-привилегированные: карточки проектов, где они участник/менеджер,
+      // ПЛЮС карточки, где они исполнитель (в т.ч. один из нескольких) —
+      // чтобы назначенная карточка появилась на их доске даже без членства.
+      const memberRows: Array<{ projectsId: string }> = await this.repo.manager.query(
+        `SELECT "projectsId" FROM project_members WHERE "usersId" = $1`,
+        [viewer.id],
+      );
+      const myProjectIds = new Set<string>([
+        ...projects.filter(p => (p as any).managerId === viewer.id).map(p => p.id),
+        ...memberRows.map(r => r.projectsId),
+      ]);
+      visible = cards.filter(c => myProjectIds.has(c.projectId) || this.isAssignee(c, viewer.id));
+    }
+
+    return visible.map(c => ({
       ...this.toDto(c),
       project: { id: c.projectId, name: nameMap.get(c.projectId) || '' },
     }));
@@ -388,6 +410,7 @@ export class WorkflowService implements OnModuleInit {
       stage: c.stage,
       position: c.position,
       assigneeId: c.assigneeId,
+      assigneeIds: c.assigneeIds || null,
       assignee: c.assignee ? {
         id: c.assignee.id,
         name: c.assignee.name,
@@ -592,6 +615,8 @@ export class WorkflowService implements OnModuleInit {
         description: it.description ? String(it.description).slice(0, 5000) : null,
         assigneeId: it.assigneeId || null,
         assigneeName: it.assigneeName || null,
+        assigneeIds: Array.isArray(it.assigneeIds) ? it.assigneeIds.filter(Boolean) : (it.assigneeId ? [it.assigneeId] : []),
+        assigneeNames: Array.isArray(it.assigneeNames) ? it.assigneeNames.filter(Boolean) : (it.assigneeName ? [it.assigneeName] : []),
         shootDate: it.shootDate || null,
         shootTime: it.shootTime || null,
         shootLocation: it.shootLocation || null,
@@ -643,6 +668,8 @@ export class WorkflowService implements OnModuleInit {
           ...it,
           assigneeId: prev.assigneeId ?? it.assigneeId,
           assigneeName: prev.assigneeName ?? it.assigneeName,
+          assigneeIds: (prev.assigneeIds && prev.assigneeIds.length) ? prev.assigneeIds : it.assigneeIds,
+          assigneeNames: (prev.assigneeNames && prev.assigneeNames.length) ? prev.assigneeNames : it.assigneeNames,
           shootDate: prev.shootDate ?? it.shootDate,
           shootTime: prev.shootTime ?? it.shootTime,
           shootLocation: prev.shootLocation ?? it.shootLocation,
@@ -672,12 +699,18 @@ export class WorkflowService implements OnModuleInit {
     const list = Array.isArray(items) ? items : [];
     const prevById = new Map((card.items || []).map((it: any) => [it.id, it]));
     await this.repo.update(cardId, { items: list });
-    // Email/TG/in-app вновь назначенным исполнителям элементов.
+    // Email/TG/in-app ВСЕМ вновь назначенным исполнителям элементов
+    // (поддержка нескольких видеографов: диф по assigneeIds).
     const actor = await this.loadActor(viewer.id);
+    const idsOf = (it: any): string[] =>
+      (it?.assigneeIds && it.assigneeIds.length) ? it.assigneeIds.filter(Boolean)
+        : (it?.assigneeId ? [it.assigneeId] : []);
     for (const it of list) {
       const prev: any = prevById.get(it.id);
-      if (it.assigneeId && (!prev || prev.assigneeId !== it.assigneeId)) {
-        await this.notifyAssigned([it.assigneeId], it.title || card.title, card.projectId, actor.name);
+      const prevIds = idsOf(prev);
+      const added = idsOf(it).filter(id => !prevIds.includes(id));
+      if (added.length) {
+        await this.notifyAssigned(added, it.title || card.title, card.projectId, actor.name);
       }
     }
     this.broadcast(card.projectId);
@@ -692,14 +725,7 @@ export class WorkflowService implements OnModuleInit {
       relations: ['assignee', 'createdBy'],
       order: { stage: 'ASC', position: 'ASC', createdAt: 'ASC' },
     });
-    const mine = cards.filter(c => {
-      if (c.assigneeId === uid) return true;
-      const items = (c.items || []) as any[];
-      if ((c.kind === 'reels' || c.kind === 'macros') && Array.isArray(items)) {
-        return items.some(it => it?.assigneeId === uid);
-      }
-      return false;
-    });
+    const mine = cards.filter(c => this.isAssignee(c, uid));
     if (mine.length === 0) return [];
     const projects = await this.projectRepo.find({ where: { id: In([...new Set(mine.map(c => c.projectId))]) } });
     const nameMap = new Map(projects.map(p => [p.id, p.name]));
@@ -935,6 +961,11 @@ export class WorkflowService implements OnModuleInit {
       `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
       [group.projectId, stage],
     );
+    // Несколько исполнителей (видеографов): переносим всех; assigneeId —
+    // основной (первый) для аватара/совместимости.
+    const assigneeIds: string[] = (item.assigneeIds && item.assigneeIds.length)
+      ? item.assigneeIds.filter(Boolean)
+      : (item.assigneeId ? [item.assigneeId] : []);
     const saved = await this.repo.save(this.repo.create({
       projectId: group.projectId,
       title: item.title || (isReel ? 'Reels' : 'Макет'),
@@ -947,7 +978,8 @@ export class WorkflowService implements OnModuleInit {
       publishDate: item.publishDate || null,
       deadline: deadlines?.[stage] || null,
       stageDeadlines: deadlines,
-      assigneeId: item.assigneeId || null,
+      assigneeId: assigneeIds[0] || null,
+      assigneeIds: assigneeIds.length ? assigneeIds : null,
       shootDate: item.shootDate || null,
       shootTime: item.shootTime || null,
       shootLocation: item.shootLocation || null,
@@ -960,7 +992,7 @@ export class WorkflowService implements OnModuleInit {
     }));
     await this.logEvent(saved.id, 'stage_enter', { toStage: stage, actor, message: `Из контент-плана → ${STAGE_LABELS[stage] || stage}` });
     await this.notifyStageRole(group.projectId, stage, `➡️ ${STAGE_LABELS[stage] || stage}`, `«${saved.title}» на этапе «${STAGE_LABELS[stage] || stage}»`);
-    if (saved.assigneeId) await this.notifyAssigned([saved.assigneeId], saved.title, group.projectId, actor.name);
+    if (assigneeIds.length) await this.notifyAssigned(assigneeIds, saved.title, group.projectId, actor.name);
   }
 
   // R3: «Подтвердить съёмку» (Организация → Съёмка)

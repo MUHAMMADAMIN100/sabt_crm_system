@@ -185,6 +185,7 @@ export default function ProjectsBoardPage() {
           <Avatar name={c.assignee.name} src={c.assignee.avatar} size={20} />
           <span className="text-[11px] text-surface-600 dark:text-surface-300 truncate">
             {c.assignee.name} ({shortRole(c.assignee.role)})
+            {Array.isArray(c.assigneeIds) && c.assigneeIds.length > 1 && ` +${c.assigneeIds.length - 1}`}
           </span>
         </div>
       )}

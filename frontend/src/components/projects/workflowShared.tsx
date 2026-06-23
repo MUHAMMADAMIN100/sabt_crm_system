@@ -188,10 +188,15 @@ export function WorkflowCardBadges({ card }: { card: any }) {
   const isGroup = card.kind === 'kp' || card.kind === 'reels' || card.kind === 'macros'
   const isWorkGroup = card.kind === 'reels' || card.kind === 'macros'
   const pct = isGroup ? fillPercent(card) : 100
-  // Исполнители групповой карточки: уникальные имена + счётчик назначенных.
+  // Исполнители групповой карточки: уникальные имена (с учётом нескольких на
+  // элемент) + счётчик элементов с назначением.
   const groupItems: any[] = isWorkGroup ? (card.items || []) : []
-  const execNames = Array.from(new Set(groupItems.map(it => it.assigneeName).filter(Boolean))) as string[]
-  const assignedCount = groupItems.filter(it => it.assigneeId).length
+  const namesOf = (it: any): string[] =>
+    (Array.isArray(it.assigneeNames) && it.assigneeNames.length) ? it.assigneeNames : (it.assigneeName ? [it.assigneeName] : [])
+  const hasAssignee = (it: any): boolean =>
+    (Array.isArray(it.assigneeIds) && it.assigneeIds.length > 0) || !!it.assigneeId
+  const execNames = Array.from(new Set(groupItems.flatMap(namesOf).filter(Boolean))) as string[]
+  const assignedCount = groupItems.filter(hasAssignee).length
   const totalItems = groupItems.length
   return (
     <>
@@ -991,6 +996,19 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
   const showShoot = isReels && ['organization', 'shooting'].includes(stage)
   const setItem = (idx: number, patch: any) => setItems(items.map((it, i) => i === idx ? { ...it, ...patch } : it))
 
+  // Несколько исполнителей на элемент. Храним assigneeIds/assigneeNames;
+  // assigneeId/assigneeName = первый из списка (совместимость, аватар).
+  const itemIds = (it: any): string[] =>
+    Array.isArray(it.assigneeIds) && it.assigneeIds.length ? it.assigneeIds : (it.assigneeId ? [it.assigneeId] : [])
+  const itemNames = (it: any): string[] =>
+    Array.isArray(it.assigneeNames) && it.assigneeNames.length ? it.assigneeNames : (it.assigneeName ? [it.assigneeName] : [])
+  const toggleAssignee = (idx: number, m: any) => {
+    const cur = itemIds(items[idx])
+    const ids = cur.includes(m.id) ? cur.filter(x => x !== m.id) : [...cur, m.id]
+    const names = ids.map(id => (opts as any[]).find((o: any) => o.id === id)?.name).filter(Boolean)
+    setItem(idx, { assigneeIds: ids, assigneeNames: names, assigneeId: ids[0] || '', assigneeName: names[0] || '' })
+  }
+
   // Оптимистичное обновление обеих досок (префикс ['workflow']).
   const optimistic = (patch: (c: any) => any) =>
     qc.setQueriesData({ queryKey: ['workflow'] }, (old: any) =>
@@ -1008,7 +1026,7 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
   const onDone = () => {
     if (!nextKey) return
     // Исполнитель обязателен на этапах с выбором (видеограф/монтажёр/дизайнер).
-    if (showAssignee && items.some(it => !it.assigneeId)) {
+    if (showAssignee && items.some(it => itemIds(it).length === 0)) {
       toast.error(`Назначьте: ${assignLabel} — у всех элементов`)
       return
     }
@@ -1029,7 +1047,7 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
 
   // Вынести ОДИН элемент на следующий этап независимо от других.
   const advanceOne = (it: any) => {
-    if (showAssignee && !it.assigneeId) {
+    if (showAssignee && itemIds(it).length === 0) {
       toast.error(`Назначьте: ${assignLabel}`)
       return
     }
@@ -1077,15 +1095,25 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {showAssignee && (
                   <div>
-                    <label className="label text-xs">{assignLabel} *</label>
-                    <select className="input" value={it.assigneeId || ''} disabled={!canManage}
-                      onChange={e => {
-                        const m = (opts as any[]).find((o: any) => o.id === e.target.value)
-                        setItem(idx, { assigneeId: e.target.value, assigneeName: m?.name || '' })
-                      }}>
-                      <option value="">— Не назначен —</option>
-                      {opts.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                    </select>
+                    <label className="label text-xs">{assignLabel} * <span className="text-surface-400 font-normal">(можно несколько)</span></label>
+                    {canManage ? (
+                      <div className="max-h-32 overflow-y-auto rounded-lg border border-surface-200 dark:border-surface-700 divide-y divide-surface-100 dark:divide-surface-700">
+                        {opts.length === 0 && <p className="text-xs text-surface-400 px-2 py-1.5">Нет доступных</p>}
+                        {opts.map((m: any) => {
+                          const checked = itemIds(it).includes(m.id)
+                          return (
+                            <label key={m.id} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700/40">
+                              <input type="checkbox" className="w-4 h-4 shrink-0" checked={checked} onChange={() => toggleAssignee(idx, m)} />
+                              <span className="truncate">{m.name}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-surface-600 dark:text-surface-300 input flex items-center min-h-[38px]">
+                        {itemNames(it).length ? itemNames(it).join(', ') : '— Не назначен —'}
+                      </p>
+                    )}
                   </div>
                 )}
                 {showShoot && (
@@ -1101,7 +1129,7 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
             {nextKey && (
               <div className="flex items-center justify-between gap-2 pt-1">
                 <span className="text-[11px] text-surface-500 dark:text-surface-400">
-                  {(assigneeName(it.assigneeId) || it.assigneeName) ? `Исполнитель: ${assigneeName(it.assigneeId) || it.assigneeName}` : 'Исполнитель не назначен'}
+                  {itemNames(it).length ? `${itemNames(it).length > 1 ? 'Исполнители' : 'Исполнитель'}: ${itemNames(it).join(', ')}` : 'Исполнитель не назначен'}
                 </span>
                 <button type="button" onClick={() => advanceOne(it)}
                   className="px-3 py-1 rounded-lg text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors">
