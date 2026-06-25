@@ -467,8 +467,10 @@ export class ClientsService implements OnModuleInit {
     // Разбивка по направлению — чтобы вернуть боссу, какой менеджер получит
     // звонки (СММ-клиента видит СММ-менеджер, Разработку — менеджер разработки).
     const byDirection = { smm: 0, development: 0, none: 0 };
-    // Снимать отметку может руководитель или владелец лида; ставить — только босс.
-    const eligible = list.filter(lead => (flag ? isBoss : (isBoss || lead.ownerId === actor.id)));
+    // Снимать отметку может руководитель, владелец лида ИЛИ любой менеджер для
+    // лида без владельца (ничейный звонок виден всем в базе — кто позвонил, тот
+    // и снял). Ставить (flag=true) — только босс.
+    const eligible = list.filter(lead => (flag ? isBoss : (isBoss || lead.ownerId === actor.id || lead.ownerId == null)));
     const eligibleIds = eligible.map(l => l.id);
     for (const lead of eligible) {
       if (flag) {
