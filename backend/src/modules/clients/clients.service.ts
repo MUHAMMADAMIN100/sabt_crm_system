@@ -160,6 +160,14 @@ export class ClientsService implements OnModuleInit {
       this.logger.warn(`ALTER TABLE client_leads emailStatus failed: ${e?.message || e}`);
     }
     try {
+      // Последняя активность менеджера с клиентом — для колонки в Базе клиентов.
+      await this.repo.manager.query(
+        `ALTER TABLE client_leads ADD COLUMN IF NOT EXISTS "lastActivityAt" timestamp with time zone`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`ALTER TABLE client_leads lastActivityAt failed: ${e?.message || e}`);
+    }
+    try {
       // «Позвонить» — отметка руководителя для менеджера-владельца.
       await this.repo.manager.query(
         `ALTER TABLE client_leads ADD COLUMN IF NOT EXISTS "callRequested" boolean NOT NULL DEFAULT false`,
@@ -354,7 +362,7 @@ export class ClientsService implements OnModuleInit {
     ownerId?: string,
     actor?: { id: string; name?: string },
   ) {
-    const lead = this.repo.create({ ...dto, ownerId: dto.ownerId ?? ownerId });
+    const lead = this.repo.create({ ...dto, ownerId: dto.ownerId ?? ownerId, lastActivityAt: new Date() });
     const saved = await this.repo.save(lead);
     // KPI «Холодные звонки»: если лид создаётся сразу с «Тип звонка =
     // Холодный» — логируем событие холодного звонка.
@@ -419,7 +427,8 @@ export class ClientsService implements OnModuleInit {
     if (!isAdmin && before.ownerId && before.ownerId !== user.id) {
       throw new ForbiddenException('Вы можете редактировать только своих лидов');
     }
-    const updated = await this.update(id, dto);
+    // Правка менеджером = активность с клиентом.
+    const updated = await this.update(id, { ...dto, lastActivityAt: new Date() });
     // KPI «Холодные звонки»: событие при ПЕРЕХОДЕ «Тип звонка» → Холодный
     // (был не-cold, стал cold). Считаем по событиям, не по состоянию —
     // звонок не пропадёт при последующей смене типа и каждый новый
@@ -487,6 +496,15 @@ export class ClientsService implements OnModuleInit {
           eligibleIds,
         ],
       );
+      // «Позвонил» (снятие отметки) = звонок состоялся → активность с клиентом.
+      // Обновляем lastActivityAt raw-запросом, не трогая updatedAt (позиция в
+      // списке сохраняется).
+      if (!flag) {
+        await this.repo.query(
+          `UPDATE client_leads SET "lastActivityAt" = NOW() WHERE id = ANY($1::uuid[])`,
+          [eligibleIds],
+        );
+      }
     }
     const updated = eligibleIds.length;
 

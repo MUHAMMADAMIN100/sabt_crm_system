@@ -8,8 +8,24 @@ import { Plus, Search, Edit, Trash2, List, LayoutGrid, Phone, Instagram, Mail, C
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker, DateTimePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, formatDistanceToNow } from 'date-fns'
+import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
+
+/** «Последняя активность» с клиентом: недавно — относительно («5 часов
+ *  назад»), старше недели — датой («12 июн»). title — точные дата+время. */
+function formatLastActivity(iso?: string | null): { text: string; title: string } | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return null
+  const diffMs = Date.now() - d.getTime()
+  const title = format(d, 'dd.MM.yyyy, HH:mm')
+  let text: string
+  if (diffMs < 60_000) text = 'только что'
+  else if (diffMs <= 7 * 86_400_000) text = formatDistanceToNow(d, { addSuffix: true, locale: ru })
+  else text = format(d, 'd MMM yyyy', { locale: ru })
+  return { text, title }
+}
 import clsx from 'clsx'
 
 // Канбан-доска онбординга — отрисовывается прямо здесь при переключении
@@ -574,6 +590,7 @@ export default function ClientsPage() {
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden lg:table-cell">Интерес</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 text-right hidden lg:table-cell">Потенциал</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden md:table-cell">Следующий контакт</th>
+                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden lg:table-cell">Последняя активность</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 text-right">
                   <div className="flex items-center justify-end gap-2">
                     {isBoss && (() => {
@@ -693,6 +710,14 @@ export default function ClientsPage() {
                           {format(new Date(l.nextContactAt), 'dd.MM.yy HH:mm')}
                         </span>
                       ) : <span className="text-surface-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 hidden lg:table-cell align-top">
+                      {(() => {
+                        const act = formatLastActivity(l.lastActivityAt || l.updatedAt)
+                        return act
+                          ? <span className="text-xs text-surface-500 dark:text-surface-400" title={act.title}>{act.text}</span>
+                          : <span className="text-surface-400">—</span>
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                       <div className="flex gap-1.5 justify-end items-center">

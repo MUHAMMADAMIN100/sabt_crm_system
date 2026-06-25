@@ -107,6 +107,12 @@ export class ClientLead {
   @Column({ type: 'date', nullable: true })
   lastContactAt: Date;
 
+  /** Последняя активность менеджера с клиентом (создание / правка / звонок).
+   *  Показывается в Базе клиентов: «5 часов назад» / «12 июн». Обновляется
+   *  raw-запросом при «Позвонил», чтобы не двигать лид по сортировке updatedAt. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  lastActivityAt: Date | null;
+
   /** Дата+время следующей встречи / контакта (timestamp). На этот момент
    *  создаётся личная задача в Календаре и приходит напоминание. */
   @Column({ type: 'timestamp with time zone', nullable: true })
