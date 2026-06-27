@@ -648,8 +648,60 @@ export class WorkflowService implements OnModuleInit {
     await this.upsertGroupCard(projectId, 'reels', 'Рилсы', reels, viewer);
     await this.upsertGroupCard(projectId, 'macros', 'Макеты', macros, viewer);
 
+    // Уведомляем организаторов — ТОЛЬКО при первом создании КП (не при правке),
+    // чтобы не спамить. 3 канала: in-app + Telegram + Email.
+    if (!kp) {
+      const actor = await this.loadActor(viewer.id);
+      await this.notifyContentPlanCreated(projectId, reels.length, macros.length, actor.name);
+    }
+
     this.broadcast(projectId);
     return { ok: true, reels: reels.length, macros: macros.length };
+  }
+
+  /** Уведомление организаторам о создании контент-плана (3 канала) с
+   *  подробностями: проект, кол-во рилсов/макетов, кто создал. */
+  private async notifyContentPlanCreated(projectId: string, reelsCount: number, macrosCount: number, actorName?: string) {
+    const organizers: Array<{ id: string; name: string; email: string }> = await this.userRepo.query(
+      `SELECT id, name, email FROM users
+       WHERE "isActive" = true AND "isBlocked" = false
+         AND (role = 'organizer' OR "secondaryRole" = 'organizer')`,
+    ).catch(() => []);
+    if (!organizers.length) return;
+    const project = await this.projectRepo.findOne({ where: { id: projectId } }).catch(() => null);
+    const projectName = project?.name || 'проект';
+
+    const title = '📋 Контент-план создан — нужно организовать';
+    const parts: string[] = [];
+    if (reelsCount > 0) parts.push(`рилсов: ${reelsCount} (на «Организацию» — организуйте съёмки)`);
+    if (macrosCount > 0) parts.push(`макетов: ${macrosCount} (на «Дизайн»)`);
+    const message = `Проект «${projectName}»: создан контент-план — ${parts.join('; ')}.${actorName ? ` Создал: ${actorName}.` : ''}`;
+
+    const tg = [
+      `<b>${title}</b>`,
+      `📁 Проект: ${projectName}`,
+      reelsCount > 0 ? `🎬 Рилсов: <b>${reelsCount}</b> — этап «Организация»: назначьте дату/время/место съёмки и видеографов.` : '',
+      macrosCount > 0 ? `🖼 Макетов: <b>${macrosCount}</b> — этап «Дизайн».` : '',
+      actorName ? `👤 Создал: ${actorName}` : '',
+      `\n👉 Откройте «Доску проектов» и приступите к организации.`,
+    ].filter(Boolean).join('\n');
+
+    const emailBody =
+      `Создан новый <strong>контент-план</strong> по проекту <strong>«${projectName}»</strong>.<br><br>` +
+      (reelsCount > 0 ? `🎬 Рилсов: <strong>${reelsCount}</strong> — на этапе «Организация»: нужно организовать съёмки (дата/время/место + видеографы).<br>` : '') +
+      (macrosCount > 0 ? `🖼 Макетов: <strong>${macrosCount}</strong> — на этапе «Дизайн».<br>` : '') +
+      (actorName ? `<br>Создал: ${actorName}.` : '') +
+      `<br><br>Откройте «Доску проектов», чтобы приступить к организации.`;
+
+    for (const o of organizers) {
+      await this.notifications.create({
+        userId: o.id, type: NotificationType.STATUS_CHANGE, title, message, link: '/workflow-board',
+      } as any).catch(() => {});
+      this.telegram.sendToUser(o.id, tg).catch(() => {});
+      if (o.email) {
+        this.mail.sendGenericNotification(o.email, o.name || 'Организатор', title, emailBody).catch(() => {});
+      }
+    }
   }
 
   /** Создаёт/обновляет групповую карточку. При обновлении мерджит items по id,
