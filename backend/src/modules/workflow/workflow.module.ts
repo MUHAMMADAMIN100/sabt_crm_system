@@ -20,5 +20,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
   ],
   controllers: [WorkflowController],
   providers: [WorkflowService],
+  exports: [WorkflowService],
 })
 export class WorkflowModule {}

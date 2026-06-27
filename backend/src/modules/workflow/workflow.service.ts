@@ -770,7 +770,7 @@ export class WorkflowService implements OnModuleInit {
       const added = idsOf(it).filter(id => !prevIds.includes(id));
       if (added.length) {
         await this.notifyAssigned(added, {
-          title: it.title || card.title, projectId: card.projectId, type: card.kind,
+          title: it.title || card.title, projectId: card.projectId, cardId: card.id, type: card.kind,
           description: it.description, publishDate: it.publishDate,
           shootDate: it.shootDate, shootTime: it.shootTime, shootLocation: it.shootLocation,
         }, actor.name);
@@ -851,7 +851,7 @@ export class WorkflowService implements OnModuleInit {
       await this.logEvent(id, 'assign', { actor, message: `Назначен исполнитель`, meta: { assigneeIds: newlyAssigned } });
       const m: any = { ...card, ...patch };
       await this.notifyAssigned(newlyAssigned, {
-        title: m.title, projectId: m.projectId, type: m.type,
+        title: m.title, projectId: m.projectId, cardId: id, type: m.type,
         description: m.description, deadline: m.deadline, publishDate: m.publishDate,
         shootDate: m.shootDate, shootTime: m.shootTime, shootLocation: m.shootLocation,
       }, actor.name);
@@ -1013,7 +1013,7 @@ export class WorkflowService implements OnModuleInit {
     });
     const saved = await this.repo.save(cover);
     await this.logEvent(saved.id, 'stage_enter', { toStage: 'design', actor, message: 'Создана карточка обложки/заставки' });
-    await this.notifyStageRole(reel.projectId, 'design', `🎨 Обложка/заставка: ${reel.title}`, 'Создана карточка обложки/заставки рилса');
+    await this.notifyStageRole(reel.projectId, 'design', `🎨 Обложка/заставка: ${reel.title}`, 'Создана карточка обложки/заставки рилса', saved.id);
   }
 
   // Групповая «Готово» (все элементы вместе) → следующий этап маршрута группы.
@@ -1088,9 +1088,9 @@ export class WorkflowService implements OnModuleInit {
       createdById: group.createdById || actor.id,
     }));
     await this.logEvent(saved.id, 'stage_enter', { toStage: stage, actor, message: `Из контент-плана → ${STAGE_LABELS[stage] || stage}` });
-    await this.notifyStageRole(group.projectId, stage, `➡️ ${STAGE_LABELS[stage] || stage}`, `«${saved.title}» на этапе «${STAGE_LABELS[stage] || stage}»`);
+    await this.notifyStageRole(group.projectId, stage, `➡️ ${STAGE_LABELS[stage] || stage}`, `«${saved.title}» на этапе «${STAGE_LABELS[stage] || stage}»`, saved.id);
     if (assigneeIds.length) await this.notifyAssigned(assigneeIds, {
-      title: saved.title, projectId: group.projectId, type: saved.type,
+      title: saved.title, projectId: group.projectId, cardId: saved.id, type: saved.type,
       description: saved.description, deadline: saved.deadline, publishDate: saved.publishDate,
       shootDate: saved.shootDate, shootTime: saved.shootTime, shootLocation: saved.shootLocation,
     }, actor.name);
@@ -1117,7 +1117,11 @@ export class WorkflowService implements OnModuleInit {
     if (!assigneeId) throw new BadRequestException('Выберите видеографа');
     await this.repo.update(card.id, { assigneeId });
     await this.logEvent(card.id, 'assign', { actor, message: 'Назначен видеограф', meta: { assigneeId } });
-    await this.notify([assigneeId], '🎥 Съёмка', `Вам назначена съёмка: «${card.title}»`, card.projectId);
+    await this.notifyAssigned([assigneeId], {
+      title: card.title, projectId: card.projectId, cardId: card.id, type: card.type,
+      description: card.description, deadline: card.deadline, publishDate: card.publishDate,
+      shootDate: card.shootDate, shootTime: card.shootTime, shootLocation: card.shootLocation,
+    }, actor.name);
   }
 
   // R5: «Съёмка завершена» (Съёмка → Монтаж). Ссылка на исходники — необязательна.
@@ -1145,11 +1149,11 @@ export class WorkflowService implements OnModuleInit {
   // R7: обложка/заставка «Готово» (карточка type='cover') → designDone у родителя
   private async coverDone(card: WorkflowCard, payload: any, actor: Actor) {
     if (card.type !== 'cover') throw new BadRequestException('Это действие — для карточки обложки/заставки');
-    const coverUrl = payload?.coverUrl || card.coverUrl;
-    if (!coverUrl) throw new BadRequestException('Прикрепите ссылку на обложку');
-    const introUrl = payload?.introUrl || card.introUrl;
-    if (card.needsIntro && !introUrl) throw new BadRequestException('Прикрепите ссылку на заставку (intro)');
-    await this.repo.update(card.id, { coverUrl, introUrl: introUrl || null, status: 'done' });
+    // Ссылки на обложку/заставку — необязательны (чтобы кнопка «Сделал» из бота
+    // работала; ссылки можно прикрепить на доске).
+    const coverUrl = payload?.coverUrl || card.coverUrl || null;
+    const introUrl = payload?.introUrl || card.introUrl || null;
+    await this.repo.update(card.id, { coverUrl, introUrl, status: 'done' });
     await this.logEvent(card.id, 'cover_done', { actor, message: 'Обложка/заставка готова' });
     if (card.parentCardId) {
       await this.repo.update(card.parentCardId, { designDone: true });
@@ -1160,8 +1164,9 @@ export class WorkflowService implements OnModuleInit {
   // R8: «Макет готов» (static) → Внутренняя проверка
   private async layoutDone(card: WorkflowCard, payload: any, actor: Actor) {
     if (card.stage !== 'design' || card.type === 'cover') throw new BadRequestException('Доступно только для макета на этапе Дизайн');
-    const finalAssetUrl = payload?.finalAssetUrl || card.finalAssetUrl;
-    if (!finalAssetUrl) throw new BadRequestException('Прикрепите ссылку на макет');
+    // Ссылка на макет — необязательна (кнопка «Сделал» из бота; ссылку можно
+    // прикрепить на доске).
+    const finalAssetUrl = payload?.finalAssetUrl || card.finalAssetUrl || null;
     await this.repo.update(card.id, { finalAssetUrl, designDone: true });
     card.finalAssetUrl = finalAssetUrl;
     await this.moveToStage(card, 'internal_review', actor, { message: 'Макет готов → Внутренняя проверка' });
@@ -1201,6 +1206,7 @@ export class WorkflowService implements OnModuleInit {
     card.status = 'rework';
     await this.logEvent(card.id, 'qa_rework', { actor, message: 'На доработку (QA)', comment });
     await this.moveToStage(card, back, actor, { message: `На доработку: ${comment}` });
+    await this.notifyRework(card, comment, isReels, 'qa', actor.name);
   }
 
   // «Отправлено клиенту» — фиксируем время (без смены этапа)
@@ -1228,6 +1234,7 @@ export class WorkflowService implements OnModuleInit {
     await this.repo.update(card.id, { status: 'rework', clientComment: comment, ...reset });
     await this.logEvent(card.id, 'client_revisions', { actor, message: 'Правки клиента', comment });
     await this.moveToStage(card, back, actor, { message: `Правки клиента: ${comment}` });
+    await this.notifyRework(card, comment, isReels, 'client', actor.name);
   }
 
   /** Рилс ли это (с учётом легаси-карточек без type, но с contentType='reel'). */
@@ -1238,8 +1245,8 @@ export class WorkflowService implements OnModuleInit {
   // R13: «Опубликовано» → Опубликовано
   private async publish(card: WorkflowCard, payload: any, actor: Actor) {
     if (card.stage !== 'ready_to_publish') throw new BadRequestException('Доступно только на «Готово к публикации»');
-    const publishedUrl = payload?.publishedUrl || card.publishedUrl;
-    if (!publishedUrl) throw new BadRequestException('Прикрепите ссылку на публикацию');
+    // Ссылка на публикацию — необязательна (кнопка «Сделал» из бота).
+    const publishedUrl = payload?.publishedUrl || card.publishedUrl || null;
     const now = new Date();
     await this.repo.update(card.id, { publishedUrl, publishedAt: now, status: 'published' });
     card.publishedUrl = publishedUrl;
@@ -1264,10 +1271,14 @@ export class WorkflowService implements OnModuleInit {
       fromStage, toStage: newStage, actor,
       message: opts.message || `Этап: ${STAGE_LABELS[newStage] || newStage}`,
     });
-    // R15: уведомление роли нового этапа + текущему исполнителю.
-    await this.notifyStageRole(card.projectId, newStage, `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» на этапе «${STAGE_LABELS[newStage] || newStage}»`);
-    if (card.assigneeId) {
-      await this.notify([card.assigneeId], `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» перешла на новый этап`, card.projectId);
+    // R15: уведомление роли нового этапа + текущим исполнителям — с кнопками
+    // «Сделал/Не сделал» в Telegram (нельзя для финальных этапов).
+    const actionable = !['published', 'ads'].includes(newStage);
+    const buttons = actionable ? this.cardButtons(card.id) : undefined;
+    await this.notifyStageRole(card.projectId, newStage, `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» на этапе «${STAGE_LABELS[newStage] || newStage}»`, actionable ? card.id : undefined);
+    const assignees = [card.assigneeId, ...((card.assigneeIds as string[]) || [])].filter(Boolean) as string[];
+    if (assignees.length) {
+      await this.notify(assignees, `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» перешла на этап «${STAGE_LABELS[newStage] || newStage}»`, card.projectId, buttons);
     }
   }
 
@@ -1292,12 +1303,13 @@ export class WorkflowService implements OnModuleInit {
     }
   }
 
-  /** Уведомить пользователей проекта с ролью-владельцем этапа. */
-  private async notifyStageRole(projectId: string, stage: string, title: string, message: string) {
+  /** Уведомить пользователей проекта с ролью-владельцем этапа.
+   *  cardId — если передан, в Telegram добавляются кнопки «Сделал/Не сделал». */
+  private async notifyStageRole(projectId: string, stage: string, title: string, message: string, cardId?: string) {
     const roles = STAGE_ROLES[stage] || [];
     if (roles.length === 0) return;
     const ids = await this.findProjectUsersByRole(projectId, roles);
-    await this.notify(ids, title, message, projectId);
+    await this.notify(ids, title, message, projectId, this.cardButtons(cardId));
   }
 
   /** Все активные пользователи с одной из ролей (основной или второй) —
@@ -1330,8 +1342,18 @@ export class WorkflowService implements OnModuleInit {
     return rows.map((r: any) => r.id);
   }
 
-  /** Уведомление в приложении (колокол) + Telegram (ТЗ §6 R15). */
-  private async notify(userIds: string[], title: string, message: string, projectId: string) {
+  /** Inline-кнопки «Сделал / Не сделал» для карточки в Telegram. */
+  private cardButtons(cardId?: string): { text: string; callback_data: string }[][] | undefined {
+    if (!cardId) return undefined;
+    return [[
+      { text: '✅ Сделал', callback_data: `wf:done:${cardId}` },
+      { text: '🚫 Не сделал', callback_data: `wf:skip:${cardId}` },
+    ]];
+  }
+
+  /** Уведомление в приложении (колокол) + Telegram (ТЗ §6 R15).
+   *  buttons — опциональные inline-кнопки для Telegram. */
+  private async notify(userIds: string[], title: string, message: string, projectId: string, buttons?: { text: string; callback_data: string }[][]) {
     const unique = [...new Set(userIds.filter(Boolean))];
     for (const uid of unique) {
       await this.notifications.create({
@@ -1341,7 +1363,7 @@ export class WorkflowService implements OnModuleInit {
         message,
         link: '/workflow-board',
       } as any).catch(() => {});
-      this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}`).catch(() => {});
+      this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}`, buttons).catch(() => {});
     }
   }
 
@@ -1353,6 +1375,7 @@ export class WorkflowService implements OnModuleInit {
     details: {
       title: string;
       projectId: string;
+      cardId?: string;
       type?: string | null;
       description?: string | null;
       deadline?: string | null;
@@ -1416,7 +1439,7 @@ export class WorkflowService implements OnModuleInit {
         message,
         link: '/workflow-board',
       } as any).catch(() => {});
-      this.telegram.sendToUser(uid, tg).catch(() => {});
+      this.telegram.sendToUser(uid, tg, this.cardButtons(details.cardId)).catch(() => {});
       const u = await this.userRepo.findOne({ where: { id: uid } }).catch(() => null);
       if (u?.email) {
         this.mail.sendCardAssigned(u.email, u.name || 'Сотрудник', {
@@ -1430,6 +1453,89 @@ export class WorkflowService implements OnModuleInit {
           assignedBy: actorName || null,
         }).catch(() => {});
       }
+    }
+  }
+
+  /** Уведомление о доработке (QA / правки клиента) — 3 канала + комментарий +
+   *  кнопки «Сделал/Не сделал». Шлём исполнителям карточки. */
+  private async notifyRework(card: WorkflowCard, comment: string, isReels: boolean, kind: 'qa' | 'client', actorName?: string) {
+    const backLabel = isReels ? 'Монтаж' : 'Дизайн';
+    const source = kind === 'qa' ? 'Внутренняя проверка' : 'Правки клиента';
+    const project = await this.projectRepo.findOne({ where: { id: card.projectId } }).catch(() => null);
+    const title = `↩ Доработка (${backLabel})`;
+    const message = `«${card.title}» — на доработку: ${comment}`;
+    const ids = [...new Set([card.assigneeId, ...((card.assigneeIds as string[]) || [])].filter(Boolean) as string[])];
+    for (const uid of ids) {
+      await this.notifications.create({
+        userId: uid, type: NotificationType.STATUS_CHANGE, title, message, link: '/workflow-board',
+      } as any).catch(() => {});
+      this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}\n📋 ${source}${actorName ? ` · ${actorName}` : ''}`, this.cardButtons(card.id)).catch(() => {});
+      const u = await this.userRepo.findOne({ where: { id: uid } }).catch(() => null);
+      if (u?.email) {
+        const body = `Карточка <strong>«${card.title}»</strong> (проект «${project?.name || ''}») отправлена на доработку — этап «${backLabel}».<br><br>💬 Комментарий (${source}): ${comment}<br><br>Откройте «Доску проектов», исправьте и отметьте «Сделал».`;
+        this.mail.sendGenericNotification(u.email, u.name || 'Сотрудник', `↩ Доработка: ${card.title}`, body).catch(() => {});
+      }
+    }
+  }
+
+  /** Уведомление руководителю СММ, что сотрудник отметил «не сделано». */
+  private async notifyNotDone(card: WorkflowCard, whoName: string) {
+    const leads: Array<{ id: string; name: string; email: string }> = await this.userRepo.query(
+      `SELECT id, name, email FROM users
+       WHERE "isActive" = true AND "isBlocked" = false
+         AND (role = 'smm_director' OR "secondaryRole" = 'smm_director')`,
+    ).catch(() => []);
+    if (!leads.length) return;
+    const project = await this.projectRepo.findOne({ where: { id: card.projectId } }).catch(() => null);
+    const stageLabel = STAGE_LABELS[card.stage] || card.stage;
+    const title = '🚫 Сотрудник отметил «не сделано»';
+    const message = `${whoName}: ещё не сделал «${card.title}» · этап «${stageLabel}» · проект «${project?.name || ''}»`;
+    for (const l of leads) {
+      await this.notifications.create({
+        userId: l.id, type: NotificationType.STATUS_CHANGE, title, message, link: '/workflow-board',
+      } as any).catch(() => {});
+      this.telegram.sendToUser(l.id, `<b>${title}</b>\n${message}`).catch(() => {});
+      if (l.email) {
+        this.mail.sendGenericNotification(l.email, l.name || 'Руководитель', title,
+          `<strong>${whoName}</strong> отметил, что ещё не сделал карточку <strong>«${card.title}»</strong> (этап «${stageLabel}», проект «${project?.name || ''}»).`).catch(() => {});
+      }
+    }
+  }
+
+  /** Обработка нажатия inline-кнопки бота: «Сделал» (форвард этапа) /
+   *  «Не сделал» (эскалация руководителю СММ). Возвращает текст для ответа. */
+  async handleBotAction(cardId: string, action: 'done' | 'skip', userId: string): Promise<{ text: string }> {
+    const card = await this.repo.findOne({ where: { id: cardId } });
+    if (!card) return { text: 'Карточка не найдена или уже закрыта.' };
+    const u = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null);
+    const viewer: Viewer = { id: userId, role: u?.role || '' };
+
+    if (action === 'skip') {
+      await this.notifyNotDone(card, u?.name || 'Сотрудник');
+      return { text: '🚫 Отмечено: не сделано. Руководитель СММ уведомлён.' };
+    }
+
+    // «Сделал» — двигаем карточку вперёд.
+    try {
+      if (card.kind === 'reels' || card.kind === 'macros') {
+        const items = (card.items || []).filter((it: any) =>
+          it.assigneeId === userId || (Array.isArray(it.assigneeIds) && it.assigneeIds.includes(userId)));
+        if (!items.length) return { text: 'В этой карточке нет элементов, назначенных на вас.' };
+        let moved = 0;
+        for (const it of items) { try { await this.advanceItem(cardId, it.id, viewer); moved++; } catch { /* пропускаем */ } }
+        return { text: moved ? `✅ Готово: переведено элементов — ${moved}.` : 'Не удалось — откройте «Доску проектов».' };
+      }
+      const FORWARD: Record<string, string> = {
+        content_plan: 'confirm_plan', organization: 'confirm_shoot', shooting: 'shoot_done',
+        editing: 'editing_done', design: 'layout_done', internal_review: 'qa_accept',
+        client_approval: 'client_approve', ready_to_publish: 'publish',
+      };
+      const action2 = (card.stage === 'design' && card.type === 'cover') ? 'cover_done' : FORWARD[card.stage];
+      if (!action2) return { text: 'На этом этапе кнопка недоступна — откройте «Доску проектов».' };
+      await this.transition(cardId, action2, {}, viewer);
+      return { text: '✅ Готово — карточка переведена на следующий этап.' };
+    } catch (e: any) {
+      return { text: e?.message || 'Не удалось. Откройте «Доску проектов».' };
     }
   }
 

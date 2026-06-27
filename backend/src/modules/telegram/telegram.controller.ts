@@ -1,13 +1,20 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TelegramService } from './telegram.service';
 import { Employee } from '../employees/employee.entity';
+import { WorkflowService } from '../workflow/workflow.service';
 
 interface TelegramUpdate {
   message?: {
     from?: { id: number; username?: string; first_name?: string };
     text?: string;
+  };
+  callback_query?: {
+    id: string;
+    from?: { id: number };
+    data?: string;
+    message?: { message_id: number; chat?: { id: number }; text?: string };
   };
 }
 
@@ -15,11 +22,46 @@ interface TelegramUpdate {
 export class TelegramController {
   constructor(
     private telegramService: TelegramService,
+    @Inject(forwardRef(() => WorkflowService)) private workflowService: WorkflowService,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
   ) {}
 
   @Post('webhook')
   async handleWebhook(@Body() update: TelegramUpdate) {
+    // ── Нажатие inline-кнопки («Сделал / Не сделал» на карточке) ──────────
+    const cq = update?.callback_query;
+    if (cq) {
+      const chatId = cq.from?.id;
+      const data = cq.data || '';
+      const m = data.match(/^wf:(done|skip):(.+)$/);
+      if (!chatId || !m) {
+        if (cq.id) await this.telegramService.answerCallbackQuery(cq.id, '');
+        return { ok: true };
+      }
+      const action = m[1] as 'done' | 'skip';
+      const cardId = m[2];
+      const userId = await this.telegramService.resolveUserIdByChat(chatId);
+      if (!userId) {
+        await this.telegramService.answerCallbackQuery(cq.id, 'Аккаунт не привязан. Нажмите /start в боте.');
+        return { ok: true };
+      }
+      let resultText = 'Готово';
+      try {
+        const res = await this.workflowService.handleBotAction(cardId, action, userId);
+        resultText = res.text;
+      } catch (e: any) {
+        resultText = 'Не удалось выполнить. Откройте «Доску проектов».';
+      }
+      await this.telegramService.answerCallbackQuery(cq.id, resultText);
+      // Заменяем текст сообщения (с результатом) и убираем кнопки.
+      if (cq.message?.chat?.id && cq.message?.message_id) {
+        const base = cq.message.text ? `${cq.message.text}\n\n` : '';
+        await this.telegramService.editMessageText(cq.message.chat.id, cq.message.message_id, `${base}${resultText}`);
+      }
+      return { ok: true };
+    }
+
+    // ── Привязка аккаунта по /start ───────────────────────────────────────
     const msg = update?.message;
     if (!msg) return { ok: true };
 
