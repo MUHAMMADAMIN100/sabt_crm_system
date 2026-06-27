@@ -185,8 +185,10 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const PM_OR_ADMIN = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'smm_specialist'];
-    const isAllowed = PM_OR_ADMIN.includes(user.role) || project.managerId === user.id;
+    const PM_OR_ADMIN = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
+    const isAllowed = PM_OR_ADMIN.includes(user.role)
+      || project.managerId === user.id
+      || (project as any).salesManagerId === user.id;
     if (!isAllowed) {
       throw new ForbiddenException('Нет прав на редактирование брифа этого проекта');
     }
@@ -219,8 +221,10 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const ADMIN_PM = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'smm_specialist'];
-    const isAllowed = ADMIN_PM.includes(user.role) || project.managerId === user.id;
+    const ADMIN_PM = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
+    const isAllowed = ADMIN_PM.includes(user.role)
+      || project.managerId === user.id
+      || (project as any).salesManagerId === user.id;
     if (!isAllowed) throw new ForbiddenException('Нет прав на проект');
 
     let token = project.briefShareToken;

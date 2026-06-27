@@ -111,6 +111,8 @@ export class ProjectsController {
     UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
     UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
     UserRole.SMM_SPECIALIST,
+    // Менеджеры продаж заполняют бриф клиента при заведении проекта.
+    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV,
   )
   saveBrief(
     @Param('id') id: string,
@@ -136,6 +138,7 @@ export class ProjectsController {
     UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
     UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
     UserRole.SMM_SPECIALIST,
+    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV,
   )
   async briefShareLink(@Param('id') id: string, @Request() req) {
     const { token } = await this.service.generateBriefShareToken(id, req.user);
