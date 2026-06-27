@@ -286,17 +286,6 @@ export default function TaskDrawer({
           )}
         </div>
 
-        {task && (
-          <div className="shrink-0 px-6 py-3 border-t border-surface-100 dark:border-surface-700/60 bg-surface-50/50 dark:bg-surface-800/30">
-            <Link
-              to={`/tasks/${task.id}`}
-              onClick={onClose}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900 hover:bg-surface-100 dark:hover:bg-surface-800 text-sm font-medium text-surface-700 dark:text-surface-200 transition-colors"
-            >
-              <ExternalLink size={14} /> Открыть полностью
-            </Link>
-          </div>
-        )}
       </aside>
     </>,
     document.body,

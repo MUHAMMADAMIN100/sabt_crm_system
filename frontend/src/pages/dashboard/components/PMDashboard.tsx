@@ -1,14 +1,14 @@
 import { useMemo, lazy, Suspense } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { tasksApi, analyticsApi } from '@/services/api.service'
+import { analyticsApi, workflowApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { PageLoader, StatusBadge, PriorityBadge, Avatar, CollapsibleSection } from '@/components/ui'
-import { TrendingDown, Clock, Eye, AlertTriangle } from 'lucide-react'
+import { PageLoader, Avatar, CollapsibleSection } from '@/components/ui'
+import { TrendingDown, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import toast from 'react-hot-toast'
 import { PmWidgets, HeadSmmWidgets } from './RiskWidgets'
+import { STAGES } from '@/components/projects/workflowShared'
 
 // Глобальный календарь историй — для руководителя SMM (отметки SMM-команды)
 const GlobalStoriesCalendar = lazy(() => import('./GlobalStoriesCalendar'))
@@ -17,35 +17,19 @@ const SMM_POSITIONS = ['SMM специалист', 'Руководитель SMM
 const SMM_ROLES = ['smm_specialist', 'storymaker']
 
 export default function PMDashboard() {
-  const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const isHeadSMM = user?.role === 'smm_director'
 
-  const { data: overdueTasksRaw, isLoading: loadingOverdue } = useQuery({
-    queryKey: ['tasks-overdue'],
-    queryFn: tasksApi.overdue,
-  })
-
-  const { data: reviewTasksRaw, isLoading: loadingReview } = useQuery({
-    queryKey: ['tasks-review'],
-    queryFn: () => tasksApi.list({ status: 'review' }),
+  // Просрочки теперь из Доски проектов (workflow), не из задач.
+  const { data: overdueCards, isLoading: loadingOverdue } = useQuery({
+    queryKey: ['workflow-overdue'],
+    queryFn: workflowApi.overdue,
   })
 
   const { data: workloadRaw } = useQuery({
     queryKey: ['employee-workload'],
     queryFn: analyticsApi.employeeWorkload,
   })
-
-  // For smm_director — filter to SMM-only data
-  const overdueTasks = useMemo(() => {
-    if (!isHeadSMM) return overdueTasksRaw
-    return (overdueTasksRaw || []).filter((t: any) => t.project?.projectType === 'SMM')
-  }, [overdueTasksRaw, isHeadSMM])
-
-  const reviewTasks = useMemo(() => {
-    if (!isHeadSMM) return reviewTasksRaw
-    return (reviewTasksRaw || []).filter((t: any) => t.project?.projectType === 'SMM')
-  }, [reviewTasksRaw, isHeadSMM])
 
   const workload = useMemo(() => {
     if (!isHeadSMM) return workloadRaw
@@ -54,33 +38,9 @@ export default function PMDashboard() {
     )
   }, [workloadRaw, isHeadSMM])
 
-  const approve = useMutation({
-    mutationFn: (id: string) => tasksApi.approve(id),
-    onMutate: async (taskId: string) => {
-      await qc.cancelQueries({ queryKey: ['tasks-review'] })
-      const previous = qc.getQueryData(['tasks-review'])
-      qc.setQueryData(['tasks-review'], (old: any[]) => old?.filter((t: any) => t.id !== taskId) ?? [])
-      return { previous }
-    },
-    onError: (_e: any, _v: any, context: any) => {
-      qc.setQueryData(['tasks-review'], context?.previous)
-      toast.error('Ошибка')
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['tasks-review'] })
-      qc.invalidateQueries({ queryKey: ['tasks-overdue'] })
-      toast.success('Задача подтверждена')
-    },
-  })
+  const stageLabel = (k: string) => STAGES.find(s => s.key === k)?.label || k
 
-  if (loadingOverdue || loadingReview) return <PageLoader />
-
-  // Tasks due in next 24h
-  const urgentSoon = (overdueTasks || []).filter((t: any) => {
-    if (!t.deadline) return false
-    const diff = new Date(t.deadline).getTime() - Date.now()
-    return diff > 0 && diff < 86400000
-  })
+  if (loadingOverdue) return <PageLoader />
 
   return (
     <div className="space-y-6">
@@ -98,18 +58,10 @@ export default function PMDashboard() {
       )}
 
       {/* Summary row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div className="card text-center">
-          <p className="text-3xl font-bold text-surface-500">{reviewTasks?.length ?? 0}</p>
-          <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">На проверке</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-red-500">{overdueTasks?.length ?? 0}</p>
-          <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">Просрочено</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-surface-500">{urgentSoon.length}</p>
-          <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">Сгорят сегодня</p>
+          <p className="text-3xl font-bold text-red-500">{overdueCards?.length ?? 0}</p>
+          <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">Просрочено (Доска)</p>
         </div>
         <div className="card text-center">
           <p className="text-3xl font-bold text-primary-600 dark:text-primary-400">{workload?.length ?? 0}</p>
@@ -117,92 +69,35 @@ export default function PMDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Tasks on review */}
-        <CollapsibleSection
-          id="pm-review"
-          title={<h2 className="section-title flex items-center gap-2"><Eye size={16} className="text-surface-500" /> Ожидают проверки</h2>}
-        >
-          {!reviewTasks?.length ? (
-            <p className="text-sm text-surface-400 py-4 text-center">Нет задач на проверке</p>
-          ) : (
-            <div className="space-y-3">
-              {reviewTasks.slice(0, 8).map((t: any) => (
-                <div key={t.id} className="flex items-start gap-3 p-2 rounded-lg bg-surface-50 dark:bg-surface-900/10">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <Link to={`/tasks/${t.id}`} className="text-sm font-medium text-surface-900 dark:text-surface-100 hover:text-primary-600 truncate">
-                        {t.title}
-                      </Link>
-                      {t.createdById && t.assigneeId && (t.createdById === t.assigneeId || t.createdBy?.name?.trim()) && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${t.createdById === t.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'}`}>
-                          {t.createdById === t.assigneeId ? 'сам' : (t.createdBy?.name?.trim().split(' ')[0] || '')}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <PriorityBadge priority={t.priority} />
-                      {t.assignee && (
-                        <span className="text-xs text-surface-400">{t.assignee.name}</span>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => approve.mutate(t.id)}
-                    disabled={approve.isPending}
-                    className="shrink-0 text-xs px-2 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50"
-                  >
-                    Принять
-                  </button>
-                  <Link
-                    to={`/tasks/${t.id}`}
-                    className="shrink-0 text-xs px-2 py-1 bg-surface-200 dark:bg-surface-700 text-surface-700 dark:text-surface-300 rounded-lg hover:opacity-80"
-                  >
-                    Открыть
-                  </Link>
+      {/* Overdue workflow cards (Доска проектов) */}
+      <CollapsibleSection
+        id="pm-overdue"
+        title={<h2 className="section-title flex items-center gap-2 text-red-600 dark:text-red-400"><TrendingDown size={16} /> Просроченные карточки</h2>}
+      >
+        {!overdueCards?.length ? (
+          <p className="text-sm text-green-600 dark:text-green-400 py-4 text-center">Просрочек нет ✓</p>
+        ) : (
+          <div className="space-y-2">
+            {overdueCards.slice(0, 12).map((c: any) => (
+              <Link
+                key={c.id}
+                to="/workflow-board"
+                className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{c.title}</p>
+                  <p className="text-xs text-surface-400">{c.project?.name} · {stageLabel(c.stage)}{c.assignee ? ` · ${c.assignee.name}` : ''}</p>
                 </div>
-              ))}
-            </div>
-          )}
-        </CollapsibleSection>
-
-        {/* Overdue tasks */}
-        <CollapsibleSection
-          id="pm-overdue"
-          title={<h2 className="section-title flex items-center gap-2 text-red-600 dark:text-red-400"><TrendingDown size={16} /> Просроченные</h2>}
-        >
-          {!overdueTasks?.length ? (
-            <p className="text-sm text-green-600 dark:text-green-400 py-4 text-center">Просрочек нет ✓</p>
-          ) : (
-            <div className="space-y-2">
-              {overdueTasks.slice(0, 8).map((t: any) => (
-                <Link
-                  key={t.id}
-                  to={`/tasks/${t.id}`}
-                  className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{t.title}</p>
-                      {t.createdById && t.assigneeId && (t.createdById === t.assigneeId || t.createdBy?.name?.trim()) && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${t.createdById === t.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'}`}>
-                          {t.createdById === t.assigneeId ? 'сам' : (t.createdBy?.name?.trim().split(' ')[0] || '')}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-surface-400">{t.assignee?.name}</p>
-                  </div>
-                  {t.deadline && (
-                    <span className="text-xs text-red-500 font-semibold shrink-0">
-                      {format(new Date(t.deadline), 'dd.MM', { locale: ru })}
-                    </span>
-                  )}
-                </Link>
-              ))}
-            </div>
-          )}
-        </CollapsibleSection>
-      </div>
+                {c.deadline && (
+                  <span className="text-xs text-red-500 font-semibold shrink-0">
+                    {format(new Date(c.deadline), 'dd.MM', { locale: ru })}
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
+        )}
+      </CollapsibleSection>
 
       {/* Team workload */}
       <CollapsibleSection

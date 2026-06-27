@@ -31,7 +31,6 @@ const SALES_GREETINGS = [
   'Твой профессионализм впечатляет',
   'Новый день — новые возможности',
 ]
-const SMMDashboard = lazy(() => import('./components/SMMDashboard'))
 const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
 const MyWorkflowCards = lazy(() => import('./components/MyWorkflowCards'))
 
@@ -226,9 +225,6 @@ export default function DashboardPage() {
         </div>
         <Suspense fallback={null}>
           <MyWorkflowCards />
-        </Suspense>
-        <Suspense fallback={<PageLoader />}>
-          <SMMDashboard />
         </Suspense>
       </div>
     )

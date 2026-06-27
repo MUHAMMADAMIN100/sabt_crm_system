@@ -746,6 +746,21 @@ export class WorkflowService implements OnModuleInit {
     }));
   }
 
+  /** Просроченные карточки доски в зоне видимости пользователя — для
+   *  дашбордов (замена просрочек по задачам). Карточка просрочена, если
+   *  deadline < сегодня, этап не финальный и статус не закрыт. */
+  async overdueCards(viewer: Viewer) {
+    const all = await this.listAll(viewer);
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    return all.filter((c: any) => {
+      if (!c.deadline || c.kind === 'kp') return false;
+      if (['published', 'ads'].includes(c.stage)) return false;
+      if (['done', 'published'].includes(c.status || '')) return false;
+      const d = new Date(c.deadline); d.setHours(0, 0, 0, 0);
+      return d < todayStart;
+    });
+  }
+
   async update(id: string, dto: any, viewer: Viewer) {
     const card = await this.repo.findOne({ where: { id } });
     if (!card) throw new NotFoundException('Карточка не найдена');

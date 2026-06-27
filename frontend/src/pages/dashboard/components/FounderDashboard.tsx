@@ -2,7 +2,8 @@ import { useState, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi, employeesApi, projectsApi } from '@/services/api.service'
-import { tasksApi } from '@/services/api.service'
+import { workflowApi } from '@/services/api.service'
+import { STAGES } from '@/components/projects/workflowShared'
 import { useAuthStore } from '@/store/auth.store'
 import { StatCard, PageLoader, StatusBadge, Avatar, CollapsibleSection } from '@/components/ui'
 import {
@@ -67,9 +68,9 @@ export default function FounderDashboard() {
     queryFn: analyticsApi.overview,
   })
 
-  const { data: overdueTasks } = useQuery({
-    queryKey: ['tasks-overdue'],
-    queryFn: tasksApi.overdue,
+  const { data: overdueCards } = useQuery({
+    queryKey: ['workflow-overdue'],
+    queryFn: workflowApi.overdue,
   })
 
   const { data: workload } = useQuery({
@@ -109,7 +110,9 @@ export default function FounderDashboard() {
 
   if (isLoading) return <PageLoader />
 
-  const atRiskProjects = overview?.overdueTasks > 0 ? Math.ceil(overview.overdueTasks / 3) : 0
+  const overdueCount = overdueCards?.length ?? 0
+  const stageLabel = (k: string) => STAGES.find(s => s.key === k)?.label || k
+  const atRiskProjects = overdueCount > 0 ? Math.ceil(overdueCount / 3) : 0
   const inactiveEmployees = (workload || []).filter((e: any) => e.activeTasks === 0)
   const overloadedPMs = (workload || []).filter((e: any) => e.activeTasks >= 10)
 
@@ -141,11 +144,11 @@ export default function FounderDashboard() {
           sub={`из ${overview?.totalProjects ?? 0} всего`}
         />
         <StatCard
-          title="Просроченных задач"
-          value={overview?.overdueTasks ?? 0}
+          title="Просроченные карточки"
+          value={overdueCount}
           icon={TrendingDown}
           color="bg-red-500"
-          sub="требуют внимания"
+          sub="по Доске проектов"
         />
         <StatCard
           title="Сотрудников"
@@ -279,45 +282,37 @@ export default function FounderDashboard() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Overdue tasks */}
+        {/* Overdue workflow cards (Доска проектов) */}
         <div className="lg:col-span-2 card">
           <div className="flex items-center justify-between mb-4">
             <h2 className="section-title text-red-600 dark:text-red-400 flex items-center gap-2">
-              <TrendingDown size={16} /> Просроченные задачи
+              <TrendingDown size={16} /> Просроченные карточки
             </h2>
-            <Link to="/tasks?overdue=true" className="text-xs text-primary-600 dark:text-primary-400 hover:underline">
+            <Link to="/workflow-board" className="text-xs text-primary-600 dark:text-primary-400 hover:underline">
               Все
             </Link>
           </div>
-          {!overdueTasks?.length ? (
+          {!overdueCards?.length ? (
             <p className="text-sm text-green-600 dark:text-green-400 py-4 text-center">Просрочек нет ✓</p>
           ) : (
             <div className="space-y-2">
-              {overdueTasks.slice(0, 8).map((t: any) => (
+              {overdueCards.slice(0, 8).map((c: any) => (
                 <Link
-                  key={t.id}
-                  to={`/tasks/${t.id}`}
+                  key={c.id}
+                  to="/workflow-board"
                   className="flex items-center justify-between gap-3 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{t.title}</p>
-                      {t.createdById && t.assigneeId && (t.createdById === t.assigneeId || t.createdBy?.name?.trim()) && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${t.createdById === t.assigneeId ? 'bg-surface-100 dark:bg-surface-700 text-surface-400' : 'bg-surface-50 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400'}`}>
-                          {t.createdById === t.assigneeId ? 'сам' : (t.createdBy?.name?.trim().split(' ')[0] || '')}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-surface-400 dark:text-surface-500">{t.project?.name}</p>
+                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{c.title}</p>
+                    <p className="text-xs text-surface-400 dark:text-surface-500">{c.project?.name} · {stageLabel(c.stage)}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {t.assignee && <Avatar name={t.assignee.name} src={t.assignee.avatar} size={20} />}
-                    {t.deadline && (
+                    {c.assignee && <Avatar name={c.assignee.name} src={c.assignee.avatar} size={20} />}
+                    {c.deadline && (
                       <span className="text-xs text-red-500 font-medium">
-                        {format(new Date(t.deadline), 'dd.MM', { locale: ru })}
+                        {format(new Date(c.deadline), 'dd.MM', { locale: ru })}
                       </span>
                     )}
-                    <StatusBadge status={t.status} />
                   </div>
                 </Link>
               ))}

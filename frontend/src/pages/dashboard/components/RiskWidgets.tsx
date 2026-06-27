@@ -73,7 +73,6 @@ export function HeadSmmWidgets() {
   const { data: employeeRisks } = useQuery({ queryKey: ['risks-employees'], queryFn: riskApi.employeeRisks })
   const { data: workloads } = useQuery({ queryKey: ['workload-employees-all'], queryFn: () => riskApi.workloadEmployees() })
   const { data: pmWorkloads } = useQuery({ queryKey: ['workload-pm-all'], queryFn: () => riskApi.workloadPm() })
-  const { data: tasks } = useQuery({ queryKey: ['tasks'], queryFn: () => tasksApi.list() })
 
   // Рейтинг PM по нагрузке (меньше — лучше)
   const pmRated = (pmWorkloads ?? []).slice().sort(
@@ -86,26 +85,13 @@ export function HeadSmmWidgets() {
   )
   const smmRanked = smmEmployees.slice().sort((a: any, b: any) => a.tasksInProgress - b.tasksInProgress)
 
-  // Возвраты
-  const tasksWithRework = (tasks ?? []).filter((t: any) => (t.reworkCount ?? 0) > 0).length
-  const totalTasks = (tasks ?? []).length
-  const reworkRate = totalTasks > 0 ? Math.round((tasksWithRework / totalTasks) * 100) : 0
-
-  // Среднее качество
-  const withScore = (tasks ?? []).filter((t: any) => t.qualityScore != null)
-  const avgQuality = withScore.length > 0
-    ? (withScore.reduce((s: number, t: any) => s + Number(t.qualityScore), 0) / withScore.length).toFixed(1)
-    : '—'
-
   const overloadedTeam = (workloads ?? []).filter((w: any) => w.overload === 'red').length
   const complexProjects = (projectRisks ?? []).filter((r: any) => r.level === 'red').length
 
   return (
     <section className="space-y-3">
       <h2 className="font-semibold text-base flex items-center gap-2"><Zap size={16} className="text-surface-500" /> Сводка Head of SMM</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Tile label="Возвратов задач" value={`${tasksWithRework} (${reworkRate}%)`} accent={reworkRate > 30 ? 'text-red-600' : reworkRate > 10 ? 'text-surface-600' : 'text-green-600'} />
-        <Tile label="Среднее качество" value={`${avgQuality} / 10`} accent="text-green-600" />
+      <div className="grid grid-cols-2 gap-3">
         <Tile label="Перегруз команды" value={overloadedTeam} accent={overloadedTeam > 0 ? 'text-red-600' : 'text-gray-500'} />
         <Tile label="Сложные проекты" value={complexProjects} accent={complexProjects > 0 ? 'text-red-600' : 'text-gray-500'} />
       </div>

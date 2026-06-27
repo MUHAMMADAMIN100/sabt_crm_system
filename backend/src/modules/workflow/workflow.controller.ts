@@ -31,6 +31,12 @@ export class WorkflowController {
     return this.service.myCards(req.user);
   }
 
+  /** Просроченные карточки доски (в зоне видимости) — для дашбордов. */
+  @Get('overdue')
+  overdue(@Request() req) {
+    return this.service.overdueCards(req.user);
+  }
+
   /** Очистить всю доску (для тестов) — только руководитель. */
   @Post('clear')
   clearAll(@Request() req) {

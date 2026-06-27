@@ -6,6 +6,7 @@ import { Task, TaskStatus, TaskPriority, TaskScope, TASK_CLOSED_FOR_OVERDUE } fr
 import { Employee } from '../employees/employee.entity'
 import { Project, ProjectStatus } from '../projects/project.entity'
 import { User, UserRole } from '../users/user.entity'
+import { WorkflowCard } from '../workflow/workflow-card.entity'
 import { NotificationsService } from '../notifications/notifications.service'
 import { NotificationType } from '../notifications/notification.entity'
 import { MailService } from '../mail/mail.service'
@@ -37,6 +38,20 @@ const STATUS_ICON: Record<string, string> = {
   cancelled: '⛔',
 }
 
+/** Названия этапов Доски проектов — для текста уведомлений о просрочке. */
+const STAGE_LABELS_WF: Record<string, string> = {
+  content_plan: 'Контент-план',
+  organization: 'Организация',
+  shooting: 'Съёмка',
+  editing: 'Монтаж',
+  design: 'Дизайн',
+  internal_review: 'Внутренняя проверка',
+  client_approval: 'Согласование с клиентом',
+  ready_to_publish: 'Готово к публикации',
+  published: 'Опубликовано',
+  ads: 'Реклама',
+}
+
 @Injectable()
 export class DeadlineScheduler implements OnModuleInit {
   private readonly logger = new Logger(DeadlineScheduler.name)
@@ -51,6 +66,15 @@ export class DeadlineScheduler implements OnModuleInit {
     } catch (e: any) {
       this.logger.warn(`Boot cleanup failed: ${e?.message}`)
     }
+    // Переход на Доску проектов: удаляем ВСЕ старые уведомления по задачам
+    // (просрочки/дедлайны/итоги дня) — они больше не актуальны.
+    try {
+      const res = await this.taskRepo.manager.query(`DELETE FROM notifications WHERE link LIKE '/tasks%'`)
+      const cnt = Array.isArray(res) ? Number(res[1] ?? 0) : 0
+      if (cnt > 0) this.logger.log(`Removed ${cnt} task notifications (migrated to workflow board)`)
+    } catch (e: any) {
+      this.logger.warn(`Task-notifications cleanup failed: ${e?.message}`)
+    }
   }
 
   constructor(
@@ -59,13 +83,15 @@ export class DeadlineScheduler implements OnModuleInit {
     @InjectRepository(ActivityLog) private activityLogRepo: Repository<ActivityLog>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(WorkflowCard) private workflowRepo: Repository<WorkflowCard>,
     private notificationsService: NotificationsService,
     private mailService: MailService,
     private telegramService: TelegramService,
   ) {}
 
   // ── 1. Deadline reminder (daily at 9am) ───────────────────────────────────
-  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  // ОТКЛЮЧЕНО: работа ведётся по Доске проектов. Просрочки/напоминания —
+  // из workflow_cards (см. notifyOverdueWorkflowCards). @Cron снят.
   async notifyUpcomingDeadlines() {
     this.logger.log('Checking upcoming deadlines...')
 
@@ -131,7 +157,8 @@ export class DeadlineScheduler implements OnModuleInit {
   }
 
   // ── 2. Overdue tasks (daily at 18:00 Dushanbe) ────────────────────────────
-  @Cron('0 18 * * *', { timeZone: 'Asia/Dushanbe' })
+  // ОТКЛЮЧЕНО: просрочки теперь считаются по Доске проектов
+  // (notifyOverdueWorkflowCards). @Cron снят — задачные просрочки не шлём.
   async notifyOverdueTasks() {
     this.logger.log('Checking overdue tasks...')
 
@@ -267,6 +294,82 @@ export class DeadlineScheduler implements OnModuleInit {
     this.logger.log(`Sent ${sent} overdue notifications, ${escalated} escalated to SMM-lead/organizer`)
   }
 
+  // ── 2b. Просрочки по ДОСКЕ ПРОЕКТОВ (ежедневно 18:00 Душанбе) ──────────
+  /** Заменяет notifyOverdueTasks: просрочки теперь из workflow_cards.
+   *  Карточка просрочена, если deadline < сегодня, этап не финальный
+   *  (не published/ads), статус не закрыт (не done/published) и это не КП. */
+  @Cron('0 18 * * *', { timeZone: 'Asia/Dushanbe' })
+  async notifyOverdueWorkflowCards() {
+    this.logger.log('Checking overdue workflow cards...')
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+    const cards = await this.workflowRepo.find({ relations: ['assignee'] })
+    const overdue = cards.filter(c => {
+      if (!c.deadline || c.kind === 'kp') return false
+      if (['published', 'ads'].includes(c.stage)) return false
+      if (['done', 'published'].includes((c.status as string) || '')) return false
+      const d = new Date(c.deadline); d.setHours(0, 0, 0, 0)
+      return d < todayStart
+    })
+    if (overdue.length === 0) { this.logger.log('No overdue workflow cards'); return }
+
+    const projectIds = [...new Set(overdue.map(c => c.projectId))]
+    const projects = projectIds.length ? await this.projectRepo.find({ where: { id: In(projectIds) } }) : []
+    const projMap = new Map(projects.map(p => [p.id, p]))
+    // Эскалация — руководителю СММ и организатору (как в задачах раньше).
+    const leads = await this.userRepo.find({ where: [
+      { role: UserRole.SMM_DIRECTOR, isActive: true },
+      { role: UserRole.ORGANIZER, isActive: true },
+    ] })
+
+    let sent = 0, escalated = 0
+    for (const card of overdue) {
+      const proj = projMap.get(card.projectId)
+      const projectName = proj?.name || '—'
+      const dl = new Date(card.deadline); dl.setHours(0, 0, 0, 0)
+      const daysOverdue = Math.max(1, Math.floor((todayStart.getTime() - dl.getTime()) / 86400000))
+      const daysWord = daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'
+      const sendExternal = daysOverdue <= 14
+      const stageLabel = STAGE_LABELS_WF[card.stage] || card.stage
+      const emailBody = `Карточка <b>«${card.title}»</b> (проект «${projectName}», этап «${stageLabel}») просрочена на <b>${daysOverdue} ${daysWord}</b>.<br>Откройте «Доску проектов», чтобы закрыть этап.`
+
+      const assigneeIds = new Set<string>()
+      if (card.assigneeId) assigneeIds.add(card.assigneeId)
+      if (Array.isArray(card.assigneeIds)) card.assigneeIds.forEach(id => id && assigneeIds.add(id))
+
+      for (const uid of assigneeIds) {
+        await this.pushOverdueNotify(uid, '🔴 Карточка просрочена',
+          `«${card.title}» — просрочено на ${daysOverdue} ${daysWord} · этап «${stageLabel}»`, sendExternal, emailBody)
+      }
+      const pmId = proj?.managerId
+      if (pmId && !assigneeIds.has(pmId)) {
+        await this.pushOverdueNotify(pmId, '🔴 Просрочка в команде',
+          `«${card.title}» (${projectName}) — просрочено на ${daysOverdue} ${daysWord}`, sendExternal, emailBody)
+      }
+      if (daysOverdue >= 3) {
+        for (const lead of leads) {
+          if (assigneeIds.has(lead.id) || lead.id === pmId) continue
+          await this.pushOverdueNotify(lead.id, '⚠️ Серьёзная просрочка',
+            `«${card.title}» (${projectName}) — просрочено на ${daysOverdue} ${daysWord}`, sendExternal, emailBody)
+        }
+        escalated++
+      }
+      sent++
+    }
+    this.logger.log(`Workflow overdue: ${sent} cards, ${escalated} escalated`)
+  }
+
+  /** in-app + (если sendExternal) Telegram + Email об одной просроченной карточке. */
+  private async pushOverdueNotify(userId: string, title: string, message: string, sendExternal: boolean, emailHtml: string) {
+    await this.notificationsService.create({
+      userId, type: NotificationType.TASK_OVERDUE, title, message, link: '/workflow-board',
+    } as any).catch(() => {})
+    if (sendExternal) {
+      this.telegramService.sendToUser(userId, `<b>${title}</b>\n${message}\n\n👉 ${this.telegramService.appUrl}/workflow-board`).catch(() => {})
+      const u = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null)
+      if (u?.email) this.mailService.sendGenericNotification(u.email, u.name || 'Сотрудник', title, emailHtml).catch(() => {})
+    }
+  }
+
   // ── 3. Inactivity check (every 2 hours) ───────────────────────────────────
   @Cron('0 */2 * * *')
   async checkInactivity() {
@@ -347,13 +450,14 @@ export class DeadlineScheduler implements OnModuleInit {
         },
       })
 
-      // Count overdue tasks assigned to this employee. КП-задачи не учитываются.
-      // Задачи в проверочных статусах overdue не считаются.
-      const overdueCount = await this.taskRepo.createQueryBuilder('t')
-        .where('t.assigneeId = :uid', { uid: emp.userId })
-        .andWhere('t.deadline < NOW()')
-        .andWhere('t.status NOT IN (:...statuses)', { statuses: TASK_CLOSED_FOR_OVERDUE })
-        .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
+      // Просрочки теперь считаются по Доске проектов: карточки сотрудника
+      // с истёкшим дедлайном, не на финальных этапах и не закрытые.
+      const overdueCount = await this.workflowRepo.createQueryBuilder('c')
+        .where('c."assigneeId" = :uid', { uid: emp.userId })
+        .andWhere('c.deadline < NOW()')
+        .andWhere(`c.stage NOT IN ('published','ads')`)
+        .andWhere(`COALESCE(c.status, '') NOT IN ('done','published')`)
+        .andWhere(`(c.kind IS NULL OR c.kind <> 'kp')`)
         .getCount()
 
       // Score formula: (positive * 10 - negative * 10 - overdue * 20) normalized to 0-100
@@ -523,7 +627,7 @@ export class DeadlineScheduler implements OnModuleInit {
   }
 
   // ── 7. Daily 18:00 Dushanbe — remind PMs about uncompleted tasks ─────────
-  @Cron('0 18 * * *', { timeZone: 'Asia/Dushanbe' })
+  // ОТКЛЮЧЕНО: переведено на Доску проектов. @Cron снят.
   async notifyDailyUncompleted() {
     this.logger.log('Daily 18:00 Dushanbe — collecting uncompleted tasks by project...')
 
@@ -660,7 +764,7 @@ export class DeadlineScheduler implements OnModuleInit {
   //  В упрощённой 4-статусной модели «на проверке» больше нет — берём
   //  все активные задачи которые не обновлялись > 24 часов и шлём PM
   //  напоминание разобраться.
-  @Cron('0 10 * * *')
+  // ОТКЛЮЧЕНО: переведено на Доску проектов. @Cron снят.
   async notifyPendingReview() {
     this.logger.log('Checking stale in-progress tasks...')
 

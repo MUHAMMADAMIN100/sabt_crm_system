@@ -33,9 +33,6 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/',              icon: LayoutDashboard, label: t('nav.dashboard'),  permission: 'dashboard',         exact: true },
     { to: '/projects',      icon: FolderKanban,    label: t('nav.projects'),   permission: 'projects.view' },
     { to: '/workflow-board', icon: Trello,         label: 'Доска проектов',    permission: 'projects.view' },
-    ...(isTopExec ? [] : [
-      { to: '/tasks',       icon: CheckSquare,     label: t('nav.tasks'),      permission: 'tasks.view' as Permission },
-    ]),
     { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
     { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
     { to: '/analytics',     icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },
