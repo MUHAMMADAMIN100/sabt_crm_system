@@ -341,6 +341,19 @@ export function CardFormModal({
   const stageLabel = STAGES.find(s => s.key === effectiveStage)?.label
   const canManage = canManageBoard(actor)
 
+  // Несколько исполнителей (как в групповой карточке): держим список id.
+  const [selectedAssignees, setSelectedAssignees] = useState<string[]>([])
+  useEffect(() => {
+    const fromArr = Array.isArray(card?.assigneeIds) && card.assigneeIds.length
+      ? card.assigneeIds
+      : (card?.assigneeId ? [card.assigneeId] : [])
+    setSelectedAssignees(fromArr)
+  }, [card?.id])
+  const toggleAssignee = (uid: string) =>
+    setSelectedAssignees(prev => prev.includes(uid) ? prev.filter(x => x !== uid) : [...prev, uid])
+  const nameOf = (id: string) =>
+    (assignees.find((m: any) => m.id === id)?.name) || (card?.assignee?.id === id ? card.assignee.name : '')
+
   return (
     <Modal open={open} onClose={onClose} title={card ? `Карточка — ${stageLabel}` : `Новая карточка — ${stageLabel}`}>
       {!canManage && (
@@ -353,7 +366,8 @@ export function CardFormModal({
           title: data.title,
           description: data.description || null,
           deadline: data.deadline || null,
-          assigneeId: data.assigneeId || null,
+          assigneeId: selectedAssignees[0] || null,
+          assigneeIds: selectedAssignees,
           publishDate: data.publishDate || null,
           ...(isContentPlan ? { type: data.type, needsCover: true, needsIntro: data.type === 'reels' ? !!data.needsIntro : false } : {}),
         }))}
@@ -406,13 +420,24 @@ export function CardFormModal({
               render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
           </div>
           <div>
-            <label className="label">Исполнитель</label>
-            <select {...register('assigneeId')} className="input" disabled={!activeProjectId}>
-              <option value="">{activeProjectId ? '— Не назначен —' : '— Сначала выберите проект —'}</option>
-              {assignees.map((m: any) => (
-                <option key={m.id} value={m.id}>{m.name}{m.role ? ` (${shortRole(m.role)})` : ''}</option>
-              ))}
-            </select>
+            <label className="label">Исполнители <span className="text-surface-400 font-normal">(можно несколько)</span></label>
+            {!activeProjectId ? (
+              <p className="input flex items-center text-surface-400 min-h-[38px]">— Сначала выберите проект —</p>
+            ) : canManage ? (
+              <div className="max-h-32 overflow-y-auto rounded-lg border border-surface-200 dark:border-surface-700 divide-y divide-surface-100 dark:divide-surface-700">
+                {assignees.length === 0 && <p className="text-xs text-surface-400 px-2 py-1.5">Нет доступных</p>}
+                {assignees.map((m: any) => (
+                  <label key={m.id} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700/40">
+                    <input type="checkbox" className="w-4 h-4 shrink-0" checked={selectedAssignees.includes(m.id)} onChange={() => toggleAssignee(m.id)} />
+                    <span className="truncate">{m.name}{m.role ? ` (${shortRole(m.role)})` : ''}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-surface-600 dark:text-surface-300 input flex items-center min-h-[38px]">
+                {selectedAssignees.length ? selectedAssignees.map(id => nameOf(id)).filter(Boolean).join(', ') : '— Не назначен —'}
+              </p>
+            )}
           </div>
         </div>
         <div>

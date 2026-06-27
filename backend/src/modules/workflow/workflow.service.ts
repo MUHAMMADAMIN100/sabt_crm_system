@@ -778,15 +778,27 @@ export class WorkflowService implements OnModuleInit {
     if (dto.type !== undefined && (dto.type === 'reels' || dto.type === 'static')) patch.type = dto.type;
     if (dto.needsCover !== undefined) patch.needsCover = !!dto.needsCover;
     if (dto.needsIntro !== undefined) patch.needsIntro = !!dto.needsIntro;
-    const assigneeChanged = dto.assigneeId !== undefined && (dto.assigneeId || null) !== card.assigneeId;
-    if (dto.assigneeId !== undefined) patch.assigneeId = dto.assigneeId || null;
+    // Несколько исполнителей: assigneeIds — список, assigneeId — основной.
+    const prevIds: string[] = (card.assigneeIds && card.assigneeIds.length)
+      ? card.assigneeIds : (card.assigneeId ? [card.assigneeId] : []);
+    let newlyAssigned: string[] = [];
+    if (dto.assigneeIds !== undefined) {
+      const ids = Array.isArray(dto.assigneeIds) ? dto.assigneeIds.filter(Boolean) : [];
+      patch.assigneeIds = ids.length ? ids : null;
+      patch.assigneeId = ids[0] || null;
+      newlyAssigned = ids.filter(id => !prevIds.includes(id));
+    } else if (dto.assigneeId !== undefined) {
+      patch.assigneeId = dto.assigneeId || null;
+      patch.assigneeIds = dto.assigneeId ? [dto.assigneeId] : null;
+      if (dto.assigneeId && !prevIds.includes(dto.assigneeId)) newlyAssigned = [dto.assigneeId];
+    }
     await this.repo.update(id, patch);
-    // R15: уведомление при назначении исполнителя — in-app + Telegram + Email.
-    if (assigneeChanged && patch.assigneeId) {
+    // R15: уведомление ВСЕМ вновь назначенным — in-app + Telegram + Email.
+    if (newlyAssigned.length) {
       const actor = await this.loadActor(viewer.id);
-      await this.logEvent(id, 'assign', { actor, message: `Назначен исполнитель`, meta: { assigneeId: patch.assigneeId } });
+      await this.logEvent(id, 'assign', { actor, message: `Назначен исполнитель`, meta: { assigneeIds: newlyAssigned } });
       const m: any = { ...card, ...patch };
-      await this.notifyAssigned([patch.assigneeId], {
+      await this.notifyAssigned(newlyAssigned, {
         title: m.title, projectId: m.projectId, type: m.type,
         description: m.description, deadline: m.deadline, publishDate: m.publishDate,
         shootDate: m.shootDate, shootTime: m.shootTime, shootLocation: m.shootLocation,
@@ -1007,7 +1019,9 @@ export class WorkflowService implements OnModuleInit {
       position: Number(max) + 1,
       status: 'active',
       publishDate: item.publishDate || null,
-      deadline: deadlines?.[stage] || null,
+      // Авто-дедлайн убран: дедлайн этапа ставит руководитель вручную
+      // (иначе расчёт от даты публикации мог попасть в прошлое).
+      deadline: null,
       stageDeadlines: deadlines,
       assigneeId: assigneeIds[0] || null,
       assigneeIds: assigneeIds.length ? assigneeIds : null,
@@ -1189,7 +1203,9 @@ export class WorkflowService implements OnModuleInit {
       `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
       [card.projectId, newStage],
     );
-    const deadline = card.stageDeadlines?.[newStage] || card.deadline || null;
+    // Авто-дедлайн убран: при переходе НЕ подставляем дедлайн из stageDeadlines,
+    // сохраняем тот, что выставлен вручную.
+    const deadline = card.deadline || null;
     const fromStage = card.stage;
     await this.repo.update(card.id, { stage: newStage, position: Number(max) + 1, deadline });
     await this.logEvent(card.id, 'stage_enter', {
