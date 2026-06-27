@@ -732,6 +732,11 @@ export class WorkflowService implements OnModuleInit {
         this.mail.sendGenericNotification(o.email, o.name || 'Организатор', title, emailBody).catch(() => {});
       }
     }
+    // Руководитель СММ — знает о создании контент-плана.
+    await this.notifySupervisor('', null, {
+      title: '📋 Контент-план создан',
+      message: `Создан контент-план: рилсов ${reelsCount}, макетов ${macrosCount} (проект «${projectName}»)`,
+    });
   }
 
   /** Создаёт/обновляет групповую карточку. При обновлении мерджит items по id,
@@ -1244,6 +1249,10 @@ export class WorkflowService implements OnModuleInit {
     if (card.stage !== 'client_approval') throw new BadRequestException('Доступно только на Согласовании');
     await this.repo.update(card.id, { sentToClientAt: new Date() });
     await this.logEvent(card.id, 'sent_to_client', { actor, message: 'Отправлено клиенту' });
+    await this.notifySupervisor(card.id, actor.id, {
+      title: `📤 Отправлено клиенту: ${card.title}`,
+      message: `«${card.title}» отправлена клиенту на согласование.`,
+    });
   }
 
   // R11: «Клиент согласовал» → Готово к публикации
@@ -1310,6 +1319,22 @@ export class WorkflowService implements OnModuleInit {
     if (assignees.length) {
       await this.notify(assignees, `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» перешла на этап «${STAGE_LABELS[newStage] || newStage}»`, card.projectId, buttons);
     }
+    // Руководитель СММ (Навруз) — знает КАЖДЫЙ шаг. Email + кнопки на его
+    // рабочих этапах (внутренняя проверка / согласование), иначе только CRM+TG.
+    const sLabel = STAGE_LABELS[newStage] || newStage;
+    const proj = await this.projectRepo.findOne({ where: { id: card.projectId } }).catch(() => null);
+    const pn = proj?.name || '';
+    const supMsg = newStage === 'internal_review'
+      ? `«${card.title}» сдан на внутреннюю проверку — нужно проверить и принять/вернуть (проект «${pn}»)`
+      : newStage === 'client_approval'
+        ? `«${card.title}» на согласовании с клиентом (проект «${pn}»)`
+        : `«${card.title}» → этап «${sLabel}» (проект «${pn}»)`;
+    await this.notifySupervisor(card.id, actor.id, {
+      title: `📋 ${sLabel}: ${card.title}`,
+      message: supMsg,
+      email: ['internal_review', 'client_approval'].includes(newStage),
+      buttons: actionable,
+    });
   }
 
   private async logEvent(cardId: string, action: string, data: {
@@ -1394,6 +1419,34 @@ export class WorkflowService implements OnModuleInit {
         link: '/workflow-board',
       } as any).catch(() => {});
       this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}`, buttons).catch(() => {});
+    }
+  }
+
+  /** Уведомить руководителей СММ (Навруза) о СОБЫТИИ доски — он должен знать
+   *  каждый шаг. in-app + Telegram всегда; Email — по флагу (его рабочие
+   *  этапы). buttons — кнопки «Сделал/Не сделал» (может закрыть этап из бота).
+   *  Уведомляем всех активных smm_director независимо от участия в проекте. */
+  private async notifySupervisor(
+    cardId: string,
+    actorId: string | null,
+    opts: { title: string; message: string; email?: boolean; buttons?: boolean },
+  ) {
+    const dirs: Array<{ id: string; name: string; email: string }> = await this.userRepo.query(
+      `SELECT id, name, email FROM users
+       WHERE "isActive" = true AND "isBlocked" = false
+         AND (role = 'smm_director' OR "secondaryRole" = 'smm_director')`,
+    ).catch(() => []);
+    if (!dirs.length) return;
+    const buttons = opts.buttons ? this.cardButtons(cardId) : undefined;
+    for (const d of dirs) {
+      if (actorId && d.id === actorId) continue; // не дублируем собственное действие
+      await this.notifications.create({
+        userId: d.id, type: NotificationType.STATUS_CHANGE, title: opts.title, message: opts.message, link: '/workflow-board',
+      } as any).catch(() => {});
+      this.telegram.sendToUser(d.id, `<b>${opts.title}</b>\n${opts.message}`, buttons).catch(() => {});
+      if (opts.email && d.email) {
+        this.mail.sendGenericNotification(d.email, d.name || 'Руководитель', opts.title, opts.message).catch(() => {});
+      }
     }
   }
 
@@ -1506,6 +1559,12 @@ export class WorkflowService implements OnModuleInit {
         this.mail.sendGenericNotification(u.email, u.name || 'Сотрудник', `↩ Доработка: ${card.title}`, body).catch(() => {});
       }
     }
+    // Руководитель СММ должен знать о доработке.
+    await this.notifySupervisor(card.id, null, {
+      title: `↩ Доработка: ${card.title}`,
+      message: `«${card.title}» отправлена на доработку (${kind === 'qa' ? 'внутренняя проверка' : 'правки клиента'}): ${comment}`,
+      buttons: true,
+    });
   }
 
   /** Уведомление руководителю СММ, что сотрудник отметил «не сделано». */
