@@ -303,9 +303,16 @@ export class WorkflowService implements OnModuleInit {
     };
   }
 
+  /** Руководитель производства (admin/founder/co_founder/smm_director/
+   *  organizer) может выполнять действие любого этапа. */
+  private isManager(actor: Actor): boolean {
+    return MANAGE_ROLES.includes(actor.role)
+      || (!!actor.secondaryRole && MANAGE_ROLES.includes(actor.secondaryRole));
+  }
+
   /** RBAC действия выхода этапа (ТЗ §12). */
   private assertCanAct(action: string, actor: Actor) {
-    if (ALL_ACCESS.includes(actor.role)) return;
+    if (this.isManager(actor)) return;
     const allowed = ACTION_ROLES[action] || [];
     if (allowed.includes(actor.role)) return;
     if (actor.secondaryRole && allowed.includes(actor.secondaryRole)) return;
@@ -315,7 +322,7 @@ export class WorkflowService implements OnModuleInit {
   /** RBAC по роли-владельцу ТЕКУЩЕГО этапа (для групповых действий, где этап
    *  меняется: организатор на «Организации», дизайнер на «Дизайне» и т.д.). */
   private assertStageRole(stage: string, actor: Actor) {
-    if (ALL_ACCESS.includes(actor.role)) return;
+    if (this.isManager(actor)) return;
     const roles = STAGE_ROLES[stage] || [];
     if (roles.includes(actor.role)) return;
     if (actor.secondaryRole && roles.includes(actor.secondaryRole)) return;

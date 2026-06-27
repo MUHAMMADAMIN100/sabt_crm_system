@@ -101,9 +101,11 @@ export const ACTION_ROLES: Record<string, string[]> = {
 }
 const ALL_ACCESS = ['admin', 'founder', 'co_founder']
 
-/** Может ли текущий пользователь выполнить действие (для скрытия кнопок). */
+/** Может ли текущий пользователь выполнить действие (для скрытия кнопок).
+ *  Руководители производства (MANAGE_ROLES: admin/founder/co_founder/
+ *  smm_director/organizer) могут выполнять действие ЛЮБОГО этапа. */
 export function canDoAction(action: string, role?: string | null, secondaryRole?: string | null): boolean {
-  if (role && ALL_ACCESS.includes(role)) return true
+  if (canManageBoard({ role, secondaryRole })) return true
   const allowed = ACTION_ROLES[action] || []
   return allowed.includes(role || '') || (!!secondaryRole && allowed.includes(secondaryRole))
 }
