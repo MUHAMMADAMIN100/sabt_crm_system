@@ -36,6 +36,9 @@ export default function ProjectWorkflowTab({ project }: Props) {
     queryKey,
     queryFn: () => workflowApi.list(projectId),
     enabled: !!projectId,
+    // Страховка на случай разрыва WebSocket — доска синхронизируется без F5.
+    refetchInterval: 12000,
+    refetchOnWindowFocus: true,
   })
 
   const byStage = useMemo(() => {

@@ -27,8 +27,14 @@ export function useSocket(authMarker: string | null) {
       // браузеров, где cookies заблокированы (Chrome anti-tracking).
       withCredentials: true,
       auth: bearer ? { token: bearer } : undefined,
-      transports: ['websocket'],
-      reconnectionAttempts: 5,
+      // websocket — основной; polling — fallback, если WS режет прокси/сеть.
+      // Без fallback сокет мог вообще не подняться → доска не обновлялась.
+      transports: ['websocket', 'polling'],
+      // Не сдаёмся после 5 попыток — иначе после разрыва realtime «умирал»
+      // до перезагрузки страницы.
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     })
 
     socket.on('connect', () => {

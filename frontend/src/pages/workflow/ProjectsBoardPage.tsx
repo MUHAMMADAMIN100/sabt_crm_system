@@ -25,6 +25,10 @@ export default function ProjectsBoardPage() {
   const { data: cards, isLoading } = useQuery({
     queryKey,
     queryFn: () => workflowApi.listAll(),
+    // Мгновенно — через WebSocket (workflow:changed). Интервал + фокус —
+    // страховка на случай разрыва сокета: доска синхронизируется без F5.
+    refetchInterval: 12000,
+    refetchOnWindowFocus: true,
   })
 
   const { data: projects } = useQuery({
