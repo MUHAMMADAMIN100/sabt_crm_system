@@ -331,6 +331,36 @@ export class WorkflowService implements OnModuleInit {
 
   private broadcast(projectId: string) {
     try { this.gateway.broadcast('workflow:changed', { projectId }); } catch { /* best-effort */ }
+    // Прогресс SMM-проекта считается по доске — пересчитываем при любой
+    // мутации (fire-and-forget, не блокируем ответ).
+    if (projectId) this.recomputeProjectProgress(projectId).catch(() => {});
+  }
+
+  /** Прогресс проекта = доля «единиц контента», дошедших до публикации.
+   *  Единица = одиночная карточка (kind=null, кроме обложек) ИЛИ элемент
+   *  группы (items в Рилсы/Макеты). КП-карточка и обложки не считаются.
+   *  Готово = одиночная карточка на этапе published. */
+  private async recomputeProjectProgress(projectId: string): Promise<void> {
+    try {
+      const cards = await this.repo.find({ where: { projectId } });
+      let total = 0;
+      let done = 0;
+      for (const c of cards) {
+        if (c.kind === 'reels' || c.kind === 'macros') {
+          total += Array.isArray(c.items) ? c.items.length : 0;
+        } else if (c.kind === 'kp' || c.type === 'cover') {
+          // КП-инструкция и карточки обложки/заставки — не единицы контента.
+          continue;
+        } else {
+          total += 1;
+          if (c.stage === 'published') done += 1;
+        }
+      }
+      const progress = total > 0 ? Math.round((done / total) * 100) : 0;
+      await this.projectRepo.update(projectId, { progress });
+    } catch (e: any) {
+      this.logger.warn(`recomputeProjectProgress failed: ${e?.message || e}`);
+    }
   }
 
   // ─── Чтение ───────────────────────────────────────────────────────────

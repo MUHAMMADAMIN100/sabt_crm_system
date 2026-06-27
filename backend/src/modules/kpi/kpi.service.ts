@@ -151,7 +151,7 @@ export class KpiService {
     // 2) Параллельно гонимся за всеми агрегациями.
     // Wave 14: убрали запрос hours/time_logs — метрика «Часов залогировано»
     // выпилена, считать её больше не нужно.
-    const [tasksRows, sessionRows, storyRows, projectRows] = await Promise.all([
+    const [tasksRows, sessionRows, storyRows, projectRows, boardRows] = await Promise.all([
       this.taskRepo.manager.query(
         `SELECT "assigneeId" AS uid,
                 COUNT(*)::int AS done_count,
@@ -189,6 +189,24 @@ export class KpiService {
          GROUP BY "managerId"`,
         [userIds],
       ),
+      // Доска проектов: опубликованные карточки исполнителя за период
+      // (учитываем и нескольких исполнителей через assigneeIds).
+      this.projectRepo.manager.query(
+        `SELECT uid, COUNT(*)::int AS done_count,
+                COUNT(*) FILTER (WHERE deadline IS NULL OR "publishedAt"::date <= deadline)::int AS on_time_count
+         FROM (
+           SELECT COALESCE(elem, "assigneeId"::text) AS uid, "publishedAt", deadline
+           FROM workflow_cards
+           LEFT JOIN LATERAL jsonb_array_elements_text(
+             CASE WHEN jsonb_typeof("assigneeIds") = 'array' THEN "assigneeIds" ELSE '[]'::jsonb END
+           ) AS elem ON true
+           WHERE stage = 'published' AND "publishedAt" BETWEEN $2 AND $3
+             AND (kind IS NULL)
+         ) sub
+         WHERE sub.uid IS NOT NULL AND sub.uid = ANY($1::text[])
+         GROUP BY uid`,
+        [userIds, periodFrom, periodTo],
+      ).catch(() => [] as any[]),
     ]);
 
     // 3) Индексируем по userId для быстрого доступа
@@ -202,6 +220,8 @@ export class KpiService {
     for (const r of storyRows) storiesByUid.set(r.uid, Number(r.total) || 0);
     const projectsByUid = new Map<string, number>();
     for (const r of projectRows) projectsByUid.set(r.uid, Number(r.cnt) || 0);
+    const boardByUid = new Map<string, { done: number; onTime: number }>();
+    for (const r of boardRows) boardByUid.set(r.uid, { done: Number(r.done_count) || 0, onTime: Number(r.on_time_count) || 0 });
 
     // 4) Для МП — запросы к ClientsService, параллельно
     const salesIds = userIds.filter(uid => {
@@ -238,16 +258,41 @@ export class KpiService {
       // и activity_days как универсальные. Подсчёт `t.done`/`hours` ниже
       // всё ещё нужен для deadline_rate.
 
-      // Deadline rate: %, не скейлим. Если done=0 → null/100 чтобы не штрафовать.
-      const deadlineRate = t.done > 0 ? Math.round((t.onTime / t.done) * 100) : 0;
-      items.push({
-        key: 'deadline_rate',
-        label: 'Соблюдено дедлайнов',
-        target: targets.deadlineRate,
-        value: deadlineRate,
-        percent: t.done > 0 ? Math.min(100, Math.round(deadlineRate / targets.deadlineRate * 100)) : 0,
-        done: t.done > 0 && deadlineRate >= targets.deadlineRate,
-      });
+      // KPI по Доске проектов — для всех ролей, КРОМЕ менеджеров продаж и
+      // разработчиков (они остаются на задачах).
+      const isBoardRole = !SALES_ROLES.has(user.role) && user.role !== UserRole.DEVELOPER;
+      if (isBoardRole) {
+        const board = boardByUid.get(uid) || { done: 0, onTime: 0 };
+        const cardsTarget = this.scaleTarget(targets.tasksDone, days);
+        items.push({
+          key: 'cards_done',
+          label: 'Карточек выполнено',
+          target: cardsTarget,
+          value: board.done,
+          percent: Math.min(100, Math.round(board.done / cardsTarget * 100)),
+          done: board.done >= cardsTarget,
+        });
+        const dr = board.done > 0 ? Math.round((board.onTime / board.done) * 100) : 0;
+        items.push({
+          key: 'deadline_rate',
+          label: 'Соблюдено дедлайнов',
+          target: targets.deadlineRate,
+          value: dr,
+          percent: board.done > 0 ? Math.min(100, Math.round(dr / targets.deadlineRate * 100)) : 0,
+          done: board.done > 0 && dr >= targets.deadlineRate,
+        });
+      } else {
+        // Разработчики / менеджеры продаж — соблюдение дедлайнов по задачам.
+        const deadlineRate = t.done > 0 ? Math.round((t.onTime / t.done) * 100) : 0;
+        items.push({
+          key: 'deadline_rate',
+          label: 'Соблюдено дедлайнов',
+          target: targets.deadlineRate,
+          value: deadlineRate,
+          percent: t.done > 0 ? Math.min(100, Math.round(deadlineRate / targets.deadlineRate * 100)) : 0,
+          done: t.done > 0 && deadlineRate >= targets.deadlineRate,
+        });
+      }
 
       const activityTarget = Math.min(days, this.scaleTarget(targets.activityDays, days));
       items.push({
@@ -344,7 +389,22 @@ export class KpiService {
     // Нормализуем ключ: SalesDashboard передаёт `new_companies` (без префикса),
     // EmployeeKpiCard — `sales_new_companies` (с префиксом). Внутри switch
     // всегда работаем с префиксом sales_*. Универсальные метрики остаются как есть.
-    const UNIVERSAL_KEYS = new Set(['deadline_rate', 'activity_days', 'stories_posted', 'projects_managed']);
+    const UNIVERSAL_KEYS = new Set(['deadline_rate', 'activity_days', 'stories_posted', 'projects_managed', 'cards_done']);
+    const isBoardRole = user.role !== UserRole.SALES_MANAGER_SMM
+      && user.role !== UserRole.SALES_MANAGER_DEV
+      && user.role !== UserRole.DEVELOPER
+      && !TOP_ROLES.has(user.role);
+    // Опубликованные карточки доски исполнителя за период (для cards_done и
+    // board-варианта deadline_rate).
+    const boardPublished = async () => this.projectRepo.manager.query(
+      `SELECT id, title, "publishedAt", deadline, "projectId"
+       FROM workflow_cards
+       WHERE stage = 'published' AND kind IS NULL
+         AND "publishedAt" BETWEEN $2 AND $3
+         AND ("assigneeId"::text = $1 OR (jsonb_typeof("assigneeIds") = 'array' AND "assigneeIds" ? $1))
+       ORDER BY "publishedAt" DESC`,
+      [userId, periodFrom, periodTo],
+    ).catch(() => [] as any[]);
     const normalized = UNIVERSAL_KEYS.has(metric)
       ? metric
       : (metric.startsWith('sales_') ? metric : `sales_${metric}`);
@@ -501,8 +561,39 @@ export class KpiService {
         }));
       }
 
-      // ─── Универсальное: соблюдено дедлайнов (done tasks за период) ─────
+      // ─── Доска: карточки, доведённые до публикации за период ───────────
+      case 'cards_done': {
+        const rows = await boardPublished();
+        return (rows as any[]).map(c => {
+          const onTime = !c.deadline || new Date(c.publishedAt) <= new Date(c.deadline);
+          return {
+            id: c.id,
+            title: c.title,
+            subtitle: onTime ? '✓ опубликовано в срок' : '⚠ с опозданием',
+            date: c.publishedAt ? new Date(c.publishedAt).toISOString() : null,
+            link: '/workflow-board',
+            meta: { onTime, deadline: c.deadline },
+          };
+        });
+      }
+
+      // ─── Универсальное: соблюдено дедлайнов ────────────────────────────
+      // Для SMM/продакшн-ролей — по Доске проектов; для остальных — по задачам.
       case 'deadline_rate': {
+        if (isBoardRole) {
+          const rows = await boardPublished();
+          return (rows as any[]).map(c => {
+            const onTime = !c.deadline || new Date(c.publishedAt) <= new Date(c.deadline);
+            return {
+              id: c.id,
+              title: c.title,
+              subtitle: onTime ? '✓ в срок' : '⚠ с опозданием',
+              date: c.publishedAt ? new Date(c.publishedAt).toISOString() : null,
+              link: '/workflow-board',
+              meta: { onTime, deadline: c.deadline },
+            };
+          });
+        }
         const tasks = await this.taskRepo.manager.query(
           `SELECT id, title, deadline, "updatedAt", "reviewedAt", status
            FROM tasks

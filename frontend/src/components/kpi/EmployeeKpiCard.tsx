@@ -4,7 +4,7 @@ import { kpiApi } from '@/services/api.service'
 import KpiDetailsModal from './KpiDetailsModal'
 import {
   TrendingUp, Building2, Phone, Mail, Calendar,
-  Target, Activity, Camera, Briefcase,
+  Target, Activity, Camera, Briefcase, CheckSquare,
 } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subMonths } from 'date-fns'
 import clsx from 'clsx'
@@ -69,6 +69,7 @@ export interface UserKpi {
 /** Иконка для каждого ключа метрики. tasks_done и hours_logged выпилены
  *  в Wave 14 — оставлены fallback'ом на случай старых клиентов в очереди. */
 const KEY_ICON: Record<string, any> = {
+  cards_done: CheckSquare,
   deadline_rate: Target,
   activity_days: Activity,
   stories_posted: Camera,
