@@ -170,6 +170,7 @@ export class WorkflowService implements OnModuleInit {
         `ADD COLUMN IF NOT EXISTS items jsonb`,
         `ADD COLUMN IF NOT EXISTS confirmed boolean NOT NULL DEFAULT false`,
         `ADD COLUMN IF NOT EXISTS "assigneeIds" jsonb`,
+        `ADD COLUMN IF NOT EXISTS "editorIds" jsonb`,
       ];
       for (const c of cols) {
         await this.repo.manager.query(`ALTER TABLE workflow_cards ${c}`);
@@ -448,6 +449,7 @@ export class WorkflowService implements OnModuleInit {
       position: c.position,
       assigneeId: c.assigneeId,
       assigneeIds: c.assigneeIds || null,
+      editorIds: c.editorIds || null,
       assignee: c.assignee ? {
         id: c.assignee.id,
         name: c.assignee.name,
@@ -654,6 +656,9 @@ export class WorkflowService implements OnModuleInit {
         assigneeName: it.assigneeName || null,
         assigneeIds: Array.isArray(it.assigneeIds) ? it.assigneeIds.filter(Boolean) : (it.assigneeId ? [it.assigneeId] : []),
         assigneeNames: Array.isArray(it.assigneeNames) ? it.assigneeNames.filter(Boolean) : (it.assigneeName ? [it.assigneeName] : []),
+        // Монтажёры, выбранные заранее на «Съёмке» — переходят в исполнители на «Монтаже».
+        editorIds: Array.isArray(it.editorIds) ? it.editorIds.filter(Boolean) : [],
+        editorNames: Array.isArray(it.editorNames) ? it.editorNames.filter(Boolean) : [],
         shootDate: it.shootDate || null,
         shootTime: it.shootTime || null,
         shootLocation: it.shootLocation || null,
@@ -764,6 +769,8 @@ export class WorkflowService implements OnModuleInit {
           assigneeName: prev.assigneeName ?? it.assigneeName,
           assigneeIds: (prev.assigneeIds && prev.assigneeIds.length) ? prev.assigneeIds : it.assigneeIds,
           assigneeNames: (prev.assigneeNames && prev.assigneeNames.length) ? prev.assigneeNames : it.assigneeNames,
+          editorIds: (prev.editorIds && prev.editorIds.length) ? prev.editorIds : it.editorIds,
+          editorNames: (prev.editorNames && prev.editorNames.length) ? prev.editorNames : it.editorNames,
           shootDate: prev.shootDate ?? it.shootDate,
           shootTime: prev.shootTime ?? it.shootTime,
           shootLocation: prev.shootLocation ?? it.shootLocation,
@@ -799,6 +806,8 @@ export class WorkflowService implements OnModuleInit {
     const idsOf = (it: any): string[] =>
       (it?.assigneeIds && it.assigneeIds.length) ? it.assigneeIds.filter(Boolean)
         : (it?.assigneeId ? [it.assigneeId] : []);
+    const editorsOf = (it: any): string[] =>
+      (it?.editorIds && it.editorIds.length) ? it.editorIds.filter(Boolean) : [];
     for (const it of list) {
       const prev: any = prevById.get(it.id);
       const prevIds = idsOf(prev);
@@ -808,6 +817,17 @@ export class WorkflowService implements OnModuleInit {
           title: it.title || card.title, projectId: card.projectId, cardId: card.id, type: card.kind,
           description: it.description, publishDate: it.publishDate,
           shootDate: it.shootDate, shootTime: it.shootTime, shootLocation: it.shootLocation,
+        }, actor.name);
+      }
+      // Вновь выбранные монтажёры (editorIds) — уведомляем по 3 каналам.
+      const prevEditors = editorsOf(prev);
+      const addedEditors = editorsOf(it).filter(id => !prevEditors.includes(id));
+      if (addedEditors.length) {
+        await this.notifyAssigned(addedEditors, {
+          title: it.title || card.title, projectId: card.projectId, cardId: card.id, type: card.kind,
+          description: it.description, publishDate: it.publishDate,
+          shootDate: it.shootDate, shootTime: it.shootTime, shootLocation: it.shootLocation,
+          note: 'Назначены монтажёром — приступайте после съёмки.',
         }, actor.name);
       }
     }
@@ -879,17 +899,37 @@ export class WorkflowService implements OnModuleInit {
       patch.assigneeIds = dto.assigneeId ? [dto.assigneeId] : null;
       if (dto.assigneeId && !prevIds.includes(dto.assigneeId)) newlyAssigned = [dto.assigneeId];
     }
+    // Монтажёры, выбранные заранее на карточке «Съёмка» (editorIds). Станут
+    // исполнителями при переходе Съёмка → Монтаж; здесь уведомляем о назначении.
+    const prevEditors: string[] = (card.editorIds && card.editorIds.length) ? card.editorIds : [];
+    let newlyEditors: string[] = [];
+    if (dto.editorIds !== undefined) {
+      const ids = Array.isArray(dto.editorIds) ? dto.editorIds.filter(Boolean) : [];
+      patch.editorIds = ids.length ? ids : null;
+      newlyEditors = ids.filter(id => !prevEditors.includes(id));
+    }
     await this.repo.update(id, patch);
     // R15: уведомление ВСЕМ вновь назначенным — in-app + Telegram + Email.
-    if (newlyAssigned.length) {
+    if (newlyAssigned.length || newlyEditors.length) {
       const actor = await this.loadActor(viewer.id);
-      await this.logEvent(id, 'assign', { actor, message: `Назначен исполнитель`, meta: { assigneeIds: newlyAssigned } });
       const m: any = { ...card, ...patch };
-      await this.notifyAssigned(newlyAssigned, {
-        title: m.title, projectId: m.projectId, cardId: id, type: m.type,
-        description: m.description, deadline: m.deadline, publishDate: m.publishDate,
-        shootDate: m.shootDate, shootTime: m.shootTime, shootLocation: m.shootLocation,
-      }, actor.name);
+      if (newlyAssigned.length) {
+        await this.logEvent(id, 'assign', { actor, message: `Назначен исполнитель`, meta: { assigneeIds: newlyAssigned } });
+        await this.notifyAssigned(newlyAssigned, {
+          title: m.title, projectId: m.projectId, cardId: id, type: m.type,
+          description: m.description, deadline: m.deadline, publishDate: m.publishDate,
+          shootDate: m.shootDate, shootTime: m.shootTime, shootLocation: m.shootLocation,
+        }, actor.name);
+      }
+      if (newlyEditors.length) {
+        await this.logEvent(id, 'assign', { actor, message: `Назначен монтажёр`, meta: { editorIds: newlyEditors } });
+        await this.notifyAssigned(newlyEditors, {
+          title: m.title, projectId: m.projectId, cardId: id, type: m.type,
+          description: m.description, deadline: m.deadline, publishDate: m.publishDate,
+          shootDate: m.shootDate, shootTime: m.shootTime, shootLocation: m.shootLocation,
+          note: 'Назначены монтажёром — приступайте после съёмки.',
+        }, actor.name);
+      }
     }
     this.broadcast(card.projectId);
     return this.repo.findOne({ where: { id }, relations: ['assignee', 'createdBy'] })
@@ -1091,11 +1131,16 @@ export class WorkflowService implements OnModuleInit {
       `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
       [group.projectId, stage],
     );
-    // Несколько исполнителей (видеографов): переносим всех; assigneeId —
-    // основной (первый) для аватара/совместимости.
-    const assigneeIds: string[] = (item.assigneeIds && item.assigneeIds.length)
+    // Несколько исполнителей: переносим всех; assigneeId — основной (первый).
+    // На этапе «Монтаж» исполнители = заранее выбранные монтажёры (editorIds),
+    // иначе — обычные исполнители элемента (видеографы).
+    const editorIds: string[] = (item.editorIds && item.editorIds.length)
+      ? item.editorIds.filter(Boolean) : [];
+    const baseAssignees: string[] = (item.assigneeIds && item.assigneeIds.length)
       ? item.assigneeIds.filter(Boolean)
       : (item.assigneeId ? [item.assigneeId] : []);
+    const assigneeIds: string[] = (stage === 'editing' && editorIds.length)
+      ? editorIds : baseAssignees;
     const saved = await this.repo.save(this.repo.create({
       projectId: group.projectId,
       title: item.title || (isReel ? 'Reels' : 'Макет'),
@@ -1112,6 +1157,9 @@ export class WorkflowService implements OnModuleInit {
       stageDeadlines: deadlines,
       assigneeId: assigneeIds[0] || null,
       assigneeIds: assigneeIds.length ? assigneeIds : null,
+      // Если карточка ушла на «Съёмку» — монтажёров несём дальше (editorIds),
+      // чтобы shootDone перевёл их в исполнители на «Монтаже».
+      editorIds: (stage !== 'editing' && editorIds.length) ? editorIds : null,
       shootDate: item.shootDate || null,
       shootTime: item.shootTime || null,
       shootLocation: item.shootLocation || null,
@@ -1162,11 +1210,23 @@ export class WorkflowService implements OnModuleInit {
   // R5: «Съёмка завершена» (Съёмка → Монтаж). Ссылка на исходники — необязательна.
   private async shootDone(card: WorkflowCard, payload: any, actor: Actor) {
     if (card.stage !== 'shooting') throw new BadRequestException('Доступно только на этапе Съёмка');
+    const patch: Partial<WorkflowCard> = {};
     const rawFootageUrl = payload?.rawFootageUrl || card.rawFootageUrl;
     if (rawFootageUrl) {
-      await this.repo.update(card.id, { rawFootageUrl });
+      patch.rawFootageUrl = rawFootageUrl;
       card.rawFootageUrl = rawFootageUrl;
     }
+    // Передаём карточку монтажёрам, выбранным заранее на «Съёмке» (editorIds).
+    // Тогда на этапе «Монтаж» в исполнителях сразу видны выбранные люди и им
+    // придёт уведомление этапа с кнопками (через moveToStage).
+    const editorIds = (card.editorIds || []).filter(Boolean);
+    if (editorIds.length) {
+      patch.assigneeId = editorIds[0];
+      patch.assigneeIds = editorIds;
+      card.assigneeId = editorIds[0];
+      card.assigneeIds = editorIds;
+    }
+    if (Object.keys(patch).length) await this.repo.update(card.id, patch);
     await this.moveToStage(card, 'editing', actor, { message: 'Съёмка завершена → Монтаж' });
   }
 
@@ -1466,6 +1526,8 @@ export class WorkflowService implements OnModuleInit {
       shootDate?: string | null;
       shootTime?: string | null;
       shootLocation?: string | null;
+      /** Доп. пояснение роли — напр. «Назначены монтажёром (после съёмки)». */
+      note?: string | null;
     },
     actorName?: string,
   ) {
@@ -1495,6 +1557,7 @@ export class WorkflowService implements OnModuleInit {
     const lines = [
       typeLabel ? `${typeLabel}: ${details.title}` : details.title,
       `Проект: ${projectName}`,
+      details.note ? details.note : '',
       deadline ? `Дедлайн: ${deadline}` : '',
       publishDate ? `Публикация: ${publishDate}` : '',
       shoot ? `Съёмка: ${shoot}` : '',
@@ -1507,6 +1570,7 @@ export class WorkflowService implements OnModuleInit {
       `<b>${title}</b>`,
       `📌 <b>${details.title}</b>${typeLabel ? ` (${typeLabel})` : ''}`,
       `📁 Проект: ${projectName}`,
+      details.note ? `🎞 ${details.note}` : '',
       deadline ? `📅 Дедлайн: ${deadline}` : '',
       publishDate ? `🗓 Публикация: ${publishDate}` : '',
       shoot ? `🎥 Съёмка: ${shoot}` : '',

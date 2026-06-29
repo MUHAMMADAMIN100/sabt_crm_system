@@ -57,6 +57,12 @@ export class WorkflowCard {
   @Column({ type: 'jsonb', nullable: true })
   assigneeIds: string[] | null;
 
+  /** Монтажёры, выбранные ЗАРАНЕЕ на карточке «Съёмка» (роль video_editor).
+   *  При переходе Съёмка → Монтаж они становятся исполнителями карточки
+   *  (assigneeIds), поэтому на карточке монтажа сразу видны выбранные люди. */
+  @Column({ type: 'jsonb', nullable: true })
+  editorIds: string[] | null;
+
   /** Этап (колонка доски). */
   @Column({ default: 'content_plan' })
   stage: string;

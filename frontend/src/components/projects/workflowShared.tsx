@@ -354,6 +354,22 @@ export function CardFormModal({
   const nameOf = (id: string) =>
     (assignees.find((m: any) => m.id === id)?.name) || (card?.assignee?.id === id ? card.assignee.name : '')
 
+  // ─── Монтаж: на этапе «Съёмка» заранее выбираем монтажёров (video_editor).
+  // При переходе Съёмка → Монтаж они станут исполнителями карточки монтажа.
+  const showEditors = effectiveStage === 'shooting'
+  const { data: editorUsers = [] } = useQuery({
+    queryKey: ['workflow-assignees', 'video_editor'],
+    queryFn: () => workflowApi.assignees(['video_editor']),
+    enabled: showEditors,
+  })
+  const [selectedEditors, setSelectedEditors] = useState<string[]>([])
+  useEffect(() => {
+    setSelectedEditors(Array.isArray(card?.editorIds) ? card.editorIds : [])
+  }, [card?.id])
+  const toggleEditor = (uid: string) =>
+    setSelectedEditors(prev => prev.includes(uid) ? prev.filter(x => x !== uid) : [...prev, uid])
+  const editorNameOf = (id: string) => (editorUsers as any[]).find((m: any) => m.id === id)?.name || ''
+
   return (
     <Modal open={open} onClose={onClose} title={card ? `Карточка — ${stageLabel}` : `Новая карточка — ${stageLabel}`}>
       {!canManage && (
@@ -369,6 +385,7 @@ export function CardFormModal({
           assigneeId: selectedAssignees[0] || null,
           assigneeIds: selectedAssignees,
           publishDate: data.publishDate || null,
+          ...(showEditors ? { editorIds: selectedEditors } : {}),
           ...(isContentPlan ? { type: data.type, needsCover: true, needsIntro: data.type === 'reels' ? !!data.needsIntro : false } : {}),
         }))}
         className="space-y-4"
@@ -440,6 +457,31 @@ export function CardFormModal({
             )}
           </div>
         </div>
+        {showEditors && (
+          <div>
+            <label className="label">Монтаж <span className="text-surface-400 font-normal">— монтажёры (можно несколько)</span></label>
+            {!activeProjectId ? (
+              <p className="input flex items-center text-surface-400 min-h-[38px]">— Сначала выберите проект —</p>
+            ) : canManage ? (
+              <>
+                <div className="max-h-32 overflow-y-auto rounded-lg border border-surface-200 dark:border-surface-700 divide-y divide-surface-100 dark:divide-surface-700">
+                  {(editorUsers as any[]).length === 0 && <p className="text-xs text-surface-400 px-2 py-1.5">Нет доступных монтажёров</p>}
+                  {(editorUsers as any[]).map((m: any) => (
+                    <label key={m.id} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700/40">
+                      <input type="checkbox" className="w-4 h-4 shrink-0" checked={selectedEditors.includes(m.id)} onChange={() => toggleEditor(m.id)} />
+                      <span className="truncate">{m.name}{m.role ? ` (${shortRole(m.role)})` : ''}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[11px] text-surface-400 mt-1">Когда съёмка завершится, карточка перейдёт в «Монтаж» на выбранных монтажёров — они получат уведомление.</p>
+              </>
+            ) : (
+              <p className="text-sm text-surface-600 dark:text-surface-300 input flex items-center min-h-[38px]">
+                {selectedEditors.length ? selectedEditors.map(id => editorNameOf(id)).filter(Boolean).join(', ') : '— Не назначен —'}
+              </p>
+            )}
+          </div>
+        )}
         <div>
           <label className="label">Описание / сценарий</label>
           <textarea {...register('description')} className="input min-h-[70px]" rows={3} />
@@ -1016,6 +1058,14 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
     queryKey: ['workflow-assignees', assignRoles.join(',')],
     queryFn: () => workflowApi.assignees(assignRoles),
   })
+  // На «Съёмке» рилсов можно заранее выбрать монтажёров — при переходе в
+  // «Монтаж» они станут исполнителями и получат уведомление по 3 каналам.
+  const showEditorPick = isReels && stage === 'shooting'
+  const { data: editorOpts = [] } = useQuery({
+    queryKey: ['workflow-assignees', 'video_editor'],
+    queryFn: () => workflowApi.assignees(['video_editor']),
+    enabled: showEditorPick,
+  })
   // Следующий этап маршрута группы (для подписей кнопок).
   const nextKey = GROUP_NEXT_FE[isReels ? 'reels' : 'macros'][stage]
   const nextLabel = STAGES.find(s => s.key === nextKey)?.label || ''
@@ -1034,6 +1084,15 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
     const ids = cur.includes(m.id) ? cur.filter(x => x !== m.id) : [...cur, m.id]
     const names = ids.map(id => (opts as any[]).find((o: any) => o.id === id)?.name).filter(Boolean)
     setItem(idx, { assigneeIds: ids, assigneeNames: names, assigneeId: ids[0] || '', assigneeName: names[0] || '' })
+  }
+  // Монтажёры элемента (заранее на «Съёмке»).
+  const itemEditorIds = (it: any): string[] => Array.isArray(it.editorIds) ? it.editorIds.filter(Boolean) : []
+  const itemEditorNames = (it: any): string[] => Array.isArray(it.editorNames) ? it.editorNames.filter(Boolean) : []
+  const toggleEditor = (idx: number, m: any) => {
+    const cur = itemEditorIds(items[idx])
+    const ids = cur.includes(m.id) ? cur.filter(x => x !== m.id) : [...cur, m.id]
+    const names = ids.map(id => (editorOpts as any[]).find((o: any) => o.id === id)?.name).filter(Boolean)
+    setItem(idx, { editorIds: ids, editorNames: names })
   }
 
   // Оптимистичное обновление обеих досок (префикс ['workflow']).
@@ -1139,6 +1198,29 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
                     ) : (
                       <p className="text-sm text-surface-600 dark:text-surface-300 input flex items-center min-h-[38px]">
                         {itemNames(it).length ? itemNames(it).join(', ') : '— Не назначен —'}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {showEditorPick && (
+                  <div>
+                    <label className="label text-xs">Монтаж <span className="text-surface-400 font-normal">— монтажёры (можно несколько)</span></label>
+                    {canManage ? (
+                      <div className="max-h-32 overflow-y-auto rounded-lg border border-surface-200 dark:border-surface-700 divide-y divide-surface-100 dark:divide-surface-700">
+                        {(editorOpts as any[]).length === 0 && <p className="text-xs text-surface-400 px-2 py-1.5">Нет доступных монтажёров</p>}
+                        {(editorOpts as any[]).map((m: any) => {
+                          const checked = itemEditorIds(it).includes(m.id)
+                          return (
+                            <label key={m.id} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700/40">
+                              <input type="checkbox" className="w-4 h-4 shrink-0" checked={checked} onChange={() => toggleEditor(idx, m)} />
+                              <span className="truncate">{m.name}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-surface-600 dark:text-surface-300 input flex items-center min-h-[38px]">
+                        {itemEditorNames(it).length ? itemEditorNames(it).join(', ') : '— Не назначен —'}
                       </p>
                     )}
                   </div>
