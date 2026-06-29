@@ -118,6 +118,24 @@ export function canManageBoard(actor?: { role?: string | null; secondaryRole?: s
   return MANAGE_ROLES.includes(actor.role || '') || MANAGE_ROLES.includes(actor.secondaryRole || '')
 }
 
+/** Является ли пользователь исполнителем карточки — зеркалит backend isAssignee:
+ *  основной assigneeId, список assigneeIds, заранее назначенные монтажёры
+ *  (editorIds) и назначения внутри элементов группы. Используется фильтром
+ *  «только мои» на доске, чтобы он совпадал с виджетом «Мои карточки». */
+export function isMineCard(card: any, uid?: string | null): boolean {
+  if (!uid || !card) return false
+  if (card.assigneeId === uid) return true
+  if (Array.isArray(card.assigneeIds) && card.assigneeIds.includes(uid)) return true
+  if (Array.isArray(card.editorIds) && card.editorIds.includes(uid)) return true
+  if (Array.isArray(card.items)) {
+    return card.items.some((it: any) =>
+      it?.assigneeId === uid ||
+      (Array.isArray(it?.assigneeIds) && it.assigneeIds.includes(uid)) ||
+      (Array.isArray(it?.editorIds) && it.editorIds.includes(uid)))
+  }
+  return false
+}
+
 /**
  * Предсказание результата перехода для ОПТИМИСТИЧНОГО обновления доски —
  * зеркалит движок workflow.service. patch применяется к карточке в кэше

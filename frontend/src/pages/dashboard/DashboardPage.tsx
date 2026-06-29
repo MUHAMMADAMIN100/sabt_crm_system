@@ -178,6 +178,10 @@ export default function DashboardPage() {
         <Suspense fallback={<PageLoader />}>
           <FounderDashboard />
         </Suspense>
+        {/* Назначенные лично карточки доски — виджет сам скрыт, если их нет. */}
+        <Suspense fallback={null}>
+          <MyWorkflowCards />
+        </Suspense>
       </div>
     )
   }
@@ -193,6 +197,11 @@ export default function DashboardPage() {
         </div>
         <Suspense fallback={<PageLoader />}>
           <PMDashboard />
+        </Suspense>
+        {/* Руководитель СММ/видео — штатный исполнитель этапов проверки/
+            согласования; назначенные ему карточки показываем и в его кабинете. */}
+        <Suspense fallback={null}>
+          <MyWorkflowCards />
         </Suspense>
       </div>
     )

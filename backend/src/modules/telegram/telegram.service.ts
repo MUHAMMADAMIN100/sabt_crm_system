@@ -31,7 +31,10 @@ export class TelegramService {
   async sendToUser(userId: string, text: string, buttons?: TgButton[][]): Promise<void> {
     try {
       const employee = await this.employeeRepo.findOne({ where: { userId } });
-      if (!employee?.telegramChatId) return;
+      // Операционные причины «не пришло в TG» — логируем, чтобы было видно:
+      // нет карточки сотрудника, или не нажал /start (нет telegramChatId).
+      if (!employee) { this.logger.debug(`no employee row for user ${userId} — Telegram skipped`); return; }
+      if (!employee.telegramChatId) { this.logger.debug(`user ${userId} has no telegramChatId (не нажал /start) — Telegram skipped`); return; }
       await this.sendMessage(employee.telegramChatId, text, buttons);
     } catch (e) {
       this.logger.warn(`Failed to send Telegram to user ${userId}: ${e?.message || e}`);

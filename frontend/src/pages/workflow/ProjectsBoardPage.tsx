@@ -8,7 +8,7 @@ import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
 import {
   STAGES, shortRole, CardFormModal, AdCampaignModal, WorkflowCardBadges,
-  DeadlineSettingsModal, ContentPlanModal, GroupCardModal, predictTransition, canManageBoard,
+  DeadlineSettingsModal, ContentPlanModal, GroupCardModal, predictTransition, canManageBoard, isMineCard,
 } from '@/components/projects/workflowShared'
 
 /**
@@ -44,7 +44,7 @@ export default function ProjectsBoardPage() {
   const [mineOnly, setMineOnly] = useState(false)
 
   const visibleCards = useMemo(
-    () => (cards || []).filter((c: any) => !mineOnly || c.assigneeId === currentUserId),
+    () => (cards || []).filter((c: any) => !mineOnly || isMineCard(c, currentUserId)),
     [cards, mineOnly, currentUserId],
   )
 

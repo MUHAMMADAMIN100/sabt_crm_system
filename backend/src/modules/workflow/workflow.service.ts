@@ -280,15 +280,19 @@ export class WorkflowService implements OnModuleInit {
   }
 
   /** Является ли пользователь исполнителем карточки — учитывая нескольких
-   *  исполнителей (assigneeIds) и назначения внутри элементов группы. */
+   *  исполнителей (assigneeIds), заранее назначенных монтажёров (editorIds —
+   *  чтобы карточка была в кабинете монтажёра ещё на «Съёмке») и назначения
+   *  внутри элементов группы. */
   private isAssignee(card: WorkflowCard, uid: string): boolean {
     if (card.assigneeId === uid) return true;
     if (Array.isArray(card.assigneeIds) && card.assigneeIds.includes(uid)) return true;
+    if (Array.isArray(card.editorIds) && card.editorIds.includes(uid)) return true;
     const items = (card.items || []) as any[];
     if (Array.isArray(items)) {
       return items.some(it =>
         it?.assigneeId === uid ||
-        (Array.isArray(it?.assigneeIds) && it.assigneeIds.includes(uid)));
+        (Array.isArray(it?.assigneeIds) && it.assigneeIds.includes(uid)) ||
+        (Array.isArray(it?.editorIds) && it.editorIds.includes(uid)));
     }
     return false;
   }
@@ -367,13 +371,24 @@ export class WorkflowService implements OnModuleInit {
   // ─── Чтение ───────────────────────────────────────────────────────────
 
   async list(projectId: string, viewer: Viewer) {
-    // B1: доска проекта видна только участнику/менеджеру/привилегированной роли.
-    await this.assertCanEdit(projectId, viewer);
-    return this.repo.find({
+    // Полная доска проекта — участнику/менеджеру/привилегированной роли.
+    // Иначе (назначен исполнителем/монтажёром, но не участник проекта) — только
+    // свои карточки, чтобы назначение не упиралось в 403 (как в listAll/myCards).
+    let full = true;
+    try {
+      await this.assertCanEdit(projectId, viewer);
+    } catch {
+      full = false;
+    }
+    const cards = await this.repo.find({
       where: { projectId },
       relations: ['assignee', 'createdBy'],
       order: { stage: 'ASC', position: 'ASC', createdAt: 'ASC' },
-    }).then(cards => cards.map(c => this.toDto(c)));
+    });
+    if (full) return cards.map(c => this.toDto(c));
+    const mine = cards.filter(c => this.isAssignee(c, viewer.id));
+    if (mine.length === 0) throw new ForbiddenException('Нет доступа к доске этого проекта');
+    return mine.map(c => this.toDto(c));
   }
 
   async listAll(viewer: Viewer) {
@@ -500,6 +515,14 @@ export class WorkflowService implements OnModuleInit {
     const stage = WORKFLOW_STAGES.includes(dto?.stage) ? dto.stage : 'content_plan';
     const type: 'reels' | 'static' | null =
       dto?.type === 'reels' || dto?.type === 'static' ? dto.type : null;
+    // Несколько исполнителей: assigneeIds — список, assigneeId — основной (первый).
+    // ВАЖНО: раньше create() сохранял только assigneeId и НЕ слал уведомления —
+    // из-за этого назначенные при создании карточки не видели её и не получали
+    // оповещений. Теперь поведение зеркалит update().
+    const assigneeIds: string[] = Array.isArray(dto?.assigneeIds)
+      ? dto.assigneeIds.filter(Boolean)
+      : (dto?.assigneeId ? [dto.assigneeId] : []);
+    const editorIds: string[] = Array.isArray(dto?.editorIds) ? dto.editorIds.filter(Boolean) : [];
     const [{ max }] = await this.repo.manager.query(
       `SELECT COALESCE(MAX(position), -1)::int AS max
        FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
@@ -511,7 +534,9 @@ export class WorkflowService implements OnModuleInit {
       description: dto?.description ? String(dto.description).slice(0, 5000) : null,
       contentType: dto?.contentType ? String(dto.contentType).slice(0, 30) : null,
       deadline: dto?.deadline || null,
-      assigneeId: dto?.assigneeId || null,
+      assigneeId: assigneeIds[0] || null,
+      assigneeIds: assigneeIds.length ? assigneeIds : null,
+      editorIds: editorIds.length ? editorIds : null,
       stage,
       position: Number(max) + 1,
       createdById: viewer.id,
@@ -522,6 +547,25 @@ export class WorkflowService implements OnModuleInit {
       status: 'active',
     });
     const saved = await this.repo.save(card);
+    // R15: уведомление ВСЕМ назначенным при создании — in-app + Telegram + Email.
+    if (assigneeIds.length || editorIds.length) {
+      const actor = await this.loadActor(viewer.id);
+      const base = {
+        title: saved.title, projectId, cardId: saved.id, type: saved.type,
+        description: saved.description, deadline: saved.deadline, publishDate: saved.publishDate,
+        shootDate: saved.shootDate, shootTime: saved.shootTime, shootLocation: saved.shootLocation,
+      };
+      if (assigneeIds.length) {
+        await this.logEvent(saved.id, 'assign', { actor, message: 'Назначен исполнитель', meta: { assigneeIds } });
+        await this.notifyAssigned(assigneeIds, base, actor.name);
+      }
+      // Монтажёрам, которых нет среди исполнителей (без дубля уведомления).
+      const editorsOnly = editorIds.filter(id => !assigneeIds.includes(id));
+      if (editorsOnly.length) {
+        await this.logEvent(saved.id, 'assign', { actor, message: 'Назначен монтажёр', meta: { editorIds: editorsOnly } });
+        await this.notifyAssigned(editorsOnly, { ...base, note: 'Назначены монтажёром — приступайте после съёмки.' }, actor.name);
+      }
+    }
     this.broadcast(projectId);
     return this.repo.findOne({ where: { id: saved.id }, relations: ['assignee'] })
       .then(c => this.toDto(c!));
@@ -729,9 +773,7 @@ export class WorkflowService implements OnModuleInit {
       `<br><br>Откройте «Доску проектов», чтобы приступить к организации.`;
 
     for (const o of organizers) {
-      await this.notifications.create({
-        userId: o.id, type: NotificationType.STATUS_CHANGE, title, message, link: '/workflow-board',
-      } as any).catch(() => {});
+      await this.createInApp(o.id, title, message);
       this.telegram.sendToUser(o.id, tg).catch(() => {});
       if (o.email) {
         this.mail.sendGenericNotification(o.email, o.name || 'Организатор', title, emailBody).catch(() => {});
@@ -763,14 +805,17 @@ export class WorkflowService implements OnModuleInit {
       const prevById = new Map((existing.items || []).map((it: any) => [it.id, it]));
       const merged = items.map(it => {
         const prev: any = prevById.get(it.id);
+        // Приоритет ЯВНО переданным из КП непустым значениям (правка состава
+        // исполнителей/монтажёров в форме не должна молча теряться); иначе —
+        // сохраняем уже заполненное на этапах prev.
         return prev ? {
           ...it,
-          assigneeId: prev.assigneeId ?? it.assigneeId,
-          assigneeName: prev.assigneeName ?? it.assigneeName,
-          assigneeIds: (prev.assigneeIds && prev.assigneeIds.length) ? prev.assigneeIds : it.assigneeIds,
-          assigneeNames: (prev.assigneeNames && prev.assigneeNames.length) ? prev.assigneeNames : it.assigneeNames,
-          editorIds: (prev.editorIds && prev.editorIds.length) ? prev.editorIds : it.editorIds,
-          editorNames: (prev.editorNames && prev.editorNames.length) ? prev.editorNames : it.editorNames,
+          assigneeIds: (it.assigneeIds && it.assigneeIds.length) ? it.assigneeIds : (prev.assigneeIds || it.assigneeIds),
+          assigneeNames: (it.assigneeNames && it.assigneeNames.length) ? it.assigneeNames : (prev.assigneeNames || it.assigneeNames),
+          assigneeId: (it.assigneeIds && it.assigneeIds.length) ? it.assigneeIds[0] : (prev.assigneeId ?? it.assigneeId),
+          assigneeName: (it.assigneeNames && it.assigneeNames.length) ? it.assigneeNames[0] : (prev.assigneeName ?? it.assigneeName),
+          editorIds: (it.editorIds && it.editorIds.length) ? it.editorIds : (prev.editorIds || it.editorIds),
+          editorNames: (it.editorNames && it.editorNames.length) ? it.editorNames : (prev.editorNames || it.editorNames),
           shootDate: prev.shootDate ?? it.shootDate,
           shootTime: prev.shootTime ?? it.shootTime,
           shootLocation: prev.shootLocation ?? it.shootLocation,
@@ -921,6 +966,8 @@ export class WorkflowService implements OnModuleInit {
           shootDate: m.shootDate, shootTime: m.shootTime, shootLocation: m.shootLocation,
         }, actor.name);
       }
+      // Без дубля: монтажёров, которых только что уведомили как исполнителей, пропускаем.
+      newlyEditors = newlyEditors.filter(id => !newlyAssigned.includes(id));
       if (newlyEditors.length) {
         await this.logEvent(id, 'assign', { actor, message: `Назначен монтажёр`, meta: { editorIds: newlyEditors } });
         await this.notifyAssigned(newlyEditors, {
@@ -1177,6 +1224,17 @@ export class WorkflowService implements OnModuleInit {
       description: saved.description, deadline: saved.deadline, publishDate: saved.publishDate,
       shootDate: saved.shootDate, shootTime: saved.shootTime, shootLocation: saved.shootLocation,
     }, actor.name);
+    // Если карточку вынесли на «Съёмку» с заранее выбранными монтажёрами —
+    // уведомляем их сразу (на «Монтаже» editorIds уже стали assigneeIds выше).
+    if (stage !== 'editing' && editorIds.length) {
+      const editorsOnly = editorIds.filter(id => !assigneeIds.includes(id));
+      if (editorsOnly.length) await this.notifyAssigned(editorsOnly, {
+        title: saved.title, projectId: group.projectId, cardId: saved.id, type: saved.type,
+        description: saved.description, deadline: saved.deadline, publishDate: saved.publishDate,
+        shootDate: saved.shootDate, shootTime: saved.shootTime, shootLocation: saved.shootLocation,
+        note: 'Назначены монтажёром — приступайте после съёмки.',
+      }, actor.name);
+    }
   }
 
   // R3: «Подтвердить съёмку» (Организация → Съёмка)
@@ -1193,18 +1251,25 @@ export class WorkflowService implements OnModuleInit {
     await this.moveToStage(card, 'shooting', actor, { message: `Съёмка назначена на ${shootDate}` });
   }
 
-  // R4: назначение видеографа (без смены этапа)
+  // R4: назначение видеографа (без смены этапа). Поддержка нескольких +
+  // согласованная запись assigneeId/assigneeIds + уведомление только новым.
   private async assignVideographer(card: WorkflowCard, payload: any, actor: Actor) {
     if (card.stage !== 'shooting') throw new BadRequestException('Доступно только на этапе Съёмка');
-    const assigneeId = payload?.assigneeId;
-    if (!assigneeId) throw new BadRequestException('Выберите видеографа');
-    await this.repo.update(card.id, { assigneeId });
-    await this.logEvent(card.id, 'assign', { actor, message: 'Назначен видеограф', meta: { assigneeId } });
-    await this.notifyAssigned([assigneeId], {
-      title: card.title, projectId: card.projectId, cardId: card.id, type: card.type,
-      description: card.description, deadline: card.deadline, publishDate: card.publishDate,
-      shootDate: card.shootDate, shootTime: card.shootTime, shootLocation: card.shootLocation,
-    }, actor.name);
+    const ids: string[] = Array.isArray(payload?.assigneeIds)
+      ? payload.assigneeIds.filter(Boolean)
+      : (payload?.assigneeId ? [payload.assigneeId] : []);
+    if (!ids.length) throw new BadRequestException('Выберите видеографа');
+    const prevIds = [card.assigneeId, ...((card.assigneeIds as string[]) || [])].filter(Boolean) as string[];
+    await this.repo.update(card.id, { assigneeId: ids[0], assigneeIds: ids });
+    const newly = ids.filter(id => !prevIds.includes(id));
+    if (newly.length) {
+      await this.logEvent(card.id, 'assign', { actor, message: 'Назначен видеограф', meta: { assigneeIds: newly } });
+      await this.notifyAssigned(newly, {
+        title: card.title, projectId: card.projectId, cardId: card.id, type: card.type,
+        description: card.description, deadline: card.deadline, publishDate: card.publishDate,
+        shootDate: card.shootDate, shootTime: card.shootTime, shootLocation: card.shootLocation,
+      }, actor.name);
+    }
   }
 
   // R5: «Съёмка завершена» (Съёмка → Монтаж). Ссылка на исходники — необязательна.
@@ -1216,18 +1281,43 @@ export class WorkflowService implements OnModuleInit {
       patch.rawFootageUrl = rawFootageUrl;
       card.rawFootageUrl = rawFootageUrl;
     }
-    // Передаём карточку монтажёрам, выбранным заранее на «Съёмке» (editorIds).
-    // Тогда на этапе «Монтаж» в исполнителях сразу видны выбранные люди и им
-    // придёт уведомление этапа с кнопками (через moveToStage).
+    // Кто был исполнителем съёмки (видеографы) — чтобы не оставить их
+    // исполнителями «Монтажа».
+    const prevAssignees = [card.assigneeId, ...((card.assigneeIds as string[]) || [])].filter(Boolean) as string[];
+    // На «Монтаже» исполнители = заранее выбранные монтажёры (editorIds).
     const editorIds = (card.editorIds || []).filter(Boolean);
+    let addedEditors: string[] = [];
     if (editorIds.length) {
       patch.assigneeId = editorIds[0];
       patch.assigneeIds = editorIds;
+      patch.editorIds = null; // промоушен выполнен — список монтажёров больше не нужен
       card.assigneeId = editorIds[0];
       card.assigneeIds = editorIds;
+      card.editorIds = null;
+      addedEditors = editorIds.filter(id => !prevAssignees.includes(id));
+    } else {
+      // Монтажёров заранее не выбрали — снимаем видеографов с исполнителей,
+      // чтобы карточка «Монтаж» не висела на них. Монтажёра назначат на доске
+      // (через update — с уведомлением). Роль video_editor проекта уведомит
+      // notifyStageRole внутри moveToStage.
+      patch.assigneeId = null;
+      patch.assigneeIds = null;
+      card.assigneeId = null;
+      card.assigneeIds = null;
     }
-    if (Object.keys(patch).length) await this.repo.update(card.id, patch);
-    await this.moveToStage(card, 'editing', actor, { message: 'Съёмка завершена → Монтаж' });
+    await this.repo.update(card.id, patch);
+    // Полноценное 3-канальное «вам назначена карточка» монтажёрам в момент,
+    // когда монтаж реально начинается (Email + поля + кнопки). moveToStage
+    // дубль исполнителям не шлём (skipAssigneeNotify).
+    if (addedEditors.length) {
+      await this.notifyAssigned(addedEditors, {
+        title: card.title, projectId: card.projectId, cardId: card.id, type: card.type,
+        description: card.description, deadline: card.deadline, publishDate: card.publishDate,
+        shootDate: card.shootDate, shootTime: card.shootTime, shootLocation: card.shootLocation,
+        note: 'Съёмка завершена — можно приступать к монтажу.',
+      }, actor.name);
+    }
+    await this.moveToStage(card, 'editing', actor, { message: 'Съёмка завершена → Монтаж', skipAssigneeNotify: addedEditors.length > 0 });
   }
 
   // R6: «Монтаж готов» → editingDone + join-гейт. Ссылка на монтаж — необязательна.
@@ -1356,7 +1446,7 @@ export class WorkflowService implements OnModuleInit {
 
   /** Перенос карточки на этап: ставит в конец колонки, обновляет дедлайн
    *  по stageDeadlines, пишет журнал и шлёт уведомление роли этапа. */
-  private async moveToStage(card: WorkflowCard, newStage: string, actor: Actor, opts: { message?: string } = {}) {
+  private async moveToStage(card: WorkflowCard, newStage: string, actor: Actor, opts: { message?: string; skipAssigneeNotify?: boolean } = {}) {
     const [{ max }] = await this.repo.manager.query(
       `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
       [card.projectId, newStage],
@@ -1376,7 +1466,9 @@ export class WorkflowService implements OnModuleInit {
     const buttons = actionable ? this.cardButtons(card.id) : undefined;
     await this.notifyStageRole(card.projectId, newStage, `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» на этапе «${STAGE_LABELS[newStage] || newStage}»`, actionable ? card.id : undefined);
     const assignees = [card.assigneeId, ...((card.assigneeIds as string[]) || [])].filter(Boolean) as string[];
-    if (assignees.length) {
+    // skipAssigneeNotify — когда вызывающий уже отправил исполнителям полное
+    // «вам назначена карточка» (shootDone для монтажёров), не дублируем.
+    if (assignees.length && !opts.skipAssigneeNotify) {
       await this.notify(assignees, `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» перешла на этап «${STAGE_LABELS[newStage] || newStage}»`, card.projectId, buttons);
     }
     // Руководитель СММ (Навруз) — знает КАЖДЫЙ шаг. Email + кнопки на его
@@ -1466,18 +1558,24 @@ export class WorkflowService implements OnModuleInit {
     ]];
   }
 
+  /** In-app уведомление (колокол) — ГАРАНТИРОВАННЫЙ канал (не зависит от TG/
+   *  email). Сбой логируем, а не глотаем молча: это последняя линия доставки. */
+  private async createInApp(userId: string, title: string, message: string) {
+    try {
+      await this.notifications.create({
+        userId, type: NotificationType.STATUS_CHANGE, title, message, link: '/workflow-board',
+      } as any);
+    } catch (e: any) {
+      this.logger.warn(`in-app notify failed for ${userId}: ${e?.message || e}`);
+    }
+  }
+
   /** Уведомление в приложении (колокол) + Telegram (ТЗ §6 R15).
    *  buttons — опциональные inline-кнопки для Telegram. */
   private async notify(userIds: string[], title: string, message: string, projectId: string, buttons?: { text: string; callback_data: string }[][]) {
     const unique = [...new Set(userIds.filter(Boolean))];
     for (const uid of unique) {
-      await this.notifications.create({
-        userId: uid,
-        type: NotificationType.STATUS_CHANGE,
-        title,
-        message,
-        link: '/workflow-board',
-      } as any).catch(() => {});
+      await this.createInApp(uid, title, message);
       this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}`, buttons).catch(() => {});
     }
   }
@@ -1500,9 +1598,7 @@ export class WorkflowService implements OnModuleInit {
     const buttons = opts.buttons ? this.cardButtons(cardId) : undefined;
     for (const d of dirs) {
       if (actorId && d.id === actorId) continue; // не дублируем собственное действие
-      await this.notifications.create({
-        userId: d.id, type: NotificationType.STATUS_CHANGE, title: opts.title, message: opts.message, link: '/workflow-board',
-      } as any).catch(() => {});
+      await this.createInApp(d.id, opts.title, opts.message);
       this.telegram.sendToUser(d.id, `<b>${opts.title}</b>\n${opts.message}`, buttons).catch(() => {});
       if (opts.email && d.email) {
         this.mail.sendGenericNotification(d.email, d.name || 'Руководитель', opts.title, opts.message).catch(() => {});
@@ -1579,13 +1675,7 @@ export class WorkflowService implements OnModuleInit {
     ].filter(Boolean).join('\n');
 
     for (const uid of unique) {
-      await this.notifications.create({
-        userId: uid,
-        type: NotificationType.STATUS_CHANGE,
-        title,
-        message,
-        link: '/workflow-board',
-      } as any).catch(() => {});
+      await this.createInApp(uid, title, message);
       this.telegram.sendToUser(uid, tg, this.cardButtons(details.cardId)).catch(() => {});
       const u = await this.userRepo.findOne({ where: { id: uid } }).catch(() => null);
       if (u?.email) {
@@ -1598,7 +1688,9 @@ export class WorkflowService implements OnModuleInit {
           publishDate: publishDate || null,
           shoot: shoot || null,
           assignedBy: actorName || null,
-        }).catch(() => {});
+        }).catch((e: any) => this.logger.warn(`card-assigned mail failed for ${uid}: ${e?.message || e}`));
+      } else {
+        this.logger.debug(`user ${uid} has no email — card-assigned mail skipped`);
       }
     }
   }
@@ -1613,9 +1705,7 @@ export class WorkflowService implements OnModuleInit {
     const message = `«${card.title}» — на доработку: ${comment}`;
     const ids = [...new Set([card.assigneeId, ...((card.assigneeIds as string[]) || [])].filter(Boolean) as string[])];
     for (const uid of ids) {
-      await this.notifications.create({
-        userId: uid, type: NotificationType.STATUS_CHANGE, title, message, link: '/workflow-board',
-      } as any).catch(() => {});
+      await this.createInApp(uid, title, message);
       this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}\n📋 ${source}${actorName ? ` · ${actorName}` : ''}`, this.cardButtons(card.id)).catch(() => {});
       const u = await this.userRepo.findOne({ where: { id: uid } }).catch(() => null);
       if (u?.email) {
@@ -1644,9 +1734,7 @@ export class WorkflowService implements OnModuleInit {
     const title = '🚫 Сотрудник отметил «не сделано»';
     const message = `${whoName}: ещё не сделал «${card.title}» · этап «${stageLabel}» · проект «${project?.name || ''}»`;
     for (const l of leads) {
-      await this.notifications.create({
-        userId: l.id, type: NotificationType.STATUS_CHANGE, title, message, link: '/workflow-board',
-      } as any).catch(() => {});
+      await this.createInApp(l.id, title, message);
       this.telegram.sendToUser(l.id, `<b>${title}</b>\n${message}`).catch(() => {});
       if (l.email) {
         this.mail.sendGenericNotification(l.email, l.name || 'Руководитель', title,
