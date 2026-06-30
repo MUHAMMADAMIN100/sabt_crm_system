@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowApi, projectsApi } from '@/services/api.service'
 import { ConfirmDialog, Avatar, PageLoader } from '@/components/ui'
-import { Plus, LayoutGrid, SlidersHorizontal, Trash2, Eraser } from 'lucide-react'
+import { Plus, LayoutGrid, SlidersHorizontal, Trash2, Eraser, History } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
 import {
   STAGES, shortRole, CardFormModal, AdCampaignModal, WorkflowCardBadges,
-  DeadlineSettingsModal, ContentPlanModal, GroupCardModal, predictTransition, canManageBoard, isMineCard,
+  DeadlineSettingsModal, ContentPlanModal, GroupCardModal, ArchiveModal, predictTransition, canManageBoard, isMineCard,
 } from '@/components/projects/workflowShared'
 
 /**
@@ -70,6 +70,7 @@ export default function ProjectsBoardPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [adCard, setAdCard] = useState<any>(null)
   const [deadlinesOpen, setDeadlinesOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
   const [clearConfirm, setClearConfirm] = useState(false)
   const [kp, setKp] = useState<any>(null)          // 'new' | КП-карточка | null
   const [groupCard, setGroupCard] = useState<any>(null)
@@ -206,6 +207,10 @@ export default function ProjectsBoardPage() {
           <h1 className="page-title">Доска проектов</h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button type="button" onClick={() => setArchiveOpen(true)} title="Архив карточек, прошедших все этапы (опубл. > 6 дней)"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
+            <History size={14} /> История
+          </button>
           <button type="button" onClick={() => setMineOnly(v => !v)}
             className={clsx('px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
               mineOnly ? 'bg-primary-600 text-white' : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600')}>
@@ -310,6 +315,7 @@ export default function ProjectsBoardPage() {
       )}
 
       {deadlinesOpen && <DeadlineSettingsModal onClose={() => setDeadlinesOpen(false)} />}
+      {archiveOpen && <ArchiveModal onClose={() => setArchiveOpen(false)} />}
 
       <ConfirmDialog
         open={clearConfirm}

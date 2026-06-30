@@ -1281,3 +1281,46 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
     </Modal>
   )
 }
+
+// ─── «История»: архив карточек, прошедших все этапы (опубл. > 6 дней) ──────
+export function ArchiveModal({ projectId, onClose }: { projectId?: string; onClose: () => void }) {
+  const { data: cards = [], isLoading } = useQuery({
+    queryKey: ['workflow-archive', projectId || 'all'],
+    queryFn: () => (projectId ? workflowApi.projectArchive(projectId) : workflowApi.archive()),
+  })
+  const list = (cards as any[]) || []
+  return (
+    <Modal open onClose={onClose} title={`История${list.length ? ` (${list.length})` : ''}`} size="xl">
+      <p className="text-xs text-surface-500 dark:text-surface-400 mb-3">
+        Карточки, опубликованные более 6 дней назад — попадают сюда автоматически и убираются с доски. Только просмотр.
+      </p>
+      {isLoading ? (
+        <p className="text-sm text-surface-400 animate-pulse py-6 text-center">Загрузка…</p>
+      ) : list.length === 0 ? (
+        <p className="text-sm text-surface-400 py-6 text-center">В истории пока пусто.</p>
+      ) : (
+        <div className="space-y-2 max-h-[68vh] overflow-y-auto pr-1">
+          {list.map((c: any) => (
+            <div key={c.id} className="border border-surface-200 dark:border-surface-700 rounded-lg p-3 space-y-1.5">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-semibold text-surface-900 dark:text-surface-100 leading-snug">{c.title}</p>
+                {c.project?.name && (
+                  <span className="text-[11px] text-primary-600 dark:text-primary-400 font-medium shrink-0">{c.project.name}</span>
+                )}
+              </div>
+              <WorkflowCardBadges card={c} />
+              {c.assignee?.name && (
+                <p className="text-[11px] text-surface-500 dark:text-surface-400">
+                  Исполнитель: {c.assignee.name}{c.assignee.role ? ` (${shortRole(c.assignee.role)})` : ''}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex justify-end pt-3 border-t border-surface-100 dark:border-surface-700 mt-3">
+        <button type="button" onClick={onClose} className="btn-secondary text-sm">Закрыть</button>
+      </div>
+    </Modal>
+  )
+}

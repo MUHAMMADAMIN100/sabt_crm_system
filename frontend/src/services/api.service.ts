@@ -380,4 +380,7 @@ export const workflowApi = {
     api.post(`/workflow/${cardId}/item/${itemId}/advance`, {}).then(r => r.data),
   /** Очистить всю доску (для тестов) — только руководитель. */
   clearAll: () => api.post('/workflow/clear', {}).then(r => r.data),
+  /** «История» — архивные карточки (опубликованы > 6 дней назад). */
+  archive: () => api.get('/workflow/archive').then(r => r.data),
+  projectArchive: (projectId: string) => api.get(`/workflow/project/${projectId}/archive`).then(r => r.data),
 }

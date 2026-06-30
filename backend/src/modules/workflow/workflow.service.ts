@@ -97,6 +97,9 @@ const ACTION_ROLES: Record<string, string[]> = {
   publish: ['publisher'],
 };
 
+/** Через сколько дней после публикации карточка уходит с доски в «Историю». */
+const ARCHIVE_AFTER_DAYS = 6;
+
 /** Обратное планирование дедлайнов от publishDate (ТЗ §11), дни до публикации. */
 const DEADLINE_OFFSETS: Record<string, Record<string, number>> = {
   reels: { organization: 12, shooting: 9, editing: 5, design: 5, internal_review: 3, client_approval: 2, ready_to_publish: 1 },
@@ -297,6 +300,17 @@ export class WorkflowService implements OnModuleInit {
     return false;
   }
 
+  /** Карточка в «Истории» (архиве): прошла все этапы (Опубликовано) и с момента
+   *  публикации прошло ≥ ARCHIVE_AFTER_DAYS дней. Такие убираем с доски —
+   *  они доступны только в разделе «История». Считаем на лету (без отдельной
+   *  колонки/крона — не рассинхронизируется). */
+  private isArchivedCard(c: { stage?: string | null; publishedAt?: Date | string | null }): boolean {
+    if (c.stage !== 'published' || !c.publishedAt) return false;
+    const t = new Date(c.publishedAt).getTime();
+    if (!Number.isFinite(t)) return false;
+    return Date.now() - t >= ARCHIVE_AFTER_DAYS * 86400000;
+  }
+
   /** Загружает актёра с обеими ролями и именем (для RBAC и журнала). */
   private async loadActor(userId: string): Promise<Actor> {
     const u = await this.userRepo.findOne({ where: { id: userId } });
@@ -370,7 +384,9 @@ export class WorkflowService implements OnModuleInit {
 
   // ─── Чтение ───────────────────────────────────────────────────────────
 
-  async list(projectId: string, viewer: Viewer) {
+  /** Карточки проекта в зоне видимости (полная доска или только свои) — без
+   *  фильтра по архиву. База для list (доска без архива) и archiveForProject. */
+  private async projectCards(projectId: string, viewer: Viewer) {
     // Полная доска проекта — участнику/менеджеру/привилегированной роли.
     // Иначе (назначен исполнителем/монтажёром, но не участник проекта) — только
     // свои карточки, чтобы назначение не упиралось в 403 (как в listAll/myCards).
@@ -391,7 +407,21 @@ export class WorkflowService implements OnModuleInit {
     return mine.map(c => this.toDto(c));
   }
 
-  async listAll(viewer: Viewer) {
+  async list(projectId: string, viewer: Viewer) {
+    // Доска проекта без архивных (опубликованы > ARCHIVE_AFTER_DAYS дней назад).
+    return (await this.projectCards(projectId, viewer)).filter(c => !this.isArchivedCard(c));
+  }
+
+  /** «История» проекта — только архивные карточки (новые сверху). */
+  async archiveForProject(projectId: string, viewer: Viewer) {
+    return (await this.projectCards(projectId, viewer))
+      .filter(c => this.isArchivedCard(c))
+      .sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime());
+  }
+
+  /** Все видимые карточки доски (без фильтра по архиву) — база для listAll
+   *  (доска без архива) и archiveAll («История»). */
+  private async visibleAllCards(viewer: Viewer) {
     const projects = await this.projectRepo.createQueryBuilder('p')
       .select(['p.id', 'p.name', 'p.managerId'])
       .where('p."isArchived" = false')
@@ -426,6 +456,18 @@ export class WorkflowService implements OnModuleInit {
       ...this.toDto(c),
       project: { id: c.projectId, name: nameMap.get(c.projectId) || '' },
     }));
+  }
+
+  async listAll(viewer: Viewer) {
+    // Доска без архивных (опубликованы > ARCHIVE_AFTER_DAYS дней назад).
+    return (await this.visibleAllCards(viewer)).filter(c => !this.isArchivedCard(c));
+  }
+
+  /** «История» по всем проектам — только архивные карточки (новые сверху). */
+  async archiveAll(viewer: Viewer) {
+    return (await this.visibleAllCards(viewer))
+      .filter(c => this.isArchivedCard(c))
+      .sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime());
   }
 
   /** Очистить ВСЮ доску (для тестов) — только admin/founder/co_founder. */
@@ -894,7 +936,8 @@ export class WorkflowService implements OnModuleInit {
       relations: ['assignee', 'createdBy'],
       order: { stage: 'ASC', position: 'ASC', createdAt: 'ASC' },
     });
-    const mine = cards.filter(c => this.isAssignee(c, uid));
+    // Архивные (опубликованы > ARCHIVE_AFTER_DAYS дней назад) в кабинет не тянем.
+    const mine = cards.filter(c => this.isAssignee(c, uid) && !this.isArchivedCard(c));
     if (mine.length === 0) return [];
     const projects = await this.projectRepo.find({ where: { id: In([...new Set(mine.map(c => c.projectId))]) } });
     const nameMap = new Map(projects.map(p => [p.id, p.name]));

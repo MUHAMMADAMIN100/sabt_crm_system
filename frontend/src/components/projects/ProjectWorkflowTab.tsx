@@ -3,13 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowApi } from '@/services/api.service'
 import { ConfirmDialog, Avatar } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
-import { Plus, Clapperboard, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { Plus, Clapperboard, SlidersHorizontal, Trash2, History } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import {
   STAGES, CONTENT_TYPES, typeLabel, shortRole,
   CardFormModal, AdCampaignModal, WorkflowCardBadges,
-  ShootSessionModal, DeadlineSettingsModal, ContentPlanModal, GroupCardModal,
+  ShootSessionModal, DeadlineSettingsModal, ContentPlanModal, GroupCardModal, ArchiveModal,
   predictTransition, canManageBoard,
 } from './workflowShared'
 
@@ -61,6 +61,7 @@ export default function ProjectWorkflowTab({ project }: Props) {
   const [adCard, setAdCard] = useState<any>(null)
   const [shootOpen, setShootOpen] = useState(false)
   const [deadlinesOpen, setDeadlinesOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
   const [kp, setKp] = useState<any>(null)
   const [groupCard, setGroupCard] = useState<any>(null)
   const isBoss = ['admin', 'founder', 'co_founder', 'smm_director'].includes(user?.role || '')
@@ -185,6 +186,10 @@ export default function ProjectWorkflowTab({ project }: Props) {
           Переходы — через кнопки в карточке · перетаскивание только в «Реклама» · клик — открыть карточку
         </p>
         <div className="flex items-center gap-2 flex-wrap">
+          <button type="button" onClick={() => setArchiveOpen(true)} title="Архив карточек, прошедших все этапы (опубл. > 6 дней)"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
+            <History size={14} /> История
+          </button>
           {canManage && (
             <button type="button" onClick={() => setShootOpen(true)} title="Сгруппировать рилсы в одну съёмку"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
@@ -290,6 +295,7 @@ export default function ProjectWorkflowTab({ project }: Props) {
       )}
 
       {deadlinesOpen && <DeadlineSettingsModal onClose={() => setDeadlinesOpen(false)} />}
+      {archiveOpen && <ArchiveModal projectId={projectId} onClose={() => setArchiveOpen(false)} />}
 
       {kp && (
         <ContentPlanModal

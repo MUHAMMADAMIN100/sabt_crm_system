@@ -19,6 +19,13 @@ export class WorkflowController {
     return this.service.listAll(req.user);
   }
 
+  /** «История» — архивные карточки (опубликованы > 6 дней назад) со всех
+   *  доступных SMM-проектов. */
+  @Get('archive')
+  archiveAll(@Request() req) {
+    return this.service.archiveAll(req.user);
+  }
+
   /** Все исполнители по ролям (для селекта видеографов/дизайнеров). */
   @Get('assignees')
   assignees(@Query('roles') roles?: string) {
@@ -41,6 +48,12 @@ export class WorkflowController {
   @Post('clear')
   clearAll(@Request() req) {
     return this.service.clearAll(req.user);
+  }
+
+  /** «История» проекта — архивные карточки этого проекта. */
+  @Get('project/:projectId/archive')
+  archiveForProject(@Param('projectId') projectId: string, @Request() req) {
+    return this.service.archiveForProject(projectId, req.user);
   }
 
   @Get('project/:projectId')
