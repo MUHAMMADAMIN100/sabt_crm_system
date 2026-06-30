@@ -86,7 +86,8 @@ export class User {
    *  (например "18181b-fafafa-4f46e5-71717a-22c55e"). NULL — дефолт.
    *  Из этих 5 цветов фронт генерирует весь surface-масштаб и красит
    *  ВЕСЬ интерфейс. Персонально на сотрудника, ни на кого не влияет. */
-  @Column({ type: 'varchar', length: 64, nullable: true })
+  // 128 символов: вмещает пару тем (10 цветов: 5 светлая + 5 тёмная = 69 симв.).
+  @Column({ type: 'varchar', length: 128, nullable: true })
   themeColor: string | null;
 
   @Column({ default: true })

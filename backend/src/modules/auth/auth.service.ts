@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, ForbiddenException, HttpException, HttpStatus, OnModuleInit, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull, ILike } from 'typeorm';
@@ -25,7 +25,9 @@ import type { Request } from 'express';
 const REFRESH_TTL_DAYS = 30;
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
@@ -37,6 +39,18 @@ export class AuthService {
     private gateway: AppGateway,
     private audit: SecurityAuditService,
   ) {}
+
+  /** Рантайм-миграция: расширяем themeColor до 128 символов — теперь там пара
+   *  тем (светлая+тёмная, до 69 симв.). Идемпотентно, без отдельной миграции. */
+  async onModuleInit() {
+    try {
+      await this.userRepo.manager.query(
+        `ALTER TABLE users ALTER COLUMN "themeColor" TYPE varchar(128)`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`themeColor widen failed: ${e?.message || e}`);
+    }
+  }
 
   // ─── Refresh tokens ──────────────────────────────────────────────────
 
