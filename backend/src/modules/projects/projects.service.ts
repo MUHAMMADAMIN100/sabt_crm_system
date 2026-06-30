@@ -756,7 +756,79 @@ export class ProjectsService implements OnModuleInit {
       }
     }
 
+    // Тариф-статистика на карточке SMM-проекта: план берём из тарифа
+    // (reelsPerMonth/postsPerMonth), «сделано» — опубликованные карточки
+    // ТЕКУЩЕГО контент-плана (по окну дат публикаций элементов текущего КП).
+    await this.attachTariffStats(projects);
+
     return this.stripFinance(projects, requestUser?.role);
+  }
+
+  /** Считает для каждого SMM-проекта tariffStats { name, reelsDone, reelsTotal,
+   *  postsDone, postsTotal }. total — из тарифа (или из КП, если тарифа нет);
+   *  done — опубликованные рилсы/макеты, чья дата публикации попадает в окно
+   *  дат текущего контент-плана (kind='kp' items). */
+  private async attachTariffStats(projects: Project[]) {
+    const smmProjs = projects.filter(p => p.projectType === 'SMM');
+    if (smmProjs.length === 0) return;
+    const ids = smmProjs.map(p => p.id);
+
+    const tariffIds = [...new Set(smmProjs.map(p => p.tariffId).filter(Boolean))] as string[];
+    const tariffRows: Array<{ id: string; name: string; reelsPerMonth: number; postsPerMonth: number }> =
+      tariffIds.length
+        ? await this.repo.manager.query(
+            `SELECT id, name, "reelsPerMonth", "postsPerMonth" FROM smm_tariffs WHERE id = ANY($1::uuid[])`,
+            [tariffIds],
+          )
+        : [];
+    const tariffMap = new Map(tariffRows.map(t => [t.id, t]));
+
+    // КП-карточки (kind='kp') с элементами — окно дат текущего плана + fallback тоталов.
+    const kpRows: Array<{ projectId: string; items: any[] }> = await this.repo.manager.query(
+      `SELECT "projectId", items FROM workflow_cards WHERE "projectId" = ANY($1::uuid[]) AND kind = 'kp'`,
+      [ids],
+    );
+    const kpMap = new Map(kpRows.map(r => [r.projectId, Array.isArray(r.items) ? r.items : []]));
+
+    // Опубликованные карточки (рилс/макет) с плановой датой публикации.
+    const pubRows: Array<{ projectId: string; type: string | null; contentType: string | null; publishDate: string | null }> =
+      await this.repo.manager.query(
+        `SELECT "projectId", type, "contentType", "publishDate" FROM workflow_cards
+         WHERE "projectId" = ANY($1::uuid[]) AND stage = 'published'`,
+        [ids],
+      );
+
+    const isReel = (c: { type: string | null; contentType: string | null }) =>
+      c.type === 'reels' || (c.type == null && c.contentType === 'reel');
+    const isPost = (c: { type: string | null; contentType: string | null }) =>
+      c.type === 'static' || (c.type == null && c.contentType === 'design');
+
+    const now = new Date();
+    const monthMin = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const monthMax = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-31`;
+
+    for (const p of smmProjs) {
+      const t = p.tariffId ? tariffMap.get(p.tariffId) : null;
+      const kpItems = kpMap.get(p.id) || [];
+      const reelsTotal = t ? Number(t.reelsPerMonth) || 0 : kpItems.filter((i: any) => i.itemKind === 'reel').length;
+      const postsTotal = t ? Number(t.postsPerMonth) || 0 : kpItems.filter((i: any) => i.itemKind === 'macro').length;
+      if (reelsTotal === 0 && postsTotal === 0) continue;
+
+      // Окно дат текущего КП по publishDate элементов; нет дат — текущий месяц.
+      const dates = kpItems.map((i: any) => i.publishDate).filter(Boolean).sort();
+      const winMin = dates.length ? dates[0] : monthMin;
+      const winMax = dates.length ? dates[dates.length - 1] : monthMax;
+      const inWin = (d: string | null) => !!d && d >= winMin && d <= winMax;
+
+      const pub = pubRows.filter(r => r.projectId === p.id);
+      const reelsDone = pub.filter(r => isReel(r) && inWin(r.publishDate)).length;
+      const postsDone = pub.filter(r => isPost(r) && inWin(r.publishDate)).length;
+
+      (p as any).tariffStats = {
+        name: (p as any).tariffNameSnapshot || t?.name || null,
+        reelsDone, reelsTotal, postsDone, postsTotal,
+      };
+    }
   }
 
   async findOne(id: string, requestUserRole?: string) {

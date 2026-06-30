@@ -367,6 +367,36 @@ export default function ProjectsPage() {
                     )}
                   </div>
                 </div>
+                {/* Тариф + сделано/план по текущему КП (рилс/пост из доски) */}
+                {p.projectType === 'SMM' && (p as any).tariffStats && (
+                  <div className="shrink-0 text-right pr-4">
+                    {(p as any).tariffStats.name && (
+                      <p className="text-[11px] font-semibold text-surface-700 dark:text-surface-300 leading-tight truncate max-w-[130px] ml-auto" title={`Тариф: ${(p as any).tariffStats.name}`}>
+                        🏷 {(p as any).tariffStats.name}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-end gap-1 mt-1">
+                      {(p as any).tariffStats.reelsTotal > 0 && (
+                        <span title="Рилсы: опубликовано / план по тарифу"
+                          className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded tabular-nums',
+                            (p as any).tariffStats.reelsDone >= (p as any).tariffStats.reelsTotal
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-300')}>
+                          {(p as any).tariffStats.reelsDone}/{(p as any).tariffStats.reelsTotal} рилс
+                        </span>
+                      )}
+                      {(p as any).tariffStats.postsTotal > 0 && (
+                        <span title="Посты/макеты: опубликовано / план по тарифу"
+                          className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded tabular-nums',
+                            (p as any).tariffStats.postsDone >= (p as any).tariffStats.postsTotal
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-300')}>
+                          {(p as any).tariffStats.postsDone}/{(p as any).tariffStats.postsTotal} пост
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {(isManagerPlus || canCreateProject) && (
                   <div className="flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={(e) => { e.stopPropagation(); setEditProject(p) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded text-surface-500 dark:text-surface-400" title="Редактировать"><Edit size={13} /></button>
@@ -380,21 +410,13 @@ export default function ProjectsPage() {
                 )}
               </div>
 
-              {/* Метки: тариф / команда / без тарифа — в отдельной строке */}
-              {((p as any).tariffNameSnapshot || (p.projectType === 'SMM' && !(p as any).tariffId)) && (
+              {/* SMM без тарифа — предупреждение (название тарифа и план показаны в шапке) */}
+              {p.projectType === 'SMM' && !(p as any).tariffId && (
                 <div className="flex items-center gap-1 mb-3 flex-wrap">
-                  {(p as any).tariffNameSnapshot && (
-                    <span title={`Тариф: ${(p as any).tariffNameSnapshot}`}
-                      className="text-[10px] bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400 px-1.5 py-0.5 rounded-full max-w-[120px] truncate">
-                      🏷 {(p as any).tariffNameSnapshot}
-                    </span>
-                  )}
-                  {p.projectType === 'SMM' && !(p as any).tariffId && (
-                    <span title="SMM-проект без тарифа"
-                      className="text-[10px] bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400 px-1.5 py-0.5 rounded-full">
-                      ⚠ без тарифа
-                    </span>
-                  )}
+                  <span title="SMM-проект без тарифа"
+                    className="text-[10px] bg-surface-100 dark:bg-surface-900/30 text-surface-700 dark:text-surface-400 px-1.5 py-0.5 rounded-full">
+                    ⚠ без тарифа
+                  </span>
                 </div>
               )}
 
