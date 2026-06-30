@@ -1,12 +1,12 @@
 import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeProjectStories, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserPlus,
-  Shield, LogOut, RotateCcw, Trello,
+  Shield, LogOut, RotateCcw, Trello, Image as ImageIcon,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -33,6 +33,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/',              icon: LayoutDashboard, label: t('nav.dashboard'),  permission: 'dashboard',         exact: true },
     { to: '/projects',      icon: FolderKanban,    label: t('nav.projects'),   permission: 'projects.view' },
     { to: '/workflow-board', icon: Trello,         label: 'Доска проектов',    permission: 'projects.view' },
+    { to: '/project-stories', icon: ImageIcon,     label: 'Истории по проектам', permission: 'stories.manage' },
     { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
     { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
     { to: '/analytics',     icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },
@@ -57,6 +58,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
     // Доска проектов — отдельный список ролей (SMM-производство/руководители/топ).
     if (item.to === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole)
+    // «Истории по проектам» — только сторисмейкер.
+    if (item.to === '/project-stories') return canSeeProjectStories(role, secondaryRole)
     // Права = объединение основной и дополнительной ролей.
     return hasPermissionAny(role, secondaryRole, item.permission)
   })

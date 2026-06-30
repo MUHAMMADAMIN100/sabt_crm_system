@@ -120,8 +120,9 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
       )
     }
     if (['admin', 'founder', 'co_founder'].includes(user?.role || '')) return base
-    // Сторисмейкер — видит все SMM-проекты, может вносить отметки в любой.
-    if (user?.isStoryMaker) return base
+    // Сторисмейкер — видит все SMM-проекты, может вносить отметки в любой
+    // (по роли storymaker или по флагу isStoryMaker).
+    if (user?.isStoryMaker || user?.role === 'storymaker' || user?.secondaryRole === 'storymaker') return base
     // Everyone else (PM, SMM, designer, etc.): projects where they are member OR manager
     return base.filter((p: any) =>
       p.members?.some((m: any) => m.id === user?.id) || p.managerId === user?.id,

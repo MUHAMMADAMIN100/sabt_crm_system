@@ -236,12 +236,12 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'time-tracker.use',
     'ai.chat',
   ],
-  // Сторисмейкер — исполнитель + ведение историй SMM-проектов.
+  // Сторисмейкер — ведение историй SMM-проектов. Доска проектов и Отчёты у
+  // него убраны: его рабочий экран — «Истории по проектам».
   storymaker: [
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
-    'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
     'ai.chat',
@@ -360,11 +360,17 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
  *  руководители + топ. Менеджерам продаж и разработчику не нужна. */
 export const WORKFLOW_BOARD_ROLES = [
   'admin', 'founder', 'co_founder', 'smm_director', 'video_director',
-  'smm_specialist', 'designer', 'videographer', 'video_editor', 'organizer', 'storymaker',
+  'smm_specialist', 'designer', 'videographer', 'video_editor', 'organizer',
   'scriptwriter', 'qa', 'publisher', 'targetologist',
 ]
 export function canSeeWorkflowBoard(role?: string | null, secondaryRole?: string | null): boolean {
   return WORKFLOW_BOARD_ROLES.includes(role || '') || WORKFLOW_BOARD_ROLES.includes(secondaryRole || '')
+}
+
+/** «Истории по проектам» — пункт только для сторисмейкера (отметка сторис по
+ *  всем SMM-проектам). Остальные роли его не видят. */
+export function canSeeProjectStories(role?: string | null, secondaryRole?: string | null): boolean {
+  return role === 'storymaker' || secondaryRole === 'storymaker'
 }
 
 export function canAccessRoute(
@@ -380,6 +386,8 @@ export function canAccessRoute(
   if (route === '/onboarding') return role === 'sales_manager_smm' || role === 'sales_manager_dev'
   // Глобальная доска проектов — SMM-производство/руководители/топ.
   if (route === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole)
+  // «Истории по проектам» — только сторисмейкер.
+  if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole)
 
   // Detail pages — allow if user can view the parent
   if (route.startsWith('/projects/')) return hasPermissionAny(role, secondaryRole, 'projects.view')

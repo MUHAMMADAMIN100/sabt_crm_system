@@ -47,6 +47,7 @@ const AuthPage          = lazy(() => import('@/pages/auth/AuthPage'))
 const DashboardPage     = lazy(() => import('@/pages/dashboard/DashboardPage'))
 const ProjectsPage      = lazy(() => import('@/pages/projects/ProjectsPage'))
 const ProjectsBoardPage = lazy(() => import('@/pages/workflow/ProjectsBoardPage'))
+const ProjectStoriesPage = lazy(() => import('@/pages/stories/ProjectStoriesPage'))
 const ProjectDetailPage = lazy(() => import('@/pages/projects/ProjectDetailPage'))
 const EmployeesPage     = lazy(() => import('@/pages/employees/EmployeesPage'))
 const EmployeeDetailPage = lazy(() => import('@/pages/employees/EmployeeDetailPage'))
@@ -119,6 +120,7 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="projects" element={<RoleGuard><ProjectsPage /></RoleGuard>} />
           <Route path="workflow-board" element={<RoleGuard><ProjectsBoardPage /></RoleGuard>} />
+          <Route path="project-stories" element={<RoleGuard><ProjectStoriesPage /></RoleGuard>} />
           <Route path="projects/:id" element={<RoleGuard><ProjectDetailPage /></RoleGuard>} />
           <Route path="employees" element={<RoleGuard><EmployeesPage /></RoleGuard>} />
           <Route path="employees/:id" element={<RoleGuard><EmployeeDetailPage /></RoleGuard>} />
