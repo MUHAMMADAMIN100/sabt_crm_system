@@ -33,6 +33,7 @@ const SALES_GREETINGS = [
 ]
 const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
 const MyWorkflowCards = lazy(() => import('./components/MyWorkflowCards'))
+const StorymakerDashboard = lazy(() => import('./components/StorymakerDashboard'))
 
 
 // ── Helpers for story dot colors ──────────────────────────────────
@@ -218,6 +219,24 @@ export default function DashboardPage() {
         </div>
         <Suspense fallback={<PageLoader />}>
           <SalesDashboard />
+        </Suspense>
+      </div>
+    )
+  }
+
+  // Сторисмейкер — оперативная сводка по сторис всех SMM-проектов (его дашборд
+  // не про карточки доски, а про истории). Проверяем ДО isWorkerView.
+  if (role === 'storymaker' || user?.isStoryMaker) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="page-title">Добро пожаловать, {user?.name?.split(' ')[0] || ''}</h1>
+          <p className="text-surface-500 dark:text-surface-400 mt-0.5">
+            {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
+          </p>
+        </div>
+        <Suspense fallback={<PageLoader />}>
+          <StorymakerDashboard />
         </Suspense>
       </div>
     )
