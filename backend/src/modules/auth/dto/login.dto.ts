@@ -1,9 +1,12 @@
-import { IsEmail, IsOptional, IsString, Length, MinLength } from 'class-validator';
+import { IsOptional, IsString, Length, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class LoginDto {
+  /** Логин: полный email (любой домен) ИЛИ только часть до @ — сервер найдёт
+   *  пользователя по логину на любом домене (gmail/icloud/…). */
   @ApiProperty()
-  @IsEmail()
+  @IsString()
+  @MinLength(3)
   email: string;
 
   @ApiProperty()

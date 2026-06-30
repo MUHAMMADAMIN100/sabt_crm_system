@@ -134,8 +134,10 @@ export default function AuthPage() {
   }
 
   const handleEmailBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    // Только подчищаем пробелы. Домен НЕ дописываем: можно войти по логину или
+    // по полному email любого домена (gmail/icloud/…) — это разрешает сервер.
     const val = e.target.value.trim()
-    if (val && !val.includes('@')) setValue('email', val + '@gmail.com', { shouldValidate: true })
+    if (val !== e.target.value) setValue('email', val, { shouldValidate: true })
   }
 
   const handleTelegramChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -299,11 +301,12 @@ export default function AuthPage() {
                 <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
                 <input
                   {...reg('email', {
-                    required: 'Email обязателен',
-                    pattern: { value: /\S+@\S+\.\S+/, message: 'Введите корректный email' },
+                    required: 'Введите логин или email',
+                    // Логин (без пробелов/@) ИЛИ полный email любого домена.
+                    pattern: { value: /^([^\s@]+|\S+@\S+\.\S+)$/, message: 'Введите логин или email' },
                   })}
-                  type="email"
-                  placeholder="username"
+                  type="text"
+                  placeholder="логин или email"
                   onBlur={handleEmailBlur}
                   className={`input pl-9 ${errors.email && String(errors.email.message ?? '').trim() ? 'border-red-400 focus:ring-red-400' : ''}`}
                 />

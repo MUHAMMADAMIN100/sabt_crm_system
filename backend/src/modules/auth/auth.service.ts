@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, ILike } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -232,6 +232,25 @@ export class AuthService {
     };
   }
 
+  /** Находит пользователя по логину: полный email (без учёта регистра) ИЛИ
+   *  только логин (часть до @) — на любом домене. Если по логину несколько
+   *  кандидатов (один логин на разных доменах) — возвращаем null (нужен полный
+   *  email). */
+  private async resolveLoginUser(input: string | undefined | null): Promise<User | null> {
+    const raw = (input || '').trim();
+    if (!raw) return null;
+    if (raw.includes('@')) {
+      return this.userRepo.findOne({ where: { email: ILike(raw) } });
+    }
+    // Только логин (без @) — ищем по части до @ на любом домене.
+    const esc = raw.replace(/[\\%_]/g, m => '\\' + m);
+    const candidates = await this.userRepo.find({ where: { email: ILike(`${esc}@%`) } });
+    const exact = candidates.filter(
+      u => (u.email.split('@')[0] || '').toLowerCase() === raw.toLowerCase(),
+    );
+    return exact.length === 1 ? exact[0] : null;
+  }
+
   async login(dto: LoginDto, req?: Request | null) {
     // ─── Account lockout: проверяем ДО валидации пароля ────────────────
     // 5 неудач по email или 20 с одного IP за 15 минут → блок на 15 мин.
@@ -258,7 +277,11 @@ export class AuthService {
       );
     }
 
-    const user = await this.userRepo.findOne({ where: { email: dto.email } });
+    // Распознавание логина: можно ввести полный email (любой домен, без учёта
+    // регистра) ИЛИ только логин (часть до @) — тогда находим пользователя по
+    // совпадению логина на любом домене (gmail/icloud/…). Так вход работает не
+    // только для gmail.
+    const user = await this.resolveLoginUser(dto.email);
     if (!user || !(await user.validatePassword(dto.password))) {
       await this.audit.log({
         type: SecurityEventType.LOGIN_FAIL,
@@ -439,7 +462,7 @@ export class AuthService {
   }
 
   async validateUser(email: string, password: string): Promise<User | null> {
-    const user = await this.userRepo.findOne({ where: { email } });
+    const user = await this.resolveLoginUser(email);
     if (user && (await user.validatePassword(password))) return user;
     return null;
   }
