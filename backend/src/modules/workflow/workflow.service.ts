@@ -523,6 +523,11 @@ export class WorkflowService implements OnModuleInit {
       ? dto.assigneeIds.filter(Boolean)
       : (dto?.assigneeId ? [dto.assigneeId] : []);
     const editorIds: string[] = Array.isArray(dto?.editorIds) ? dto.editorIds.filter(Boolean) : [];
+    // Карточка, создаваемая НАПРЯМУЮ на этапе после «Контент-плана» (напр. сразу
+    // на «Съёмке»), не проходит confirmPlan и под-карточку обложки не получает.
+    // Поэтому для неё ветка дизайна сразу готова (designDone=true, needsCover=
+    // false) — иначе join-гейт «ждёт обложку» заблокирует монтаж навсегда.
+    const pastPlanning = stage !== 'content_plan';
     const [{ max }] = await this.repo.manager.query(
       `SELECT COALESCE(MAX(position), -1)::int AS max
        FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
@@ -542,8 +547,9 @@ export class WorkflowService implements OnModuleInit {
       createdById: viewer.id,
       type,
       publishDate: dto?.publishDate || null,
-      needsCover: dto?.needsCover !== undefined ? !!dto.needsCover : true,
-      needsIntro: dto?.needsIntro !== undefined ? !!dto.needsIntro : true,
+      needsCover: pastPlanning ? false : (dto?.needsCover !== undefined ? !!dto.needsCover : true),
+      needsIntro: pastPlanning ? false : (dto?.needsIntro !== undefined ? !!dto.needsIntro : true),
+      designDone: pastPlanning,
       status: 'active',
     });
     const saved = await this.repo.save(card);
@@ -1362,11 +1368,23 @@ export class WorkflowService implements OnModuleInit {
   private async runJoinCheck(reelId: string, actor: Actor) {
     const reel = await this.repo.findOne({ where: { id: reelId } });
     if (!reel) return;
-    if (reel.editingDone && reel.designDone) {
+    // Ветка дизайна готова, если designDone=true ИЛИ под-карточки обложки/
+    // заставки вообще нет (карточка создана напрямую / новая модель). Иначе
+    // монтаж завис бы навсегда, ожидая обложку, которой не существует.
+    let designReady = reel.designDone;
+    if (!designReady) {
+      const coverCount = await this.repo.count({ where: { parentCardId: reel.id, type: 'cover' } });
+      if (coverCount === 0) {
+        designReady = true;
+        await this.repo.update(reel.id, { designDone: true });
+        reel.designDone = true;
+      }
+    }
+    if (reel.editingDone && designReady) {
       await this.repo.update(reel.id, { status: 'active' });
       reel.status = 'active';
-      await this.moveToStage(reel, 'internal_review', actor, { message: 'Монтаж и обложка готовы → Внутренняя проверка' });
-    } else if (reel.editingDone && !reel.designDone) {
+      await this.moveToStage(reel, 'internal_review', actor, { message: 'Монтаж готов → Внутренняя проверка' });
+    } else if (reel.editingDone && !designReady) {
       await this.repo.update(reel.id, { status: 'waiting_cover' });
       await this.logEvent(reel.id, 'waiting_cover', { actor, message: 'Ждёт обложку/заставку' });
     }
