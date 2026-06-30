@@ -36,6 +36,8 @@ export interface User {
   isSubAdmin?: boolean
   /** Сторисмейкер — видит истории всех SMM-проектов, а не только своих. */
   isStoryMaker?: boolean
+  /** Персональные доступы поверх роли (выдаёт основатель на «Доступах сотрудников»). */
+  extraPermissions?: string[] | null
   position?: string | null
   department?: string | null
   isBlocked?: boolean

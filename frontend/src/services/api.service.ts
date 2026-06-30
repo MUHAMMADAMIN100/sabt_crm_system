@@ -27,6 +27,11 @@ export const usersApi = {
   resetPassword: (id: string, newPassword?: string) => api.patch(`/users/${id}/reset-password`, { newPassword }).then(r => r.data),
   remove: (id: string) => api.delete(`/users/${id}`).then(r => r.data),
   cleanupOrphans: () => api.post('/users/cleanup-orphans').then(r => r.data),
+  // Доступы сотрудников (персональные гранты поверх роли)
+  accessCatalog: () => api.get('/users/access/catalog').then(r => r.data),
+  listAccess: () => api.get('/users/access').then(r => r.data),
+  setAccess: (id: string, permissions: string[]) =>
+    api.patch(`/users/${id}/access`, { permissions }).then(r => r.data),
   // Аватары — multipart/form-data загрузка картинки
   uploadMyAvatar: (file: File) =>
     api.patch('/users/me/avatar', avatarFormData(file), {

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
+import { hasGrant } from '../auth/permissions';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike } from 'typeorm';
 import { Project, ProjectStatus, ProjectBillingType, ProjectPaymentStatus } from './project.entity';
@@ -1050,7 +1051,8 @@ export class ProjectsService implements OnModuleInit {
     const canEdit = ['admin', 'founder', 'co_founder'].includes(user.role) ||
       isSmmDirectorOnSmm ||
       isSalesOnOwnSegment ||
-      isAssignedManager;
+      isAssignedManager ||
+      hasGrant(user as any, 'projects.edit'); // персональный грант
     if (!canEdit) {
       throw new ForbiddenException('Not allowed');
     }

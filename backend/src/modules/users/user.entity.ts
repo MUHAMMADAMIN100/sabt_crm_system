@@ -81,6 +81,12 @@ export class User {
   @Column({ type: 'varchar', length: 50, nullable: true })
   secondaryRole: UserRole | null;
 
+  /** Персональные доступы ПОВЕРХ роли — выдаёт основатель/сооснователь/админ
+   *  на странице «Доступы сотрудников». Расширяют права (не отнимают).
+   *  Список ключей-возможностей (см. auth/permissions.ts GRANTABLE). */
+  @Column({ type: 'jsonb', nullable: true })
+  extraPermissions: string[] | null;
+
   /** Персональная тема интерфейса в формате realtimecolors —
    *  5 hex-цветов через дефис: text-background-primary-secondary-accent
    *  (например "18181b-fafafa-4f46e5-71717a-22c55e"). NULL — дефолт.

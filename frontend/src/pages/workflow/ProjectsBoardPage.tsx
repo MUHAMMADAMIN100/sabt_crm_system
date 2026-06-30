@@ -20,7 +20,7 @@ export default function ProjectsBoardPage() {
   const qc = useQueryClient()
   const queryKey = ['workflow', 'all']
   const user = useAuthStore(s => s.user)
-  const actor = { role: user?.role, secondaryRole: user?.secondaryRole }
+  const actor = { role: user?.role, secondaryRole: user?.secondaryRole, extraPermissions: user?.extraPermissions }
 
   const { data: cards, isLoading } = useQuery({
     queryKey,

@@ -314,6 +314,35 @@ export function hasPermissionAny(
     || (!!secondaryRole && hasPermission(secondaryRole, permission))
 }
 
+// ─── Персональные доступы (гранты) поверх роли ────────────────────────
+/** Выдаваемые возможности (зеркало backend GRANTABLE). implies — какие
+ *  view-права открыть, чтобы гранту было где примениться (страница/раздел). */
+export const GRANTABLE_FE: Record<string, { label: string; implies: string[] }> = {
+  'projects.create':     { label: 'Добавление проектов',               implies: ['projects.view'] },
+  'projects.edit':       { label: 'Редактирование проектов',           implies: ['projects.view'] },
+  'clients.create':      { label: 'Добавление клиентов / организаций',  implies: ['clients.view'] },
+  'content-plan.manage': { label: 'Контент-план (создание и ведение)',  implies: [] },
+  'tariffs.manage':      { label: 'Управление SMM-тарифами',            implies: ['tariffs.manage'] },
+}
+
+type GrantUser = { role?: string | null; secondaryRole?: string | null; extraPermissions?: string[] | null } | null | undefined
+
+/** Может ли пользователь выполнить действие: право роли ИЛИ персональный
+ *  грант ИЛИ грант, открывающий это view-право (implies). */
+export function userCan(user: GrantUser, permission: string): boolean {
+  if (!user) return false
+  if (hasPermissionAny(user.role as UserRole, user.secondaryRole as UserRole, permission as Permission)) return true
+  const extra = Array.isArray(user.extraPermissions) ? user.extraPermissions : []
+  if (extra.includes(permission)) return true
+  for (const g of extra) if (GRANTABLE_FE[g]?.implies.includes(permission)) return true
+  return false
+}
+
+/** Управлять доступами сотрудников могут только основатель/сооснователь/админ. */
+export function canManageAccess(role?: string | null): boolean {
+  return role === 'admin' || role === 'founder' || role === 'co_founder'
+}
+
 /** Комбинированный лейбл ролей: «Видеограф / Монтажёр». */
 export function getCombinedRoleLabel(
   role: string | undefined | null,
@@ -377,24 +406,29 @@ export function canAccessRoute(
   role: UserRole | undefined,
   route: string,
   secondaryRole?: UserRole | null,
+  extraPermissions?: string[] | null,
 ): boolean {
   if (!role) return false
+  const u = { role, secondaryRole, extraPermissions }
 
   // Always allowed routes
   if (['/profile', '/notifications', '/'].includes(route)) return true
   // Онбординг — только менеджеры по продажам.
   if (route === '/onboarding') return role === 'sales_manager_smm' || role === 'sales_manager_dev'
-  // Глобальная доска проектов — SMM-производство/руководители/топ.
-  if (route === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole)
+  // Глобальная доска проектов — SMM-производство/руководители/топ + грант КП.
+  if (route === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || userCan(u, 'content-plan.manage')
   // «Истории по проектам» — только сторисмейкер.
   if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole)
+  // «Доступы сотрудников» — только основатель/сооснователь/админ.
+  if (route === '/employee-access') return canManageAccess(role)
 
   // Detail pages — allow if user can view the parent
-  if (route.startsWith('/projects/')) return hasPermissionAny(role, secondaryRole, 'projects.view')
+  if (route.startsWith('/projects/')) return userCan(u, 'projects.view')
   if (route.startsWith('/tasks/')) return hasPermissionAny(role, secondaryRole, 'tasks.view')
   if (route.startsWith('/employees/')) return hasPermissionAny(role, secondaryRole, 'employees.view')
 
   const perm = Object.entries(PERMISSION_TO_ROUTE).find(([_, r]) => r === route)?.[0] as Permission | undefined
   if (!perm) return true
-  return hasPermissionAny(role, secondaryRole, perm)
+  // Учитываем персональные гранты (например clients.view от clients.create).
+  return userCan(u, perm)
 }

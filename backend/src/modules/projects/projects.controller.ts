@@ -5,6 +5,7 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
+import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { UserRole } from '../users/user.entity';
 import { ProjectStatus } from './project.entity';
 
@@ -13,7 +14,7 @@ export { UpdateProjectDto } from './dto/create-project.dto';
 
 @ApiTags('Projects')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('projects')
 export class ProjectsController {
   constructor(private service: ProjectsService) {}
@@ -38,13 +39,13 @@ export class ProjectsController {
   }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+  @RequirePerm('projects.create')
   create(@Body() dto: CreateProjectDto, @Request() req) {
     return this.service.create(dto, req.user.id, req.user.role);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+  @RequirePerm('projects.edit')
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto, @Request() req) {
     return this.service.update(id, dto, req.user);
   }

@@ -8,6 +8,7 @@ import { UpdateClientDto } from './dto/update-client.dto';
 import { ClientLeadStatus, ClientLeadInterest, ClientLeadDirection } from './client-lead.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
+import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { UserRole } from '../users/user.entity';
 import { getSalesSegment } from '../../common/sales-segment';
 
@@ -18,7 +19,7 @@ function leadDirectionFor(role?: string): ClientLeadDirection | undefined {
 
 @ApiTags('Client Leads')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
 @Controller('clients')
 export class ClientsController {
@@ -99,6 +100,7 @@ export class ClientsController {
   }
 
   @Post()
+  @RequirePerm('clients.create')
   create(@Body() dto: CreateClientDto, @Request() req) {
     // Направление лида задаётся автоматически по сегменту менеджера-создателя.
     // meetingTaskId выставляется только сервером — игнорируем то, что прислал фронт.

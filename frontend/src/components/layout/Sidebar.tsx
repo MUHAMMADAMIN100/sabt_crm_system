@@ -1,12 +1,12 @@
 import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeProjectStories, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeProjectStories, canManageAccess, userCan, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserPlus,
-  Shield, LogOut, RotateCcw, Trello, Image as ImageIcon,
+  Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -39,6 +39,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/analytics',     icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },
     { to: '/archive',       icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
     { to: '/employees',     icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
+    { to: '/employee-access', icon: ShieldCheck,   label: 'Доступы сотрудников', permission: 'users.manage' },
     { to: '/clients',       icon: Contact,         label: 'База клиентов',     permission: 'clients.view' },
     { to: '/onboarding',    icon: UserPlus,        label: 'Онбординг',         permission: 'clients.view' },
     { to: '/tariffs',       icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
@@ -56,12 +57,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     // отдельный пункт скрываем. У sales_manager_dev — отдельный пункт сайдбара
     // (по запросу пользователя). Остальным ролям пункт не нужен.
     if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
-    // Доска проектов — отдельный список ролей (SMM-производство/руководители/топ).
-    if (item.to === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole)
+    // Доска проектов — список ролей SMM-производства + персональный грант КП.
+    if (item.to === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || userCan(user, 'content-plan.manage')
     // «Истории по проектам» — только сторисмейкер.
     if (item.to === '/project-stories') return canSeeProjectStories(role, secondaryRole)
-    // Права = объединение основной и дополнительной ролей.
-    return hasPermissionAny(role, secondaryRole, item.permission)
+    // «Доступы сотрудников» — только основатель/сооснователь/админ.
+    if (item.to === '/employee-access') return canManageAccess(role)
+    // Права роли + персональные гранты (например clients.view от clients.create).
+    return userCan(user, item.permission)
   })
 
   return (

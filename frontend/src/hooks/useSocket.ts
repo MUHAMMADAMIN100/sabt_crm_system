@@ -52,6 +52,18 @@ export function useSocket(authMarker: string | null) {
       } catch {}
     })
 
+    // Персональные доступы изменили — если это мне, мгновенно подтягиваем
+    // /auth/me, чтобы новые возможности открылись без перезахода.
+    socket.on('access:changed', async (payload: any) => {
+      const myId = useAuthStore.getState().user?.id
+      if (payload?.userId && payload.userId === myId) {
+        try {
+          await useAuthStore.getState().fetchMe()
+          toast.success('Ваши доступы обновлены', { icon: '🔓', duration: 4000 })
+        } catch {}
+      }
+    })
+
     // Мгновенный logout при блокировке учётки администратором.
     // Бэкенд эмитит auth:blocked адресно через notifyUser(userId, ...).
     socket.on('auth:blocked', (payload: any) => {

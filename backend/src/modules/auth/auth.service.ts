@@ -50,6 +50,13 @@ export class AuthService implements OnModuleInit {
     } catch (e: any) {
       this.logger.warn(`themeColor widen failed: ${e?.message || e}`);
     }
+    try {
+      await this.userRepo.manager.query(
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "extraPermissions" jsonb`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`extraPermissions column add failed: ${e?.message || e}`);
+    }
   }
 
   // ─── Refresh tokens ──────────────────────────────────────────────────

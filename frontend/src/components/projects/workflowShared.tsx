@@ -113,9 +113,11 @@ export function canDoAction(action: string, role?: string | null, secondaryRole?
 /** Роли, которым разрешено РЕДАКТИРОВАТЬ данные доски (создавать/менять/
  *  удалять/назначать). Остальные — только смена статуса своих карточек. */
 export const MANAGE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'organizer']
-export function canManageBoard(actor?: { role?: string | null; secondaryRole?: string | null } | null): boolean {
+export function canManageBoard(actor?: { role?: string | null; secondaryRole?: string | null; extraPermissions?: string[] | null } | null): boolean {
   if (!actor) return false
-  return MANAGE_ROLES.includes(actor.role || '') || MANAGE_ROLES.includes(actor.secondaryRole || '')
+  if (MANAGE_ROLES.includes(actor.role || '') || MANAGE_ROLES.includes(actor.secondaryRole || '')) return true
+  // Персональный грант «Контент-план» — даёт право вести доску.
+  return Array.isArray(actor.extraPermissions) && actor.extraPermissions.includes('content-plan.manage')
 }
 
 /** Является ли пользователь исполнителем карточки — зеркалит backend isAssignee:

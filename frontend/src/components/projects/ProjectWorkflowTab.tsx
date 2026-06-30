@@ -30,7 +30,7 @@ export default function ProjectWorkflowTab({ project }: Props) {
   const projectId = project?.id
   const queryKey = ['workflow', projectId]
   const user = useAuthStore(s => s.user)
-  const actor = { role: user?.role, secondaryRole: user?.secondaryRole }
+  const actor = { role: user?.role, secondaryRole: user?.secondaryRole, extraPermissions: user?.extraPermissions }
 
   const { data: cards } = useQuery({
     queryKey,

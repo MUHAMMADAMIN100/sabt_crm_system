@@ -11,6 +11,7 @@ import { UserRole } from './user.entity';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { BlockUserDto } from './dto/block-user.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
+import { GRANTABLE } from '../auth/permissions';
 
 /** Безопасный конфиг для загрузки аватарок: только PNG/JPEG/WEBP,
  *  максимум 2MB. Никаких SVG (XSS) и тем более .html/.exe. */
@@ -49,6 +50,28 @@ export class UsersController {
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   findAll(@Query('role') role?: UserRole) {
     return this.usersService.findAll(role);
+  }
+
+  // ─── Доступы сотрудников (персональные гранты) ────────────────────────
+  /** Каталог выдаваемых возможностей (ключ → подпись) — для UI. */
+  @Get('access/catalog')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  accessCatalog() {
+    return Object.entries(GRANTABLE).map(([key, def]) => ({ key, label: def.label }));
+  }
+
+  /** Список сотрудников с их ролью и персональными доступами. */
+  @Get('access')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  listAccess() {
+    return this.usersService.listAccess();
+  }
+
+  /** Выдать/снять персональные доступы сотруднику. */
+  @Patch(':id/access')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  setAccess(@Param('id') id: string, @Body() body: { permissions?: string[] }, @Request() req) {
+    return this.usersService.setAccess(id, body?.permissions || [], req.user?.role);
   }
 
   @Get(':id')

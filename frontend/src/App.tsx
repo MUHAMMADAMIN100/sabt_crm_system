@@ -50,6 +50,7 @@ const ProjectsBoardPage = lazy(() => import('@/pages/workflow/ProjectsBoardPage'
 const ProjectStoriesPage = lazy(() => import('@/pages/stories/ProjectStoriesPage'))
 const ProjectDetailPage = lazy(() => import('@/pages/projects/ProjectDetailPage'))
 const EmployeesPage     = lazy(() => import('@/pages/employees/EmployeesPage'))
+const EmployeeAccessPage = lazy(() => import('@/pages/access/EmployeeAccessPage'))
 const EmployeeDetailPage = lazy(() => import('@/pages/employees/EmployeeDetailPage'))
 const CalendarPage      = lazy(() => import('@/pages/calendar/CalendarPage'))
 const ReportsPage       = lazy(() => import('@/pages/reports/ReportsPage'))
@@ -96,11 +97,12 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const role = useAuthStore(s => s.user?.role)
   const secondaryRole = useAuthStore(s => s.user?.secondaryRole)
+  const extraPermissions = useAuthStore(s => s.user?.extraPermissions)
   const location = useLocation()
   // Strip query/hash, get pathname
   const path = location.pathname
   // Build canonical path: /projects/:id → /projects/abc treated as /projects/abc
-  if (role && !canAccessRoute(role, path, secondaryRole)) {
+  if (role && !canAccessRoute(role, path, secondaryRole, extraPermissions)) {
     return <Navigate to="/" replace />
   }
   return <>{children}</>
@@ -123,6 +125,7 @@ export default function App() {
           <Route path="project-stories" element={<RoleGuard><ProjectStoriesPage /></RoleGuard>} />
           <Route path="projects/:id" element={<RoleGuard><ProjectDetailPage /></RoleGuard>} />
           <Route path="employees" element={<RoleGuard><EmployeesPage /></RoleGuard>} />
+          <Route path="employee-access" element={<RoleGuard><EmployeeAccessPage /></RoleGuard>} />
           <Route path="employees/:id" element={<RoleGuard><EmployeeDetailPage /></RoleGuard>} />
           <Route path="calendar" element={<RoleGuard><CalendarPage /></RoleGuard>} />
           <Route path="reports" element={<RoleGuard><ReportsPage /></RoleGuard>} />

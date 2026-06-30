@@ -15,6 +15,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { MailService } from '../mail/mail.service';
+import { hasGrant } from '../auth/permissions';
 
 interface Viewer { id: string; role: string }
 interface Actor { id: string; name: string; role: string; secondaryRole: string | null }
@@ -264,11 +265,13 @@ export class WorkflowService implements OnModuleInit {
 
   /** RBAC редактирования: менять данные доски могут только руководитель SMM,
    *  организатор и ADMIN-уровень (admin/founder/co_founder). Проверяем обе
-   *  роли (основную и вторую). */
+   *  роли (основную и вторую) + персональный грант content-plan.manage. */
   private async assertCanManage(viewer: Viewer): Promise<void> {
     if (MANAGE_ROLES.includes(viewer.role)) return;
     const u = await this.userRepo.findOne({ where: { id: viewer.id } });
     if (u?.secondaryRole && MANAGE_ROLES.includes(u.secondaryRole)) return;
+    // Персональный доступ «Контент-план» — выдаётся на странице «Доступы сотрудников».
+    if (hasGrant({ role: viewer.role, secondaryRole: u?.secondaryRole, extraPermissions: u?.extraPermissions }, 'content-plan.manage')) return;
     throw new ForbiddenException('Изменять доску может только руководитель SMM или организатор');
   }
 

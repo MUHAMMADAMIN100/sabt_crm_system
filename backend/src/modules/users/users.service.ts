@@ -9,6 +9,7 @@ import { AppGateway } from '../gateway/app.gateway';
 import { SecurityAuditService } from '../auth/security-audit.service';
 import { SecurityEventType } from '../auth/security-event.entity';
 import { RefreshToken } from '../auth/refresh-token.entity';
+import { sanitizeGrants } from '../auth/permissions';
 
 @Injectable()
 export class UsersService {
@@ -40,6 +41,44 @@ export class UsersService {
     const user = await this.repo.findOne({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
     return user;
+  }
+
+  // ─── Доступы сотрудников (персональные гранты поверх роли) ─────────────
+
+  /** Список сотрудников с их ролью и персональными доступами — для страницы
+   *  «Доступы сотрудников». */
+  async listAccess() {
+    const users = await this.repo.find({ order: { createdAt: 'ASC' } });
+    const emps = await this.employeeRepo.find();
+    const posByUser = new Map(emps.filter(e => e.userId).map(e => [e.userId, e.position]));
+    return users.map(u => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      secondaryRole: u.secondaryRole || null,
+      position: posByUser.get(u.id) || null,
+      extraPermissions: Array.isArray(u.extraPermissions) ? u.extraPermissions : [],
+      isActive: u.isActive,
+    }));
+  }
+
+  /** Выдать/снять персональные доступы сотруднику. Мгновенно уведомляет его
+   *  клиент (socket access:changed) — тот сам перечитает /auth/me. */
+  async setAccess(id: string, permissions: any, actorRole?: string) {
+    const user = await this.findOne(id);
+    this.assertCanManage(user, actorRole);
+    const clean = sanitizeGrants(permissions);
+    await this.repo.update(id, { extraPermissions: clean.length ? clean : null });
+    await this.activityLog.log({
+      action: ActivityAction.EMPLOYEE_UPDATE,
+      entity: 'user',
+      entityId: id,
+      entityName: user.name,
+      details: { extraPermissions: clean },
+    }).catch(() => {});
+    try { this.gateway.broadcast('access:changed', { userId: id }); } catch { /* best-effort */ }
+    return { id, extraPermissions: clean };
   }
 
   /** Защита: основателем/сооснователем может управлять только основатель

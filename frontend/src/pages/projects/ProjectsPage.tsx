@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { projectsApi, employeesApi, smmTariffsApi, riskApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import { userCan } from '@/lib/permissions'
 import { useTranslation } from '@/i18n'
 import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar, Pagination } from '@/components/ui'
 import { Plus, Search, FolderKanban, Archive, Trash2, Edit, Users, ChevronDown, X, Check, Banknote, Calendar as CalIcon } from 'lucide-react'
@@ -78,6 +79,7 @@ export default function ProjectsPage() {
   // admin/founder/co-founder + smm_director (SMM only) can create projects
   // МП по продажам управляют проектами своего направления (создание/правка/архив/удаление).
   const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
+    || userCan(user, 'projects.create')
   const qc = useQueryClient()
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -505,6 +507,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   const formUser = useAuthStore(s => s.user)
   const isFormHeadSMM = formUser?.role === 'smm_director'
   const canCreateProject = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm', 'sales_manager_dev'].includes(formUser?.role || '')
+    || userCan(formUser, 'projects.create')
   const isSalesDev = formUser?.role === 'sales_manager_dev'
   // Подтипы DEV-проектов, которые МП-dev выбирает в селекте «Тип проекта».
   // (На бэке проверка в createSegment.projectTypes допускает эти 4 + legacy
