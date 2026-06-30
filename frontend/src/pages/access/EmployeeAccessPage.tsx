@@ -1,59 +1,30 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usersApi } from '@/services/api.service'
 import { getRoleLabel } from '@/lib/permissions'
-import { Avatar } from '@/components/ui'
-import { ShieldCheck, Search, Check } from 'lucide-react'
+import { Avatar, Modal } from '@/components/ui'
+import { ShieldCheck, Search, SlidersHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
-import clsx from 'clsx'
 
 interface AccessUser {
-  id: string
-  name: string
-  email: string
-  role: string
-  secondaryRole?: string | null
-  position?: string | null
-  extraPermissions: string[]
-  isActive: boolean
+  id: string; name: string; email: string; role: string
+  secondaryRole?: string | null; position?: string | null
+  extraPermissions: string[]; isActive: boolean
 }
-interface Cap { key: string; label: string }
+interface Cap { key: string; label: string; category: string }
 
 /**
  * «Доступы сотрудников» — основатель/сооснователь/админ выдаёт сотрудникам
- * персональные возможности ПОВЕРХ роли (например менеджеру продаж — добавление
- * проектов или ведение контент-плана). Тумблер сохраняется мгновенно, доступ
- * у сотрудника открывается без перезахода (socket access:changed → /auth/me).
+ * персональные возможности ПОВЕРХ роли (категоризированная матрица). Доступ
+ * у сотрудника открывается мгновенно (socket access:changed → /auth/me).
  */
 export default function EmployeeAccessPage() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
+  const [editing, setEditing] = useState<AccessUser | null>(null)
 
   const { data: caps = [] } = useQuery<Cap[]>({ queryKey: ['access-catalog'], queryFn: () => usersApi.accessCatalog() })
   const { data: users = [], isLoading } = useQuery<AccessUser[]>({ queryKey: ['access-users'], queryFn: () => usersApi.listAccess() })
-
-  const setAccess = useMutation({
-    mutationFn: ({ id, permissions }: { id: string; permissions: string[] }) => usersApi.setAccess(id, permissions),
-    onMutate: async ({ id, permissions }) => {
-      await qc.cancelQueries({ queryKey: ['access-users'] })
-      const prev = qc.getQueryData<AccessUser[]>(['access-users'])
-      qc.setQueryData<AccessUser[]>(['access-users'], (old = []) =>
-        old.map(u => u.id === id ? { ...u, extraPermissions: permissions } : u))
-      return { prev }
-    },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(['access-users'], ctx.prev)
-      toast.error('Не удалось сохранить доступ')
-    },
-    onSuccess: () => toast.success('Доступ обновлён'),
-    onSettled: () => qc.invalidateQueries({ queryKey: ['access-users'] }),
-  })
-
-  const toggle = (u: AccessUser, key: string) => {
-    const has = u.extraPermissions.includes(key)
-    const permissions = has ? u.extraPermissions.filter(k => k !== key) : [...u.extraPermissions, key]
-    setAccess.mutate({ id: u.id, permissions })
-  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -89,45 +60,88 @@ export default function EmployeeAccessPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {filtered.map(u => (
-            <div key={u.id} className="card">
-              <div className="flex items-center gap-3 mb-3">
-                <Avatar name={u.name} size={36} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate">{u.name}</p>
-                  <p className="text-xs text-surface-500 dark:text-surface-400 truncate">{u.position || getRoleLabel(u.role)}</p>
-                </div>
-                {u.extraPermissions.length > 0 && (
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shrink-0">
-                    +{u.extraPermissions.length}
-                  </span>
-                )}
+            <button key={u.id} type="button" onClick={() => setEditing(u)}
+              className="card flex items-center gap-3 text-left hover:border-surface-400 dark:hover:border-surface-500 transition-colors">
+              <Avatar name={u.name} size={40} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate">{u.name}</p>
+                <p className="text-xs text-surface-500 dark:text-surface-400 truncate">{u.position || getRoleLabel(u.role)}</p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {caps.map(c => {
-                  const on = u.extraPermissions.includes(c.key)
-                  return (
-                    <button
-                      key={c.key}
-                      type="button"
-                      onClick={() => toggle(u, c.key)}
-                      disabled={setAccess.isPending}
-                      className={clsx(
-                        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors disabled:opacity-60',
-                        on
-                          ? 'bg-green-50 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800'
-                          : 'bg-surface-50 text-surface-600 border-surface-200 hover:border-surface-400 dark:bg-surface-800 dark:text-surface-300 dark:border-surface-700 dark:hover:border-surface-500',
-                      )}
-                    >
-                      {on && <Check size={12} />}
-                      {c.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
+              {u.extraPermissions.length > 0 && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shrink-0">
+                  +{u.extraPermissions.length} доступов
+                </span>
+              )}
+              <SlidersHorizontal size={16} className="text-surface-400 shrink-0" />
+            </button>
           ))}
         </div>
       )}
+
+      {editing && (
+        <AccessEditorModal
+          user={editing}
+          caps={caps}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); qc.invalidateQueries({ queryKey: ['access-users'] }) }}
+        />
+      )}
     </div>
+  )
+}
+
+// ─── Модалка-редактор доступов сотрудника (категоризированная матрица) ──
+function AccessEditorModal({ user, caps, onClose, onSaved }: {
+  user: AccessUser; caps: Cap[]; onClose: () => void; onSaved: () => void
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set(user.extraPermissions))
+  useEffect(() => { setSelected(new Set(user.extraPermissions)) }, [user.id])
+
+  const save = useMutation({
+    mutationFn: () => usersApi.setAccess(user.id, [...selected]),
+    onSuccess: () => { toast.success('Доступы сохранены'); onSaved() },
+    onError: () => toast.error('Не удалось сохранить доступы'),
+  })
+
+  const toggle = (key: string) =>
+    setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+
+  // Группировка возможностей по категориям (порядок появления).
+  const grouped = useMemo(() => {
+    const map = new Map<string, Cap[]>()
+    for (const c of caps) { if (!map.has(c.category)) map.set(c.category, []); map.get(c.category)!.push(c) }
+    return [...map.entries()]
+  }, [caps])
+
+  return (
+    <Modal open onClose={onClose} title={`Доступы — ${user.name}`} size="xl">
+      <p className="text-xs text-surface-500 dark:text-surface-400 mb-4">
+        {user.position || getRoleLabel(user.role)} · отмеченные возможности добавятся поверх роли.
+        Выбрано: <b className="text-surface-700 dark:text-surface-300">{selected.size}</b>
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+        {grouped.map(([category, list]) => (
+          <div key={category} className="rounded-xl border border-surface-200 dark:border-surface-700 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">{category}</p>
+            <div className="space-y-1.5">
+              {list.map(c => (
+                <label key={c.key} className="flex items-center gap-2 text-sm cursor-pointer text-surface-700 dark:text-surface-200">
+                  <input type="checkbox" className="w-4 h-4 shrink-0" checked={selected.has(c.key)} onChange={() => toggle(c.key)} />
+                  <span>{c.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex justify-end gap-2 pt-4 mt-3 border-t border-surface-100 dark:border-surface-700">
+        <button type="button" onClick={onClose} className="btn-secondary text-sm">Отмена</button>
+        <button type="button" disabled={save.isPending} onClick={() => save.mutate()} className="btn-primary text-sm">
+          {save.isPending ? 'Сохранение…' : 'Сохранить'}
+        </button>
+      </div>
+    </Modal>
   )
 }

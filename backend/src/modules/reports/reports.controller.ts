@@ -4,17 +4,18 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
+import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { UserRole } from '../users/user.entity';
 
 @ApiTags('Reports')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('reports')
 export class ReportsController {
   constructor(private service: ReportsService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.VIDEO_DIRECTOR)
+  @RequirePerm('reports.view')
   findAll(
     @Query('employeeId') employeeId?: string,
     @Query('projectId') projectId?: string,
@@ -25,7 +26,7 @@ export class ReportsController {
   }
 
   @Get('export/csv')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.VIDEO_DIRECTOR)
+  @RequirePerm('reports.view')
   async exportCsv(
     @Query('employeeId') employeeId: string,
     @Query('projectId') projectId: string,

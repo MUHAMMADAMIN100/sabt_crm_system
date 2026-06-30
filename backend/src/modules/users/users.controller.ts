@@ -57,7 +57,7 @@ export class UsersController {
   @Get('access/catalog')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   accessCatalog() {
-    return Object.entries(GRANTABLE).map(([key, def]) => ({ key, label: def.label }));
+    return Object.entries(GRANTABLE).map(([key, def]) => ({ key, label: def.label, category: def.category }));
   }
 
   /** Список сотрудников с их ролью и персональными доступами. */

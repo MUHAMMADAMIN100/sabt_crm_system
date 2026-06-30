@@ -315,14 +315,13 @@ export function hasPermissionAny(
 }
 
 // ─── Персональные доступы (гранты) поверх роли ────────────────────────
-/** Выдаваемые возможности (зеркало backend GRANTABLE). implies — какие
- *  view-права открыть, чтобы гранту было где примениться (страница/раздел). */
-export const GRANTABLE_FE: Record<string, { label: string; implies: string[] }> = {
-  'projects.create':     { label: 'Добавление проектов',               implies: ['projects.view'] },
-  'projects.edit':       { label: 'Редактирование проектов',           implies: ['projects.view'] },
-  'clients.create':      { label: 'Добавление клиентов / организаций',  implies: ['clients.view'] },
-  'content-plan.manage': { label: 'Контент-план (создание и ведение)',  implies: [] },
-  'tariffs.manage':      { label: 'Управление SMM-тарифами',            implies: ['tariffs.manage'] },
+/** implies — какие view-права открывает грант, чтобы ему было где
+ *  примениться (раздел/страница). Каталог возможностей приходит с бэка. */
+export const GRANTABLE_FE: Record<string, { implies: string[] }> = {
+  'projects.create': { implies: ['projects.view'] },
+  'projects.edit':   { implies: ['projects.view'] },
+  'clients.create':  { implies: ['clients.view'] },
+  'reports.create':  { implies: ['reports.view'] },
 }
 
 type GrantUser = { role?: string | null; secondaryRole?: string | null; extraPermissions?: string[] | null } | null | undefined
