@@ -504,7 +504,9 @@ export class AuthService {
    *  Валидируем строго по regex, чтобы в БД не попал мусор. */
   async setThemeColor(userId: string, themeColor: string | null) {
     const raw = (themeColor || '').trim().toLowerCase();
-    const valid = /^[0-9a-f]{6}(-[0-9a-f]{6}){4}$/.test(raw);
+    // 5 цветов (легаси, один набор на обе темы) ИЛИ 10 цветов
+    // (5 светлая + 5 тёмная — раздельные наборы для режимов).
+    const valid = /^[0-9a-f]{6}(-[0-9a-f]{6}){4}((-[0-9a-f]{6}){5})?$/.test(raw);
     const value = valid ? raw : null;
     await this.userRepo.update(userId, { themeColor: value });
     return { themeColor: value };

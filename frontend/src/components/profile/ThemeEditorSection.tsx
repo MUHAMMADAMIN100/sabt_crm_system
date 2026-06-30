@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { HexColorPicker } from 'react-colorful'
-import { Palette, Pipette, RotateCcw, Check } from 'lucide-react'
+import { Palette, Pipette, RotateCcw, Check, Sun, Moon } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { authApi } from '@/services/api.service'
 import {
-  useThemeStore, serializeTheme, THEME_PRESETS, DEFAULT_THEME, type ThemeColors,
+  useThemeStore, serializeTheme, serializeThemePair, THEME_PRESETS, DEFAULT_THEME, type ThemeColors,
 } from '@/lib/theme'
+import { useThemeStore as useColorMode } from '@/store/theme.store'
 
 /** 5 ролей цвета (модель realtimecolors). Порядок — как в редакторе. */
 const ROLES: { key: keyof ThemeColors; label: string; hint: string }[] = [
@@ -18,33 +19,44 @@ const ROLES: { key: keyof ThemeColors; label: string; hint: string }[] = [
 ]
 
 /**
- * Редактор персональной темы (как realtimecolors): 5 настраиваемых
- * цветов с пикером/HEX/пипеткой. Любое изменение применяется МГНОВЕННО
- * ко всему интерфейсу (live-preview прямо на системе), сохраняется на
- * сервере (users.themeColor) — тема ездит за сотрудником, персональна.
+ * Редактор персональной темы (как realtimecolors): 5 настраиваемых цветов
+ * с пикером/HEX/пипеткой — ОТДЕЛЬНО для светлой и тёмной темы. Переключатель
+ * режима вверху меняет и редактируемый набор, и сам интерфейс (живой
+ * предпросмотр). Сохраняется на сервере (users.themeColor) — тема ездит за
+ * сотрудником, персональна.
  */
 export default function ThemeEditorSection() {
-  const theme = useThemeStore(s => s.theme)
+  const light = useThemeStore(s => s.light)
+  const dark = useThemeStore(s => s.dark)
   const isCustom = useThemeStore(s => s.isCustom)
-  const setTheme = useThemeStore(s => s.setTheme)
+  const updateMode = useThemeStore(s => s.updateMode)
   const reset = useThemeStore(s => s.reset)
   const [openRole, setOpenRole] = useState<keyof ThemeColors | null>(null)
+
+  // Текущий режим интерфейса (light/dark) — он же определяет, какой набор
+  // цветов мы сейчас редактируем. Переключение режима даёт живой предпросмотр.
+  const mode = useColorMode(s => s.theme)
+  const setColorMode = useColorMode(s => s.setTheme)
+  const active = mode === 'dark' ? dark : light
 
   const saveServer = (str: string | null) =>
     authApi.setTheme(str).catch(() => toast.error('Не удалось сохранить тему — действует до перезахода'))
 
-  // Мгновенно применяем; на сервер пишем при закрытии пикера/смене роли.
-  const changeColor = (key: keyof ThemeColors, hex: string) =>
-    setTheme({ ...useThemeStore.getState().theme, [key]: hex })
-
-  const commit = () => saveServer(serializeTheme(useThemeStore.getState().theme))
-
-  const applyPreset = (colors: ThemeColors) => {
-    if (serializeTheme(colors) === serializeTheme(DEFAULT_THEME)) {
-      reset(); saveServer(null); setOpenRole(null); return
-    }
-    setTheme(colors); saveServer(serializeTheme(colors)); setOpenRole(null)
+  // Сохраняем пару (светлая+тёмная). Если оба набора = дефолт — сбрасываем.
+  const commit = () => {
+    const st = useThemeStore.getState()
+    const isDefault =
+      serializeTheme(st.light) === serializeTheme(DEFAULT_THEME) &&
+      serializeTheme(st.dark) === serializeTheme(DEFAULT_THEME)
+    if (isDefault) { reset(); saveServer(null) }
+    else saveServer(serializeThemePair(st.light, st.dark))
   }
+
+  // Мгновенно применяем выбранному режиму; на сервер пишем по commit.
+  const changeColor = (key: keyof ThemeColors, hex: string) =>
+    updateMode(mode, { ...(useThemeStore.getState()[mode] as ThemeColors), [key]: hex })
+
+  const applyPreset = (colors: ThemeColors) => { updateMode(mode, colors); commit(); setOpenRole(null) }
 
   const onReset = () => { reset(); saveServer(null); setOpenRole(null) }
 
@@ -56,6 +68,21 @@ export default function ThemeEditorSection() {
       if (res?.sRGBHex) { changeColor(key, res.sRGBHex); commit() }
     } catch { /* отменили — игнор */ }
   }
+
+  const modeBtn = (m: 'light' | 'dark', Icon: any, label: string) => (
+    <button
+      type="button"
+      onClick={() => { if (openRole) commit(); setColorMode(m); setOpenRole(null) }}
+      className={clsx(
+        'flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+        mode === m
+          ? 'bg-primary-600 text-white shadow-sm'
+          : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+      )}
+    >
+      <Icon size={15} /> {label}
+    </button>
+  )
 
   return (
     <div className="card">
@@ -71,18 +98,28 @@ export default function ThemeEditorSection() {
           </button>
         )}
       </div>
-      <p className="text-xs text-surface-500 dark:text-surface-400 mb-4">
+      <p className="text-xs text-surface-500 dark:text-surface-400 mb-3">
         Личная настройка — весь интерфейс перекрашивается мгновенно и только у вас.
+        Цвета можно задать отдельно для светлой и тёмной темы.
       </p>
 
-      {/* Быстрые пресеты */}
+      {/* Переключатель редактируемого режима (он же — режим интерфейса) */}
+      <div className="flex items-center gap-2 mb-4">
+        {modeBtn('light', Sun, 'Светлая')}
+        {modeBtn('dark', Moon, 'Тёмная')}
+      </div>
+      <p className="text-[11px] text-surface-400 dark:text-surface-500 mb-4 -mt-2">
+        Сейчас настраиваете: <b className="text-surface-600 dark:text-surface-300">{mode === 'dark' ? 'тёмная тема' : 'светлая тема'}</b>
+      </p>
+
+      {/* Быстрые пресеты — применяются к выбранному режиму */}
       <div className="flex flex-wrap gap-2 mb-5">
         {THEME_PRESETS.map(p => (
           <button
             key={p.name}
             type="button"
             onClick={() => applyPreset(p.colors)}
-            title={p.name}
+            title={`${p.name} — для ${mode === 'dark' ? 'тёмной' : 'светлой'} темы`}
             className="flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-full border border-surface-200 dark:border-surface-700 hover:border-surface-400 dark:hover:border-surface-500 transition-colors"
           >
             <span className="flex -space-x-1">
@@ -94,10 +131,10 @@ export default function ThemeEditorSection() {
         ))}
       </div>
 
-      {/* 5 ролей цвета */}
+      {/* 5 ролей цвета активного режима */}
       <div className="space-y-2">
         {ROLES.map(role => {
-          const value = theme[role.key]
+          const value = active[role.key]
           const isOpen = openRole === role.key
           return (
             <div key={role.key} className="rounded-xl border border-surface-200 dark:border-surface-700 overflow-hidden">

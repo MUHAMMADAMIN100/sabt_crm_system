@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+// Стор режима отображения (light/dark) — отдельный от стора цветов.
+import { useThemeStore as useColorModeStore } from '@/store/theme.store'
 
 /**
  * Персональная тема интерфейса в модели realtimecolors — 5 ролей цвета:
@@ -155,12 +157,14 @@ const block = (sel: string, vars: Record<string, string>) =>
 /** Вставляем/обновляем <style> с двумя блоками (светлый+тёмный) и
  *  включаем класс theme-on на <html>. Селекторы html.theme-on /
  *  html.dark.theme-on перебивают дефолтные :root / .dark. */
-function applyVars(theme: ThemeColors) {
+function applyVars(light: ThemeColors, dark: ThemeColors) {
   let el = document.getElementById(STYLE_ID) as HTMLStyleElement | null
   if (!el) { el = document.createElement('style'); el.id = STYLE_ID; document.head.appendChild(el) }
+  // Светлая тема строится из набора light, тёмная — из набора dark
+  // (раздельный выбор цветов для каждого режима).
   el.textContent =
-    block('html.theme-on', buildLight(theme)) +
-    block('html.dark.theme-on', buildDark(theme))
+    block('html.theme-on', buildLight(light)) +
+    block('html.dark.theme-on', buildDark(dark))
   document.documentElement.classList.add('theme-on')
 }
 function clearVars() {
@@ -180,53 +184,83 @@ export function parseTheme(str?: string | null): ThemeColors | null {
   return { text, background, primary, secondary, accent }
 }
 
+/** Пара тем: 10 hex через дефис (5 светлая + 5 тёмная). */
+export function serializeThemePair(light: ThemeColors, dark: ThemeColors): string {
+  return `${serializeTheme(light)}-${serializeTheme(dark)}`
+}
+/** Разбор: 10 цветов → {light, dark}; 5 цветов (легаси) → один набор на оба
+ *  режима; иначе null. */
+export function parseThemePair(str?: string | null): { light: ThemeColors; dark: ThemeColors } | null {
+  const s = (str || '').trim()
+  if (/^[0-9a-f]{6}(-[0-9a-f]{6}){9}$/i.test(s)) {
+    const parts = s.split('-')
+    const light = parseTheme(parts.slice(0, 5).join('-'))
+    const dark = parseTheme(parts.slice(5, 10).join('-'))
+    if (light && dark) return { light, dark }
+  }
+  const single = parseTheme(s)
+  if (single) return { light: single, dark: single }
+  return null
+}
+
 // ─── Zustand-стор ─────────────────────────────────────────────────────
 interface ThemeState {
-  theme: ThemeColors
+  /** Набор цветов для СВЕТЛОЙ темы. */
+  light: ThemeColors
+  /** Набор цветов для ТЁМНОЙ темы (выбирается отдельно от светлой). */
+  dark: ThemeColors
   /** true если применена кастомная тема (не дефолт). Когда false —
    *  цвета берёт из CSS (включая .dark серый primary). */
   isCustom: boolean
-  /** Применяет кастомную тему мгновенно (DOM + localStorage + стор). */
-  setTheme: (theme: ThemeColors) => void
-  /** Сброс к дефолтному ч/б монохрому. */
+  /** Применяет обе темы мгновенно (DOM + localStorage + стор). */
+  setThemes: (light: ThemeColors, dark: ThemeColors) => void
+  /** Обновить набор только одного режима, второй оставить как есть. */
+  updateMode: (mode: 'light' | 'dark', theme: ThemeColors) => void
+  /** Сброс к дефолтному ч/б монохрому (оба режима). */
   reset: () => void
 }
 
 const STORAGE_KEY = 'theme-colors'
 
-export const useThemeStore = create<ThemeState>(set => ({
-  theme: DEFAULT_THEME,
+export const useThemeStore = create<ThemeState>((set, get) => ({
+  light: DEFAULT_THEME,
+  dark: DEFAULT_THEME,
   isCustom: false,
-  setTheme: (theme) => {
-    applyVars(theme)
-    try { localStorage.setItem(STORAGE_KEY, serializeTheme(theme)) } catch {}
-    set({ theme, isCustom: true })
+  setThemes: (light, dark) => {
+    applyVars(light, dark)
+    try { localStorage.setItem(STORAGE_KEY, serializeThemePair(light, dark)) } catch {}
+    set({ light, dark, isCustom: true })
+  },
+  updateMode: (mode, theme) => {
+    const cur = get()
+    get().setThemes(mode === 'light' ? theme : cur.light, mode === 'dark' ? theme : cur.dark)
   },
   reset: () => {
     clearVars()
     try { localStorage.removeItem(STORAGE_KEY) } catch {}
-    set({ theme: DEFAULT_THEME, isCustom: false })
+    set({ light: DEFAULT_THEME, dark: DEFAULT_THEME, isCustom: false })
   },
 }))
 
 /** Бутстрап до первого рендера — применяем закэшированную тему,
  *  чтобы интерфейс не мигал дефолтным. */
 export function initThemeFromStorage() {
-  let cached: ThemeColors | null = null
-  try { cached = parseTheme(localStorage.getItem(STORAGE_KEY)) } catch {}
+  let cached: { light: ThemeColors; dark: ThemeColors } | null = null
+  try { cached = parseThemePair(localStorage.getItem(STORAGE_KEY)) } catch {}
   if (cached) {
-    applyVars(cached)
-    useThemeStore.setState({ theme: cached, isCustom: true })
+    applyVars(cached.light, cached.dark)
+    useThemeStore.setState({ light: cached.light, dark: cached.dark, isCustom: true })
   }
 }
 
 /** Синхронизация с сервером после /auth/me — сервер источник истины. */
 export function syncThemeFromServer(themeColor?: string | null) {
-  const parsed = parseTheme(themeColor)
+  const parsed = parseThemePair(themeColor)
   if (parsed) {
     const cur = useThemeStore.getState()
-    if (!cur.isCustom || serializeTheme(cur.theme) !== serializeTheme(parsed)) {
-      useThemeStore.getState().setTheme(parsed)
+    const next = serializeThemePair(parsed.light, parsed.dark)
+    if (!cur.isCustom || serializeThemePair(cur.light, cur.dark) !== next) {
+      cur.setThemes(parsed.light, parsed.dark)
     }
   } else {
     // На сервере темы нет → сброс (если локально была кастомная).
@@ -258,11 +292,14 @@ function buildChartColors(t: ThemeColors): string[] {
   ]
 }
 
-/** Реактивная палитра графиков — перерисовываются при смене темы. */
+/** Реактивная палитра графиков — перерисовываются при смене темы. Берёт
+ *  набор активного режима (светлый/тёмный). */
 export function useChartColors(): string[] {
-  const theme = useThemeStore(s => s.theme)
+  const light = useThemeStore(s => s.light)
+  const dark = useThemeStore(s => s.dark)
   const isCustom = useThemeStore(s => s.isCustom)
+  const mode = useColorModeStore(s => s.theme)
   // Дефолт (не кастом) — прежняя серая рампа (нейтральна к ч/б).
   if (!isCustom) return ['#18181b', '#52525b', '#8a8a93', '#a1a1aa', '#b4b4bb', '#d4d4d8']
-  return buildChartColors(theme)
+  return buildChartColors(mode === 'dark' ? dark : light)
 }
