@@ -107,6 +107,24 @@ export class FinanceTransaction {
   @Column({ type: 'text', nullable: true })
   comment: string;
 
+  // ─── Связи с сущностями финмодуля (для матриц/графиков) ──────────
+  /** Направление дохода/статья расхода: smm|development|design|salary|rent_subs|debts. */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  group: string | null;
+
+  /** Проект-источник дохода (переиспользуем проекты CRM). */
+  @Column({ type: 'uuid', nullable: true })
+  projectId: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  subscriptionId: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  debtId: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  plannedPaymentId: string | null;
+
   /** Кто создал запись — для аудита. */
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'createdById' })
