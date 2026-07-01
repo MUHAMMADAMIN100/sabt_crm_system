@@ -17,3 +17,7 @@ frontend/.env
 uploads/
 .DS_Store
 coverage/
+
+# Локальные настройки Claude Code (могут содержать секреты в allowlist) —
+# НИКОГДА не коммитить.
+.claude/settings.local.json
