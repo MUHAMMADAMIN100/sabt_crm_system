@@ -169,6 +169,9 @@ ${context}
 
 Дай точный, полный, красиво оформленный ответ строго на основе данных выше.`;
 
+    // Копим ошибки провайдеров, чтобы вернуть реальную причину (а не generic).
+    const errors: string[] = [];
+
     // If user picked a specific model — try ONLY that model first, then fall back
     if (selectedModel) {
       const found = AVAILABLE_MODELS.find(m => m.id === selectedModel);
@@ -194,6 +197,7 @@ ${context}
             }
           }
         } catch (error: any) {
+          errors.push(`${selectedModel}: ${error?.message || error}`);
           this.logger.warn(`Selected model ${selectedModel} failed: ${error?.message}, falling back to chain`);
         }
       }
@@ -215,6 +219,7 @@ ${context}
           }
         } catch (error: any) {
           const msg = error?.message || '';
+          errors.push(`gemini/${modelName}: ${msg || error}`);
           if (msg.includes('503') || msg.includes('429') || msg.includes('overloaded') || msg.includes('quota') || msg.includes('high demand')) {
             continue;
           }
@@ -233,13 +238,16 @@ ${context}
             return text;
           }
         } catch (error: any) {
+          errors.push(`groq/${modelName}: ${error?.message || error}`);
           this.logger.warn(`Groq ${modelName} failed: ${error?.message}`);
           continue;
         }
       }
     }
 
-    return 'Ошибка ИИ: все провайдеры временно недоступны, попробуйте через минуту.';
+    this.logger.error(`All AI providers failed: ${errors.join(' | ') || 'нет попыток'}`);
+    const detail = errors.length ? ` Причина: ${errors[errors.length - 1]}` : '';
+    return `Ошибка ИИ: все провайдеры временно недоступны.${detail}`;
   }
 
   /** Возвращает кэшированный контекст для конкретного пользователя (<30s), иначе строит свежий */
