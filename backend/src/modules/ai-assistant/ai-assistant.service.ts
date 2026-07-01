@@ -246,7 +246,7 @@ ${context}
     }
 
     this.logger.error(`All AI providers failed: ${errors.join(' | ') || 'нет попыток'}`);
-    const detail = errors.length ? ` Причина: ${errors[errors.length - 1]}` : '';
+    const detail = errors.length ? ` Причины: ${errors.join(' || ')}` : '';
     return `Ошибка ИИ: все провайдеры временно недоступны.${detail}`;
   }
 
