@@ -1,5 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom'
-import { useState } from 'react'
+import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeProjectStories, canManageAccess, userCan, type Permission } from '@/lib/permissions'
@@ -7,17 +6,8 @@ import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserPlus,
-  Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon, ChevronDown,
+  Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
 } from 'lucide-react'
-
-/** Подпункты раздела «Финансы» — раскрываются под пунктом в сайдбаре. */
-const FINANCE_SUBNAV: { to: string; label: string; end?: boolean }[] = [
-  { to: '/finance',              label: 'Обзор', end: true },
-  { to: '/finance/income',       label: 'Доходы' },
-  { to: '/finance/expense',      label: 'Расходы' },
-  { to: '/finance/transactions', label: 'Транзакции' },
-  { to: '/finance/settings',     label: 'Счета и справочники' },
-]
 import clsx from 'clsx'
 
 interface SidebarProps { open: boolean; onClose: () => void }
@@ -38,9 +28,6 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const role = user?.role
   const secondaryRole = user?.secondaryRole
   const isTopExec = role === 'founder' || role === 'co_founder'
-  const location = useLocation()
-  const financeActive = location.pathname.startsWith('/finance')
-  const [financeOpen, setFinanceOpen] = useState(financeActive)
 
   const navItems: { to: string; icon: any; label: string; permission: Permission; exact?: boolean }[] = [
     { to: '/',              icon: LayoutDashboard, label: t('nav.dashboard'),  permission: 'dashboard',         exact: true },
@@ -121,77 +108,35 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {/* Навигация */}
       <nav className="flex-1 p-3 overflow-y-auto overflow-x-hidden">
         <ul className="space-y-1">
-          {filtered.map(item => {
-            const labelSpan = (
-              <span className={clsx(
-                'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
-                open ? 'max-w-[200px] opacity-100' : 'max-w-0 opacity-0',
-              )}>
-                {item.label}
-              </span>
-            )
-            const linkClass = ({ isActive }: { isActive: boolean }) => clsx(
-              'group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-              isActive
-                ? 'bg-primary-600 text-white shadow-sm'
-                : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
-              !open && 'lg:justify-center lg:px-2',
-            )
-
-            // «Финансы» — раскрывающийся раздел с подпунктами.
-            if (item.to === '/finance') {
-              return (
-                <li key="/finance">
-                  <button
-                    type="button"
-                    onClick={() => setFinanceOpen(v => (open ? !v : true))}
-                    className={clsx(
-                      'w-full group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                      financeActive
-                        ? 'bg-primary-600/15 text-[rgb(var(--sidebar-fg))]'
-                        : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
-                      !open && 'lg:justify-center lg:px-2',
-                    )}
-                    title={!open ? item.label : undefined}
-                  >
-                    <item.icon size={18} className="shrink-0" />
-                    {labelSpan}
-                    {open && <ChevronDown size={15} className={clsx('ml-auto shrink-0 transition-transform', financeOpen && 'rotate-180')} />}
-                  </button>
-                  {open && financeOpen && (
-                    <ul className="mt-1 ml-3 pl-3 border-l border-white/10 space-y-0.5">
-                      {FINANCE_SUBNAV.map(sub => (
-                        <li key={sub.to}>
-                          <NavLink
-                            to={sub.to}
-                            end={sub.end}
-                            onClick={handleNavClick}
-                            className={({ isActive }) => clsx(
-                              'block px-3 py-2 rounded-lg text-[13px] font-medium transition-colors',
-                              isActive
-                                ? 'bg-primary-600 text-white shadow-sm'
-                                : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
-                            )}
-                          >
-                            {sub.label}
-                          </NavLink>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              )
-            }
-
-            return (
-              <li key={item.to}>
-                <NavLink to={item.to} end={item.exact} onClick={handleNavClick} className={linkClass} title={!open ? item.label : undefined}>
-                  <item.icon size={18} className="shrink-0" />
-                  {labelSpan}
-                </NavLink>
-              </li>
-            )
-          })}
+          {filtered.map(item => (
+            <li key={item.to}>
+              <NavLink
+                to={item.to}
+                end={item.exact}
+                onClick={handleNavClick}
+                className={({ isActive }) =>
+                  clsx(
+                    'group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                    // Активный пункт — заливка выбранным Primary-цветом
+                    // темы (главный акцент перекрашивается вместе со всем).
+                    isActive
+                      ? 'bg-primary-600 text-white shadow-sm'
+                      : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
+                    !open && 'lg:justify-center lg:px-2',
+                  )
+                }
+                title={!open ? item.label : undefined}
+              >
+                <item.icon size={18} className="shrink-0" />
+                <span className={clsx(
+                  'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
+                  open ? 'max-w-[200px] opacity-100' : 'max-w-0 opacity-0',
+                )}>
+                  {item.label}
+                </span>
+              </NavLink>
+            </li>
+          ))}
         </ul>
       </nav>
 

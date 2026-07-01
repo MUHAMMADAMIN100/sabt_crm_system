@@ -65,9 +65,6 @@ const OnboardingPage    = lazy(() => import('@/pages/onboarding/OnboardingPage')
 const TariffsPage       = lazy(() => import('@/pages/tariffs/TariffsPage'))
 const RisksPage         = lazy(() => import('@/pages/risks/RisksPage'))
 const FinancePage       = lazy(() => import('@/pages/finance/FinancePage'))
-const FinanceIncomePage = lazy(() => import('@/pages/finance/FinanceIncomePage'))
-const FinanceExpensePage = lazy(() => import('@/pages/finance/FinanceExpensePage'))
-const FinanceSettingsPage = lazy(() => import('@/pages/finance/FinanceSettingsPage'))
 const SecurityLogPage   = lazy(() => import('@/pages/security/SecurityLogPage'))
 const PublicBriefPage   = lazy(() => import('@/pages/public/PublicBriefPage'))
 
@@ -143,10 +140,6 @@ export default function App() {
           <Route path="tariffs" element={<RoleGuard><TariffsPage /></RoleGuard>} />
           <Route path="risks" element={<RoleGuard><RisksPage /></RoleGuard>} />
           <Route path="finance" element={<RoleGuard><FinancePage /></RoleGuard>} />
-          <Route path="finance/transactions" element={<RoleGuard><FinancePage defaultView="transactions" /></RoleGuard>} />
-          <Route path="finance/income" element={<RoleGuard><FinanceIncomePage /></RoleGuard>} />
-          <Route path="finance/expense" element={<RoleGuard><FinanceExpensePage /></RoleGuard>} />
-          <Route path="finance/settings" element={<RoleGuard><FinanceSettingsPage /></RoleGuard>} />
           <Route path="security-log" element={<RoleGuard><SecurityLogPage /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
