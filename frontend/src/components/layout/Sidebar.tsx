@@ -58,7 +58,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     // (по запросу пользователя). Остальным ролям пункт не нужен.
     if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
     // Доска проектов — список ролей SMM-производства + персональный грант КП.
-    if (item.to === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || userCan(user, 'content-plan.manage')
+    if (item.to === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || userCan(user, 'content-plan.manage') || userCan(user, 'board.view')
     // «Истории по проектам» — только сторисмейкер.
     if (item.to === '/project-stories') return canSeeProjectStories(role, secondaryRole)
     // «Доступы сотрудников» — только основатель/сооснователь/админ.

@@ -415,7 +415,7 @@ export function canAccessRoute(
   // Онбординг — только менеджеры по продажам.
   if (route === '/onboarding') return role === 'sales_manager_smm' || role === 'sales_manager_dev'
   // Глобальная доска проектов — SMM-производство/руководители/топ + грант КП.
-  if (route === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || userCan(u, 'content-plan.manage')
+  if (route === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || userCan(u, 'content-plan.manage') || userCan(u, 'board.view')
   // «Истории по проектам» — только сторисмейкер.
   if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole)
   // «Доступы сотрудников» — только основатель/сооснователь/админ.

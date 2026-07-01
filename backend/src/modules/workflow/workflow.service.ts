@@ -18,7 +18,7 @@ import { MailService } from '../mail/mail.service';
 import { hasGrant } from '../auth/permissions';
 
 interface Viewer { id: string; role: string }
-interface Actor { id: string; name: string; role: string; secondaryRole: string | null }
+interface Actor { id: string; name: string; role: string; secondaryRole: string | null; extraPermissions?: string[] | null }
 
 /** Роли, которые могут редактировать доску любого SMM-проекта.
  *  Остальным нужно быть менеджером или участником проекта. */
@@ -282,6 +282,9 @@ export class WorkflowService implements OnModuleInit {
   private async assertCanAccessCard(card: WorkflowCard, viewer: Viewer): Promise<void> {
     if (PRIVILEGED.includes(viewer.role) || MANAGE_ROLES.includes(viewer.role)) return;
     if (this.isAssignee(card, viewer.id)) return;
+    // Персональный грант «полное управление доской» — доступ к любой карточке.
+    const u = await this.userRepo.findOne({ where: { id: viewer.id } });
+    if (hasGrant({ role: viewer.role, secondaryRole: u?.secondaryRole, extraPermissions: u?.extraPermissions }, 'content-plan.manage')) return;
     await this.assertCanEdit(card.projectId, viewer);
   }
 
@@ -322,14 +325,17 @@ export class WorkflowService implements OnModuleInit {
       name: u?.name || 'Сотрудник',
       role: u?.role || '',
       secondaryRole: u?.secondaryRole || null,
+      extraPermissions: u?.extraPermissions || null,
     };
   }
 
   /** Руководитель производства (admin/founder/co_founder/smm_director/
-   *  organizer) может выполнять действие любого этапа. */
+   *  organizer) ЛИБО сотрудник с персональным грантом «полное управление
+   *  доской» — может выполнять действие любого этапа (все статусы). */
   private isManager(actor: Actor): boolean {
     return MANAGE_ROLES.includes(actor.role)
-      || (!!actor.secondaryRole && MANAGE_ROLES.includes(actor.secondaryRole));
+      || (!!actor.secondaryRole && MANAGE_ROLES.includes(actor.secondaryRole))
+      || hasGrant(actor, 'content-plan.manage');
   }
 
   /** RBAC действия выхода этапа (ТЗ §12). */
@@ -387,18 +393,29 @@ export class WorkflowService implements OnModuleInit {
 
   // ─── Чтение ───────────────────────────────────────────────────────────
 
+  /** Видит ли пользователь ВСЮ доску: роль из SEE_ALL (основная/вторая) ИЛИ
+   *  персональный грант просмотра/полного управления доской. */
+  private async canSeeWholeBoard(viewer: Viewer): Promise<boolean> {
+    if (SEE_ALL.includes(viewer.role)) return true;
+    const u = await this.userRepo.findOne({ where: { id: viewer.id } });
+    if (u?.secondaryRole && SEE_ALL.includes(u.secondaryRole)) return true;
+    const g = { role: viewer.role, secondaryRole: u?.secondaryRole, extraPermissions: u?.extraPermissions };
+    return hasGrant(g, 'board.view') || hasGrant(g, 'content-plan.manage');
+  }
+
   /** Карточки проекта в зоне видимости (полная доска или только свои) — без
    *  фильтра по архиву. База для list (доска без архива) и archiveForProject. */
   private async projectCards(projectId: string, viewer: Viewer) {
-    // Полная доска проекта — участнику/менеджеру/привилегированной роли.
-    // Иначе (назначен исполнителем/монтажёром, но не участник проекта) — только
-    // свои карточки, чтобы назначение не упиралось в 403 (как в listAll/myCards).
+    // Полная доска проекта — участнику/менеджеру/привилегированной роли ИЛИ
+    // сотруднику с грантом доски. Иначе (назначен исполнителем, но не участник) —
+    // только свои карточки, чтобы назначение не упиралось в 403.
     let full = true;
     try {
       await this.assertCanEdit(projectId, viewer);
     } catch {
       full = false;
     }
+    if (!full && await this.canSeeWholeBoard(viewer)) full = true;
     const cards = await this.repo.find({
       where: { projectId },
       relations: ['assignee', 'createdBy'],
@@ -440,7 +457,7 @@ export class WorkflowService implements OnModuleInit {
     });
 
     let visible = cards;
-    if (!SEE_ALL.includes(viewer.role)) {
+    if (!(await this.canSeeWholeBoard(viewer))) {
       // Не-привилегированные: карточки проектов, где они участник/менеджер,
       // ПЛЮС карточки, где они исполнитель (в т.ч. один из нескольких) —
       // чтобы назначенная карточка появилась на их доске даже без членства.
