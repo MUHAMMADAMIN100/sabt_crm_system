@@ -3,16 +3,11 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { FinanceService } from './finance.service';
-import { CreateFinanceTransactionDto } from './dto/create-finance-transaction.dto';
-import { UpdateFinanceTransactionDto } from './dto/update-finance-transaction.dto';
-import {
-  FinanceAccount, FinanceTxStatus, FinanceTxType,
-} from './finance-transaction.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
 
-/** Финансовый модуль доступен только основателю и сооснователю. */
+/** Финансовый модуль — только основатель и сооснователь. */
 @ApiTags('Finance')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -21,65 +16,95 @@ import { UserRole } from '../users/user.entity';
 export class FinanceController {
   constructor(private service: FinanceService) {}
 
-  // ─── Aggregators ─────────────────────────────────────────────────
-  @Get('accounts-summary')
-  getAccountsSummary() { return this.service.getAccountsSummary(); }
+  // ─── Дашборды / расчёты ──────────────────────────────────────────
+  @Get('overview')
+  overview(@Query('ym') ym: string) { return this.service.overview(ym || currentYm()); }
 
-  @Get('monthly')
-  getMonthly(
-    @Query('account') account?: FinanceAccount,
-    @Query('months') months?: string,
-  ) {
-    return this.service.getMonthly(account, months ? parseInt(months, 10) || 6 : 6);
+  @Get('income/directions')
+  incomeDirections(@Query('ym') ym: string) { return this.service.incomeDirections(ym || currentYm()); }
+
+  @Get('income/directions/:direction')
+  incomeDirectionDetail(@Param('direction') direction: string, @Query('ym') ym: string) {
+    return this.service.incomeDirectionDetail(direction, ym || currentYm());
   }
 
-  @Get('by-category')
-  getByCategory(
-    @Query('account') account?: FinanceAccount,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-  ) {
-    return this.service.getByCategory(account, from, to);
+  @Get('expense/summary')
+  expenseSummary(@Query('ym') ym: string) { return this.service.expenseSummary(ym || currentYm()); }
+
+  @Get('expense/detail/:kind')
+  expenseDetail(@Param('kind') kind: string, @Query('ym') ym: string) {
+    return this.service.expenseDetail(kind, ym || currentYm());
   }
 
-  /** Список категорий для выпадашки в форме (стандартные + пользовательские). */
-  @Get('categories')
-  getCategories() { return this.service.getCategories(); }
+  @Get('accounts/balances')
+  accountsBalances() { return this.service.accountsBalances(); }
 
-  // ─── CRUD ────────────────────────────────────────────────────────
-  @Get()
-  findAll(
-    @Query('account')  account?: FinanceAccount,
-    @Query('type')     type?: FinanceTxType,
-    @Query('category') category?: string,
-    @Query('status')   status?: FinanceTxStatus,
-    @Query('search')   search?: string,
-    @Query('from')     from?: string,
-    @Query('to')       to?: string,
-    @Query('sort')     sort?: 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc',
-    @Query('page')     page?: string,
-    @Query('pageSize') pageSize?: string,
+  // ─── Транзакции ──────────────────────────────────────────────────
+  @Get('transactions')
+  transactions(
+    @Query('type') type?: string, @Query('search') search?: string,
+    @Query('from') from?: string, @Query('to') to?: string,
+    @Query('page') page?: string, @Query('pageSize') pageSize?: string,
   ) {
-    return this.service.findAll({
-      account, type, category, status, search, from, to, sort,
+    return this.service.listTransactions({
+      type, search, from, to,
       page: page ? parseInt(page, 10) || 1 : 1,
-      pageSize: pageSize ? parseInt(pageSize, 10) || 15 : 15,
+      pageSize: pageSize ? parseInt(pageSize, 10) || 100 : 100,
     });
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) { return this.service.findOne(id); }
+  @Post('operations')
+  createOperation(@Body() dto: any, @Request() req) { return this.service.createOperation(dto, req.user?.id); }
 
-  @Post()
-  create(@Body() dto: CreateFinanceTransactionDto, @Request() req) {
-    return this.service.create(dto as any, req.user.id);
-  }
+  @Patch('transactions/:id')
+  updateTransaction(@Param('id') id: string, @Body() dto: any) { return this.service.updateTransaction(id, dto); }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateFinanceTransactionDto) {
-    return this.service.update(id, dto as any);
-  }
+  @Delete('transactions/:id')
+  removeTransaction(@Param('id') id: string) { return this.service.removeTransaction(id); }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) { return this.service.remove(id); }
+  // ─── Справочники: Счета ──────────────────────────────────────────
+  @Get('accounts') listAccounts() { return this.service.listAccounts(); }
+  @Post('accounts') createAccount(@Body() dto: any) { return this.service.createAccount(dto); }
+  @Patch('accounts/:id') updateAccount(@Param('id') id: string, @Body() dto: any) { return this.service.updateAccount(id, dto); }
+  @Delete('accounts/:id') removeAccount(@Param('id') id: string) { return this.service.removeAccount(id); }
+
+  // ─── Справочники: Категории ──────────────────────────────────────
+  @Get('categories') listCategories() { return this.service.listCategories(); }
+  @Post('categories') createCategory(@Body() dto: any) { return this.service.createCategory(dto); }
+  @Patch('categories/:id') updateCategory(@Param('id') id: string, @Body() dto: any) { return this.service.updateCategory(id, dto); }
+  @Delete('categories/:id') removeCategory(@Param('id') id: string) { return this.service.removeCategory(id); }
+
+  // ─── Справочники: Проекты/клиенты ────────────────────────────────
+  @Get('projects') listProjects() { return this.service.listProjects(); }
+  @Post('projects') createProject(@Body() dto: any) { return this.service.createProject(dto); }
+  @Patch('projects/:id') updateProject(@Param('id') id: string, @Body() dto: any) { return this.service.updateProject(id, dto); }
+  @Delete('projects/:id') removeProject(@Param('id') id: string) { return this.service.removeProject(id); }
+
+  // ─── Справочники: Сотрудники ─────────────────────────────────────
+  @Get('employees') listEmployees() { return this.service.listEmployees(); }
+  @Post('employees') createEmployee(@Body() dto: any) { return this.service.createEmployee(dto); }
+  @Patch('employees/:id') updateEmployee(@Param('id') id: string, @Body() dto: any) { return this.service.updateEmployee(id, dto); }
+  @Delete('employees/:id') removeEmployee(@Param('id') id: string) { return this.service.removeEmployee(id); }
+
+  // ─── Справочники: Аренда/подписки ────────────────────────────────
+  @Get('subscriptions') listSubscriptions() { return this.service.listSubscriptions(); }
+  @Post('subscriptions') createSubscription(@Body() dto: any) { return this.service.createSubscription(dto); }
+  @Patch('subscriptions/:id') updateSubscription(@Param('id') id: string, @Body() dto: any) { return this.service.updateSubscription(id, dto); }
+  @Delete('subscriptions/:id') removeSubscription(@Param('id') id: string) { return this.service.removeSubscription(id); }
+
+  // ─── Справочники: Долги ──────────────────────────────────────────
+  @Get('debts') listDebts() { return this.service.listDebts(); }
+  @Post('debts') createDebt(@Body() dto: any) { return this.service.createDebt(dto); }
+  @Patch('debts/:id') updateDebt(@Param('id') id: string, @Body() dto: any) { return this.service.updateDebt(id, dto); }
+  @Delete('debts/:id') removeDebt(@Param('id') id: string) { return this.service.removeDebt(id); }
+
+  // ─── Резервная копия / сброс ─────────────────────────────────────
+  @Get('backup/export') exportAll() { return this.service.exportAll(); }
+  @Post('backup/import') importAll(@Body() data: any) { return this.service.importAll(data); }
+  @Post('reset') resetAll() { return this.service.resetAll(true); }
+}
+
+function currentYm(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }

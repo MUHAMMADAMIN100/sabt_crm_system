@@ -419,6 +419,8 @@ export function canAccessRoute(
   if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole)
   // «Доступы сотрудников» — только основатель/сооснователь/админ.
   if (route === '/employee-access') return canManageAccess(role)
+  // Финансы и все подстраницы — по гранту finance.manage.
+  if (route === '/finance' || route.startsWith('/finance/')) return userCan(u, 'finance.manage')
 
   // Detail pages — allow if user can view the parent
   if (route.startsWith('/projects/')) return userCan(u, 'projects.view')

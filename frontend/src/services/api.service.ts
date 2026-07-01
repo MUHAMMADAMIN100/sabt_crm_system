@@ -317,18 +317,61 @@ export const teamsApi = {
 
 // ─── Finance (Founder/Co-founder only) ──────────────────
 export const financeApi = {
-  list: (params?: any) => api.get('/finance', { params }).then(r => r.data),
-  get: (id: string) => api.get(`/finance/${id}`).then(r => r.data),
-  create: (data: any) => api.post('/finance', data).then(r => r.data),
-  update: (id: string, data: any) => api.patch(`/finance/${id}`, data).then(r => r.data),
-  remove: (id: string) => api.delete(`/finance/${id}`).then(r => r.data),
-  accountsSummary: () => api.get('/finance/accounts-summary').then(r => r.data),
-  monthly: (params?: { account?: string; months?: number }) =>
-    api.get('/finance/monthly', { params }).then(r => r.data),
-  byCategory: (params?: { account?: string; from?: string; to?: string }) =>
-    api.get('/finance/by-category', { params }).then(r => r.data),
-  categories: (): Promise<string[]> =>
-    api.get('/finance/categories').then(r => r.data),
+  // Дашборды / расчёты
+  overview: (ym: string) => api.get('/finance/overview', { params: { ym } }).then(r => r.data),
+  incomeDirections: (ym: string) => api.get('/finance/income/directions', { params: { ym } }).then(r => r.data),
+  incomeDirectionDetail: (direction: string, ym: string) =>
+    api.get(`/finance/income/directions/${direction}`, { params: { ym } }).then(r => r.data),
+  expenseSummary: (ym: string) => api.get('/finance/expense/summary', { params: { ym } }).then(r => r.data),
+  expenseDetail: (kind: string, ym: string) => api.get(`/finance/expense/detail/${kind}`, { params: { ym } }).then(r => r.data),
+  accountsBalances: () => api.get('/finance/accounts/balances').then(r => r.data),
+
+  // Транзакции
+  transactions: (params?: any) => api.get('/finance/transactions', { params }).then(r => r.data),
+  createOperation: (data: any) => api.post('/finance/operations', data).then(r => r.data),
+  updateTransaction: (id: string, data: any) => api.patch(`/finance/transactions/${id}`, data).then(r => r.data),
+  removeTransaction: (id: string) => api.delete(`/finance/transactions/${id}`).then(r => r.data),
+
+  // Счета
+  accounts: () => api.get('/finance/accounts').then(r => r.data),
+  createAccount: (data: any) => api.post('/finance/accounts', data).then(r => r.data),
+  updateAccount: (id: string, data: any) => api.patch(`/finance/accounts/${id}`, data).then(r => r.data),
+  removeAccount: (id: string) => api.delete(`/finance/accounts/${id}`).then(r => r.data),
+
+  // Категории
+  categories: () => api.get('/finance/categories').then(r => r.data),
+  createCategory: (data: any) => api.post('/finance/categories', data).then(r => r.data),
+  updateCategory: (id: string, data: any) => api.patch(`/finance/categories/${id}`, data).then(r => r.data),
+  removeCategory: (id: string) => api.delete(`/finance/categories/${id}`).then(r => r.data),
+
+  // Проекты/клиенты
+  projects: () => api.get('/finance/projects').then(r => r.data),
+  createProject: (data: any) => api.post('/finance/projects', data).then(r => r.data),
+  updateProject: (id: string, data: any) => api.patch(`/finance/projects/${id}`, data).then(r => r.data),
+  removeProject: (id: string) => api.delete(`/finance/projects/${id}`).then(r => r.data),
+
+  // Сотрудники
+  employees: () => api.get('/finance/employees').then(r => r.data),
+  createEmployee: (data: any) => api.post('/finance/employees', data).then(r => r.data),
+  updateEmployee: (id: string, data: any) => api.patch(`/finance/employees/${id}`, data).then(r => r.data),
+  removeEmployee: (id: string) => api.delete(`/finance/employees/${id}`).then(r => r.data),
+
+  // Аренда/подписки
+  subscriptions: () => api.get('/finance/subscriptions').then(r => r.data),
+  createSubscription: (data: any) => api.post('/finance/subscriptions', data).then(r => r.data),
+  updateSubscription: (id: string, data: any) => api.patch(`/finance/subscriptions/${id}`, data).then(r => r.data),
+  removeSubscription: (id: string) => api.delete(`/finance/subscriptions/${id}`).then(r => r.data),
+
+  // Долги
+  debts: () => api.get('/finance/debts').then(r => r.data),
+  createDebt: (data: any) => api.post('/finance/debts', data).then(r => r.data),
+  updateDebt: (id: string, data: any) => api.patch(`/finance/debts/${id}`, data).then(r => r.data),
+  removeDebt: (id: string) => api.delete(`/finance/debts/${id}`).then(r => r.data),
+
+  // Резервная копия / сброс
+  exportAll: () => api.get('/finance/backup/export').then(r => r.data),
+  importAll: (data: any) => api.post('/finance/backup/import', data).then(r => r.data),
+  resetAll: () => api.post('/finance/reset', {}).then(r => r.data),
 }
 
 // ─── Risk Analytics (Wave 5) ─────────────────────────────

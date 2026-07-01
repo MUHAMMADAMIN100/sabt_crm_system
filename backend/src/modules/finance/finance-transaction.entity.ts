@@ -4,39 +4,20 @@ import {
 } from 'typeorm';
 import { User } from '../users/user.entity';
 
-/** Тип операции — деньги пришли или ушли. */
+/** Тип операции: приход, расход, перевод между счетами, накопление. */
 export enum FinanceTxType {
-  INCOME  = 'income',
-  EXPENSE = 'expense',
+  INCOME   = 'income',
+  EXPENSE  = 'expense',
+  TRANSFER = 'transfer',
+  SAVING   = 'saving',
 }
 
-/** Фиксированный список рабочих счетов агентства. */
+/** Ключи дефолтных счетов (для бэкфилла старых записей). Счета теперь
+ *  хранятся в таблице finance_accounts; enum оставлен для совместимости. */
 export enum FinanceAccount {
   ALIF          = 'alif',
   DUSHANBE_CITY = 'dushanbe_city',
   CASH          = 'cash',
-}
-
-/** Стандартные категории транзакций — стартовый набор.
- *  Поле `category` теперь свободная строка: пользователь может добавлять
- *  свои категории прямо в форме, и они сохраняются вместе с транзакцией. */
-export enum FinanceCategory {
-  SALARY      = 'salary',
-  PROJECT     = 'project',
-  SUBSCRIPTION = 'subscription',
-  RENT        = 'rent',
-  MARKETING   = 'marketing',
-  TOOLS       = 'tools',
-  TRANSPORT   = 'transport',
-  OTHER       = 'other',
-}
-
-/** Способ оплаты — необязательное поле. */
-export enum FinancePaymentMethod {
-  TRANSFER = 'transfer',
-  CARD     = 'card',
-  CASH     = 'cash',
-  QR       = 'qr',
 }
 
 /** Статус — отменённые не учитываются в балансе. */
@@ -52,10 +33,10 @@ export class FinanceTransaction {
   id: string;
 
   @Index()
-  @Column({ type: 'enum', enum: FinanceTxType })
+  @Column({ type: 'varchar', length: 16 })
   type: FinanceTxType;
 
-  /** Сумма в сомони (TJS). Decimal — чтобы не терять копейки. */
+  /** Сумма в сомони (TJS). */
   @Column({ type: 'decimal', precision: 15, scale: 2 })
   amount: number;
 
@@ -63,51 +44,68 @@ export class FinanceTransaction {
   @Column({ type: 'date' })
   date: string;
 
-  /** «Основной» счёт. Для одиночных оплат — единственный счёт зачисления.
-   *  Для сплит-оплат — оставлен для обратной совместимости (отчёты, которые
-   *  ещё не научились читать `splits`, корректно покажут хотя бы один счёт). */
+  // ─── Счета (новая динамическая модель) ───────────────────────────
+  /** Счёт для income/expense/saving. */
   @Index()
-  @Column({ type: 'enum', enum: FinanceAccount })
-  account: FinanceAccount;
+  @Column({ type: 'uuid', nullable: true })
+  accountId: string | null;
 
-  /** Сплит-оплата: часть суммы на один счёт, часть на другой.
-   *  Каждый элемент: { account: FinanceAccount, amount: number }.
-   *  Сумма всех частей должна равняться `amount`.
-   *  Если null/пусто — транзакция считается одиночной по `account`.
-   *  Балансы по счетам считаются из splits, если они есть. */
-  @Column({ type: 'jsonb', nullable: true })
-  splits: Array<{ account: FinanceAccount; amount: number }> | null;
+  /** Перевод: списание со счёта. */
+  @Column({ type: 'uuid', nullable: true })
+  fromAccountId: string | null;
 
-  /** Категория — свободная строка. Стандартные значения берутся из
-   *  FinanceCategory, но допускаются и произвольные пользовательские. */
+  /** Перевод: зачисление на счёт. */
+  @Column({ type: 'uuid', nullable: true })
+  toAccountId: string | null;
+
+  /** Категория (FK на finance_categories). */
   @Index()
-  @Column({ type: 'varchar', length: 100 })
-  category: string;
+  @Column({ type: 'uuid', nullable: true })
+  categoryId: string | null;
 
-  /** Краткое название операции — обязательное. */
-  @Column()
-  description: string;
+  /** Финансовый проект/клиент (для доходов). */
+  @Column({ type: 'uuid', nullable: true })
+  projectId: string | null;
 
-  /** Имя клиента/поставщика — свободный текст, не FK. */
-  @Column({ nullable: true })
-  counterparty: string;
+  /** Сотрудник (для выплат зарплаты). */
+  @Column({ type: 'uuid', nullable: true })
+  employeeId: string | null;
 
-  /** Название проекта — текст. Не FK на projects, чтобы не падать
-   *  при удалении проекта и поддерживать любые строки. */
-  @Column({ nullable: true })
-  project: string;
-
-  @Column({ type: 'enum', enum: FinancePaymentMethod, nullable: true })
-  paymentMethod: FinancePaymentMethod;
-
-  @Index()
-  @Column({ type: 'enum', enum: FinanceTxStatus, default: FinanceTxStatus.COMPLETED })
-  status: FinanceTxStatus;
+  /** Долг (для погашений). */
+  @Column({ type: 'uuid', nullable: true })
+  debtId: string | null;
 
   @Column({ type: 'text', nullable: true })
-  comment: string;
+  comment: string | null;
 
-  /** Кто создал запись — для аудита. */
+  // ─── Legacy-поля (совместимость со старым журналом) ──────────────
+  /** Legacy enum-счёт. Новые записи используют accountId. */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  account: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  splits: Array<{ account: string; amount: number }> | null;
+
+  /** Название категории строкой (для отображения/legacy). */
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  category: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  description: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  counterparty: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  project: string | null;
+
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  paymentMethod: string | null;
+
+  @Index()
+  @Column({ type: 'varchar', length: 16, default: FinanceTxStatus.COMPLETED })
+  status: FinanceTxStatus;
+
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'createdById' })
   createdBy: User;
