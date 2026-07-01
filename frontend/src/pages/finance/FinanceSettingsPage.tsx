@@ -1,39 +1,16 @@
-import { useEffect, useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { financeApi } from '@/services/api.service'
 import { Settings, Users, FolderKanban, Tag } from 'lucide-react'
-import toast from 'react-hot-toast'
 
 const money = (v: any) => (Math.round(Number(v) || 0)).toLocaleString('ru-RU') + ' сом.'
-const ACCOUNTS: { key: string; label: string }[] = [
-  { key: 'alif', label: 'Alif' },
-  { key: 'dushanbe_city', label: 'Dushanbe City' },
-  { key: 'cash', label: 'Наличные' },
-]
+const ACCOUNT_LABELS: Record<string, string> = { alif: 'Alif', dushanbe_city: 'Dushanbe City', cash: 'Наличные' }
 
-/** «Счета и справочники» — редактируемые стартовые балансы + балансы из операций. */
+/** «Счета и справочники» — балансы счетов + быстрые ссылки на справочники CRM. */
 export default function FinanceSettingsPage() {
-  const qc = useQueryClient()
-  const { data: summary } = useQuery({ queryKey: ['finance', 'accounts-summary'], queryFn: financeApi.accountsSummary })
-  const { data: opening } = useQuery({ queryKey: ['finance', 'opening-balances'], queryFn: financeApi.openingBalances })
-
-  const [form, setForm] = useState<Record<string, string>>({})
-  useEffect(() => {
-    if (opening) setForm({ alif: String(opening.alif ?? 0), dushanbe_city: String(opening.dushanbe_city ?? 0), cash: String(opening.cash ?? 0) })
-  }, [opening])
-
-  const save = useMutation({
-    mutationFn: () => financeApi.setOpeningBalances({
-      alif: Number(form.alif) || 0, dushanbe_city: Number(form.dushanbe_city) || 0, cash: Number(form.cash) || 0,
-    }),
-    onSuccess: () => { toast.success('Стартовые балансы сохранены'); qc.invalidateQueries({ queryKey: ['finance'] }) },
-    onError: () => toast.error('Не удалось сохранить'),
-  })
-
-  const perAccount: any[] = summary?.perAccount || []
-  const total = summary?.total
-  const balOf = (k: string) => perAccount.find(a => a.account === k)?.balance ?? 0
+  const { data } = useQuery({ queryKey: ['finance', 'accounts-summary'], queryFn: financeApi.accountsSummary })
+  const perAccount: any[] = data?.perAccount || []
+  const total = data?.total
 
   return (
     <div className="space-y-6">
@@ -41,48 +18,34 @@ export default function FinanceSettingsPage() {
         <Settings size={20} className="text-surface-500" />
         <div>
           <h1 className="page-title">Счета и справочники</h1>
-          <p className="text-surface-500 dark:text-surface-400 mt-0.5 text-sm">Стартовые балансы (вводятся вручную) + текущие балансы из операций.</p>
+          <p className="text-surface-500 dark:text-surface-400 mt-0.5 text-sm">Балансы счетов (считаются из операций) и справочники системы.</p>
         </div>
       </div>
 
       <div className="card">
-        <h3 className="section-title mb-3">Счета и стартовые балансы</h3>
+        <h3 className="section-title mb-3">Счета</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-surface-400 border-b border-surface-100 dark:border-surface-700">
                 <th className="py-2 pr-3 font-medium">Счёт</th>
-                <th className="py-2 px-3 font-medium">Стартовый баланс</th>
                 <th className="py-2 px-3 font-medium text-right">Приход</th>
                 <th className="py-2 px-3 font-medium text-right">Расход</th>
-                <th className="py-2 pl-3 font-medium text-right">Текущий баланс</th>
+                <th className="py-2 pl-3 font-medium text-right">Баланс</th>
               </tr>
             </thead>
             <tbody>
-              {ACCOUNTS.map(a => {
-                const acc = perAccount.find(x => x.account === a.key)
-                return (
-                  <tr key={a.key} className="border-b border-surface-50 dark:border-surface-800/60">
-                    <td className="py-2 pr-3 font-medium text-surface-800 dark:text-surface-200">{a.label}</td>
-                    <td className="py-2 px-3">
-                      <input
-                        type="number"
-                        value={form[a.key] ?? ''}
-                        onChange={e => setForm(f => ({ ...f, [a.key]: e.target.value }))}
-                        className="input w-36 py-1 text-right tabular-nums"
-                        placeholder="0"
-                      />
-                    </td>
-                    <td className="py-2 px-3 text-right tabular-nums text-green-600 dark:text-green-400">{money(acc?.income)}</td>
-                    <td className="py-2 px-3 text-right tabular-nums text-red-600 dark:text-red-400">{money(acc?.expense)}</td>
-                    <td className="py-2 pl-3 text-right tabular-nums font-semibold">{money(balOf(a.key))}</td>
-                  </tr>
-                )
-              })}
+              {perAccount.map(a => (
+                <tr key={a.account} className="border-b border-surface-50 dark:border-surface-800/60">
+                  <td className="py-2 pr-3 font-medium text-surface-800 dark:text-surface-200">{ACCOUNT_LABELS[a.account] || a.account}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-green-600 dark:text-green-400">{money(a.income)}</td>
+                  <td className="py-2 px-3 text-right tabular-nums text-red-600 dark:text-red-400">{money(a.expense)}</td>
+                  <td className="py-2 pl-3 text-right tabular-nums font-semibold">{money(a.balance)}</td>
+                </tr>
+              ))}
               {total && (
                 <tr className="font-semibold">
                   <td className="py-2 pr-3">Итого</td>
-                  <td className="py-2 px-3 tabular-nums">{money(total.opening)}</td>
                   <td className="py-2 px-3 text-right tabular-nums text-green-600 dark:text-green-400">{money(total.income)}</td>
                   <td className="py-2 px-3 text-right tabular-nums text-red-600 dark:text-red-400">{money(total.expense)}</td>
                   <td className="py-2 pl-3 text-right tabular-nums">{money(total.balance)}</td>
@@ -91,12 +54,7 @@ export default function FinanceSettingsPage() {
             </tbody>
           </table>
         </div>
-        <div className="flex justify-end mt-3">
-          <button onClick={() => save.mutate()} disabled={save.isPending} className="btn-primary text-sm">
-            {save.isPending ? 'Сохранение…' : 'Сохранить стартовые балансы'}
-          </button>
-        </div>
-        <p className="text-xs text-surface-400 mt-2">Текущий баланс = стартовый + приход − расход (сквозной, не за месяц).</p>
+        <p className="text-xs text-surface-400 mt-3">Редактируемые стартовые балансы, аренда/подписки и долги — в следующем этапе.</p>
       </div>
 
       <div className="card">

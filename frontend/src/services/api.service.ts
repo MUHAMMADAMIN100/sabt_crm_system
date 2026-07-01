@@ -329,35 +329,6 @@ export const financeApi = {
     api.get('/finance/by-category', { params }).then(r => r.data),
   categories: (): Promise<string[]> =>
     api.get('/finance/categories').then(r => r.data),
-  // Стартовые балансы счетов
-  openingBalances: () => api.get('/finance/opening-balances').then(r => r.data),
-  setOpeningBalances: (data: any) => api.patch('/finance/opening-balances', data).then(r => r.data),
-  // Подписки / аренда
-  subscriptions: () => api.get('/finance/subscriptions').then(r => r.data),
-  subscriptionsMonth: (ym: string) => api.get('/finance/subscriptions/month', { params: { ym } }).then(r => r.data),
-  createSubscription: (data: any) => api.post('/finance/subscriptions', data).then(r => r.data),
-  updateSubscription: (id: string, data: any) => api.patch(`/finance/subscriptions/${id}`, data).then(r => r.data),
-  deleteSubscription: (id: string) => api.delete(`/finance/subscriptions/${id}`).then(r => r.data),
-  paySubscription: (id: string, data: any) => api.post(`/finance/subscriptions/${id}/pay`, data).then(r => r.data),
-  cancelSubscription: (id: string, ym: string) => api.delete(`/finance/subscriptions/${id}/pay`, { params: { ym } }).then(r => r.data),
-  // Долги
-  debts: () => api.get('/finance/debts').then(r => r.data),
-  debtsMatrix: (params?: { start?: string; months?: number }) => api.get('/finance/debts/matrix', { params }).then(r => r.data),
-  createDebt: (data: any) => api.post('/finance/debts', data).then(r => r.data),
-  updateDebt: (id: string, data: any) => api.patch(`/finance/debts/${id}`, data).then(r => r.data),
-  deleteDebt: (id: string) => api.delete(`/finance/debts/${id}`).then(r => r.data),
-  addDebtPlan: (id: string, data: any) => api.post(`/finance/debts/${id}/plan`, data).then(r => r.data),
-  payDebt: (id: string, data: any) => api.post(`/finance/debts/${id}/pay`, data).then(r => r.data),
-  payDebtPlanned: (pid: string, data: any) => api.post(`/finance/debts/planned/${pid}/pay`, data).then(r => r.data),
-  unreceiveDebtPlanned: (pid: string) => api.post(`/finance/debts/planned/${pid}/unreceive`, {}).then(r => r.data),
-  removeDebtPlanned: (pid: string) => api.delete(`/finance/debts/planned/${pid}`).then(r => r.data),
-  // Доходные матрицы / планируемые оплаты
-  incomeMatrix: (params: { group: string; start?: string; months?: number }) => api.get('/finance/income-matrix', { params }).then(r => r.data),
-  addPlanned: (data: any) => api.post('/finance/planned', data).then(r => r.data),
-  addReceived: (data: any) => api.post('/finance/planned/received', data).then(r => r.data),
-  receivePlanned: (pid: string, data: any) => api.post(`/finance/planned/${pid}/receive`, data).then(r => r.data),
-  unreceivePlanned: (pid: string) => api.post(`/finance/planned/${pid}/unreceive`, {}).then(r => r.data),
-  removePlanned: (pid: string) => api.delete(`/finance/planned/${pid}`).then(r => r.data),
 }
 
 // ─── Risk Analytics (Wave 5) ─────────────────────────────
