@@ -246,8 +246,15 @@ ${context}
     }
 
     this.logger.error(`All AI providers failed: ${errors.join(' | ') || 'нет попыток'}`);
-    const detail = errors.length ? ` Причины: ${errors.join(' || ')}` : '';
-    return `Ошибка ИИ: все провайдеры временно недоступны.${detail}`;
+    const all = errors.join(' ');
+    // Понятная подсказка по типовым причинам.
+    if (/leaked|API key not valid|API_KEY_INVALID|403/i.test(all)) {
+      return 'ИИ недоступен: ключ Gemini заблокирован или недействителен. Обновите GEMINI_API_KEY в настройках сервера (сгенерируйте новый ключ на aistudio.google.com).';
+    }
+    if (/413|too large|tokens per minute|TPM|context length|quota|429/i.test(all)) {
+      return 'ИИ перегружен: слишком большой объём данных для текущего тарифа провайдера. Попробуйте задать более конкретный вопрос или повторите через минуту.';
+    }
+    return 'Ошибка ИИ: все провайдеры временно недоступны, попробуйте через минуту.';
   }
 
   /** Возвращает кэшированный контекст для конкретного пользователя (<30s), иначе строит свежий */
@@ -474,17 +481,17 @@ ${context}
       this.taskRepo.find({
         relations: ['assignee', 'project', 'createdBy'],
         order: { updatedAt: 'DESC' },
-        take: 200,
+        take: 80,
       }),
       this.commentRepo.find({
         relations: ['author', 'task'],
         order: { createdAt: 'DESC' },
-        take: 100,
+        take: 30,
       }),
       this.timeRepo.find({
         relations: ['employee', 'task'],
         order: { date: 'DESC' },
-        take: 100,
+        take: 40,
       }),
       this.reportRepo.find({
         relations: ['employee', 'project', 'task'],
@@ -494,7 +501,7 @@ ${context}
       this.storyRepo.find({
         relations: ['user', 'project'],
         order: { date: 'DESC' },
-        take: 100,
+        take: 40,
       }).catch(() => []),
       this.fileRepo.find({
         relations: ['uploadedBy', 'project', 'task'],
@@ -504,7 +511,7 @@ ${context}
       this.activityRepo.find({
         relations: ['user'],
         order: { createdAt: 'DESC' },
-        take: 100,
+        take: 40,
       }).catch(() => []),
       this.sessionRepo.find({
         relations: ['user'],
@@ -534,21 +541,9 @@ ${context}
     // ── 3. EMPLOYEES (full profiles) ───────────────────────
     const empList = employees.map((e, i) => {
       const status = e.status === 'active' ? '✅' : '⏸';
-      return `${i + 1}. ${status} **${e.fullName}**
-   - Должность: ${e.position || '—'}
-   - Отдел: ${e.department || '—'}
-   - Email: ${e.email || '—'}
-   - Phone: ${e.phone || '—'}
-   - Telegram: ${e.telegram || '—'}
-   - Instagram: ${(e as any).instagram || '—'}
-   - Дата найма: ${e.hireDate ? new Date(e.hireDate).toLocaleDateString('ru-RU') : '—'}
-   - Активность: ${e.activityScore || 0}/100
-   - Задач выполнено: ${e.tasksCompleted || 0}
-   - Задач просрочено: ${e.tasksOverdue || 0}
-   - Роль системы: ${e.user?.role || '—'}
-   - User ID: ${e.userId || '—'}
-   - Sub-admin: ${e.isSubAdmin ? 'да' : 'нет'}`;
-    }).join('\n\n');
+      // Компактно (одна строка) — экономим токены контекста.
+      return `${i + 1}. ${status} ${e.fullName} | ${e.position || '—'} (${e.user?.role || '—'}) | email: ${e.email || '—'} | tg: ${e.telegram || '—'} | тел: ${e.phone || '—'} | найм: ${e.hireDate ? new Date(e.hireDate).toLocaleDateString('ru-RU') : '—'} | активность: ${e.activityScore || 0}/100 | задачи: ✓${e.tasksCompleted || 0}/✗${e.tasksOverdue || 0}`;
+    }).join('\n');
     parts.push(`## 👤 ВСЕ СОТРУДНИКИ (${employees.length})\n${empList}`);
 
     // ── 4. PROJECTS (full details) ─────────────────────────
