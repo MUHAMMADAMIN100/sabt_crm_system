@@ -52,10 +52,10 @@ const fmtMoney = (v: any) => {
 }
 
 // ─── Page ────────────────────────────────────────────────────────────
-export default function FinancePage() {
+export default function FinancePage({ defaultView = 'overview' }: { defaultView?: 'overview' | 'transactions' }) {
   const qc = useQueryClient()
   const [account, setAccount] = useState<Account>('all')
-  const [view, setView] = useState<'overview' | 'transactions'>('overview')
+  const [view, setView] = useState<'overview' | 'transactions'>(defaultView)
   const [filterType, setFilterType] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [filterPeriod, setFilterPeriod] = useState<'all' | 'week' | 'month' | 'year'>('all')
