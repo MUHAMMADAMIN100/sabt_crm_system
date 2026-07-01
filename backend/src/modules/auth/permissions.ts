@@ -29,9 +29,8 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'finance.manage': { label: 'Финансы — доступ', category: 'Финансы', roles: ['founder', 'co_founder'] },
 
   // ─── Аналитика и отчёты ────────────────────────────────────────────
-  'analytics.view': { label: 'Аналитика',          category: 'Аналитика и отчёты', roles: [...TOP, 'smm_director', 'video_director'] },
-  'reports.view':   { label: 'Отчёты — просмотр',   category: 'Аналитика и отчёты', roles: [...TOP, 'video_director'] },
-  'reports.create': { label: 'Отчёты — создание',   category: 'Аналитика и отчёты', roles: [...TOP, 'video_director', 'smm_director'] },
+  'analytics.view': { label: 'Аналитика',        category: 'Аналитика и отчёты', roles: [...TOP, 'smm_director', 'video_director'] },
+  'reports.view':   { label: 'Отчёты — просмотр', category: 'Аналитика и отчёты', roles: [...TOP, 'video_director'] },
 
   // ─── Сотрудники / HR ───────────────────────────────────────────────
   'employees.view': { label: 'Сотрудники — просмотр', category: 'Сотрудники', roles: [...TOP, 'smm_director', 'video_director'] },

@@ -399,7 +399,7 @@ export default function ProjectsPage() {
                     </div>
                   </div>
                 )}
-                {(isManagerPlus || canCreateProject) && (
+                {(isManagerPlus || canCreateProject || userCan(user, 'projects.edit')) && (
                   <div className="flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={(e) => { e.stopPropagation(); setEditProject(p) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded text-surface-500 dark:text-surface-400" title="Редактировать"><Edit size={13} /></button>
                     {canCreateProject && (

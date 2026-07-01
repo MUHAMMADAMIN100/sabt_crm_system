@@ -679,7 +679,10 @@ export class ProjectsService implements OnModuleInit {
       }).catch(() => null);
       const isStoryMaker = !!emp?.isStoryMaker;
 
-      if (role === 'smm_director' || role === 'organizer') {
+      if (hasGrant(requestUser as any, 'projects.view')) {
+        // Персональный грант «Проекты — просмотр» — видит ВСЕ проекты компании
+        // (без сужения по роли/членству).
+      } else if (role === 'smm_director' || role === 'organizer') {
         // Руководитель SMM и организатор видят ВСЕ SMM-проекты компании
         // (управляющие роли производства). Не-SMM проекты им не показываем.
         qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });

@@ -51,8 +51,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
   const filtered = navItems.filter(item => {
-    // Аналитика и Отчёты — не зона работы менеджеров продаж.
-    if (isSalesManager && (item.to === '/reports' || item.to === '/analytics')) return false
+    // Аналитика и Отчёты — не зона работы менеджеров продаж, ЕСЛИ им не выдали
+    // персональный грант на эти разделы.
+    if (isSalesManager && (item.to === '/reports' || item.to === '/analytics') && !userCan(user, item.permission)) return false
     // Онбординг: у sales_manager_smm встроен переключателем в Базу клиентов —
     // отдельный пункт скрываем. У sales_manager_dev — отдельный пункт сайдбара
     // (по запросу пользователя). Остальным ролям пункт не нужен.

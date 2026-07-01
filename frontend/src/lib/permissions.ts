@@ -321,7 +321,6 @@ export const GRANTABLE_FE: Record<string, { implies: string[] }> = {
   'projects.create': { implies: ['projects.view'] },
   'projects.edit':   { implies: ['projects.view'] },
   'clients.create':  { implies: ['clients.view'] },
-  'reports.create':  { implies: ['reports.view'] },
 }
 
 type GrantUser = { role?: string | null; secondaryRole?: string | null; extraPermissions?: string[] | null } | null | undefined
