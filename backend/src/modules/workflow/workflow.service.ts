@@ -743,8 +743,94 @@ export class WorkflowService implements OnModuleInit {
       });
       await this.moveToStage(card, 'shooting', actor, { message: `Съёмка (группа) на ${dto.date}` });
     }
+    // Уведомляем видеографов о новой съёмке — по РОЛИ (без требования участия
+    // в проекте, т.к. видеографы работают общим пулом) + заранее назначенных
+    // на карточках. Иначе видеограф, не добавленный в проект, не узнаёт о съёмке.
+    const preAssigned = [...new Set(
+      eligible.flatMap(c => [c.assigneeId, ...((c.assigneeIds as string[]) || [])]).filter(Boolean) as string[],
+    )];
+    await this.notifyShootCreated(projectId, session, eligible, preAssigned, actor.name);
     this.broadcast(projectId);
     return { ok: true, sessionId: session.id, moved: eligible.length };
+  }
+
+  /** Уведомление о создании съёмки (3 канала) всем активным видеографам /
+   *  руководителям видео (по роли, без требования участия в проекте) +
+   *  заранее назначенным на карточках. Детали: дата/время/место, кол-во рилсов. */
+  private async notifyShootCreated(
+    projectId: string,
+    session: { id: string; date?: string | null; time?: string | null; location?: string | null; title?: string | null },
+    cards: WorkflowCard[],
+    preAssigned: string[],
+    actorName?: string,
+  ) {
+    const roleUsers: Array<{ id: string; name: string; email: string }> = await this.userRepo.query(
+      `SELECT id, name, email FROM users
+       WHERE "isActive" = true AND "isBlocked" = false
+         AND (role IN ('videographer','video_director') OR "secondaryRole" IN ('videographer','video_director'))`,
+    ).catch(() => []);
+    let assignedUsers: Array<{ id: string; name: string; email: string }> = [];
+    if (preAssigned.length) {
+      assignedUsers = await this.userRepo.query(
+        `SELECT id, name, email FROM users WHERE id = ANY($1) AND "isActive" = true AND "isBlocked" = false`,
+        [preAssigned],
+      ).catch(() => []);
+    }
+    const byId = new Map<string, { id: string; name: string; email: string }>();
+    for (const u of [...roleUsers, ...assignedUsers]) byId.set(u.id, u);
+    const recipients = [...byId.values()];
+    if (!recipients.length) return;
+
+    const project = await this.projectRepo.findOne({ where: { id: projectId } }).catch(() => null);
+    const projectName = project?.name || 'проект';
+    const fmtDate = (d?: string | null) => {
+      if (!d) return '';
+      const s = String(d).slice(0, 10); const [y, m, day] = s.split('-');
+      return (y && m && day) ? `${day}.${m}.${y}` : s;
+    };
+    const when = `${fmtDate(session.date)}${session.time ? `, ${session.time}` : ''}`;
+    const place = session.location ? ` · ${session.location}` : '';
+    const reelsCount = cards.length;
+    const titlesPreview = cards.slice(0, 5).map(c => `• ${c.title}`).join('\n')
+      + (cards.length > 5 ? `\n…и ещё ${cards.length - 5}` : '');
+
+    const title = '🎥 Новая съёмка назначена';
+    const message = [
+      `Проект: ${projectName}`,
+      `Когда: ${when}${place}`,
+      `Рилсов: ${reelsCount}`,
+      actorName ? `Назначил: ${actorName}` : '',
+    ].filter(Boolean).join('\n');
+
+    const tg = [
+      `<b>${title}</b>`,
+      `📁 Проект: ${projectName}`,
+      `🗓 Когда: <b>${when}</b>${place}`,
+      `🎬 Рилсов: <b>${reelsCount}</b>`,
+      titlesPreview,
+      actorName ? `👤 Назначил: ${actorName}` : '',
+      `\n👉 Откройте «Доску проектов», этап «Съёмка».`,
+    ].filter(Boolean).join('\n');
+
+    const emailBody =
+      `Назначена <strong>новая съёмка</strong> по проекту <strong>«${projectName}»</strong>.<br><br>` +
+      `🗓 Когда: <strong>${when}</strong>${session.location ? ` · ${session.location}` : ''}<br>` +
+      `🎬 Рилсов: <strong>${reelsCount}</strong><br>` +
+      (actorName ? `<br>Назначил: ${actorName}.` : '') +
+      `<br><br>Откройте «Доску проектов» (этап «Съёмка»), чтобы приступить.`;
+
+    for (const u of recipients) {
+      await this.createInApp(u.id, title, message);
+      this.telegram.sendToUser(u.id, tg, this.cardButtons(cards[0]?.id)).catch(() => {});
+      if (u.email) {
+        this.mail.sendGenericNotification(u.email, u.name || 'Видеограф', title, emailBody)
+          .catch((e: any) => this.logger.warn(`shoot-created mail failed for ${u.id}: ${e?.message || e}`));
+      }
+    }
+    await this.notifySupervisor(cards[0]?.id || '', null, {
+      title: '🎥 Новая съёмка',
+      message: `Назначена съёмка на ${when}${place} — рилсов ${reelsCount} (проект «${projectName}»)`,
+    });
   }
 
   /** Контент-план как групповая карточка: КП-инструкция остаётся в content_plan,
