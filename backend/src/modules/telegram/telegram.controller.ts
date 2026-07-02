@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { TelegramService } from './telegram.service';
 import { Employee } from '../employees/employee.entity';
 import { WorkflowService } from '../workflow/workflow.service';
+import { TasksService } from '../tasks/tasks.service';
 
 interface TelegramUpdate {
   message?: {
@@ -23,6 +24,7 @@ export class TelegramController {
   constructor(
     private telegramService: TelegramService,
     @Inject(forwardRef(() => WorkflowService)) private workflowService: WorkflowService,
+    @Inject(forwardRef(() => TasksService)) private tasksService: TasksService,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
   ) {}
 
@@ -33,13 +35,13 @@ export class TelegramController {
     if (cq) {
       const chatId = cq.from?.id;
       const data = cq.data || '';
-      const m = data.match(/^wf:(done|skip):(.+)$/);
-      if (!chatId || !m) {
+      // Карточки доски: wf:done|skip:<cardId>. Обычные задачи: t:done|progress:<taskId>.
+      const wfMatch = data.match(/^wf:(done|skip):(.+)$/);
+      const taskMatch = data.match(/^t:(done|progress):(.+)$/);
+      if (!chatId || (!wfMatch && !taskMatch)) {
         if (cq.id) await this.telegramService.answerCallbackQuery(cq.id, '');
         return { ok: true };
       }
-      const action = m[1] as 'done' | 'skip';
-      const cardId = m[2];
       const userId = await this.telegramService.resolveUserIdByChat(chatId);
       if (!userId) {
         await this.telegramService.answerCallbackQuery(cq.id, 'Аккаунт не привязан. Нажмите /start в боте.');
@@ -47,10 +49,15 @@ export class TelegramController {
       }
       let resultText = 'Готово';
       try {
-        const res = await this.workflowService.handleBotAction(cardId, action, userId);
-        resultText = res.text;
+        if (taskMatch) {
+          const res = await this.tasksService.handleBotAction(taskMatch[2], taskMatch[1] as 'done' | 'progress', userId);
+          resultText = res.text;
+        } else {
+          const res = await this.workflowService.handleBotAction(wfMatch![2], wfMatch![1] as 'done' | 'skip', userId);
+          resultText = res.text;
+        }
       } catch (e: any) {
-        resultText = 'Не удалось выполнить. Откройте «Доску проектов».';
+        resultText = taskMatch ? 'Не удалось выполнить. Откройте задачу в системе.' : 'Не удалось выполнить. Откройте «Доску проектов».';
       }
       await this.telegramService.answerCallbackQuery(cq.id, resultText);
       // Заменяем текст сообщения (с результатом) и убираем кнопки.

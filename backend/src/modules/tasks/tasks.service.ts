@@ -563,6 +563,10 @@ export class TasksService {
             deadline, saved.priority, saved.description || undefined,
           );
           const priorityLabels: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный', critical: 'Критический' };
+          // Общая задача (для всей команды) — без персональных кнопок «Готово»
+          // (нет одного исполнителя). Личные/бизнес — с кнопками управления
+          // статусом прямо из бота.
+          const botButtons = (isGeneral && isFromFounder) ? undefined : this.taskBotButtons(saved.id);
           await this.telegramService.sendToUser(
             aid,
             (isGeneral && isFromFounder
@@ -583,6 +587,7 @@ export class TasksService {
             (saved.priority ? `\n🔥 Приоритет: ${priorityLabels[saved.priority] || saved.priority}` : '') +
             (deadline ? `\n📅 Дедлайн: ${deadline}` : '') +
             `\n\n👉 ${this.telegramService.appUrl}/tasks/${saved.id}`,
+            botButtons,
           );
         }
       } catch (e: any) {
@@ -607,6 +612,45 @@ export class TasksService {
     }
     this.gateway.broadcast('tasks:changed', { projectId: dto.projectId });
     return this.findOne(saved.id);
+  }
+
+  /** Inline-кнопки управления статусом задачи в Telegram. */
+  private taskBotButtons(taskId: string): { text: string; callback_data: string }[][] {
+    return [[
+      { text: '✅ Готово', callback_data: `t:done:${taskId}` },
+      { text: '▶️ В работу', callback_data: `t:progress:${taskId}` },
+    ]];
+  }
+
+  /** Обработка нажатия кнопки в боте: исполнитель меняет статус задачи
+   *  («✅ Готово» → done, «▶️ В работу» → in_progress). Переиспользует update,
+   *  поэтому автоматически уведомляет назначившего и обновляет проект/доски.
+   *  Возвращает текст для ответа боту. */
+  async handleBotAction(taskId: string, action: 'done' | 'progress', userId: string): Promise<{ text: string }> {
+    const task = await this.repo.findOne({ where: { id: taskId } });
+    if (!task) return { text: 'Задача не найдена' };
+
+    // Разрешаем действие только исполнителю (основному или из task_assignees)
+    // или создателю задачи.
+    const assignees = await this.assigneesRepo.find({ where: { taskId } }).catch(() => [] as any[]);
+    const isAssignee = task.assigneeId === userId || assignees.some((a: any) => a.userId === userId);
+    if (!isAssignee && task.createdById !== userId) {
+      return { text: 'Это не ваша задача' };
+    }
+    if (task.status === TaskStatus.DONE && action === 'done') {
+      return { text: 'Задача уже отмечена выполненной' };
+    }
+
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const status = action === 'done' ? TaskStatus.DONE : TaskStatus.IN_PROGRESS;
+    try {
+      await this.update(taskId, { status } as UpdateTaskDto, {
+        id: userId, role: user?.role || '', name: user?.name,
+      });
+    } catch (e: any) {
+      return { text: 'Не удалось изменить статус. Откройте задачу в системе.' };
+    }
+    return { text: action === 'done' ? '✅ Задача отмечена выполненной' : '▶️ Задача взята в работу' };
   }
 
   async update(id: string, dto: UpdateTaskDto, user: { id: string; role: string; name?: string }) {
@@ -709,13 +753,38 @@ export class TasksService {
       const candidate = task.createdById !== user.id ? task.createdById : task.assigneeId;
       const notifyId = candidate && candidate !== user.id ? candidate : null;
       if (notifyId) {
+        const STATUS_LABELS: Record<string, string> = { new: 'Новая', in_progress: 'В работе', done: 'Готово', cancelled: 'Отмена' };
+        const statusLabel = STATUS_LABELS[dto.status] || dto.status;
+        const isDone = dto.status === TaskStatus.DONE;
         await this.notificationsService.create({
           userId: notifyId,
           type: NotificationType.STATUS_CHANGE,
-          title: 'Статус задачи изменён',
-          message: `Задача "${task.title}" изменила статус на "${dto.status}"`,
+          title: isDone ? '✅ Задача выполнена' : 'Статус задачи изменён',
+          message: `Задача "${task.title}" изменила статус на "${statusLabel}"${user.name ? ` (${user.name})` : ''}`,
           link: `/tasks/${id}`,
         });
+        // Тот, кто назначил задачу, узнаёт об изменении статуса по 3 каналам:
+        // in-app (выше) + Telegram + Email.
+        try {
+          await this.telegramService.sendToUser(
+            notifyId,
+            `${isDone ? '✅' : '🔄'} <b>${isDone ? 'Задача выполнена' : 'Статус задачи изменён'}</b>\n\n` +
+            `📋 ${task.title}\n` +
+            `📊 Статус: <b>${statusLabel}</b>` +
+            (user.name ? `\n👤 Изменил: ${user.name}` : '') +
+            `\n\n👉 ${this.telegramService.appUrl}/tasks/${id}`,
+          );
+          const recipient = await this.userRepo.findOne({ where: { id: notifyId } });
+          if (recipient?.email) {
+            await this.mailService.sendGenericNotification(
+              recipient.email, recipient.name || 'Сотрудник',
+              `${isDone ? '✅' : '🔄'} ${isDone ? 'Задача выполнена' : 'Статус изменён'}: ${task.title}`,
+              `Задача <strong>«${task.title}»</strong> изменила статус на <strong>${statusLabel}</strong>${user.name ? ` (изменил: ${user.name})` : ''}.<br><br>👉 Откройте задачу в системе, чтобы посмотреть детали.`,
+            );
+          }
+        } catch (e: any) {
+          console.warn('status-change notify failed for', notifyId, e?.message);
+        }
       }
       await this.activityLog.log({
         userId: user.id,

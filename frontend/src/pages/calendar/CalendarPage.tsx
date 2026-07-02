@@ -836,6 +836,14 @@ export default function CalendarPage() {
             : undefined
         }
         approving={approveTaskMut.isPending}
+        canChangeStatus={
+          !!detailEvent?.taskId &&
+          (detailEvent.assigneeId === user?.id || detailEvent.createdById === user?.id || isManagerPlus)
+        }
+        onStatusChange={(status: string) => {
+          if (detailEvent?.taskId) statusMut.mutate({ id: detailEvent.taskId, status })
+        }}
+        changingStatus={statusMut.isPending}
       />
 
       {/* Модал «все задачи дня» — открывается по клику на «+N ещё». */}
@@ -1634,12 +1642,18 @@ function TaskDetailDrawer({
   onDelete,
   onApprove,
   approving,
+  canChangeStatus,
+  onStatusChange,
+  changingStatus,
 }: {
   event: any | null
   onClose: () => void
   onDelete: () => void
   onApprove?: () => void
   approving?: boolean
+  canChangeStatus?: boolean
+  onStatusChange?: (status: string) => void
+  changingStatus?: boolean
 }) {
   const isOpen = !!event
   const previousActive = useRef<HTMLElement | null>(null)
@@ -1727,12 +1741,29 @@ function TaskDetailDrawer({
           {/* Большой статус-баннер: с одного взгляда видно, в каком состоянии задача. */}
           {event.type === 'task' && event.status && (
             <div className={clsx(
-              'rounded-xl px-4 py-3 flex items-center gap-3',
+              'rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap',
               STATUS_BANNER_COLORS[event.status] || 'bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-200',
             )}>
-              <span className="text-sm font-semibold">
-                {statusLabels[event.status] || event.status}
-              </span>
+              {canChangeStatus && onStatusChange ? (
+                <label className="flex items-center gap-2 text-sm font-semibold">
+                  Статус
+                  <select
+                    value={event.status}
+                    onChange={(e) => onStatusChange(e.target.value)}
+                    disabled={changingStatus}
+                    className="text-sm font-medium bg-white/70 dark:bg-surface-800 border border-black/10 dark:border-surface-700 rounded-md px-2 py-1 disabled:opacity-60"
+                  >
+                    <option value="new">Новая</option>
+                    <option value="in_progress">В работе</option>
+                    <option value="done">Готово</option>
+                    <option value="cancelled">Отмена</option>
+                  </select>
+                </label>
+              ) : (
+                <span className="text-sm font-semibold">
+                  {statusLabels[event.status] || event.status}
+                </span>
+              )}
               {onApprove && (
                 <button
                   onClick={onApprove}
