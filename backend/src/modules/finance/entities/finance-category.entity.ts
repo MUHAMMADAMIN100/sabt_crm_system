@@ -26,6 +26,14 @@ export class FinanceCategory {
   @Column({ type: 'boolean', default: false })
   builtin: boolean;
 
+  /** Иконка для рендера на фронте (ключ из набора иконок). */
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  icon: string | null;
+
+  /** Цвет категории (hex) для рендера на фронте. */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  color: string | null;
+
   @Column({ type: 'int', default: 0 })
   position: number;
 

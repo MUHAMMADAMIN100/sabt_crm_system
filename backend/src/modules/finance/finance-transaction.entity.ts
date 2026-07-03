@@ -75,6 +75,10 @@ export class FinanceTransaction {
   @Column({ type: 'uuid', nullable: true })
   debtId: string | null;
 
+  /** Подписка/аренда (для оплаты регулярного платежа). */
+  @Column({ type: 'uuid', nullable: true })
+  subscriptionId: string | null;
+
   @Column({ type: 'text', nullable: true })
   comment: string | null;
 

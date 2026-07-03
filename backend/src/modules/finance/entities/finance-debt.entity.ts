@@ -10,11 +10,19 @@ export class FinanceDebt {
   @Column({ type: 'varchar', length: 200 })
   name: string;
 
+  /** Контрагент (кому должны). */
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  counterparty: string | null;
+
   /** Полная сумма долга. */
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   totalAmount: number;
 
-  /** Планируемый платёж в месяц (для колонки «план/мес»). */
+  /** Погашено до старта учёта — вычитается из остатка. */
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
+  paidBefore: number;
+
+  /** Планируемый платёж в месяц (для колонки «план/мес» и графика). */
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   monthlyPayment: number;
 
