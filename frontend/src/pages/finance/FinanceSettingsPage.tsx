@@ -84,6 +84,13 @@ function AccountsSection() {
 
   const del = useMutation({ mutationFn: (id: string) => financeApi.removeAccount(id), onSuccess: () => { toast.success('Удалено'); inv() }, onError: onErr })
 
+  // Инлайн-правка стартового баланса прямо в таблице (§5.12).
+  const patchStart = useMutation({
+    mutationFn: ({ id, startBalance }: { id: string; startBalance: number }) => financeApi.updateAccount(id, { startBalance }),
+    onSuccess: () => { toast.success('Стартовый баланс обновлён'); inv() },
+    onError: onErr,
+  })
+
   return (
     <Section title="Счета и стартовые балансы" onAdd={() => setModal({})}>
       <div className="px-4 py-2.5 text-xs text-surface-400 border-b border-surface-100 dark:border-surface-700">Стартовый баланс = сколько было на счёте на момент запуска. Текущий = старт + доходы − расходы.</div>
@@ -108,7 +115,13 @@ function AccountsSection() {
                     {a.name}
                   </span>
                 </td>
-                <td className="py-2 px-4 text-right tabular-nums text-surface-500">{money(r?.startBalance ?? a.startBalance)}</td>
+                <td className="py-2 px-4 text-right">
+                  <StartBalanceInput
+                    key={`${a.id}-${a.startBalance}`}
+                    value={Number(r?.startBalance ?? a.startBalance) || 0}
+                    onCommit={(v) => patchStart.mutate({ id: a.id, startBalance: v })}
+                  />
+                </td>
                 <td className="py-2 px-4 text-right tabular-nums text-green-600 dark:text-green-400">{money(r?.income ?? 0)}</td>
                 <td className="py-2 px-4 text-right tabular-nums text-red-600 dark:text-red-400">{money(r?.expense ?? 0)}</td>
                 <td className="py-2 px-4 text-right tabular-nums font-semibold">{money(r?.balance ?? a.startBalance)}</td>
@@ -582,5 +595,26 @@ function SaveBar({ onClose, onSave, disabled }: { onClose: () => void; onSave: (
       <button onClick={onClose} className="btn-secondary text-sm">Отмена</button>
       <button onClick={onSave} disabled={disabled} className="btn-primary text-sm">Сохранить</button>
     </div>
+  )
+}
+
+/** Инлайн-редактор стартового баланса счёта: правка на месте, сохранение по blur/Enter. */
+function StartBalanceInput({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  const [v, setV] = useState(String(value))
+  const commit = () => {
+    const n = parseFloat(v.replace(',', '.'))
+    if (!Number.isFinite(n) || n === value) { setV(String(value)); return }
+    onCommit(n)
+  }
+  return (
+    <input
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      inputMode="decimal"
+      className="w-28 bg-transparent text-sm text-right tabular-nums px-1.5 py-1 rounded border border-transparent hover:border-surface-200 focus:border-primary-400 dark:hover:border-surface-700 focus:outline-none text-surface-600 dark:text-surface-300"
+      title="Стартовый баланс — правится на месте, сохранение по Enter или клику вне поля"
+    />
   )
 }

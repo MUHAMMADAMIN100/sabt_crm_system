@@ -251,13 +251,19 @@ export class FinanceService implements OnModuleInit {
     const backup = this.readWebRandBackup();
     if (!backup) return;
 
-    // Счета: стартовые балансы (только если ещё 0 — не затираем).
+    // Счета: стартовые балансы (только если ещё 0 — не затираем) + цвета точек (§4.1).
     const startByKey: Record<string, number> = { alif: 1090, dushanbe_city: 1644, cash: 5500 };
     const startByName: Record<string, number> = { Alif: 1090, DC: 1644, 'Dushanbe City': 1644, 'Наличные': 5500 };
+    const colorByKey: Record<string, string> = { alif: '#22c55e', dushanbe_city: '#f59e0b', cash: '#94a3b8' };
+    const colorByName: Record<string, string> = { Alif: '#22c55e', DC: '#f59e0b', 'Dushanbe City': '#f59e0b', 'Наличные': '#94a3b8' };
     const accounts = await this.accRepo.find();
     for (const a of accounts) {
+      let dirty = false;
       const sb = a.key && startByKey[a.key] != null ? startByKey[a.key] : startByName[a.name];
-      if (sb != null && Number(a.startBalance) === 0) { a.startBalance = sb; await this.accRepo.save(a); }
+      if (sb != null && Number(a.startBalance) === 0) { a.startBalance = sb; dirty = true; }
+      const col = (a.key && colorByKey[a.key]) || colorByName[a.name];
+      if (col && !a.color) { a.color = col; dirty = true; }
+      if (dirty) await this.accRepo.save(a);
     }
 
     // Проекты/клиенты.
@@ -718,6 +724,9 @@ export class FinanceService implements OnModuleInit {
     const debtsSpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'debts'));
     const totalRemaining = r2(m.debts.reduce((s, d) => s + this.debtRemaining(d, allExp), 0));
     const dueMonth = r2(planned.filter(p => p.debtId && debtIds.has(p.debtId) && p.ym === cm && p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0));
+    // Месячное обязательство по долгам — как в эталоне (карточка «Долги» на
+    // странице Расход и план/факт Обзора): Σ min(платёж/мес, остаток).
+    const debtsMonthly = r2(m.debts.reduce((s, d) => s + Math.min(Number(d.monthlyPayment) || 0, this.debtRemaining(d, allExp)), 0));
     const debtCount = m.debts.filter(d => this.debtRemaining(d, allExp) > 0).length;
 
     const otherSpent = this.sum(monthExp.filter(t => !['salary', 'rent_subs', 'debts'].includes(this.groupOf(t, m) || '')));
@@ -726,7 +735,7 @@ export class FinanceService implements OnModuleInit {
       ym,
       salary: { spent: salarySpent, count: activeEmps.length, toPay: r2(Math.max(0, salaryFund - salaryAdvances - salarySpent)) },
       subscriptions: { spent: subsSpent, count: subsCount, monthly: subMonthly },
-      debts: { spent: debtsSpent, count: debtCount, remaining: totalRemaining, dueMonth },
+      debts: { spent: debtsSpent, count: debtCount, remaining: totalRemaining, dueMonth, monthly: debtsMonthly },
       other: { spent: otherSpent },
     };
   }
@@ -936,6 +945,20 @@ export class FinanceService implements OnModuleInit {
     const patch: any = {};
     for (const k of ['amount', 'date', 'comment', 'categoryId', 'accountId', 'fromAccountId', 'toAccountId', 'projectId', 'employeeId', 'debtId', 'subscriptionId', 'type']) {
       if (dto[k] !== undefined) patch[k] = dto[k];
+    }
+    // Смена типа чистит неприменимые поля (§5.11): income/expense/saving не имеют
+    // from/to; transfer не имеет счёта-получателя/категории/привязок. Иначе после
+    // transfer→income остаются старые from/to и операция выпадает из балансов.
+    if (patch.type !== undefined && patch.type !== t.type) {
+      if (patch.type === FinanceTxType.TRANSFER) {
+        patch.accountId = patch.accountId ?? null;
+        patch.categoryId = patch.categoryId ?? null;
+        patch.projectId = null; patch.employeeId = null; patch.debtId = null; patch.subscriptionId = null;
+      } else {
+        patch.fromAccountId = null; patch.toAccountId = null;
+        if (patch.type !== FinanceTxType.INCOME) patch.projectId = patch.projectId ?? null;
+        if (patch.type !== FinanceTxType.EXPENSE) { patch.employeeId = null; patch.debtId = null; patch.subscriptionId = null; }
+      }
     }
     if (patch.categoryId !== undefined) patch.category = patch.categoryId ? (await this.catRepo.findOne({ where: { id: patch.categoryId } }))?.name ?? null : null;
     await this.txRepo.update(id, patch);
