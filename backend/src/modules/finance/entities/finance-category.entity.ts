@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 
 /** Тип категории — определяет, в какую сторону влияет операция. */
-export type FinanceCategoryType = 'income' | 'expense' | 'saving';
+export type FinanceCategoryType = 'income' | 'expense' | 'saving' | 'transfer';
 
 /** Категория операции. Часть категорий системные (`builtin=true`) — они
  *  участвуют в расчётах обзора и защищены от удаления; их `key` фиксирован.

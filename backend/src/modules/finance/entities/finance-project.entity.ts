@@ -31,6 +31,10 @@ export class FinanceProject {
   @Column({ type: 'boolean', default: false })
   archived: boolean;
 
+  /** Статус жизненного цикла: lead | active | done | archived. */
+  @Column({ type: 'varchar', length: 16, nullable: true, default: 'active' })
+  status: string | null;
+
   /** design: брендбук/логобук — оплата по месяцам (матрица), иначе разовая. */
   @Column({ type: 'boolean', default: false })
   multiMonth: boolean;

@@ -5,6 +5,7 @@ export enum FinanceCategoryKind {
   INCOME = 'income',
   EXPENSE = 'expense',
   SAVING = 'saving',
+  TRANSFER = 'transfer',
 }
 
 export class CreateCategoryDto {

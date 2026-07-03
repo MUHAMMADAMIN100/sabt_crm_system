@@ -19,6 +19,14 @@ export class FinanceAccount {
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   startBalance: number;
 
+  /** Цвет счёта (hex) для рендера на фронте. */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  color: string | null;
+
+  /** Вид счёта: bank | cash | savings. */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  kind: string | null;
+
   @Column({ type: 'int', default: 0 })
   position: number;
 

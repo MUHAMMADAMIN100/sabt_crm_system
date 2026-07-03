@@ -128,6 +128,7 @@ export class FinanceService implements OnModuleInit {
     await run(`CREATE TABLE IF NOT EXISTS finance_accounts (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), key varchar(32),
       name varchar(120) NOT NULL, "startBalance" numeric(15,2) NOT NULL DEFAULT 0,
+      color varchar(16), kind varchar(16),
       position int NOT NULL DEFAULT 0, "createdAt" timestamptz NOT NULL DEFAULT now())`);
     await run(`CREATE TABLE IF NOT EXISTS finance_categories (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(120) NOT NULL,
@@ -136,6 +137,7 @@ export class FinanceService implements OnModuleInit {
     await run(`CREATE TABLE IF NOT EXISTS finance_projects (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(200) NOT NULL,
       direction varchar(16) NOT NULL DEFAULT 'smm', tariff numeric(15,2) NOT NULL DEFAULT 0,
+      status varchar(16) DEFAULT 'active',
       note text, position int NOT NULL DEFAULT 0, "createdAt" timestamptz NOT NULL DEFAULT now())`);
     await run(`CREATE TABLE IF NOT EXISTS finance_employees (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(200) NOT NULL,
@@ -156,6 +158,9 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "contractDate" date`);
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "archived" boolean NOT NULL DEFAULT false`);
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "multiMonth" boolean NOT NULL DEFAULT false`);
+    await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "status" varchar(16) DEFAULT 'active'`);
+    await run(`ALTER TABLE finance_accounts ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
+    await run(`ALTER TABLE finance_accounts ADD COLUMN IF NOT EXISTS "kind" varchar(16)`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "advance" numeric(15,2) NOT NULL DEFAULT 0`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "hireDate" date`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "icon" varchar(40)`);
@@ -433,8 +438,8 @@ export class FinanceService implements OnModuleInit {
     const balances = [...m.accounts]
       .sort((a, b) => a.position - b.position || (a.createdAt < b.createdAt ? -1 : 1))
       .map(a => ({
-        accountId: a.id, name: a.name, color: null as string | null,
-        kind: a.key === 'cash' ? 'cash' : 'bank', balance: this.lifetimeBalance(a, allTx),
+        accountId: a.id, name: a.name, color: a.color ?? null,
+        kind: a.kind ?? (a.key === 'cash' ? 'cash' : 'bank'), balance: this.lifetimeBalance(a, allTx),
       }));
 
     // Разбивка месяца по категориям.
@@ -444,7 +449,7 @@ export class FinanceService implements OnModuleInit {
     // План/факт дохода по направлениям.
     const dirs = ['smm', 'development', 'design'];
     const incomePlan = dirs.map(dir => {
-      const projs = m.projects.filter(p => p.direction === dir && !p.archived);
+      const projs = m.projects.filter(p => p.direction === dir && !p.archived && p.status !== 'lead');
       const ids = new Set(projs.map(p => p.id));
       const plan = r2(projs.reduce((s, p) => s + Number(p.tariff), 0));
       const fact = r2(planned
@@ -521,7 +526,7 @@ export class FinanceService implements OnModuleInit {
     const planned = await this.ppRepo.find();
     const dirs = ['smm', 'development', 'design'];
     return dirs.map(dir => {
-      const projs = m.projects.filter(p => p.direction === dir && !p.archived);
+      const projs = m.projects.filter(p => p.direction === dir && !p.archived && p.status !== 'lead');
       const ids = new Set(projs.map(p => p.id));
       const forMonth = planned.filter(p => p.ym === ym && p.projectId && ids.has(p.projectId));
       const received = r2(forMonth.filter(p => p.status === 'received' && p.receivedTxId).reduce((s, p) => s + Number(p.amount), 0));
@@ -665,6 +670,7 @@ export class FinanceService implements OnModuleInit {
     const rows = clients.map(p => {
       const pPlans = planned.filter(x => x.projectId === p.id);
       const paidLife = r2(pPlans.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0));
+      const scheduledLife = r2(pPlans.reduce((s, x) => s + Number(x.amount), 0));
       const cells = months.map(mm => {
         const cp = pPlans.filter(x => x.ym === mm);
         return {
@@ -674,7 +680,7 @@ export class FinanceService implements OnModuleInit {
           expected: r2(cp.filter(x => x.status === 'expected').reduce((s, x) => s + Number(x.amount), 0)),
         };
       });
-      return { project: { id: p.id, name: p.name, tariff: Number(p.tariff), note: p.note, multiMonth: p.multiMonth }, paidLife, cells };
+      return { project: { id: p.id, name: p.name, tariff: Number(p.tariff), note: p.note, multiMonth: p.multiMonth }, paidLife, scheduledLife, cells };
     });
     const totals = {
       tariff: r2(clients.reduce((s, p) => s + Number(p.tariff), 0)),
@@ -1118,13 +1124,18 @@ export class FinanceService implements OnModuleInit {
   async createAccount(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Название обязательно');
     const position = (await this.accRepo.count());
-    return this.accRepo.save(this.accRepo.create({ name: dto.name.trim(), startBalance: Number(dto.startBalance) || 0, position }));
+    return this.accRepo.save(this.accRepo.create({
+      name: dto.name.trim(), startBalance: Number(dto.startBalance) || 0,
+      color: dto.color ?? null, kind: dto.kind ?? null, position,
+    }));
   }
   async updateAccount(id: string, dto: any) {
     const a = await this.accRepo.findOne({ where: { id } });
     if (!a) throw new NotFoundException('Счёт не найден');
     if (dto.name !== undefined) a.name = String(dto.name).trim();
     if (dto.startBalance !== undefined) a.startBalance = Number(dto.startBalance) || 0;
+    if (dto.color !== undefined) a.color = dto.color ?? null;
+    if (dto.kind !== undefined) a.kind = dto.kind ?? null;
     return this.accRepo.save(a);
   }
   async removeAccount(id: string) {
@@ -1138,7 +1149,7 @@ export class FinanceService implements OnModuleInit {
   listCategories() { return this.catRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } }); }
   async createCategory(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Название обязательно');
-    const type = ['income', 'expense', 'saving'].includes(dto.type) ? dto.type : 'expense';
+    const type = ['income', 'expense', 'saving', 'transfer'].includes(dto.type) ? dto.type : 'expense';
     const position = (await this.catRepo.count()) + 100;
     return this.catRepo.save(this.catRepo.create({
       name: dto.name.trim(), type, key: null, builtin: false,
@@ -1149,7 +1160,7 @@ export class FinanceService implements OnModuleInit {
     const c = await this.catRepo.findOne({ where: { id } });
     if (!c) throw new NotFoundException('Категория не найдена');
     if (dto.name !== undefined) c.name = String(dto.name).trim();
-    if (dto.type !== undefined && !c.builtin && ['income', 'expense', 'saving'].includes(dto.type)) c.type = dto.type;
+    if (dto.type !== undefined && !c.builtin && ['income', 'expense', 'saving', 'transfer'].includes(dto.type)) c.type = dto.type;
     if (dto.icon !== undefined) c.icon = dto.icon;
     if (dto.color !== undefined) c.color = dto.color;
     return this.catRepo.save(c);
@@ -1167,10 +1178,12 @@ export class FinanceService implements OnModuleInit {
   async createProject(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Название обязательно');
     const direction = ['smm', 'development', 'design'].includes(dto.direction) ? dto.direction : 'smm';
+    const status = ['lead', 'active', 'done', 'archived'].includes(dto.status) ? dto.status : 'active';
     const position = await this.projRepo.count();
     return this.projRepo.save(this.projRepo.create({
       name: dto.name.trim(), direction, tariff: Number(dto.tariff) || 0, note: dto.note ?? null,
-      contractDate: dto.contractDate ?? null, archived: !!dto.archived, multiMonth: !!dto.multiMonth, position,
+      contractDate: dto.contractDate ?? null, archived: !!dto.archived, multiMonth: !!dto.multiMonth,
+      status, position,
     }));
   }
   async updateProject(id: string, dto: any) {
@@ -1183,6 +1196,7 @@ export class FinanceService implements OnModuleInit {
     if (dto.contractDate !== undefined) p.contractDate = dto.contractDate || null;
     if (dto.archived !== undefined) p.archived = !!dto.archived;
     if (dto.multiMonth !== undefined) p.multiMonth = !!dto.multiMonth;
+    if (dto.status !== undefined && ['lead', 'active', 'done', 'archived'].includes(dto.status)) p.status = dto.status;
     return this.projRepo.save(p);
   }
   async removeProject(id: string) {

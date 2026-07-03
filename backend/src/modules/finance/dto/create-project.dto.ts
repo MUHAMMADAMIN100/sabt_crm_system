@@ -8,6 +8,13 @@ export enum FinanceProjectDirection {
   DESIGN = 'design',
 }
 
+export enum FinanceProjectStatus {
+  LEAD = 'lead',
+  ACTIVE = 'active',
+  DONE = 'done',
+  ARCHIVED = 'archived',
+}
+
 export class CreateProjectDto {
   @ApiProperty() @IsString() @MaxLength(200)
   name: string;
@@ -29,4 +36,7 @@ export class CreateProjectDto {
 
   @ApiPropertyOptional() @IsOptional() @IsBoolean()
   multiMonth?: boolean;
+
+  @ApiPropertyOptional({ enum: FinanceProjectStatus }) @IsOptional() @IsEnum(FinanceProjectStatus)
+  status?: FinanceProjectStatus;
 }
