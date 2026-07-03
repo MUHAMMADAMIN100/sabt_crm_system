@@ -13,6 +13,7 @@ import { FinanceEmployee } from './entities/finance-employee.entity';
 import { FinanceSubscription } from './entities/finance-subscription.entity';
 import { FinanceDebt } from './entities/finance-debt.entity';
 import { FinancePlannedPayment } from './entities/finance-planned-payment.entity';
+import { WEBRAND_BACKUP } from './webrand-backup.data';
 
 // ─── helpers ────────────────────────────────────────────────────────
 const r2 = (n: any) => Math.round((Number(n) || 0) * 100) / 100;
@@ -347,7 +348,9 @@ export class FinanceService implements OnModuleInit {
         if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
       } catch { /* пропускаем */ }
     }
-    return null;
+    // Файл на проде (Railway) отсутствует — используем встроенный снимок,
+    // чтобы первичный посев работал в любом окружении.
+    return WEBRAND_BACKUP ?? null;
   }
 
   // ─── справочники: helpers ────────────────────────────────────────
