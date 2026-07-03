@@ -23,6 +23,18 @@ export class FinanceProject {
   @Column({ type: 'text', nullable: true })
   note: string | null;
 
+  /** Дата заключения контракта (ISO). По ней считается день оплаты SMM-цикла. */
+  @Column({ type: 'date', nullable: true })
+  contractDate: string | null;
+
+  /** Архивный проект — больше не работаем; уходит из активных таблиц. */
+  @Column({ type: 'boolean', default: false })
+  archived: boolean;
+
+  /** design: брендбук/логобук — оплата по месяцам (матрица), иначе разовая. */
+  @Column({ type: 'boolean', default: false })
+  multiMonth: boolean;
+
   @Column({ type: 'int', default: 0 })
   position: number;
 

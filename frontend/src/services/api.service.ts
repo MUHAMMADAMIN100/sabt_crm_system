@@ -320,10 +320,10 @@ export const financeApi = {
   // Дашборды / расчёты
   overview: (ym: string) => api.get('/finance/overview', { params: { ym } }).then(r => r.data),
   incomeDirections: (ym: string) => api.get('/finance/income/directions', { params: { ym } }).then(r => r.data),
-  incomeDirectionDetail: (direction: string, ym: string) =>
-    api.get(`/finance/income/directions/${direction}`, { params: { ym } }).then(r => r.data),
+  incomeDirectionDetail: (direction: string, ym: string, start?: string) =>
+    api.get(`/finance/income/directions/${direction}`, { params: { ym, start } }).then(r => r.data),
   expenseSummary: (ym: string) => api.get('/finance/expense/summary', { params: { ym } }).then(r => r.data),
-  expenseDetail: (kind: string, ym: string) => api.get(`/finance/expense/detail/${kind}`, { params: { ym } }).then(r => r.data),
+  expenseDetail: (kind: string, ym: string, start?: string) => api.get(`/finance/expense/detail/${kind}`, { params: { ym, start } }).then(r => r.data),
   accountsBalances: () => api.get('/finance/accounts/balances').then(r => r.data),
 
   // Транзакции
@@ -367,6 +367,15 @@ export const financeApi = {
   createDebt: (data: any) => api.post('/finance/debts', data).then(r => r.data),
   updateDebt: (id: string, data: any) => api.patch(`/finance/debts/${id}`, data).then(r => r.data),
   removeDebt: (id: string) => api.delete(`/finance/debts/${id}`).then(r => r.data),
+  regenerateDebtSchedule: (id: string) => api.post(`/finance/debts/${id}/regenerate-schedule`, {}).then(r => r.data),
+
+  // Планируемые оплаты (SMM части 1/2, матрицы Development/Design, график долгов)
+  plannedPayments: (params?: any) => api.get('/finance/planned-payments', { params }).then(r => r.data),
+  createPlanned: (data: any) => api.post('/finance/planned-payments', data).then(r => r.data),
+  receivePlanned: (id: string, data: any) => api.post(`/finance/planned-payments/${id}/receive`, data).then(r => r.data),
+  unreceivePlanned: (id: string) => api.post(`/finance/planned-payments/${id}/unreceive`, {}).then(r => r.data),
+  removePlanned: (id: string) => api.delete(`/finance/planned-payments/${id}`).then(r => r.data),
+  payNow: (data: any) => api.post('/finance/planned-payments/pay-now', data).then(r => r.data),
 
   // Резервная копия / сброс
   exportAll: () => api.get('/finance/backup/export').then(r => r.data),

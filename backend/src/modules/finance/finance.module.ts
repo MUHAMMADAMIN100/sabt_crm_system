@@ -7,6 +7,7 @@ import { FinanceProject } from './entities/finance-project.entity';
 import { FinanceEmployee } from './entities/finance-employee.entity';
 import { FinanceSubscription } from './entities/finance-subscription.entity';
 import { FinanceDebt } from './entities/finance-debt.entity';
+import { FinancePlannedPayment } from './entities/finance-planned-payment.entity';
 import { FinanceService } from './finance.service';
 import { FinanceController } from './finance.controller';
 
@@ -14,6 +15,7 @@ import { FinanceController } from './finance.controller';
   imports: [TypeOrmModule.forFeature([
     FinanceTransaction, FinanceAccount, FinanceCategory,
     FinanceProject, FinanceEmployee, FinanceSubscription, FinanceDebt,
+    FinancePlannedPayment,
   ])],
   controllers: [FinanceController],
   providers: [FinanceService],

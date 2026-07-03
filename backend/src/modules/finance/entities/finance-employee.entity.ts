@@ -17,9 +17,17 @@ export class FinanceEmployee {
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   salary: number;
 
-  /** active — учитывается в фонде ЗП; inactive — нет. */
+  /** Типовой аванс (выдан) — вычитается из «к выплате» в зарплатной ведомости. */
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
+  advance: number;
+
+  /** Дата приёма на работу (ISO). */
+  @Column({ type: 'date', nullable: true })
+  hireDate: string | null;
+
+  /** active — учитывается в фонде ЗП; fired — нет. Legacy 'inactive' трактуем как fired. */
   @Column({ type: 'varchar', length: 16, default: 'active' })
-  status: 'active' | 'inactive';
+  status: 'active' | 'fired';
 
   @Column({ type: 'int', default: 0 })
   position: number;
