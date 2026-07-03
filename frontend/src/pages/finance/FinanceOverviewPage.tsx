@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
-import { Plus, TrendingUp, TrendingDown, Wallet2, Users, Receipt, Repeat, type LucideIcon } from 'lucide-react'
+import { Plus, TrendingUp, TrendingDown, Wallet2, Users, Receipt, Repeat, Pencil, Trash2, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
+import toast from 'react-hot-toast'
 import { financeApi } from '@/services/api.service'
 import {
   money, currentYm, dirLabel, groupLabel, formatDate,
@@ -18,8 +19,21 @@ const NEUTRAL_DOT = '#94a3b8'
 export default function FinanceOverviewPage() {
   const [ym, setYm] = useState(currentYm())
   const [op, setOp] = useState(false)
+  const [editTx, setEditTx] = useState<any | null>(null)
   const nav = useNavigate()
+  const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['finance', 'overview', ym], queryFn: () => financeApi.overview(ym) })
+
+  const del = useMutation({
+    mutationFn: (id: string) => financeApi.removeTransaction(id),
+    onSuccess: () => {
+      toast.success('Операция удалена')
+      qc.invalidateQueries({ queryKey: ['finance', 'overview'] })
+      qc.invalidateQueries({ queryKey: ['finance'] })
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка'),
+  })
+  const removeTx = (t: any) => { if (confirm('Удалить операцию?')) del.mutate(t.id) }
 
   const income: number = data?.income ?? 0
   const expense: number = data?.expense ?? 0
@@ -153,12 +167,13 @@ export default function FinanceOverviewPage() {
           <EmptyState icon={<Wallet2 size={28} />}>Нет операций за период</EmptyState>
         ) : (
           <ul className="divide-y divide-surface-50 dark:divide-surface-800/60">
-            {txs.slice(0, 15).map((t) => <TxRow key={t.id} t={t} />)}
+            {txs.slice(0, 15).map((t) => <TxRow key={t.id} t={t} onEdit={setEditTx} onDelete={removeTx} />)}
           </ul>
         )}
       </div>
 
       <OperationModal open={op} onClose={() => setOp(false)} defaultTab="income" />
+      {editTx && <OperationModal open edit={editTx} onClose={() => setEditTx(null)} />}
     </div>
   )
 }
@@ -241,13 +256,14 @@ function PlanCard({
 }
 
 /* ── Строка транзакции (используется также в FinanceExpensePage) ── */
-export function TxRow({ t }: { t: any }) {
+export function TxRow({ t, onEdit, onDelete }: { t: any; onEdit?: (t: any) => void; onDelete?: (t: any) => void }) {
   const title = t.type === 'transfer'
     ? `${t.fromAccountName || '—'} → ${t.toAccountName || '—'}`
     : (t.categoryName || t.projectName || TYPE_LABEL[t.type] || '—')
   const sub = [t.projectName, t.employeeName, t.debtName, t.comment].filter(Boolean).join(' · ')
+  const hasActions = !!(onEdit || onDelete)
   return (
-    <li className="flex items-center gap-3 py-2.5">
+    <li className="group flex items-center gap-3 py-2.5">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-surface-800 dark:text-surface-200 truncate">{title}</p>
         {sub && <p className="text-xs text-surface-400 truncate">{sub}</p>}
@@ -256,6 +272,22 @@ export function TxRow({ t }: { t: any }) {
         <p className={clsx('text-sm font-semibold tabular-nums', TYPE_COLOR[t.type])}>{TYPE_SIGN[t.type]}{money(t.amount)}</p>
         <p className="text-[11px] text-surface-400">{formatDate(t.date)} · {t.accountName || t.toAccountName || ''}</p>
       </div>
+      {hasActions && (
+        <div className="shrink-0 inline-flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onEdit && (
+            <button onClick={() => onEdit(t)} title="Изменить"
+              className="p-1.5 rounded hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500">
+              <Pencil size={14} />
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={() => onDelete(t)} title="Удалить"
+              className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600">
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
+      )}
     </li>
   )
 }

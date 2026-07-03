@@ -43,7 +43,7 @@ interface SmmDetailData {
 }
 interface MatrixPlan { id: string; amount: number; status: 'expected' | 'received'; txId?: string }
 interface MatrixCell { ym: string; plans: MatrixPlan[]; received: number; expected: number }
-interface MatrixRow { project: Project; paidLife: number; cells: MatrixCell[] }
+interface MatrixRow { project: Project; paidLife: number; scheduledLife: number; cells: MatrixCell[] }
 interface MatrixData {
   months: string[]
   rows: MatrixRow[]
@@ -405,7 +405,7 @@ function MatrixTable({ direction, months, rows, totals, onNavigate }: {
   const archive = useFinMutation((id: string) => financeApi.updateProject(id, { archived: true }), 'Проект в архиве')
   const del = useFinMutation((id: string) => financeApi.removeProject(id), 'Проект удалён')
 
-  const [cellFor, setCellFor] = useState<{ project: Project; ym: string; plan?: MatrixPlan; scheduled: number } | null>(null)
+  const [cellFor, setCellFor] = useState<{ project: Project; ym: string; plan?: MatrixPlan; scheduledLife: number } | null>(null)
   const [editProject, setEditProject] = useState<Project | null>(null)
 
   const removeProjectConfirm = (p: Project) => {
@@ -433,7 +433,9 @@ function MatrixTable({ direction, months, rows, totals, onNavigate }: {
           </thead>
           <tbody>
             {rows.map(r => {
-              const scheduled = r.cells.reduce((s, c) => s + c.plans.reduce((x, p) => x + p.amount, 0), 0)
+              // Остаток по проекту считаем за всё время (scheduledLife), а не только по видимым 6 месяцам —
+              // иначе перелистывание месяцев позволяло бы превысить тариф проекта.
+              const scheduledLife = r.scheduledLife ?? 0
               const pct = r.project.tariff ? Math.round((r.paidLife / r.project.tariff) * 100) : 0
               return (
                 <tr key={r.project.id} className={TR}>
@@ -449,7 +451,7 @@ function MatrixTable({ direction, months, rows, totals, onNavigate }: {
                     return (
                       <td key={m} className={clsx(TD, 'text-right')}>
                         {plans.length === 0 ? (
-                          <IconBtn onClick={() => setCellFor({ project: r.project, ym: m, scheduled })} title="Добавить поступление">
+                          <IconBtn onClick={() => setCellFor({ project: r.project, ym: m, scheduledLife })} title="Добавить поступление">
                             <Plus size={14} />
                           </IconBtn>
                         ) : (
@@ -457,7 +459,7 @@ function MatrixTable({ direction, months, rows, totals, onNavigate }: {
                             {plans.map(p => (
                               <Badge
                                 key={p.id} tone={p.status === 'received' ? 'ok' : 'wait'} check={p.status === 'received'}
-                                onClick={() => setCellFor({ project: r.project, ym: m, plan: p, scheduled })}
+                                onClick={() => setCellFor({ project: r.project, ym: m, plan: p, scheduledLife })}
                                 title={p.status === 'received' ? 'Получено — нажмите для управления' : 'Запланировано — нажмите, чтобы отметить оплату'}
                               >
                                 {money(p.amount)}
@@ -491,7 +493,7 @@ function MatrixTable({ direction, months, rows, totals, onNavigate }: {
         </table>
       </TableCard>
 
-      {cellFor && <DevCellModal project={cellFor.project} ym={cellFor.ym} plan={cellFor.plan} scheduled={cellFor.scheduled} onClose={() => setCellFor(null)} />}
+      {cellFor && <DevCellModal project={cellFor.project} ym={cellFor.ym} plan={cellFor.plan} scheduledLife={cellFor.scheduledLife} onClose={() => setCellFor(null)} />}
       {editProject && <ProjectModal direction={direction} project={editProject} onClose={() => setEditProject(null)} />}
     </div>
   )
@@ -766,15 +768,17 @@ function ReceiveModal({ plannedId, amount, onClose }: { plannedId: string; amoun
   )
 }
 
-function DevCellModal({ project, ym, plan, scheduled, onClose }: {
-  project: Project; ym: string; plan?: MatrixPlan; scheduled: number; onClose: () => void
+function DevCellModal({ project, ym, plan, scheduledLife, onClose }: {
+  project: Project; ym: string; plan?: MatrixPlan; scheduledLife: number; onClose: () => void
 }) {
   const { accounts, accountId, setAccountId } = useAccountSelect()
   const [amount, setAmount] = useState(String(plan?.amount ?? ''))
   const [paidNow, setPaidNow] = useState(false)
   const [date, setDate] = useState(todayISO())
   const amt = num(amount)
-  const remaining = project.tariff - scheduled
+  // Остаток по проекту за всё время: тариф минус все запланированные оплаты (по всем месяцам/статусам),
+  // а не только по видимому окну месяцев — иначе перелистывание позволяло бы превысить тариф.
+  const remaining = project.tariff - scheduledLife
   const overLimit = project.tariff > 0 && amt > remaining
 
   const receive = useFinMutation((d: any) => financeApi.receivePlanned(plan!.id, d), 'Отмечено полученным')

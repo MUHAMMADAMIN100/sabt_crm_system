@@ -42,6 +42,36 @@ function Empty({ text }: { text: string }) { return <p className="text-sm text-s
 function useInvalidate() { const qc = useQueryClient(); return () => qc.invalidateQueries({ queryKey: ['finance'] }) }
 const onErr = (e: any) => toast.error(e?.response?.data?.message || 'Ошибка')
 
+// 8-цветная палитра для счетов/категорий
+const PALETTE = ['#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#14b8a6', '#ec4899', '#6366f1']
+
+// Тип счёта
+const ACCOUNT_KINDS: { key: 'bank' | 'cash' | 'savings'; label: string }[] = [
+  { key: 'bank', label: 'Банк' },
+  { key: 'cash', label: 'Наличные' },
+  { key: 'savings', label: 'Накопления' },
+]
+
+// Статус проекта
+const PROJECT_STATUSES: { key: 'lead' | 'active' | 'done' | 'archived'; label: string }[] = [
+  { key: 'lead', label: 'Лид' },
+  { key: 'active', label: 'Активный' },
+  { key: 'done', label: 'Завершён' },
+  { key: 'archived', label: 'Архив' },
+]
+
+function ColorPalette({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {PALETTE.map(c => (
+        <button key={c} type="button" onClick={() => onChange(c)} title={c}
+          className={clsx('h-7 w-7 rounded-lg border-2 transition-transform', value === c ? 'border-surface-900 dark:border-white scale-110' : 'border-transparent')}
+          style={{ background: c }} />
+      ))}
+    </div>
+  )
+}
+
 // ─── Счета ──────────────────────────────────────────────────────────
 function AccountsSection() {
   const inv = useInvalidate()
@@ -72,7 +102,12 @@ function AccountsSection() {
             const r = recOf(a.id)
             return (
               <tr key={a.id} className="border-b border-surface-50 dark:border-surface-800/60 group">
-                <td className="py-2 px-4 font-medium text-surface-800 dark:text-surface-200">{a.name}</td>
+                <td className="py-2 px-4 font-medium text-surface-800 dark:text-surface-200">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full shrink-0" style={{ background: a.color || '#94a3b8' }} />
+                    {a.name}
+                  </span>
+                </td>
                 <td className="py-2 px-4 text-right tabular-nums text-surface-500">{money(r?.startBalance ?? a.startBalance)}</td>
                 <td className="py-2 px-4 text-right tabular-nums text-green-600 dark:text-green-400">{money(r?.income ?? 0)}</td>
                 <td className="py-2 px-4 text-right tabular-nums text-red-600 dark:text-red-400">{money(r?.expense ?? 0)}</td>
@@ -101,15 +136,28 @@ function AccountsSection() {
 function AccountModal({ item, onClose, onDone }: any) {
   const [name, setName] = useState(item.name || '')
   const [startBalance, setStartBalance] = useState(String(item.startBalance ?? ''))
+  const [color, setColor] = useState(item.color || PALETTE[1])
+  const [kind, setKind] = useState(item.kind || 'bank')
   const save = useMutation({
-    mutationFn: () => item.id ? financeApi.updateAccount(item.id, { name, startBalance: Number(startBalance) || 0 }) : financeApi.createAccount({ name, startBalance: Number(startBalance) || 0 }),
+    mutationFn: () => {
+      const body = { name, startBalance: Number(startBalance) || 0, color, kind }
+      return item.id ? financeApi.updateAccount(item.id, body) : financeApi.createAccount(body)
+    },
     onSuccess: () => { toast.success('Сохранено'); onDone(); onClose() }, onError: onErr,
   })
   return (
     <Modal open onClose={onClose} title={item.id ? 'Счёт' : 'Новый счёт'}>
       <div className="space-y-3">
         <div><label className="label text-xs">Название</label><input value={name} onChange={e => setName(e.target.value)} className="input" placeholder="Например: Alif" autoFocus /></div>
-        <div><label className="label text-xs">Стартовый баланс</label><input type="number" value={startBalance} onChange={e => setStartBalance(e.target.value)} className="input" placeholder="0" /></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="label text-xs">Стартовый баланс</label><input type="number" value={startBalance} onChange={e => setStartBalance(e.target.value)} className="input" placeholder="0" /></div>
+          <div><label className="label text-xs">Тип</label>
+            <select value={kind} onChange={e => setKind(e.target.value)} className="input">
+              {ACCOUNT_KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div><label className="label text-xs">Цвет</label><ColorPalette value={color} onChange={setColor} /></div>
         <SaveBar onClose={onClose} onSave={() => save.mutate()} disabled={!name.trim() || save.isPending} />
       </div>
     </Modal>
@@ -117,8 +165,8 @@ function AccountModal({ item, onClose, onDone }: any) {
 }
 
 // ─── Категории ──────────────────────────────────────────────────────
-const CAT_TYPE_LABEL: Record<string, string> = { income: 'Доход', expense: 'Расход', saving: 'Накопление' }
-const CAT_TYPE_TONE: Record<string, 'ok' | 'danger' | 'transfer'> = { income: 'ok', expense: 'danger', saving: 'transfer' }
+const CAT_TYPE_LABEL: Record<string, string> = { income: 'Доход', expense: 'Расход', saving: 'Накопление', transfer: 'Перевод' }
+const CAT_TYPE_TONE: Record<string, 'ok' | 'danger' | 'transfer' | 'neutral'> = { income: 'ok', expense: 'danger', saving: 'transfer', transfer: 'neutral' }
 // Имена иконок для выбора (совпадают с ключами ICON_MAP в financeIcons).
 const ICON_NAMES = ['smm', 'development', 'design', 'salary', 'building', 'subscription', 'receipt', 'target', 'ads', 'car', 'printer', 'percent', 'dots', 'plus', 'income', 'expense', 'wallet', 'currency']
 
@@ -168,7 +216,7 @@ function CategoryModal({ item, onClose, onDone }: any) {
         <div className="grid grid-cols-2 gap-3">
           <div><label className="label text-xs">Тип</label>
             <select value={type} onChange={e => setType(e.target.value)} className="input" disabled={item.builtin}>
-              <option value="income">Доход</option><option value="expense">Расход</option><option value="saving">Накопление</option>
+              <option value="income">Доход</option><option value="expense">Расход</option><option value="saving">Накопление</option><option value="transfer">Перевод</option>
             </select>
             {item.builtin && <p className="text-[11px] text-surface-400 mt-1">Системная категория — тип менять нельзя.</p>}
           </div>
@@ -234,9 +282,10 @@ function ProjectModal({ item, onClose, onDone }: any) {
   const [contractDate, setContractDate] = useState(item.contractDate || '')
   const [archived, setArchived] = useState(item.archived ?? false)
   const [multiMonth, setMultiMonth] = useState(item.multiMonth ?? false)
+  const [status, setStatus] = useState(item.status || 'active')
   const save = useMutation({
     mutationFn: () => {
-      const body = { name, direction, tariff: Number(tariff) || 0, note, contractDate: contractDate || undefined, archived, multiMonth }
+      const body = { name, direction, tariff: Number(tariff) || 0, note, contractDate: contractDate || undefined, archived, multiMonth, status }
       return item.id ? financeApi.updateProject(item.id, body) : financeApi.createProject(body)
     },
     onSuccess: () => { toast.success('Сохранено'); onDone(); onClose() }, onError: onErr,
@@ -248,6 +297,11 @@ function ProjectModal({ item, onClose, onDone }: any) {
         <div className="grid grid-cols-2 gap-3">
           <div><label className="label text-xs">Направление</label><select value={direction} onChange={e => setDirection(e.target.value)} className="input">{DIRECTIONS.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}</select></div>
           <div><label className="label text-xs">Тариф (мес)</label><input type="number" value={tariff} onChange={e => setTariff(e.target.value)} className="input" placeholder="0" /></div>
+        </div>
+        <div><label className="label text-xs">Статус</label>
+          <select value={status} onChange={e => setStatus(e.target.value)} className="input">
+            {PROJECT_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div><label className="label text-xs">Дата контракта</label><input type="date" value={contractDate} onChange={e => setContractDate(e.target.value)} className="input" /></div>

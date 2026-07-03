@@ -111,10 +111,12 @@ function ExpenseCards({ ym, onOpen }: { ym: string; onOpen: (k: Kind) => void })
   const debts = data?.debts || {}
   const other = data?.other || {}
 
+  // Крупная цифра карточки = обязательство за месяц (к выплате / месячная сумма /
+  // плановый платёж), а фактически «потрачено за месяц» уходит в подпись.
   const cards = [
-    { kind: 'salary' as Kind, label: 'Зарплата', Icon: Users, color: 'text-orange-500', value: s.spent, sub: `${s.count ?? 0} сотрудников`, hint: `к выплате ${money(s.toPay ?? 0)}` },
-    { kind: 'subscriptions' as Kind, label: 'Аренда и подписки', Icon: Building2, color: 'text-red-500', value: subs.spent, sub: `${subs.count ?? 0} позиций`, hint: `${money(subs.monthly ?? 0)}/мес` },
-    { kind: 'debts' as Kind, label: 'Долги', Icon: Landmark, color: 'text-amber-600', value: debts.spent, sub: `осталось ${money(debts.remaining ?? 0)}`, hint: `в этом месяце ${money(debts.dueMonth ?? 0)}` },
+    { kind: 'salary' as Kind, label: 'Зарплата', Icon: Users, color: 'text-orange-500', value: s.toPay, sub: `${s.count ?? 0} сотрудников`, hint: `потрачено за месяц ${money(s.spent ?? 0)}` },
+    { kind: 'subscriptions' as Kind, label: 'Аренда и подписки', Icon: Building2, color: 'text-red-500', value: subs.monthly, sub: `${subs.count ?? 0} позиций`, hint: `потрачено за месяц ${money(subs.spent ?? 0)}` },
+    { kind: 'debts' as Kind, label: 'Долги', Icon: Landmark, color: 'text-amber-600', value: debts.dueMonth, sub: `осталось ${money(debts.remaining ?? 0)}`, hint: `потрачено за месяц ${money(debts.spent ?? 0)}` },
     { kind: 'other' as Kind, label: 'Прочее', Icon: MoreHorizontal, color: 'text-surface-500', value: other.spent, sub: 'реклама, транспорт, налоги…', hint: '' },
   ]
 
