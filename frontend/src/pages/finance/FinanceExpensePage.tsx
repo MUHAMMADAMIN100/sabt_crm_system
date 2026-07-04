@@ -8,7 +8,7 @@ import {
 import clsx from 'clsx'
 import { financeApi } from '@/services/api.service'
 import { Modal } from '@/components/ui'
-import { money, monthLabel, currentYm, todayISO, formatDate } from './financeUtils'
+import { money, monthLabel, currentYm, todayISO, formatDate, monthEndISO } from './financeUtils'
 import { MonthNav, MonthRangeNav, Stat, Badge, ProgressBar, EmptyState, TableCard } from './financeUi'
 import { CatIcon } from './financeIcons'
 
@@ -116,7 +116,7 @@ function ExpenseCards({ ym, onOpen }: { ym: string; onOpen: (k: Kind) => void })
   const cards = [
     { kind: 'salary' as Kind, label: 'Зарплата', Icon: Users, color: 'text-orange-500', value: s.toPay, sub: `${s.count ?? 0} сотрудников`, hint: `потрачено за месяц ${money(s.spent ?? 0)}` },
     { kind: 'subscriptions' as Kind, label: 'Аренда и подписки', Icon: Building2, color: 'text-red-500', value: subs.monthly, sub: `${subs.count ?? 0} позиций`, hint: `потрачено за месяц ${money(subs.spent ?? 0)}` },
-    { kind: 'debts' as Kind, label: 'Долги', Icon: Landmark, color: 'text-amber-600', value: debts.dueMonth, sub: `осталось ${money(debts.remaining ?? 0)}`, hint: `потрачено за месяц ${money(debts.spent ?? 0)}` },
+    { kind: 'debts' as Kind, label: 'Долги', Icon: Landmark, color: 'text-amber-600', value: debts.monthly ?? debts.dueMonth, sub: `остаток ${money(debts.remaining ?? 0)}`, hint: `потрачено за месяц ${money(debts.spent ?? 0)}` },
     { kind: 'other' as Kind, label: 'Прочее', Icon: MoreHorizontal, color: 'text-surface-500', value: other.spent, sub: 'реклама, транспорт, налоги…', hint: '' },
   ]
 
@@ -152,7 +152,7 @@ function SalarySection({ ym }: { ym: string }) {
   const empById = useMemo(() => new Map(employees.map((e: any) => [e.id, e])), [employees])
 
   const undo = useFinMutation(async (employeeId: string) => {
-    const res = await financeApi.transactions({ from: `${ym}-01`, to: `${ym}-31`, type: 'expense' })
+    const res = await financeApi.transactions({ from: `${ym}-01`, to: monthEndISO(ym), type: 'expense' })
     const targets = (res?.items ?? []).filter((t: any) => t.employeeId === employeeId && t.group === 'salary')
     for (const t of targets) await financeApi.removeTransaction(t.id)
   }, 'Выплата отменена')
@@ -382,7 +382,7 @@ function SubscriptionsSection({ ym }: { ym: string }) {
     'Оплачено',
   )
   const undo = useFinMutation(async (subscriptionId: string) => {
-    const res = await financeApi.transactions({ from: `${ym}-01`, to: `${ym}-31`, type: 'expense' })
+    const res = await financeApi.transactions({ from: `${ym}-01`, to: monthEndISO(ym), type: 'expense' })
     const targets = (res?.items ?? []).filter((t: any) => t.subscriptionId === subscriptionId)
     for (const t of targets) await financeApi.removeTransaction(t.id)
   }, 'Оплата отменена')

@@ -6,6 +6,7 @@ import { FinanceService } from './finance.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
+import { FinanceAccessGuard } from './finance-access.guard';
 import { UserRole } from '../users/user.entity';
 import { CreateOperationDto } from './dto/create-operation.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
@@ -28,7 +29,10 @@ import { UpdateAccountDto } from './dto/update-account.dto';
 /** Финансовый модуль — только основатель и сооснователь (право finance.manage). */
 @ApiTags('Finance')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+// FinanceAccessGuard обязателен: RolesGuard/PermissionsGuard читают метаданные
+// только с обработчиков, поэтому классовые @Roles/@RequirePerm сами по себе
+// доступ не ограничивают.
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard, FinanceAccessGuard)
 @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
 @RequirePerm('finance.manage')
 @Controller('finance')

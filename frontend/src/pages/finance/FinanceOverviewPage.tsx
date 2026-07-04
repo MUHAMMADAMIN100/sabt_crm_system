@@ -155,9 +155,10 @@ export default function FinanceOverviewPage() {
         />
       </div>
 
-      {/* Транзакции за месяц */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-2">
+      {/* Транзакции за месяц — полная таблица (§5.1):
+          Дата · Тип · Статья/описание · Счёт · Клиент · Сумма · действия */}
+      <div className="card !p-0 overflow-hidden">
+        <div className="flex items-center justify-between px-4 pt-4 mb-2">
           <h3 className="text-xs font-semibold text-surface-400 uppercase tracking-wide">Транзакции за месяц</h3>
           <Link to="/finance/transactions" className="text-xs text-primary-600 hover:underline">Все операции →</Link>
         </div>
@@ -166,9 +167,24 @@ export default function FinanceOverviewPage() {
         ) : txs.length === 0 ? (
           <EmptyState icon={<Wallet2 size={28} />}>Нет операций за период</EmptyState>
         ) : (
-          <ul className="divide-y divide-surface-50 dark:divide-surface-800/60">
-            {txs.slice(0, 15).map((t) => <TxRow key={t.id} t={t} onEdit={setEditTx} onDelete={removeTx} />)}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-surface-400 border-b border-surface-100 dark:border-surface-700">
+                  <th className="py-2.5 px-4 font-medium w-[130px]">Дата</th>
+                  <th className="py-2.5 px-3 font-medium w-[110px]">Тип</th>
+                  <th className="py-2.5 px-3 font-medium">Статья / описание</th>
+                  <th className="py-2.5 px-3 font-medium w-[180px]">Счёт</th>
+                  <th className="py-2.5 px-3 font-medium w-[180px]">Клиент</th>
+                  <th className="py-2.5 px-3 font-medium text-right w-[130px]">Сумма</th>
+                  <th className="py-2.5 px-3 w-[80px]"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {txs.slice(0, 15).map((t) => <TxRow key={t.id} t={t} onEdit={setEditTx} onDelete={removeTx} />)}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -255,25 +271,49 @@ function PlanCard({
   )
 }
 
-/* ── Строка транзакции (используется также в FinanceExpensePage) ── */
-export function TxRow({ t, onEdit, onDelete }: { t: any; onEdit?: (t: any) => void; onDelete?: (t: any) => void }) {
-  const title = t.type === 'transfer'
+const TYPE_BADGE: Record<string, string> = {
+  income: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+  expense: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  transfer: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+  saving: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+}
+
+/* ── Строка таблицы транзакций Обзора (§5.1). Двойной клик — редактировать. ── */
+function TxRow({ t, onEdit, onDelete }: { t: any; onEdit?: (t: any) => void; onDelete?: (t: any) => void }) {
+  const account = t.type === 'transfer'
     ? `${t.fromAccountName || '—'} → ${t.toAccountName || '—'}`
-    : (t.categoryName || t.projectName || TYPE_LABEL[t.type] || '—')
-  const sub = [t.projectName, t.employeeName, t.debtName, t.comment].filter(Boolean).join(' · ')
-  const hasActions = !!(onEdit || onDelete)
+    : (t.accountName || t.toAccountName || '—')
+  const client = t.projectName || t.employeeName || t.debtName || '—'
   return (
-    <li className="group flex items-center gap-3 py-2.5">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-surface-800 dark:text-surface-200 truncate">{title}</p>
-        {sub && <p className="text-xs text-surface-400 truncate">{sub}</p>}
-      </div>
-      <div className="text-right shrink-0">
-        <p className={clsx('text-sm font-semibold tabular-nums', TYPE_COLOR[t.type])}>{TYPE_SIGN[t.type]}{money(t.amount)}</p>
-        <p className="text-[11px] text-surface-400">{formatDate(t.date)} · {t.accountName || t.toAccountName || ''}</p>
-      </div>
-      {hasActions && (
-        <div className="shrink-0 inline-flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+    <tr
+      className="group border-b border-surface-50 dark:border-surface-800/60 last:border-0 hover:bg-surface-50/60 dark:hover:bg-surface-800/40"
+      onDoubleClick={() => onEdit?.(t)}
+    >
+      <td className="py-2.5 px-4 text-surface-400 whitespace-nowrap">{formatDate(t.date)}</td>
+      <td className="py-2.5 px-3">
+        <span className={clsx('inline-flex rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap', TYPE_BADGE[t.type])}>
+          {TYPE_LABEL[t.type] || t.type}
+        </span>
+      </td>
+      <td className="py-2.5 px-3 min-w-0">
+        <span className="flex items-center gap-1.5 min-w-0">
+          {t.type !== 'transfer' && (
+            <span className="shrink-0" style={{ color: t.categoryColor || undefined }}><CatIcon name={t.categoryIcon} size={15} /></span>
+          )}
+          <span className="truncate font-medium text-surface-800 dark:text-surface-200">
+            {t.type === 'transfer' ? 'Перевод' : (t.categoryName || '—')}
+          </span>
+        </span>
+        {t.comment && <p className="text-xs text-surface-400 truncate mt-0.5">{t.comment}</p>}
+      </td>
+      <td className="py-2.5 px-3 text-surface-500 whitespace-nowrap">{account}</td>
+      <td className="py-2.5 px-3 text-surface-500 truncate max-w-[180px]">{client}</td>
+      <td className={clsx('py-2.5 px-3 text-right font-semibold tabular-nums whitespace-nowrap',
+        t.type === 'transfer' ? 'text-surface-400 font-medium' : TYPE_COLOR[t.type])}>
+        {TYPE_SIGN[t.type]}{money(t.amount)}
+      </td>
+      <td className="py-2.5 px-3 text-right">
+        <span className="inline-flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           {onEdit && (
             <button onClick={() => onEdit(t)} title="Изменить"
               className="p-1.5 rounded hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500">
@@ -286,8 +326,8 @@ export function TxRow({ t, onEdit, onDelete }: { t: any; onEdit?: (t: any) => vo
               <Trash2 size={14} />
             </button>
           )}
-        </div>
-      )}
-    </li>
+        </span>
+      </td>
+    </tr>
   )
 }

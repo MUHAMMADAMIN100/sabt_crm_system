@@ -23,6 +23,13 @@ export const todayISO = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** Последний день месяца ym в ISO (`2026-02` → `2026-02-28`).
+ *  Нельзя писать `${ym}-31`: для коротких месяцев это невалидная дата → 500. */
+export const monthEndISO = (ym: string) => {
+  const [y, m] = ym.split('-').map(Number)
+  return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+}
+
 export const DIRECTIONS: { key: string; label: string; color: string }[] = [
   { key: 'smm', label: 'SMM', color: '#16a34a' },
   { key: 'development', label: 'Development', color: '#0ea5e9' },
@@ -33,12 +40,14 @@ export const dirLabel = (k: string) => DIRECTIONS.find(d => d.key === k)?.label 
 /** YYYY-MM из ISO-даты. */
 export const ymOf = (iso: string) => (iso || '').slice(0, 7)
 
-/** «09 июн 2026» из ISO-даты. */
+/** «09 июн 2026» из ISO-даты (как в эталоне: короткий месяц без точки, без « г.»). */
 export const formatDate = (iso?: string) => {
   if (!iso) return '—'
   const d = new Date(iso.slice(0, 10) + 'T00:00:00')
   if (isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' }).replace(' г.', '')
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = d.toLocaleDateString('ru-RU', { month: 'short' }).replace('.', '')
+  return `${day} ${month} ${d.getFullYear()}`
 }
 
 /** Тип операции → подпись/цвет/знак. */

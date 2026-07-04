@@ -82,6 +82,16 @@ export default function OperationModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, edit?.id])
 
+  // Урок эталона (§9.2): счёт по умолчанию выставляем ПОСЛЕ загрузки списка,
+  // иначе кнопка «Добавить» остаётся заблокированной без видимой причины.
+  useEffect(() => {
+    if (!open || edit) return
+    if (tab !== 'transfer' && !accountId && (accounts as any[]).length) {
+      setAccountId((accounts as any[])[0].id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, tab, accounts, accountId, edit])
+
   const buildBody = () => {
     const base: any = { type: tab, amount: Number(amount), date, comment: comment || null }
     if (tab === 'transfer') {

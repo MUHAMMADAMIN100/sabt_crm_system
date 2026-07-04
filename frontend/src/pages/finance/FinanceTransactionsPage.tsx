@@ -4,7 +4,7 @@ import { financeApi } from '@/services/api.service'
 import { Plus, Pencil, Trash2, Wallet2, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
-import { currentYm } from './financeUtils'
+import { currentYm, monthEndISO } from './financeUtils'
 import { MonthNav, EmptyState, SectionTitle, TableCard } from './financeUi'
 import OperationModal from './OperationModal'
 
@@ -76,10 +76,7 @@ export default function FinanceTransactionsPage() {
 
   const from = allTime ? undefined : `${ym}-01`
   // Реальный последний день месяца — иначе `${ym}-31` даёт невалидную дату (напр. 2026-02-31) и 500 на бэкенде.
-  const to = allTime ? undefined : (() => {
-    const [yy, mm] = ym.split('-').map(Number)
-    return `${ym}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`
-  })()
+  const to = allTime ? undefined : monthEndISO(ym)
   const filters = { type: type || undefined, search: search || undefined, from, to, page }
 
   const { data, isLoading } = useQuery({
