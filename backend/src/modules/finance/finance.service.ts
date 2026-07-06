@@ -168,6 +168,10 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "counterparty" varchar(200)`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "paidBefore" numeric(15,2) NOT NULL DEFAULT 0`);
+    // Таблицы subscriptions/debts на проде созданы старой версией БЕЗ position —
+    // без этих ALTER'ов любые SELECT/INSERT по ним падают и рушат сид целиком.
+    await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "position" int NOT NULL DEFAULT 0`);
+    await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "position" int NOT NULL DEFAULT 0`);
 
     // Плановые оплаты (SMM части, матрицы Dev/Design, график долгов).
     await run(`CREATE TABLE IF NOT EXISTS finance_planned_payments (
