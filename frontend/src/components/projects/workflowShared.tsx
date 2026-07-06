@@ -1141,7 +1141,10 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
     onClose()
     ;(async () => {
       try {
-        await workflowApi.updateItems(card.id, items)
+        // updateItems — менеджерский эндпоинт (403 для исполнителей). У
+        // исполнителя все поля заблокированы, сохранять ему нечего — сразу
+        // выполняем переход (он разрешён роли-владельцу текущего этапа).
+        if (canManage) await workflowApi.updateItems(card.id, items)
         await workflowApi.transition(card.id, 'org_confirm', {})
       } catch (e: any) {
         toast.error(e?.response?.data?.message || 'Не удалось выполнить')
@@ -1164,7 +1167,9 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
     if (rest.length === 0) onClose()
     ;(async () => {
       try {
-        await workflowApi.updateItems(card.id, items)
+        // Как в onDone: updateItems только менеджерам, иначе 403 ломал
+        // «Готово» у исполнителя (дизайнер/видеограф) до самого перехода.
+        if (canManage) await workflowApi.updateItems(card.id, items)
         await workflowApi.advanceItem(card.id, it.id)
       } catch (e: any) {
         toast.error(e?.response?.data?.message || 'Не удалось')
