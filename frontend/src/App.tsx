@@ -65,6 +65,14 @@ const OnboardingPage    = lazy(() => import('@/pages/onboarding/OnboardingPage')
 const TariffsPage       = lazy(() => import('@/pages/tariffs/TariffsPage'))
 const RisksPage         = lazy(() => import('@/pages/risks/RisksPage'))
 const SecurityLogPage   = lazy(() => import('@/pages/security/SecurityLogPage'))
+// Fin System · WebRand — финансовый раздел (Обзор/Доход/Расход/Транзакции/Настройки)
+const FinanceOverviewPage     = lazy(() => import('@/pages/finance/FinanceOverviewPage'))
+const FinanceIncomePage       = lazy(() => import('@/pages/finance/FinanceIncomePage'))
+const FinanceIncomeGroupPage  = lazy(() => import('@/pages/finance/FinanceIncomeGroupPage'))
+const FinanceExpensePage      = lazy(() => import('@/pages/finance/FinanceExpensePage'))
+const FinanceExpenseGroupPage = lazy(() => import('@/pages/finance/FinanceExpenseGroupPage'))
+const FinanceTransactionsPage = lazy(() => import('@/pages/finance/FinanceTransactionsPage'))
+const FinanceSettingsPage     = lazy(() => import('@/pages/finance/FinanceSettingsPage'))
 const PublicBriefPage   = lazy(() => import('@/pages/public/PublicBriefPage'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -139,6 +147,13 @@ export default function App() {
           <Route path="tariffs" element={<RoleGuard><TariffsPage /></RoleGuard>} />
           <Route path="risks" element={<RoleGuard><RisksPage /></RoleGuard>} />
           <Route path="security-log" element={<RoleGuard><SecurityLogPage /></RoleGuard>} />
+          <Route path="finance" element={<RoleGuard><FinanceOverviewPage /></RoleGuard>} />
+          <Route path="finance/income" element={<RoleGuard><FinanceIncomePage /></RoleGuard>} />
+          <Route path="finance/income/:direction" element={<RoleGuard><FinanceIncomeGroupPage /></RoleGuard>} />
+          <Route path="finance/expense" element={<RoleGuard><FinanceExpensePage /></RoleGuard>} />
+          <Route path="finance/expense/:kind" element={<RoleGuard><FinanceExpenseGroupPage /></RoleGuard>} />
+          <Route path="finance/transactions" element={<RoleGuard><FinanceTransactionsPage /></RoleGuard>} />
+          <Route path="finance/settings" element={<RoleGuard><FinanceSettingsPage /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
