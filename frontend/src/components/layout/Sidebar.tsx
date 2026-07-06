@@ -1,25 +1,14 @@
-import { NavLink, useLocation } from 'react-router-dom'
-import { useState } from 'react'
+import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeProjectStories, canManageAccess, userCan, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
-  FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, Wallet, UserPlus,
+  FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, UserPlus,
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
-  ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal,
 } from 'lucide-react'
 import clsx from 'clsx'
-
-/** Подпункты раздела «Финансы» (как в референсе Fin System). */
-const FINANCE_SUBNAV = [
-  { to: '/finance', label: 'Обзор', icon: LayoutGrid, exact: true },
-  { to: '/finance/income', label: 'Доход', icon: TrendingUp },
-  { to: '/finance/expense', label: 'Расход', icon: TrendingDown },
-  { to: '/finance/transactions', label: 'Транзакции', icon: ArrowLeftRight },
-  { to: '/finance/settings', label: 'Настройки', icon: SlidersHorizontal },
-]
 
 interface SidebarProps { open: boolean; onClose: () => void }
 
@@ -31,9 +20,6 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
   const { t } = useTranslation()
-  const location = useLocation()
-  const financeActive = location.pathname === '/finance' || location.pathname.startsWith('/finance/')
-  const [financeOpen, setFinanceOpen] = useState(financeActive)
 
   const handleNavClick = () => {
     if (window.innerWidth < 993) onClose()
@@ -58,7 +44,6 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/onboarding',    icon: UserPlus,        label: 'Онбординг',         permission: 'clients.view' },
     { to: '/tariffs',       icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/risks',         icon: ShieldAlert,     label: 'Риски',             permission: 'risks.view' },
-    { to: '/finance',       icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
     { to: '/security-log',  icon: Shield,          label: 'Журнал безопасности', permission: 'security-log.view' },
     { to: '/ai',            icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]
@@ -122,62 +107,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {/* Навигация */}
       <nav className="flex-1 p-3 overflow-y-auto overflow-x-hidden">
         <ul className="space-y-1">
-          {filtered.map(item => {
-            // «Финансы» — раскрывающийся раздел с подпунктами (Fin System).
-            if (item.to === '/finance') {
-              return (
-                <li key={item.to}>
-                  <button
-                    type="button"
-                    onClick={() => (open ? setFinanceOpen(v => !v) : (handleNavClick()))}
-                    className={clsx(
-                      'group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                      financeActive
-                        ? 'bg-primary-600 text-white shadow-sm'
-                        : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
-                      !open && 'lg:justify-center lg:px-2',
-                    )}
-                    title={!open ? item.label : undefined}
-                  >
-                    <item.icon size={18} className="shrink-0" />
-                    <span className={clsx(
-                      'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
-                      open ? 'max-w-[200px] opacity-100' : 'max-w-0 opacity-0',
-                    )}>
-                      {item.label}
-                    </span>
-                    {open && (
-                      <ChevronDown size={15} className={clsx('ml-auto shrink-0 transition-transform', financeOpen && 'rotate-180')} />
-                    )}
-                  </button>
-                  {open && financeOpen && (
-                    <ul className="mt-1 ml-3 pl-3 border-l border-white/10 space-y-0.5">
-                      {FINANCE_SUBNAV.map(sub => (
-                        <li key={sub.to}>
-                          <NavLink
-                            to={sub.to}
-                            end={sub.exact}
-                            onClick={handleNavClick}
-                            className={({ isActive }) =>
-                              clsx(
-                                'flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors',
-                                isActive
-                                  ? 'bg-primary-600/90 text-white'
-                                  : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
-                              )
-                            }
-                          >
-                            <sub.icon size={15} className="shrink-0" />
-                            <span className="truncate">{sub.label}</span>
-                          </NavLink>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              )
-            }
-            return (
+          {filtered.map(item => (
             <li key={item.to}>
               <NavLink
                 to={item.to}
@@ -205,7 +135,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 </span>
               </NavLink>
             </li>
-          )})}
+          ))}
         </ul>
       </nav>
 
