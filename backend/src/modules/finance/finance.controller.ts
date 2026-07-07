@@ -3,6 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { FinanceService } from './finance.service';
+import { FinanceScheduler } from './finance.scheduler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
@@ -38,7 +39,14 @@ import { UpdateAccountDto } from './dto/update-account.dto';
 @RequirePerm('finance.manage')
 @Controller('finance')
 export class FinanceController {
-  constructor(private service: FinanceService) {}
+  constructor(
+    private service: FinanceService,
+    private scheduler: FinanceScheduler,
+  ) {}
+
+  /** Ручной запуск проверки сроков оплат (крон делает это ежедневно в 9:00). */
+  @Post('reminders/run')
+  runReminders() { return this.scheduler.runDueCheck(); }
 
   // ─── Дашборды / расчёты ──────────────────────────────────────────
   @Get('overview')

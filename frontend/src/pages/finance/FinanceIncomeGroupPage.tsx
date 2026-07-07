@@ -283,6 +283,11 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                       ) : (
                         <span className="flex">
                           <span className="badge wait">{money(p.amount)}</span>
+                          {p.dueDate && (
+                            <span className={'mini nowrap ' + (p.dueDate < todayISO() ? 'neg' : 'muted')} title="Срок оплаты">
+                              до {formatDate(p.dueDate)}
+                            </span>
+                          )}
                           <button className="btn primary sm" onClick={() => setReceive(p)}>Получено</button>
                         </span>
                       )}
@@ -291,7 +296,14 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                 })}
                 <td>
                   {r.fullyPaid
-                    ? <span className="badge ok">оплачено</span>
+                    ? (
+                      <div>
+                        <span className="badge ok">оплачено</span>
+                        {r.nextDue?.dueDate && (
+                          <div className="mini muted" style={{ marginTop: 4 }}>след. платёж {money(r.nextDue.amount)} к {formatDate(r.nextDue.dueDate)}</div>
+                        )}
+                      </div>
+                    )
                     : <span className="mini muted">{money(r.paidLife)} / {money(r.project.tariff)}</span>}
                 </td>
                 <td><NoteCell project={r.project} /></td>
@@ -317,6 +329,8 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
 
       <p className="mini muted" style={{ marginTop: 12 }}>
         «Получено» создаёт операцию-доход на выбранный счёт и привязывает её к проекту. «↩» отменяет.
+        При частичной оплате остаток планируется автоматически со сроком +20 дней; когда цикл оплачен
+        полностью — создаётся план следующего платежа ко дню контракта и приходит уведомление.
       </p>
 
       <ArchivedProjects projects={data.archived || []} />

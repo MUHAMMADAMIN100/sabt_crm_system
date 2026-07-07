@@ -14,6 +14,7 @@ import { FinanceSubscription } from './entities/finance-subscription.entity';
 import { FinanceDebt } from './entities/finance-debt.entity';
 import { FinancePlannedPayment } from './entities/finance-planned-payment.entity';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
+import { FinanceScheduler } from './finance.scheduler';
 import {
   NOTION_ACCOUNTS, NOTION_PROJECT_RENAMES, NOTION_PROJECTS,
   NOTION_EMPLOYEES, NOTION_TRANSACTIONS,
@@ -58,6 +59,16 @@ function dueDateForMonth(ym: string, day: number): string {
   const lastDay = new Date(y, m, 0).getDate();
   return `${ym}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
 }
+
+/** ISO-дата + delta дней. */
+function addDays(iso: string, delta: number): string {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Срок второй части после оплаты первой — 20 дней (правило компании). */
+const PART2_DUE_DAYS = 20;
 
 const DEFAULT_ACCOUNTS = [
   { key: 'alif', name: 'Alif', position: 0 },
@@ -121,6 +132,7 @@ export class FinanceService implements OnModuleInit {
     @InjectRepository(FinanceDebt) private debtRepo: Repository<FinanceDebt>,
     @InjectRepository(FinancePlannedPayment) private ppRepo: Repository<FinancePlannedPayment>,
     private ds: DataSource,
+    private scheduler: FinanceScheduler,
   ) {}
 
   // ─── SCHEMA: таблицы/колонки создаём вручную (на проде synchronize off) ──
@@ -185,6 +197,7 @@ export class FinanceService implements OnModuleInit {
       ym varchar(7), "partNo" int DEFAULT 1, amount numeric(15,2) DEFAULT 0,
       status varchar(16) DEFAULT 'expected', "receivedTxId" uuid, auto boolean DEFAULT false,
       "createdAt" timestamptz DEFAULT now())`);
+    await run(`ALTER TABLE finance_planned_payments ADD COLUMN IF NOT EXISTS "dueDate" date`);
     await run(`CREATE INDEX IF NOT EXISTS idx_fpp_project ON finance_planned_payments("projectId")`);
     await run(`CREATE INDEX IF NOT EXISTS idx_fpp_debt ON finance_planned_payments("debtId")`);
     await run(`CREATE INDEX IF NOT EXISTS idx_fpp_ym ON finance_planned_payments(ym)`);
@@ -234,9 +247,62 @@ export class FinanceService implements OnModuleInit {
       await this.seedWebRand();
       await this.seedNotionSnapshot();
       await this.linkNotionSubscriptionPayments();
+      await this.linkNotionSmmParts();
     } catch (e: any) {
       this.logger.warn(`finance seed skipped: ${String(e?.message || e).slice(0, 200)}`);
     }
+  }
+
+  /** Оплаты SMM-клиентов из Notion, разнесённые по частям (июнь–июль 2026):
+   *  полученные части привязываются к УЖЕ существующим операциям журнала
+   *  (денег не двигает — балансы не меняются), ожидаемые получают срок из
+   *  заметок Notion («24/28/30 июля второй транш», «9 июля за июль», «за июль
+   *  не оплачено»). Идемпотентно: по ключу (проект, месяц, часть); разовая
+   *  правка данных — после 2026-08-15 не выполняется. */
+  private async linkNotionSmmParts() {
+    if (todayISO() > '2026-08-15') return;
+    const projByName = new Map((await this.projRepo.find()).map(p => [p.name, p]));
+
+    const findTx = async (comment: string, date: string, amount: number) => {
+      const txs = await this.txRepo.find({ where: { type: FinanceTxType.INCOME, date, comment } as any });
+      return txs.find(t => Number(t.amount) === amount) ?? null;
+    };
+    const ensure = async (
+      projName: string, ym: string, partNo: number, amount: number,
+      status: 'received' | 'expected',
+      opts: { due?: string; tx?: [string, string, number] } = {},
+    ) => {
+      const p = projByName.get(projName);
+      if (!p) return;
+      if (await this.ppRepo.findOne({ where: { projectId: p.id, ym, partNo } as any })) return;
+      let receivedTxId: string | null = null;
+      if (status === 'received' && opts.tx) {
+        const tx = await findTx(...opts.tx);
+        if (!tx) return; // операция журнала не найдена — не выдумываем оплату
+        receivedTxId = tx.id;
+      }
+      await this.ppRepo.save(this.ppRepo.create({
+        projectId: p.id, ym, partNo, amount, status,
+        receivedTxId, dueDate: opts.due ?? null, auto: false,
+      }));
+    };
+
+    // Частично оплаченные: часть 1 = операция журнала, часть 2 = срок из заметки.
+    await ensure('Клиника Жасмин', '2026-06', 1, 1500, 'received', { tx: ['Клиника Жасмин — остаток 2к от 3500', '2026-06-26', 1500] });
+    await ensure('Клиника Жасмин', '2026-06', 2, 2000, 'expected', { due: '2026-07-24' });
+    await ensure('Сеченак', '2026-06', 1, 2100, 'received', { tx: ['Оплата за Сеченак — Тариф 3500', '2026-06-30', 2100] });
+    await ensure('Сеченак', '2026-06', 2, 1400, 'expected', { due: '2026-07-28' });
+    // Индотач: 800 + 850 = 1650 одной частью (обе оплаты 4 июля, привязка к большей).
+    await ensure('Клиника Индотач', '2026-07', 1, 1650, 'received', { tx: ['Проект Индотач — У Мухаммада', '2026-07-04', 850] });
+    await ensure('Клиника Индотач', '2026-07', 2, 1850, 'expected', { due: '2026-07-30' });
+    // Аке: июнь закрыт двумя частями (первая — в сиде), июль ждём к 9-му.
+    await ensure('Аке Нем Центр', '2026-06', 2, 1750, 'received', { tx: ['Оплата за Аке', '2026-06-30', 1750] });
+    await ensure('Аке Нем Центр', '2026-07', 1, 3500, 'expected', { due: '2026-07-09' });
+    // Ирам синема: июльская оплата целиком.
+    await ensure('Iram cinema', '2026-07', 1, 3500, 'received', { tx: ['Ирам синема', '2026-07-02', 3500] });
+    // «За июль не оплачено» — ожидаем с начала месяца (день контракта = 1-е).
+    await ensure('Asan', '2026-07', 1, 2500, 'expected', { due: '2026-07-01' });
+    await ensure('Furug clinic', '2026-07', 1, 3000, 'expected', { due: '2026-07-01' });
   }
 
   /** Оплаты аренды/подписок июля из снимка Notion: привязывает уже
@@ -701,12 +767,17 @@ export class FinanceService implements OnModuleInit {
         const monthPlans = pPlans.filter(x => x.ym === ym);
         const partOf = (n: number) => {
           const x = monthPlans.find(y => y.partNo === n);
-          return x ? { plannedId: x.id, amount: Number(x.amount), status: x.status, txId: x.receivedTxId } : null;
+          return x ? { plannedId: x.id, amount: Number(x.amount), status: x.status, txId: x.receivedTxId, dueDate: x.dueDate ?? null } : null;
         };
         const paidLife = r2(pPlans.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0));
+        // Ближайший будущий ожидаемый платёж (для «след. платёж» при полной оплате).
+        const nextPlan = pPlans
+          .filter(x => x.status === 'expected' && x.ym > ym)
+          .sort((a, b) => ((a.dueDate ?? a.ym) < (b.dueDate ?? b.ym) ? -1 : 1))[0] ?? null;
         return {
           project: { id: p.id, name: p.name, tariff: Number(p.tariff), contractDate: p.contractDate, archived: p.archived, note: p.note },
           part1: partOf(1), part2: partOf(2), paidLife,
+          nextDue: nextPlan ? { ym: nextPlan.ym, amount: Number(nextPlan.amount), dueDate: nextPlan.dueDate ?? null } : null,
           fullyPaid: Number(p.tariff) > 0 && paidLife >= Number(p.tariff),
           alert: this.smmAlert(p, pPlans, today),
         };
@@ -1147,8 +1218,59 @@ export class FinanceService implements OnModuleInit {
       };
       if (existing) await this.ppRepo.update(existing.id, data);
       else await this.ppRepo.save(this.ppRepo.create(data));
+      await this.ensureSmmFollowUps(tx.projectId);
     } else if (existing) {
       await this.ppRepo.delete(existing.id);
+    }
+  }
+
+  /** Автологика цикла оплат SMM. После получения оплаты:
+   *  — если тариф цикла покрыт не полностью — создаёт ожидаемую часть 2 на
+   *    остаток со сроком «дата оплаты части 1 + 20 дней»;
+   *  — если цикл оплачен полностью — создаёт ожидаемый платёж следующего
+   *    цикла ко дню контракта и уведомляет финансовых пользователей.
+   *  Ничего не создаёт, если план на месяц/следующий месяц уже есть. */
+  private async ensureSmmFollowUps(projectId?: string | null) {
+    if (!projectId) return;
+    try {
+      const p = await this.projRepo.findOne({ where: { id: projectId } });
+      const tariff = Number(p?.tariff) || 0;
+      if (!p || p.direction !== 'smm' || p.archived || tariff <= 0) return;
+
+      const plans = await this.ppRepo.find({ where: { projectId } });
+      const received = plans.filter(x => x.status === 'received');
+      if (!received.length) return;
+      // Текущий цикл = месяц последней полученной оплаты.
+      const yms = received.map(x => x.ym).sort();
+      const lastYm = yms[yms.length - 1];
+      const cycleReceived = r2(received.filter(x => x.ym === lastYm).reduce((s, x) => s + Number(x.amount), 0));
+      const monthPlans = plans.filter(x => x.ym === lastYm);
+
+      if (cycleReceived < tariff) {
+        // Остаток не покрыт: нужна ожидаемая часть 2 (не дублируем ручные планы).
+        if (monthPlans.some(x => x.partNo === 2 || x.status === 'expected')) return;
+        const lastPart = received.filter(x => x.ym === lastYm).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)).pop();
+        const lastTx = lastPart?.receivedTxId
+          ? await this.txRepo.findOne({ where: { id: lastPart.receivedTxId } })
+          : null;
+        const baseDate = lastTx?.date || todayISO();
+        await this.ppRepo.save(this.ppRepo.create({
+          projectId, ym: lastYm, partNo: 2, amount: r2(tariff - cycleReceived),
+          status: 'expected', dueDate: addDays(baseDate, PART2_DUE_DAYS), auto: false,
+        }));
+      } else {
+        // Цикл покрыт: план следующего цикла ко дню контракта + уведомление.
+        const nextYm = shiftYm(lastYm, 1);
+        if (plans.some(x => x.ym === nextYm)) return;
+        const day = contractDay(p.contractDate) ?? 1;
+        const next = await this.ppRepo.save(this.ppRepo.create({
+          projectId, ym: nextYm, partNo: 1, amount: tariff,
+          status: 'expected', dueDate: dueDateForMonth(nextYm, day), auto: false,
+        }));
+        await this.scheduler.notifyCycleCompleted(p, next);
+      }
+    } catch (e: any) {
+      this.logger.warn(`smm follow-up skipped: ${String(e?.message || e).slice(0, 160)}`);
     }
   }
 
@@ -1171,6 +1293,7 @@ export class FinanceService implements OnModuleInit {
     return this.ppRepo.save(this.ppRepo.create({
       projectId: dto.projectId ?? null, debtId: dto.debtId ?? null, ym: dto.ym,
       partNo: Number(dto.partNo) || 1, amount, status: 'expected', auto: false,
+      dueDate: dto.dueDate ?? null,
     }));
   }
 
@@ -1212,6 +1335,10 @@ export class FinanceService implements OnModuleInit {
       pp.receivedTxId = tx.id;
       await ppRepo.save(pp);
       return { ...pp, amount: Number(pp.amount) };
+    }).then(async (res) => {
+      // После коммита: автологика частей/цикла SMM (часть 2, следующий цикл).
+      if (res.projectId) await this.ensureSmmFollowUps(res.projectId);
+      return res;
     });
   }
 
@@ -1256,6 +1383,9 @@ export class FinanceService implements OnModuleInit {
       });
       const saved = await em.getRepository(FinancePlannedPayment).save(pp);
       return { ...saved, amount: Number(saved.amount) };
+    }).then(async (res) => {
+      if (res.projectId) await this.ensureSmmFollowUps(res.projectId);
+      return res;
     });
   }
 

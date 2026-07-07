@@ -1,4 +1,4 @@
-import { IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Min } from 'class-validator';
+import { IsInt, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Matches, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -18,4 +18,8 @@ export class CreatePlannedPaymentDto {
 
   @ApiProperty() @Type(() => Number) @IsNumber() @Min(0)
   amount: number;
+
+  /** Срок оплаты (к какой дате ждём платёж). */
+  @ApiPropertyOptional({ example: '2026-07-24' }) @IsOptional() @IsISO8601()
+  dueDate?: string;
 }

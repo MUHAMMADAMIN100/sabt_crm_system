@@ -38,6 +38,11 @@ export class FinancePlannedPayment {
   @Column({ type: 'varchar', length: 16, default: 'expected' })
   status: PlannedPaymentStatus;
 
+  /** Срок оплаты (для ожидаемых): к этой дате платёж должен быть получен.
+   *  Часть 2 = дата оплаты части 1 + 20 дней; новый цикл = день контракта. */
+  @Column({ type: 'date', nullable: true })
+  dueDate: string | null;
+
   /** Связанная транзакция (доход для проекта / расход для долга). */
   @Column({ type: 'uuid', nullable: true })
   receivedTxId: string | null;
