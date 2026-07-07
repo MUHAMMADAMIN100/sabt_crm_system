@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
 import { money, currentYm, EXPENSE_GROUPS, OTHER_GROUP } from './finlib';
-import FinIcon from './FinIcon';
+import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import './finance.css';
 
@@ -33,6 +33,13 @@ export default function FinanceExpensePage() {
     return remaining > 0 ? `остаток ${money(remaining)}` : 'нет долгов';
   };
 
+  /** Прогресс оплат месяца для подсветки карточки: {paid, total} или null. */
+  const paidProgress = (key: string): { paid: number; total: number } | null => {
+    if (key === 'salary') return { paid: data?.salary?.paidCount ?? 0, total: data?.salary?.count ?? 0 };
+    if (key === 'rent_subs') return { paid: data?.subscriptions?.paidCount ?? 0, total: data?.subscriptions?.count ?? 0 };
+    return null;
+  };
+
   return (
     <div className="fin-root">
       <div className="page-head">
@@ -44,16 +51,27 @@ export default function FinanceExpensePage() {
       </div>
 
       <div className="cards grid-4">
-        {EXPENSE_GROUPS.map((g) => (
-          <div className="card clickable" key={g.key} onClick={() => navigate(`/finance/expense/${g.key}`)}>
-            <div className="summary-head"><span className="t" style={{ color: g.color }}><FinIcon name={g.icon} size={18} /> {g.label}</span></div>
-            <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(groupValue(g.key))}</div>
-            <div className="mini muted" style={{ marginTop: 6 }}>{subtitle(g.key)}</div>
-            <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
-          </div>
-        ))}
+        {EXPENSE_GROUPS.map((g) => {
+          const pp = paidProgress(g.key);
+          const allPaid = !!pp && pp.total > 0 && pp.paid >= pp.total;
+          return (
+            <div className="card clickable" key={g.key} onClick={() => navigate(`/finance/expense/${g.key}`)}>
+              <div className="summary-head"><span className="t" style={{ color: g.color }}><CatIcon icon={g.icon} color={g.color} size={30} /> {g.label}</span></div>
+              <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(groupValue(g.key))}</div>
+              <div className="mini muted" style={{ marginTop: 6 }}>{subtitle(g.key)}</div>
+              {pp && pp.total > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  {allPaid
+                    ? <span className="badge ok"><FinIcon name="check" size={12} /> {g.key === 'salary' ? 'всё выплачено' : 'всё оплачено'}</span>
+                    : <span className="mini muted">{g.key === 'salary' ? 'выплачено' : 'оплачено'} {pp.paid} из {pp.total}</span>}
+                </div>
+              )}
+              <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
+            </div>
+          );
+        })}
         <div className="card clickable" onClick={() => navigate('/finance/expense/other')}>
-          <div className="summary-head"><span className="t" style={{ color: OTHER_GROUP.color }}><FinIcon name={OTHER_GROUP.icon} size={18} /> {OTHER_GROUP.label}</span></div>
+          <div className="summary-head"><span className="t" style={{ color: OTHER_GROUP.color }}><CatIcon icon={OTHER_GROUP.icon} color={OTHER_GROUP.color} size={30} /> {OTHER_GROUP.label}</span></div>
           <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(data?.other?.spent ?? 0)}</div>
           <div className="mini muted" style={{ marginTop: 6 }}>реклама, транспорт, налоги…</div>
           <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>

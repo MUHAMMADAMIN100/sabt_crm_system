@@ -19,6 +19,7 @@ import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
+import { MarkSubscriptionPaidDto } from './dto/mark-subscription-paid.dto';
 import { CreateDebtDto } from './dto/create-debt.dto';
 import { UpdateDebtDto } from './dto/update-debt.dto';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -130,6 +131,9 @@ export class FinanceController {
   @Post('subscriptions') createSubscription(@Body() dto: CreateSubscriptionDto) { return this.service.createSubscription(dto); }
   @Patch('subscriptions/:id') updateSubscription(@Param('id') id: string, @Body() dto: UpdateSubscriptionDto) { return this.service.updateSubscription(id, dto); }
   @Delete('subscriptions/:id') removeSubscription(@Param('id') id: string) { return this.service.removeSubscription(id); }
+  /** Отметить месяц оплаченным без операции (балансы не меняются). */
+  @Post('subscriptions/:id/mark-paid') markSubscriptionPaid(@Param('id') id: string, @Body() dto: MarkSubscriptionPaidDto) { return this.service.markSubscriptionPaid(id, dto); }
+  @Post('subscriptions/:id/unmark-paid') unmarkSubscriptionPaid(@Param('id') id: string, @Body() dto: MarkSubscriptionPaidDto) { return this.service.unmarkSubscriptionPaid(id, dto); }
 
   // ─── Справочники: Долги ──────────────────────────────────────────
   @Get('debts') listDebts() { return this.service.listDebts(); }

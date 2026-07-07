@@ -176,6 +176,8 @@ export class FinanceService implements OnModuleInit {
     // без этих ALTER'ов любые SELECT/INSERT по ним падают и рушат сид целиком.
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "position" int NOT NULL DEFAULT 0`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "position" int NOT NULL DEFAULT 0`);
+    // Отметки «оплачено без операции» по месяцам (см. FinanceSubscription.paidMarks).
+    await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "paidMarks" jsonb`);
 
     // Плановые оплаты (SMM части, матрицы Dev/Design, график долгов).
     await run(`CREATE TABLE IF NOT EXISTS finance_planned_payments (
@@ -231,8 +233,41 @@ export class FinanceService implements OnModuleInit {
       }
       await this.seedWebRand();
       await this.seedNotionSnapshot();
+      await this.linkNotionSubscriptionPayments();
     } catch (e: any) {
       this.logger.warn(`finance seed skipped: ${String(e?.message || e).slice(0, 200)}`);
+    }
+  }
+
+  /** Оплаты аренды/подписок июля из снимка Notion: привязывает уже
+   *  существующие операции журнала к позициям (балансы счетов не меняются —
+   *  деньги уже списаны этими операциями) и отмечает Adobe оплаченным без
+   *  операции (2026-07-02). Идемпотентно: операции ищутся по точному
+   *  фингерпринту (комментарий+дата+сумма) и только пока не привязаны;
+   *  после 2026-08-15 не выполняется вовсе — это разовая правка данных. */
+  private async linkNotionSubscriptionPayments() {
+    if (todayISO() > '2026-08-15') return;
+    const subs = await this.subRepo.find();
+    const byName = new Map(subs.map(s => [s.name, s]));
+
+    const link = async (subName: string, comment: string, date: string, amounts: number[]) => {
+      const s = byName.get(subName);
+      if (!s) return;
+      const txs = await this.txRepo.find({ where: { type: FinanceTxType.EXPENSE, date, comment } as any });
+      for (const t of txs) {
+        if (!t.subscriptionId && amounts.includes(Number(t.amount))) {
+          t.subscriptionId = s.id;
+          await this.txRepo.save(t);
+        }
+      }
+    };
+    await link('Аренда офиса', 'Аренда офиса 2', '2026-07-06', [2000, 4000]);
+    await link('Claude', 'Подписка на клауд', '2026-07-04', [1860]);
+
+    const adobe = byName.get('Adobe');
+    if (adobe && !(adobe.paidMarks || []).some(x => x.ym === '2026-07')) {
+      adobe.paidMarks = [...(adobe.paidMarks || []), { ym: '2026-07', date: '2026-07-02' }];
+      await this.subRepo.save(adobe);
     }
   }
 
@@ -818,10 +853,22 @@ export class FinanceService implements OnModuleInit {
     const salaryFund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
     const salaryAdvances = r2(activeEmps.reduce((s, e) => s + Number(e.advance), 0));
     const salarySpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'salary'));
+    // Сотрудники, у которых месяц закрыт (выплачено ≥ оклада) — для подсветки карточки.
+    const salaryPaidCount = activeEmps.filter(e => {
+      const salary = Number(e.salary);
+      if (salary <= 0) return false;
+      const paid = monthExp.filter(t => t.employeeId === e.id).reduce((s, t) => s + Number(t.amount), 0);
+      return paid >= salary;
+    }).length;
 
-    const subsCount = subs.filter(s => s.active).length;
-    const subMonthly = r2(subs.filter(s => s.active).reduce((s, x) => s + Number(x.amount), 0));
+    const activeSubs = subs.filter(s => s.active);
+    const subsCount = activeSubs.length;
+    const subMonthly = r2(activeSubs.reduce((s, x) => s + Number(x.amount), 0));
     const subsSpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'rent_subs'));
+    // Позиции, оплаченные за месяц: операцией журнала или отметкой без операции.
+    const subsPaidCount = activeSubs.filter(s =>
+      monthExp.some(t => t.subscriptionId === s.id) || (s.paidMarks || []).some(x => x.ym === ym),
+    ).length;
 
     const debtIds = new Set(m.debts.map(d => d.id));
     const cm = currentYm();
@@ -837,8 +884,8 @@ export class FinanceService implements OnModuleInit {
 
     return {
       ym,
-      salary: { spent: salarySpent, count: activeEmps.length, toPay: r2(Math.max(0, salaryFund - salaryAdvances - salarySpent)) },
-      subscriptions: { spent: subsSpent, count: subsCount, monthly: subMonthly },
+      salary: { spent: salarySpent, count: activeEmps.length, paidCount: salaryPaidCount, toPay: r2(Math.max(0, salaryFund - salaryAdvances - salarySpent)) },
+      subscriptions: { spent: subsSpent, count: subsCount, paidCount: subsPaidCount, monthly: subMonthly },
       debts: { spent: debtsSpent, count: debtCount, remaining: totalRemaining, dueMonth, monthly: debtsMonthly },
       other: { spent: otherSpent },
     };
@@ -876,9 +923,12 @@ export class FinanceService implements OnModuleInit {
       const rows = subs.map(s => {
         const txs = monthExp.filter(t => t.subscriptionId === s.id);
         const dates = txs.map(t => t.date).sort();
+        // Отметка «оплачено без операции» за выбранный месяц (денег не двигает).
+        const mark = (s.paidMarks || []).find(x => x.ym === ym) ?? null;
         return {
           id: s.id, name: s.name, kind: s.kind, amount: Number(s.amount), active: s.active,
           paidMonth: this.sum(txs), lastPaidDate: dates.length ? dates[dates.length - 1] : null,
+          paidMark: mark ? mark.date : null,
         };
       });
       return { kind: 'subscriptions', rows, monthly: r2(subs.filter(s => s.active).reduce((s, x) => s + Number(x.amount), 0)) };
@@ -1382,6 +1432,26 @@ export class FinanceService implements OnModuleInit {
     return this.subRepo.save(s);
   }
   async removeSubscription(id: string) { await this.subRepo.delete(id); return { ok: true }; }
+
+  /** Отметить месяц оплаченным БЕЗ операции в журнале — деньги по счетам
+   *  не двигаются (оплата прошла вне системы или уже учтена в балансе). */
+  async markSubscriptionPaid(id: string, dto: { ym?: string; date?: string }) {
+    const s = await this.subRepo.findOne({ where: { id } });
+    if (!s) throw new NotFoundException('Позиция не найдена');
+    const ym = dto.ym || currentYm();
+    const date = dto.date || todayISO();
+    s.paidMarks = [...(s.paidMarks || []).filter(x => x.ym !== ym), { ym, date }];
+    return this.subRepo.save(s);
+  }
+
+  /** Снять отметку «оплачено без операции» за месяц. */
+  async unmarkSubscriptionPaid(id: string, dto: { ym?: string }) {
+    const s = await this.subRepo.findOne({ where: { id } });
+    if (!s) throw new NotFoundException('Позиция не найдена');
+    const ym = dto.ym || currentYm();
+    s.paidMarks = (s.paidMarks || []).filter(x => x.ym !== ym);
+    return this.subRepo.save(s);
+  }
 
   // Долги
   async listDebts() {

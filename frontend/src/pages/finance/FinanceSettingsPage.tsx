@@ -1,11 +1,11 @@
 // Настройки Fin System: счета, справочники, резервные копии.
 // Порт fin-webrand/src/pages/Settings.tsx (Dexie → financeApi + react-query).
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
 import { money, todayISO, INCOME_GROUPS, TYPE_LABEL, COLOR_PALETTE } from './finlib';
-import FinIcon from './FinIcon';
+import FinIcon, { CatIcon } from './FinIcon';
 import { financeApi } from '@/services/api.service';
 
 function errMsg(e: any) {
@@ -128,7 +128,7 @@ export default function FinanceSettingsPage() {
 
       <Directory title="Категории" items={categories}
         head={['Название', 'Тип']}
-        cols={(c: any) => [c.name, TYPE_LABEL[c.type] ?? c.type]}
+        cols={(c: any) => [<span className="flex" key="n"><CatIcon icon={c.icon} color={c.color} size={24} /> {c.name}</span>, TYPE_LABEL[c.type] ?? c.type]}
         onAdd={() => setModal(<CategoryModal onClose={() => setModal(null)} />)}
         onEdit={(c: any) => setModal(<CategoryModal category={c} onClose={() => setModal(null)} />)}
         canDelete={(c: any) => !c.builtin}
@@ -180,7 +180,7 @@ export default function FinanceSettingsPage() {
 }
 
 function Directory({ title, items, head, cols, onAdd, onEdit, onDel, canDelete }: {
-  title: string; items: any[]; head: string[]; cols: (x: any) => (string | number)[];
+  title: string; items: any[]; head: string[]; cols: (x: any) => ReactNode[];
   onAdd: () => void; onEdit: (x: any) => void; onDel: (x: any) => void; canDelete?: (x: any) => boolean;
 }) {
   return (

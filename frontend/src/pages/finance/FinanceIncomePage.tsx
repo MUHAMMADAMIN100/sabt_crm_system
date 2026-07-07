@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import './finance.css';
 import { money, currentYm, INCOME_GROUPS } from './finlib';
-import FinIcon from './FinIcon';
+import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import { financeApi } from '@/services/api.service';
 
@@ -36,7 +36,7 @@ export default function FinanceIncomePage() {
           return (
             <div className="card clickable" key={g.key} onClick={() => navigate(`/finance/income/${g.key}`)}>
               <div className="summary-head">
-                <span className="t" style={{ color: g.color }}><FinIcon name={g.icon} size={18} /> {g.label}</span>
+                <span className="t" style={{ color: g.color }}><CatIcon icon={g.icon} color={g.color} size={30} /> {g.label}</span>
               </div>
               <div className="value" style={{ fontSize: 26, fontWeight: 700 }}>{money(cash)}</div>
               <div className="mini muted" style={{ marginTop: 6 }}>

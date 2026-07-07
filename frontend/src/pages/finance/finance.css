@@ -102,6 +102,9 @@
 .fin-root .badge.info { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); }
 .fin-root .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--surface-2); font-size: 12.5px; }
 
+/* Плоская цветная плитка категории (CatIcon): белая иконка на цветном фоне */
+.fin-root .cat-ico { display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; color: #fff; flex-shrink: 0; }
+
 /* Buttons */
 .fin-root .btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; border-radius: var(--radius-sm); border: 1px solid var(--border);
   background: var(--surface); font-weight: 600; font-size: 13.5px; color: var(--text); }

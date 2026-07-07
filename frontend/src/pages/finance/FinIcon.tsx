@@ -59,3 +59,18 @@ export default function FinIcon({ name, size = 18, className, style }: {
     </svg>
   );
 }
+
+/** Плоская 2D-плитка категории: белая иконка на цветном скруглённом фоне.
+ *  color — цвет категории (fallback серый), icon — имя из PATHS. */
+export function CatIcon({ icon, color, size = 26 }: {
+  icon?: string | null; color?: string | null; size?: number;
+}) {
+  return (
+    <span
+      className="cat-ico"
+      style={{ width: size, height: size, minWidth: size, background: color || '#94a3b8' }}
+    >
+      <FinIcon name={icon || 'dots'} size={Math.round(size * 0.58)} />
+    </span>
+  );
+}

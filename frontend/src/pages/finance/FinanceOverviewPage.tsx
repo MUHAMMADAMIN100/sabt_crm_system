@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import './finance.css';
 import { money, currentYm, INCOME_GROUPS, EXPENSE_GROUPS } from './finlib';
-import FinIcon from './FinIcon';
+import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import TxTable from './TxTable';
 import TransactionModal from './TransactionModal';
@@ -128,7 +128,7 @@ export default function FinanceOverviewPage() {
           <div className="brk">
             {incomeRows.map((r) => (
               <div className="brk-row" key={r.key}>
-                <span className="name" style={{ color: r.color }}><FinIcon name={r.icon} size={16} /><span style={{ color: 'var(--text)' }}>{r.label}</span></span>
+                <span className="name" style={{ color: r.color }}><CatIcon icon={r.icon} color={r.color} size={22} /><span style={{ color: 'var(--text)' }}>{r.label}</span></span>
                 <span className="num"><span className="muted" style={{ fontWeight: 500 }}>{money(r.fact)}</span> / {money(r.plan)}</span>
               </div>
             ))}
@@ -148,7 +148,7 @@ export default function FinanceOverviewPage() {
           <div className="brk">
             {expenseRows.map((r) => (
               <div className="brk-row" key={r.key}>
-                <span className="name" style={{ color: r.color }}><FinIcon name={r.icon} size={16} /><span style={{ color: 'var(--text)' }}>{r.label}</span></span>
+                <span className="name" style={{ color: r.color }}><CatIcon icon={r.icon} color={r.color} size={22} /><span style={{ color: 'var(--text)' }}>{r.label}</span></span>
                 <span className="num"><span className="muted" style={{ fontWeight: 500 }}>{money(r.fact)}</span> / {money(r.plan)}</span>
               </div>
             ))}
@@ -211,7 +211,7 @@ function SummaryContainer({ title, icon, color, total, rows, onClick }: {
         {rows.map((r) => (
           <div className="brk-row" key={r.categoryId ?? 'none'}>
             <span className="name" style={{ color: r.color }}>
-              {r.icon && <FinIcon name={r.icon} size={16} />}<span style={{ color: 'var(--text)' }}>{r.name ?? 'Без категории'}</span>
+              <CatIcon icon={r.icon} color={r.color} size={22} /><span style={{ color: 'var(--text)' }}>{r.name ?? 'Без категории'}</span>
             </span>
             <span className="num">{money(r.total)}</span>
           </div>

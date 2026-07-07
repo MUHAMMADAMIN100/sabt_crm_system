@@ -361,6 +361,9 @@ export const financeApi = {
   createSubscription: (data: any) => api.post('/finance/subscriptions', data).then(r => r.data),
   updateSubscription: (id: string, data: any) => api.patch(`/finance/subscriptions/${id}`, data).then(r => r.data),
   removeSubscription: (id: string) => api.delete(`/finance/subscriptions/${id}`).then(r => r.data),
+  // Отметка «оплачено без операции» — балансы счетов не меняются.
+  markSubPaid: (id: string, data: { ym?: string; date?: string }) => api.post(`/finance/subscriptions/${id}/mark-paid`, data).then(r => r.data),
+  unmarkSubPaid: (id: string, data: { ym?: string }) => api.post(`/finance/subscriptions/${id}/unmark-paid`, data).then(r => r.data),
 
   // Долги
   debts: () => api.get('/finance/debts').then(r => r.data),

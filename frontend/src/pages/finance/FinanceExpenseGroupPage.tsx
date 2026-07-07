@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
 import { money, currentYm, todayISO, formatDate, monthLabel, shiftYm, EXPENSE_GROUPS, OTHER_GROUP } from './finlib';
-import FinIcon from './FinIcon';
+import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import './finance.css';
 
@@ -94,7 +94,7 @@ function OtherExpenseList({ ym }: { ym: string }) {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.categoryId ?? 'none'}>
-                  <td><span className="flex">{r.icon && <span style={{ color: r.color, display: 'inline-flex' }}><FinIcon name={r.icon} size={16} /></span>}<b>{r.name ?? 'Без категории'}</b></span></td>
+                  <td><span className="flex"><CatIcon icon={r.icon} color={r.color} size={24} /><b>{r.name ?? 'Без категории'}</b></span></td>
                   <td className="num">{money(r.total)}</td>
                   <td><div className="progress"><i style={{ width: (r.share ?? 0) + '%', background: r.color ?? '#94a3b8' }} /></div><span className="mini muted">{r.share ?? 0}%</span></td>
                 </tr>
@@ -366,12 +366,21 @@ function SubsList({ ym }: { ym: string }) {
     } catch (e) { apiError(e); }
   }
 
+  /** Отметить оплаченным без операции: денег по счетам не двигает. */
+  async function markPaid(s: any) {
+    try {
+      await financeApi.markSubPaid(s.id, { ym, date: todayISO() });
+      qc.invalidateQueries({ queryKey: ['finance'] });
+    } catch (e) { apiError(e); }
+  }
+
   async function cancelMonth(s: any) {
     if (!confirm('Отменить оплату? Оплаты позиции за месяц будут удалены.')) return;
     try {
       await removeMonthOps(ym, (t) => t.subscriptionId === s.id);
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      if (s.paidMark) await financeApi.unmarkSubPaid(s.id, { ym });
     } catch (e) { apiError(e); }
+    finally { qc.invalidateQueries({ queryKey: ['finance'] }); }
   }
 
   return (
@@ -388,29 +397,37 @@ function SubsList({ ym }: { ym: string }) {
         <table>
           <thead><tr><th>Позиция</th><th>Тип</th><th className="num">Сумма/мес</th><th>Статус месяца</th><th style={{ width: 90 }} /></tr></thead>
           <tbody>
-            {rows.map((s) => (
-              <tr key={s.id} style={{ opacity: s.active ? 1 : 0.5 }} onDoubleClick={() => setEditFor(s)}>
-                <td><b>{s.name}</b></td>
-                <td className="muted">{s.kind === 'rent' ? 'Аренда' : 'Подписка'}</td>
-                <td className="num">{money(s.amount)}</td>
-                <td>
-                  {s.paidMonth ? (
-                    <span className="flex">
-                      <span className="badge ok">оплачено</span>
-                      {s.lastPaidDate && <span className="mini muted">{formatDate(s.lastPaidDate)}</span>}
+            {rows.map((s) => {
+              const isPaid = !!s.paidMonth || !!s.paidMark;
+              const paidDate = s.lastPaidDate ?? s.paidMark;
+              return (
+                <tr key={s.id} style={{ opacity: s.active ? 1 : 0.5 }} onDoubleClick={() => setEditFor(s)}>
+                  <td><b>{s.name}</b></td>
+                  <td className="muted">{s.kind === 'rent' ? 'Аренда' : 'Подписка'}</td>
+                  <td className="num">{money(s.amount)}</td>
+                  <td>
+                    {isPaid ? (
+                      <span className="flex">
+                        <span className="badge ok"><FinIcon name="check" size={13} /> оплачено</span>
+                        {paidDate && <span className="mini muted">{formatDate(paidDate)}</span>}
+                        {!s.paidMonth && <span className="mini muted">· без списания</span>}
+                      </span>
+                    ) : <span className="badge wait">не оплачено</span>}
+                  </td>
+                  <td className="num">
+                    <span className="flex" style={{ justifyContent: 'flex-end' }}>
+                      {isPaid
+                        ? <button className="btn ghost sm" title="Отменить оплату" onClick={() => cancelMonth(s)}><FinIcon name="undo" size={15} /></button>
+                        : <>
+                            <button className="btn ghost sm" title="Оплатить — создаст расход со счёта" onClick={() => pay(s)}><FinIcon name="check" size={14} /> оплатить</button>
+                            <button className="btn ghost sm" title="Отметить оплаченным без списания со счёта" onClick={() => markPaid(s)}><FinIcon name="checkCircle" size={15} /></button>
+                          </>}
+                      <button className="btn ghost sm row-actions" title="Редактировать" onClick={() => setEditFor(s)}><FinIcon name="edit" size={15} /></button>
                     </span>
-                  ) : <span className="badge wait">не оплачено</span>}
-                </td>
-                <td className="num">
-                  <span className="flex" style={{ justifyContent: 'flex-end' }}>
-                    {s.paidMonth
-                      ? <button className="btn ghost sm" title="Отменить оплату" onClick={() => cancelMonth(s)}><FinIcon name="undo" size={15} /></button>
-                      : <button className="btn ghost sm" title="Оплатить" onClick={() => pay(s)}><FinIcon name="check" size={14} /> оплатить</button>}
-                    <button className="btn ghost sm row-actions" title="Редактировать" onClick={() => setEditFor(s)}><FinIcon name="edit" size={15} /></button>
-                  </span>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
             <tr>

@@ -2,7 +2,7 @@
 // txns — decorated-транзакции с бэка: имена счетов/категорий/проектов уже внутри.
 import './finance.css';
 import { money, formatDate, TYPE_LABEL } from './finlib';
-import FinIcon from './FinIcon';
+import FinIcon, { CatIcon } from './FinIcon';
 
 export default function TxTable({ txns, onEdit, onDelete }: {
   txns: any[];
@@ -44,9 +44,9 @@ export default function TxTable({ txns, onEdit, onDelete }: {
                 <td><span className={'badge ' + t.type}>{TYPE_LABEL[t.type]}</span></td>
                 <td>
                   <div className="flex">
-                    {t.categoryName && t.categoryIcon && (
-                      <span style={{ color: t.categoryColor, display: 'inline-flex' }}><FinIcon name={t.categoryIcon} size={16} /></span>
-                    )}
+                    {t.type === 'transfer'
+                      ? <CatIcon icon="transactions" color="var(--accent)" size={26} />
+                      : <CatIcon icon={t.categoryIcon} color={t.categoryColor} size={26} />}
                     <div>
                       <div>{t.categoryName ?? (t.type === 'transfer' ? 'Перевод' : '—')}</div>
                       {t.comment && <div className="mini muted">{t.comment}</div>}
