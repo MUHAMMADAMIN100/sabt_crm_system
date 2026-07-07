@@ -14,6 +14,10 @@ import { FinanceSubscription } from './entities/finance-subscription.entity';
 import { FinanceDebt } from './entities/finance-debt.entity';
 import { FinancePlannedPayment } from './entities/finance-planned-payment.entity';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
+import {
+  NOTION_ACCOUNTS, NOTION_PROJECT_RENAMES, NOTION_PROJECTS,
+  NOTION_EMPLOYEES, NOTION_TRANSACTIONS,
+} from './notion-snapshot.data';
 
 // ─── helpers ────────────────────────────────────────────────────────
 const r2 = (n: any) => Math.round((Number(n) || 0) * 100) / 100;
@@ -226,9 +230,105 @@ export class FinanceService implements OnModuleInit {
         await this.backfillCategoryIcons();
       }
       await this.seedWebRand();
+      await this.seedNotionSnapshot();
     } catch (e: any) {
       this.logger.warn(`finance seed skipped: ${String(e?.message || e).slice(0, 200)}`);
     }
+  }
+
+  /** Снимок реальных данных из Notion (2026-07-07): счета, клиенты, авансы,
+   *  журнал операций. Применяется ОДИН раз — только пока журнал пуст; после
+   *  первой транзакции (своей или из снимка) больше никогда не трогает БД. */
+  private async seedNotionSnapshot() {
+    if ((await this.txRepo.count()) > 0) return;
+
+    // Счета: имена как в Notion + стартовые остатки, дающие точные балансы.
+    const accounts = await this.accRepo.find();
+    const accByKey = new Map(accounts.filter(a => a.key).map(a => [a.key as string, a]));
+    for (const na of NOTION_ACCOUNTS) {
+      const a = accByKey.get(na.key);
+      if (!a) continue;
+      a.name = na.name;
+      a.startBalance = na.startBalance;
+      if (!a.color) a.color = na.color;
+      await this.accRepo.save(a);
+    }
+
+    // Клиенты: чиним искажённые имена старого сида (id сохраняются — плановые
+    // оплаты не ломаются), затем приводим карточки к Notion; недостающих создаём.
+    const projects = await this.projRepo.find();
+    const projByName = new Map(projects.map(p => [p.name, p]));
+    for (const [oldName, newName] of Object.entries(NOTION_PROJECT_RENAMES)) {
+      const p = projByName.get(oldName);
+      if (!p || projByName.has(newName)) continue;
+      projByName.delete(oldName);
+      p.name = newName;
+      projByName.set(newName, p);
+    }
+    for (let i = 0; i < NOTION_PROJECTS.length; i++) {
+      const np = NOTION_PROJECTS[i];
+      const p = projByName.get(np.name) ?? this.projRepo.create({ name: np.name, direction: 'smm' });
+      p.tariff = np.tariff;
+      p.contractDate = np.contractDate;
+      p.note = np.note;
+      p.archived = np.archived;
+      p.status = np.archived ? 'archived' : 'active';
+      p.position = i;
+      await this.projRepo.save(p);
+      projByName.set(np.name, p);
+    }
+    // Dev-проекты (Javonon, Arhideya) не из Notion — просто сдвигаем в конец списка.
+    let tailPos = NOTION_PROJECTS.length;
+    for (const p of projects.filter(x => x.direction !== 'smm').sort((a, b) => a.position - b.position)) {
+      p.position = tailPos++;
+      await this.projRepo.save(p);
+    }
+
+    // Сотрудники: ЗП и авансы из Notion; недостающих создаём.
+    const empByName = new Map((await this.empRepo.find()).map(e => [e.name, e]));
+    for (const ne of NOTION_EMPLOYEES) {
+      const e = empByName.get(ne.name)
+        ?? this.empRepo.create({ name: ne.name, role: ne.role, hireDate: ne.hireDate, status: 'active', position: empByName.size });
+      e.salary = ne.salary;
+      e.advance = ne.advance;
+      await this.empRepo.save(e);
+    }
+
+    // Категории журнала: находим по имени+типу (создаём, если удалили).
+    const cats = await this.catRepo.find();
+    const catOf = async (name: string, type: string): Promise<FinanceCategory> => {
+      const found = cats.find(c => c.name === name && c.type === type);
+      if (found) return found;
+      const created = await this.catRepo.save(this.catRepo.create({ name, type: type as any, position: cats.length }));
+      cats.push(created);
+      return created;
+    };
+
+    // Журнал: 24 операции одним save() (одна транзакция БД — всё или ничего).
+    // createdAt убывает с индексом: внутри одного дня порядок как в Notion.
+    const base = Date.parse('2026-07-07T12:00:00.000Z');
+    const rows: FinanceTransaction[] = [];
+    for (let i = 0; i < NOTION_TRANSACTIONS.length; i++) {
+      const t = NOTION_TRANSACTIONS[i];
+      const cat = t.cat ? await catOf(t.cat[0], t.cat[1]) : null;
+      rows.push(this.txRepo.create({
+        type: t.type as FinanceTxType,
+        amount: t.amount,
+        date: t.date,
+        accountId: t.account ? accByKey.get(t.account)?.id ?? null : null,
+        fromAccountId: t.from ? accByKey.get(t.from)?.id ?? null : null,
+        toAccountId: t.to ? accByKey.get(t.to)?.id ?? null : null,
+        categoryId: cat?.id ?? null,
+        category: cat?.name ?? null,
+        account: t.account ?? null,
+        projectId: t.project ? projByName.get(t.project)?.id ?? null : null,
+        comment: t.comment,
+        status: FinanceTxStatus.COMPLETED,
+        createdAt: new Date(base - i * 60000),
+      }));
+    }
+    await this.txRepo.save(rows);
+    this.logger.log(`finance: применён снимок Notion — ${rows.length} операций, ${NOTION_PROJECTS.length} клиентов, ${NOTION_EMPLOYEES.length} сотрудников`);
   }
 
   /** Проставить icon/color существующим категориям (по позиции) — идемпотентно. */
