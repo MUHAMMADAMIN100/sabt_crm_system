@@ -561,6 +561,19 @@ export function StageActions({ card, disabled, assignees, actor, onTransition }:
       <input className="input" value={f[k] || ''} onChange={e => set(k, e.target.value)} placeholder={placeholder} />
     </div>
   )
+  // Глобальная занятость дат — подсветка календаря «Дата съёмки» на этапе
+  // «Организация» (грузим только когда поле реально показывается).
+  const { data: globalLoad } = useQuery({
+    queryKey: ['workflow', 'publication-load'],
+    queryFn: () => workflowApi.publicationLoad(),
+    enabled: card?.stage === 'organization',
+    staleTime: 60_000,
+  })
+  const KIND_RU: Record<string, string> = { reel: 'Рилс', macro: 'Макет', shoot: 'Съёмка' }
+  const shootDateMarks = ((globalLoad as any[]) || []).map((m: any) => ({
+    date: m.date, kind: m.kind,
+    label: `${m.project} · ${KIND_RU[m.kind] || m.kind}${m.title && m.kind !== 'shoot' ? `: ${m.title}` : ''}`,
+  }))
   // Кнопка скрывается, если у пользователя нет роли этапа (ТЗ §12 / M4).
   const btn = (action: string, payload: any, children: React.ReactNode, danger = false) => {
     if (!canDoAction(action, actor?.role, actor?.secondaryRole)) return null
@@ -599,7 +612,10 @@ export function StageActions({ card, disabled, assignees, actor, onTransition }:
       return (
         <Wrap>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {field('shootDate', 'Дата съёмки', '2026-06-20')}
+            <div>
+              <label className="label text-xs">Дата съёмки</label>
+              <DatePicker value={f.shootDate || ''} onChange={(v: string) => set('shootDate', v)} marks={shootDateMarks} />
+            </div>
             {field('shootTime', 'Время', '14:00')}
             {field('shootLocation', 'Место', 'Студия')}
           </div>
@@ -718,6 +734,18 @@ export function ShootSessionModal({ projectId, cards, onClose, onSaved }: {
   const [f, setF] = useState<Record<string, string>>({})
   const toggle = (id: string) => setPicked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
+  // Глобальная занятость дат (все проекты) — не назначить две съёмки на день.
+  const { data: globalLoad } = useQuery({
+    queryKey: ['workflow', 'publication-load'],
+    queryFn: () => workflowApi.publicationLoad(),
+    staleTime: 60_000,
+  })
+  const KIND_RU: Record<string, string> = { reel: 'Рилс', macro: 'Макет', shoot: 'Съёмка' }
+  const dateMarks = ((globalLoad as any[]) || []).map(m => ({
+    date: m.date, kind: m.kind,
+    label: `${m.project} · ${KIND_RU[m.kind] || m.kind}${m.title && m.kind !== 'shoot' ? `: ${m.title}` : ''}`,
+  }))
+
   const saveMut = useMutation({
     mutationFn: () => workflowApi.createShootSession(projectId, {
       date: f.date, time: f.time, location: f.location, title: f.title,
@@ -731,7 +759,7 @@ export function ShootSessionModal({ projectId, cards, onClose, onSaved }: {
     <Modal open onClose={onClose} title="Съёмочная группа">
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div><label className="label text-xs">Дата съёмки *</label><input className="input" value={f.date || ''} onChange={e => setF(p => ({ ...p, date: e.target.value }))} placeholder="2026-06-20" /></div>
+          <div><label className="label text-xs">Дата съёмки *</label><DatePicker value={f.date || ''} onChange={(v: string) => setF(p => ({ ...p, date: v }))} marks={dateMarks} /></div>
           <div><label className="label text-xs">Время</label><input className="input" value={f.time || ''} onChange={e => setF(p => ({ ...p, time: e.target.value }))} placeholder="14:00" /></div>
           <div><label className="label text-xs">Место</label><input className="input" value={f.location || ''} onChange={e => setF(p => ({ ...p, location: e.target.value }))} placeholder="Студия" /></div>
         </div>
@@ -978,12 +1006,26 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
     setList(list.map((it: any, i: number) => i === idx ? { ...it, ...patch } : it))
 
   const todayIso = format(new Date(), 'yyyy-MM-dd')
-  // Занятые дни для подсветки в календаре: рилсы — голубой, макеты —
-  // оранжевый. Исключаем дату самого редактируемого элемента.
+  // Глобальная занятость по ВСЕМ проектам (публикации рилсов/макетов и
+  // съёмки) — чтобы не ставить несколько единиц на один день. Даты текущего
+  // проекта дают локальные reels/macros формы (свежее, чем сохранённые в БД),
+  // поэтому его записи из глобальных меток исключаем.
+  const { data: globalLoad } = useQuery({
+    queryKey: ['workflow', 'publication-load'],
+    queryFn: () => workflowApi.publicationLoad(),
+    staleTime: 60_000,
+  })
+  const KIND_RU: Record<string, string> = { reel: 'Рилс', macro: 'Макет', shoot: 'Съёмка' }
+  const globalMarks = ((globalLoad as any[]) || [])
+    .filter(m => m.projectId !== projectId)
+    .map(m => ({ date: m.date, kind: m.kind, label: `${m.project} · ${KIND_RU[m.kind] || m.kind}${m.title && m.kind !== 'shoot' ? `: ${m.title}` : ''}` }))
+
+  // Занятые дни для подсветки в календаре: локальные (этот план) + глобальные.
+  // Исключаем дату самого редактируемого элемента.
   const occupiedMarks = (excludeKind: 'reel' | 'macro', excludeIdx: number) => [
-    ...reels.map((r: any, i: number) => ({ date: r.publishDate, kind: 'reel' as const, skip: excludeKind === 'reel' && i === excludeIdx })),
-    ...macros.map((m: any, i: number) => ({ date: m.publishDate, kind: 'macro' as const, skip: excludeKind === 'macro' && i === excludeIdx })),
-  ].filter(m => m.date && !m.skip).map(({ date, kind }) => ({ date, kind }))
+    ...reels.map((r: any, i: number) => ({ date: r.publishDate, kind: 'reel' as const, label: `Этот план · Рилс ${i + 1}${r.title ? `: ${r.title}` : ''}`, skip: excludeKind === 'reel' && i === excludeIdx })),
+    ...macros.map((m: any, i: number) => ({ date: m.publishDate, kind: 'macro' as const, label: `Этот план · Макет ${i + 1}${m.title ? `: ${m.title}` : ''}`, skip: excludeKind === 'macro' && i === excludeIdx })),
+  ].filter(m => m.date && !m.skip).map(({ date, kind, label }) => ({ date, kind, label })).concat(globalMarks)
 
   const qc = useQueryClient()
   // Мгновенно закрываем + сохраняем в фоне; доска обновится по invalidate.
@@ -1091,6 +1133,20 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
   const nextLabel = STAGES.find(s => s.key === nextKey)?.label || ''
   const showAssignee = ['organization', 'shooting', 'editing', 'design'].includes(stage)
   const showShoot = isReels && ['organization', 'shooting'].includes(stage)
+
+  // Глобальная занятость дат по всем проектам — подсветка календаря «Дата
+  // съёмки», чтобы не назначить две съёмки/публикации на один день.
+  const { data: globalLoad } = useQuery({
+    queryKey: ['workflow', 'publication-load'],
+    queryFn: () => workflowApi.publicationLoad(),
+    enabled: showShoot && canManage,
+    staleTime: 60_000,
+  })
+  const SHOOT_KIND_RU: Record<string, string> = { reel: 'Рилс', macro: 'Макет', shoot: 'Съёмка' }
+  const shootMarks = ((globalLoad as any[]) || []).map(m => ({
+    date: m.date, kind: m.kind,
+    label: `${m.project} · ${SHOOT_KIND_RU[m.kind] || m.kind}${m.title && m.kind !== 'shoot' ? `: ${m.title}` : ''}`,
+  }))
   const setItem = (idx: number, patch: any) => setItems(items.map((it, i) => i === idx ? { ...it, ...patch } : it))
 
   // Несколько исполнителей на элемент. Храним assigneeIds/assigneeNames;
@@ -1252,7 +1308,7 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
                 )}
                 {showShoot && (
                   <>
-                    <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} disabled={!canManage} minDate={todayIso} maxDate={it.publishDate || undefined} onChange={(v: string) => setItem(idx, { shootDate: v })} /></div>
+                    <div><label className="label text-xs">Дата съёмки</label><DatePicker value={it.shootDate || ''} disabled={!canManage} minDate={todayIso} maxDate={it.publishDate || undefined} onChange={(v: string) => setItem(idx, { shootDate: v })} marks={shootMarks} /></div>
                     <div><label className="label text-xs">Время</label><input type="time" className="input" disabled={!canManage} value={it.shootTime || ''} onChange={e => setItem(idx, { shootTime: e.target.value })} /></div>
                     <div><label className="label text-xs">Место</label><input className="input" disabled={!canManage} value={it.shootLocation || ''} onChange={e => setItem(idx, { shootLocation: e.target.value })} placeholder="Студия" /></div>
                   </>

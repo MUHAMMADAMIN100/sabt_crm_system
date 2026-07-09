@@ -44,6 +44,13 @@ export class WorkflowController {
     return this.service.overdueCards(req.user);
   }
 
+  /** Глобальная занятость дат по ВСЕМ проектам: публикации рилсов/макетов и
+   *  съёмки. Для подсветки календаря при планировании (КП, дата съёмки). */
+  @Get('publication-load')
+  publicationLoad() {
+    return this.service.publicationLoad();
+  }
+
   /** Очистить всю доску (для тестов) — только руководитель. */
   @Post('clear')
   clearAll(@Request() req) {

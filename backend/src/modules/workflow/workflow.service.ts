@@ -1068,6 +1068,50 @@ export class WorkflowService implements OnModuleInit {
     });
   }
 
+  /** Глобальная занятость дат по ВСЕМ проектам — для подсветки календаря при
+   *  планировании. Единицы: элементы групповых карточек (Рилсы/Макеты) и
+   *  одиночные карточки (кроме КП-инструкции и обложек). По каждой:
+   *  публикация (reel/macro) + съёмка (shoot). Съёмки схлопываются до одной
+   *  метки на проект+день (групповая съёмка нескольких рилсов — одно событие). */
+  async publicationLoad(): Promise<Array<{ date: string; kind: 'reel' | 'macro' | 'shoot'; projectId: string; project: string; title: string }>> {
+    const cards = await this.repo.find();
+    const projects = await this.projectRepo.find({ select: ['id', 'name'] as any });
+    const nameOf = new Map(projects.map(p => [p.id, p.name]));
+    const out: Array<{ date: string; kind: 'reel' | 'macro' | 'shoot'; projectId: string; project: string; title: string }> = [];
+    const shootSeen = new Set<string>();
+    const day = (v: any): string | null => {
+      if (!v) return null;
+      const s = String(v).slice(0, 10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+    };
+    const push = (date: string | null, kind: 'reel' | 'macro' | 'shoot', projectId: string, title: string) => {
+      if (!date) return;
+      if (kind === 'shoot') {
+        const key = `${projectId}|${date}`;
+        if (shootSeen.has(key)) return;
+        shootSeen.add(key);
+      }
+      out.push({ date, kind, projectId, project: nameOf.get(projectId) || 'Проект', title });
+    };
+
+    for (const c of cards) {
+      if (c.kind === 'kp' || c.type === 'cover') continue; // КП — дубль групп, обложки — не единицы
+      if (c.kind === 'reels' || c.kind === 'macros') {
+        const isReels = c.kind === 'reels';
+        for (const it of (c.items || []) as any[]) {
+          push(day(it?.publishDate), isReels ? 'reel' : 'macro', c.projectId, it?.title || (isReels ? 'Reels' : 'Макет'));
+          if (isReels) push(day(it?.shootDate) || null, 'shoot', c.projectId, 'Съёмка');
+        }
+        if (isReels) push(day(c.shootDate), 'shoot', c.projectId, 'Съёмка');
+      } else {
+        const kind = c.type === 'reels' ? 'reel' : 'macro';
+        push(day(c.publishDate), kind, c.projectId, c.title || (kind === 'reel' ? 'Reels' : 'Макет'));
+        if (kind === 'reel') push(day(c.shootDate), 'shoot', c.projectId, 'Съёмка');
+      }
+    }
+    return out;
+  }
+
   async update(id: string, dto: any, viewer: Viewer) {
     const card = await this.repo.findOne({ where: { id } });
     if (!card) throw new NotFoundException('Карточка не найдена');

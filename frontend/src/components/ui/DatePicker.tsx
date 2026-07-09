@@ -120,8 +120,9 @@ export function DatePicker({
    *  к выбранному году, длинный список не мешает. */
   startYear?: number
   /** «Занятые» дни — подсветка цветом типа: рилс — голубой, макет —
-   *  оранжевый. Помогает выбрать свободный день публикации. */
-  marks?: { date: string; kind: 'reel' | 'macro' }[]
+   *  оранжевый, съёмка — фиолетовый. Помогает выбрать свободный день.
+   *  label — подпись для ховер-подсказки («Проект · Рилс: Тема»). */
+  marks?: { date: string; kind: 'reel' | 'macro' | 'shoot'; label?: string }[]
   /** Минимально/максимально допустимая дата (ISO YYYY-MM-DD). Дни вне
    *  диапазона гасятся и недоступны для выбора. */
   minDate?: string
@@ -133,6 +134,18 @@ export function DatePicker({
 
   const reelDays = (marks || []).filter(m => m.kind === 'reel').map(m => parseLocalDate(m.date))
   const macroDays = (marks || []).filter(m => m.kind === 'macro').map(m => parseLocalDate(m.date))
+  const shootDays = (marks || []).filter(m => m.kind === 'shoot').map(m => parseLocalDate(m.date))
+
+  // Группировка меток по дню: количество (бейдж) + список для ховер-подсказки.
+  const marksByDay = new Map<string, { count: number; labels: string[] }>()
+  const KIND_LABEL: Record<string, string> = { reel: 'Рилс', macro: 'Макет', shoot: 'Съёмка' }
+  for (const m of marks || []) {
+    if (!m.date) continue
+    const e = marksByDay.get(m.date) || { count: 0, labels: [] }
+    e.count += 1
+    e.labels.push(m.label || KIND_LABEL[m.kind] || m.kind)
+    marksByDay.set(m.date, e)
+  }
 
   // Ограничения диапазона: дни до minDate и после maxDate — недоступны.
   const minD = minDate ? parseLocalDate(minDate) : undefined
@@ -151,6 +164,33 @@ export function DatePicker({
     if (!d) return
     onChange(format(d, 'yyyy-MM-dd'))
     setOpen(false)
+  }
+
+  // Кастомная кнопка дня: бейдж с количеством (когда на день ≥2 единиц) и
+  // нативная ховер-подсказка со списком «что именно стоит на этот день».
+  const DayBtn = (props: any) => {
+    const { day, modifiers: _m, ...buttonProps } = props
+    const iso = format(day.date, 'yyyy-MM-dd')
+    const info = marksByDay.get(iso)
+    return (
+      <button
+        {...buttonProps}
+        title={info ? info.labels.join('\n') : buttonProps.title}
+        style={{ ...buttonProps.style, position: 'relative' }}
+      >
+        {buttonProps.children}
+        {info && info.count >= 2 && (
+          <span
+            style={{
+              position: 'absolute', top: -4, right: -4, minWidth: 15, height: 15,
+              padding: '0 3px', borderRadius: 8, background: '#4f46e5', color: '#fff',
+              fontSize: 9.5, fontWeight: 700, lineHeight: '15px', textAlign: 'center',
+              pointerEvents: 'none', boxShadow: '0 0 0 1.5px #fff',
+            }}
+          >{info.count}</span>
+        )}
+      </button>
+    )
   }
 
   return (
@@ -190,14 +230,16 @@ export function DatePicker({
           captionLayout="dropdown"
           startMonth={new Date(startYear, 0)}
           endMonth={new Date(2035, 11)}
-          modifiers={{ reelMark: reelDays, macroMark: macroDays }}
+          modifiers={{ reelMark: reelDays, macroMark: macroDays, shootMark: shootDays }}
           modifiersStyles={{
             reelMark: { backgroundColor: '#dbeafe', color: '#1d4ed8', fontWeight: 700, borderRadius: 6 },
             macroMark: { backgroundColor: '#ffedd5', color: '#c2410c', fontWeight: 700, borderRadius: 6 },
+            shootMark: { backgroundColor: '#ede9fe', color: '#6d28d9', fontWeight: 700, borderRadius: 6 },
           }}
+          components={{ DayButton: DayBtn }}
         />
-        {(reelDays.length > 0 || macroDays.length > 0) && (
-          <div className="flex items-center gap-3 px-3 pt-2 text-[11px] text-surface-500 dark:text-surface-400">
+        {(reelDays.length > 0 || macroDays.length > 0 || shootDays.length > 0) && (
+          <div className="flex items-center flex-wrap gap-x-3 gap-y-1 px-3 pt-2 text-[11px] text-surface-500 dark:text-surface-400">
             {reelDays.length > 0 && (
               <span className="inline-flex items-center gap-1">
                 <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#dbeafe', border: '1px solid #93c5fd' }} /> рилс
@@ -208,7 +250,12 @@ export function DatePicker({
                 <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#ffedd5', border: '1px solid #fdba74' }} /> макет
               </span>
             )}
-            <span className="text-surface-400">— занятые дни</span>
+            {shootDays.length > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#ede9fe', border: '1px solid #c4b5fd' }} /> съёмка
+              </span>
+            )}
+            <span className="text-surface-400">— занятые дни (наведите: что стоит)</span>
           </div>
         )}
         <div className="flex gap-2 px-3 py-2 border-t border-surface-100 dark:border-surface-700 text-xs">

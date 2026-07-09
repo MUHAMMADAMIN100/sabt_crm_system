@@ -407,6 +407,9 @@ export const workflowApi = {
   myCards: () => api.get('/workflow/my').then(r => r.data),
   /** Просроченные карточки доски (в зоне видимости) — для дашбордов. */
   overdue: () => api.get('/workflow/overdue').then(r => r.data),
+  /** Глобальная занятость дат (публикации/съёмки всех проектов) — для
+   *  подсветки календаря при планировании. */
+  publicationLoad: () => api.get('/workflow/publication-load').then(r => r.data),
   create: (projectId: string, data: any) => api.post(`/workflow/project/${projectId}`, data).then(r => r.data),
   /** M3: сгенерировать план месяца из тарифа (рилсы + макеты). */
   generatePlan: (projectId: string, month?: string) =>
