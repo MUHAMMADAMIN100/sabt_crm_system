@@ -26,6 +26,7 @@ import { StoriesModule } from './modules/stories/stories.module';
 import { MailModule } from './modules/mail/mail.module';
 import { ActivityLogModule } from './modules/activity-log/activity-log.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
+import { MetaWebhookModule } from './modules/meta-webhook/meta-webhook.module';
 import { TaskResultsModule } from './modules/task-results/task-results.module';
 import { TaskChecklistsModule } from './modules/task-checklists/task-checklists.module';
 import { AiAssistantModule } from './modules/ai-assistant/ai-assistant.module';
@@ -96,6 +97,7 @@ import { DbIndexesService } from './common/db-indexes.service';
     MailModule,
     ActivityLogModule,
     TelegramModule,
+    MetaWebhookModule,
     TaskResultsModule,
     TaskChecklistsModule,
     AiAssistantModule,
