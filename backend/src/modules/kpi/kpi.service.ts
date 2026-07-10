@@ -128,7 +128,13 @@ export class KpiService {
     periodFrom.setHours(0, 0, 0, 0);
     const periodTo = this.parseDate(to) ?? new Date(now.getFullYear(), now.getMonth() + 1, 0);
     periodTo.setHours(23, 59, 59, 999);
-    const days = Math.max(1, Math.ceil((periodTo.getTime() - periodFrom.getTime()) / 86400_000) + 1);
+    // Число КАЛЕНДАРНЫХ дней периода включительно. Считаем по полуночям обеих
+    // дат: раньше ceil() от разницы с 23:59:59.999 плюс ещё +1 давали лишний
+    // день (июль = 32, «Сегодня» = 2) и завышали нормы. Round — страховка от
+    // перевода часов.
+    const fromMidnight = new Date(periodFrom.getFullYear(), periodFrom.getMonth(), periodFrom.getDate());
+    const toMidnight = new Date(periodTo.getFullYear(), periodTo.getMonth(), periodTo.getDate());
+    const days = Math.max(1, Math.round((toMidnight.getTime() - fromMidnight.getTime()) / 86400_000) + 1);
     return { periodFrom, periodTo, days };
   }
 
