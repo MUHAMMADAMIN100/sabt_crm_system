@@ -44,6 +44,31 @@ const SMM_ROLES = new Set<string>([
   UserRole.SMM_SPECIALIST, UserRole.STORYMAKER,
 ]);
 
+/** Порядок этапов доски для определения ДВИЖЕНИЯ ВПЕРЁД. «Монтаж» и «Дизайн» —
+ *  параллельные ветки (рилс/макет), поэтому у них одинаковый ранг. Переход
+ *  считается прогрессом, когда ранг нового этапа больше ранга прежнего;
+ *  возвраты на доработку (QA / правки клиента) не засчитываются. */
+const STAGE_RANK: Record<string, number> = {
+  content_plan: 0, organization: 1, shooting: 2, editing: 3, design: 3,
+  internal_review: 4, client_approval: 5, ready_to_publish: 6, published: 7, ads: 8,
+};
+/** SQL-таблица рангов для JOIN'ов (та же, что STAGE_RANK). */
+const STAGE_RANK_VALUES = Object.entries(STAGE_RANK)
+  .map(([s, r]) => `('${s}',${r})`).join(',');
+
+const STAGE_LABELS: Record<string, string> = {
+  content_plan: 'Контент-план', organization: 'Организация', shooting: 'Съёмка',
+  editing: 'Монтаж', design: 'Дизайн', internal_review: 'Внутренняя проверка',
+  client_approval: 'Согласование с клиентом', ready_to_publish: 'Готово к публикации',
+  published: 'Опубликовано', ads: 'Реклама',
+};
+
+/** Истории ведёт только сторисмейкер — метрика «Историй опубликовано»
+ *  показывается лишь ему (основная или вторая роль). */
+function isStoryMaker(user: { role?: string | null; secondaryRole?: string | null }): boolean {
+  return user.role === UserRole.STORYMAKER || user.secondaryRole === UserRole.STORYMAKER;
+}
+
 /** Базовые таргеты на 30-дневный период. Для других периодов скейлим
  *  пропорционально (см. scaleTarget ниже). */
 interface RoleTargets {
@@ -111,6 +136,60 @@ export class KpiService {
    *  периода — пропорционально, минимум 1. */
   private scaleTarget(base: number, days: number): number {
     return Math.max(1, Math.round(base * days / 30));
+  }
+
+  /** CTE «выполненные этапы доски» — общая база для сводки и детализации.
+   *  Параметры запроса: $2 = начало периода, $3 = конец.
+   *
+   *  Источник 1 (fwd): forward-переходы карточки (stage_enter, ранг нового
+   *    этапа выше прежнего). Возвраты на доработку не считаются. DISTINCT ON
+   *    (cardId, toStage) — этап каждой карточки засчитывается ОДИН раз, даже
+   *    если после доработки её провели повторно; зачёт получает тот, кто
+   *    провёл её последним. units из meta (у групповой карточки — все её
+   *    элементы), дедлайн — снимок срока на момент перехода.
+   *  Источник 2 (covers): «обложка/заставка готова» — работа дизайнера,
+   *    которая не двигает карточку по этапам, но является выполненным этапом.
+   *
+   *  Не считаем: карточки-обложки в источнике 1 (их создание пишет событие от
+   *  автора плана — фантомный зачёт), КП-инструкцию и перенос в «Рекламу»
+   *  (это ручной drag руководителя, а не производственный этап). */
+  private boardEventsCte(): string {
+    return `WITH stage_rank(stage, r) AS (VALUES ${STAGE_RANK_VALUES}),
+      fwd AS (
+        SELECT DISTINCT ON (e."cardId", e."toStage")
+               e.id, 'stage'::text AS src, e."fromStage", e."toStage",
+               e."actorId"::text AS uid,
+               COALESCE((e.meta->>'units')::int, 1) AS units,
+               e."createdAt" AS at,
+               NULLIF(COALESCE(e.meta->>'deadline', c.deadline::text), '')::date AS dl,
+               c.title AS title
+        FROM unit_events e
+        LEFT JOIN workflow_cards c ON c.id = e."cardId"
+        LEFT JOIN stage_rank rf ON rf.stage = e."fromStage"
+        LEFT JOIN stage_rank rt ON rt.stage = e."toStage"
+        WHERE e.action = 'stage_enter'
+          AND e."actorId" IS NOT NULL
+          AND e."createdAt" BETWEEN $2 AND $3
+          AND rt.r IS NOT NULL
+          AND rt.r > COALESCE(rf.r, -1)
+          AND e."toStage" <> 'ads'
+          AND COALESCE(c.type, '') <> 'cover'
+          AND COALESCE(c.kind, '') <> 'kp'
+        ORDER BY e."cardId", e."toStage", e."createdAt" DESC
+      ),
+      covers AS (
+        SELECT DISTINCT ON (e."cardId")
+               e.id, 'cover'::text AS src, NULL::varchar AS "fromStage", 'design'::varchar AS "toStage",
+               e."actorId"::text AS uid, 1 AS units, e."createdAt" AS at,
+               NULLIF(c.deadline::text, '')::date AS dl, c.title AS title
+        FROM unit_events e
+        LEFT JOIN workflow_cards c ON c.id = e."cardId"
+        WHERE e.action = 'cover_done'
+          AND e."actorId" IS NOT NULL
+          AND e."createdAt" BETWEEN $2 AND $3
+        ORDER BY e."cardId", e."createdAt" DESC
+      ),
+      ev AS (SELECT * FROM fwd UNION ALL SELECT * FROM covers)`;
   }
 
   /** KPI одного юзера. Внутри использует bulk-методы (с массивом из одного
@@ -189,22 +268,14 @@ export class KpiService {
          GROUP BY "managerId"`,
         [userIds],
       ),
-      // Доска проектов: опубликованные карточки исполнителя за период
-      // (учитываем и нескольких исполнителей через assigneeIds).
+      // Доска проектов: ЭТАПЫ, закрытые сотрудником за период (не только
+      // публикация). Фильтр по сотрудникам — ПОСЛЕ дедупликации, иначе при
+      // доработке зачёт мог бы уйти не последнему исполнителю.
       this.projectRepo.manager.query(
-        `SELECT uid, COUNT(*)::int AS done_count,
-                COUNT(*) FILTER (WHERE deadline IS NULL OR "publishedAt"::date <= deadline)::int AS on_time_count
-         FROM (
-           SELECT COALESCE(elem, "assigneeId"::text) AS uid, "publishedAt", deadline
-           FROM workflow_cards
-           LEFT JOIN LATERAL jsonb_array_elements_text(
-             CASE WHEN jsonb_typeof("assigneeIds") = 'array' THEN "assigneeIds" ELSE '[]'::jsonb END
-           ) AS elem ON true
-           WHERE stage = 'published' AND "publishedAt" BETWEEN $2 AND $3
-             AND (kind IS NULL)
-         ) sub
-         WHERE sub.uid IS NOT NULL AND sub.uid = ANY($1::text[])
-         GROUP BY uid`,
+        `${this.boardEventsCte()}
+         SELECT uid, SUM(units)::int AS done_count,
+                SUM(CASE WHEN dl IS NULL OR at::date <= dl THEN units ELSE 0 END)::int AS on_time_count
+         FROM ev WHERE uid = ANY($1::text[]) GROUP BY uid`,
         [userIds, periodFrom, periodTo],
       ).catch(() => [] as any[]),
     ]);
@@ -266,7 +337,7 @@ export class KpiService {
         const cardsTarget = this.scaleTarget(targets.tasksDone, days);
         items.push({
           key: 'cards_done',
-          label: 'Карточек выполнено',
+          label: 'Этапов выполнено',
           target: cardsTarget,
           value: board.done,
           percent: Math.min(100, Math.round(board.done / cardsTarget * 100)),
@@ -304,9 +375,11 @@ export class KpiService {
         done: actDays >= activityTarget,
       });
 
-      // Бонус-метрики по роли
-      if (SMM_ROLES.has(user.role) && targets.storiesPosted) {
-        const storiesTarget = this.scaleTarget(targets.storiesPosted, days);
+      // Бонус-метрики по роли. Истории ведёт только сторисмейкер — у
+      // SMM-специалиста этой метрики нет (цели по историям к нему не относятся).
+      // Вторая роль «сторисмейкер» тоже даёт метрику (базовая норма 80/30дн).
+      if (isStoryMaker(user)) {
+        const storiesTarget = this.scaleTarget(targets.storiesPosted ?? 80, days);
         items.push({
           key: 'stories_posted',
           label: 'Историй опубликовано',
@@ -394,17 +467,30 @@ export class KpiService {
       && user.role !== UserRole.SALES_MANAGER_DEV
       && user.role !== UserRole.DEVELOPER
       && !TOP_ROLES.has(user.role);
-    // Опубликованные карточки доски исполнителя за период (для cards_done и
-    // board-варианта deadline_rate).
-    const boardPublished = async () => this.projectRepo.manager.query(
-      `SELECT id, title, "publishedAt", deadline, "projectId"
-       FROM workflow_cards
-       WHERE stage = 'published' AND kind IS NULL
-         AND "publishedAt" BETWEEN $2 AND $3
-         AND ("assigneeId"::text = $1 OR (jsonb_typeof("assigneeIds") = 'array' AND "assigneeIds" ? $1))
-       ORDER BY "publishedAt" DESC`,
+    // Этапы, закрытые сотрудником за период (для cards_done и board-варианта
+    // deadline_rate). Та же база, что у сводки — цифры всегда сходятся.
+    const boardStages = async () => this.projectRepo.manager.query(
+      `${this.boardEventsCte()}
+       SELECT * FROM ev WHERE uid = $1 ORDER BY at DESC`,
       [userId, periodFrom, periodTo],
     ).catch(() => [] as any[]);
+
+    /** Строка детализации по закрытому этапу. */
+    const stageRow = (e: any) => {
+      const onTime = !e.dl || new Date(e.at) <= new Date(new Date(e.dl).setHours(23, 59, 59, 999));
+      const units = Number(e.units) || 1;
+      const what = e.src === 'cover'
+        ? 'Обложка/заставка готова'
+        : `${e.fromStage ? (STAGE_LABELS[e.fromStage] || e.fromStage) : '—'} → ${STAGE_LABELS[e.toStage] || e.toStage}`;
+      return {
+        id: e.id,
+        title: e.title || 'Карточка удалена',
+        subtitle: `${what}${units > 1 ? ` · ${units} шт.` : ''} · ${onTime ? '✓ в срок' : '⚠ с опозданием'}`,
+        date: e.at ? new Date(e.at).toISOString() : null,
+        link: '/workflow-board',
+        meta: { onTime, deadline: e.dl, units },
+      };
+    };
     const normalized = UNIVERSAL_KEYS.has(metric)
       ? metric
       : (metric.startsWith('sales_') ? metric : `sales_${metric}`);
@@ -561,38 +647,18 @@ export class KpiService {
         }));
       }
 
-      // ─── Доска: карточки, доведённые до публикации за период ───────────
+      // ─── Доска: этапы, закрытые сотрудником за период ───────────────────
       case 'cards_done': {
-        const rows = await boardPublished();
-        return (rows as any[]).map(c => {
-          const onTime = !c.deadline || new Date(c.publishedAt) <= new Date(c.deadline);
-          return {
-            id: c.id,
-            title: c.title,
-            subtitle: onTime ? '✓ опубликовано в срок' : '⚠ с опозданием',
-            date: c.publishedAt ? new Date(c.publishedAt).toISOString() : null,
-            link: '/workflow-board',
-            meta: { onTime, deadline: c.deadline },
-          };
-        });
+        const rows = await boardStages();
+        return (rows as any[]).map(stageRow);
       }
 
       // ─── Универсальное: соблюдено дедлайнов ────────────────────────────
       // Для SMM/продакшн-ролей — по Доске проектов; для остальных — по задачам.
       case 'deadline_rate': {
         if (isBoardRole) {
-          const rows = await boardPublished();
-          return (rows as any[]).map(c => {
-            const onTime = !c.deadline || new Date(c.publishedAt) <= new Date(c.deadline);
-            return {
-              id: c.id,
-              title: c.title,
-              subtitle: onTime ? '✓ в срок' : '⚠ с опозданием',
-              date: c.publishedAt ? new Date(c.publishedAt).toISOString() : null,
-              link: '/workflow-board',
-              meta: { onTime, deadline: c.deadline },
-            };
-          });
+          const rows = await boardStages();
+          return (rows as any[]).map(stageRow);
         }
         const tasks = await this.taskRepo.manager.query(
           `SELECT id, title, deadline, "updatedAt", "reviewedAt", status

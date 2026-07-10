@@ -206,6 +206,8 @@ export class WorkflowService implements OnModuleInit {
           "createdAt" timestamp NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS idx_unit_events_card ON unit_events ("cardId", "createdAt");
+        -- KPI считает закрытые этапы по автору события за период.
+        CREATE INDEX IF NOT EXISTS idx_unit_events_actor ON unit_events ("actorId", "createdAt");
         CREATE TABLE IF NOT EXISTS workflow_settings (
           id          varchar PRIMARY KEY,
           data        jsonb,
@@ -1416,7 +1418,13 @@ export class WorkflowService implements OnModuleInit {
       designDone: true,
       createdById: group.createdById || actor.id,
     }));
-    await this.logEvent(saved.id, 'stage_enter', { toStage: stage, actor, message: `Из контент-плана → ${STAGE_LABELS[stage] || stage}` });
+    // fromStage = этап группы: элемент реально продвинулся с него на `stage`.
+    // Нужно для KPI («этапов выполнено») — иначе переход выглядит как создание.
+    await this.logEvent(saved.id, 'stage_enter', {
+      fromStage: group.stage, toStage: stage, actor,
+      message: `Из контент-плана → ${STAGE_LABELS[stage] || stage}`,
+      meta: { units: 1, deadline: group.deadline || null },
+    });
     await this.notifyStageRole(group.projectId, stage, `➡️ ${STAGE_LABELS[stage] || stage}`, `«${saved.title}» на этапе «${STAGE_LABELS[stage] || stage}»`, saved.id);
     if (assigneeIds.length) await this.notifyAssigned(assigneeIds, {
       title: saved.title, projectId: group.projectId, cardId: saved.id, type: saved.type,
@@ -1556,6 +1564,20 @@ export class WorkflowService implements OnModuleInit {
     await this.moveToStage(card, 'internal_review', actor, { message: 'Макет готов → Внутренняя проверка' });
   }
 
+  /** Кто закрыл монтаж этой карточки (последнее событие editing_done).
+   *  Нужен, чтобы зачёт за этап получил монтажёр, а не тот, кто случайно
+   *  разблокировал join-гейт. Фолбэк — переданный актор. */
+  private async editorCreditActor(cardId: string, fallback: Actor): Promise<Actor> {
+    try {
+      const ev = await this.eventRepo.findOne({
+        where: { cardId, action: 'editing_done' },
+        order: { createdAt: 'DESC' },
+      });
+      if (ev?.actorId) return await this.loadActor(ev.actorId);
+    } catch { /* фолбэк ниже */ }
+    return fallback;
+  }
+
   /** Join-гейт (ТЗ §8): когда готовы и монтаж, и обложка — рилс уходит
    *  на Внутреннюю проверку. Иначе «ждёт обложку» и стоит в Монтаже. */
   private async runJoinCheck(reelId: string, actor: Actor) {
@@ -1576,7 +1598,11 @@ export class WorkflowService implements OnModuleInit {
     if (reel.editingDone && designReady) {
       await this.repo.update(reel.id, { status: 'active' });
       reel.status = 'active';
-      await this.moveToStage(reel, 'internal_review', actor, { message: 'Монтаж готов → Внутренняя проверка' });
+      // Переход «Монтаж → Внутренняя проверка» — заслуга МОНТАЖЁРА, даже если
+      // гейт разблокировал дизайнер, закрывший обложку последним. Берём автора
+      // события editing_done, иначе KPI зачтёт этап не тому.
+      const credit = await this.editorCreditActor(reel.id, actor);
+      await this.moveToStage(reel, 'internal_review', credit, { message: 'Монтаж готов → Внутренняя проверка' });
     } else if (reel.editingDone && !designReady) {
       await this.repo.update(reel.id, { status: 'waiting_cover' });
       await this.logEvent(reel.id, 'waiting_cover', { actor, message: 'Ждёт обложку/заставку' });
@@ -1667,9 +1693,15 @@ export class WorkflowService implements OnModuleInit {
     const deadline = card.deadline || null;
     const fromStage = card.stage;
     await this.repo.update(card.id, { stage: newStage, position: Number(max) + 1, deadline });
+    // units — сколько единиц контента продвинулось (у групповой карточки это
+    // все её элементы); deadline — снимок срока этапа на момент перехода.
+    // Оба поля читает KPI («этапов выполнено» / «соблюдено дедлайнов»).
+    const units = (card.kind === 'reels' || card.kind === 'macros')
+      ? Math.max(1, ((card.items as any[]) || []).length) : 1;
     await this.logEvent(card.id, 'stage_enter', {
       fromStage, toStage: newStage, actor,
       message: opts.message || `Этап: ${STAGE_LABELS[newStage] || newStage}`,
+      meta: { units, deadline },
     });
     // R15: уведомление роли нового этапа + текущим исполнителям — с кнопками
     // «Сделал/Не сделал» в Telegram (нельзя для финальных этапов).
