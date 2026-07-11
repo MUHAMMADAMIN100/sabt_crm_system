@@ -14,6 +14,10 @@ export class CreateEmployeeDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(120)
   role?: string;
 
+  /** Категория/отдел для группировки зарплатной ведомости. */
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(80)
+  category?: string;
+
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
   salary?: number;
 

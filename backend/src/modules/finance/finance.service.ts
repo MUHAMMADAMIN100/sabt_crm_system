@@ -192,6 +192,7 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "advance" numeric(15,2) NOT NULL DEFAULT 0`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "hireDate" date`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "bonuses" jsonb`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "category" varchar(80)`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "icon" varchar(40)`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "counterparty" varchar(200)`);
@@ -778,22 +779,35 @@ export class FinanceService implements OnModuleInit {
       const rows = active.map(p => {
         const pPlans = planned.filter(x => x.projectId === p.id);
         const monthPlans = pPlans.filter(x => x.ym === ym);
+        // В слоте может оказаться два плана (частичная оплата = received +
+        // expected-остаток): показываем received (с ним работает «↩»),
+        // остаток виден отдельной строкой «остаток …». Сортировка — для
+        // детерминизма (repo.find() без ORDER BY).
         const partOf = (n: number) => {
-          const x = monthPlans.find(y => y.partNo === n);
+          const x = monthPlans
+            .filter(y => y.partNo === n)
+            .sort((a, b) => (a.status === b.status
+              ? (a.createdAt?.getTime?.() ?? 0) - (b.createdAt?.getTime?.() ?? 0)
+              : a.status === 'received' ? -1 : 1))[0];
           return x ? { plannedId: x.id, amount: Number(x.amount), status: x.status, txId: x.receivedTxId, dueDate: x.dueDate ?? null } : null;
         };
         const paidLife = r2(pPlans.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0));
-        // Ближайший будущий ожидаемый платёж (для «след. платёж» при полной оплате).
+        const monthPaid = r2(monthPlans.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0));
+        // Ближайший ожидаемый платёж ЛЮБОГО месяца: у частично оплаченных
+        // остаток может числиться в прошлом месяце — иначе срок не виден
+        // (жалоба «не показывает, когда должны»).
         const nextPlan = pPlans
-          .filter(x => x.status === 'expected' && x.ym > ym)
-          .sort((a, b) => ((a.dueDate ?? a.ym) < (b.dueDate ?? b.ym) ? -1 : 1))[0] ?? null;
+          .filter(x => x.status === 'expected')
+          .sort((a, b) => ((a.dueDate ?? `${a.ym}-01`) < (b.dueDate ?? `${b.ym}-01`) ? -1 : 1))[0] ?? null;
         return {
           project: { id: p.id, name: p.name, tariff: Number(p.tariff), contractDate: p.contractDate, archived: p.archived, note: p.note },
           // Дата цикла «катится»: контракт 20.01 → в просмотре февраля 20.02.
           cycleDate: this.smmCycleDate(p, ym),
-          part1: partOf(1), part2: partOf(2), paidLife,
-          nextDue: nextPlan ? { ym: nextPlan.ym, amount: Number(nextPlan.amount), dueDate: nextPlan.dueDate ?? null } : null,
-          fullyPaid: Number(p.tariff) > 0 && paidLife >= Number(p.tariff),
+          part1: partOf(1), part2: partOf(2), paidLife, monthPaid,
+          nextDue: nextPlan ? { plannedId: nextPlan.id, ym: nextPlan.ym, amount: Number(nextPlan.amount), dueDate: nextPlan.dueDate ?? null } : null,
+          // «Оплачено» — про ПРОСМАТРИВАЕМЫЙ месяц: пожизненная сумма делала
+          // флаг вечным после первого же полного цикла.
+          fullyPaid: Number(p.tariff) > 0 && monthPaid >= Number(p.tariff) - 0.005,
           alert: this.smmAlert(p, pPlans, today),
         };
       });
@@ -806,8 +820,10 @@ export class FinanceService implements OnModuleInit {
       const expected = r2(monthActive.filter(x => x.status === 'expected').reduce((s, x) => s + Number(x.amount), 0));
       const receivedCash = r2(monthActive.filter(x => x.status === 'received' && x.receivedTxId).reduce((s, x) => s + Number(x.amount), 0));
       const spentOffAccount = r2(monthActive.filter(x => x.status === 'received' && !x.receivedTxId).reduce((s, x) => s + Number(x.amount), 0));
-      const part1 = r2(rows.reduce((s, r) => s + (r.part1?.amount ?? 0), 0));
-      const part2 = r2(rows.reduce((s, r) => s + (r.part2?.amount ?? 0), 0));
+      // Итоги частей — по ВСЕМ планам месяца, а не по показанным в ячейках:
+      // после частичной оплаты в слоте может быть два плана.
+      const part1 = r2(monthActive.filter(x => x.partNo === 1).reduce((s, x) => s + Number(x.amount), 0));
+      const part2 = r2(monthActive.filter(x => x.partNo === 2).reduce((s, x) => s + Number(x.amount), 0));
       return {
         kind: 'smm', rows,
         stats: { expected, receivedCash, spentOffAccount, total: r2(expected + receivedCash) },
@@ -941,7 +957,7 @@ export class FinanceService implements OnModuleInit {
         const cp = pPlans.filter(x => x.ym === mm);
         return {
           ym: mm,
-          plans: cp.map(x => ({ id: x.id, amount: Number(x.amount), status: x.status, txId: x.receivedTxId })),
+          plans: cp.map(x => ({ id: x.id, amount: Number(x.amount), status: x.status, txId: x.receivedTxId, dueDate: x.dueDate ?? null })),
           received: r2(cp.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0)),
           expected: r2(cp.filter(x => x.status === 'expected').reduce((s, x) => s + Number(x.amount), 0)),
         };
@@ -972,10 +988,13 @@ export class FinanceService implements OnModuleInit {
     const salaryAdvances = r2(activeEmps.reduce((s, e) => s + Number(e.advance), 0));
     const salaryBonuses = r2(activeEmps.reduce((s, e) => s + bonusOf(e, ym), 0));
     const salarySpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'salary'));
-    // Сотрудники, у которых месяц закрыт (выплачено ≥ оклад + бонус) — для подсветки карточки.
+    // Сотрудники, у которых месяц закрыт (выплачен остаток «оклад + бонус −
+    // аванс»; аванс уже на руках) — для подсветки карточки.
     const salaryPaidCount = activeEmps.filter(e => {
-      const due = r2(Number(e.salary) + bonusOf(e, ym));
-      if (due <= 0) return false;
+      const gross = r2(Number(e.salary) + bonusOf(e, ym));
+      if (gross <= 0) return false;
+      const due = r2(Math.max(0, gross - Number(e.advance)));
+      if (due <= 0) return true; // аванс покрыл всё
       const paid = monthExp.filter(t => t.employeeId === e.id).reduce((s, t) => s + Number(t.amount), 0);
       // Полкопейки допуска — сумма float'ов может недотянуть до r2-округлённого due.
       return paid >= due - 0.005;
@@ -1024,9 +1043,12 @@ export class FinanceService implements OnModuleInit {
         const paid = paidOf(e.id);
         const bonus = bonusOf(e, ym);
         return {
-          id: e.id, name: e.name, role: e.role, hireDate: e.hireDate, salary: Number(e.salary),
+          id: e.id, name: e.name, role: e.role, category: e.category ?? null,
+          hireDate: e.hireDate, salary: Number(e.salary),
           advance: Number(e.advance), bonus, status: e.status, paid,
-          toPay: r2(Math.max(0, Number(e.salary) + bonus - paid)),
+          // Аванс вычитается и по-строчно — иначе подытог групп противоречил
+          // карточке «К выплате за месяц» (фонд + бонусы − авансы − выплачено).
+          toPay: r2(Math.max(0, Number(e.salary) + bonus - Number(e.advance) - paid)),
         };
       });
       const fund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
@@ -1037,7 +1059,12 @@ export class FinanceService implements OnModuleInit {
         kind: 'salary',
         cards: { fund, advances, bonuses, paid, toPay: r2(Math.max(0, fund + bonuses - advances - paid)) },
         rows,
-        fired: emps.filter(e => e.status !== 'active').map(e => ({ id: e.id, name: e.name, role: e.role, salary: Number(e.salary) })),
+        // Полный набор полей: модалка редактирования открывается и из этой
+        // таблицы — усечённая строка затирала category/advance/hireDate.
+        fired: emps.filter(e => e.status !== 'active').map(e => ({
+          id: e.id, name: e.name, role: e.role, category: e.category ?? null,
+          hireDate: e.hireDate, salary: Number(e.salary), advance: Number(e.advance), status: e.status,
+        })),
       };
     }
 
@@ -1333,8 +1360,9 @@ export class FinanceService implements OnModuleInit {
         const nextYm = shiftYm(baseYm, 1);
         const existingNext = plans.find(x => x.ym === nextYm);
         if (existingNext) {
-          // План уже есть (создан до сдвига якоря) — подтягиваем срок.
-          if (existingNext.status === 'expected') {
+          // Авто-план — подтягиваем срок под новый якорь. Ручной (правленный
+          // пользователем через PATCH) не трогаем: договорённость важнее.
+          if (existingNext.status === 'expected' && existingNext.auto) {
             existingNext.dueDate = dueDateForMonth(nextYm, day);
             await this.ppRepo.save(existingNext);
           }
@@ -1470,15 +1498,60 @@ export class FinanceService implements OnModuleInit {
     }));
   }
 
+  /** Правка ожидаемого плана: сумма и/или срок (для received сумма привязана
+   *  к операции журнала — правьте её или отмените оплату). */
+  async updatePlannedPayment(id: string, dto: any) {
+    const pp = await this.ppRepo.findOne({ where: { id } });
+    if (!pp) throw new NotFoundException('Плановая оплата не найдена');
+    if (pp.status === 'received') throw new BadRequestException('Полученную оплату нельзя править — отмените её или измените операцию в журнале');
+    if (dto.amount !== undefined) {
+      const amount = Number(dto.amount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('Сумма должна быть больше нуля');
+      pp.amount = r2(amount);
+    }
+    if (dto.dueDate !== undefined) pp.dueDate = dto.dueDate || null;
+    // Ручная правка делает план «ручным»: авто-логика цикла больше не
+    // перезапишет его срок и не удалит как сироту при откатах.
+    pp.auto = false;
+    const saved = await this.ppRepo.save(pp);
+    return { ...saved, amount: Number(saved.amount) };
+  }
+
   async receivePlannedPayment(id: string, dto: any) {
     if (!dto.accountId) throw new BadRequestException('Укажите счёт');
     const date = dto.date || todayISO();
     return this.ds.transaction(async (em) => {
       const ppRepo = em.getRepository(FinancePlannedPayment);
-      const pp = await ppRepo.findOne({ where: { id } });
+      // FOR UPDATE: двойной клик «Получено» не должен дважды пройти сплит
+      // (дубли остатков + двойной доход).
+      const pp = await ppRepo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!pp) throw new NotFoundException('Плановая оплата не найдена');
       if (pp.status === 'received') throw new BadRequestException('Оплата уже получена');
-      const tx = await this.buildLinkedTx(em, pp, dto.accountId, date);
+      const planned = Number(pp.amount);
+      const amount = dto.amount !== undefined ? r2(Number(dto.amount)) : planned;
+      if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('Сумма должна быть больше нуля');
+      if (amount > planned + 0.005) throw new BadRequestException('Сумма больше запланированной — сначала увеличьте план');
+      // Частичная оплата: полученная часть закрывается этим планом, на разницу
+      // остаётся ожидаемый план с тем же сроком.
+      if (amount < planned - 0.005) {
+        // SMM, частично оплачена часть 1: остаток кладём во «вторую часть»,
+        // если слот свободен — обе видны в таблице частей. Иначе тот же слот
+        // (в ячейке приоритет у received, остаток виден в строке «остаток…»).
+        let restPartNo = pp.partNo;
+        if (pp.projectId && pp.partNo === 1) {
+          const proj = await em.getRepository(FinanceProject).findOne({ where: { id: pp.projectId } });
+          if (proj?.direction === 'smm') {
+            const slotBusy = await ppRepo.findOne({ where: { projectId: pp.projectId, ym: pp.ym, partNo: 2 } });
+            if (!slotBusy) restPartNo = 2;
+          }
+        }
+        await ppRepo.save(ppRepo.create({
+          projectId: pp.projectId, debtId: pp.debtId, ym: pp.ym, partNo: restPartNo,
+          amount: r2(planned - amount), status: 'expected', dueDate: pp.dueDate ?? null, auto: false,
+        }));
+        pp.amount = amount;
+      }
+      const tx = await this.buildLinkedTx(em, { projectId: pp.projectId, debtId: pp.debtId, amount }, dto.accountId, date);
       pp.status = 'received';
       pp.receivedTxId = tx.id;
       await ppRepo.save(pp);
@@ -1686,6 +1759,7 @@ export class FinanceService implements OnModuleInit {
     return this.empRepo.save(this.empRepo.create({
       name: dto.name.trim(), role: dto.role ?? null, salary: Number(dto.salary) || 0,
       advance: Number(dto.advance) || 0, hireDate: dto.hireDate ?? null,
+      category: (dto.category ?? '').trim() || null,
       status: this.normStatus(dto.status), position,
     }));
   }
@@ -1694,6 +1768,7 @@ export class FinanceService implements OnModuleInit {
     if (!e) throw new NotFoundException('Сотрудник не найден');
     if (dto.name !== undefined) e.name = String(dto.name).trim();
     if (dto.role !== undefined) e.role = dto.role;
+    if (dto.category !== undefined) e.category = String(dto.category ?? '').trim() || null;
     if (dto.salary !== undefined) e.salary = Number(dto.salary) || 0;
     if (dto.advance !== undefined) e.advance = Number(dto.advance) || 0;
     if (dto.hireDate !== undefined) e.hireDate = dto.hireDate || null;

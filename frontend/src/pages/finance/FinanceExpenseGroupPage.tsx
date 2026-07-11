@@ -1,6 +1,6 @@
 // Статья расхода /finance/expense/:kind (salary | rent_subs | debts | other) —
 // порт fin-webrand/src/pages/ExpenseGroup.tsx (ТЗ 4.2–4.5).
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -128,6 +128,23 @@ function SalaryList({ ym }: { ym: string }) {
   const rows: any[] = data?.rows ?? [];
   const fired: any[] = data?.fired ?? [];
 
+  // Группировка по категориям: именованные по алфавиту, «Без категории» последней.
+  const groups = useMemo(() => {
+    const map = new Map<string, any[]>();
+    for (const e of rows) {
+      const key = (e.category ?? '').trim() || 'Без категории';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(e);
+    }
+    return [...map.entries()].sort((a, b) =>
+      (a[0] === 'Без категории' ? 1 : 0) - (b[0] === 'Без категории' ? 1 : 0)
+      || a[0].localeCompare(b[0], 'ru'));
+  }, [rows]);
+  const knownCategories = useMemo(
+    () => [...new Set(rows.map((e) => (e.category ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru')),
+    [rows],
+  );
+
   const openEmp = (row: any) => {
     const full = (fullEmployees ?? []).find((x: any) => x.id === row.id);
     setEmpFor(full ?? row);
@@ -159,52 +176,75 @@ function SalaryList({ ym }: { ym: string }) {
         <button className="btn primary" onClick={() => setEmpFor('new')}><FinIcon name="plus" size={16} /> Сотрудник</button>
       </div>
 
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th style={{ minWidth: 160 }}>ФИО</th><th>Должность</th><th>Дата приёма</th>
-              <th className="num" style={{ width: 96 }}>ЗП</th><th className="num" style={{ width: 96 }}>Аванс</th>
-              <th className="num" style={{ width: 110 }}>Бонус</th>
-              <th style={{ minWidth: 150 }}>Статус</th><th style={{ width: 60 }} />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((e) => {
-              // Месяц закрыт, когда выплачено покрывает оклад + бонус месяца.
-              // Полкопейки допуска — float-сумма может недотянуть до округлённой.
-              const due = Math.round(((Number(e.salary) || 0) + (Number(e.bonus) || 0)) * 100) / 100;
-              const isPaid = due > 0 && e.paid >= due - 0.005;
-              return (
-                <tr key={e.id} onDoubleClick={() => openEmp(e)}>
-                  <td><b>{e.name}</b></td>
-                  <td className="muted">{e.role ?? '—'}</td>
-                  <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
-                  <td className="num">{money(e.salary)}</td>
-                  <td className="num muted">{e.advance ? money(e.advance) : '—'}</td>
-                  <td className="num"><BonusCell row={e} ym={ym} /></td>
-                  <td>
-                    {isPaid
-                      ? <span className="flex"><span className="badge ok"><FinIcon name="check" size={13} /> выплачено</span><button className="btn ghost sm" title="Отменить выплату" onClick={() => cancelSalaryMonth(e)}><FinIcon name="undo" size={15} /></button></span>
-                      : <button className="btn primary sm" onClick={() => setPayFor(e)}>Выплатить</button>}
-                  </td>
-                  <td className="num"><button className="btn ghost sm" title="Редактировать" onClick={() => openEmp(e)}><FinIcon name="edit" size={15} /></button></td>
-                </tr>
-              );
-            })}
-            {rows.length === 0 && <tr><td colSpan={8} className="empty">Нет активных сотрудников</td></tr>}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={3}><b>Итого</b></td>
-              <td className="num"><b>{money(cards.fund)}</b></td>
-              <td className="num"><b>{money(cards.advances)}</b></td>
-              <td className="num"><b>{money(cards.bonuses ?? 0)}</b></td>
-              <td colSpan={2} />
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+      {groups.map(([cat, list]) => {
+        const sum = (f: (e: any) => number) => list.reduce((s, e) => s + (f(e) || 0), 0);
+        return (
+          <div key={cat}>
+            {!(groups.length === 1 && cat === 'Без категории') && (
+              <div className="section-title" style={{ margin: '18px 0 10px' }}>{cat} · {list.length} чел.</div>
+            )}
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ minWidth: 160 }}>ФИО</th><th>Должность</th><th>Дата приёма</th>
+                    <th className="num" style={{ width: 96 }}>ЗП</th><th className="num" style={{ width: 96 }}>Аванс</th>
+                    <th className="num" style={{ width: 110 }}>Бонус</th>
+                    <th style={{ minWidth: 150 }}>Статус</th><th style={{ width: 60 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((e) => {
+                    // Месяц закрыт, когда выплачен остаток «оклад + бонус − аванс»
+                    // (аванс уже на руках). Полкопейки допуска — float-суммы.
+                    const gross = Math.round(((Number(e.salary) || 0) + (Number(e.bonus) || 0)) * 100) / 100;
+                    const due = Math.max(0, Math.round((gross - (Number(e.advance) || 0)) * 100) / 100);
+                    const isPaid = gross > 0 && (due <= 0 || e.paid >= due - 0.005);
+                    return (
+                      <tr key={e.id} onDoubleClick={() => openEmp(e)}>
+                        <td><b>{e.name}</b></td>
+                        <td className="muted">{e.role ?? '—'}</td>
+                        <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
+                        <td className="num">{money(e.salary)}</td>
+                        <td className="num muted">{e.advance ? money(e.advance) : '—'}</td>
+                        <td className="num"><BonusCell row={e} ym={ym} /></td>
+                        <td>
+                          {isPaid
+                            ? <span className="flex"><span className="badge ok"><FinIcon name="check" size={13} /> выплачено</span><button className="btn ghost sm" title="Отменить выплату" onClick={() => cancelSalaryMonth(e)}><FinIcon name="undo" size={15} /></button></span>
+                            : <button className="btn primary sm" onClick={() => setPayFor(e)}>Выплатить</button>}
+                        </td>
+                        <td className="num"><button className="btn ghost sm" title="Редактировать" onClick={() => openEmp(e)}><FinIcon name="edit" size={15} /></button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={3}><b>Итого · {cat}</b></td>
+                    <td className="num"><b>{money(sum(e => Number(e.salary)))}</b></td>
+                    <td className="num"><b>{money(sum(e => Number(e.advance)))}</b></td>
+                    <td className="num"><b>{money(sum(e => Number(e.bonus)))}</b></td>
+                    <td colSpan={2} className="num nowrap">к выплате <b>{money(sum(e => Number(e.toPay)))}</b></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+      {rows.length === 0 && <div className="card empty">Нет активных сотрудников</div>}
+
+      {/* Общий итог по всем категориям. */}
+      {rows.length > 0 && (
+        <div className="card" style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: '8px 22px', alignItems: 'center' }}>
+          <b>Итого по всем сотрудникам ({rows.length})</b>
+          <span className="mini muted nowrap">Фонд ЗП <b style={{ color: 'var(--text)' }}>{money(cards.fund)}</b></span>
+          <span className="mini muted nowrap">Авансы <b style={{ color: 'var(--text)' }}>{money(cards.advances)}</b></span>
+          <span className="mini muted nowrap">Бонусы <b style={{ color: 'var(--text)' }}>{money(cards.bonuses ?? 0)}</b></span>
+          <span className="mini muted nowrap">Выплачено <b className="pos">{money(cards.paid)}</b></span>
+          <span className="mini muted nowrap">К выплате <b className="neg">{money(cards.toPay)}</b></span>
+        </div>
+      )}
 
       {fired.length > 0 && (
         <>
@@ -233,7 +273,7 @@ function SalaryList({ ym }: { ym: string }) {
       )}
 
       {payFor && <SalaryPayModal row={payFor} ym={ym} onClose={() => setPayFor(null)} />}
-      {empFor && <EmployeeFormModal employee={empFor === 'new' ? undefined : empFor} onClose={() => setEmpFor(null)} />}
+      {empFor && <EmployeeFormModal employee={empFor === 'new' ? undefined : empFor} categories={knownCategories} onClose={() => setEmpFor(null)} />}
     </>
   );
 }
@@ -261,10 +301,11 @@ function BonusCell({ row, ym }: { row: any; ym: string }) {
   );
 }
 
-function EmployeeFormModal({ employee, onClose }: { employee?: any; onClose: () => void }) {
+function EmployeeFormModal({ employee, categories = [], onClose }: { employee?: any; categories?: string[]; onClose: () => void }) {
   const qc = useQueryClient();
   const [name, setName] = useState(employee?.name ?? '');
   const [role, setRole] = useState(employee?.role ?? '');
+  const [category, setCategory] = useState(employee?.category ?? '');
   const [hireDate, setHireDate] = useState(employee?.hireDate ?? '');
   const [salary, setSalary] = useState(employee != null ? String(employee.salary ?? '') : '');
   const [advance, setAdvance] = useState(employee != null ? String(employee.advance ?? '') : '');
@@ -274,6 +315,7 @@ function EmployeeFormModal({ employee, onClose }: { employee?: any; onClose: () 
     if (!name.trim()) return;
     const p = {
       name: name.trim(), role: role.trim() || undefined, hireDate: hireDate || undefined,
+      category: category.trim(),
       salary: parseFloat(salary) || 0, advance: parseFloat(advance) || 0, status,
     };
     try {
@@ -301,6 +343,10 @@ function EmployeeFormModal({ employee, onClose }: { employee?: any; onClose: () 
           <div className="form-grid">
             <div className="field"><label>Должность</label><input value={role} onChange={(e) => setRole(e.target.value)} /></div>
             <div className="field"><label>Дата приёма</label><input type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)} /></div>
+          </div>
+          <div className="field"><label>Категория (группа в ведомости)</label>
+            <input list="fin-emp-categories" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="SMM, Продакшн, Разработка…" />
+            <datalist id="fin-emp-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
           </div>
           <div className="form-grid">
             <div className="field"><label>ЗП / мес</label><input inputMode="decimal" value={salary} onChange={(e) => setSalary(e.target.value)} /></div>

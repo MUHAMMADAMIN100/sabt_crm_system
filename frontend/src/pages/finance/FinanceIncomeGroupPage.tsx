@@ -157,6 +157,99 @@ function ProjectModal({ direction, project, onClose }: { direction: string; proj
   );
 }
 
+// ---------- Управление ожидаемым планом: сумма, срок, (частичная) оплата ----------
+
+function PlanManageModal({ title, plan, onClose, onDelete }: {
+  title: string;
+  plan: { id: string; amount: number; dueDate?: string | null };
+  onClose: () => void;
+  onDelete?: () => void;
+}) {
+  const accounts = useAccounts();
+  const inv = useInvalidate();
+  const [planAmount, setPlanAmount] = useState(String(plan.amount));
+  const [planDue, setPlanDue] = useState(plan.dueDate ?? '');
+  const [payAmount, setPayAmount] = useState(String(plan.amount));
+  // Пока сумму оплаты не трогали руками, она следует за суммой плана.
+  const [payTouched, setPayTouched] = useState(false);
+  const [date, setDate] = useState(todayISO());
+  const [accountId, setAccountId] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
+
+  const planAmt = parseFloat(planAmount.replace(',', '.'));
+  const payAmt = parseFloat(payAmount.replace(',', '.'));
+  const planChanged = planAmt !== plan.amount || (planDue || null) !== (plan.dueDate ?? null);
+  const payValid = payAmt > 0 && planAmt > 0 && payAmt <= planAmt + 0.005 && !!accountId && !busy;
+
+  async function persistPlanIfChanged() {
+    if (!planChanged || !(planAmt > 0)) return;
+    // Шлём только изменённые поля: у матрицы срок мог не прийти с бэка,
+    // и безусловный dueDate стирал бы сохранённое значение.
+    const patch: any = {};
+    if (planAmt !== plan.amount) patch.amount = planAmt;
+    if ((planDue || null) !== (plan.dueDate ?? null)) patch.dueDate = planDue || null;
+    await financeApi.updatePlanned(plan.id, patch);
+  }
+  async function savePlan() {
+    if (!(planAmt > 0) || busy) return;
+    setBusy(true);
+    try { await persistPlanIfChanged(); inv(); onClose(); }
+    catch (e) { showErr(e); inv(); }
+    finally { setBusy(false); }
+  }
+  async function receive() {
+    if (!payValid) return;
+    setBusy(true);
+    try {
+      await persistPlanIfChanged();
+      const partial = payAmt < planAmt - 0.005;
+      await financeApi.receivePlanned(plan.id, { accountId, date, ...(partial ? { amount: payAmt } : {}) });
+      inv();
+      onClose();
+    } catch (e) {
+      // План мог уже сохраниться первым запросом — сбрасываем кэш, чтобы
+      // таблица не показывала устаревшие сумму/срок.
+      showErr(e);
+      inv();
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 470 }}>
+        <div className="modal-head"><h3>{title}</h3><button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
+        <div className="modal-body">
+          <div className="section-title" style={{ margin: 0 }}>План</div>
+          <div className="form-grid">
+            <div className="field"><label>Сумма плана</label><input autoFocus inputMode="decimal" value={planAmount} onChange={(e) => { setPlanAmount(e.target.value); if (!payTouched) setPayAmount(e.target.value); }} /></div>
+            <div className="field"><label>Срок оплаты</label><input type="date" value={planDue} onChange={(e) => setPlanDue(e.target.value)} /></div>
+          </div>
+          <div className="section-title" style={{ margin: '4px 0 0' }}>Оплата</div>
+          <div className="form-grid">
+            <div className="field"><label>Получено, сомони</label><input inputMode="decimal" value={payAmount} onChange={(e) => { setPayTouched(true); setPayAmount(e.target.value); }} /></div>
+            <div className="field"><label>Дата оплаты</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+          </div>
+          <div className="field"><label>На счёт</label>
+            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+          </div>
+          {payAmt > 0 && planAmt > 0 && payAmt < planAmt - 0.005
+            ? <p className="mini muted" style={{ margin: 0 }}>Частичная оплата: {money(payAmt)} будет получено, остаток {money(Math.max(0, planAmt - payAmt))} останется запланированным с тем же сроком.</p>
+            : payAmt > planAmt + 0.005
+              ? <p className="mini neg" style={{ margin: 0 }}>Сумма оплаты больше плана — сначала увеличьте сумму плана.</p>
+              : <p className="mini muted" style={{ margin: 0 }}>«Получено» создаёт доход на счёт. Сумму и срок плана можно менять.</p>}
+        </div>
+        <div className="modal-foot">
+          {onDelete && <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy} onClick={onDelete}>Удалить план</button>}
+          <button className="btn ghost" onClick={onClose}>Отмена</button>
+          <button className="btn" disabled={!planChanged || !(planAmt > 0) || busy} onClick={savePlan}>Сохранить план</button>
+          <button className="btn primary" disabled={!payValid} onClick={receive}>Получено</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Архив проектов ----------
 
 function ArchivedProjects({ projects }: { projects: any[] }) {
@@ -207,6 +300,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
   const inv = useInvalidate();
   const [planFor, setPlanFor] = useState<{ row: any; partNo: 1 | 2 } | null>(null);
   const [receive, setReceive] = useState<any>(null); // part {plannedId, amount, ...}
+  const [restFor, setRestFor] = useState<any>(null); // row с nextDue (остаток/след. платёж)
   const [editProject, setEditProject] = useState<any>(null);
 
   const rows: any[] = data.rows || [];
@@ -301,19 +395,22 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                   );
                 })}
                 <td>
-                  {r.fullyPaid
-                    ? (
-                      <div>
-                        <span className="badge ok">оплачено</span>
-                        {r.nextDue?.dueDate && (
-                          <div className={'mini nowrap ' + ((daysUntil(r.nextDue.dueDate) ?? 1) < 0 ? 'neg' : 'muted')} style={{ marginTop: 4 }}>
-                            след. {money(r.nextDue.amount)} к {formatDate(r.nextDue.dueDate)}
-                            <br />{daysLabel(r.nextDue.dueDate)}
-                          </div>
-                        )}
-                      </div>
-                    )
-                    : <span className="mini muted nowrap">{money(r.paidLife)} / {money(r.project.tariff)}</span>}
+                  {/* Клик по блоку — правка суммы/срока ближайшего плана и
+                      (частичная) оплата. Доступен и у полностью оплаченных:
+                      там ближайший план — следующий цикл. */}
+                  <button type="button" className="rest-link" disabled={!r.nextDue}
+                    title={r.nextDue ? 'Изменить сумму/срок или отметить полученным' : undefined}
+                    onClick={() => r.nextDue && setRestFor(r)}>
+                    {r.fullyPaid
+                      ? <span className="badge ok">оплачено</span>
+                      : <span className="mini muted nowrap">{money(r.monthPaid ?? r.paidLife)} / {money(r.project.tariff)}</span>}
+                    {r.nextDue && (
+                      <span className={'mini nowrap ' + ((daysUntil(r.nextDue.dueDate) ?? 1) < 0 ? 'neg' : 'muted')}>
+                        {r.fullyPaid ? 'след.' : 'остаток'} {money(r.nextDue.amount)}
+                        {r.nextDue.dueDate ? <><br />до {formatDate(r.nextDue.dueDate)} · {daysLabel(r.nextDue.dueDate)}</> : null}
+                      </span>
+                    )}
+                  </button>
                 </td>
                 <td><NoteCell project={r.project} /></td>
                 <RowActions onEdit={() => setEditProject(r.project)} onArchive={() => archiveProject(r.project)} onDelete={() => removeProjectRow(r.project)} />
@@ -345,6 +442,17 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
 
       {planFor && <PayPartModal row={planFor.row} partNo={planFor.partNo} ym={ym} onClose={() => setPlanFor(null)} />}
       {receive && <ReceiveModal part={receive} onClose={() => setReceive(null)} />}
+      {restFor?.nextDue && (
+        <PlanManageModal
+          title={`Остаток · ${restFor.project.name}`}
+          plan={{ id: restFor.nextDue.plannedId, amount: restFor.nextDue.amount, dueDate: restFor.nextDue.dueDate }}
+          onClose={() => setRestFor(null)}
+          onDelete={async () => {
+            if (!confirm('Удалить план остатка?')) return;
+            try { await financeApi.removePlanned(restFor.nextDue.plannedId); inv(); setRestFor(null); } catch (e) { showErr(e); }
+          }}
+        />
+      )}
       {editProject && <ProjectModal direction="smm" project={editProject} onClose={() => setEditProject(null)} />}
     </>
   );
@@ -572,6 +680,21 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
 
   const remaining = project.tariff - (row.scheduledLife ?? 0);
   const overLimit = project.tariff > 0 && amt > remaining;
+
+  // Ожидаемый план: сумма/срок правятся, оплатить можно частично.
+  if (plan && plan.status !== 'received') {
+    return (
+      <PlanManageModal
+        title={`${project.name} · ${monthName}`}
+        plan={{ id: plan.id, amount: Number(plan.amount), dueDate: plan.dueDate ?? null }}
+        onClose={onClose}
+        onDelete={async () => {
+          if (!confirm('Удалить план?')) return;
+          try { await financeApi.removePlanned(plan.id); inv(); onClose(); } catch (e) { showErr(e); }
+        }}
+      />
+    );
+  }
 
   async function saveNew() {
     if (!(amt > 0) || overLimit) return;

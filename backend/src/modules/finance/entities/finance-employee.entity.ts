@@ -13,6 +13,10 @@ export class FinanceEmployee {
   @Column({ type: 'varchar', length: 120, nullable: true })
   role: string | null;
 
+  /** Категория/отдел для группировки зарплатной ведомости (SMM, Продакшн…). */
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  category: string | null;
+
   /** Оклад в месяц. */
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   salary: number;

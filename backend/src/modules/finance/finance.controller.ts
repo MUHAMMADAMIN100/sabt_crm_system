@@ -12,6 +12,7 @@ import { UserRole } from '../users/user.entity';
 import { CreateOperationDto } from './dto/create-operation.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { CreatePlannedPaymentDto } from './dto/create-planned-payment.dto';
+import { UpdatePlannedPaymentDto } from './dto/update-planned-payment.dto';
 import { ReceivePlannedPaymentDto } from './dto/receive-planned-payment.dto';
 import { PayNowDto } from './dto/pay-now.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -102,6 +103,9 @@ export class FinanceController {
   }
   @Post('planned-payments')
   createPlanned(@Body() dto: CreatePlannedPaymentDto) { return this.service.createPlannedPayment(dto); }
+  /** Правка ожидаемого плана: сумма и/или срок. */
+  @Patch('planned-payments/:id')
+  updatePlanned(@Param('id') id: string, @Body() dto: UpdatePlannedPaymentDto) { return this.service.updatePlannedPayment(id, dto); }
   @Post('planned-payments/pay-now')
   payNow(@Body() dto: PayNowDto) { return this.service.payNow(dto); }
   @Post('planned-payments/:id/receive')

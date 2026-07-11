@@ -1,5 +1,6 @@
 // Модалка «Новая операция» / «Изменить операцию» (порт fin-webrand/src/components/TransactionModal.tsx, ТЗ «Этап 2»).
-// initial — decorated-транзакция при редактировании; initialType — предвыбранный тип.
+// initial — decorated-транзакция при редактировании; initialType — предвыбранный тип;
+// initialDate — предвыбранная дата (клик по дню в календаре транзакций).
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -10,7 +11,7 @@ import { financeApi } from '@/services/api.service';
 
 const TYPES = ['income', 'expense', 'transfer', 'saving'];
 
-export default function TransactionModal({ initial, initialType, onClose }: { initial?: any; initialType?: string; onClose: () => void }) {
+export default function TransactionModal({ initial, initialType, initialDate, onClose }: { initial?: any; initialType?: string; initialDate?: string; onClose: () => void }) {
   const qc = useQueryClient();
   const { data: accounts = [] } = useQuery({ queryKey: ['finance', 'accounts'], queryFn: () => financeApi.accounts() });
   const { data: categories = [] } = useQuery({ queryKey: ['finance', 'categories'], queryFn: () => financeApi.categories() });
@@ -21,7 +22,7 @@ export default function TransactionModal({ initial, initialType, onClose }: { in
   const [type, setType] = useState<string>(initial?.type ?? initialType ?? 'expense');
   const [newCatName, setNewCatName] = useState('');
   const [addingCat, setAddingCat] = useState(false);
-  const [date, setDate] = useState<string>((initial?.date ?? todayISO()).slice(0, 10));
+  const [date, setDate] = useState<string>((initial?.date ?? initialDate ?? todayISO()).slice(0, 10));
   const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
   const [categoryId, setCategoryId] = useState<string>(initial?.categoryId ?? '');
   const [accountFrom, setAccountFrom] = useState<string>(
