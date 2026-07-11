@@ -18,6 +18,7 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { SetEmployeeBonusDto } from './dto/set-employee-bonus.dto';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { MarkSubscriptionPaidDto } from './dto/mark-subscription-paid.dto';
@@ -133,6 +134,8 @@ export class FinanceController {
   @Post('employees') createEmployee(@Body() dto: CreateEmployeeDto) { return this.service.createEmployee(dto); }
   @Patch('employees/:id') updateEmployee(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) { return this.service.updateEmployee(id, dto); }
   @Delete('employees/:id') removeEmployee(@Param('id') id: string) { return this.service.removeEmployee(id); }
+  /** Бонус сотрудника за месяц (входит в «к выплате»; 0 — снять). */
+  @Post('employees/:id/bonus') setEmployeeBonus(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeBonus(id, dto); }
 
   // ─── Справочники: Аренда/подписки ────────────────────────────────
   @Get('subscriptions') listSubscriptions() { return this.service.listSubscriptions(); }

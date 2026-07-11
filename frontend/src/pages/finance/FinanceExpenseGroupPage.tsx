@@ -124,7 +124,7 @@ function SalaryList({ ym }: { ym: string }) {
   const [empFor, setEmpFor] = useState<any | 'new' | null>(null);
   const [showFired, setShowFired] = useState(false);
 
-  const cards = data?.cards ?? { fund: 0, advances: 0, paid: 0, toPay: 0 };
+  const cards = data?.cards ?? { fund: 0, advances: 0, bonuses: 0, paid: 0, toPay: 0 };
   const rows: any[] = data?.rows ?? [];
   const fired: any[] = data?.fired ?? [];
 
@@ -144,10 +144,13 @@ function SalaryList({ ym }: { ym: string }) {
   return (
     <>
       <div className="cards grid-4" style={{ marginBottom: 16 }}>
-        <div className="card stat"><div className="label">Фонд ЗП / мес</div><div className="value">{money(cards.fund)}</div></div>
+        <div className="card stat">
+          <div className="label">Фонд ЗП / мес</div><div className="value">{money(cards.fund)}</div>
+          {(cards.bonuses ?? 0) > 0 && <div className="sub">+ бонусы {money(cards.bonuses)}</div>}
+        </div>
         <div className="card stat"><div className="label">Авансы (выдано)</div><div className="value">{money(cards.advances)}</div></div>
         <div className="card stat"><div className="label">Выплачено за месяц</div><div className="value pos">{money(cards.paid)}</div></div>
-        <div className="card stat"><div className="label">К выплате за месяц</div><div className="value neg">{money(cards.toPay)}</div><div className="sub">фонд − авансы − выплачено</div></div>
+        <div className="card stat"><div className="label">К выплате за месяц</div><div className="value neg">{money(cards.toPay)}</div><div className="sub">фонд + бонусы − авансы − выплачено</div></div>
       </div>
 
       <div className="toolbar">
@@ -160,13 +163,18 @@ function SalaryList({ ym }: { ym: string }) {
         <table>
           <thead>
             <tr>
-              <th>ФИО</th><th>Должность</th><th>Дата приёма</th>
-              <th className="num">ЗП</th><th className="num">Аванс</th><th>Статус</th><th style={{ width: 44 }} />
+              <th style={{ minWidth: 160 }}>ФИО</th><th>Должность</th><th>Дата приёма</th>
+              <th className="num" style={{ width: 96 }}>ЗП</th><th className="num" style={{ width: 96 }}>Аванс</th>
+              <th className="num" style={{ width: 110 }}>Бонус</th>
+              <th style={{ minWidth: 150 }}>Статус</th><th style={{ width: 60 }} />
             </tr>
           </thead>
           <tbody>
             {rows.map((e) => {
-              const isPaid = e.salary > 0 && e.paid >= e.salary;
+              // Месяц закрыт, когда выплачено покрывает оклад + бонус месяца.
+              // Полкопейки допуска — float-сумма может недотянуть до округлённой.
+              const due = Math.round(((Number(e.salary) || 0) + (Number(e.bonus) || 0)) * 100) / 100;
+              const isPaid = due > 0 && e.paid >= due - 0.005;
               return (
                 <tr key={e.id} onDoubleClick={() => openEmp(e)}>
                   <td><b>{e.name}</b></td>
@@ -174,6 +182,7 @@ function SalaryList({ ym }: { ym: string }) {
                   <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
                   <td className="num">{money(e.salary)}</td>
                   <td className="num muted">{e.advance ? money(e.advance) : '—'}</td>
+                  <td className="num"><BonusCell row={e} ym={ym} /></td>
                   <td>
                     {isPaid
                       ? <span className="flex"><span className="badge ok"><FinIcon name="check" size={13} /> выплачено</span><button className="btn ghost sm" title="Отменить выплату" onClick={() => cancelSalaryMonth(e)}><FinIcon name="undo" size={15} /></button></span>
@@ -183,13 +192,14 @@ function SalaryList({ ym }: { ym: string }) {
                 </tr>
               );
             })}
-            {rows.length === 0 && <tr><td colSpan={7} className="empty">Нет активных сотрудников</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={8} className="empty">Нет активных сотрудников</td></tr>}
           </tbody>
           <tfoot>
             <tr>
               <td colSpan={3}><b>Итого</b></td>
               <td className="num"><b>{money(cards.fund)}</b></td>
               <td className="num"><b>{money(cards.advances)}</b></td>
+              <td className="num"><b>{money(cards.bonuses ?? 0)}</b></td>
               <td colSpan={2} />
             </tr>
           </tfoot>
@@ -225,6 +235,29 @@ function SalaryList({ ym }: { ym: string }) {
       {payFor && <SalaryPayModal row={payFor} ym={ym} onClose={() => setPayFor(null)} />}
       {empFor && <EmployeeFormModal employee={empFor === 'new' ? undefined : empFor} onClose={() => setEmpFor(null)} />}
     </>
+  );
+}
+
+/** Инлайн-бонус за месяц: вводится прямо в таблице, входит в «к выплате».
+ *  Расход создаётся не здесь, а при выплате — вместе с окладом. */
+function BonusCell({ row, ym }: { row: any; ym: string }) {
+  const qc = useQueryClient();
+  return (
+    <input
+      key={`${row.id}-${ym}-${row.bonus ?? 0}`}
+      className="cell-input" inputMode="decimal" placeholder="—"
+      style={{ textAlign: 'right', minWidth: 70 }}
+      defaultValue={row.bonus ? row.bonus : ''}
+      title="Бонус за этот месяц — прибавляется к сумме к выплате"
+      onBlur={async (e) => {
+        const v = Math.max(0, parseFloat(e.target.value.replace(',', '.')) || 0);
+        if (v === (Number(row.bonus) || 0)) return;
+        try {
+          await financeApi.setEmployeeBonus(row.id, { ym, amount: v });
+          qc.invalidateQueries({ queryKey: ['finance'] });
+        } catch (err) { apiError(err); }
+      }}
+    />
   );
 }
 
@@ -327,7 +360,10 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
               {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
-          <p className="mini muted" style={{ margin: 0 }}>По умолчанию — 10-е число месяца. Остаток к выплате: {money(remaining)}.</p>
+          <p className="mini muted" style={{ margin: 0 }}>
+            По умолчанию — 10-е число месяца. Остаток к выплате: {money(remaining)}
+            {(Number(row.bonus) || 0) > 0 ? <> (оклад {money(row.salary)} + бонус {money(row.bonus)})</> : null}.
+          </p>
         </div>
         <div className="modal-foot">
           <button className="btn ghost" onClick={onClose}>Отмена</button>
@@ -395,7 +431,8 @@ function SubsList({ ym }: { ym: string }) {
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Позиция</th><th>Тип</th><th className="num">Сумма/мес</th><th>Статус месяца</th><th style={{ width: 90 }} /></tr></thead>
+          {/* Колонка действий держит до трёх кнопок («оплатить» — с подписью). */}
+          <thead><tr><th style={{ minWidth: 170 }}>Позиция</th><th>Тип</th><th className="num" style={{ width: 110 }}>Сумма/мес</th><th style={{ minWidth: 200 }}>Статус месяца</th><th style={{ width: 190 }} /></tr></thead>
           <tbody>
             {rows.map((s) => {
               const isPaid = !!s.paidMonth || !!s.paidMark;
@@ -539,10 +576,10 @@ function DebtsList({ ym }: { ym: string }) {
           <table>
             <thead>
               <tr>
-                <th style={{ minWidth: 160 }}>Наименование</th>
-                <th className="num">Сумма</th>
-                {months.map((m) => <th key={m} className="num" style={{ textTransform: 'capitalize' }}>{monthLabel(m)}</th>)}
-                <th style={{ width: 44 }} />
+                <th style={{ minWidth: 190 }}>Наименование</th>
+                <th className="num" style={{ width: 96 }}>Сумма</th>
+                {months.map((m) => <th key={m} className="num" style={{ textTransform: 'capitalize', minWidth: 84 }}>{monthLabel(m)}</th>)}
+                <th style={{ width: 60 }} />
               </tr>
             </thead>
             <tbody>

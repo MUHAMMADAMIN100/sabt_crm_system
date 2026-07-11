@@ -26,13 +26,13 @@ export default function TxTable({ txns, onEdit, onDelete }: {
       <table>
         <thead>
           <tr>
-            <th style={{ width: 104 }}>Дата</th>
-            <th style={{ width: 88 }}>Тип</th>
-            <th>Статья / описание</th>
-            <th>Счёт</th>
-            <th>Клиент</th>
+            <th style={{ width: 112 }}>Дата</th>
+            <th style={{ width: 96 }}>Тип</th>
+            <th style={{ minWidth: 220 }}>Статья / описание</th>
+            <th style={{ minWidth: 130 }}>Счёт</th>
+            <th style={{ minWidth: 130 }}>Клиент</th>
             <th className="num" style={{ width: 120 }}>Сумма</th>
-            {(onEdit || onDelete) && <th style={{ width: 64 }} />}
+            {(onEdit || onDelete) && <th style={{ width: 84 }} />}
           </tr>
         </thead>
         <tbody>

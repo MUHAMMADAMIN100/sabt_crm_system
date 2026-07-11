@@ -70,6 +70,16 @@ function addDays(iso: string, delta: number): string {
 /** Срок второй части после оплаты первой — 20 дней (правило компании). */
 const PART2_DUE_DAYS = 20;
 
+/** Бонус сотрудника за месяц (jsonb bonuses: { '2026-07': 500 }). */
+function bonusOf(e: { bonuses?: Record<string, number> | null }, ym: string): number {
+  return r2(Number((e.bonuses || {})[ym]) || 0);
+}
+
+/** Действующий якорь SMM-цикла: дата последней полной оплаты или дата контракта. */
+function smmAnchor(p: { cycleAnchor?: string | null; contractDate?: string | null }): string | null {
+  return p.cycleAnchor || p.contractDate || null;
+}
+
 const DEFAULT_ACCOUNTS = [
   { key: 'alif', name: 'Alif', position: 0 },
   { key: 'dushanbe_city', name: 'Dushanbe City', position: 1 },
@@ -173,6 +183,7 @@ export class FinanceService implements OnModuleInit {
 
     // Новые колонки справочников (расширенная финансовая модель).
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "contractDate" date`);
+    await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "cycleAnchor" date`);
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "archived" boolean NOT NULL DEFAULT false`);
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "multiMonth" boolean NOT NULL DEFAULT false`);
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "status" varchar(16) DEFAULT 'active'`);
@@ -180,6 +191,7 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_accounts ADD COLUMN IF NOT EXISTS "kind" varchar(16)`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "advance" numeric(15,2) NOT NULL DEFAULT 0`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "hireDate" date`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "bonuses" jsonb`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "icon" varchar(40)`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "counterparty" varchar(200)`);
@@ -672,12 +684,13 @@ export class FinanceService implements OnModuleInit {
       return { direction: dir, plan, fact };
     });
 
-    // Зарплата.
+    // Зарплата (бонусы месяца входят в «к выплате»).
     const activeEmps = m.employees.filter(e => e.status === 'active');
     const salaryFund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
     const salaryAdvances = r2(activeEmps.reduce((s, e) => s + Number(e.advance), 0));
+    const salaryBonuses = r2(activeEmps.reduce((s, e) => s + bonusOf(e, ym), 0));
     const salaryPaid = this.sum(monthExpense.filter(t => this.groupOf(t, m) === 'salary'));
-    const salaryToPay = r2(Math.max(0, salaryFund - salaryAdvances - salaryPaid));
+    const salaryToPay = r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances - salaryPaid));
 
     // Аренда/подписки.
     const subsMonthly = r2(subs.filter(s => s.active).reduce((s, x) => s + Number(x.amount), 0));
@@ -698,7 +711,7 @@ export class FinanceService implements OnModuleInit {
       .filter(p => p.status === 'expected' && p.projectId)
       .reduce((s, p) => s + Number(p.amount), 0));
 
-    const stats = { expectedIncome, salaryToPay, salaryFund, salaryAdvances, salaryPaid, totalDebt, subsMonthly };
+    const stats = { expectedIncome, salaryToPay, salaryFund, salaryAdvances, salaryBonuses, salaryPaid, totalDebt, subsMonthly };
 
     const transactions = await this.decorate(this.sortByDateDesc(monthTx), m);
 
@@ -776,12 +789,18 @@ export class FinanceService implements OnModuleInit {
           .sort((a, b) => ((a.dueDate ?? a.ym) < (b.dueDate ?? b.ym) ? -1 : 1))[0] ?? null;
         return {
           project: { id: p.id, name: p.name, tariff: Number(p.tariff), contractDate: p.contractDate, archived: p.archived, note: p.note },
+          // Дата цикла «катится»: контракт 20.01 → в просмотре февраля 20.02.
+          cycleDate: this.smmCycleDate(p, ym),
           part1: partOf(1), part2: partOf(2), paidLife,
           nextDue: nextPlan ? { ym: nextPlan.ym, amount: Number(nextPlan.amount), dueDate: nextPlan.dueDate ?? null } : null,
           fullyPaid: Number(p.tariff) > 0 && paidLife >= Number(p.tariff),
           alert: this.smmAlert(p, pPlans, today),
         };
       });
+      // Свежая дата — сверху. Сортируем по отображаемой дате цикла, чтобы
+      // колонка «Дата контракта» читалась упорядоченно в любом месяце.
+      rows.sort((a, b) => (b.cycleDate ?? '').localeCompare(a.cycleDate ?? '')
+        || a.project.name.localeCompare(b.project.name, 'ru'));
       const activeIds = new Set(active.map(p => p.id));
       const monthActive = planned.filter(x => x.projectId && activeIds.has(x.projectId) && x.ym === ym);
       const expected = r2(monthActive.filter(x => x.status === 'expected').reduce((s, x) => s + Number(x.amount), 0));
@@ -847,19 +866,47 @@ export class FinanceService implements OnModuleInit {
     throw new BadRequestException('Неизвестное направление');
   }
 
-  /** Напоминание по циклу оплаты SMM: 'pay' | 'rest' | null. */
+  /** Дата цикла в просматриваемом месяце: день якоря (последней полной
+   *  оплаты, иначе контракта), спроецированный в ym. В месяце самого якоря —
+   *  его точная дата. */
+  private smmCycleDate(p: FinanceProject, ym: string): string | null {
+    const anchor = smmAnchor(p);
+    const day = contractDay(anchor);
+    if (!anchor || day === null) return anchor ?? null;
+    return ymOf(anchor) === ym ? anchor : dueDateForMonth(ym, day);
+  }
+
+  /** Напоминание по циклу оплаты SMM: 'pay' | 'rest' | null.
+   *  Основной сигнал — просроченные expected-планы (авто-план следующего
+   *  цикла и остатки создаются самой системой), поэтому подсветка согласована
+   *  с бейджами сроков в таблице. Календарный фолбэк — для проектов без
+   *  планов (заведены до автологики). */
   private smmAlert(p: FinanceProject, pPlans: FinancePlannedPayment[], today: string): 'pay' | 'rest' | null {
-    const day = contractDay(p.contractDate);
-    if (day === null || Number(p.tariff) <= 0 || !p.contractDate) return null;
+    if (Number(p.tariff) <= 0) return null;
+    const anchor = smmAnchor(p);
+    const day = contractDay(anchor);
+    if (!anchor || day === null) return null;
+
+    const overdue = pPlans.filter(x => x.status === 'expected' && x.dueDate && x.dueDate <= today);
+    if (overdue.length) {
+      // Просрочен остаток уже начатого цикла → «получить остаток».
+      const isRest = overdue.some(o => pPlans.some(r => r.ym === o.ym && r.status === 'received'));
+      return isRest ? 'rest' : 'pay';
+    }
+    if (pPlans.some(x => x.status === 'expected' && x.dueDate)) return null; // срок ещё впереди
+
+    // Фолбэк: календарный срок по дню якоря в текущем/прошлом месяце.
     const todayYm = ymOf(today);
-    let anchor = dueDateForMonth(todayYm, day);
-    if (anchor > today) anchor = dueDateForMonth(shiftYm(todayYm, -1), day);
-    if (anchor < p.contractDate) return null;
-    const anchorYm = ymOf(anchor);
-    const recv = pPlans.filter(x => x.ym === anchorYm && x.status === 'received').reduce((s, x) => s + Number(x.amount), 0);
-    if (recv >= Number(p.tariff)) return null;
+    let due = dueDateForMonth(todayYm, day);
+    if (due > today) due = dueDateForMonth(shiftYm(todayYm, -1), day);
+    // Срок не позже даты последней полной оплаты — цикл покрыт ею.
+    if (p.cycleAnchor && due <= p.cycleAnchor) return null;
+    // До начала контракта долгов нет.
+    if (!p.cycleAnchor && p.contractDate && due < p.contractDate) return null;
+    const recv = pPlans.filter(x => x.ym === ymOf(due) && x.status === 'received').reduce((s, x) => s + Number(x.amount), 0);
+    if (recv >= Number(p.tariff) - 0.005) return null;
     if (recv <= 0) return 'pay';
-    const daysIn = Math.floor((new Date(today).getTime() - new Date(anchor).getTime()) / 86400000);
+    const daysIn = Math.floor((new Date(today).getTime() - new Date(due).getTime()) / 86400000);
     return daysIn >= 24 ? 'rest' : null;
   }
 
@@ -923,13 +970,15 @@ export class FinanceService implements OnModuleInit {
     const activeEmps = m.employees.filter(e => e.status === 'active');
     const salaryFund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
     const salaryAdvances = r2(activeEmps.reduce((s, e) => s + Number(e.advance), 0));
+    const salaryBonuses = r2(activeEmps.reduce((s, e) => s + bonusOf(e, ym), 0));
     const salarySpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'salary'));
-    // Сотрудники, у которых месяц закрыт (выплачено ≥ оклада) — для подсветки карточки.
+    // Сотрудники, у которых месяц закрыт (выплачено ≥ оклад + бонус) — для подсветки карточки.
     const salaryPaidCount = activeEmps.filter(e => {
-      const salary = Number(e.salary);
-      if (salary <= 0) return false;
+      const due = r2(Number(e.salary) + bonusOf(e, ym));
+      if (due <= 0) return false;
       const paid = monthExp.filter(t => t.employeeId === e.id).reduce((s, t) => s + Number(t.amount), 0);
-      return paid >= salary;
+      // Полкопейки допуска — сумма float'ов может недотянуть до r2-округлённого due.
+      return paid >= due - 0.005;
     }).length;
 
     const activeSubs = subs.filter(s => s.active);
@@ -955,7 +1004,7 @@ export class FinanceService implements OnModuleInit {
 
     return {
       ym,
-      salary: { spent: salarySpent, count: activeEmps.length, paidCount: salaryPaidCount, toPay: r2(Math.max(0, salaryFund - salaryAdvances - salarySpent)) },
+      salary: { spent: salarySpent, count: activeEmps.length, paidCount: salaryPaidCount, bonuses: salaryBonuses, toPay: r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances - salarySpent)) },
       subscriptions: { spent: subsSpent, count: subsCount, paidCount: subsPaidCount, monthly: subMonthly },
       debts: { spent: debtsSpent, count: debtCount, remaining: totalRemaining, dueMonth, monthly: debtsMonthly },
       other: { spent: otherSpent },
@@ -973,17 +1022,20 @@ export class FinanceService implements OnModuleInit {
       const activeEmps = emps.filter(e => e.status === 'active');
       const rows = activeEmps.map(e => {
         const paid = paidOf(e.id);
+        const bonus = bonusOf(e, ym);
         return {
           id: e.id, name: e.name, role: e.role, hireDate: e.hireDate, salary: Number(e.salary),
-          advance: Number(e.advance), status: e.status, paid, toPay: r2(Math.max(0, Number(e.salary) - paid)),
+          advance: Number(e.advance), bonus, status: e.status, paid,
+          toPay: r2(Math.max(0, Number(e.salary) + bonus - paid)),
         };
       });
       const fund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
       const advances = r2(activeEmps.reduce((s, e) => s + Number(e.advance), 0));
+      const bonuses = r2(activeEmps.reduce((s, e) => s + bonusOf(e, ym), 0));
       const paid = r2(activeEmps.reduce((s, e) => s + paidOf(e.id), 0));
       return {
         kind: 'salary',
-        cards: { fund, advances, paid, toPay: r2(Math.max(0, fund - advances - paid)) },
+        cards: { fund, advances, bonuses, paid, toPay: r2(Math.max(0, fund + bonuses - advances - paid)) },
         rows,
         fired: emps.filter(e => e.status !== 'active').map(e => ({ id: e.id, name: e.name, role: e.role, salary: Number(e.salary) })),
       };
@@ -1192,6 +1244,7 @@ export class FinanceService implements OnModuleInit {
   }
 
   async removeTransaction(id: string) {
+    const tx = await this.txRepo.findOne({ where: { id } });
     // Плановые оплаты, связанные с этой операцией: авто — удалить, ручные — вернуть в «ожидается».
     const linked = await this.ppRepo.find({ where: { receivedTxId: id } });
     for (const p of linked) {
@@ -1199,6 +1252,9 @@ export class FinanceService implements OnModuleInit {
       else { p.status = 'expected'; p.receivedTxId = null; await this.ppRepo.save(p); }
     }
     await this.txRepo.delete(id);
+    // Удалённая оплата могла быть той, что двигала якорь SMM-цикла.
+    const projectId = tx?.projectId ?? linked.find(x => x.projectId)?.projectId ?? null;
+    if (projectId) await this.resyncSmmAfterUndo(projectId);
     return { ok: true };
   }
 
@@ -1240,13 +1296,16 @@ export class FinanceService implements OnModuleInit {
       const plans = await this.ppRepo.find({ where: { projectId } });
       const received = plans.filter(x => x.status === 'received');
       if (!received.length) return;
+      // Якорь всегда актуализируем: сюда попадают и правки транзакций
+      // (syncSmmPartLink), меняющие даты/суммы уже полученных оплат.
+      await this.recomputeSmmAnchor(p, plans);
       // Текущий цикл = месяц последней полученной оплаты.
       const yms = received.map(x => x.ym).sort();
       const lastYm = yms[yms.length - 1];
       const cycleReceived = r2(received.filter(x => x.ym === lastYm).reduce((s, x) => s + Number(x.amount), 0));
       const monthPlans = plans.filter(x => x.ym === lastYm);
 
-      if (cycleReceived < tariff) {
+      if (cycleReceived < tariff - 0.005) {
         // Остаток не покрыт: нужна ожидаемая часть 2 (не дублируем ручные планы).
         if (monthPlans.some(x => x.partNo === 2 || x.status === 'expected')) return;
         const lastPart = received.filter(x => x.ym === lastYm).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)).pop();
@@ -1256,21 +1315,110 @@ export class FinanceService implements OnModuleInit {
         const baseDate = lastTx?.date || todayISO();
         await this.ppRepo.save(this.ppRepo.create({
           projectId, ym: lastYm, partNo: 2, amount: r2(tariff - cycleReceived),
-          status: 'expected', dueDate: addDays(baseDate, PART2_DUE_DAYS), auto: false,
+          status: 'expected', dueDate: addDays(baseDate, PART2_DUE_DAYS), auto: true,
         }));
       } else {
-        // Цикл покрыт: план следующего цикла ко дню контракта + уведомление.
-        const nextYm = shiftYm(lastYm, 1);
-        if (plans.some(x => x.ym === nextYm)) return;
-        const day = contractDay(p.contractDate) ?? 1;
+        // Цикл покрыт. Якорь = дата платежа, закрывшего последний цикл:
+        // просрочка сдвигает следующий срок, отмена оплаты откатывает якорь
+        // (recomputeSmmAnchor детерминированно выводит его из оплат).
+        const anchor = smmAnchor(p);
+        const day = contractDay(anchor) ?? 1;
+
+        // Следующий цикл — через месяц от max(последний покрытый цикл, месяц
+        // якоря): досрочная оплата, датированная предыдущим месяцем, не должна
+        // коллизировать с только что оплаченным планом (иначе цепочка авто-
+        // планирования молча обрывалась).
+        const anchorYm = anchor ? ymOf(anchor) : lastYm;
+        const baseYm = anchorYm > lastYm ? anchorYm : lastYm;
+        const nextYm = shiftYm(baseYm, 1);
+        const existingNext = plans.find(x => x.ym === nextYm);
+        if (existingNext) {
+          // План уже есть (создан до сдвига якоря) — подтягиваем срок.
+          if (existingNext.status === 'expected') {
+            existingNext.dueDate = dueDateForMonth(nextYm, day);
+            await this.ppRepo.save(existingNext);
+          }
+          return;
+        }
         const next = await this.ppRepo.save(this.ppRepo.create({
           projectId, ym: nextYm, partNo: 1, amount: tariff,
-          status: 'expected', dueDate: dueDateForMonth(nextYm, day), auto: false,
+          status: 'expected', dueDate: dueDateForMonth(nextYm, day), auto: true,
         }));
         await this.scheduler.notifyCycleCompleted(p, next);
       }
     } catch (e: any) {
       this.logger.warn(`smm follow-up skipped: ${String(e?.message || e).slice(0, 160)}`);
+    }
+  }
+
+  /** Пересчитать якорь цикла из фактических оплат: дата транзакции платежа,
+   *  которым последний покрытый цикл достиг тарифа. Кумулятив считается в
+   *  порядке дат транзакций — ввод задним числом и доплаты после закрытия
+   *  цикла якорь не двигают. Платёж без транзакции (вне счёта) в сумме
+   *  участвует, но дату не задаёт — для него берётся день цикла по договору,
+   *  а не «сегодня». Сохраняет проект, если якорь изменился. */
+  private async recomputeSmmAnchor(p: FinanceProject, plans: FinancePlannedPayment[]): Promise<void> {
+    const tariff = Number(p.tariff) || 0;
+    let anchor: string | null = null;
+    if (tariff > 0) {
+      const received = plans.filter(x => x.status === 'received');
+      const byYm = new Map<string, FinancePlannedPayment[]>();
+      for (const x of received) {
+        if (!byYm.has(x.ym)) byYm.set(x.ym, []);
+        byYm.get(x.ym)!.push(x);
+      }
+      const coveredYms = [...byYm.keys()]
+        .filter(ym => byYm.get(ym)!.reduce((s, x) => s + Number(x.amount), 0) >= tariff - 0.005)
+        .sort();
+      const lastYm = coveredYms[coveredYms.length - 1];
+      if (lastYm) {
+        const fallbackDate = dueDateForMonth(lastYm, contractDay(p.contractDate) ?? 1);
+        const parts: Array<{ date: string; amount: number; created: number }> = [];
+        for (const x of byYm.get(lastYm)!) {
+          const tx = x.receivedTxId ? await this.txRepo.findOne({ where: { id: x.receivedTxId } }) : null;
+          parts.push({ date: tx?.date || fallbackDate, amount: Number(x.amount), created: x.createdAt?.getTime?.() ?? 0 });
+        }
+        parts.sort((a, b) => a.date.localeCompare(b.date) || a.created - b.created);
+        let acc = 0;
+        for (const part of parts) {
+          acc += part.amount;
+          if (acc >= tariff - 0.005) { anchor = part.date; break; }
+        }
+      }
+    }
+    if ((p.cycleAnchor ?? null) !== anchor) {
+      p.cycleAnchor = anchor;
+      await this.projRepo.save(p);
+    }
+  }
+
+  /** После отмены/удаления оплаты SMM: пересчитать якорь и удалить осиротевшие
+   *  авто-планы будущих циклов, созданные уже отменённой полной оплатой —
+   *  иначе фантомный expected-план навсегда глушит авто-планирование. */
+  private async resyncSmmAfterUndo(projectId?: string | null) {
+    if (!projectId) return;
+    try {
+      const p = await this.projRepo.findOne({ where: { id: projectId } });
+      if (!p || p.direction !== 'smm') return;
+      const plans = await this.ppRepo.find({ where: { projectId } });
+      await this.recomputeSmmAnchor(p, plans);
+      const tariff = Number(p.tariff) || 0;
+      if (tariff <= 0) return;
+
+      const sums = new Map<string, number>();
+      for (const x of plans.filter(y => y.status === 'received')) {
+        sums.set(x.ym, (sums.get(x.ym) ?? 0) + Number(x.amount));
+      }
+      const coveredYms = [...sums.entries()].filter(([, s]) => s >= tariff - 0.005).map(([ym]) => ym).sort();
+      const lastCovered = coveredYms[coveredYms.length - 1] ?? null;
+      // Авто-план уместен в месяце имеющихся оплат (остаток, часть 2) или в
+      // месяце следующего цикла. Авто-expected в любом другом месяце — сирота.
+      const validYms = new Set<string>(sums.keys());
+      if (lastCovered) validYms.add(shiftYm(lastCovered, 1));
+      const orphans = plans.filter(x => x.auto && x.status === 'expected' && !validYms.has(x.ym));
+      if (orphans.length) await this.ppRepo.delete(orphans.map(x => x.id));
+    } catch (e: any) {
+      this.logger.warn(`smm undo resync skipped: ${String(e?.message || e).slice(0, 160)}`);
     }
   }
 
@@ -1352,6 +1500,10 @@ export class FinanceService implements OnModuleInit {
       pp.receivedTxId = null;
       await ppRepo.save(pp);
       return { ...pp, amount: Number(pp.amount) };
+    }).then(async (res) => {
+      // Откат оплаты: якорь и авто-планы пересчитываются из оставшихся оплат.
+      if (res.projectId) await this.resyncSmmAfterUndo(res.projectId);
+      return res;
     });
   }
 
@@ -1362,6 +1514,9 @@ export class FinanceService implements OnModuleInit {
       if (!pp) throw new NotFoundException('Плановая оплата не найдена');
       if (pp.receivedTxId) await em.getRepository(FinanceTransaction).delete(pp.receivedTxId);
       await ppRepo.delete(id);
+      return { ok: true, projectId: pp.projectId ?? null };
+    }).then(async (res) => {
+      if (res.projectId) await this.resyncSmmAfterUndo(res.projectId);
       return { ok: true };
     });
   }
@@ -1503,7 +1658,12 @@ export class FinanceService implements OnModuleInit {
     if (dto.direction !== undefined && ['smm', 'development', 'design'].includes(dto.direction)) p.direction = dto.direction;
     if (dto.tariff !== undefined) p.tariff = Number(dto.tariff) || 0;
     if (dto.note !== undefined) p.note = dto.note;
-    if (dto.contractDate !== undefined) p.contractDate = dto.contractDate || null;
+    if (dto.contractDate !== undefined) {
+      // Ручная правка даты контракта задаёт новую точку отсчёта цикла —
+      // катящийся якорь сбрасывается и заново выставится ближайшей оплатой.
+      p.contractDate = dto.contractDate || null;
+      p.cycleAnchor = null;
+    }
     if (dto.archived !== undefined) p.archived = !!dto.archived;
     if (dto.multiMonth !== undefined) p.multiMonth = !!dto.multiMonth;
     if (dto.status !== undefined && ['lead', 'active', 'done', 'archived'].includes(dto.status)) p.status = dto.status;
@@ -1541,6 +1701,21 @@ export class FinanceService implements OnModuleInit {
     return this.empRepo.save(e);
   }
   async removeEmployee(id: string) { await this.empRepo.delete(id); return { ok: true }; }
+
+  /** Задать бонус сотрудника за месяц (0 — убрать). Хранится в jsonb bonuses,
+   *  расход создаётся отдельно — при выплате, вместе с окладом. */
+  async setEmployeeBonus(id: string, dto: { ym?: string; amount?: any }) {
+    const e = await this.empRepo.findOne({ where: { id } });
+    if (!e) throw new NotFoundException('Сотрудник не найден');
+    const ym = dto.ym || currentYm();
+    const amount = r2(Number(dto.amount) || 0);
+    if (amount < 0) throw new BadRequestException('Бонус не может быть отрицательным');
+    const map = { ...(e.bonuses || {}) };
+    if (amount > 0) map[ym] = amount;
+    else delete map[ym];
+    e.bonuses = Object.keys(map).length ? map : null;
+    return this.empRepo.save(e);
+  }
 
   // Подписки/аренда
   listSubscriptions() { return this.subRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } }); }

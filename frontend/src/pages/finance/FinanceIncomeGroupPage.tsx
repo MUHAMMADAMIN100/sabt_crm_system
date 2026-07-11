@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, INCOME_GROUPS } from './finlib';
+import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, INCOME_GROUPS } from './finlib';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
 import { financeApi } from '@/services/api.service';
@@ -180,7 +180,7 @@ function ArchivedProjects({ projects }: { projects: any[] }) {
       {open && (
         <div className="table-wrap" style={{ marginTop: 10 }}>
           <table>
-            <thead><tr><th>Проект</th><th>Дата контракта</th><th className="num">Тариф</th><th style={{ width: 150 }} /></tr></thead>
+            <thead><tr><th>Проект</th><th>Дата контракта</th><th className="num">Тариф</th><th style={{ width: 172 }} /></tr></thead>
             <tbody>
               {projects.map((p) => (
                 <tr key={p.id} style={{ opacity: 0.75 }}>
@@ -249,14 +249,15 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
         <table>
           <thead>
             <tr>
-              <th>Проект</th>
+              <th style={{ minWidth: 150 }}>Проект</th>
               <th>Дата контракта</th>
-              <th className="num">Тариф</th>
-              <th>Часть 1</th>
-              <th>Часть 2</th>
-              <th>Полная оплата</th>
-              <th style={{ minWidth: 180 }}>Комментарий</th>
-              <th style={{ width: 76 }} />
+              <th className="num" style={{ width: 90 }}>Тариф</th>
+              <th style={{ minWidth: 170 }}>Часть 1</th>
+              <th style={{ minWidth: 170 }}>Часть 2</th>
+              <th style={{ minWidth: 118 }}>Полная оплата</th>
+              <th style={{ minWidth: 140 }}>Комментарий</th>
+              {/* 3 кнопки действий — 76px не хватало, колонка обрезалась. */}
+              <th style={{ width: 116 }} />
             </tr>
           </thead>
           <tbody>
@@ -267,7 +268,9 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                   {r.alert === 'pay' && <div style={{ marginTop: 4 }}><span className="badge wait">получить оплату</span></div>}
                   {r.alert === 'rest' && <div style={{ marginTop: 4 }}><span className="badge transfer">получить остаток</span></div>}
                 </td>
-                <td className="muted nowrap">{r.project.contractDate ? formatDate(r.project.contractDate) : '—'}</td>
+                {/* Дата цикла катится по месяцам: контракт 20.01 → в феврале 20.02.
+                    После каждой полной оплаты якорь = дата фактической оплаты. */}
+                <td className="muted nowrap">{r.cycleDate ? formatDate(r.cycleDate) : (r.project.contractDate ? formatDate(r.project.contractDate) : '—')}</td>
                 <td className="num">{money(r.project.tariff)}</td>
                 {([1, 2] as const).map((n) => {
                   const p = n === 1 ? r.part1 : r.part2;
@@ -281,15 +284,18 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                           <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPart(p)}><FinIcon name="undo" size={15} /></button>
                         </span>
                       ) : (
-                        <span className="flex">
-                          <span className="badge wait">{money(p.amount)}</span>
+                        // Срок — второй строкой: ячейка вдвое уже, таблица влезает в окно.
+                        <div className="part-cell">
+                          <span className="flex">
+                            <span className="badge wait">{money(p.amount)}</span>
+                            <button className="btn primary sm" onClick={() => setReceive(p)}>Получено</button>
+                          </span>
                           {p.dueDate && (
                             <span className={'mini nowrap ' + (p.dueDate < todayISO() ? 'neg' : 'muted')} title="Срок оплаты">
-                              до {formatDate(p.dueDate)}
+                              до {formatDate(p.dueDate)} · {daysLabel(p.dueDate)}
                             </span>
                           )}
-                          <button className="btn primary sm" onClick={() => setReceive(p)}>Получено</button>
-                        </span>
+                        </div>
                       )}
                     </td>
                   );
@@ -300,11 +306,14 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                       <div>
                         <span className="badge ok">оплачено</span>
                         {r.nextDue?.dueDate && (
-                          <div className="mini muted" style={{ marginTop: 4 }}>след. платёж {money(r.nextDue.amount)} к {formatDate(r.nextDue.dueDate)}</div>
+                          <div className={'mini nowrap ' + ((daysUntil(r.nextDue.dueDate) ?? 1) < 0 ? 'neg' : 'muted')} style={{ marginTop: 4 }}>
+                            след. {money(r.nextDue.amount)} к {formatDate(r.nextDue.dueDate)}
+                            <br />{daysLabel(r.nextDue.dueDate)}
+                          </div>
                         )}
                       </div>
                     )
-                    : <span className="mini muted">{money(r.paidLife)} / {money(r.project.tariff)}</span>}
+                    : <span className="mini muted nowrap">{money(r.paidLife)} / {money(r.project.tariff)}</span>}
                 </td>
                 <td><NoteCell project={r.project} /></td>
                 <RowActions onEdit={() => setEditProject(r.project)} onArchive={() => archiveProject(r.project)} onDelete={() => removeProjectRow(r.project)} />
@@ -328,9 +337,8 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
       </div>
 
       <p className="mini muted" style={{ marginTop: 12 }}>
-        «Получено» создаёт операцию-доход на выбранный счёт и привязывает её к проекту. «↩» отменяет.
-        При частичной оплате остаток планируется автоматически со сроком +20 дней; когда цикл оплачен
-        полностью — создаётся план следующего платежа ко дню контракта и приходит уведомление.
+        Частичная оплата: остаток планируется сам со сроком +20 дней. Полная оплата: дата контракта
+        сдвигается на день оплаты, план следующего месяца создаётся автоматически.
       </p>
 
       <ArchivedProjects projects={data.archived || []} />
@@ -482,11 +490,11 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
         <table>
           <thead>
             <tr>
-              <th style={{ minWidth: 170 }}>Проект</th>
-              <th className="num">Сумма</th>
-              {months.map((m) => <th key={m} className="num" style={{ textTransform: 'capitalize' }}>{monthLabel(m)}</th>)}
-              <th style={{ minWidth: 150 }}>Комментарий</th>
-              <th style={{ width: 76 }} />
+              <th style={{ minWidth: 190 }}>Проект</th>
+              <th className="num" style={{ width: 96 }}>Сумма</th>
+              {months.map((m) => <th key={m} className="num" style={{ textTransform: 'capitalize', minWidth: 84 }}>{monthLabel(m)}</th>)}
+              <th style={{ minWidth: 160 }}>Комментарий</th>
+              <th style={{ width: 124 }} />
             </tr>
           </thead>
           <tbody>
@@ -684,12 +692,12 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
           <table>
             <thead>
               <tr>
-                <th>Название</th>
+                <th style={{ minWidth: 160 }}>Название</th>
                 <th>Дата</th>
-                <th className="num">Сумма</th>
+                <th className="num" style={{ width: 96 }}>Сумма</th>
                 <th style={{ minWidth: 170 }}>Комментарий</th>
-                <th>Статус</th>
-                <th style={{ width: 44 }} />
+                <th style={{ minWidth: 140 }}>Статус</th>
+                <th style={{ width: 90 }} />
               </tr>
             </thead>
             <tbody>

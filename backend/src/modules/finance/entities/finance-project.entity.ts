@@ -23,9 +23,16 @@ export class FinanceProject {
   @Column({ type: 'text', nullable: true })
   note: string | null;
 
-  /** Дата заключения контракта (ISO). По ней считается день оплаты SMM-цикла. */
+  /** Дата заключения контракта (ISO) — исходная, правится только вручную. */
   @Column({ type: 'date', nullable: true })
   contractDate: string | null;
+
+  /** Якорь SMM-цикла: дата последней ПОЛНОЙ оплаты. Катится вперёд при каждой
+   *  полной оплате (просрочка сдвигает день следующего платежа) и
+   *  пересчитывается из оплат при их отмене. NULL — оплат ещё не было,
+   *  якорём служит contractDate. */
+  @Column({ type: 'date', nullable: true })
+  cycleAnchor: string | null;
 
   /** Архивный проект — больше не работаем; уходит из активных таблиц. */
   @Column({ type: 'boolean', default: false })

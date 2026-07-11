@@ -8,7 +8,9 @@ export function money(n: number, withSign = false): string {
   const v = Number(n) || 0
   const sign = withSign && v > 0 ? '+' : ''
   const abs = Number.isInteger(v) ? nf.format(v) : nf2.format(v)
-  return `${sign}${abs} с.`
+  // Пробел перед «с.» — неразрывный: с обычным «с.» отрывалось на новую строку
+  // в узких ячейках таблиц («3 500» / «с.»).
+  return `${sign}${abs} с.`
 }
 
 export function todayISO(): string {
@@ -39,6 +41,25 @@ export function contractDay(contractDate?: string | null): number | null {
   if (!contractDate || contractDate.length < 10) return null
   const d = Number(contractDate.slice(8, 10))
   return Number.isFinite(d) && d > 0 ? d : null
+}
+
+/** Дней от сегодня до даты (ISO). Отрицательное — дата в прошлом. */
+export function daysUntil(iso?: string | null): number | null {
+  if (!iso || iso.length < 10) return null
+  const target = new Date(iso.slice(0, 10) + 'T00:00:00')
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (isNaN(target.getTime())) return null
+  return Math.round((target.getTime() - today.getTime()) / 86400_000)
+}
+
+/** «через 12 дн.» / «сегодня» / «просрочено 3 дн.» — подпись к сроку оплаты. */
+export function daysLabel(iso?: string | null): string | null {
+  const d = daysUntil(iso)
+  if (d === null) return null
+  if (d === 0) return 'сегодня'
+  if (d > 0) return `через ${d} дн.`
+  return `просрочено ${-d} дн.`
 }
 
 export function formatDate(iso?: string | null): string {

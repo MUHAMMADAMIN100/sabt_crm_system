@@ -25,6 +25,11 @@ export class FinanceEmployee {
   @Column({ type: 'date', nullable: true })
   hireDate: string | null;
 
+  /** Бонусы по месяцам: { '2026-07': 500 }. Задаются вручную в зарплатной
+   *  ведомости; входят в «к выплате», выплата создаёт расход как и оклад. */
+  @Column({ type: 'jsonb', nullable: true })
+  bonuses: Record<string, number> | null;
+
   /** active — учитывается в фонде ЗП; fired — нет. Legacy 'inactive' трактуем как fired. */
   @Column({ type: 'varchar', length: 16, default: 'active' })
   status: 'active' | 'fired';

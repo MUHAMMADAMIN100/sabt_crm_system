@@ -355,6 +355,7 @@ export const financeApi = {
   createEmployee: (data: any) => api.post('/finance/employees', data).then(r => r.data),
   updateEmployee: (id: string, data: any) => api.patch(`/finance/employees/${id}`, data).then(r => r.data),
   removeEmployee: (id: string) => api.delete(`/finance/employees/${id}`).then(r => r.data),
+  setEmployeeBonus: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/bonus`, data).then(r => r.data),
 
   // Аренда/подписки
   subscriptions: () => api.get('/finance/subscriptions').then(r => r.data),

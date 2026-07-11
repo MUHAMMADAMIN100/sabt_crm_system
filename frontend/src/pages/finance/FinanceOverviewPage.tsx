@@ -169,7 +169,7 @@ export default function FinanceOverviewPage() {
         <div className="card stat clickable" onClick={() => navigate('/finance/expense/salary')}>
           <div className="label"><FinIcon name="salary" size={15} /> К выплате ЗП за месяц</div>
           <div className="value">{money(stats.salaryToPay || 0)}</div>
-          <div className="sub">фонд {money(stats.salaryFund || 0)} − авансы − выплачено</div>
+          <div className="sub">фонд {money(stats.salaryFund || 0)}{(stats.salaryBonuses || 0) > 0 ? ` + бонусы ${money(stats.salaryBonuses)}` : ''} − авансы − выплачено</div>
         </div>
         <div className="card stat clickable" onClick={() => navigate('/finance/expense/debts')}>
           <div className="label"><FinIcon name="receipt" size={15} /> Всего должны</div>

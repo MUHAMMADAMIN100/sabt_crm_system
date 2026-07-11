@@ -84,14 +84,14 @@ export default function FinanceTransactionsPage() {
           <table>
             <thead>
               <tr>
-                <th style={{ width: 132 }}>Дата</th>
-                <th style={{ width: 110 }}>Тип</th>
-                <th style={{ width: 160 }}>Категория</th>
-                <th>Описание</th>
-                <th className="num" style={{ width: 110 }}>Сумма</th>
-                <th style={{ width: 120 }}>Со счёта</th>
-                <th style={{ width: 120 }}>На счёт</th>
-                <th style={{ width: 44 }} />
+                <th style={{ width: 140 }}>Дата</th>
+                <th style={{ width: 120 }}>Тип</th>
+                <th style={{ width: 170 }}>Категория</th>
+                <th style={{ minWidth: 200 }}>Описание</th>
+                <th className="num" style={{ width: 120 }}>Сумма</th>
+                <th style={{ width: 130 }}>Со счёта</th>
+                <th style={{ width: 130 }}>На счёт</th>
+                <th style={{ width: 56 }} />
               </tr>
             </thead>
             <tbody>

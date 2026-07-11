@@ -24,7 +24,11 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
   color: var(--text);
   font-size: 14px;
-  max-width: 1200px;
+  /* Раньше здесь было max-width: 1200px — раздел не использовал ширину окна,
+     широкие таблицы (SMM, матрицы месяцев) не помещались и обрезались справа. */
+  width: 100%;
+  max-width: 1700px;
+  min-width: 0;
 }
 .fin-root a { color: inherit; text-decoration: none; }
 .fin-root button { font-family: inherit; cursor: pointer; }
@@ -74,16 +78,29 @@
 .fin-root .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; overflow-x: auto; }
 .fin-root table { width: 100%; border-collapse: collapse; }
 .fin-root th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
-  font-weight: 600; padding: 11px 14px; border-bottom: 1px solid var(--border); background: transparent; }
-.fin-root td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13.5px; color: var(--text); }
+  font-weight: 600; padding: 11px 12px; border-bottom: 1px solid var(--border); background: transparent;
+  white-space: nowrap; vertical-align: bottom; }
+.fin-root td { padding: 11px 12px; border-bottom: 1px solid var(--border); font-size: 13.5px; color: var(--text); vertical-align: middle; }
 .fin-root tr:last-child td { border-bottom: none; }
 .fin-root tbody tr:hover { background: var(--surface-2); }
-.fin-root td.num, .fin-root th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.fin-root .row-actions { opacity: 0; transition: opacity .12s; }
+/* Суммы не переносятся: колонка сужается — «3 500 с.» рвалось пополам. */
+.fin-root td.num, .fin-root th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Ряд кнопок-действий: компактнее и с ровным зазором, иначе распирал колонку. */
+.fin-root td .btn.sm + .btn.sm { margin-left: 2px; }
+.fin-root td .flex { gap: 7px; }
+/* Ячейка «Часть 1/2»: бейдж + кнопка, срок оплаты второй строкой. */
+.fin-root .part-cell { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
+.fin-root .row-actions { opacity: 0; transition: opacity .12s; white-space: nowrap; }
 .fin-root tr:hover .row-actions { opacity: 1; }
 .fin-root tfoot td { border-top: 2px solid var(--border); background: var(--surface-2); font-variant-numeric: tabular-nums; font-weight: 600; }
-.fin-root .cell-input { border: 1px solid transparent; background: transparent; padding: 5px 7px; font-size: 13px; width: 100%; border-radius: 6px; color: var(--text); }
+.fin-root .cell-input { border: 1px solid transparent; background: transparent; padding: 5px 7px; font-size: 13px; width: 100%; min-width: 90px; border-radius: 6px; color: var(--text); }
 .fin-root .cell-input:hover { border-color: var(--border); }
+
+/* Если таблица всё же шире окна — тонкий, не «системный» скроллбар. */
+.fin-root .table-wrap { scrollbar-width: thin; scrollbar-color: #d3d7de transparent; }
+.fin-root .table-wrap::-webkit-scrollbar { height: 8px; }
+.fin-root .table-wrap::-webkit-scrollbar-thumb { background: #d3d7de; border-radius: 99px; }
+.fin-root .table-wrap::-webkit-scrollbar-track { background: transparent; }
 .fin-root select.cell-input { cursor: pointer; appearance: none; }
 .fin-root .badge-select { font-weight: 600; }
 .fin-root .badge-select.income { color: var(--green); }
@@ -156,6 +173,7 @@
 .fin-root .progress { height: 6px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
 .fin-root .progress > i { display: block; height: 100%; border-radius: 99px; background: var(--green); }
 
+/* ─── Адаптив: планшет и мобильный ───────────────────────── */
 @media (max-width: 1180px) {
   .fin-root .grid-4 { grid-template-columns: repeat(2, 1fr); }
   .fin-root .grid-overview { grid-template-columns: 1fr 1fr; }
@@ -165,7 +183,41 @@
   .fin-root .grid-3 { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 720px) {
+  .fin-root { font-size: 13.5px; }
   .fin-root .grid-2, .fin-root .grid-3, .fin-root .grid-4, .fin-root .grid-overview { grid-template-columns: 1fr; }
   .fin-root .grid-overview > :last-child { grid-column: auto; }
+  .fin-root .grid-balances { grid-template-columns: repeat(2, 1fr); }
   .fin-root .form-grid { grid-template-columns: 1fr; }
+
+  /* Шапка страницы: заголовок и управление в столбик, без сплющивания. */
+  .fin-root .page-head { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 14px; }
+  .fin-root .page-head h1 { font-size: 19px; }
+  .fin-root .page-head .flex { flex-wrap: wrap; }
+  .fin-root .month-nav { justify-content: space-between; flex: 1; }
+  .fin-root .month-nav .label { min-width: 0; flex: 1; }
+
+  /* Карточки и таблицы компактнее; таблица скроллится, страница — нет. */
+  .fin-root .card { padding: 14px; }
+  .fin-root .stat .value { font-size: 21px; }
+  .fin-root th, .fin-root td { padding: 9px 10px; }
+  .fin-root td { font-size: 13px; }
+
+  /* На тач-устройствах hover нет — кнопки строк видны всегда. */
+  .fin-root .row-actions { opacity: 1; }
+
+  /* Модалка почти во весь экран, кнопки — в столбик, если не влезают. */
+  .fin-root .overlay, .fin-overlay { padding: 10px; align-items: end; }
+  .fin-root .modal { max-width: 100%; max-height: 94vh; border-radius: 14px; }
+  .fin-root .modal-head { padding: 14px 16px; }
+  .fin-root .modal-body { padding: 16px; gap: 12px; }
+  .fin-root .modal-foot { padding: 12px 16px; flex-wrap: wrap; }
+  .fin-root .type-tabs { grid-template-columns: repeat(2, 1fr); }
+
+  .fin-root .toolbar { gap: 8px; }
+  .fin-root .toolbar .grow { flex-basis: 100%; }
+  .fin-root .section-title { margin: 20px 0 10px; }
+}
+@media (max-width: 460px) {
+  .fin-root .grid-balances { grid-template-columns: 1fr; }
+  .fin-root .btn { padding: 8px 12px; }
 }
