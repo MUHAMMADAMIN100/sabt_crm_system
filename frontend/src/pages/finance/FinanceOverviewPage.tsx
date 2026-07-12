@@ -86,17 +86,25 @@ export default function FinanceOverviewPage() {
       </div>
 
       <div className="cards grid-overview" style={{ marginBottom: 22 }}>
+        {/* Три среза в одной карточке: текущий месяц (заголовок),
+            приходящий месяц (прогноз) и за всё время — без дублей внизу. */}
         <SummaryContainer
           title="Доход за месяц" hint="все операции месяца · по категориям"
           icon="income" color="var(--green)" total={income}
           rows={incCats} onClick={() => navigate('/finance/income')}
-          footerLabel="Доход за всё время" footerValue={money(stats.incomeAllTime || 0)} footerCls="pos"
+          footerRows={[
+            { label: 'Прогноз на приходящий месяц', value: `≈ ${money(stats.forecastNextMonth || 0)}` },
+            { label: 'Доход за всё время', value: money(stats.incomeAllTime || 0), cls: 'pos' },
+          ]}
         />
         <SummaryContainer
           title="Расход за месяц" hint="все операции месяца · по категориям"
           icon="expense" color="var(--red)" total={expense}
           rows={expCats} onClick={() => navigate('/finance/expense')}
-          footerLabel="Расход за всё время" footerValue={money(stats.expenseAllTime || 0)} footerCls="neg"
+          footerRows={[
+            { label: 'Регулярные обязательства / мес', value: money((stats.salaryToPay || 0) + (stats.subsMonthly || 0)) },
+            { label: 'Расход за всё время', value: money(stats.expenseAllTime || 0), cls: 'neg' },
+          ]}
         />
         <div className="card">
           <div className="summary-head"><span className="t">Overall</span></div>
@@ -138,19 +146,9 @@ export default function FinanceOverviewPage() {
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div className="between">
-              <span className="mini muted">Ожидается ещё в этом месяце</span>
-              <b>{money(stats.expectedThisMonth || 0)}</b>
-            </div>
-            <div className="between">
-              <span className="mini muted">Прогноз на следующий месяц</span>
-              <b>≈ {money(stats.forecastNextMonth || 0)}</b>
-            </div>
-            <div className="between">
-              <span className="mini muted">Доход за всё время</span>
-              <b className="pos">{money(stats.incomeAllTime || 0)}</b>
-            </div>
+          <div className="between" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
+            <span className="mini muted">Ожидается ещё в этом месяце</span>
+            <b>{money(stats.expectedThisMonth || 0)}</b>
           </div>
         </div>
 
@@ -168,9 +166,11 @@ export default function FinanceOverviewPage() {
               </div>
             ))}
           </div>
+          {/* «Потрачено за месяц» дублировало заголовок верхней карточки —
+              вместо него остаток по плану статей. */}
           <div className="between" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
-            <span className="mini muted">Потрачено за месяц</span>
-            <b className="neg">{money(expense)}</b>
+            <span className="mini muted">Осталось оплатить по плану</span>
+            <b>{money(expenseRows.reduce((s, r) => s + Math.max(0, r.plan - r.fact), 0))}</b>
           </div>
         </div>
       </div>
@@ -211,10 +211,10 @@ export default function FinanceOverviewPage() {
 
 // Карточка-сводка «Доход»/«Расход»: разбивка по категориям операций месяца.
 // rows приходят из overview.incomeByCategory/expenseByCategory: {categoryId,name,icon,color,total}.
-function SummaryContainer({ title, hint, icon, color, total, rows, onClick, footerLabel, footerValue, footerCls }: {
+function SummaryContainer({ title, hint, icon, color, total, rows, onClick, footerRows }: {
   title: string; hint?: string; icon: string; color: string; total: number;
   rows: any[]; onClick: () => void;
-  footerLabel?: string; footerValue?: string; footerCls?: string;
+  footerRows?: Array<{ label: string; value: string; cls?: string }>;
 }) {
   return (
     <div className="card clickable" onClick={onClick}>
@@ -234,10 +234,14 @@ function SummaryContainer({ title, hint, icon, color, total, rows, onClick, foot
           </div>
         ))}
       </div>
-      {footerLabel && (
-        <div className="between" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
-          <span className="mini muted">{footerLabel}</span>
-          <b className={footerCls}>{footerValue}</b>
+      {footerRows && footerRows.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {footerRows.map((f) => (
+            <div className="between" key={f.label}>
+              <span className="mini muted">{f.label}</span>
+              <b className={f.cls}>{f.value}</b>
+            </div>
+          ))}
         </div>
       )}
       <div className="mini muted" style={{ marginTop: 10 }}>Открыть детали →</div>
