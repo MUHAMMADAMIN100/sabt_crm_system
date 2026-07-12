@@ -39,7 +39,6 @@ export default function FinanceOverviewPage() {
     const p = (ov.incomePlan || []).find((x: any) => x.direction === g.key);
     return { ...g, plan: p?.plan || 0, fact: p?.fact || 0 };
   }), [ov.incomePlan]);
-  const incomePlanTotal = incomeRows.reduce((s, r) => s + r.plan, 0);
   const incomeReceivedTotal = incomeRows.reduce((s, r) => s + r.fact, 0);
 
   // Расход по статьям: план/факт из бэка (expensePlan), метаданные из EXPENSE_GROUPS
@@ -122,7 +121,9 @@ export default function FinanceOverviewPage() {
         <div className="card clickable" onClick={() => navigate('/finance/income')}>
           <div className="summary-head">
             <span className="t" style={{ color: 'var(--green)' }}><FinIcon name="income" size={18} /> Доход</span>
-            <span className="total" style={{ color: 'var(--green)' }}>{money(incomePlanTotal)}</span>
+            {/* Главная цифра — фактически получено за месяц (сумма планов
+                с полными тарифами Dev только запутывала). */}
+            <span className="total" style={{ color: 'var(--green)' }}>{money(incomeReceivedTotal)}</span>
           </div>
           <div className="brk-legend"><span>Направление</span><span>получено / план</span></div>
           <div className="brk">
@@ -133,9 +134,19 @@ export default function FinanceOverviewPage() {
               </div>
             ))}
           </div>
-          <div className="between" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
-            <span className="mini muted">Получено за месяц</span>
-            <b className="pos">{money(incomeReceivedTotal)}</b>
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="between">
+              <span className="mini muted">Ожидается ещё в этом месяце</span>
+              <b>{money(stats.expectedThisMonth || 0)}</b>
+            </div>
+            <div className="between">
+              <span className="mini muted">Прогноз на следующий месяц</span>
+              <b>≈ {money(stats.forecastNextMonth || 0)}</b>
+            </div>
+            <div className="between">
+              <span className="mini muted">Доход за всё время</span>
+              <b className="pos">{money(stats.incomeAllTime || 0)}</b>
+            </div>
           </div>
         </div>
 

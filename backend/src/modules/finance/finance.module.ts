@@ -8,6 +8,7 @@ import { FinanceEmployee } from './entities/finance-employee.entity';
 import { FinanceSubscription } from './entities/finance-subscription.entity';
 import { FinanceDebt } from './entities/finance-debt.entity';
 import { FinancePlannedPayment } from './entities/finance-planned-payment.entity';
+import { FinanceAsset } from './entities/finance-asset.entity';
 import { User } from '../users/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TelegramModule } from '../telegram/telegram.module';
@@ -19,7 +20,7 @@ import { FinanceController } from './finance.controller';
   imports: [TypeOrmModule.forFeature([
     FinanceTransaction, FinanceAccount, FinanceCategory,
     FinanceProject, FinanceEmployee, FinanceSubscription, FinanceDebt,
-    FinancePlannedPayment, User,
+    FinancePlannedPayment, FinanceAsset, User,
   ]), NotificationsModule, TelegramModule],
   controllers: [FinanceController],
   providers: [FinanceService, FinanceScheduler],

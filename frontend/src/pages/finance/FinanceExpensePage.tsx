@@ -20,7 +20,8 @@ export default function FinanceExpensePage() {
   const groupValue = (key: string): number => {
     if (!data) return 0;
     if (key === 'salary') return data.salary?.toPay ?? 0;
-    if (key === 'rent_subs') return data.subscriptions?.monthly ?? 0;
+    // Остаток к оплате за месяц — уменьшается с каждой оплатой, как у ЗП.
+    if (key === 'rent_subs') return data.subscriptions?.toPay ?? data.subscriptions?.monthly ?? 0;
     // Месячное обязательство по долгам: Σ min(платёж/мес, остаток) — как в эталоне.
     if (key === 'debts') return data.debts?.monthly ?? 0;
     return 0;

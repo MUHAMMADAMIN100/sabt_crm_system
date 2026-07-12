@@ -20,6 +20,7 @@ import { UpdateProjectDto } from './dto/update-project.dto';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { SetEmployeeBonusDto } from './dto/set-employee-bonus.dto';
+import { CreateAssetDto, UpdateAssetDto } from './dto/asset.dto';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { MarkSubscriptionPaidDto } from './dto/mark-subscription-paid.dto';
@@ -156,6 +157,12 @@ export class FinanceController {
   @Patch('debts/:id') updateDebt(@Param('id') id: string, @Body() dto: UpdateDebtDto) { return this.service.updateDebt(id, dto); }
   @Delete('debts/:id') removeDebt(@Param('id') id: string) { return this.service.removeDebt(id); }
   @Post('debts/:id/regenerate-schedule') regenerateSchedule(@Param('id') id: string) { return this.service.regenerateDebtScheduleById(id); }
+
+  // ─── Инвентарь (оборудование + амортизация) ──────────────────────
+  @Get('assets') listAssets() { return this.service.listAssets(); }
+  @Post('assets') createAsset(@Body() dto: CreateAssetDto) { return this.service.createAsset(dto); }
+  @Patch('assets/:id') updateAsset(@Param('id') id: string, @Body() dto: UpdateAssetDto) { return this.service.updateAsset(id, dto); }
+  @Delete('assets/:id') removeAsset(@Param('id') id: string) { return this.service.removeAsset(id); }
 
   // ─── Резервная копия / сброс ─────────────────────────────────────
   @Get('backup/export') exportAll() { return this.service.exportAll(); }

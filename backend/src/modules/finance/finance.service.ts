@@ -13,6 +13,7 @@ import { FinanceEmployee } from './entities/finance-employee.entity';
 import { FinanceSubscription } from './entities/finance-subscription.entity';
 import { FinanceDebt } from './entities/finance-debt.entity';
 import { FinancePlannedPayment } from './entities/finance-planned-payment.entity';
+import { FinanceAsset } from './entities/finance-asset.entity';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
 import {
@@ -141,6 +142,7 @@ export class FinanceService implements OnModuleInit {
     @InjectRepository(FinanceSubscription) private subRepo: Repository<FinanceSubscription>,
     @InjectRepository(FinanceDebt) private debtRepo: Repository<FinanceDebt>,
     @InjectRepository(FinancePlannedPayment) private ppRepo: Repository<FinancePlannedPayment>,
+    @InjectRepository(FinanceAsset) private assetRepo: Repository<FinanceAsset>,
     private ds: DataSource,
     private scheduler: FinanceScheduler,
   ) {}
@@ -211,6 +213,14 @@ export class FinanceService implements OnModuleInit {
       status varchar(16) DEFAULT 'expected', "receivedTxId" uuid, auto boolean DEFAULT false,
       "createdAt" timestamptz DEFAULT now())`);
     await run(`ALTER TABLE finance_planned_payments ADD COLUMN IF NOT EXISTS "dueDate" date`);
+
+    // Инвентарь (оборудование + линейная амортизация).
+    await run(`CREATE TABLE IF NOT EXISTS finance_assets (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(200) NOT NULL,
+      category varchar(60), "purchaseDate" date, price numeric(15,2) NOT NULL DEFAULT 0,
+      "serviceMonths" int NOT NULL DEFAULT 0, status varchar(16) NOT NULL DEFAULT 'in_use',
+      assignee varchar(200), serial varchar(120), "warrantyUntil" date, note text,
+      position int NOT NULL DEFAULT 0, "createdAt" timestamptz NOT NULL DEFAULT now())`);
     await run(`CREATE INDEX IF NOT EXISTS idx_fpp_project ON finance_planned_payments("projectId")`);
     await run(`CREATE INDEX IF NOT EXISTS idx_fpp_debt ON finance_planned_payments("debtId")`);
     await run(`CREATE INDEX IF NOT EXISTS idx_fpp_ym ON finance_planned_payments(ym)`);
@@ -712,7 +722,27 @@ export class FinanceService implements OnModuleInit {
       .filter(p => p.status === 'expected' && p.projectId)
       .reduce((s, p) => s + Number(p.amount), 0));
 
-    const stats = { expectedIncome, salaryToPay, salaryFund, salaryAdvances, salaryBonuses, salaryPaid, totalDebt, subsMonthly };
+    // Доход: ожидается ещё в ЭТОМ месяце, прогноз следующего месяца
+    // (SMM — тарифы активных проектов: цикл повторяется каждый месяц;
+    // Dev/Design — ожидаемые планы матриц на следующий месяц) и за всё время.
+    const expectedThisMonth = r2(planned
+      .filter(pp => pp.projectId && pp.status === 'expected' && pp.ym === ym)
+      .reduce((s, pp) => s + Number(pp.amount), 0));
+    const nextYm = shiftYm(ym, 1);
+    const smmForecast = r2(m.projects
+      .filter(p => p.direction === 'smm' && !p.archived && p.status !== 'lead')
+      .reduce((s, p) => s + Number(p.tariff), 0));
+    const otherIds = new Set(m.projects.filter(p => p.direction !== 'smm' && !p.archived).map(p => p.id));
+    const otherForecast = r2(planned
+      .filter(pp => pp.projectId && otherIds.has(pp.projectId) && pp.status === 'expected' && pp.ym === nextYm)
+      .reduce((s, pp) => s + Number(pp.amount), 0));
+    const forecastNextMonth = r2(smmForecast + otherForecast);
+    const incomeAllTime = this.sum(allTx.filter(t => t.type === FinanceTxType.INCOME));
+
+    const stats = {
+      expectedIncome, expectedThisMonth, forecastNextMonth, incomeAllTime,
+      salaryToPay, salaryFund, salaryAdvances, salaryBonuses, salaryPaid, totalDebt, subsMonthly,
+    };
 
     const transactions = await this.decorate(this.sortByDateDesc(monthTx), m);
 
@@ -1005,9 +1035,12 @@ export class FinanceService implements OnModuleInit {
     const subMonthly = r2(activeSubs.reduce((s, x) => s + Number(x.amount), 0));
     const subsSpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'rent_subs'));
     // Позиции, оплаченные за месяц: операцией журнала или отметкой без операции.
-    const subsPaidCount = activeSubs.filter(s =>
-      monthExp.some(t => t.subscriptionId === s.id) || (s.paidMarks || []).some(x => x.ym === ym),
-    ).length;
+    const subPaid = (s: FinanceSubscription) =>
+      monthExp.some(t => t.subscriptionId === s.id) || (s.paidMarks || []).some(x => x.ym === ym);
+    const subsPaidCount = activeSubs.filter(subPaid).length;
+    // Осталось оплатить за месяц — карточка «Аренда и подписки» уменьшается
+    // с каждой оплатой, как у зарплаты.
+    const subsToPay = r2(activeSubs.filter(s => !subPaid(s)).reduce((s, x) => s + Number(x.amount), 0));
 
     const debtIds = new Set(m.debts.map(d => d.id));
     const cm = currentYm();
@@ -1024,7 +1057,7 @@ export class FinanceService implements OnModuleInit {
     return {
       ym,
       salary: { spent: salarySpent, count: activeEmps.length, paidCount: salaryPaidCount, bonuses: salaryBonuses, toPay: r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances - salarySpent)) },
-      subscriptions: { spent: subsSpent, count: subsCount, paidCount: subsPaidCount, monthly: subMonthly },
+      subscriptions: { spent: subsSpent, count: subsCount, paidCount: subsPaidCount, monthly: subMonthly, toPay: subsToPay },
       debts: { spent: debtsSpent, count: debtCount, remaining: totalRemaining, dueMonth, monthly: debtsMonthly },
       other: { spent: otherSpent },
     };
@@ -1872,13 +1905,82 @@ export class FinanceService implements OnModuleInit {
     return { ok: true };
   }
 
+  // ─── Инвентарь (оборудование + амортизация) ──────────────────────
+  /** Полных месяцев эксплуатации от даты покупки до сегодня (не меньше 0). */
+  private assetMonthsElapsed(purchaseDate: string | null): number {
+    if (!purchaseDate || purchaseDate.length < 10) return 0;
+    const today = todayISO();
+    if (purchaseDate >= today) return 0;
+    const [py, pm, pd] = purchaseDate.slice(0, 10).split('-').map(Number);
+    const [ty, tm, td] = today.split('-').map(Number);
+    let months = (ty - py) * 12 + (tm - pm);
+    if (td < pd) months -= 1; // неполный месяц не считаем
+    return Math.max(0, months);
+  }
+
+  /** Расчёт линейной амортизации: цена равными долями за срок службы.
+   *  Для списанных/проданных остаточную стоимость считаем нулевой. */
+  private decorateAsset(a: FinanceAsset) {
+    const price = Number(a.price) || 0;
+    const life = Number(a.serviceMonths) || 0;
+    const monthlyDep = life > 0 ? r2(price / life) : 0;
+    const elapsed = this.assetMonthsElapsed(a.purchaseDate);
+    const depreciated = life > 0 ? r2(Math.min(price, monthlyDep * Math.min(elapsed, life))) : 0;
+    const residualRaw = life > 0 ? r2(Math.max(0, price - depreciated)) : price;
+    const active = a.status === 'in_use' || a.status === 'repair';
+    return {
+      ...a, price,
+      monthlyDep, depreciated: active ? depreciated : price,
+      residual: active ? residualRaw : 0,
+      monthsElapsed: elapsed,
+      wornOut: life > 0 && elapsed >= life,
+    };
+  }
+
+  async listAssets() {
+    const rows = await this.assetRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
+    return rows.map(a => this.decorateAsset(a));
+  }
+
+  async createAsset(dto: any) {
+    if (!dto.name?.trim()) throw new BadRequestException('Название обязательно');
+    const position = await this.assetRepo.count();
+    const saved = await this.assetRepo.save(this.assetRepo.create({
+      name: dto.name.trim(), category: dto.category?.trim() || null,
+      purchaseDate: dto.purchaseDate || null, price: r2(Number(dto.price) || 0),
+      serviceMonths: Math.max(0, Number(dto.serviceMonths) || 0),
+      status: ['in_use', 'repair', 'written_off', 'sold'].includes(dto.status) ? dto.status : 'in_use',
+      assignee: dto.assignee?.trim() || null, serial: dto.serial?.trim() || null,
+      warrantyUntil: dto.warrantyUntil || null, note: dto.note?.trim() || null, position,
+    }));
+    return this.decorateAsset(saved);
+  }
+
+  async updateAsset(id: string, dto: any) {
+    const a = await this.assetRepo.findOne({ where: { id } });
+    if (!a) throw new NotFoundException('Позиция инвентаря не найдена');
+    if (dto.name !== undefined) a.name = String(dto.name).trim();
+    if (dto.category !== undefined) a.category = dto.category?.trim() || null;
+    if (dto.purchaseDate !== undefined) a.purchaseDate = dto.purchaseDate || null;
+    if (dto.price !== undefined) a.price = r2(Number(dto.price) || 0);
+    if (dto.serviceMonths !== undefined) a.serviceMonths = Math.max(0, Number(dto.serviceMonths) || 0);
+    if (dto.status !== undefined && ['in_use', 'repair', 'written_off', 'sold'].includes(dto.status)) a.status = dto.status;
+    if (dto.assignee !== undefined) a.assignee = dto.assignee?.trim() || null;
+    if (dto.serial !== undefined) a.serial = dto.serial?.trim() || null;
+    if (dto.warrantyUntil !== undefined) a.warrantyUntil = dto.warrantyUntil || null;
+    if (dto.note !== undefined) a.note = dto.note?.trim() || null;
+    return this.decorateAsset(await this.assetRepo.save(a));
+  }
+
+  async removeAsset(id: string) { await this.assetRepo.delete(id); return { ok: true }; }
+
   // ─── Резервная копия / сброс ─────────────────────────────────────
   async exportAll() {
-    const [accounts, categories, projects, employees, subscriptions, debts, plannedPayments, transactions] = await Promise.all([
+    const [accounts, categories, projects, employees, subscriptions, debts, plannedPayments, transactions, assets] = await Promise.all([
       this.accRepo.find(), this.catRepo.find(), this.projRepo.find(), this.empRepo.find(),
-      this.subRepo.find(), this.debtRepo.find(), this.ppRepo.find(), this.txRepo.find(),
+      this.subRepo.find(), this.debtRepo.find(), this.ppRepo.find(), this.txRepo.find(), this.assetRepo.find(),
     ]);
-    return { version: 2, exportedAt: new Date().toISOString(), accounts, categories, projects, employees, subscriptions, debts, plannedPayments, transactions };
+    return { version: 2, exportedAt: new Date().toISOString(), accounts, categories, projects, employees, subscriptions, debts, plannedPayments, transactions, assets };
   }
 
   async importAll(data: any) {
@@ -1893,6 +1995,7 @@ export class FinanceService implements OnModuleInit {
     await save(this.debtRepo, data.debts);
     await save(this.ppRepo, data.plannedPayments);
     await save(this.txRepo, data.transactions);
+    await save(this.assetRepo, data.assets);
     if (!(data.accounts?.length) && !(data.categories?.length)) await this.seedDefaults();
     return { ok: true };
   }
@@ -1901,6 +2004,7 @@ export class FinanceService implements OnModuleInit {
   async resetAll(reseed = true) {
     await this.txRepo.createQueryBuilder().delete().execute();
     await this.ppRepo.createQueryBuilder().delete().execute();
+    await this.assetRepo.createQueryBuilder().delete().execute();
     await this.debtRepo.createQueryBuilder().delete().execute();
     await this.subRepo.createQueryBuilder().delete().execute();
     await this.empRepo.createQueryBuilder().delete().execute();

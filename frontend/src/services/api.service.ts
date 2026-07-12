@@ -356,6 +356,12 @@ export const financeApi = {
   updateEmployee: (id: string, data: any) => api.patch(`/finance/employees/${id}`, data).then(r => r.data),
   removeEmployee: (id: string) => api.delete(`/finance/employees/${id}`).then(r => r.data),
   setEmployeeBonus: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/bonus`, data).then(r => r.data),
+
+  // Инвентарь
+  assets: () => api.get('/finance/assets').then(r => r.data),
+  createAsset: (data: any) => api.post('/finance/assets', data).then(r => r.data),
+  updateAsset: (id: string, data: any) => api.patch(`/finance/assets/${id}`, data).then(r => r.data),
+  removeAsset: (id: string) => api.delete(`/finance/assets/${id}`).then(r => r.data),
   updatePlanned: (id: string, data: { amount?: number; dueDate?: string | null }) => api.patch(`/finance/planned-payments/${id}`, data).then(r => r.data),
 
   // Аренда/подписки
