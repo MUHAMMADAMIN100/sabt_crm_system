@@ -87,12 +87,16 @@ export default function FinanceOverviewPage() {
 
       <div className="cards grid-overview" style={{ marginBottom: 22 }}>
         <SummaryContainer
-          title="Доход" icon="income" color="var(--green)" total={income}
+          title="Доход за месяц" hint="все операции месяца · по категориям"
+          icon="income" color="var(--green)" total={income}
           rows={incCats} onClick={() => navigate('/finance/income')}
+          footerLabel="Доход за всё время" footerValue={money(stats.incomeAllTime || 0)} footerCls="pos"
         />
         <SummaryContainer
-          title="Расход" icon="expense" color="var(--red)" total={expense}
+          title="Расход за месяц" hint="все операции месяца · по категориям"
+          icon="expense" color="var(--red)" total={expense}
           rows={expCats} onClick={() => navigate('/finance/expense')}
+          footerLabel="Расход за всё время" footerValue={money(stats.expenseAllTime || 0)} footerCls="neg"
         />
         <div className="card">
           <div className="summary-head"><span className="t">Overall</span></div>
@@ -120,12 +124,12 @@ export default function FinanceOverviewPage() {
       <div className="cards grid-2" style={{ marginBottom: 22 }}>
         <div className="card clickable" onClick={() => navigate('/finance/income')}>
           <div className="summary-head">
-            <span className="t" style={{ color: 'var(--green)' }}><FinIcon name="income" size={18} /> Доход</span>
+            <span className="t" style={{ color: 'var(--green)' }}><FinIcon name="income" size={18} /> Доход по направлениям</span>
             {/* Главная цифра — фактически получено за месяц (сумма планов
                 с полными тарифами Dev только запутывала). */}
             <span className="total" style={{ color: 'var(--green)' }}>{money(incomeReceivedTotal)}</span>
           </div>
-          <div className="brk-legend"><span>Направление</span><span>получено / план</span></div>
+          <div className="brk-legend"><span>только проекты · за месяц</span><span>получено / план</span></div>
           <div className="brk">
             {incomeRows.map((r) => (
               <div className="brk-row" key={r.key}>
@@ -152,10 +156,10 @@ export default function FinanceOverviewPage() {
 
         <div className="card clickable" onClick={() => navigate('/finance/expense')}>
           <div className="summary-head">
-            <span className="t" style={{ color: 'var(--red)' }}><FinIcon name="expense" size={18} /> Расход</span>
+            <span className="t" style={{ color: 'var(--red)' }}><FinIcon name="expense" size={18} /> Расход по статьям</span>
             <span className="total" style={{ color: 'var(--red)' }}>{money(expensePlanTotal)}</span>
           </div>
-          <div className="brk-legend"><span>Статья</span><span>потрачено / план</span></div>
+          <div className="brk-legend"><span>план месяца по статьям</span><span>потрачено / план</span></div>
           <div className="brk">
             {expenseRows.map((r) => (
               <div className="brk-row" key={r.key}>
@@ -207,9 +211,10 @@ export default function FinanceOverviewPage() {
 
 // Карточка-сводка «Доход»/«Расход»: разбивка по категориям операций месяца.
 // rows приходят из overview.incomeByCategory/expenseByCategory: {categoryId,name,icon,color,total}.
-function SummaryContainer({ title, icon, color, total, rows, onClick }: {
-  title: string; icon: string; color: string; total: number;
+function SummaryContainer({ title, hint, icon, color, total, rows, onClick, footerLabel, footerValue, footerCls }: {
+  title: string; hint?: string; icon: string; color: string; total: number;
   rows: any[]; onClick: () => void;
+  footerLabel?: string; footerValue?: string; footerCls?: string;
 }) {
   return (
     <div className="card clickable" onClick={onClick}>
@@ -217,6 +222,7 @@ function SummaryContainer({ title, icon, color, total, rows, onClick }: {
         <span className="t" style={{ color }}><FinIcon name={icon} size={18} /> {title}</span>
         <span className="total" style={{ color }}>{money(total)}</span>
       </div>
+      {hint && <div className="brk-legend"><span>{hint}</span><span /></div>}
       <div className="brk">
         {rows.length === 0 && <div className="mini muted" style={{ padding: '6px 0' }}>Нет операций</div>}
         {rows.map((r) => (
@@ -228,6 +234,12 @@ function SummaryContainer({ title, icon, color, total, rows, onClick }: {
           </div>
         ))}
       </div>
+      {footerLabel && (
+        <div className="between" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
+          <span className="mini muted">{footerLabel}</span>
+          <b className={footerCls}>{footerValue}</b>
+        </div>
+      )}
       <div className="mini muted" style={{ marginTop: 10 }}>Открыть детали →</div>
     </div>
   );

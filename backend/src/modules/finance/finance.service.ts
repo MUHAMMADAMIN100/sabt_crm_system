@@ -713,7 +713,9 @@ export class FinanceService implements OnModuleInit {
     const debtFact = this.sum(monthExpense.filter(t => this.groupOf(t, m) === 'debts'));
 
     const expensePlan = [
-      { group: 'salary', plan: salaryToPay, fact: salaryPaid },
+      // План ЗП — полное обязательство месяца (фонд + бонусы − авансы), а не
+      // остаток: после выплат «потрачено 31 750 / план 0» выглядело нонсенсом.
+      { group: 'salary', plan: r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances)), fact: salaryPaid },
       { group: 'rent_subs', plan: subsMonthly, fact: rentSubFact },
       { group: 'debts', plan: debtPlan, fact: debtFact },
     ];
@@ -738,9 +740,10 @@ export class FinanceService implements OnModuleInit {
       .reduce((s, pp) => s + Number(pp.amount), 0));
     const forecastNextMonth = r2(smmForecast + otherForecast);
     const incomeAllTime = this.sum(allTx.filter(t => t.type === FinanceTxType.INCOME));
+    const expenseAllTime = this.sum(allTx.filter(t => t.type === FinanceTxType.EXPENSE));
 
     const stats = {
-      expectedIncome, expectedThisMonth, forecastNextMonth, incomeAllTime,
+      expectedIncome, expectedThisMonth, forecastNextMonth, incomeAllTime, expenseAllTime,
       salaryToPay, salaryFund, salaryAdvances, salaryBonuses, salaryPaid, totalDebt, subsMonthly,
     };
 
@@ -806,15 +809,37 @@ export class FinanceService implements OnModuleInit {
       const projects = m.projects.filter(p => p.direction === 'smm');
       const active = projects.filter(p => !p.archived);
       const archived = projects.filter(p => p.archived);
+      // Планы, попавшие в ячейки строк, — для честных итогов частей в tfoot.
+      const displayedPlans: FinancePlannedPayment[] = [];
       const rows = active.map(p => {
         const pPlans = planned.filter(x => x.projectId === p.id);
+        const tariff = Number(p.tariff);
         const monthPlans = pPlans.filter(x => x.ym === ym);
+
+        // Отображаемый цикл. Первый транш платят в день подписания — цикл
+        // может начаться в прошлом месяце и перетечь в текущий (остаток
+        // через 20 дней). Если в просматриваемом месяце планов нет,
+        // показываем последний прошлый цикл: пока он не закрыт, либо если
+        // он закрыт оплатой уже в этом месяце (якорь попал в этот месяц).
+        let cyclePlans = monthPlans;
+        if (!monthPlans.length) {
+          const prevYm = [...new Set(pPlans.filter(x => x.ym < ym).map(x => x.ym))].sort().pop();
+          if (prevYm) {
+            const prev = pPlans.filter(x => x.ym === prevYm);
+            const prevPaid = r2(prev.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0));
+            const unclosed = tariff > 0 && prevPaid < tariff - 0.005;
+            const closedThisYm = !!p.cycleAnchor && ymOf(p.cycleAnchor) === ym;
+            if (unclosed || closedThisYm) cyclePlans = prev;
+          }
+        }
+        displayedPlans.push(...cyclePlans);
+
         // В слоте может оказаться два плана (частичная оплата = received +
         // expected-остаток): показываем received (с ним работает «↩»),
         // остаток виден отдельной строкой «остаток …». Сортировка — для
         // детерминизма (repo.find() без ORDER BY).
         const partOf = (n: number) => {
-          const x = monthPlans
+          const x = cyclePlans
             .filter(y => y.partNo === n)
             .sort((a, b) => (a.status === b.status
               ? (a.createdAt?.getTime?.() ?? 0) - (b.createdAt?.getTime?.() ?? 0)
@@ -822,7 +847,7 @@ export class FinanceService implements OnModuleInit {
           return x ? { plannedId: x.id, amount: Number(x.amount), status: x.status, txId: x.receivedTxId, dueDate: x.dueDate ?? null } : null;
         };
         const paidLife = r2(pPlans.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0));
-        const monthPaid = r2(monthPlans.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0));
+        const cyclePaid = r2(cyclePlans.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0));
         // Ближайший ожидаемый платёж ЛЮБОГО месяца: у частично оплаченных
         // остаток может числиться в прошлом месяце — иначе срок не виден
         // (жалоба «не показывает, когда должны»).
@@ -830,14 +855,13 @@ export class FinanceService implements OnModuleInit {
           .filter(x => x.status === 'expected')
           .sort((a, b) => ((a.dueDate ?? `${a.ym}-01`) < (b.dueDate ?? `${b.ym}-01`) ? -1 : 1))[0] ?? null;
         return {
-          project: { id: p.id, name: p.name, tariff: Number(p.tariff), contractDate: p.contractDate, archived: p.archived, note: p.note },
+          project: { id: p.id, name: p.name, tariff, contractDate: p.contractDate, archived: p.archived, note: p.note },
           // Дата цикла «катится»: контракт 20.01 → в просмотре февраля 20.02.
           cycleDate: this.smmCycleDate(p, ym),
-          part1: partOf(1), part2: partOf(2), paidLife, monthPaid,
+          part1: partOf(1), part2: partOf(2), paidLife, monthPaid: cyclePaid,
           nextDue: nextPlan ? { plannedId: nextPlan.id, ym: nextPlan.ym, amount: Number(nextPlan.amount), dueDate: nextPlan.dueDate ?? null } : null,
-          // «Оплачено» — про ПРОСМАТРИВАЕМЫЙ месяц: пожизненная сумма делала
-          // флаг вечным после первого же полного цикла.
-          fullyPaid: Number(p.tariff) > 0 && monthPaid >= Number(p.tariff) - 0.005,
+          // «Оплачено» — про отображаемый цикл (не пожизненно).
+          fullyPaid: tariff > 0 && cyclePaid >= tariff - 0.005,
           alert: this.smmAlert(p, pPlans, today),
         };
       });
@@ -850,10 +874,10 @@ export class FinanceService implements OnModuleInit {
       const expected = r2(monthActive.filter(x => x.status === 'expected').reduce((s, x) => s + Number(x.amount), 0));
       const receivedCash = r2(monthActive.filter(x => x.status === 'received' && x.receivedTxId).reduce((s, x) => s + Number(x.amount), 0));
       const spentOffAccount = r2(monthActive.filter(x => x.status === 'received' && !x.receivedTxId).reduce((s, x) => s + Number(x.amount), 0));
-      // Итоги частей — по ВСЕМ планам месяца, а не по показанным в ячейках:
-      // после частичной оплаты в слоте может быть два плана.
-      const part1 = r2(monthActive.filter(x => x.partNo === 1).reduce((s, x) => s + Number(x.amount), 0));
-      const part2 = r2(monthActive.filter(x => x.partNo === 2).reduce((s, x) => s + Number(x.amount), 0));
+      // Итоги частей — по планам, отображаемым в ячейках строк (включая
+      // перетёкшие циклы прошлого месяца), чтобы tfoot совпадал с таблицей.
+      const part1 = r2(displayedPlans.filter(x => x.partNo === 1).reduce((s, x) => s + Number(x.amount), 0));
+      const part2 = r2(displayedPlans.filter(x => x.partNo === 2).reduce((s, x) => s + Number(x.amount), 0));
       return {
         kind: 'smm', rows,
         stats: { expected, receivedCash, spentOffAccount, total: r2(expected + receivedCash) },
