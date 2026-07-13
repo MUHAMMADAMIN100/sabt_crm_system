@@ -83,6 +83,7 @@ export type Permission =
   | 'profile.view'
   | 'ai.chat'
   | 'stories.manage'
+  | 'organizer.directory'
   | 'time-tracker.use'
   | 'tariffs.manage'
   | 'risks.view'
@@ -102,7 +103,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
-    'tariffs.manage', 'risks.view', 'clients.view', 'security-log.view',
+    'tariffs.manage', 'risks.view', 'clients.view', 'security-log.view', 'organizer.directory',
   ],
   founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -115,7 +116,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
-    'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view',
+    'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
   ],
   co_founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -128,7 +129,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
-    'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view',
+    'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
   ],
   // Руководитель по видеографии — менеджерский уровень для видео-
   // направления: управление задачами, аналитика, отчёты, риски.
@@ -156,7 +157,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
-    'ai.chat', 'tariffs.manage', 'risks.view', 'teams.manage',
+    'ai.chat', 'tariffs.manage', 'risks.view', 'teams.manage', 'organizer.directory',
   ],
   smm_specialist: [
     'dashboard', 'projects.view',
@@ -248,7 +249,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use',
-    'ai.chat',
+    'ai.chat', 'organizer.directory',
   ],
   // Сторисмейкер — ведение историй SMM-проектов. Доска проектов и Отчёты у
   // него убраны: его рабочий экран — «Истории по проектам».
@@ -435,6 +436,8 @@ export function canAccessRoute(
   if (route === '/employee-access') return canManageAccess(role)
   // Финансы и все подстраницы — по гранту finance.manage.
   if (route === '/finance' || route.startsWith('/finance/')) return userCan(u, 'finance.manage')
+  // Справочники организатора съёмок (клиенты/модели/места).
+  if (route.startsWith('/organizer/')) return userCan(u, 'organizer.directory')
 
   // Detail pages — allow if user can view the parent
   if (route.startsWith('/projects/')) return userCan(u, 'projects.view')

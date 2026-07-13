@@ -73,6 +73,7 @@ const FinanceExpensePage      = lazy(() => import('@/pages/finance/FinanceExpens
 const FinanceExpenseGroupPage = lazy(() => import('@/pages/finance/FinanceExpenseGroupPage'))
 const FinanceTransactionsPage = lazy(() => import('@/pages/finance/FinanceTransactionsPage'))
 const FinanceInventoryPage    = lazy(() => import('@/pages/finance/FinanceInventoryPage'))
+const OrganizerDirectoryPage  = lazy(() => import('@/pages/organizer/OrganizerDirectoryPage'))
 const FinanceSettingsPage     = lazy(() => import('@/pages/finance/FinanceSettingsPage'))
 const PublicBriefPage   = lazy(() => import('@/pages/public/PublicBriefPage'))
 
@@ -155,6 +156,9 @@ export default function App() {
           <Route path="finance/expense/:kind" element={<RoleGuard><FinanceExpenseGroupPage /></RoleGuard>} />
           <Route path="finance/transactions" element={<RoleGuard><FinanceTransactionsPage /></RoleGuard>} />
           <Route path="finance/inventory" element={<RoleGuard><FinanceInventoryPage /></RoleGuard>} />
+          <Route path="organizer/clients" element={<RoleGuard><OrganizerDirectoryPage kind="clients" /></RoleGuard>} />
+          <Route path="organizer/models" element={<RoleGuard><OrganizerDirectoryPage kind="models" /></RoleGuard>} />
+          <Route path="organizer/places" element={<RoleGuard><OrganizerDirectoryPage kind="places" /></RoleGuard>} />
           <Route path="finance/settings" element={<RoleGuard><FinanceSettingsPage /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

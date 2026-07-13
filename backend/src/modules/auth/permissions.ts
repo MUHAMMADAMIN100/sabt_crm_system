@@ -21,6 +21,9 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'board.view':          { label: 'Доска проектов — просмотр (все статусы)',            category: 'Доска проектов', roles: [...TOP, 'smm_director', 'video_director', 'organizer'] },
   'content-plan.manage': { label: 'Доска проектов — полное управление (все этапы)', category: 'Доска проектов', roles: [...TOP, 'smm_director', 'organizer'] },
 
+  // ─── Организация съёмок ────────────────────────────────────────────
+  'organizer.directory': { label: 'Организация съёмок — клиенты/модели/места', category: 'Проекты', roles: [...TOP, 'smm_director', 'organizer'] },
+
   // ─── Клиенты ───────────────────────────────────────────────────────
   'clients.view':   { label: 'Клиенты — просмотр',   category: 'Клиенты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },
   'clients.create': { label: 'Клиенты — добавление', category: 'Клиенты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },

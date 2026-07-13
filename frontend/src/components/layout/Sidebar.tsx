@@ -9,7 +9,7 @@ import {
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, UserPlus,
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
   Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal,
-  Package,
+  Package, PersonStanding, MapPin,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -57,6 +57,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/employees',     icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
     { to: '/employee-access', icon: ShieldCheck,   label: 'Доступы сотрудников', permission: 'users.manage' },
     { to: '/clients',       icon: Contact,         label: 'База клиентов',     permission: 'clients.view' },
+    // Справочники организатора съёмок (отдельные от «Базы клиентов»).
+    { to: '/organizer/clients', icon: Contact,       label: 'Клиенты',         permission: 'organizer.directory' },
+    { to: '/organizer/models',  icon: PersonStanding, label: 'Модели',          permission: 'organizer.directory' },
+    { to: '/organizer/places',  icon: MapPin,        label: 'Места',           permission: 'organizer.directory' },
     { to: '/onboarding',    icon: UserPlus,        label: 'Онбординг',         permission: 'clients.view' },
     { to: '/tariffs',       icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/risks',         icon: ShieldAlert,     label: 'Риски',             permission: 'risks.view' },

@@ -455,3 +455,16 @@ export const workflowApi = {
   archive: () => api.get('/workflow/archive').then(r => r.data),
   projectArchive: (projectId: string) => api.get(`/workflow/project/${projectId}/archive`).then(r => r.data),
 }
+
+/** Справочники организатора съёмок: клиенты / модели / места (полный CRUD).
+ *  kind: 'clients' | 'models' | 'places'. Доступ — грант organizer.directory. */
+export const organizerApi = {
+  list: (kind: string, search?: string) =>
+    api.get(`/organizer-directory/${kind}`, { params: { search } }).then(r => r.data),
+  create: (kind: string, data: any) =>
+    api.post(`/organizer-directory/${kind}`, data).then(r => r.data),
+  update: (kind: string, id: string, data: any) =>
+    api.patch(`/organizer-directory/${kind}/${id}`, data).then(r => r.data),
+  remove: (kind: string, id: string) =>
+    api.delete(`/organizer-directory/${kind}/${id}`).then(r => r.data),
+}
