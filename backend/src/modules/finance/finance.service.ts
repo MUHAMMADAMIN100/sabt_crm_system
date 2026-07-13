@@ -1,6 +1,7 @@
 import {
   Injectable, OnModuleInit, Logger, NotFoundException, BadRequestException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, DataSource, EntityManager } from 'typeorm';
 import * as fs from 'fs';
@@ -14,6 +15,7 @@ import { FinanceSubscription } from './entities/finance-subscription.entity';
 import { FinanceDebt } from './entities/finance-debt.entity';
 import { FinancePlannedPayment } from './entities/finance-planned-payment.entity';
 import { FinanceAsset } from './entities/finance-asset.entity';
+import { FinanceBackup } from './entities/finance-backup.entity';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
 import {
@@ -33,9 +35,11 @@ function monthRange(ym: string): { from: string; to: string } {
 
 const ymOf = (iso: string): string => (iso || '').slice(0, 7);
 
+/** Сегодня по Душанбе — сервер (Railway) живёт в UTC: операции с 00:00 до
+ *  05:00 местного получали бы вчерашнюю дату, а на стыке месяцев уезжали бы
+ *  в прошлый месяц (авансы, циклы, «текущий месяц» автопланов). */
 function todayISO(): string {
-  const d = new Date();
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
 }
 
 function currentYm(): string { return ymOf(todayISO()); }
@@ -143,6 +147,7 @@ export class FinanceService implements OnModuleInit {
     @InjectRepository(FinanceDebt) private debtRepo: Repository<FinanceDebt>,
     @InjectRepository(FinancePlannedPayment) private ppRepo: Repository<FinancePlannedPayment>,
     @InjectRepository(FinanceAsset) private assetRepo: Repository<FinanceAsset>,
+    @InjectRepository(FinanceBackup) private backupRepo: Repository<FinanceBackup>,
     private ds: DataSource,
     private scheduler: FinanceScheduler,
   ) {}
@@ -205,6 +210,15 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "position" int NOT NULL DEFAULT 0`);
     // Отметки «оплачено без операции» по месяцам (см. FinanceSubscription.paidMarks).
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "paidMarks" jsonb`);
+    // День оплаты подписки/аренды — для напоминаний.
+    await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "dueDay" int`);
+    // Архивные счета: скрыты из карточек и селектов, история цела.
+    await run(`ALTER TABLE finance_accounts ADD COLUMN IF NOT EXISTS "archived" boolean NOT NULL DEFAULT false`);
+
+    // Снимки данных (автобэкап кроном + ручные из настроек).
+    await run(`CREATE TABLE IF NOT EXISTS finance_backups (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), kind varchar(16) NOT NULL DEFAULT 'auto',
+      stats jsonb, data jsonb NOT NULL, "createdAt" timestamptz NOT NULL DEFAULT now())`);
 
     // Плановые оплаты (SMM части, матрицы Dev/Design, график долгов).
     await run(`CREATE TABLE IF NOT EXISTS finance_planned_payments (
@@ -671,8 +685,9 @@ export class FinanceService implements OnModuleInit {
     const income = this.sum(monthIncome);
     const expense = this.sum(monthExpense);
 
-    // Балансы счетов (пожизненные).
+    // Балансы счетов (пожизненные); архивные счета в карточки не выводим.
     const balances = [...m.accounts]
+      .filter(a => !a.archived)
       .sort((a, b) => a.position - b.position || (a.createdAt < b.createdAt ? -1 : 1))
       .map(a => ({
         accountId: a.id, name: a.name, color: a.color ?? null,
@@ -770,9 +785,31 @@ export class FinanceService implements OnModuleInit {
     const incomeAllTime = this.sum(allTx.filter(t => t.type === FinanceTxType.INCOME));
     const expenseAllTime = this.sum(allTx.filter(t => t.type === FinanceTxType.EXPENSE));
 
+    // Амортизация за просматриваемый месяц: линейная доля цены активов,
+    // у которых месяц входит в срок службы (списанные/проданные не считаем).
+    const assets = await this.assetRepo.find();
+    const amortMonthly = r2(assets.reduce((s, a) => {
+      const price = Number(a.price) || 0;
+      const life = Number(a.serviceMonths) || 0;
+      if (price <= 0 || life <= 0 || !a.purchaseDate) return s;
+      if (a.status === 'written_off' || a.status === 'sold') return s;
+      const startYm = ymOf(a.purchaseDate);
+      return ym >= startYm && ym <= shiftYm(startYm, life - 1) ? s + price / life : s;
+    }, 0));
+
+    // Динамика 12 месяцев (по просматриваемый включительно) для графика тренда.
+    const monthlySeries = Array.from({ length: 12 }, (_, i) => shiftYm(ym, i - 11)).map(mm => {
+      const { from: mf, to: mt } = monthRange(mm);
+      const mTx = allTx.filter(t => t.date >= mf && t.date <= mt);
+      const inc = this.sum(mTx.filter(t => t.type === FinanceTxType.INCOME));
+      const exp = this.sum(mTx.filter(t => t.type === FinanceTxType.EXPENSE));
+      return { ym: mm, income: inc, expense: exp, profit: r2(inc - exp) };
+    });
+
     const stats = {
       expectedIncome, expectedThisMonth, forecastNextMonth, incomeAllTime, expenseAllTime,
       salaryToPay, salaryFund, salaryAdvances, salaryBonuses, salaryPaid, totalDebt, subsMonthly,
+      amortMonthly,
     };
 
     const transactions = await this.decorate(this.sortByDateDesc(monthTx), m);
@@ -780,6 +817,7 @@ export class FinanceService implements OnModuleInit {
     return {
       ym, income, expense, profit: r2(income - expense),
       balances, incomeByCategory, expenseByCategory, incomePlan, expensePlan, stats, transactions,
+      monthlySeries,
       // Legacy-алиасы (совместимость со старым фронтом).
       incomeByDirection: incomePlan.map(x => ({ direction: x.direction, received: x.fact, plan: x.plan })),
       expectedIncome, salaryFund, salaryPaid, salaryToPay, totalDebt, regularMonthly: subsMonthly,
@@ -1162,6 +1200,7 @@ export class FinanceService implements OnModuleInit {
         const mark = (s.paidMarks || []).find(x => x.ym === ym) ?? null;
         return {
           id: s.id, name: s.name, kind: s.kind, amount: Number(s.amount), active: s.active,
+          dueDay: s.dueDay ?? null,
           paidMonth: this.sum(txs), lastPaidDate: dates.length ? dates[dates.length - 1] : null,
           paidMark: mark ? mark.date : null,
         };
@@ -1689,6 +1728,15 @@ export class FinanceService implements OnModuleInit {
     if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('Сумма должна быть больше нуля');
     const date = dto.date || todayISO();
     return this.ds.transaction(async (em) => {
+      // Антидубль: повторная отправка (даблклик, ретрай сети) с теми же
+      // параметрами в течение минуты не должна провести оплату дважды.
+      const dupQb = em.getRepository(FinancePlannedPayment).createQueryBuilder('pp')
+        .where('pp.ym = :ym AND pp.status = :st AND pp.amount = :amt', { ym: dto.ym, st: 'received', amt: r2(amount) })
+        .andWhere(`pp.createdAt > now() - interval '60 seconds'`);
+      if (dto.projectId) dupQb.andWhere('pp.projectId = :id', { id: dto.projectId });
+      else dupQb.andWhere('pp.debtId = :id', { id: dto.debtId });
+      if (await dupQb.getOne()) throw new BadRequestException('Такая оплата только что проведена — проверьте журнал');
+
       const tx = await this.buildLinkedTx(em, { projectId: dto.projectId ?? null, debtId: dto.debtId ?? null, amount }, dto.accountId, date, dto.comment);
       const pp = em.getRepository(FinancePlannedPayment).create({
         projectId: dto.projectId ?? null, debtId: dto.debtId ?? null, ym: dto.ym,
@@ -1700,6 +1748,40 @@ export class FinanceService implements OnModuleInit {
       if (res.projectId) await this.ensureSmmFollowUps(res.projectId);
       return res;
     });
+  }
+
+  /** Отменить все оплаты проекта (кнопка «Отменить оплату» у разовых работ):
+   *  планы и связанные с ними операции журнала удаляются одной транзакцией —
+   *  раньше фронт удалял их по одной и обрыв сети оставлял полусостояние. */
+  async cancelProjectPayments(projectId: string) {
+    const p = await this.projRepo.findOne({ where: { id: projectId } });
+    if (!p) throw new NotFoundException('Проект не найден');
+    await this.ds.transaction(async (em) => {
+      const pps = await em.getRepository(FinancePlannedPayment).find({ where: { projectId } });
+      const txIds = pps.map(x => x.receivedTxId).filter(Boolean) as string[];
+      if (txIds.length) await em.getRepository(FinanceTransaction).delete(txIds);
+      if (pps.length) await em.getRepository(FinancePlannedPayment).delete(pps.map(x => x.id));
+    });
+    await this.resyncSmmAfterUndo(projectId);
+    return { ok: true };
+  }
+
+  /** Снять расходы месяца по сотруднику или подписке одной транзакцией
+   *  (отмена выплаты ЗП / оплаты позиции — замена клиентского цикла удалений). */
+  async removeMonthExpenses(dto: { ym: string; employeeId?: string; subscriptionId?: string }) {
+    if (!dto.employeeId && !dto.subscriptionId) throw new BadRequestException('Укажите сотрудника или подписку');
+    if (dto.employeeId && dto.subscriptionId) throw new BadRequestException('Либо сотрудник, либо подписка');
+    const { from, to } = monthRange(dto.ym);
+    const removed = await this.ds.transaction(async (em) => {
+      const repo = em.getRepository(FinanceTransaction);
+      const where: any = { type: FinanceTxType.EXPENSE, date: Between(from, to) };
+      if (dto.employeeId) where.employeeId = dto.employeeId;
+      else where.subscriptionId = dto.subscriptionId;
+      const txs = await repo.find({ where });
+      if (txs.length) await repo.delete(txs.map(t => t.id));
+      return txs.length;
+    });
+    return { ok: true, removed };
   }
 
   // ─── ГРАФИК ДОЛГОВ ───────────────────────────────────────────────
@@ -1759,6 +1841,7 @@ export class FinanceService implements OnModuleInit {
     if (dto.startBalance !== undefined) a.startBalance = Number(dto.startBalance) || 0;
     if (dto.color !== undefined) a.color = dto.color ?? null;
     if (dto.kind !== undefined) a.kind = dto.kind ?? null;
+    if (dto.archived !== undefined) a.archived = !!dto.archived;
     return this.accRepo.save(a);
   }
   async removeAccount(id: string) {
@@ -1879,12 +1962,18 @@ export class FinanceService implements OnModuleInit {
 
   // Подписки/аренда
   listSubscriptions() { return this.subRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } }); }
+  /** День оплаты 1..31 либо null (сброс/не задан). */
+  private normDueDay(v: any): number | null {
+    const n = Number(v);
+    return Number.isInteger(n) && n >= 1 && n <= 31 ? n : null;
+  }
   async createSubscription(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Название обязательно');
     const position = await this.subRepo.count();
     return this.subRepo.save(this.subRepo.create({
       name: dto.name.trim(), kind: dto.kind === 'rent' ? 'rent' : 'subscription',
-      amount: Number(dto.amount) || 0, active: dto.active !== false, position,
+      amount: Number(dto.amount) || 0, active: dto.active !== false,
+      dueDay: this.normDueDay(dto.dueDay), position,
     }));
   }
   async updateSubscription(id: string, dto: any) {
@@ -1894,6 +1983,7 @@ export class FinanceService implements OnModuleInit {
     if (dto.kind !== undefined) s.kind = dto.kind === 'rent' ? 'rent' : 'subscription';
     if (dto.amount !== undefined) s.amount = Number(dto.amount) || 0;
     if (dto.active !== undefined) s.active = !!dto.active;
+    if (dto.dueDay !== undefined) s.dueDay = this.normDueDay(dto.dueDay);
     return this.subRepo.save(s);
   }
   async removeSubscription(id: string) { await this.subRepo.delete(id); return { ok: true }; }
@@ -2033,6 +2123,64 @@ export class FinanceService implements OnModuleInit {
       this.subRepo.find(), this.debtRepo.find(), this.ppRepo.find(), this.txRepo.find(), this.assetRepo.find(),
     ]);
     return { version: 2, exportedAt: new Date().toISOString(), accounts, categories, projects, employees, subscriptions, debts, plannedPayments, transactions, assets };
+  }
+
+  // ─── Снимки данных (автобэкап) ───────────────────────────────────
+  /** Ежедневный снимок в 02:00 Душанбе — страховка от случайной порчи данных
+   *  (инлайн-правки журнала, неудачный импорт). */
+  @Cron('0 2 * * *', { timeZone: 'Asia/Dushanbe' })
+  async autoBackup() {
+    try {
+      await this.createBackupSnapshot('auto');
+    } catch (e: any) {
+      this.logger.warn(`finance auto-backup failed: ${String(e?.message || e).slice(0, 160)}`);
+    }
+  }
+
+  /** Держим последние 30 авто-снимков и 10 ручных/предвосстановительных. */
+  private async pruneBackups() {
+    const all = await this.backupRepo.find({ order: { createdAt: 'DESC' } as any, select: ['id', 'kind', 'createdAt'] as any });
+    const over = (kinds: string[], keep: number) =>
+      all.filter(b => kinds.includes(b.kind)).slice(keep).map(b => b.id);
+    const ids = [...over(['auto'], 30), ...over(['manual', 'pre_restore'], 10)];
+    if (ids.length) await this.backupRepo.delete(ids);
+  }
+
+  async createBackupSnapshot(kind: 'auto' | 'manual' | 'pre_restore' = 'manual') {
+    const data = await this.exportAll();
+    const stats = {
+      transactions: data.transactions.length, plannedPayments: data.plannedPayments.length,
+      projects: data.projects.length, employees: data.employees.length,
+      accounts: data.accounts.length, debts: data.debts.length,
+      subscriptions: data.subscriptions.length, assets: data.assets.length,
+    };
+    const saved = await this.backupRepo.save(this.backupRepo.create({ kind, stats, data }));
+    await this.pruneBackups();
+    return { id: saved.id, kind: saved.kind, createdAt: saved.createdAt, stats };
+  }
+
+  /** Список снимков без тяжёлого поля data. */
+  async listBackups() {
+    const rows = await this.backupRepo.find({
+      order: { createdAt: 'DESC' } as any,
+      select: ['id', 'kind', 'stats', 'createdAt'] as any,
+    });
+    return rows;
+  }
+
+  async getBackup(id: string) {
+    const b = await this.backupRepo.findOne({ where: { id } });
+    if (!b) throw new NotFoundException('Снимок не найден');
+    return b;
+  }
+
+  /** Восстановить данные из снимка; текущее состояние прежде сохраняется
+   *  отдельным снимком pre_restore — восстановление всегда обратимо. */
+  async restoreBackup(id: string) {
+    const b = await this.getBackup(id);
+    await this.createBackupSnapshot('pre_restore');
+    await this.importAll(b.data);
+    return { ok: true };
   }
 
   async importAll(data: any) {

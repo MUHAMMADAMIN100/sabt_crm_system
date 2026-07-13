@@ -1,9 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, Repository } from 'typeorm';
 import { FinancePlannedPayment } from './entities/finance-planned-payment.entity';
 import { FinanceProject } from './entities/finance-project.entity';
+import { FinanceSubscription } from './entities/finance-subscription.entity';
+import { FinanceEmployee } from './entities/finance-employee.entity';
+import { FinanceTransaction, FinanceTxType } from './finance-transaction.entity';
 import { User } from '../users/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
@@ -11,8 +14,16 @@ import { TelegramService } from '../telegram/telegram.service';
 import { hasGrant } from '../auth/permissions';
 
 const SMM_LINK = '/finance/income/smm';
+const SUBS_LINK = '/finance/expense/rent_subs';
+const SALARY_LINK = '/finance/expense/salary';
+/** Страница направления дохода — для ссылки из напоминания об оплате. */
+function directionLink(direction?: string | null): string {
+  return ['smm', 'development', 'design'].includes(direction || '') ? `/finance/income/${direction}` : SMM_LINK;
+}
 /** За сколько дней до срока начинать напоминать. */
 const REMIND_BEFORE_DAYS = 3;
+/** Числа месяца, по которым напоминаем о невыплаченной ЗП. */
+const SALARY_REMIND_DAYS = [10, 15, 20, 25];
 
 /** Сегодняшняя дата по Душанбе — сервер (Railway) живёт в UTC. */
 function todayISO(): string {
@@ -50,6 +61,9 @@ export class FinanceScheduler {
   constructor(
     @InjectRepository(FinancePlannedPayment) private ppRepo: Repository<FinancePlannedPayment>,
     @InjectRepository(FinanceProject) private projRepo: Repository<FinanceProject>,
+    @InjectRepository(FinanceSubscription) private subRepo: Repository<FinanceSubscription>,
+    @InjectRepository(FinanceEmployee) private empRepo: Repository<FinanceEmployee>,
+    @InjectRepository(FinanceTransaction) private txRepo: Repository<FinanceTransaction>,
     @InjectRepository(User) private userRepo: Repository<User>,
     private notifications: NotificationsService,
     private telegram: TelegramService,
@@ -63,14 +77,14 @@ export class FinanceScheduler {
 
   /** Уведомить всех финансовых пользователей (дедуп по alertKey раз в сутки).
    *  Telegram шлём только когда уведомление реально создано — без спама. */
-  async notifyFinanceUsers(opts: { title: string; message: string; alertKey: string; dedupHours?: number }): Promise<number> {
+  async notifyFinanceUsers(opts: { title: string; message: string; alertKey: string; link?: string; dedupHours?: number }): Promise<number> {
     const users = await this.financeUsers();
     let sent = 0;
     for (const u of users) {
       try {
         const created = await this.notifications.createIfNotRecent({
           userId: u.id, type: NotificationType.PAYMENT_REMINDER,
-          title: opts.title, message: opts.message, link: SMM_LINK,
+          title: opts.title, message: opts.message, link: opts.link ?? SMM_LINK,
           data: { alertKey: opts.alertKey },
         }, opts.dedupHours ?? 20);
         if (created) {
@@ -91,11 +105,11 @@ export class FinanceScheduler {
       title: 'Цикл оплачен — запланирован новый платёж',
       message: `${project.name}: услуги за период оплачены полностью. Следующий платёж ${fmtMoney(Number(next.amount))}${when}.`,
       alertKey: `fin-cycle-next:${project.id}:${next.ym}`,
+      link: directionLink(project.direction),
     });
   }
 
-  /** Ежедневно в 9:00 Душанбе: ожидаемые оплаты, у которых срок ≤ 3 дней
-   *  или уже просрочен, — напоминание раз в сутки до получения оплаты. */
+  /** Ежедневно в 9:00 Душанбе: оплаты проектов, регулярные платежи и ЗП. */
   @Cron('0 9 * * *', { timeZone: 'Asia/Dushanbe' })
   async remindDuePayments() {
     try {
@@ -109,6 +123,18 @@ export class FinanceScheduler {
   /** Проверка сроков (вызывается кроном и вручную из контроллера). */
   async runDueCheck(): Promise<{ due: number; notified: number }> {
     const today = todayISO();
+    let due = 0, notified = 0;
+
+    const pp = await this.checkProjectPayments(today);
+    const subs = await this.checkSubscriptionsDue(today);
+    const salary = await this.checkSalaryDue(today);
+    due = pp.due + subs.due + salary.due;
+    notified = pp.notified + subs.notified + salary.notified;
+    return { due, notified };
+  }
+
+  /** Ожидаемые оплаты проектов со сроком ≤ 3 дней или просроченные. */
+  private async checkProjectPayments(today: string): Promise<{ due: number; notified: number }> {
     const horizon = addDays(today, REMIND_BEFORE_DAYS);
     const expected = await this.ppRepo.find({ where: { status: 'expected' } });
     const due = expected.filter(p => p.projectId && p.dueDate && p.dueDate <= horizon);
@@ -130,8 +156,76 @@ export class FinanceScheduler {
         title: days < 0 ? 'Оплата просрочена' : 'Приближается срок оплаты',
         message: `${project.name}: ${what} ${fmtMoney(Number(pp.amount))} — ${when}`,
         alertKey: `fin-pp-due:${pp.id}`,
+        link: directionLink(project.direction),
       });
     }
     return { due: due.length, notified };
+  }
+
+  /** Аренда/подписки с днём оплаты: не оплачено за месяц (ни операцией,
+   *  ни отметкой) и срок ≤ 3 дней или прошёл. */
+  private async checkSubscriptionsDue(today: string): Promise<{ due: number; notified: number }> {
+    const ym = today.slice(0, 7);
+    const subs = (await this.subRepo.find()).filter(s => s.active && s.dueDay);
+    if (!subs.length) return { due: 0, notified: 0 };
+
+    const [y, m] = ym.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    const monthTx = await this.txRepo.find({
+      where: { type: FinanceTxType.EXPENSE, date: Between(`${ym}-01`, `${ym}-${String(lastDay).padStart(2, '0')}`) } as any,
+    });
+    const paidIds = new Set(monthTx.filter(t => t.subscriptionId).map(t => t.subscriptionId));
+
+    let due = 0, notified = 0;
+    for (const s of subs) {
+      if (paidIds.has(s.id)) continue;
+      if ((s.paidMarks || []).some(x => x.ym === ym)) continue;
+      const dueDate = `${ym}-${String(Math.min(s.dueDay as number, lastDay)).padStart(2, '0')}`;
+      const days = daysUntil(today, dueDate);
+      if (days > REMIND_BEFORE_DAYS) continue;
+      due++;
+      const kindLabel = s.kind === 'rent' ? 'Аренда' : 'Подписка';
+      const when = days > 0 ? `срок ${formatRu(dueDate)} — через ${days} дн.`
+        : days === 0 ? `срок сегодня (${formatRu(dueDate)})`
+        : `просрочена на ${-days} дн. (срок был ${formatRu(dueDate)})`;
+      notified += await this.notifyFinanceUsers({
+        title: days < 0 ? `${kindLabel} не оплачена` : `Приближается срок: ${kindLabel.toLowerCase()}`,
+        message: `${s.name}: ${fmtMoney(Number(s.amount))} — ${when}`,
+        alertKey: `fin-sub-due:${s.id}:${ym}`,
+        link: SUBS_LINK,
+      });
+    }
+    return { due, notified };
+  }
+
+  /** Невыплаченная ЗП: напоминаем 10/15/20/25 числа, пока «к выплате» > 0.
+   *  Выплаченным считаем месячные расходы с employeeId — ручные операции
+   *  «Зарплата» без сотрудника сюда не попадают (допустимая погрешность). */
+  private async checkSalaryDue(today: string): Promise<{ due: number; notified: number }> {
+    const day = Number(today.slice(8, 10));
+    if (!SALARY_REMIND_DAYS.includes(day)) return { due: 0, notified: 0 };
+    const ym = today.slice(0, 7);
+    const emps = (await this.empRepo.find()).filter(e => e.status === 'active');
+    if (!emps.length) return { due: 0, notified: 0 };
+
+    const [y, m] = ym.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    const monthTx = await this.txRepo.find({
+      where: { type: FinanceTxType.EXPENSE, date: Between(`${ym}-01`, `${ym}-${String(lastDay).padStart(2, '0')}`) } as any,
+    });
+    const paid = monthTx.filter(t => t.employeeId).reduce((s, t) => s + Number(t.amount), 0);
+    const fund = emps.reduce((s, e) => s + Number(e.salary), 0);
+    const advances = emps.reduce((s, e) => s + Number(e.advance), 0);
+    const bonuses = emps.reduce((s, e) => s + (Number((e.bonuses || {})[ym]) || 0), 0);
+    const toPay = Math.round(Math.max(0, fund + bonuses - advances - paid) * 100) / 100;
+    if (toPay <= 0) return { due: 0, notified: 0 };
+
+    const notified = await this.notifyFinanceUsers({
+      title: 'Зарплата за месяц не выплачена полностью',
+      message: `К выплате осталось ${fmtMoney(toPay)} (фонд + бонусы − авансы − выплачено). День выплаты — 10-е число.`,
+      alertKey: `fin-salary:${ym}:${day}`,
+      link: SALARY_LINK,
+    });
+    return { due: 1, notified };
   }
 }

@@ -30,6 +30,7 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
+import { RemoveMonthExpensesDto } from './dto/remove-month-expenses.dto';
 
 /** Финансовый модуль — только основатель и сооснователь (право finance.manage). */
 @ApiTags('Finance')
@@ -97,6 +98,10 @@ export class FinanceController {
   @Delete('transactions/:id')
   removeTransaction(@Param('id') id: string) { return this.service.removeTransaction(id); }
 
+  /** Снять расходы месяца по сотруднику/подписке одной транзакцией. */
+  @Post('operations/remove-month')
+  removeMonthExpenses(@Body() dto: RemoveMonthExpensesDto) { return this.service.removeMonthExpenses(dto); }
+
   // ─── Плановые оплаты (SMM части, матрицы Dev/Design, график долгов) ──
   @Get('planned-payments')
   listPlanned(@Query('projectId') projectId?: string, @Query('debtId') debtId?: string, @Query('ym') ym?: string) {
@@ -133,6 +138,8 @@ export class FinanceController {
   @Post('projects') createProject(@Body() dto: CreateProjectDto) { return this.service.createProject(dto); }
   @Patch('projects/:id') updateProject(@Param('id') id: string, @Body() dto: UpdateProjectDto) { return this.service.updateProject(id, dto); }
   @Delete('projects/:id') removeProject(@Param('id') id: string) { return this.service.removeProject(id); }
+  /** Отменить все оплаты проекта (планы + операции) одной транзакцией. */
+  @Post('projects/:id/cancel-payments') cancelProjectPayments(@Param('id') id: string) { return this.service.cancelProjectPayments(id); }
 
   // ─── Справочники: Сотрудники ─────────────────────────────────────
   @Get('employees') listEmployees() { return this.service.listEmployees(); }
@@ -168,9 +175,15 @@ export class FinanceController {
   @Get('backup/export') exportAll() { return this.service.exportAll(); }
   @Post('backup/import') importAll(@Body() data: any) { return this.service.importAll(data); }
   @Post('reset') resetAll() { return this.service.resetAll(true); }
+
+  // ─── Снимки данных (автобэкап) ───────────────────────────────────
+  @Get('backups') listBackups() { return this.service.listBackups(); }
+  @Post('backups') createBackup() { return this.service.createBackupSnapshot('manual'); }
+  @Get('backups/:id') getBackup(@Param('id') id: string) { return this.service.getBackup(id); }
+  @Post('backups/:id/restore') restoreBackup(@Param('id') id: string) { return this.service.restoreBackup(id); }
 }
 
+/** Текущий месяц по Душанбе — сервер живёт в UTC. */
 function currentYm(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date()).slice(0, 7);
 }

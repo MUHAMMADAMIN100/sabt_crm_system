@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -19,4 +19,8 @@ export class CreateSubscriptionDto {
 
   @ApiPropertyOptional() @IsOptional() @IsBoolean()
   active?: boolean;
+
+  /** День оплаты (1..31) — для напоминаний; null — без срока. */
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(31)
+  dueDay?: number | null;
 }

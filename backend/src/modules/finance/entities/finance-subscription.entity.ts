@@ -21,6 +21,10 @@ export class FinanceSubscription {
   @Column({ type: 'boolean', default: true })
   active: boolean;
 
+  /** День оплаты в месяце (1..31) — для напоминаний; null — без срока. */
+  @Column({ type: 'int', nullable: true })
+  dueDay: number | null;
+
   /** Месяцы, отмеченные оплаченными вручную — без операции в журнале
    *  (деньги по счетам не двигаются): [{ ym: '2026-07', date: '2026-07-02' }]. */
   @Column({ type: 'jsonb', nullable: true })

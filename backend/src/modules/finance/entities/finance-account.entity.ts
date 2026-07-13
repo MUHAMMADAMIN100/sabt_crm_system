@@ -27,6 +27,10 @@ export class FinanceAccount {
   @Column({ type: 'varchar', length: 16, nullable: true })
   kind: string | null;
 
+  /** Архивный счёт: скрыт из карточек и селектов, операции и история целы. */
+  @Column({ type: 'boolean', default: false })
+  archived: boolean;
+
   @Column({ type: 'int', default: 0 })
   position: number;
 
