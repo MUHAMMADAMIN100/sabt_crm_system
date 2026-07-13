@@ -90,6 +90,7 @@ export default function FinanceOverviewPage() {
             приходящий месяц (прогноз) и за всё время — без дублей внизу. */}
         <SummaryContainer
           title="Доход за месяц" hint="все операции месяца · по категориям"
+          legendRight="получено / получим за месяц"
           icon="income" color="var(--green)" total={income}
           rows={incCats} onClick={() => navigate('/finance/income')}
           footerRows={[
@@ -210,9 +211,11 @@ export default function FinanceOverviewPage() {
 }
 
 // Карточка-сводка «Доход»/«Расход»: разбивка по категориям операций месяца.
-// rows приходят из overview.incomeByCategory/expenseByCategory: {categoryId,name,icon,color,total}.
-function SummaryContainer({ title, hint, icon, color, total, rows, onClick, footerRows }: {
-  title: string; hint?: string; icon: string; color: string; total: number;
+// rows приходят из overview.incomeByCategory/expenseByCategory:
+// {categoryId,name,icon,color,total,plan?} — plan есть только у базовых категорий
+// направлений дохода (план месяца из таблиц направлений) → строка «получено / получим».
+function SummaryContainer({ title, hint, legendRight, icon, color, total, rows, onClick, footerRows }: {
+  title: string; hint?: string; legendRight?: string; icon: string; color: string; total: number;
   rows: any[]; onClick: () => void;
   footerRows?: Array<{ label: string; value: string; cls?: string }>;
 }) {
@@ -222,7 +225,7 @@ function SummaryContainer({ title, hint, icon, color, total, rows, onClick, foot
         <span className="t" style={{ color }}><FinIcon name={icon} size={18} /> {title}</span>
         <span className="total" style={{ color }}>{money(total)}</span>
       </div>
-      {hint && <div className="brk-legend"><span>{hint}</span><span /></div>}
+      {hint && <div className="brk-legend"><span>{hint}</span><span>{legendRight}</span></div>}
       <div className="brk">
         {rows.length === 0 && <div className="mini muted" style={{ padding: '6px 0' }}>Нет операций</div>}
         {rows.map((r) => (
@@ -230,7 +233,9 @@ function SummaryContainer({ title, hint, icon, color, total, rows, onClick, foot
             <span className="name" style={{ color: r.color }}>
               <CatIcon icon={r.icon} color={r.color} size={22} /><span style={{ color: 'var(--text)' }}>{r.name ?? 'Без категории'}</span>
             </span>
-            <span className="num">{money(r.total)}</span>
+            {r.plan > 0
+              ? <span className="num"><span className="muted" style={{ fontWeight: 500 }}>{money(r.total)}</span> / {money(r.plan)}</span>
+              : <span className="num">{money(r.total)}</span>}
           </div>
         ))}
       </div>

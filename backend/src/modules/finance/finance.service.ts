@@ -680,7 +680,10 @@ export class FinanceService implements OnModuleInit {
       }));
 
     // Разбивка месяца по категориям.
-    const incomeByCategory = this.byCategoryList(monthIncome, m);
+    const incomeByCategory: Array<{
+      categoryId: string | null; name: string; icon: string | null; color: string | null;
+      total: number; plan?: number;
+    }> = this.byCategoryList(monthIncome, m);
     const expenseByCategory = this.byCategoryList(monthExpense, m);
 
     // План/факт дохода по направлениям.
@@ -694,6 +697,31 @@ export class FinanceService implements OnModuleInit {
         .reduce((s, p) => s + Number(p.amount), 0));
       return { direction: dir, plan, fact };
     });
+
+    // «Получено / получим» на карточке «Доход за месяц»: план месяца направления
+    // из таблиц планов (получено деньгами + ещё ожидается; освоенное вне счёта
+    // не считаем — его не будет в журнале). План вешаем только на базовую
+    // категорию направления (smm/development/design), чтобы подкатегории
+    // SMM 1/2 не задваивали его; направление без операций получает строку с нулём.
+    for (const dir of dirs) {
+      const ids = new Set(m.projects
+        .filter(p => p.direction === dir && !p.archived && p.status !== 'lead')
+        .map(p => p.id));
+      const planMonth = r2(planned
+        .filter(pp => pp.ym === ym && pp.projectId && ids.has(pp.projectId)
+          && (pp.status === 'expected' || (pp.status === 'received' && pp.receivedTxId)))
+        .reduce((s, pp) => s + Number(pp.amount), 0));
+      if (planMonth <= 0) continue;
+      const baseCat = m.categories.find(c => c.key === dir);
+      if (!baseCat) continue;
+      let row = incomeByCategory.find(r => r.categoryId === baseCat.id);
+      if (!row) {
+        row = { categoryId: baseCat.id, name: baseCat.name, icon: baseCat.icon ?? null, color: baseCat.color ?? null, total: 0 };
+        incomeByCategory.push(row);
+      }
+      row.plan = planMonth;
+    }
+    incomeByCategory.sort((a, b) => b.total - a.total || (b.plan ?? 0) - (a.plan ?? 0));
 
     // Зарплата (бонусы месяца входят в «к выплате»).
     const activeEmps = m.employees.filter(e => e.status === 'active');
