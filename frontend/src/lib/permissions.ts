@@ -16,6 +16,7 @@ const ROLE_LABELS: Record<string, string> = {
   designer: 'Дизайнер',
   sales_manager_smm: 'Менеджер продаж (СММ)',
   sales_manager_dev: 'Менеджер продаж (Разработка)',
+  pm_dev: 'Проект-менеджер (Разработка)',
   developer: 'Разработчик',
   videographer: 'Видеограф',
   video_editor: 'Монтажёр',
@@ -196,6 +197,19 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'time-tracker.use',
     'ai.chat',
     'clients.view',
+  ],
+  // Проект-менеджер по разработке — «тестировщик» направления: все
+  // dev-проекты компании, задачи-замечания, календарь и отчёты.
+  // Без SMM-доски проектов, клиентов и финансов.
+  pm_dev: [
+    'dashboard', 'projects.view',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    'calendar.view', 'calendar.create',
+    'analytics.view',
+    'reports.view', 'reports.create',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'time-tracker.use',
+    'ai.chat',
   ],
   developer: [
     'dashboard', 'projects.view',

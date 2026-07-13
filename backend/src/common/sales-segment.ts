@@ -27,6 +27,10 @@ export const DEV_PROJECT_SUBTYPES = [
   'Интернет магазин',
 ];
 
+/** Все типы dev-проектов (вкл. legacy «Web сайт») — сегмент менеджера продаж
+ *  по разработке и проект-менеджера по разработке (pm_dev). */
+export const DEV_PROJECT_TYPES = ['Web сайт', ...DEV_PROJECT_SUBTYPES];
+
 /** Возвращает сегмент для роли МП либо null, если роль — не менеджер продаж. */
 export function getSalesSegment(role?: string | null): SalesSegment | null {
   if (role === 'sales_manager_smm') {

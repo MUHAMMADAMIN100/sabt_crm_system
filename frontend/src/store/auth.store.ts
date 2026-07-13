@@ -13,6 +13,7 @@ export type UserRole =
   | 'designer'
   | 'sales_manager_smm'
   | 'sales_manager_dev'
+  | 'pm_dev'
   | 'developer'
   | 'videographer'
   | 'video_editor'

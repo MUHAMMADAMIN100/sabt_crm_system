@@ -643,6 +643,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
       'Таргетолог': 'targetologist',
       'Менеджер продаж (СММ)': 'sales_manager_smm',
       'Менеджер продаж (Разработка)': 'sales_manager_dev',
+      'Проект-менеджер (Разработка)': 'pm_dev',
       'Разработчик': 'developer',
       'Сотрудник': 'employee',
       'Основатель': 'founder',
@@ -698,6 +699,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
                 'Таргетолог',
                 'Менеджер продаж (СММ)',
                 'Менеджер продаж (Разработка)',
+                'Проект-менеджер (Разработка)',
                 'Разработчик',
                 'Администратор',
                 'Основатель',
@@ -733,6 +735,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
               <option value="video_director">Руководитель по видеографии</option>
               <option value="sales_manager_smm">Менеджер продаж (СММ)</option>
               <option value="sales_manager_dev">Менеджер продаж (Разработка)</option>
+              <option value="pm_dev">Проект-менеджер (Разработка)</option>
               <option value="employee">Сотрудник</option>
             </select>
             <p className="text-[11px] text-surface-400 mt-1">

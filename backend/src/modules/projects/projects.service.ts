@@ -20,7 +20,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { MailService } from '../mail/mail.service';
-import { getSalesSegment } from '../../common/sales-segment';
+import { getSalesSegment, DEV_PROJECT_TYPES } from '../../common/sales-segment';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
@@ -686,6 +686,10 @@ export class ProjectsService implements OnModuleInit {
         // Руководитель SMM и организатор видят ВСЕ SMM-проекты компании
         // (управляющие роли производства). Не-SMM проекты им не показываем.
         qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
+      } else if (role === 'pm_dev') {
+        // Проект-менеджер по разработке («тестировщик» направления) видит
+        // ВСЕ dev-проекты компании без членства — анализ и задачи-замечания.
+        qb.andWhere('p.projectType IN (:...devTypes)', { devTypes: DEV_PROJECT_TYPES });
       } else if (getSalesSegment(role)) {
         // Менеджер продаж видит только проекты своего направления.
         // У МП-dev несколько подтипов (Лендинг, Телеграм бот, CRM,
@@ -845,6 +849,10 @@ export class ProjectsService implements OnModuleInit {
     const segment = getSalesSegment(requestUserRole);
     if (segment && !segment.projectTypes.includes(project.projectType as string)) {
       throw new ForbiddenException('Проект не относится к вашему направлению');
+    }
+    // ПМ по разработке — только dev-проекты (SMM/Дизайн не его направление).
+    if (requestUserRole === 'pm_dev' && !DEV_PROJECT_TYPES.includes(project.projectType as string)) {
+      throw new ForbiddenException('Проект не относится к направлению разработки');
     }
     // Задачи-«Истории» из контент-плана не показываем в списке задач проекта —
     // они ведутся во вкладке «Контент-план». Скрываем для всех ролей.

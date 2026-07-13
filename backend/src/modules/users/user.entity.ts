@@ -26,6 +26,10 @@ export enum UserRole {
   SALES_MANAGER_SMM = 'sales_manager_smm',
   /** Менеджер продаж по направлению разработки. */
   SALES_MANAGER_DEV = 'sales_manager_dev',
+  /** Проект-менеджер по разработке — «тестировщик» направления: видит ВСЕ
+   *  dev-проекты компании (без членства), анализирует их и фиксирует
+   *  недостатки задачами-замечаниями. Без SMM-доски и финансов. */
+  PM_DEV          = 'pm_dev',
   DEVELOPER       = 'developer',
   /** Видеограф — исполнитель производства контента (права как у designer). */
   VIDEOGRAPHER    = 'videographer',

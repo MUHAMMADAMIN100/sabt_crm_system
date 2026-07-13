@@ -52,6 +52,7 @@ export const shortRole = (role?: string | null): string => {
     publisher: 'Публикатор',
     targetologist: 'Таргетолог',
     developer: 'Разработчик',
+    pm_dev: 'ПМ (Разработка)',
   }
   return map[role || ''] || getRoleLabel(role)
 }
