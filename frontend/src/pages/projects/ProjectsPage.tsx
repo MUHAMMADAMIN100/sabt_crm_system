@@ -344,8 +344,11 @@ export default function ProjectsPage() {
                   )}
                 />
               )}
-              <div className="flex items-start justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
+              {/* flex-wrap + min-w левой части: на узких карточках (ноутбук,
+                  3 колонки) блок тарифа переносится вниз, а не давит название —
+                  иначе бейджи «0/4 рилс» наезжали на статус «Планируется». */}
+              <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1.5 mb-3">
+                <div className="flex items-center gap-2 min-w-[11rem] flex-1">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: p.color || '#f4f4f5' }}>
                     <FolderKanban size={18} style={{ color: p.color ? '#fff' : '#18181b' }} />
                   </div>
@@ -371,7 +374,7 @@ export default function ProjectsPage() {
                 </div>
                 {/* Тариф + сделано/план по текущему КП (рилс/пост из доски) */}
                 {p.projectType === 'SMM' && (p as any).tariffStats && (
-                  <div className="shrink-0 text-right pr-4">
+                  <div className="shrink-0 text-right pr-4 ml-auto">
                     {(p as any).tariffStats.name && (
                       <p className="text-[11px] font-semibold text-surface-700 dark:text-surface-300 leading-tight truncate max-w-[130px] ml-auto" title={`Тариф: ${(p as any).tariffStats.name}`}>
                         🏷 {(p as any).tariffStats.name}
