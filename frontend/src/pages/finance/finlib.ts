@@ -13,6 +13,12 @@ export function money(n: number, withSign = false): string {
   return `${sign}${abs} с.`
 }
 
+/** Число без «с.» — для плотных ячеек (календарь транзакций). */
+export function moneyBare(n: number): string {
+  const v = Number(n) || 0
+  return Number.isInteger(v) ? nf.format(v) : nf2.format(v)
+}
+
 export function todayISO(): string {
   const d = new Date()
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)

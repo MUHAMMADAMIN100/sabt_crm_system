@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { TYPE_LABEL, money, currentYm, todayISO } from './finlib';
+import { TYPE_LABEL, money, moneyBare, currentYm, todayISO } from './finlib';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
 import TransactionModal from './TransactionModal';
@@ -135,8 +135,10 @@ export default function FinanceTransactionsPage() {
   );
 }
 
-/** Календарь месяца: операции карточками по дням (как в Notion-виде).
- *  Клик по карточке — редактирование, «+» в дне — новая операция этой датой. */
+/** Календарь месяца: операции строками по дням, итоги дня и месяца.
+ *  Клик по строке — редактирование, «+» в дне — новая операция этой датой,
+ *  длинные дни сворачиваются до 5 строк («ещё N»). */
+const CAL_DAY_LIMIT = 5;
 function TxCalendar({ ym, txns, onEdit, onAdd }: {
   ym: string; txns: any[]; onEdit: (t: any) => void; onAdd: (iso: string) => void;
 }) {
@@ -146,6 +148,9 @@ function TxCalendar({ ym, txns, onEdit, onAdd }: {
   const cells: (string | null)[] = Array(firstIdx).fill(null);
   for (let d = 1; d <= daysIn; d++) cells.push(`${ym}-${String(d).padStart(2, '0')}`);
   while (cells.length % 7) cells.push(null);
+  // Развёрнутость длинных дней; ключ — полная дата, месяцы не пересекаются.
+  const [openDays, setOpenDays] = useState<Record<string, boolean>>({});
+  const toggleDay = (iso: string) => setOpenDays((s) => ({ ...s, [iso]: !s[iso] }));
 
   const byDay = useMemo(() => {
     const map = new Map<string, any[]>();
@@ -157,37 +162,86 @@ function TxCalendar({ ym, txns, onEdit, onAdd }: {
     }
     return map;
   }, [txns, ym]);
+
+  // Итоги дня/месяца — только реальные деньги (доход/расход, без переводов).
+  const totals = useMemo(() => {
+    const day = new Map<string, { inc: number; exp: number }>();
+    let inc = 0, exp = 0, count = 0;
+    for (const [k, list] of byDay) {
+      const t = { inc: 0, exp: 0 };
+      for (const x of list) {
+        if (x.type === 'income') t.inc += Number(x.amount) || 0;
+        else if (x.type === 'expense') t.exp += Number(x.amount) || 0;
+      }
+      day.set(k, t);
+      inc += t.inc; exp += t.exp; count += list.length;
+    }
+    return { day, inc, exp, count };
+  }, [byDay]);
+
   const today = todayISO();
-  const monthCount = [...byDay.values()].reduce((s, l) => s + l.length, 0);
+  const net = totals.inc - totals.exp;
 
   return (
     <>
       <div className="tx-cal-wrap">
+        <div className="tx-cal-top">
+          <div className="sums">
+            <span className="pos">+{money(totals.inc)}</span>
+            <span className="neg">−{money(totals.exp)}</span>
+            <span className={'net ' + (net >= 0 ? 'pos' : 'neg')}>{money(net, true)}</span>
+          </div>
+          <span className="mini muted">{totals.count} операций за месяц</span>
+        </div>
         <div className="tx-cal">
-          {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => <div key={d} className="tx-cal-h">{d}</div>)}
-          {cells.map((iso, i) => (
-            <div key={i} className={'tx-cal-cell' + (iso ? '' : ' off') + (iso === today ? ' today' : '')}>
-              {iso && (
-                <>
-                  <div className="tx-cal-day">
-                    <button className="tx-cal-add" title="Добавить операцию этой датой" onClick={() => onAdd(iso)}>＋</button>
-                    <span>{Number(iso.slice(8))}</span>
-                  </div>
-                  {(byDay.get(iso) ?? []).map((t) => (
-                    <button key={t.id} type="button" className={'tx-card ' + t.type} title="Открыть операцию" onClick={() => onEdit(t)}>
-                      <span className="t">{t.comment || t.categoryName || TYPE_LABEL[t.type]}</span>
-                      <span className={'a ' + (t.type === 'income' ? 'pos' : t.type === 'expense' ? 'neg' : 'muted')}>
-                        {t.type === 'expense' ? '−' : t.type === 'income' ? '+' : ''}{money(t.amount)}
-                      </span>
-                    </button>
-                  ))}
-                </>
-              )}
-            </div>
+          {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d, i) => (
+            <div key={d} className={'tx-cal-h' + (i >= 5 ? ' wknd' : '')}>{d}</div>
           ))}
+          {cells.map((iso, i) => {
+            const list = iso ? (byDay.get(iso) ?? []) : [];
+            const open = iso ? !!openDays[iso] : false;
+            // «ещё 1» не имеет смысла — тогда показываем все 6 сразу.
+            const collapsible = list.length > CAL_DAY_LIMIT + 1;
+            const visible = collapsible && !open ? list.slice(0, CAL_DAY_LIMIT) : list;
+            const dt = iso ? totals.day.get(iso) : undefined;
+            return (
+              <div key={i} className={'tx-cal-cell' + (iso ? '' : ' off') + (iso === today ? ' today' : '') + (i % 7 >= 5 ? ' wknd' : '')}>
+                {iso && (
+                  <>
+                    <div className="tx-cal-day">
+                      <span className="n">{Number(iso.slice(8))}</span>
+                      <button className="tx-cal-add" title="Добавить операцию этой датой" onClick={() => onAdd(iso)}>＋</button>
+                    </div>
+                    {dt && (dt.inc > 0 || dt.exp > 0) && (
+                      <div className="tx-day-sum">
+                        {dt.inc > 0 && <span className="pos">+{moneyBare(dt.inc)}</span>}
+                        {dt.exp > 0 && <span className="neg">−{moneyBare(dt.exp)}</span>}
+                      </div>
+                    )}
+                    {visible.map((t) => (
+                      <button key={t.id} type="button" className={'tx-row ' + t.type}
+                        title={`${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}`}
+                        onClick={() => onEdit(t)}>
+                        <i className="d" />
+                        <span className="t">{t.comment || t.categoryName || TYPE_LABEL[t.type]}</span>
+                        <span className={'a ' + (t.type === 'income' ? 'pos' : t.type === 'expense' ? 'neg' : 'muted')}>
+                          {t.type === 'expense' ? '−' : t.type === 'income' ? '+' : ''}{moneyBare(t.amount)}
+                        </span>
+                      </button>
+                    ))}
+                    {collapsible && (
+                      <button className="tx-cal-more" onClick={() => toggleDay(iso)}>
+                        {open ? 'свернуть' : `ещё ${list.length - CAL_DAY_LIMIT}`}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
-      <p className="mini muted" style={{ marginTop: 10 }}>{monthCount} операций за месяц · карточка — открыть, «＋» в дне — добавить этой датой.</p>
+      <p className="mini muted" style={{ marginTop: 10 }}>Строка — открыть операцию · «＋» в дне — добавить этой датой.</p>
     </>
   );
 }

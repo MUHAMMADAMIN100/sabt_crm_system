@@ -188,35 +188,56 @@
 
 .fin-root .tx-cal-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   box-shadow: var(--shadow); overflow-x: auto; scrollbar-width: thin; }
-.fin-root .tx-cal { display: grid; grid-template-columns: repeat(7, 1fr); min-width: 840px; }
+/* Шапка календаря: итоги месяца слева, счётчик операций справа. */
+.fin-root .tx-cal-top { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border); min-width: 980px; }
+.fin-root .tx-cal-top .sums { display: flex; align-items: baseline; gap: 14px;
+  font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fin-root .tx-cal-top .sums .net { padding-left: 14px; border-left: 1px solid var(--border); }
+.fin-root .tx-cal { display: grid; grid-template-columns: repeat(7, 1fr); min-width: 980px; }
 .fin-root .tx-cal-h { padding: 8px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .4px;
-  color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); text-align: right; }
-.fin-root .tx-cal-cell { min-height: 104px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
-  padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+  color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); text-align: left; }
+.fin-root .tx-cal-h.wknd { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
+.fin-root .tx-cal-cell { min-height: 112px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+  padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 .fin-root .tx-cal > *:nth-child(7n) { border-right: none; }
 .fin-root .tx-cal > *:nth-last-child(-n+7) { border-bottom: none; }
+.fin-root .tx-cal-cell.wknd { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
 .fin-root .tx-cal-cell.off { background: var(--surface-2); }
-.fin-root .tx-cal-cell.today { background: var(--accent-soft); }
-.fin-root .tx-cal-day { display: flex; justify-content: space-between; align-items: center;
-  font-size: 12px; color: var(--muted); font-weight: 600; }
-.fin-root .tx-cal-cell.today .tx-cal-day > span { color: var(--accent); }
+.fin-root .tx-cal-cell.today { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.fin-root .tx-cal-day { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+/* Номер дня — пилюля; сегодня — акцентная. */
+.fin-root .tx-cal-day .n { min-width: 21px; height: 21px; padding: 0 4px; display: inline-flex; align-items: center;
+  justify-content: center; border-radius: 999px; font-size: 11.5px; font-weight: 650; color: var(--muted); }
+.fin-root .tx-cal-cell.today .tx-cal-day .n { background: var(--accent); color: #fff; }
 .fin-root .tx-cal-add { opacity: 0; border: none; background: none; color: var(--muted); font-size: 14px;
   line-height: 1; padding: 1px 6px; border-radius: 6px; transition: opacity .12s; }
 .fin-root .tx-cal-add:hover { background: var(--surface-2); color: var(--text); }
 .fin-root .tx-cal-cell:hover .tx-cal-add { opacity: 1; }
 /* Тач-устройства: hover нет — «+» виден всегда (приглушённо). */
 @media (hover: none) { .fin-root .tx-cal-add { opacity: .55; } }
-.fin-root .tx-card { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
-  border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; padding: 4px 7px;
-  background: var(--surface); cursor: pointer; text-align: left; }
-.fin-root .tx-card:hover { border-color: var(--accent); }
-.fin-root .tx-card .t { font-size: 11.5px; color: var(--text); max-width: 100%; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; }
-.fin-root .tx-card .a { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.fin-root .tx-card.income { border-left-color: var(--green); }
-.fin-root .tx-card.expense { border-left-color: var(--red); }
-.fin-root .tx-card.transfer { border-left-color: var(--accent); }
-.fin-root .tx-card.saving { border-left-color: var(--violet); }
+/* Итог дня: приход/расход мелкими числами под номером. */
+.fin-root .tx-day-sum { display: flex; gap: 8px; padding: 0 2px 4px; margin-bottom: 2px;
+  font-size: 10.5px; font-weight: 650; font-variant-numeric: tabular-nums;
+  border-bottom: 1px dashed var(--border); }
+/* Операция — компактная строка: точка типа, описание, сумма. */
+.fin-root .tx-row { display: flex; align-items: center; gap: 6px; width: 100%; border: none; background: none;
+  padding: 3px 5px; border-radius: 7px; cursor: pointer; text-align: left; }
+.fin-root .tx-row:hover { background: var(--surface-2); }
+.fin-root .tx-cal-cell.today .tx-row:hover { background: rgba(255, 255, 255, .75); }
+.fin-root .tx-row .d { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.fin-root .tx-row.income .d { background: var(--green); }
+.fin-root .tx-row.expense .d { background: var(--red); }
+.fin-root .tx-row.transfer .d { background: var(--accent); }
+.fin-root .tx-row.saving .d { background: var(--violet); }
+.fin-root .tx-row .t { flex: 1; min-width: 0; font-size: 11.5px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .tx-row .a { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* «ещё N» / «свернуть» в длинных днях. */
+.fin-root .tx-cal-more { border: none; background: none; color: var(--accent); font-size: 11px; font-weight: 600;
+  padding: 2px 5px; border-radius: 6px; text-align: left; cursor: pointer; align-self: flex-start; }
+.fin-root .tx-cal-more:hover { background: var(--accent-soft); }
+.fin-root .tx-cal-cell.today .tx-cal-more:hover { background: rgba(255, 255, 255, .75); }
 
 /* ─── Адаптив: планшет и мобильный ───────────────────────── */
 @media (max-width: 1180px) {
