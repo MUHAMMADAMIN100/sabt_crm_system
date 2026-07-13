@@ -4,8 +4,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { organizerApi } from '@/services/api.service'
-import { ConfirmDialog } from '@/components/ui'
-import { Plus, Search, Edit, Trash2, Contact, PersonStanding, MapPin, ExternalLink, X } from 'lucide-react'
+import { ConfirmDialog, Modal } from '@/components/ui'
+import { Plus, Search, Edit, Trash2, Contact, PersonStanding, MapPin, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 type Kind = 'clients' | 'models' | 'places'
@@ -220,39 +220,33 @@ function DirectoryModal({ kind, cfg, row, onClose, onSaved }: {
     } catch (e) { showErr(e) } finally { setBusy(false) }
   }
 
+  // Общий Modal рендерится порталом в body: самодельный fixed-оверлей ловил
+  // transform от анимации контейнера страницы и уезжал за верх экрана.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
-      <div className="card w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-surface-900 dark:text-surface-100">
-            {row ? `Изменить: ${row.name}` : `Новая запись — ${cfg.title.toLowerCase()}`}
-          </h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500"><X size={16} /></button>
-        </div>
-        <div className="space-y-3">
-          {cfg.fields.map(f => (
-            <div key={f.key}>
-              <label className="label">{f.label}{f.required && ' *'}</label>
-              {f.textarea ? (
-                <textarea value={form[f.key]} onChange={e => set(f.key, e.target.value)} rows={2}
-                  placeholder={f.placeholder} className="input text-sm resize-y" />
-              ) : (
-                <input value={form[f.key]} onChange={e => set(f.key, e.target.value)}
-                  placeholder={f.placeholder} inputMode={f.money ? 'decimal' : undefined}
-                  className="input text-sm" />
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-end gap-2 mt-5">
-          <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-sm bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600">
-            Отмена
-          </button>
-          <button onClick={save} disabled={!form.name?.trim() || busy} className="btn-primary text-sm disabled:opacity-50">
-            {row ? 'Сохранить' : 'Добавить'}
-          </button>
-        </div>
+    <Modal open onClose={onClose} title={row ? `Изменить: ${row.name}` : `Новая запись — ${cfg.title.toLowerCase()}`}>
+      <div className="space-y-3">
+        {cfg.fields.map(f => (
+          <div key={f.key}>
+            <label className="label">{f.label}{f.required && ' *'}</label>
+            {f.textarea ? (
+              <textarea value={form[f.key]} onChange={e => set(f.key, e.target.value)} rows={2}
+                placeholder={f.placeholder} className="input text-sm resize-y" />
+            ) : (
+              <input value={form[f.key]} onChange={e => set(f.key, e.target.value)}
+                placeholder={f.placeholder} inputMode={f.money ? 'decimal' : undefined}
+                className="input text-sm" />
+            )}
+          </div>
+        ))}
       </div>
-    </div>
+      <div className="flex justify-end gap-2 mt-5">
+        <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-sm bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600">
+          Отмена
+        </button>
+        <button onClick={save} disabled={!form.name?.trim() || busy} className="btn-primary text-sm disabled:opacity-50">
+          {row ? 'Сохранить' : 'Добавить'}
+        </button>
+      </div>
+    </Modal>
   )
 }
