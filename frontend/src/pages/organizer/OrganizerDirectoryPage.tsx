@@ -17,6 +17,8 @@ interface Field {
   textarea?: boolean
   money?: boolean
   placeholder?: string
+  /** Выпадающий список вместо текстового поля. */
+  options?: { value: string; label: string }[]
 }
 
 const CONFIGS: Record<Kind, { title: string; subtitle: string; icon: any; addLabel: string; fields: Field[] }> = {
@@ -42,6 +44,7 @@ const CONFIGS: Record<Kind, { title: string; subtitle: string; icon: any; addLab
     addLabel: 'Модель',
     fields: [
       { key: 'name', label: 'Имя', required: true },
+      { key: 'gender', label: 'Пол', options: [{ value: 'female', label: 'Женский' }, { value: 'male', label: 'Мужской' }] },
       { key: 'phone', label: 'Телефон', placeholder: '+992 …' },
       { key: 'instagram', label: 'Instagram', placeholder: '@…' },
       { key: 'look', label: 'Типаж / описание', textarea: true, placeholder: 'возраст, внешность, опыт…' },
@@ -148,6 +151,8 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
                         <span className="font-semibold text-surface-900 dark:text-surface-100">{r[c.key]}</span>
                         {r.note && <p className="text-[11px] text-surface-400 truncate max-w-[220px]" title={r.note}>{r.note}</p>}
                       </div>
+                    ) : c.options ? (
+                      <span className="text-surface-600 dark:text-surface-300">{c.options.find(o => o.value === r[c.key])?.label ?? '—'}</span>
                     ) : c.money ? (
                       <span className="tabular-nums whitespace-nowrap">{r[c.key] != null ? `${nf.format(r[c.key])} с.` : '—'}</span>
                     ) : c.key === 'link' && r.link ? (
@@ -228,7 +233,12 @@ function DirectoryModal({ kind, cfg, row, onClose, onSaved }: {
         {cfg.fields.map(f => (
           <div key={f.key}>
             <label className="label">{f.label}{f.required && ' *'}</label>
-            {f.textarea ? (
+            {f.options ? (
+              <select value={form[f.key]} onChange={e => set(f.key, e.target.value)} className="input text-sm">
+                <option value="">—</option>
+                {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            ) : f.textarea ? (
               <textarea value={form[f.key]} onChange={e => set(f.key, e.target.value)} rows={2}
                 placeholder={f.placeholder} className="input text-sm resize-y" />
             ) : (

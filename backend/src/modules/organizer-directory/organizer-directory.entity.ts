@@ -42,6 +42,10 @@ export class OrgModel {
   @Column({ type: 'varchar', length: 200 })
   name: string;
 
+  /** Пол: female | male. */
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  gender: 'female' | 'male' | null;
+
   @Column({ type: 'varchar', length: 60, nullable: true })
   phone: string | null;
 

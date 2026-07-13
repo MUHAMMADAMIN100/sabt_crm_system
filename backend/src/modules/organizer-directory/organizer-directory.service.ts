@@ -28,8 +28,10 @@ export class OrganizerDirectoryService implements OnModuleInit {
       address varchar(300), note text, "createdAt" timestamptz NOT NULL DEFAULT now())`);
     await run(`CREATE TABLE IF NOT EXISTS org_models (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(200) NOT NULL,
-      phone varchar(60), instagram varchar(120), look text, rate numeric(15,2),
+      gender varchar(10), phone varchar(60), instagram varchar(120), look text, rate numeric(15,2),
       note text, "createdAt" timestamptz NOT NULL DEFAULT now())`);
+    // Таблица на проде могла быть создана до появления пола.
+    await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "gender" varchar(10)`);
     await run(`CREATE TABLE IF NOT EXISTS org_places (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(200) NOT NULL,
       address varchar(300), contact varchar(200), price numeric(15,2), link varchar(300),
@@ -46,7 +48,7 @@ export class OrganizerDirectoryService implements OnModuleInit {
   /** Разрешённые поля каждого справочника — защита от мусора в body. */
   private static FIELDS: Record<string, string[]> = {
     clients: ['name', 'company', 'phone', 'instagram', 'telegram', 'address', 'note'],
-    models: ['name', 'phone', 'instagram', 'look', 'rate', 'note'],
+    models: ['name', 'gender', 'phone', 'instagram', 'look', 'rate', 'note'],
     places: ['name', 'address', 'contact', 'price', 'link', 'note'],
   };
 
@@ -57,6 +59,8 @@ export class OrganizerDirectoryService implements OnModuleInit {
       if (f === 'rate' || f === 'price') {
         const n = Number(dto[f]);
         out[f] = dto[f] === null || dto[f] === '' ? null : (Number.isFinite(n) ? Math.round(n * 100) / 100 : null);
+      } else if (f === 'gender') {
+        out[f] = dto[f] === 'female' || dto[f] === 'male' ? dto[f] : null;
       } else {
         const v = typeof dto[f] === 'string' ? dto[f].trim() : dto[f];
         out[f] = v === '' ? null : v;
