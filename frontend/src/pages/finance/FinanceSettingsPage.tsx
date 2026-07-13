@@ -1,33 +1,33 @@
-// Настройки Fin System: счета, справочники, резервные копии.
+// Настройки Fin System: счета, справочники, снимки данных, резервные копии.
 // Порт fin-webrand/src/pages/Settings.tsx (Dexie → financeApi + react-query).
 import { useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, todayISO, INCOME_GROUPS, TYPE_LABEL, COLOR_PALETTE } from './finlib';
+import { money, todayISO, formatDate, INCOME_GROUPS, TYPE_LABEL, COLOR_PALETTE, apiErr } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
+import { FinModal, FinLoading, FinLoadError, finConfirm, invalidateFinanceAll } from './FinKit';
+import { ProjectFormModal, EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
 import { financeApi } from '@/services/api.service';
-
-function errMsg(e: any) {
-  return e?.response?.data?.message || 'Ошибка';
-}
 
 export default function FinanceSettingsPage() {
   const qc = useQueryClient();
 
-  const { data: accounts = [] } = useQuery<any[]>({ queryKey: ['finance', 'accounts'], queryFn: () => financeApi.accounts() });
+  const accountsQ = useQuery<any[]>({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
+  const accounts = accountsQ.data ?? [];
   const { data: balances } = useQuery<any>({ queryKey: ['finance', 'accounts-balances'], queryFn: () => financeApi.accountsBalances() });
-  const { data: categories = [] } = useQuery<any[]>({ queryKey: ['finance', 'categories'], queryFn: () => financeApi.categories() });
-  const { data: projects = [] } = useQuery<any[]>({ queryKey: ['finance', 'projects'], queryFn: () => financeApi.projects() });
-  const { data: employees = [] } = useQuery<any[]>({ queryKey: ['finance', 'employees'], queryFn: () => financeApi.employees() });
-  const { data: subs = [] } = useQuery<any[]>({ queryKey: ['finance', 'subscriptions'], queryFn: () => financeApi.subscriptions() });
+  const { data: categories = [] } = useQuery<any[]>({ queryKey: ['finref', 'categories'], queryFn: () => financeApi.categories() });
+  const { data: projects = [] } = useQuery<any[]>({ queryKey: ['finref', 'projects'], queryFn: () => financeApi.projects() });
+  const { data: employees = [] } = useQuery<any[]>({ queryKey: ['finref', 'employees'], queryFn: () => financeApi.employees() });
+  const { data: subs = [] } = useQuery<any[]>({ queryKey: ['finref', 'subscriptions'], queryFn: () => financeApi.subscriptions() });
   const { data: debts = [] } = useQuery<any[]>({ queryKey: ['finance', 'debts'], queryFn: () => financeApi.debts() });
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState('');
-  const [modal, setModal] = useState<React.ReactNode>(null);
+  const [modal, setModal] = useState<ReactNode>(null);
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['finance'] });
+  const invalidate = () => invalidateFinanceAll(qc);
+  const empCategories = [...new Set(employees.map((e: any) => e.category).filter(Boolean))] as string[];
 
   function currentBalance(accountId: string): number {
     const row = balances?.perAccount?.find((p: any) => p.id === accountId);
@@ -41,21 +41,30 @@ export default function FinanceSettingsPage() {
       await financeApi.updateAccount(a.id, { startBalance });
       invalidate();
     } catch (e: any) {
-      toast.error(errMsg(e));
+      toast.error(apiErr(e));
+    }
+  }
+
+  async function toggleArchived(a: any) {
+    if (!a.archived && !(await finConfirm(
+      `Архивировать счёт «${a.name}»? Он исчезнет из карточек и селектов, операции и история останутся.`,
+      { confirmLabel: 'Архивировать' },
+    ))) return;
+    try {
+      await financeApi.updateAccount(a.id, { archived: !a.archived });
+      invalidate();
+    } catch (e: any) {
+      toast.error(apiErr(e));
     }
   }
 
   async function exportData() {
     try {
       const dump = await financeApi.exportAll();
-      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `fin-system-${todayISO()}.json`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      downloadJson(dump, `fin-system-${todayISO()}.json`);
+      setMsg('Файл выгружен ✓');
     } catch (e: any) {
-      toast.error(errMsg(e));
+      toast.error(apiErr(e));
     }
   }
 
@@ -67,23 +76,23 @@ export default function FinanceSettingsPage() {
       toast.error('Некорректный JSON-файл');
       return;
     }
-    if (!confirm('Импорт полностью заменит все текущие данные. Продолжить?')) return;
+    if (!(await finConfirm('Импорт полностью заменит все текущие данные. Продолжить?', { danger: true, confirmLabel: 'Импортировать' }))) return;
     try {
       await financeApi.importAll(data);
       setMsg('Импортировано ✓');
       invalidate();
     } catch (e: any) {
-      toast.error(errMsg(e));
+      toast.error(apiErr(e));
     }
   }
 
   async function resetAll() {
-    if (!confirm('Удалить ВСЕ данные и пересоздать справочники? Необратимо.')) return;
+    if (!(await finConfirm('Удалить ВСЕ данные и пересоздать справочники? Действие необратимо (последний автоснимок останется).', { danger: true, confirmLabel: 'Сбросить всё' }))) return;
     try {
       await financeApi.resetAll();
       invalidate();
     } catch (e: any) {
-      toast.error(errMsg(e));
+      toast.error(apiErr(e));
     }
   }
 
@@ -92,24 +101,44 @@ export default function FinanceSettingsPage() {
       await fn();
       invalidate();
     } catch (e: any) {
-      toast.error(errMsg(e));
+      toast.error(apiErr(e));
     }
+  }
+
+  if (accountsQ.isLoading) {
+    return (
+      <div className="fin-root">
+        <div className="page-head"><div><h1>Настройки</h1><p>Счета, справочники, резервные копии</p></div></div>
+        <FinLoading />
+      </div>
+    );
+  }
+  if (accountsQ.isError) {
+    return (
+      <div className="fin-root">
+        <div className="page-head"><div><h1>Настройки</h1><p>Счета, справочники, резервные копии</p></div></div>
+        <FinLoadError onRetry={() => accountsQ.refetch()} />
+      </div>
+    );
   }
 
   return (
     <div className="fin-root">
-      <div className="page-head"><div><h1>Настройки</h1><p>Счета, справочники, резервные копии</p></div></div>
+      <div className="page-head"><div><h1>Настройки</h1><p>Счета, справочники, снимки данных</p></div></div>
 
       <div className="section-title">Счета и стартовые балансы</div>
       <div className="card">
-        <p className="mini muted" style={{ marginTop: 0 }}>Стартовый баланс = сколько было на счёте на момент запуска. Текущий = старт + операции.</p>
+        <p className="mini muted" style={{ marginTop: 0 }}>Стартовый баланс = сколько было на счёте на момент запуска. Текущий = старт + операции. Архивные счета скрыты из карточек и селектов.</p>
         <table>
           <thead><tr><th>Счёт</th><th className="num">Стартовый</th><th className="num">Текущий</th><th /></tr></thead>
           <tbody>
             {accounts.length === 0 && <tr><td colSpan={4} className="empty">Пусто</td></tr>}
             {accounts.map((a: any) => (
-              <tr key={a.id}>
-                <td><span className="dot" style={{ background: a.color }} /> <b style={{ marginLeft: 8 }}>{a.name}</b></td>
+              <tr key={a.id} style={a.archived ? { opacity: .55 } : undefined}>
+                <td>
+                  <span className="dot" style={{ background: a.color }} /> <b style={{ marginLeft: 8 }}>{a.name}</b>
+                  {a.archived && <span className="mini muted" style={{ marginLeft: 8 }}>архивный</span>}
+                </td>
                 <td className="num">
                   <input key={`${a.id}-${a.startBalance}`} className="cell-input" style={{ width: 140, textAlign: 'right' }}
                     type="number" inputMode="decimal" defaultValue={a.startBalance}
@@ -117,7 +146,10 @@ export default function FinanceSettingsPage() {
                 </td>
                 <td className="num"><b>{money(currentBalance(a.id))}</b></td>
                 <td className="num"><span className="row-actions">
-                  <button className="btn ghost sm" onClick={() => setModal(<AccountModal account={a} onClose={() => setModal(null)} />)}><FinIcon name="edit" size={15} /></button>
+                  <button className="btn ghost sm" title="Редактировать" onClick={() => setModal(<AccountModal account={a} onClose={() => setModal(null)} />)}><FinIcon name="edit" size={15} /></button>
+                  <button className="btn ghost sm" title={a.archived ? 'Вернуть из архива' : 'В архив'} onClick={() => toggleArchived(a)}>
+                    <FinIcon name={a.archived ? 'undo' : 'download'} size={15} />
+                  </button>
                 </span></td>
               </tr>
             ))}
@@ -132,38 +164,40 @@ export default function FinanceSettingsPage() {
         onAdd={() => setModal(<CategoryModal onClose={() => setModal(null)} />)}
         onEdit={(c: any) => setModal(<CategoryModal category={c} onClose={() => setModal(null)} />)}
         canDelete={(c: any) => !c.builtin}
-        onDel={(c: any) => confirm('Удалить?') && del(() => financeApi.removeCategory(c.id))} />
+        onDel={async (c: any) => (await finConfirm(`Удалить категорию «${c.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeCategory(c.id))} />
 
       <Directory title="Проекты / клиенты" items={projects}
         head={['Название', 'Направление', 'Тариф']}
         cols={(p: any) => [p.name, INCOME_GROUPS.find((g) => g.key === p.direction)?.label ?? p.direction, money(p.tariff)]}
-        onAdd={() => setModal(<ProjectModal onClose={() => setModal(null)} />)}
-        onEdit={(p: any) => setModal(<ProjectModal project={p} onClose={() => setModal(null)} />)}
-        onDel={(p: any) => confirm(`Удалить проект «${p.name}»? Удалятся его плановые оплаты и доходные операции.`) && del(() => financeApi.removeProject(p.id))} />
+        onAdd={() => setModal(<ProjectFormModal onClose={() => setModal(null)} />)}
+        onEdit={(p: any) => setModal(<ProjectFormModal project={p} onClose={() => setModal(null)} />)}
+        onDel={async (p: any) => (await finConfirm(`Удалить проект «${p.name}»? Удалятся его плановые оплаты и доходные операции.`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeProject(p.id))} />
 
       <Directory title="Сотрудники" items={employees}
         head={['Имя', 'Роль', 'Оклад', 'Статус']}
         cols={(e: any) => [e.name, e.role || '—', money(e.salary), e.status === 'active' ? 'активный' : 'уволен']}
-        onAdd={() => setModal(<EmployeeModal onClose={() => setModal(null)} />)}
-        onEdit={(e: any) => setModal(<EmployeeModal employee={e} onClose={() => setModal(null)} />)}
-        onDel={(e: any) => confirm('Удалить?') && del(() => financeApi.removeEmployee(e.id))} />
+        onAdd={() => setModal(<EmployeeFormModal categories={empCategories} onClose={() => setModal(null)} />)}
+        onEdit={(e: any) => setModal(<EmployeeFormModal employee={e} categories={empCategories} onClose={() => setModal(null)} />)}
+        onDel={async (e: any) => (await finConfirm(`Удалить сотрудника «${e.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeEmployee(e.id))} />
 
       <Directory title="Аренда и подписки" items={subs}
-        head={['Название', 'Тип', 'Сумма/мес']}
-        cols={(s: any) => [s.name, s.kind === 'rent' ? 'Аренда' : 'Подписка', money(s.amount)]}
-        onAdd={() => setModal(<SubModal onClose={() => setModal(null)} />)}
-        onEdit={(s: any) => setModal(<SubModal sub={s} onClose={() => setModal(null)} />)}
-        onDel={(s: any) => confirm('Удалить?') && del(() => financeApi.removeSubscription(s.id))} />
+        head={['Название', 'Тип', 'Сумма/мес', 'День оплаты']}
+        cols={(s: any) => [s.name, s.kind === 'rent' ? 'Аренда' : 'Подписка', money(s.amount), s.dueDay ? `до ${s.dueDay}-го` : '—']}
+        onAdd={() => setModal(<SubFormModal onClose={() => setModal(null)} />)}
+        onEdit={(s: any) => setModal(<SubFormModal sub={s} onClose={() => setModal(null)} />)}
+        onDel={async (s: any) => (await finConfirm(`Удалить «${s.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeSubscription(s.id))} />
 
       <Directory title="Долги" items={debts}
         head={['Название', 'Сумма', 'Платёж/мес']}
         cols={(d: any) => [d.name, money(d.totalAmount), d.monthlyPayment ? money(d.monthlyPayment) : '—']}
-        onAdd={() => setModal(<DebtModal onClose={() => setModal(null)} />)}
-        onEdit={(d: any) => setModal(<DebtModal debt={d} onClose={() => setModal(null)} />)}
-        onDel={(d: any) => confirm('Удалить?') && del(() => financeApi.removeDebt(d.id))} />
+        onAdd={() => setModal(<DebtFormModal onClose={() => setModal(null)} />)}
+        onEdit={(d: any) => setModal(<DebtFormModal debt={d} onClose={() => setModal(null)} />)}
+        onDel={async (d: any) => (await finConfirm(`Удалить долг «${d.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeDebt(d.id))} />
 
-      <div className="section-title">Резервная копия</div>
-      <div className="card flex" style={{ gap: 12 }}>
+      <BackupsSection />
+
+      <div className="section-title">Резервная копия (файл)</div>
+      <div className="card flex" style={{ gap: 12, flexWrap: 'wrap' }}>
         <button className="btn" onClick={exportData}><FinIcon name="download" size={16} /> Экспорт JSON</button>
         <button className="btn" onClick={() => fileRef.current?.click()}><FinIcon name="upload" size={16} /> Импорт JSON</button>
         <input ref={fileRef} type="file" accept="application/json" style={{ display: 'none' }}
@@ -176,6 +210,98 @@ export default function FinanceSettingsPage() {
 
       {modal}
     </div>
+  );
+}
+
+function downloadJson(data: any, filename: string) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/** Снимки данных: ежедневный автобэкап 02:00 + ручные; восстановление обратимо
+ *  (перед ним система сохраняет снимок pre_restore). */
+function BackupsSection() {
+  const qc = useQueryClient();
+  const { data: backups = [], isLoading } = useQuery<any[]>({ queryKey: ['finance', 'backups'], queryFn: () => financeApi.backups() });
+  const [busy, setBusy] = useState(false);
+
+  const KIND_LABEL: Record<string, string> = { auto: 'авто', manual: 'ручной', pre_restore: 'перед восстановлением' };
+
+  async function createSnapshot() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await financeApi.createBackup();
+      qc.invalidateQueries({ queryKey: ['finance', 'backups'] });
+      toast.success('Снимок создан');
+    } catch (e: any) {
+      toast.error(apiErr(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function download(b: any) {
+    try {
+      const full = await financeApi.getBackup(b.id);
+      downloadJson(full.data, `fin-backup-${String(b.createdAt).slice(0, 10)}.json`);
+    } catch (e: any) {
+      toast.error(apiErr(e));
+    }
+  }
+
+  async function restore(b: any) {
+    if (!(await finConfirm(
+      `Восстановить данные из снимка от ${formatDate(String(b.createdAt).slice(0, 10))}? Текущее состояние сначала сохранится отдельным снимком.`,
+      { danger: true, confirmLabel: 'Восстановить' },
+    ))) return;
+    if (busy) return;
+    setBusy(true);
+    try {
+      await financeApi.restoreBackup(b.id);
+      invalidateFinanceAll(qc);
+      toast.success('Данные восстановлены');
+    } catch (e: any) {
+      toast.error(apiErr(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="section-title">Снимки данных</div>
+      <div className="card">
+        <p className="mini muted" style={{ marginTop: 0 }}>Автоснимок — каждый день в 02:00 (хранятся последние 30). Перед восстановлением текущее состояние сохраняется — операция обратима.</p>
+        {isLoading ? <div className="mini muted">Загрузка…</div> : backups.length === 0 ? (
+          <div className="mini muted">Снимков пока нет — первый появится после 02:00 или по кнопке.</div>
+        ) : (
+          <div className="table-wrap" style={{ boxShadow: 'none', border: 'none' }}>
+            <table>
+              <thead><tr><th>Когда</th><th>Тип</th><th className="num">Операций</th><th /></tr></thead>
+              <tbody>
+                {backups.map((b: any) => (
+                  <tr key={b.id}>
+                    <td><b>{new Date(b.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</b></td>
+                    <td>{KIND_LABEL[b.kind] ?? b.kind}</td>
+                    <td className="num">{b.stats?.transactions ?? '—'}</td>
+                    <td className="num"><span className="row-actions">
+                      <button className="btn ghost sm" title="Скачать JSON" onClick={() => download(b)}><FinIcon name="download" size={15} /></button>
+                      <button className="btn ghost sm" title="Восстановить из снимка" disabled={busy} onClick={() => restore(b)}><FinIcon name="undo" size={15} /></button>
+                    </span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <button className="btn sm" style={{ marginTop: 12 }} disabled={busy} onClick={createSnapshot}><FinIcon name="plus" size={14} /> Создать снимок сейчас</button>
+      </div>
+    </>
   );
 }
 
@@ -210,23 +336,6 @@ function Directory({ title, items, head, cols, onAdd, onEdit, onDel, canDelete }
   );
 }
 
-function Modal({ title, onClose, onSave, canSave, children }: {
-  title: string; onClose: () => void; onSave: () => void; canSave: boolean; children: React.ReactNode;
-}) {
-  return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
-        <div className="modal-head"><h3>{title}</h3><button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
-        <div className="modal-body">{children}</div>
-        <div className="modal-foot">
-          <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={!canSave} onClick={onSave}>Сохранить</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function Palette({ color, setColor }: { color: string; setColor: (c: string) => void }) {
   return (
     <div className="field"><label>Цвет</label>
@@ -245,19 +354,27 @@ function AccountModal({ account, onClose }: { account?: any; onClose: () => void
   const [name, setName] = useState(account?.name ?? '');
   const [kind, setKind] = useState(account?.kind ?? 'bank');
   const [color, setColor] = useState(account?.color ?? COLOR_PALETTE[0]);
+  const [busy, setBusy] = useState(false);
   async function save() {
+    if (!name.trim() || busy) return;
+    setBusy(true);
     try {
       const p = { name: name.trim(), kind, color };
       if (account) await financeApi.updateAccount(account.id, p);
       else await financeApi.createAccount({ ...p, startBalance: 0 });
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      invalidateFinanceAll(qc);
       onClose();
     } catch (e: any) {
-      toast.error(errMsg(e));
+      toast.error(apiErr(e));
+      setBusy(false);
     }
   }
   return (
-    <Modal title={account ? 'Счёт' : 'Новый счёт'} onClose={onClose} onSave={save} canSave={!!name.trim()}>
+    <FinModal title={account ? 'Счёт' : 'Новый счёт'} onClose={onClose} width={440}
+      footer={<>
+        <button className="btn ghost" onClick={onClose}>Отмена</button>
+        <button className="btn primary" disabled={!name.trim() || busy} onClick={save}>{busy ? 'Сохраняю…' : 'Сохранить'}</button>
+      </>}>
       <div className="field"><label>Название</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
       <div className="field"><label>Тип</label>
         <select value={kind} onChange={(e) => setKind(e.target.value)}>
@@ -265,7 +382,7 @@ function AccountModal({ account, onClose }: { account?: any; onClose: () => void
         </select>
       </div>
       <Palette color={color} setColor={setColor} />
-    </Modal>
+    </FinModal>
   );
 }
 
@@ -274,19 +391,27 @@ function CategoryModal({ category, onClose }: { category?: any; onClose: () => v
   const [name, setName] = useState(category?.name ?? '');
   const [type, setType] = useState(category?.type ?? 'expense');
   const [color, setColor] = useState(category?.color ?? COLOR_PALETTE[4]);
+  const [busy, setBusy] = useState(false);
   async function save() {
+    if (!name.trim() || busy) return;
+    setBusy(true);
     try {
       const p = { name: name.trim(), type, color };
       if (category) await financeApi.updateCategory(category.id, p);
       else await financeApi.createCategory(p);
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      invalidateFinanceAll(qc);
       onClose();
     } catch (e: any) {
-      toast.error(errMsg(e));
+      toast.error(apiErr(e));
+      setBusy(false);
     }
   }
   return (
-    <Modal title={category ? 'Категория' : 'Новая категория'} onClose={onClose} onSave={save} canSave={!!name.trim()}>
+    <FinModal title={category ? 'Категория' : 'Новая категория'} onClose={onClose} width={440}
+      footer={<>
+        <button className="btn ghost" onClick={onClose}>Отмена</button>
+        <button className="btn primary" disabled={!name.trim() || busy} onClick={save}>{busy ? 'Сохраняю…' : 'Сохранить'}</button>
+      </>}>
       <div className="field"><label>Название</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Реклама, Транспорт, Налоги…" /></div>
       <div className="field"><label>Тип</label>
         <select value={type} onChange={(e) => setType(e.target.value)}>
@@ -295,170 +420,6 @@ function CategoryModal({ category, onClose }: { category?: any; onClose: () => v
         </select>
       </div>
       <Palette color={color} setColor={setColor} />
-    </Modal>
-  );
-}
-
-function ProjectModal({ project, onClose }: { project?: any; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [name, setName] = useState(project?.name ?? '');
-  const [direction, setDirection] = useState(project?.direction ?? 'smm');
-  const [tariff, setTariff] = useState(String(project?.tariff ?? ''));
-  const [contractDate, setContractDate] = useState(project?.contractDate ?? '');
-  const [multiMonth, setMultiMonth] = useState(!!project?.multiMonth);
-  const [status, setStatus] = useState(project?.status ?? 'active');
-  async function save() {
-    try {
-      const p = {
-        name: name.trim(), direction, tariff: parseFloat(tariff) || 0,
-        contractDate: contractDate || null,
-        multiMonth: direction === 'design' ? multiMonth : false,
-        status,
-      };
-      if (project) await financeApi.updateProject(project.id, p);
-      else await financeApi.createProject(p);
-      qc.invalidateQueries({ queryKey: ['finance'] });
-      onClose();
-    } catch (e: any) {
-      toast.error(errMsg(e));
-    }
-  }
-  return (
-    <Modal title={project ? 'Проект' : 'Новый проект'} onClose={onClose} onSave={save} canSave={!!name.trim()}>
-      <div className="field"><label>Название</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
-      <div className="form-grid">
-        <div className="field"><label>Направление</label>
-          <select value={direction} onChange={(e) => setDirection(e.target.value)}>
-            {INCOME_GROUPS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
-          </select>
-        </div>
-        <div className="field"><label>Тариф / сумма</label><input inputMode="decimal" value={tariff} onChange={(e) => setTariff(e.target.value)} /></div>
-      </div>
-      <div className="form-grid">
-        <div className="field"><label>Дата контракта</label><input type="date" value={contractDate} onChange={(e) => setContractDate(e.target.value)} /></div>
-        <div className="field"><label>Статус</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="lead">Лид</option><option value="active">Активный</option><option value="done">Завершён</option>
-            {status === 'archived' && <option value="archived">Архив</option>}
-          </select>
-        </div>
-      </div>
-      {direction === 'design' && (
-        <label className="flex" style={{ cursor: 'pointer' }}>
-          <input type="checkbox" checked={multiMonth} onChange={(e) => setMultiMonth(e.target.checked)} style={{ width: 'auto' }} />
-          Брендбук / логобук — оплата по месяцам
-        </label>
-      )}
-    </Modal>
-  );
-}
-
-function EmployeeModal({ employee, onClose }: { employee?: any; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [name, setName] = useState(employee?.name ?? '');
-  const [role, setRole] = useState(employee?.role ?? '');
-  const [hireDate, setHireDate] = useState(employee?.hireDate ?? '');
-  const [salary, setSalary] = useState(String(employee?.salary ?? ''));
-  const [advance, setAdvance] = useState(String(employee?.advance ?? 0));
-  const [status, setStatus] = useState(employee?.status ?? 'active');
-  async function save() {
-    try {
-      const p = {
-        name: name.trim(), role: role.trim() || null, hireDate: hireDate || null,
-        salary: parseFloat(salary) || 0, advance: parseFloat(advance) || 0, status,
-      };
-      if (employee) await financeApi.updateEmployee(employee.id, p);
-      else await financeApi.createEmployee(p);
-      qc.invalidateQueries({ queryKey: ['finance'] });
-      onClose();
-    } catch (e: any) {
-      toast.error(errMsg(e));
-    }
-  }
-  return (
-    <Modal title={employee ? 'Сотрудник' : 'Новый сотрудник'} onClose={onClose} onSave={save} canSave={!!name.trim()}>
-      <div className="field"><label>ФИО</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
-      <div className="form-grid">
-        <div className="field"><label>Должность</label><input value={role} onChange={(e) => setRole(e.target.value)} /></div>
-        <div className="field"><label>Дата приёма</label><input type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)} /></div>
-      </div>
-      <div className="form-grid">
-        <div className="field"><label>ЗП / мес</label><input inputMode="decimal" value={salary} onChange={(e) => setSalary(e.target.value)} /></div>
-        <div className="field"><label>Аванс</label><input inputMode="decimal" value={advance} onChange={(e) => setAdvance(e.target.value)} /></div>
-      </div>
-      <div className="field"><label>Статус</label>
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="active">Работает</option><option value="fired">Уволен</option>
-        </select>
-      </div>
-    </Modal>
-  );
-}
-
-function SubModal({ sub, onClose }: { sub?: any; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [name, setName] = useState(sub?.name ?? '');
-  const [kind, setKind] = useState(sub?.kind ?? 'subscription');
-  const [amount, setAmount] = useState(String(sub?.amount ?? ''));
-  async function save() {
-    try {
-      const p = { name: name.trim(), kind, amount: parseFloat(amount) || 0 };
-      if (sub) await financeApi.updateSubscription(sub.id, p);
-      else await financeApi.createSubscription(p);
-      qc.invalidateQueries({ queryKey: ['finance'] });
-      onClose();
-    } catch (e: any) {
-      toast.error(errMsg(e));
-    }
-  }
-  return (
-    <Modal title={sub ? 'Позиция' : 'Новая позиция'} onClose={onClose} onSave={save} canSave={!!name.trim()}>
-      <div className="field"><label>Название</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
-      <div className="form-grid">
-        <div className="field"><label>Тип</label>
-          <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="rent">Аренда</option><option value="subscription">Подписка</option>
-          </select>
-        </div>
-        <div className="field"><label>Сумма / мес</label><input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-      </div>
-    </Modal>
-  );
-}
-
-function DebtModal({ debt, onClose }: { debt?: any; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [name, setName] = useState(debt?.name ?? '');
-  const [counterparty, setCounterparty] = useState(debt?.counterparty ?? '');
-  const [monthly, setMonthly] = useState(String(debt?.monthlyPayment ?? ''));
-  const [total, setTotal] = useState(String(debt?.totalAmount ?? ''));
-  const [paidBefore, setPaidBefore] = useState(String(debt?.paidBefore ?? 0));
-  async function save() {
-    try {
-      const p = {
-        name: name.trim(), counterparty: counterparty.trim() || null,
-        monthlyPayment: parseFloat(monthly) || null,
-        totalAmount: parseFloat(total) || 0, paidBefore: parseFloat(paidBefore) || 0,
-      };
-      if (debt) await financeApi.updateDebt(debt.id, p);
-      else await financeApi.createDebt(p);
-      qc.invalidateQueries({ queryKey: ['finance'] });
-      onClose();
-    } catch (e: any) {
-      toast.error(errMsg(e));
-    }
-  }
-  return (
-    <Modal title={debt ? 'Долг' : 'Новый долг'} onClose={onClose} onSave={save} canSave={!!name.trim()}>
-      <div className="field"><label>Наименование</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
-      <div className="form-grid">
-        <div className="field"><label>Контрагент</label><input value={counterparty} onChange={(e) => setCounterparty(e.target.value)} /></div>
-        <div className="field"><label>Платёж / мес</label><input inputMode="decimal" value={monthly} onChange={(e) => setMonthly(e.target.value)} /></div>
-      </div>
-      <div className="form-grid">
-        <div className="field"><label>Сумма долга</label><input inputMode="decimal" value={total} onChange={(e) => setTotal(e.target.value)} /></div>
-        <div className="field"><label>Погашено до старта</label><input inputMode="decimal" value={paidBefore} onChange={(e) => setPaidBefore(e.target.value)} /></div>
-      </div>
-    </Modal>
+    </FinModal>
   );
 }

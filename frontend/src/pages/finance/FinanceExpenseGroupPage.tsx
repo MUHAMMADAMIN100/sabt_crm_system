@@ -5,14 +5,12 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { money, currentYm, todayISO, formatDate, monthLabel, shiftYm, EXPENSE_GROUPS, OTHER_GROUP } from './finlib';
+import { money, currentYm, todayISO, formatDate, monthLabel, shiftYm, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP } from './finlib';
+import { FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinance } from './FinKit';
+import { EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import './finance.css';
-
-function apiError(e: any) {
-  toast.error(e?.response?.data?.message || 'Ошибка');
-}
 
 export default function FinanceExpenseGroupPage() {
   const { kind } = useParams<{ kind: string }>();
@@ -51,32 +49,25 @@ export default function FinanceExpenseGroupPage() {
 // ─── Общие хуки ──────────────────────────────────────────
 
 function useFinAccounts(): any[] {
-  const { data } = useQuery({ queryKey: ['finance', 'accounts'], queryFn: () => financeApi.accounts() });
-  return data ?? [];
+  const { data } = useQuery({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
+  return (data ?? []).filter((a: any) => !a.archived);
 }
 
 function useFinCategories(): any[] {
-  const { data } = useQuery({ queryKey: ['finance', 'categories'], queryFn: () => financeApi.categories() });
+  const { data } = useQuery({ queryKey: ['finref', 'categories'], queryFn: () => financeApi.categories() });
   return data ?? [];
-}
-
-/** Удалить операции месяца, отфильтрованные предикатом (отмена оплат ЗП/подписок). */
-async function removeMonthOps(ym: string, pred: (t: any) => boolean) {
-  // Реальный последний день месяца: '2026-06-31' уронил бы Postgres date-колонку.
-  const [y, m] = ym.split('-').map(Number);
-  const last = new Date(y, m, 0).getDate();
-  const res = await financeApi.transactions({ from: `${ym}-01`, to: `${ym}-${String(last).padStart(2, '0')}`, pageSize: 1000 });
-  const ops = (res?.items ?? []).filter(pred);
-  for (const t of ops) await financeApi.removeTransaction(t.id);
 }
 
 // ─── 4.5 Прочее ──────────────────────────────────────────
 
 function OtherExpenseList({ ym }: { ym: string }) {
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'expenseDetail', 'other', ym],
     queryFn: () => financeApi.expenseDetail('other', ym),
   });
+  if (isLoading) return <FinLoading />;
+  if (isError) return <FinLoadError onRetry={refetch} />;
+
   const rows: any[] = data?.rows ?? [];
   const total: number = data?.total ?? 0;
 
@@ -115,11 +106,11 @@ function OtherExpenseList({ ym }: { ym: string }) {
 
 function SalaryList({ ym }: { ym: string }) {
   const qc = useQueryClient();
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'expenseDetail', 'salary', ym],
     queryFn: () => financeApi.expenseDetail('salary', ym),
   });
-  const { data: fullEmployees } = useQuery({ queryKey: ['finance', 'employees'], queryFn: () => financeApi.employees() });
+  const { data: fullEmployees } = useQuery({ queryKey: ['finref', 'employees'], queryFn: () => financeApi.employees() });
   const [payFor, setPayFor] = useState<any | null>(null);
   const [empFor, setEmpFor] = useState<any | 'new' | null>(null);
   const [showFired, setShowFired] = useState(false);
@@ -145,17 +136,26 @@ function SalaryList({ ym }: { ym: string }) {
     [rows],
   );
 
+  if (isLoading) return <FinLoading cards={4} />;
+  if (isError) return <FinLoadError onRetry={refetch} />;
+
   const openEmp = (row: any) => {
     const full = (fullEmployees ?? []).find((x: any) => x.id === row.id);
     setEmpFor(full ?? row);
   };
 
   async function cancelSalaryMonth(e: any) {
-    if (!confirm('Отменить выплату? Зарплатные операции сотрудника за месяц будут удалены.')) return;
+    if (!(await finConfirm('Отменить выплату? Зарплатные операции сотрудника за месяц будут удалены.', { danger: true, confirmLabel: 'Отменить выплату' }))) return;
     try {
-      await removeMonthOps(ym, (t) => t.employeeId === e.id && t.group === 'salary');
-      qc.invalidateQueries({ queryKey: ['finance'] });
-    } catch (err) { apiError(err); }
+      await financeApi.removeMonthExpenses({ ym, employeeId: e.id });
+      invalidateFinance(qc);
+    } catch (err) { toast.error(apiErr(err)); }
+  }
+
+  function exportCsv() {
+    const header = ['Сотрудник', 'Группа', 'Должность', 'Оклад', 'Бонус', 'Аванс', 'Выплачено', 'К выплате'];
+    const body = rows.map((e) => [e.name, e.category, e.role, e.salary, e.bonus, e.advance, e.paid, e.toPay]);
+    downloadCsv(`salary-${ym}.csv`, [header, ...body]);
   }
 
   return (
@@ -173,6 +173,7 @@ function SalaryList({ ym }: { ym: string }) {
       <div className="toolbar">
         <span className="chip"><FinIcon name="receipt" size={14} /> Выплата ЗП — каждое 10-е число месяца</span>
         <div className="grow" />
+        <button className="btn sm" onClick={exportCsv}>Экспорт CSV</button>
         <button className="btn primary" onClick={() => setEmpFor('new')}><FinIcon name="plus" size={16} /> Сотрудник</button>
       </div>
 
@@ -294,81 +295,15 @@ function BonusCell({ row, ym }: { row: any; ym: string }) {
         if (v === (Number(row.bonus) || 0)) return;
         try {
           await financeApi.setEmployeeBonus(row.id, { ym, amount: v });
-          qc.invalidateQueries({ queryKey: ['finance'] });
-        } catch (err) { apiError(err); }
+          invalidateFinance(qc);
+        } catch (err) { toast.error(apiErr(err)); }
       }}
     />
   );
 }
 
-function EmployeeFormModal({ employee, categories = [], onClose }: { employee?: any; categories?: string[]; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [name, setName] = useState(employee?.name ?? '');
-  const [role, setRole] = useState(employee?.role ?? '');
-  const [category, setCategory] = useState(employee?.category ?? '');
-  const [hireDate, setHireDate] = useState(employee?.hireDate ?? '');
-  const [salary, setSalary] = useState(employee != null ? String(employee.salary ?? '') : '');
-  const [advance, setAdvance] = useState(employee != null ? String(employee.advance ?? '') : '');
-  const [status, setStatus] = useState<string>(employee?.status ?? 'active');
-
-  async function save() {
-    if (!name.trim()) return;
-    const p = {
-      name: name.trim(), role: role.trim() || undefined, hireDate: hireDate || undefined,
-      category: category.trim(),
-      salary: parseFloat(salary) || 0, advance: parseFloat(advance) || 0, status,
-    };
-    try {
-      if (employee) await financeApi.updateEmployee(employee.id, p);
-      else await financeApi.createEmployee(p);
-      qc.invalidateQueries({ queryKey: ['finance'] });
-      onClose();
-    } catch (e) { apiError(e); }
-  }
-  async function remove() {
-    if (!employee || !confirm('Удалить сотрудника? История выплат сохранится в транзакциях.')) return;
-    try {
-      await financeApi.removeEmployee(employee.id);
-      qc.invalidateQueries({ queryKey: ['finance'] });
-      onClose();
-    } catch (e) { apiError(e); }
-  }
-
-  return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
-        <div className="modal-head"><h3>{employee ? 'Сотрудник' : 'Новый сотрудник'}</h3><button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
-        <div className="modal-body">
-          <div className="field"><label>ФИО</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
-          <div className="form-grid">
-            <div className="field"><label>Должность</label><input value={role} onChange={(e) => setRole(e.target.value)} /></div>
-            <div className="field"><label>Дата приёма</label><input type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)} /></div>
-          </div>
-          <div className="field"><label>Категория (группа в ведомости)</label>
-            <input list="fin-emp-categories" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="SMM, Продакшн, Разработка…" />
-            <datalist id="fin-emp-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
-          </div>
-          <div className="form-grid">
-            <div className="field"><label>ЗП / мес</label><input inputMode="decimal" value={salary} onChange={(e) => setSalary(e.target.value)} /></div>
-            <div className="field"><label>Аванс</label><input inputMode="decimal" value={advance} onChange={(e) => setAdvance(e.target.value)} /></div>
-          </div>
-          <div className="field"><label>Статус</label>
-            <select value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="active">Работает</option><option value="fired">Уволен</option>
-            </select>
-          </div>
-        </div>
-        <div className="modal-foot">
-          {employee && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={remove}>Удалить</button>}
-          <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={!name.trim()} onClick={save}>{employee ? 'Сохранить' : 'Добавить'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: () => void }) {
+  useModalKeys(onClose);
   const qc = useQueryClient();
   const accounts = useFinAccounts();
   const categories = useFinCategories();
@@ -376,20 +311,22 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
   const [amount, setAmount] = useState(String(remaining || row.salary || ''));
   const [date, setDate] = useState(`${ym}-10`); // выплата 10-го числа
   const [accountId, setAccountId] = useState('');
+  const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
 
   const amt = parseFloat(amount.replace(',', '.'));
   async function save() {
-    if (!(amt > 0) || !accountId) return;
+    if (!(amt > 0) || !accountId || busy) return;
+    setBusy(true);
     const salaryCat = categories.find((c: any) => c.key === 'salary');
     try {
       await financeApi.createOperation({
         type: 'expense', amount: amt, date, accountId,
         categoryId: salaryCat?.id, employeeId: row.id, comment: 'Зарплата',
       });
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      invalidateFinance(qc);
       onClose();
-    } catch (e) { apiError(e); }
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
 
   return (
@@ -413,7 +350,7 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
         </div>
         <div className="modal-foot">
           <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={!(amt > 0) || !accountId} onClick={save}>Выплатить</button>
+          <button className="btn primary" disabled={busy || !(amt > 0) || !accountId} onClick={save}>Выплатить</button>
         </div>
       </div>
     </div>
@@ -424,45 +361,59 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
 
 function SubsList({ ym }: { ym: string }) {
   const qc = useQueryClient();
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'expenseDetail', 'subscriptions', ym],
     queryFn: () => financeApi.expenseDetail('subscriptions', ym),
   });
   const accounts = useFinAccounts();
   const categories = useFinCategories();
   const [editFor, setEditFor] = useState<any | 'new' | null>(null);
+  // Оплата — прямые кнопки без модалки: держим id позиции «в работе»,
+  // чтобы даблклик не создал два расхода.
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  if (isLoading) return <FinLoading />;
+  if (isError) return <FinLoadError onRetry={refetch} />;
 
   const rows: any[] = data?.rows ?? [];
   const monthly: number = data?.monthly ?? 0;
 
   async function pay(s: any) {
+    if (busyId) return;
     const accountId = accounts[0]?.id;
     if (!accountId) { toast.error('Нет счетов'); return; }
     const cat = categories.find((c: any) => c.key === (s.kind === 'rent' ? 'rent' : 'subscription'));
+    setBusyId(s.id);
     try {
       await financeApi.createOperation({
         type: 'expense', amount: s.amount, date: todayISO(), accountId,
         categoryId: cat?.id, subscriptionId: s.id, comment: s.name,
       });
-      qc.invalidateQueries({ queryKey: ['finance'] });
-    } catch (e) { apiError(e); }
+      invalidateFinance(qc);
+    } catch (e) { toast.error(apiErr(e)); }
+    finally { setBusyId(null); }
   }
 
   /** Отметить оплаченным без операции: денег по счетам не двигает. */
   async function markPaid(s: any) {
+    if (busyId) return;
+    setBusyId(s.id);
     try {
       await financeApi.markSubPaid(s.id, { ym, date: todayISO() });
-      qc.invalidateQueries({ queryKey: ['finance'] });
-    } catch (e) { apiError(e); }
+      invalidateFinance(qc);
+    } catch (e) { toast.error(apiErr(e)); }
+    finally { setBusyId(null); }
   }
 
   async function cancelMonth(s: any) {
-    if (!confirm('Отменить оплату? Оплаты позиции за месяц будут удалены.')) return;
+    if (busyId) return;
+    if (!(await finConfirm('Отменить оплату? Оплаты позиции за месяц будут удалены.', { danger: true, confirmLabel: 'Отменить оплату' }))) return;
+    setBusyId(s.id);
     try {
-      await removeMonthOps(ym, (t) => t.subscriptionId === s.id);
+      await financeApi.removeMonthExpenses({ ym, subscriptionId: s.id });
       if (s.paidMark) await financeApi.unmarkSubPaid(s.id, { ym });
-    } catch (e) { apiError(e); }
-    finally { qc.invalidateQueries({ queryKey: ['finance'] }); }
+    } catch (e) { toast.error(apiErr(e)); }
+    finally { setBusyId(null); invalidateFinance(qc); }
   }
 
   return (
@@ -478,7 +429,7 @@ function SubsList({ ym }: { ym: string }) {
       <div className="table-wrap">
         <table>
           {/* Колонка действий держит до трёх кнопок («оплатить» — с подписью). */}
-          <thead><tr><th style={{ minWidth: 170 }}>Позиция</th><th>Тип</th><th className="num" style={{ width: 110 }}>Сумма/мес</th><th style={{ minWidth: 200 }}>Статус месяца</th><th style={{ width: 190 }} /></tr></thead>
+          <thead><tr><th style={{ minWidth: 170 }}>Позиция</th><th>Тип</th><th className="num" style={{ width: 110 }}>Сумма/мес</th><th style={{ width: 110 }}>День оплаты</th><th style={{ minWidth: 200 }}>Статус месяца</th><th style={{ width: 190 }} /></tr></thead>
           <tbody>
             {rows.map((s) => {
               const isPaid = !!s.paidMonth || !!s.paidMark;
@@ -488,6 +439,7 @@ function SubsList({ ym }: { ym: string }) {
                   <td><b>{s.name}</b></td>
                   <td className="muted">{s.kind === 'rent' ? 'Аренда' : 'Подписка'}</td>
                   <td className="num">{money(s.amount)}</td>
+                  <td className="muted nowrap">{s.dueDay ? `до ${s.dueDay}-го` : '—'}</td>
                   <td>
                     {isPaid ? (
                       <span className="flex">
@@ -500,10 +452,10 @@ function SubsList({ ym }: { ym: string }) {
                   <td className="num">
                     <span className="flex" style={{ justifyContent: 'flex-end' }}>
                       {isPaid
-                        ? <button className="btn ghost sm" title="Отменить оплату" onClick={() => cancelMonth(s)}><FinIcon name="undo" size={15} /></button>
+                        ? <button className="btn ghost sm" disabled={busyId === s.id} title="Отменить оплату" onClick={() => cancelMonth(s)}><FinIcon name="undo" size={15} /></button>
                         : <>
-                            <button className="btn ghost sm" title="Оплатить — создаст расход со счёта" onClick={() => pay(s)}><FinIcon name="check" size={14} /> оплатить</button>
-                            <button className="btn ghost sm" title="Отметить оплаченным без списания со счёта" onClick={() => markPaid(s)}><FinIcon name="checkCircle" size={15} /></button>
+                            <button className="btn ghost sm" disabled={busyId === s.id} title="Оплатить — создаст расход со счёта" onClick={() => pay(s)}><FinIcon name="check" size={14} /> оплатить</button>
+                            <button className="btn ghost sm" disabled={busyId === s.id} title="Отметить оплаченным без списания со счёта" onClick={() => markPaid(s)}><FinIcon name="checkCircle" size={15} /></button>
                           </>}
                       <button className="btn ghost sm row-actions" title="Редактировать" onClick={() => setEditFor(s)}><FinIcon name="edit" size={15} /></button>
                     </span>
@@ -516,6 +468,7 @@ function SubsList({ ym }: { ym: string }) {
             <tr>
               <td colSpan={2}><b>Итого</b></td>
               <td className="num"><b>{money(rows.reduce((sum, x) => sum + (x.amount || 0), 0))}</b></td>
+              <td />
               <td colSpan={2} />
             </tr>
           </tfoot>
@@ -527,57 +480,6 @@ function SubsList({ ym }: { ym: string }) {
   );
 }
 
-function SubFormModal({ sub, onClose }: { sub?: any; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [name, setName] = useState(sub?.name ?? '');
-  const [kind, setKind] = useState<string>(sub?.kind ?? 'subscription');
-  const [amount, setAmount] = useState(sub != null ? String(sub.amount ?? '') : '');
-  const amt = parseFloat(amount.replace(',', '.'));
-
-  async function save() {
-    if (!name.trim()) return;
-    const p = { name: name.trim(), kind, amount: amt > 0 ? amt : 0, active: sub?.active ?? true };
-    try {
-      if (sub) await financeApi.updateSubscription(sub.id, p);
-      else await financeApi.createSubscription(p);
-      qc.invalidateQueries({ queryKey: ['finance'] });
-      onClose();
-    } catch (e) { apiError(e); }
-  }
-  async function remove() {
-    if (!sub || !confirm('Удалить позицию?')) return;
-    try {
-      await financeApi.removeSubscription(sub.id);
-      qc.invalidateQueries({ queryKey: ['finance'] });
-      onClose();
-    } catch (e) { apiError(e); }
-  }
-
-  return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
-        <div className="modal-head"><h3>{sub ? 'Расход' : 'Новый расход'}</h3><button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
-        <div className="modal-body">
-          <div className="field"><label>Название</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Аренда, Adobe, Server…" /></div>
-          <div className="form-grid">
-            <div className="field"><label>Тип</label>
-              <select value={kind} onChange={(e) => setKind(e.target.value)}>
-                <option value="rent">Аренда</option><option value="subscription">Подписка</option>
-              </select>
-            </div>
-            <div className="field"><label>Сумма / мес</label><input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-          </div>
-        </div>
-        <div className="modal-foot">
-          {sub && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={remove}>Удалить</button>}
-          <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={!name.trim()} onClick={save}>{sub ? 'Сохранить' : 'Добавить'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── 4.4 Долги ───────────────────────────────────────────
 
 function DebtsList({ ym }: { ym: string }) {
@@ -585,10 +487,13 @@ function DebtsList({ ym }: { ym: string }) {
   const [cellFor, setCellFor] = useState<{ debt: any; ym: string; payment?: any } | null>(null);
   const [debtFor, setDebtFor] = useState<any | 'new' | null>(null);
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'expenseDetail', 'debts', ym, start],
     queryFn: () => financeApi.expenseDetail('debts', ym, start ?? undefined),
   });
+
+  if (isLoading) return <FinLoading />;
+  if (isError) return <FinLoadError onRetry={refetch} />;
 
   const months: string[] = data?.months ?? [];
   const rows: any[] = data?.rows ?? [];
@@ -679,6 +584,7 @@ function DebtsList({ ym }: { ym: string }) {
 }
 
 function DebtCellModal({ debt, ym, payment, onClose }: { debt: any; ym: string; payment?: any; onClose: () => void }) {
+  useModalKeys(onClose);
   const qc = useQueryClient();
   const accounts = useFinAccounts();
   const { data: planned } = useQuery({
@@ -691,6 +597,7 @@ function DebtCellModal({ debt, ym, payment, onClose }: { debt: any; ym: string; 
   const [paidNow, setPaidNow] = useState(false);
   const [date, setDate] = useState(todayISO());
   const [accountId, setAccountId] = useState('');
+  const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
 
   const amt = parseFloat(amount.replace(',', '.'));
@@ -701,41 +608,45 @@ function DebtCellModal({ debt, ym, payment, onClose }: { debt: any; ym: string; 
   const monthName = monthLabel(ym, true);
 
   async function saveNew() {
-    if (!(amt > 0) || overLimit) return;
+    if (!(amt > 0) || overLimit || busy) return;
+    setBusy(true);
     try {
       if (paidNow) {
-        if (!accountId) return;
+        if (!accountId) { setBusy(false); return; }
         await financeApi.payNow({ debtId: debt.id, ym, amount: amt, accountId, date });
       } else {
         await financeApi.createPlanned({ debtId: debt.id, ym, amount: amt });
       }
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      invalidateFinance(qc);
       onClose();
-    } catch (e) { apiError(e); }
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
   async function markPaid() {
-    if (!payment || !accountId) return;
+    if (!payment || !accountId || busy) return;
+    setBusy(true);
     try {
       await financeApi.receivePlanned(payment.id, { accountId, date });
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      invalidateFinance(qc);
       onClose();
-    } catch (e) { apiError(e); }
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
   async function deletePlan() {
-    if (!payment) return;
+    if (!payment || busy) return;
+    setBusy(true);
     try {
       await financeApi.removePlanned(payment.id);
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      invalidateFinance(qc);
       onClose();
-    } catch (e) { apiError(e); }
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
   async function undo() {
-    if (!payment) return;
+    if (!payment || busy) return;
+    setBusy(true);
     try {
       await financeApi.unreceivePlanned(payment.id);
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      invalidateFinance(qc);
       onClose();
-    } catch (e) { apiError(e); }
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
 
   return (
@@ -761,10 +672,10 @@ function DebtCellModal({ debt, ym, payment, onClose }: { debt: any; ym: string; 
             </div>
             <div className="modal-foot">
               {payment.status === 'received'
-                ? <button className="btn danger" style={{ marginRight: 'auto' }} onClick={undo}>Отменить оплату</button>
-                : <button className="btn danger" style={{ marginRight: 'auto' }} onClick={deletePlan}>Удалить план</button>}
+                ? <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy} onClick={undo}>Отменить оплату</button>
+                : <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy} onClick={deletePlan}>Удалить план</button>}
               <button className="btn ghost" onClick={onClose}>Закрыть</button>
-              {payment.status === 'expected' && <button className="btn primary" onClick={markPaid}>Отметить оплаченным</button>}
+              {payment.status === 'expected' && <button className="btn primary" disabled={busy} onClick={markPaid}>Отметить оплаченным</button>}
             </div>
           </>
         ) : (
@@ -789,67 +700,10 @@ function DebtCellModal({ debt, ym, payment, onClose }: { debt: any; ym: string; 
             </div>
             <div className="modal-foot">
               <button className="btn ghost" onClick={onClose}>Отмена</button>
-              <button className="btn primary" disabled={!(amt > 0) || overLimit} onClick={saveNew}>{paidNow ? 'Записать оплату' : 'Добавить план'}</button>
+              <button className="btn primary" disabled={busy || !(amt > 0) || overLimit} onClick={saveNew}>{paidNow ? 'Записать оплату' : 'Добавить план'}</button>
             </div>
           </>
         )}
-      </div>
-    </div>
-  );
-}
-
-function DebtFormModal({ debt, onClose }: { debt?: any; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [name, setName] = useState(debt?.name ?? '');
-  const [counterparty, setCounterparty] = useState(debt?.counterparty ?? '');
-  const [totalAmount, setTotalAmount] = useState(debt != null ? String(debt.totalAmount ?? '') : '');
-  const [monthlyPayment, setMonthlyPayment] = useState(debt?.monthlyPayment ? String(debt.monthlyPayment) : '');
-  const [paidBefore, setPaidBefore] = useState(String(debt?.paidBefore ?? 0));
-
-  async function save() {
-    if (!name.trim()) return;
-    const p = {
-      name: name.trim(), counterparty: counterparty.trim() || undefined,
-      totalAmount: parseFloat(totalAmount) || 0, monthlyPayment: parseFloat(monthlyPayment) || undefined,
-      paidBefore: parseFloat(paidBefore) || 0,
-    };
-    try {
-      // Бэк сам перегенерирует график погашения после create/update.
-      if (debt) await financeApi.updateDebt(debt.id, p);
-      else await financeApi.createDebt(p);
-      qc.invalidateQueries({ queryKey: ['finance'] });
-      onClose();
-    } catch (e) { apiError(e); }
-  }
-  async function remove() {
-    if (!debt || !confirm('Удалить долг? График погашения тоже удалится.')) return;
-    try {
-      await financeApi.removeDebt(debt.id);
-      qc.invalidateQueries({ queryKey: ['finance'] });
-      onClose();
-    } catch (e) { apiError(e); }
-  }
-
-  return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
-        <div className="modal-head"><h3>{debt ? 'Долг' : 'Новый долг'}</h3><button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
-        <div className="modal-body">
-          <div className="field"><label>Наименование</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Камера в рассрочку…" /></div>
-          <div className="form-grid">
-            <div className="field"><label>Контрагент</label><input value={counterparty} onChange={(e) => setCounterparty(e.target.value)} /></div>
-            <div className="field"><label>Платёж / мес</label><input inputMode="decimal" value={monthlyPayment} onChange={(e) => setMonthlyPayment(e.target.value)} /></div>
-          </div>
-          <div className="form-grid">
-            <div className="field"><label>Сумма долга</label><input inputMode="decimal" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} /></div>
-            <div className="field"><label>Погашено до старта</label><input inputMode="decimal" value={paidBefore} onChange={(e) => setPaidBefore(e.target.value)} /></div>
-          </div>
-        </div>
-        <div className="modal-foot">
-          {debt && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={remove}>Удалить</button>}
-          <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={!name.trim()} onClick={save}>{debt ? 'Сохранить' : 'Добавить'}</button>
-        </div>
       </div>
     </div>
   );

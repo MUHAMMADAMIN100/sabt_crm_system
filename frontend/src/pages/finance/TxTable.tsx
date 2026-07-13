@@ -3,10 +3,12 @@
 import './finance.css';
 import { money, formatDate, TYPE_LABEL } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
+import { finConfirm } from './FinKit';
+import type { FinTx } from './types';
 
 export default function TxTable({ txns, onEdit, onDelete }: {
-  txns: any[];
-  onEdit?: (t: any) => void;
+  txns: FinTx[];
+  onEdit?: (t: FinTx) => void;
   onDelete?: (id: string) => void;
 }) {
   if (txns.length === 0) {
@@ -60,7 +62,7 @@ export default function TxTable({ txns, onEdit, onDelete }: {
                   <td className="num">
                     <span className="row-actions">
                       {onEdit && <button className="btn ghost sm" onClick={() => onEdit(t)}><FinIcon name="edit" size={15} /></button>}
-                      {onDelete && <button className="btn ghost sm danger" onClick={() => confirm('Удалить операцию?') && onDelete(t.id)}><FinIcon name="trash" size={15} /></button>}
+                      {onDelete && <button className="btn ghost sm danger" onClick={async () => (await finConfirm('Удалить операцию? Балансы счетов пересчитаются.', { danger: true, confirmLabel: 'Удалить' })) && onDelete(t.id)}><FinIcon name="trash" size={15} /></button>}
                     </span>
                   </td>
                 )}

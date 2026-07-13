@@ -4,16 +4,16 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, INCOME_GROUPS } from './finlib';
+import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, INCOME_GROUPS, apiErr, downloadCsv } from './finlib';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
+import { FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinanceAll } from './FinKit';
+import { ProjectFormModal } from './FinForms';
 import { financeApi } from '@/services/api.service';
 
-const showErr = (e: any) => toast.error(e?.response?.data?.message || 'Ошибка');
-
 function useAccounts(): any[] {
-  const { data } = useQuery({ queryKey: ['finance', 'accounts'], queryFn: () => financeApi.accounts() });
-  return (data as any[]) || [];
+  const { data } = useQuery({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
+  return ((data as any[]) || []).filter((a: any) => !a.archived);
 }
 
 function useInvalidate() {
@@ -28,7 +28,7 @@ export default function FinanceIncomeGroupPage() {
   const [start, setStart] = useState<string | undefined>(undefined);
   const [showNew, setShowNew] = useState(false);
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'income-direction', direction, ym, start ?? ''],
     queryFn: () => financeApi.incomeDirectionDetail(direction!, ym, start),
     enabled: !!g,
@@ -36,7 +36,7 @@ export default function FinanceIncomeGroupPage() {
 
   // Архив для Development/Design — в детальном ответе его нет, берём из справочника проектов.
   const { data: allProjects } = useQuery({
-    queryKey: ['finance', 'projects'],
+    queryKey: ['finref', 'projects'],
     queryFn: () => financeApi.projects(),
     enabled: !!g && direction !== 'smm',
   });
@@ -60,12 +60,14 @@ export default function FinanceIncomeGroupPage() {
         </div>
       </div>
 
-      {!data ? null
+      {isLoading ? <FinLoading />
+        : isError ? <FinLoadError onRetry={refetch} />
+        : !data ? null
         : data.kind === 'smm' ? <SmmSection data={data} ym={ym} />
         : data.kind === 'matrix' ? <DevSection data={data} direction={direction} archived={archivedOther} onShift={shiftStart} />
         : <DesignSection data={data} direction={direction} archived={archivedOther} onShift={shiftStart} />}
 
-      {showNew && <ProjectModal direction={direction} onClose={() => setShowNew(false)} />}
+      {showNew && <ProjectFormModal direction={direction} onClose={() => setShowNew(false)} />}
     </div>
   );
 }
@@ -91,69 +93,16 @@ function RowActions({ onEdit, onArchive, onDelete }: { onEdit: () => void; onArc
 }
 
 function NoteCell({ project }: { project: any }) {
-  const inv = useInvalidate();
+  const qc = useQueryClient();
   return (
     <input
       className="cell-input" placeholder="—" defaultValue={project.note ?? ''}
       onBlur={async (e) => {
         const v = e.target.value.trim();
         if (v === (project.note ?? '')) return;
-        try { await financeApi.updateProject(project.id, { note: v }); inv(); } catch (err) { showErr(err); }
+        try { await financeApi.updateProject(project.id, { note: v }); invalidateFinanceAll(qc); } catch (err) { toast.error(apiErr(err)); }
       }}
     />
-  );
-}
-
-// ---------- Модалка проекта (создание/редактирование) ----------
-
-function ProjectModal({ direction, project, onClose }: { direction: string; project?: any; onClose: () => void }) {
-  const g = INCOME_GROUPS.find((x) => x.key === direction);
-  const inv = useInvalidate();
-  const isEdit = !!project;
-  const [name, setName] = useState(project?.name ?? '');
-  const [tariff, setTariff] = useState(project ? String(project.tariff) : '');
-  const [contractDate, setContractDate] = useState(project ? (project.contractDate ?? '') : todayISO());
-  const [multiMonth, setMultiMonth] = useState(project?.multiMonth ?? false);
-  const amt = parseFloat(tariff.replace(',', '.'));
-
-  async function save() {
-    if (!name.trim()) return;
-    const data: any = { name: name.trim(), tariff: amt > 0 ? amt : 0 };
-    if (direction !== 'development') data.contractDate = contractDate || undefined;
-    if (direction === 'design') data.multiMonth = multiMonth;
-    try {
-      if (project) await financeApi.updateProject(project.id, data);
-      else await financeApi.createProject({ direction, ...data });
-      inv();
-      onClose();
-    } catch (e) { showErr(e); }
-  }
-
-  return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
-        <div className="modal-head"><h3>{isEdit ? 'Проект' : 'Новый проект'} · {g?.label}</h3><button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
-        <div className="modal-body">
-          <div className="field"><label>Название</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Название клиента/проекта" /></div>
-          <div className="form-grid">
-            <div className="field"><label>{direction === 'smm' ? 'Тариф / мес' : 'Сумма'}</label><input inputMode="decimal" value={tariff} onChange={(e) => setTariff(e.target.value)} /></div>
-            {direction !== 'development' && (
-              <div className="field"><label>Дата контракта</label><input type="date" value={contractDate} onChange={(e) => setContractDate(e.target.value)} /></div>
-            )}
-          </div>
-          {direction === 'design' && (
-            <label className="flex" style={{ cursor: 'pointer' }}>
-              <input type="checkbox" checked={multiMonth} onChange={(e) => setMultiMonth(e.target.checked)} style={{ width: 'auto' }} />
-              Брендбук / логобук — оплата по месяцам
-            </label>
-          )}
-        </div>
-        <div className="modal-foot">
-          <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={!name.trim()} onClick={save}>{isEdit ? 'Сохранить' : 'Добавить проект'}</button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -165,6 +114,7 @@ function PlanManageModal({ title, plan, onClose, onDelete }: {
   onClose: () => void;
   onDelete?: () => void;
 }) {
+  useModalKeys(onClose);
   const accounts = useAccounts();
   const inv = useInvalidate();
   const [planAmount, setPlanAmount] = useState(String(plan.amount));
@@ -195,7 +145,7 @@ function PlanManageModal({ title, plan, onClose, onDelete }: {
     if (!(planAmt > 0) || busy) return;
     setBusy(true);
     try { await persistPlanIfChanged(); inv(); onClose(); }
-    catch (e) { showErr(e); inv(); }
+    catch (e) { toast.error(apiErr(e)); inv(); }
     finally { setBusy(false); }
   }
   async function receive() {
@@ -210,7 +160,7 @@ function PlanManageModal({ title, plan, onClose, onDelete }: {
     } catch (e) {
       // План мог уже сохраниться первым запросом — сбрасываем кэш, чтобы
       // таблица не показывала устаревшие сумму/срок.
-      showErr(e);
+      toast.error(apiErr(e));
       inv();
     } finally { setBusy(false); }
   }
@@ -253,16 +203,16 @@ function PlanManageModal({ title, plan, onClose, onDelete }: {
 // ---------- Архив проектов ----------
 
 function ArchivedProjects({ projects }: { projects: any[] }) {
-  const inv = useInvalidate();
+  const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   if (!projects || projects.length === 0) return null;
 
   async function restore(p: any) {
-    try { await financeApi.updateProject(p.id, { archived: false }); inv(); } catch (e) { showErr(e); }
+    try { await financeApi.updateProject(p.id, { archived: false }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
   async function remove(p: any) {
-    if (!confirm(`Удалить проект «${p.name}» навсегда? Удалятся его плановые оплаты и доходные операции.`)) return;
-    try { await financeApi.removeProject(p.id); inv(); } catch (e) { showErr(e); }
+    if (!(await finConfirm(`Удалить проект «${p.name}» навсегда? Удалятся его плановые оплаты и доходные операции.`, { danger: true, confirmLabel: 'Удалить' }))) return;
+    try { await financeApi.removeProject(p.id); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
 
   return (
@@ -297,6 +247,7 @@ function ArchivedProjects({ projects }: { projects: any[] }) {
 // ---------- SMM ----------
 
 function SmmSection({ data, ym }: { data: any; ym: string }) {
+  const qc = useQueryClient();
   const inv = useInvalidate();
   const [planFor, setPlanFor] = useState<{ row: any; partNo: 1 | 2 } | null>(null);
   const [receive, setReceive] = useState<any>(null); // part {plannedId, amount, ...}
@@ -307,11 +258,11 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
   const { stats, totals, needPay, needRest } = data;
 
   async function removeProjectRow(p: any) {
-    if (!confirm(`Удалить проект «${p.name}»? Удалятся его плановые оплаты и доходные операции.`)) return;
-    try { await financeApi.removeProject(p.id); inv(); } catch (e) { showErr(e); }
+    if (!(await finConfirm(`Удалить проект «${p.name}»? Удалятся его плановые оплаты и доходные операции.`, { danger: true, confirmLabel: 'Удалить' }))) return;
+    try { await financeApi.removeProject(p.id); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
   async function archiveProject(p: any) {
-    try { await financeApi.updateProject(p.id, { archived: true }); inv(); } catch (e) { showErr(e); }
+    try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
   // «↩» на полученной части: удаляем и операцию, и сам платёж — ячейка снова «+» (как в эталоне).
   async function undoPart(part: any) {
@@ -319,7 +270,13 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
       if (part.txId) await financeApi.unreceivePlanned(part.plannedId);
       await financeApi.removePlanned(part.plannedId);
       inv();
-    } catch (e) { showErr(e); }
+    } catch (e) { toast.error(apiErr(e)); }
+  }
+  // CSV для бухгалтерии/архива — те же поля, что в таблице ниже.
+  function exportCsv() {
+    const header = ['Проект', 'Дата цикла', 'Тариф', 'Часть 1', 'Часть 2', 'Оплачено за цикл', 'Оплачено всего'];
+    const body = rows.map((r) => [r.project.name, r.cycleDate, r.project.tariff, r.part1?.amount, r.part2?.amount, r.monthPaid, r.paidLife]);
+    downloadCsv(`smm-${ym}.csv`, [header, ...body]);
   }
 
   return (
@@ -338,6 +295,11 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
           <span className="mini muted">— по сроку оплаты проектов</span>
         </div>
       )}
+
+      <div className="toolbar">
+        <div className="grow" />
+        <button className="btn sm" onClick={exportCsv}>Экспорт CSV</button>
+      </div>
 
       <div className="table-wrap">
         <table>
@@ -448,23 +410,25 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
           plan={{ id: restFor.nextDue.plannedId, amount: restFor.nextDue.amount, dueDate: restFor.nextDue.dueDate }}
           onClose={() => setRestFor(null)}
           onDelete={async () => {
-            if (!confirm('Удалить план остатка?')) return;
-            try { await financeApi.removePlanned(restFor.nextDue.plannedId); inv(); setRestFor(null); } catch (e) { showErr(e); }
+            if (!(await finConfirm('Удалить план остатка?', { danger: true, confirmLabel: 'Удалить' }))) return;
+            try { await financeApi.removePlanned(restFor.nextDue.plannedId); inv(); setRestFor(null); } catch (e) { toast.error(apiErr(e)); }
           }}
         />
       )}
-      {editProject && <ProjectModal direction="smm" project={editProject} onClose={() => setEditProject(null)} />}
+      {editProject && <ProjectFormModal direction="smm" project={editProject} onClose={() => setEditProject(null)} />}
     </>
   );
 }
 
 function PayPartModal({ row, partNo, ym, onClose }: { row: any; partNo: 1 | 2; ym: string; onClose: () => void }) {
+  useModalKeys(onClose);
   const accounts = useAccounts();
   const inv = useInvalidate();
   const project = row.project;
   const [amount, setAmount] = useState(String(partNo === 1 ? project.tariff : 0));
   const [date, setDate] = useState(todayISO());
   const [accountId, setAccountId] = useState('');
+  const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
   const amt = parseFloat(amount.replace(',', '.'));
 
@@ -473,12 +437,13 @@ function PayPartModal({ row, partNo, ym, onClose }: { row: any; partNo: 1 | 2; y
   const overLimit = project.tariff > 0 && amt > remaining;
 
   async function save() {
-    if (!(amt > 0) || !accountId || overLimit) return;
+    if (!(amt > 0) || !accountId || overLimit || busy) return;
+    setBusy(true);
     try {
       await financeApi.payNow({ projectId: project.id, ym, partNo, amount: amt, accountId, date });
       inv();
       onClose();
-    } catch (e) { showErr(e); }
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
 
   return (
@@ -499,7 +464,7 @@ function PayPartModal({ row, partNo, ym, onClose }: { row: any; partNo: 1 | 2; y
         </div>
         <div className="modal-foot">
           <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={!(amt > 0) || !accountId || overLimit} onClick={save}>Записать оплату</button>
+          <button className="btn primary" disabled={busy || !(amt > 0) || !accountId || overLimit} onClick={save}>Записать оплату</button>
         </div>
       </div>
     </div>
@@ -507,19 +472,22 @@ function PayPartModal({ row, partNo, ym, onClose }: { row: any; partNo: 1 | 2; y
 }
 
 function ReceiveModal({ part, onClose }: { part: any; onClose: () => void }) {
+  useModalKeys(onClose);
   const accounts = useAccounts();
   const inv = useInvalidate();
   const [accountId, setAccountId] = useState('');
   const [date, setDate] = useState(todayISO());
+  const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
 
   async function confirmPay() {
-    if (!accountId) return;
+    if (!accountId || busy) return;
+    setBusy(true);
     try {
       await financeApi.receivePlanned(part.plannedId, { accountId, date });
       inv();
       onClose();
-    } catch (e) { showErr(e); }
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
 
   return (
@@ -534,7 +502,7 @@ function ReceiveModal({ part, onClose }: { part: any; onClose: () => void }) {
         </div>
         <div className="modal-foot">
           <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" onClick={confirmPay}>Подтвердить</button>
+          <button className="btn primary" disabled={busy} onClick={confirmPay}>Подтвердить</button>
         </div>
       </div>
     </div>
@@ -568,16 +536,16 @@ function DevSection({ data, direction, archived, onShift }: { data: any; directi
 }
 
 function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any[]; months: string[]; totals: any; direction: string; onShift: (months: string[], d: number) => void }) {
-  const inv = useInvalidate();
+  const qc = useQueryClient();
   const [cellFor, setCellFor] = useState<{ row: any; ym: string; plan?: any } | null>(null);
   const [editProject, setEditProject] = useState<any>(null);
 
   async function removeProjectRow(p: any) {
-    if (!confirm(`Удалить проект «${p.name}»? Удалятся его плановые оплаты и доходные операции.`)) return;
-    try { await financeApi.removeProject(p.id); inv(); } catch (e) { showErr(e); }
+    if (!(await finConfirm(`Удалить проект «${p.name}»? Удалятся его плановые оплаты и доходные операции.`, { danger: true, confirmLabel: 'Удалить' }))) return;
+    try { await financeApi.removeProject(p.id); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
   async function archiveProject(p: any) {
-    try { await financeApi.updateProject(p.id, { archived: true }); inv(); } catch (e) { showErr(e); }
+    try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
 
   const monthTotal = (m: string) => (totals.perMonth || []).find((x: any) => x.ym === m)?.total ?? 0;
@@ -661,12 +629,13 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
       </div>
 
       {cellFor && <CellModal row={cellFor.row} ym={cellFor.ym} plan={cellFor.plan} onClose={() => setCellFor(null)} />}
-      {editProject && <ProjectModal direction={direction} project={editProject} onClose={() => setEditProject(null)} />}
+      {editProject && <ProjectFormModal direction={direction} project={editProject} onClose={() => setEditProject(null)} />}
     </>
   );
 }
 
 function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: any; onClose: () => void }) {
+  useModalKeys(onClose);
   const accounts = useAccounts();
   const inv = useInvalidate();
   const project = row.project;
@@ -674,6 +643,7 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
   const [paidNow, setPaidNow] = useState(false);
   const [date, setDate] = useState(todayISO());
   const [accountId, setAccountId] = useState('');
+  const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
   const amt = parseFloat(amount.replace(',', '.'));
   const monthName = monthLabel(ym, true);
@@ -689,37 +659,40 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
         plan={{ id: plan.id, amount: Number(plan.amount), dueDate: plan.dueDate ?? null }}
         onClose={onClose}
         onDelete={async () => {
-          if (!confirm('Удалить план?')) return;
-          try { await financeApi.removePlanned(plan.id); inv(); onClose(); } catch (e) { showErr(e); }
+          if (!(await finConfirm('Удалить план?', { danger: true, confirmLabel: 'Удалить' }))) return;
+          try { await financeApi.removePlanned(plan.id); inv(); onClose(); } catch (e) { toast.error(apiErr(e)); }
         }}
       />
     );
   }
 
   async function saveNew() {
-    if (!(amt > 0) || overLimit) return;
+    if (!(amt > 0) || overLimit || busy || (paidNow && !accountId)) return;
+    setBusy(true);
     try {
       if (paidNow) {
-        if (!accountId) return;
         await financeApi.payNow({ projectId: project.id, ym, amount: amt, accountId, date });
       } else {
         await financeApi.createPlanned({ projectId: project.id, ym, amount: amt });
       }
       inv();
       onClose();
-    } catch (e) { showErr(e); }
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
   async function markReceived() {
-    if (!plan || !accountId) return;
-    try { await financeApi.receivePlanned(plan.id, { accountId, date }); inv(); onClose(); } catch (e) { showErr(e); }
+    if (!plan || !accountId || busy) return;
+    setBusy(true);
+    try { await financeApi.receivePlanned(plan.id, { accountId, date }); inv(); onClose(); } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
   async function deletePlan() {
-    if (!plan) return;
-    try { await financeApi.removePlanned(plan.id); inv(); onClose(); } catch (e) { showErr(e); }
+    if (!plan || busy) return;
+    setBusy(true);
+    try { await financeApi.removePlanned(plan.id); inv(); onClose(); } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
   async function undo() {
-    if (!plan) return;
-    try { await financeApi.unreceivePlanned(plan.id); inv(); onClose(); } catch (e) { showErr(e); }
+    if (!plan || busy) return;
+    setBusy(true);
+    try { await financeApi.unreceivePlanned(plan.id); inv(); onClose(); } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
 
   return (
@@ -743,10 +716,10 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
             </div>
             <div className="modal-foot">
               {plan.status === 'received'
-                ? <button className="btn danger" style={{ marginRight: 'auto' }} onClick={undo}>Отменить оплату</button>
-                : <button className="btn danger" style={{ marginRight: 'auto' }} onClick={deletePlan}>Удалить план</button>}
+                ? <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy} onClick={undo}>Отменить оплату</button>
+                : <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy} onClick={deletePlan}>Удалить план</button>}
               <button className="btn ghost" onClick={onClose}>Закрыть</button>
-              {plan.status === 'expected' && <button className="btn primary" onClick={markReceived}>Отметить полученным</button>}
+              {plan.status === 'expected' && <button className="btn primary" disabled={busy} onClick={markReceived}>Отметить полученным</button>}
             </div>
           </>
         ) : (
@@ -769,7 +742,7 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
             </div>
             <div className="modal-foot">
               <button className="btn ghost" onClick={onClose}>Отмена</button>
-              <button className="btn primary" disabled={!(amt > 0) || overLimit} onClick={saveNew}>{paidNow ? 'Записать оплату' : 'Добавить план'}</button>
+              <button className="btn primary" disabled={busy || !(amt > 0) || overLimit} onClick={saveNew}>{paidNow ? 'Записать оплату' : 'Добавить план'}</button>
             </div>
           </>
         )}
@@ -781,7 +754,7 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
 // ---------- Design (разовые работы + брендбуки) ----------
 
 function DesignSection({ data, direction, archived, onShift }: { data: any; direction: string; archived: any[]; onShift: (months: string[], d: number) => void }) {
-  const inv = useInvalidate();
+  const qc = useQueryClient();
   const [payFor, setPayFor] = useState<any>(null);   // simple row
   const [workFor, setWorkFor] = useState<any>(null); // 'new' | simple row
   const simple: any[] = data.simple || [];
@@ -792,7 +765,7 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
     return <div className="card empty"><div className="big"><FinIcon name="folder" size={30} /></div>Нет проектов — нажмите «＋ Проект»</div>;
 
   async function archiveProject(p: any) {
-    try { await financeApi.updateProject(p.id, { archived: true }); inv(); } catch (e) { showErr(e); }
+    try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
 
   return (
@@ -863,6 +836,8 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
 }
 
 function WorkModal({ row, onClose }: { row?: any; onClose: () => void }) {
+  useModalKeys(onClose);
+  const qc = useQueryClient();
   const inv = useInvalidate();
   const work = row?.project;
   const paid = row?.paidLife ?? 0;
@@ -870,10 +845,12 @@ function WorkModal({ row, onClose }: { row?: any; onClose: () => void }) {
   const [tariff, setTariff] = useState(work ? String(work.tariff) : '');
   const [date, setDate] = useState(work?.contractDate ?? todayISO());
   const [note, setNote] = useState(work?.note ?? '');
+  const [busy, setBusy] = useState(false);
   const amt = parseFloat(tariff.replace(',', '.'));
 
   async function save() {
-    if (!name.trim()) return;
+    if (!name.trim() || busy) return;
+    setBusy(true);
     const p: any = {
       name: name.trim(), tariff: amt > 0 ? amt : 0,
       contractDate: date || undefined, note: note.trim() || undefined, multiMonth: false,
@@ -881,26 +858,26 @@ function WorkModal({ row, onClose }: { row?: any; onClose: () => void }) {
     try {
       if (work) await financeApi.updateProject(work.id, p);
       else await financeApi.createProject({ direction: 'design', ...p });
-      inv();
+      invalidateFinanceAll(qc);
       onClose();
-    } catch (e) { showErr(e); }
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
-  // Отмена оплаты работы: удаляем оплаченные поступления проекта вместе с их доходными операциями.
+  // Отмена оплаты работы: одной серверной транзакцией отменяет все планы и операции проекта.
   async function cancelPayment() {
-    if (!work || !confirm('Отменить оплату по этой работе? Доход будет удалён.')) return;
+    if (!work || busy) return;
+    if (!(await finConfirm('Отменить оплату по этой работе? Доход будет удалён.', { danger: true, confirmLabel: 'Отменить оплату' }))) return;
+    setBusy(true);
     try {
-      const plans: any[] = await financeApi.plannedPayments({ projectId: work.id });
-      for (const pl of plans) {
-        if (pl.status === 'received' && pl.receivedTxId) await financeApi.unreceivePlanned(pl.id);
-        await financeApi.removePlanned(pl.id);
-      }
+      await financeApi.cancelProjectPayments(work.id);
       inv();
       onClose();
-    } catch (e) { showErr(e); }
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
   async function remove() {
-    if (!work || !confirm('Удалить работу?')) return;
-    try { await financeApi.removeProject(work.id); inv(); onClose(); } catch (e) { showErr(e); }
+    if (!work || busy) return;
+    if (!(await finConfirm('Удалить работу?', { danger: true, confirmLabel: 'Удалить' }))) return;
+    setBusy(true);
+    try { await financeApi.removeProject(work.id); invalidateFinanceAll(qc); onClose(); } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
 
   return (
@@ -917,14 +894,14 @@ function WorkModal({ row, onClose }: { row?: any; onClose: () => void }) {
           {work && paid > 0 && (
             <div className="flex between" style={{ background: 'var(--green-soft)', padding: '9px 12px', borderRadius: 9 }}>
               <span className="mini pos">Оплачено {money(paid)}</span>
-              <button className="btn danger sm" onClick={cancelPayment}><FinIcon name="undo" size={14} /> Отменить оплату</button>
+              <button className="btn danger sm" disabled={busy} onClick={cancelPayment}><FinIcon name="undo" size={14} /> Отменить оплату</button>
             </div>
           )}
         </div>
         <div className="modal-foot">
-          {work && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={remove}>Удалить</button>}
+          {work && <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy} onClick={remove}>Удалить</button>}
           <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={!name.trim()} onClick={save}>{work ? 'Сохранить' : 'Добавить'}</button>
+          <button className="btn primary" disabled={busy || !name.trim()} onClick={save}>{work ? 'Сохранить' : 'Добавить'}</button>
         </div>
       </div>
     </div>
@@ -932,6 +909,7 @@ function WorkModal({ row, onClose }: { row?: any; onClose: () => void }) {
 }
 
 function RecordIncomeModal({ row, onClose }: { row: any; onClose: () => void }) {
+  useModalKeys(onClose);
   const accounts = useAccounts();
   const inv = useInvalidate();
   const project = row.project;
@@ -939,17 +917,19 @@ function RecordIncomeModal({ row, onClose }: { row: any; onClose: () => void }) 
   const [amount, setAmount] = useState(String(remaining || project.tariff));
   const [date, setDate] = useState(todayISO());
   const [accountId, setAccountId] = useState('');
+  const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
   const amt = parseFloat(amount.replace(',', '.'));
   const overLimit = project.tariff > 0 && amt > remaining;
 
   async function save() {
-    if (!(amt > 0) || !accountId || overLimit) return;
+    if (!(amt > 0) || !accountId || overLimit || busy) return;
+    setBusy(true);
     try {
       await financeApi.payNow({ projectId: project.id, ym: ymOf(date), amount: amt, accountId, date });
       inv();
       onClose();
-    } catch (e) { showErr(e); }
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
 
   return (
@@ -968,7 +948,7 @@ function RecordIncomeModal({ row, onClose }: { row: any; onClose: () => void }) 
         </div>
         <div className="modal-foot">
           <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={!(amt > 0) || !accountId || overLimit} onClick={save}>Записать оплату</button>
+          <button className="btn primary" disabled={busy || !(amt > 0) || !accountId || overLimit} onClick={save}>Записать оплату</button>
         </div>
       </div>
     </div>

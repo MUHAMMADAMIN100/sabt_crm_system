@@ -6,13 +6,14 @@ import { financeApi } from '@/services/api.service';
 import { money, currentYm, EXPENSE_GROUPS, OTHER_GROUP } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
+import { FinLoading, FinLoadError } from './FinKit';
 import './finance.css';
 
 export default function FinanceExpensePage() {
   const [ym, setYm] = useState(currentYm());
   const navigate = useNavigate();
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'expenseSummary', ym],
     queryFn: () => financeApi.expenseSummary(ym),
   });
@@ -51,6 +52,7 @@ export default function FinanceExpensePage() {
         <MonthNav ym={ym} onChange={setYm} />
       </div>
 
+      {isLoading ? <FinLoading cards={4} /> : isError ? <FinLoadError onRetry={() => refetch()} /> : (
       <div className="cards grid-4">
         {EXPENSE_GROUPS.map((g) => {
           const pp = paidProgress(g.key);
@@ -78,6 +80,7 @@ export default function FinanceExpensePage() {
           <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
         </div>
       </div>
+      )}
     </div>
   );
 }

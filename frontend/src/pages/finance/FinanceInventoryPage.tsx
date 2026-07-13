@@ -5,11 +5,12 @@ import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, todayISO, formatDate } from './finlib';
+import { money, todayISO, formatDate, apiErr } from './finlib';
 import FinIcon from './FinIcon';
+import { FinLoading, FinLoadError, finConfirm, useModalKeys, invalidateFinanceAll } from './FinKit';
 import { financeApi } from '@/services/api.service';
 
-const showErr = (e: any) => toast.error(e?.response?.data?.message || 'Ошибка');
+const showErr = (e: any) => toast.error(apiErr(e));
 
 const STATUS_META: Record<string, { label: string; badge: string }> = {
   in_use: { label: 'в работе', badge: 'ok' },
@@ -26,7 +27,7 @@ export default function FinanceInventoryPage() {
   const [catFilter, setCatFilter] = useState('');
   const [q, setQ] = useState('');
 
-  const { data: assets = [] } = useQuery<any[]>({ queryKey: ['finance', 'assets'], queryFn: () => financeApi.assets() });
+  const { data: assets = [], isLoading, isError, refetch } = useQuery<any[]>({ queryKey: ['finref', 'assets'], queryFn: () => financeApi.assets() });
 
   const categories = useMemo(
     () => [...new Set(assets.map((a: any) => a.category).filter(Boolean))] as string[],
@@ -91,7 +92,11 @@ export default function FinanceInventoryPage() {
         <span className="muted mini">{rows.length} позиций</span>
       </div>
 
-      {rows.length === 0 ? (
+      {isLoading ? (
+        <FinLoading />
+      ) : isError ? (
+        <FinLoadError onRetry={() => refetch()} />
+      ) : rows.length === 0 ? (
         <div className="card empty"><div className="big"><FinIcon name="folder" size={30} /></div>Пусто — добавьте оборудование кнопкой «＋»</div>
       ) : (
         <div className="table-wrap">
@@ -179,7 +184,8 @@ export default function FinanceInventoryPage() {
 
 function AssetModal({ asset, knownCategories, onClose }: { asset?: any; knownCategories: string[]; onClose: () => void }) {
   const qc = useQueryClient();
-  const inv = () => qc.invalidateQueries({ queryKey: ['finance'] });
+  useModalKeys(onClose);
+  const inv = () => invalidateFinanceAll(qc);
   const isEdit = !!asset;
   const [name, setName] = useState(asset?.name ?? '');
   const [category, setCategory] = useState(asset?.category ?? '');
@@ -213,14 +219,15 @@ function AssetModal({ asset, knownCategories, onClose }: { asset?: any; knownCat
     } catch (e) { showErr(e); } finally { setBusy(false); }
   }
   async function remove() {
-    if (!asset || !confirm(`Удалить «${asset.name}» из инвентаря? История не сохранится — для выбытия лучше сменить статус на «списано».`)) return;
+    if (!asset) return;
+    if (!(await finConfirm(`Удалить «${asset.name}» из инвентаря? История не сохранится — для выбытия лучше сменить статус на «списано».`, { danger: true, confirmLabel: 'Удалить' }))) return;
     try { await financeApi.removeAsset(asset.id); inv(); onClose(); } catch (e) { showErr(e); }
   }
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
-        <div className="modal-head"><h3>{isEdit ? 'Оборудование' : 'Новое оборудование'}</h3><button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
+      <div className="modal" role="dialog" aria-modal="true" aria-label={isEdit ? 'Оборудование' : 'Новое оборудование'} onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+        <div className="modal-head"><h3>{isEdit ? 'Оборудование' : 'Новое оборудование'}</h3><button className="btn ghost sm" aria-label="Закрыть" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
         <div className="modal-body">
           <div className="field"><label>Название</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Sony A7 IV, штатив, стол…" /></div>
           <div className="form-grid">

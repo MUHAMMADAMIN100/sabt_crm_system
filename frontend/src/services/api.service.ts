@@ -331,6 +331,9 @@ export const financeApi = {
   createOperation: (data: any) => api.post('/finance/operations', data).then(r => r.data),
   updateTransaction: (id: string, data: any) => api.patch(`/finance/transactions/${id}`, data).then(r => r.data),
   removeTransaction: (id: string) => api.delete(`/finance/transactions/${id}`).then(r => r.data),
+  // Снять расходы месяца по сотруднику/подписке одной транзакцией на бэке.
+  removeMonthExpenses: (data: { ym: string; employeeId?: string; subscriptionId?: string }) =>
+    api.post('/finance/operations/remove-month', data).then(r => r.data),
 
   // Счета
   accounts: () => api.get('/finance/accounts').then(r => r.data),
@@ -349,6 +352,8 @@ export const financeApi = {
   createProject: (data: any) => api.post('/finance/projects', data).then(r => r.data),
   updateProject: (id: string, data: any) => api.patch(`/finance/projects/${id}`, data).then(r => r.data),
   removeProject: (id: string) => api.delete(`/finance/projects/${id}`).then(r => r.data),
+  // Отменить все оплаты проекта (планы + операции) одной транзакцией на бэке.
+  cancelProjectPayments: (id: string) => api.post(`/finance/projects/${id}/cancel-payments`, {}).then(r => r.data),
 
   // Сотрудники
   employees: () => api.get('/finance/employees').then(r => r.data),
@@ -392,6 +397,12 @@ export const financeApi = {
   exportAll: () => api.get('/finance/backup/export').then(r => r.data),
   importAll: (data: any) => api.post('/finance/backup/import', data).then(r => r.data),
   resetAll: () => api.post('/finance/reset', {}).then(r => r.data),
+
+  // Снимки данных (автобэкап кроном + ручные)
+  backups: () => api.get('/finance/backups').then(r => r.data),
+  createBackup: () => api.post('/finance/backups', {}).then(r => r.data),
+  getBackup: (id: string) => api.get(`/finance/backups/${id}`).then(r => r.data),
+  restoreBackup: (id: string) => api.post(`/finance/backups/${id}/restore`, {}).then(r => r.data),
 }
 
 // ─── Risk Analytics (Wave 5) ─────────────────────────────

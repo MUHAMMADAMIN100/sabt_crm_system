@@ -1,21 +1,26 @@
 // Транзакции /finance/transactions — журнал с Notion-инлайн-редактированием
 // (порт fin-webrand/src/pages/Transactions.tsx, ТЗ «Этап 5»).
-import { useMemo, useState } from 'react';
+// Таблица — серверная пагинация/поиск/фильтр; календарь грузит свой месяц.
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { TYPE_LABEL, money, moneyBare, currentYm, todayISO } from './finlib';
+import { TYPE_LABEL, money, moneyBare, currentYm, todayISO, apiErr, downloadCsv } from './finlib';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
 import TransactionModal from './TransactionModal';
+import { FinLoading, FinLoadError, finConfirm, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
 
 const TYPES = ['income', 'expense', 'transfer', 'saving'];
+const PAGE_SIZE = 100;
 
 export default function FinanceTransactionsPage() {
   const qc = useQueryClient();
   const [q, setQ] = useState('');
+  const [dq, setDq] = useState(''); // дебаунс поиска — не дёргаем сервер на каждый символ
   const [typeFilter, setTypeFilter] = useState('');
+  const [page, setPage] = useState(1);
   const [addType, setAddType] = useState<string | null>(null);
   // Вид: журнал-таблица или календарь месяца (карточки операций по дням).
   const [view, setView] = useState<'table' | 'calendar'>('table');
@@ -23,12 +28,18 @@ export default function FinanceTransactionsPage() {
   const [editTx, setEditTx] = useState<any>(null);
   const [addDate, setAddDate] = useState<string | null>(null);
 
-  const { data: txData } = useQuery({
-    queryKey: ['finance', 'transactions', 'all'],
-    queryFn: () => financeApi.transactions({ pageSize: 1000 }),
+  useEffect(() => {
+    const t = setTimeout(() => setDq(q.trim()), 350);
+    return () => clearTimeout(t);
+  }, [q]);
+  useEffect(() => { setPage(1); }, [dq, typeFilter]);
+
+  const txQ = useQuery({
+    queryKey: ['finance', 'transactions', { page, dq, typeFilter }],
+    queryFn: () => financeApi.transactions({ page, pageSize: PAGE_SIZE, search: dq || undefined, type: typeFilter || undefined }),
+    placeholderData: (prev: any) => prev, // при листании не мигаем пустотой
   });
-  // Календарь берёт СВОЙ месяц целиком: общий список обрезан первой тысячей,
-  // и старые месяцы в нём могут отсутствовать.
+  // Календарь берёт СВОЙ месяц целиком — в постраничном журнале месяца может не быть.
   const { data: calData } = useQuery({
     queryKey: ['finance', 'transactions', 'month', calYm],
     queryFn: () => {
@@ -38,40 +49,57 @@ export default function FinanceTransactionsPage() {
     },
     enabled: view === 'calendar',
   });
-  const { data: categories = [] } = useQuery({ queryKey: ['finance', 'categories'], queryFn: () => financeApi.categories() });
-  const { data: accounts = [] } = useQuery({ queryKey: ['finance', 'accounts'], queryFn: () => financeApi.accounts() });
+  const { data: categories = [] } = useQuery({ queryKey: ['finref', 'categories'], queryFn: () => financeApi.categories() });
+  const { data: accounts = [] } = useQuery({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
 
-  const txns = useMemo(() => {
-    const items: any[] = txData?.items ?? [];
-    return [...items].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-  }, [txData]);
+  const txns: any[] = txQ.data?.items ?? [];
+  const total: number = txQ.data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const matches = (t: any) => {
     if (typeFilter && t.type !== typeFilter) return false;
-    if (q) {
+    if (dq) {
       const hay = [t.comment, t.categoryName].filter(Boolean).join(' ').toLowerCase();
-      if (!hay.includes(q.toLowerCase())) return false;
+      if (!hay.includes(dq.toLowerCase())) return false;
     }
     return true;
   };
-  const filtered = txns.filter(matches);
   const calTxns = ((calData?.items ?? []) as any[]).filter(matches);
 
   async function patch(id: string, data: any) {
     try {
       await financeApi.updateTransaction(id, data);
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      invalidateFinance(qc);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Ошибка');
+      toast.error(apiErr(e));
     }
   }
 
   async function remove(id: string) {
     try {
       await financeApi.removeTransaction(id);
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      invalidateFinance(qc);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Ошибка');
+      toast.error(apiErr(e));
+    }
+  }
+
+  /** Выгрузка CSV по текущему фильтру — сервер отдаёт все страницы разом. */
+  async function exportCsv() {
+    try {
+      const res = await financeApi.transactions({ pageSize: 100000, search: dq || undefined, type: typeFilter || undefined });
+      const rows: Array<Array<string | number | null>> = [
+        ['Дата', 'Тип', 'Категория', 'Описание', 'Сумма', 'Со счёта', 'На счёт', 'Проект', 'Сотрудник', 'Долг'],
+        ...((res?.items ?? []) as any[]).map((t: any) => [
+          String(t.date || '').slice(0, 10), TYPE_LABEL[t.type] ?? t.type, t.categoryName, t.comment,
+          t.amount, t.type === 'transfer' ? t.fromAccountName : (t.type === 'expense' ? t.accountName : null),
+          t.type === 'transfer' ? t.toAccountName : (t.type !== 'expense' ? t.accountName : null),
+          t.projectName, t.employeeName, t.debtName,
+        ]),
+      ];
+      downloadCsv(`transactions-${todayISO()}.csv`, rows);
+    } catch (e: any) {
+      toast.error(apiErr(e));
     }
   }
 
@@ -98,35 +126,53 @@ export default function FinanceTransactionsPage() {
           <option value="">Все типы</option>
           {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
         </select>
-        {view === 'table' && <span className="muted mini">{filtered.length} операций</span>}
+        {view === 'table' && (
+          <>
+            <span className="muted mini">{total} операций</span>
+            <button className="btn sm" onClick={exportCsv} title="Выгрузить текущий фильтр в CSV"><FinIcon name="download" size={14} /> CSV</button>
+          </>
+        )}
       </div>
 
       {view === 'calendar' ? (
         <TxCalendar ym={calYm} txns={calTxns} onEdit={setEditTx} onAdd={setAddDate} />
-      ) : filtered.length === 0 ? (
-        <div className="card empty"><div className="big"><FinIcon name="wallet" size={30} /></div>Нет операций — добавьте кнопками сверху</div>
+      ) : txQ.isLoading ? (
+        <FinLoading />
+      ) : txQ.isError ? (
+        <FinLoadError onRetry={() => txQ.refetch()} />
+      ) : txns.length === 0 ? (
+        <div className="card empty"><div className="big"><FinIcon name="wallet" size={30} /></div>{dq || typeFilter ? 'Ничего не найдено по фильтру' : 'Нет операций — добавьте кнопками сверху'}</div>
       ) : (
-        <div className="table-wrap" style={{ overflowX: 'auto' }}>
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: 140 }}>Дата</th>
-                <th style={{ width: 120 }}>Тип</th>
-                <th style={{ width: 170 }}>Категория</th>
-                <th style={{ minWidth: 200 }}>Описание</th>
-                <th className="num" style={{ width: 120 }}>Сумма</th>
-                <th style={{ width: 130 }}>Со счёта</th>
-                <th style={{ width: 130 }}>На счёт</th>
-                <th style={{ width: 56 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((t: any) => (
-                <TxRow key={t.id} t={t} accounts={accounts} categories={categories} patch={patch} remove={remove} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="table-wrap" style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: 140 }}>Дата</th>
+                  <th style={{ width: 120 }}>Тип</th>
+                  <th style={{ width: 170 }}>Категория</th>
+                  <th style={{ minWidth: 200 }}>Описание</th>
+                  <th className="num" style={{ width: 120 }}>Сумма</th>
+                  <th style={{ width: 130 }}>Со счёта</th>
+                  <th style={{ width: 130 }}>На счёт</th>
+                  <th style={{ width: 56 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {txns.map((t: any) => (
+                  <TxRow key={t.id} t={t} accounts={accounts} categories={categories} patch={patch} remove={remove} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {pages > 1 && (
+            <div className="flex" style={{ justifyContent: 'center', marginTop: 12, gap: 10 }}>
+              <button className="btn sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>← Новее</button>
+              <span className="mini muted">стр. {page} из {pages}</span>
+              <button className="btn sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Старее →</button>
+            </div>
+          )}
+        </>
       )}
 
       {editTx && <TransactionModal initial={editTx} onClose={() => setEditTx(null)} />}
@@ -247,10 +293,12 @@ function TxCalendar({ ym, txns, onEdit, onAdd }: {
 }
 
 function AccountSelect({ value, accounts, onChange }: { value?: string; accounts: any[]; onChange: (v: string | null) => void }) {
+  // Архивные счета не предлагаем, но если операция уже на таком — показываем его.
+  const opts = accounts.filter((a: any) => !a.archived || a.id === value);
   return (
     <select className="cell-input" value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
       <option value="">—</option>
-      {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+      {opts.map((a: any) => <option key={a.id} value={a.id}>{a.name}{a.archived ? ' (архив)' : ''}</option>)}
     </select>
   );
 }
@@ -284,6 +332,10 @@ function TxRow({ t, accounts, categories, patch, remove }: {
       data.toAccountId = null;
     }
     patch(t.id, data);
+  }
+
+  async function confirmRemove() {
+    if (await finConfirm('Удалить операцию? Балансы счетов пересчитаются.', { danger: true, confirmLabel: 'Удалить' })) remove(t.id);
   }
 
   return (
@@ -320,7 +372,7 @@ function TxRow({ t, accounts, categories, patch, remove }: {
         ? <AccountSelect value={toValue} accounts={accounts} onChange={(v) => patch(t.id, t.type === 'transfer' ? { toAccountId: v } : { accountId: v })} />
         : <span className="muted mini">—</span>}</td>
       <td className="num">
-        <button className="btn ghost sm row-actions" title="Удалить" onClick={() => confirm('Удалить операцию?') && remove(t.id)}><FinIcon name="trash" size={14} /></button>
+        <button className="btn ghost sm row-actions" title="Удалить" onClick={confirmRemove}><FinIcon name="trash" size={14} /></button>
       </td>
     </tr>
   );

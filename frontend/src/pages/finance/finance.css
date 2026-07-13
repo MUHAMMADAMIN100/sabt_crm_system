@@ -239,6 +239,16 @@
 .fin-root .tx-cal-more:hover { background: var(--accent-soft); }
 .fin-root .tx-cal-cell.today .tx-cal-more:hover { background: rgba(255, 255, 255, .75); }
 
+/* ─── Состояния загрузки/ошибки ──────────────────────────── */
+.fin-root .fin-skel-grid { grid-template-columns: repeat(3, 1fr); }
+.fin-root .fin-skel { height: 14px; border-radius: 7px; margin: 8px 0;
+  background: linear-gradient(90deg, var(--surface-2) 25%, #e9edf2 50%, var(--surface-2) 75%);
+  background-size: 200% 100%; animation: fin-shimmer 1.2s ease-in-out infinite; }
+.fin-root .fin-skel.lg { height: 26px; }
+@keyframes fin-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.fin-root .fin-load-error { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  border-left: 3px solid var(--red); }
+
 /* ─── Адаптив: планшет и мобильный ───────────────────────── */
 @media (max-width: 1180px) {
   .fin-root .grid-4 { grid-template-columns: repeat(2, 1fr); }

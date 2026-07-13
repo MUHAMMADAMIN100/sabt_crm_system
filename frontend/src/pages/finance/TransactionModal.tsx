@@ -5,19 +5,24 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { TYPE_LABEL, todayISO } from './finlib';
+import { TYPE_LABEL, todayISO, apiErr } from './finlib';
 import FinIcon from './FinIcon';
+import { useModalKeys, invalidateFinance, invalidateFinanceAll } from './FinKit';
 import { financeApi } from '@/services/api.service';
 
 const TYPES = ['income', 'expense', 'transfer', 'saving'];
 
 export default function TransactionModal({ initial, initialType, initialDate, onClose }: { initial?: any; initialType?: string; initialDate?: string; onClose: () => void }) {
   const qc = useQueryClient();
-  const { data: accounts = [] } = useQuery({ queryKey: ['finance', 'accounts'], queryFn: () => financeApi.accounts() });
-  const { data: categories = [] } = useQuery({ queryKey: ['finance', 'categories'], queryFn: () => financeApi.categories() });
-  const { data: projects = [] } = useQuery({ queryKey: ['finance', 'projects'], queryFn: () => financeApi.projects() });
-  const { data: employees = [] } = useQuery({ queryKey: ['finance', 'employees'], queryFn: () => financeApi.employees() });
+  useModalKeys(onClose);
+  const { data: allAccounts = [] } = useQuery({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
+  const { data: categories = [] } = useQuery({ queryKey: ['finref', 'categories'], queryFn: () => financeApi.categories() });
+  const { data: projects = [] } = useQuery({ queryKey: ['finref', 'projects'], queryFn: () => financeApi.projects() });
+  const { data: employees = [] } = useQuery({ queryKey: ['finref', 'employees'], queryFn: () => financeApi.employees() });
   const { data: debts = [] } = useQuery({ queryKey: ['finance', 'debts'], queryFn: () => financeApi.debts() });
+  // Архивные счета не предлагаем; счёт редактируемой операции оставляем видимым.
+  const accounts = (allAccounts as any[]).filter((a: any) =>
+    !a.archived || a.id === initial?.accountId || a.id === initial?.fromAccountId || a.id === initial?.toAccountId);
 
   const [type, setType] = useState<string>(initial?.type ?? initialType ?? 'expense');
   const [newCatName, setNewCatName] = useState('');
@@ -51,13 +56,13 @@ export default function TransactionModal({ initial, initialType, initialDate, on
     if (!name) return;
     try {
       const c = await financeApi.createCategory({ name, type });
-      qc.setQueryData(['finance', 'categories'], (old: any) => (old ? [...old, c] : [c]));
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      qc.setQueryData(['finref', 'categories'], (old: any) => (old ? [...old, c] : [c]));
+      invalidateFinanceAll(qc);
       if (c?.id) setCategoryId(c.id);
       setAddingCat(false);
       setNewCatName('');
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Ошибка');
+      toast.error(apiErr(e));
     }
   }
 
@@ -87,10 +92,10 @@ export default function TransactionModal({ initial, initialType, initialDate, on
     try {
       if (initial) await financeApi.updateTransaction(initial.id, payload);
       else await financeApi.createOperation(payload);
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      invalidateFinance(qc);
       onClose();
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Ошибка');
+      toast.error(apiErr(e));
     } finally {
       setBusy(false);
     }
@@ -98,7 +103,7 @@ export default function TransactionModal({ initial, initialType, initialDate, on
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" role="dialog" aria-modal="true" aria-label={initial ? 'Изменить операцию' : 'Новая операция'} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{initial ? 'Изменить операцию' : 'Новая операция'}</h3>
           <button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button>

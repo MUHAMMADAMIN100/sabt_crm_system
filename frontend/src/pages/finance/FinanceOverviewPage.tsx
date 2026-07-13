@@ -4,13 +4,14 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import './finance.css';
-import { money, currentYm, INCOME_GROUPS, EXPENSE_GROUPS } from './finlib';
+import { money, currentYm, monthLabel, apiErr, INCOME_GROUPS, EXPENSE_GROUPS } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import TxTable from './TxTable';
 import TransactionModal from './TransactionModal';
+import { FinLoading, FinLoadError, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
 
 export default function FinanceOverviewPage() {
@@ -19,7 +20,7 @@ export default function FinanceOverviewPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'overview', ym],
     queryFn: () => financeApi.overview(ym),
   });
@@ -57,11 +58,23 @@ export default function FinanceOverviewPage() {
     const id = typeof t === 'string' || typeof t === 'number' ? t : t?.id;
     try {
       await financeApi.removeTransaction(id);
-      qc.invalidateQueries({ queryKey: ['finance'] });
+      invalidateFinance(qc);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Ошибка');
+      toast.error(apiErr(e));
     }
   };
+
+  if (isLoading || isError) {
+    return (
+      <div className="fin-root">
+        <div className="page-head">
+          <div><h1>Обзор</h1><p>Доход, расход и баланс за выбранный месяц</p></div>
+          <MonthNav ym={ym} onChange={setYm} />
+        </div>
+        {isError ? <FinLoadError onRetry={() => refetch()} /> : <FinLoading />}
+      </div>
+    );
+  }
 
   return (
     <div className="fin-root">
@@ -127,8 +140,38 @@ export default function FinanceOverviewPage() {
             <span className="mini muted">Прибыль</span>
             <b className={profit >= 0 ? 'pos' : 'neg'}>{money(profit, true)}</b>
           </div>
+          {(stats.amortMonthly || 0) > 0 && (
+            <div className="between" style={{ marginTop: 4 }} title="Линейная амортизация инвентаря за месяц">
+              <span className="mini muted">С учётом амортизации ({money(stats.amortMonthly)})</span>
+              <b className={profit - stats.amortMonthly >= 0 ? 'pos' : 'neg'}>{money(profit - stats.amortMonthly, true)}</b>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Тренд: месяц виден в контексте года, а не изолированно. */}
+      {(ov.monthlySeries?.length ?? 0) > 0 && (
+        <div className="card" style={{ marginBottom: 22 }}>
+          <div className="summary-head" style={{ marginBottom: 6 }}>
+            <span className="t"><FinIcon name="overview" size={18} /> Динамика 12 месяцев</span>
+          </div>
+          <div style={{ height: 240 }}>
+            <ResponsiveContainer>
+              <LineChart data={ov.monthlySeries} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="ym" tickFormatter={(v) => monthLabel(v)} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={70}
+                  tickFormatter={(v) => new Intl.NumberFormat('ru-RU', { notation: 'compact' }).format(Number(v))} />
+                <Tooltip formatter={(v: any, name: any) => [money(Number(v)), name]} labelFormatter={(l) => monthLabel(String(l), true)} />
+                <Legend formatter={(v) => <span style={{ fontSize: 12 }}>{v}</span>} />
+                <Line type="monotone" dataKey="income" name="Доход" stroke="#16a34a" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="expense" name="Расход" stroke="#e11d48" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="profit" name="Прибыль" stroke="#2563eb" strokeWidth={2} dot={false} strokeDasharray="5 3" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       <div className="cards grid-2" style={{ marginBottom: 22 }}>
         <div className="card clickable" onClick={() => navigate('/finance/income')}>

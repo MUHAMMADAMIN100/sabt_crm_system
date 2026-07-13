@@ -104,3 +104,25 @@ export const TYPE_LABEL: Record<string, string> = {
 
 /** Палитра из 8 цветов для счетов/категорий (модалки настроек). */
 export const COLOR_PALETTE = ['#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#14b8a6', '#ec4899', '#6366f1']
+
+/** Человекочитаемый текст ошибки API — единый для всего раздела. */
+export function apiErr(e: any): string {
+  const m = e?.response?.data?.message
+  if (Array.isArray(m)) return m.join(', ')
+  return m || e?.message || 'Ошибка'
+}
+
+/** Скачать CSV (BOM + «;» — чтобы Excel с кириллицей открывал без танцев). */
+export function downloadCsv(filename: string, rows: Array<Array<string | number | null | undefined>>) {
+  const esc = (v: any) => {
+    const s = v == null ? '' : String(v)
+    return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
+  }
+  const csv = '\uFEFF' + rows.map(r => r.map(esc).join(';')).join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
