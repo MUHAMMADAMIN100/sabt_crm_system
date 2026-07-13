@@ -115,6 +115,18 @@
 }
 
 @layer components {
+  /* Верхний прокси-скролл доски проектов: собственные стили полосы, чтобы
+     она была видна на любой платформе (кастомный webkit-скроллбар отключает
+     overlay-режим macOS; в 12px-контейнере рисуется в нижней части). */
+  .top-hscroll { overflow-x: scroll; overflow-y: hidden; scrollbar-width: auto; }
+  .top-hscroll::-webkit-scrollbar { height: 10px; }
+  .top-hscroll::-webkit-scrollbar-track { @apply bg-surface-100 rounded-full; }
+  .top-hscroll::-webkit-scrollbar-thumb { @apply bg-surface-300 rounded-full; }
+  .top-hscroll::-webkit-scrollbar-thumb:hover { @apply bg-surface-400; }
+  .dark .top-hscroll::-webkit-scrollbar-track { @apply bg-surface-800; }
+  .dark .top-hscroll::-webkit-scrollbar-thumb { @apply bg-surface-600; }
+  .dark .top-hscroll::-webkit-scrollbar-thumb:hover { @apply bg-surface-500; }
+
   /* Card в спокойном корпоративном стиле (по референсу GRANT CHINA):
      тонкий border, очень мягкая тень, белый фон. */
   .card {

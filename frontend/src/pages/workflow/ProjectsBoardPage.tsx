@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowApi, projectsApi } from '@/services/api.service'
 import { ConfirmDialog, Avatar, PageLoader } from '@/components/ui'
@@ -42,6 +42,30 @@ export default function ProjectsBoardPage() {
 
   const currentUserId = user?.id
   const [mineOnly, setMineOnly] = useState(false)
+
+  // Верхний горизонтальный скролл-дублёр: доска длинная, и чтобы прокрутить
+  // вправо, приходилось мотать страницу вниз к нижнему скроллбару.
+  // Прокси-полоса сверху синхронизирована с контейнером доски в обе стороны.
+  const boardScrollRef = useRef<HTMLDivElement | null>(null)
+  const topScrollRef = useRef<HTMLDivElement | null>(null)
+  const [boardWidths, setBoardWidths] = useState({ scroll: 0, client: 0 })
+  useEffect(() => {
+    const el = boardScrollRef.current
+    if (!el) return
+    const update = () => setBoardWidths({ scroll: el.scrollWidth, client: el.clientWidth })
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    for (const child of Array.from(el.children)) ro.observe(child)
+    return () => ro.disconnect()
+  }, [isLoading, mineOnly])
+  // Присвоение равного scrollLeft не порождает события — цикла синхронизации нет.
+  const syncFromBoard = () => {
+    if (topScrollRef.current && boardScrollRef.current) topScrollRef.current.scrollLeft = boardScrollRef.current.scrollLeft
+  }
+  const syncFromTop = () => {
+    if (topScrollRef.current && boardScrollRef.current) boardScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft
+  }
 
   const visibleCards = useMemo(
     () => (cards || []).filter((c: any) => !mineOnly || isMineCard(c, currentUserId)),
@@ -239,7 +263,16 @@ export default function ProjectsBoardPage() {
         Производственный канбан SMM-проектов · переходы — через кнопки в карточке · перетаскивание разрешено только в «Реклама» · клик — открыть карточку
       </p>
 
-      <div className="flex gap-3 overflow-x-auto pb-3 hide-scrollbar items-start">
+      {/* Прокси-скроллбар сверху (виден только когда есть что скроллить;
+          на мобильных скрыт — там скроллят пальцем). Фиксированная высота +
+          свои стили: overlay-скроллбары macOS в тонком контейнере невидимы. */}
+      {boardWidths.scroll > boardWidths.client + 2 && (
+        <div ref={topScrollRef} onScroll={syncFromTop} aria-hidden="true"
+          className="top-hscroll hidden sm:block h-3 !mt-2" title="Прокрутка доски">
+          <div style={{ width: boardWidths.scroll, height: 1 }} />
+        </div>
+      )}
+      <div ref={boardScrollRef} onScroll={syncFromBoard} className="flex gap-3 overflow-x-auto pb-3 hide-scrollbar items-start">
         {visibleStages.map(stage => {
           const items = byStage[stage.key] || []
           return (
