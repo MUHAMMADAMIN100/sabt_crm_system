@@ -107,7 +107,9 @@ export default {
         },
         pageIn: {
           from: { opacity: '0', transform: 'translateY(12px)' },
-          to:   { opacity: '1', transform: 'translateY(0)' },
+          // none, а не translateY(0): fill both держит последний кадр, а любой
+          // transform ломает fixed-позиционирование модалок внутри страницы.
+          to:   { opacity: '1', transform: 'none' },
         },
         countUp: {
           from: { opacity: '0', transform: 'translateY(8px) scale(0.9)' },
@@ -143,7 +145,9 @@ export default {
         'pulse-soft':     'pulseSoft 2s ease-in-out infinite',
         'backdrop-in':    'backdropIn 0.2s ease both',
         'backdrop-out':   'backdropOut 0.18s ease both',
-        'page-in':        'pageIn 0.4s cubic-bezier(0.22,1,0.36,1) both',
+        // backwards, а не both: висящая fill-анимация transform делала обёртку
+        // страницы containing block'ом для fixed (модалки съезжали от центра).
+        'page-in':        'pageIn 0.4s cubic-bezier(0.22,1,0.36,1) backwards',
         'count-up':       'countUp 0.5s cubic-bezier(0.22,1,0.36,1) both',
         'spin-slow':      'spinSlow 2s linear infinite',
         'bounce-soft':    'bounceSoft 0.45s cubic-bezier(0.22,1,0.36,1) both',
