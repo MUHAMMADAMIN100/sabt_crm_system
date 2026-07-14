@@ -12,6 +12,10 @@ interface StoryCalendarProps {
   employeeId?: string
   compact?: boolean
   adminAll?: boolean
+  /** Режим сторисмейкера: хотя бы одна сторис за день — квадраты зелёные
+   *  (без градаций «< половины / ≥ половины»). Руководительские виды
+   *  (adminAll/employeeId) сохраняют градацию выполнения плана. */
+  greenAnyProgress?: boolean
 }
 
 const FALLBACK_TARGET = 3 // used only if project has no smmData.storiesPerDay
@@ -23,7 +27,7 @@ function getDailyTarget(project: any): number {
   return Number.isFinite(v) && v > 0 ? Math.min(v, 12) : FALLBACK_TARGET
 }
 
-export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCalendarProps) {
+export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyProgress }: StoryCalendarProps) {
   const [current, setCurrent] = useState(new Date())
   const [selectedProject, setSelectedProject] = useState<any>(null)
   const [animMap, setAnimMap] = useState<Record<string, 'pop' | 'unpop'>>({})
@@ -232,6 +236,8 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
   /** Checkbox color: filled vs target. */
   const getCheckboxColor = (index: number, count: number, target: number) => {
     if (index > count) return 'bg-surface-200 dark:bg-surface-600'
+    // Сторисмейкер: сделала хотя бы одну — уже зелёный (просьба Фарзоны/руководства).
+    if (greenAnyProgress) return 'bg-green-500'
     if (count >= target) return 'bg-green-500'
     const pct = target > 0 ? count / target : 0
     if (pct >= 0.5) return 'bg-surface-400'
@@ -315,7 +321,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
                         if (todayCount === 0) {
                           dotColor = 'bg-red-500'
                         } else if (i <= todayCount) {
-                          if (todayCount >= dailyTarget) dotColor = 'bg-green-500'
+                          if (greenAnyProgress || todayCount >= dailyTarget) dotColor = 'bg-green-500'
                           else if (todayCount / dailyTarget >= 0.5) dotColor = 'bg-surface-400'
                           else dotColor = 'bg-surface-400'
                         } else {
@@ -335,11 +341,18 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
         )}
 
         {/* Legend */}
-        <div className="flex gap-3 text-[10px] mt-3 pt-3 border-t border-surface-100 dark:border-surface-700">
-          <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-surface-400" /><span className="text-surface-400 dark:text-surface-500">1</span></div>
-          <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-surface-400" /><span className="text-surface-400 dark:text-surface-500">2</span></div>
-          <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-green-500" /><span className="text-surface-400 dark:text-surface-500">3</span></div>
-        </div>
+        {greenAnyProgress ? (
+          <div className="flex gap-3 text-[10px] mt-3 pt-3 border-t border-surface-100 dark:border-surface-700">
+            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-red-500" /><span className="text-surface-400 dark:text-surface-500">0 за сегодня</span></div>
+            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-green-500" /><span className="text-surface-400 dark:text-surface-500">есть истории</span></div>
+          </div>
+        ) : (
+          <div className="flex gap-3 text-[10px] mt-3 pt-3 border-t border-surface-100 dark:border-surface-700">
+            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-surface-400" /><span className="text-surface-400 dark:text-surface-500">1</span></div>
+            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-surface-400" /><span className="text-surface-400 dark:text-surface-500">2</span></div>
+            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-green-500" /><span className="text-surface-400 dark:text-surface-500">3</span></div>
+          </div>
+        )}
       </div>
     )
   }
@@ -463,12 +476,19 @@ export default function StoryCalendar({ employeeId, compact, adminAll }: StoryCa
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-3 text-[10px] mt-2">
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-red-400" /><span className="text-surface-400">0 (нет)</span></div>
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-surface-400" /><span className="text-surface-400">&lt; половины</span></div>
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-surface-400" /><span className="text-surface-400">≥ половины</span></div>
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-green-500" /><span className="text-surface-400">план ({dailyTarget})</span></div>
-      </div>
+      {greenAnyProgress ? (
+        <div className="flex flex-wrap gap-3 text-[10px] mt-2">
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-red-400" /><span className="text-surface-400">0 (нет)</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-green-500" /><span className="text-surface-400">есть истории · план {dailyTarget}/день</span></div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-3 text-[10px] mt-2">
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-red-400" /><span className="text-surface-400">0 (нет)</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-surface-400" /><span className="text-surface-400">&lt; половины</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-surface-400" /><span className="text-surface-400">≥ половины</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-green-500" /><span className="text-surface-400">план ({dailyTarget})</span></div>
+        </div>
+      )}
 
       {/* Per-employee breakdown (admin only, multi-member) */}
       {adminAll && empStoryMap[selectedProject.id] && Object.keys(empStoryMap[selectedProject.id]).length > 1 && (

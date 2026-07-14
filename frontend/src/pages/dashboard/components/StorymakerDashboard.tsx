@@ -141,9 +141,10 @@ export default function StorymakerDashboard() {
           )}
         </div>
 
-        {/* Календарь — отметка сторис прямо отсюда */}
+        {/* Календарь — отметка сторис прямо отсюда.
+            Режим сторисмейкера: хотя бы одна сторис за день — зелёный. */}
         <div className="lg:col-span-2">
-          <StoryCalendar />
+          <StoryCalendar greenAnyProgress />
         </div>
       </div>
     </div>
