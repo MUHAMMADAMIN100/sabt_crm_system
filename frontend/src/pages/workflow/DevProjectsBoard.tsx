@@ -131,7 +131,11 @@ export default function DevProjectsBoard() {
       <p className="text-xs text-surface-500 dark:text-surface-400">
         Этапы разработки · {canMove ? 'перетащите карточку на этап или добавьте проект через «+» в колонке · ' : ''}клик — быстрый просмотр проекта · наведите на заголовок колонки, чтобы увидеть описание этапа
       </p>
-      <div className="flex gap-3 overflow-x-auto pb-3 items-start">
+      {/* items-start убран намеренно: колонки растягиваются на высоту самой
+          высокой (+min-h) и ловят бросок по ВСЕЙ высоте доски. Раньше пустая
+          колонка была коробкой ~100px — быстрый бросок падал ниже неё в
+          мёртвую зону, и браузер возвращал карточку на место. */}
+      <div className="flex gap-3 overflow-x-auto pb-3 items-stretch min-h-[65vh]">
         {DEV_STAGES.map(stage => {
           const items = byStage[stage.num] || []
           return (
@@ -146,7 +150,7 @@ export default function DevProjectsBoard() {
               onDragLeave={() => setDragOverStage(prev => (prev === stage.num ? null : prev))}
               onDrop={e => { e.preventDefault(); handleDrop(stage.num, e) }}
               className={clsx(
-                'w-[250px] shrink-0 rounded-xl p-2 transition-colors',
+                'w-[250px] shrink-0 rounded-xl p-2 transition-colors flex flex-col',
                 dragOverStage === stage.num
                   ? 'bg-surface-100 dark:bg-surface-700/50 ring-2 ring-primary-400 dark:ring-primary-500'
                   : 'bg-surface-50 dark:bg-surface-800/50',
@@ -166,7 +170,7 @@ export default function DevProjectsBoard() {
                   )}
                 </span>
               </div>
-              <div className="space-y-2 min-h-[60px]">
+              <div className="space-y-2 min-h-[60px] flex-1">
                 {items.length === 0
                   ? <p className="text-[11px] text-surface-300 dark:text-surface-600 text-center py-4 select-none">Пусто</p>
                   : items.map((p: any) => (
@@ -174,7 +178,14 @@ export default function DevProjectsBoard() {
                       key={p.id}
                       draggable={canMove}
                       // setData обязателен — без него Firefox вообще не начинает dnd.
-                      onDragStart={e => { e.dataTransfer.setData('text/plain', p.id); e.dataTransfer.effectAllowed = 'move'; setDragId(p.id) }}
+                      // setDragId — отложенно: синхронный ре-рендер (opacity-50 на
+                      // перетаскиваемом узле) в тик dragstart в Chrome может
+                      // молча отменить начатый перенос.
+                      onDragStart={e => {
+                        e.dataTransfer.setData('text/plain', p.id)
+                        e.dataTransfer.effectAllowed = 'move'
+                        setTimeout(() => setDragId(p.id), 0)
+                      }}
                       onDragEnd={() => { setDragId(null); setDragOverStage(null) }}
                       onClick={() => setOpenProjectId(p.id)}
                       className={clsx(
