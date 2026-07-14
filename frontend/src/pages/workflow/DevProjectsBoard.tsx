@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '@/services/api.service'
@@ -64,23 +64,37 @@ export default function DevProjectsBoard() {
     const map: Record<number, any[]> = {}
     for (const s of DEV_STAGES) map[s.num] = []
     for (const p of devProjects) map[stageOf(p)].push(p)
-    for (const k of Object.keys(map)) map[Number(k)].sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'))
+    // Тай-брейк по id обязателен: одноимённые проекты (три «Архидеи») без него
+    // меняются местами после каждого фонового рефетча — «перетаскивается не та».
+    for (const k of Object.keys(map)) {
+      map[Number(k)].sort((a, b) =>
+        String(a.name).localeCompare(String(b.name), 'ru') || String(a.id).localeCompare(String(b.id)))
+    }
     return map
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [devProjects, pending])
 
   const dropPending = (id: string) => setPending(s => { const n = { ...s }; delete n[id]; return n })
+  // Счётчик перемещений по id: два быстрых переноса одной карточки подряд —
+  // завершение ПЕРВОГО запроса не должно снимать оверлей ВТОРОГО (карточка
+  // падала на серверное место, «сбрасывается при переносе через 2 этапа»).
+  const moveSeq = useRef<Record<string, number>>({})
   const moveMut = useMutation({
     mutationFn: ({ id, devStage }: { id: string; devStage: number }) => projectsApi.setDevStage(id, devStage),
-    onMutate: ({ id, devStage }) => setPending(s => ({ ...s, [id]: devStage })),
-    onError: (e: any, { id }) => {
-      dropPending(id)
+    onMutate: ({ id, devStage }) => {
+      moveSeq.current[id] = (moveSeq.current[id] || 0) + 1
+      setPending(s => ({ ...s, [id]: devStage }))
+      return { seq: moveSeq.current[id] }
+    },
+    onError: (e: any, { id }, ctx) => {
+      if (ctx?.seq === moveSeq.current[id]) dropPending(id)
       toast.error(e?.response?.data?.message || 'Не удалось сменить этап')
     },
-    // Оверлей снимаем только когда свежие данные уже в кэше — без прыжка назад.
-    onSuccess: async (_d, { id }) => {
+    // Оверлей снимаем только когда свежие данные уже в кэше — без прыжка назад,
+    // и только если это ПОСЛЕДНЕЕ перемещение карточки.
+    onSuccess: async (_d, { id }, ctx) => {
       await qc.invalidateQueries({ queryKey: ['projects'] })
-      dropPending(id)
+      if (ctx?.seq === moveSeq.current[id]) dropPending(id)
     },
   })
 
@@ -103,12 +117,12 @@ export default function DevProjectsBoard() {
 
   const handleDrop = (stageNum: number, e: DragEvent<HTMLDivElement>) => {
     setDragOverStage(null)
-    // id берём из dataTransfer, а не из состояния: при очень быстром броске
-    // setDragId из dragstart мог ещё не закоммититься — карточка «отскакивала».
-    const id = e.dataTransfer.getData('text/plain') || dragId
+    // Два канала id: состояние (надёжно после тика dragstart) и dataTransfer
+    // (синхронный канал dnd). Валидируем оба поиском проекта: в dataTransfer
+    // при перетаскивании ВЫДЕЛЕННОГО ТЕКСТА карточки прилетает текст, а не id.
+    const rawIds = [dragId, e.dataTransfer.getData('text/plain')].filter(Boolean) as string[]
     setDragId(null)
-    if (!id) return
-    const project = devProjects.find((p: any) => p.id === id)
+    const project = rawIds.map(id => devProjects.find((p: any) => p.id === id)).find(Boolean)
     if (!project || stageOf(project) === stageNum) return
     moveMut.mutate({ id: project.id, devStage: stageNum })
   }
@@ -189,7 +203,10 @@ export default function DevProjectsBoard() {
                       onDragEnd={() => { setDragId(null); setDragOverStage(null) }}
                       onClick={() => setOpenProjectId(p.id)}
                       className={clsx(
-                        'rounded-lg bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 p-2.5 shadow-sm cursor-pointer',
+                        // select-none: двойной клик выделял название, и следующий
+                        // drag тащил ВЫДЕЛЕНИЕ вместо карточки (в drop приходил
+                        // текст, перенос отклонялся или путал карточки).
+                        'rounded-lg bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 p-2.5 shadow-sm cursor-pointer select-none',
                         'hover:border-primary-400 dark:hover:border-primary-500 transition-colors',
                         dragId === p.id && 'opacity-50',
                       )}
