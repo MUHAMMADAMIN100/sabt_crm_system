@@ -47,18 +47,32 @@ export function FinLoadError({ onRetry, text }: { onRetry: () => void; text?: st
   );
 }
 
-/** Escape закрывает модалку; фокус возвращается туда, откуда её открыли. */
+// Блокировка прокрутки фона под модалкой. Счётчик — из-за вложенных модалок
+// (конфирм поверх формы): фон разблокируется, только когда закрыта последняя.
+let scrollLocks = 0;
+function lockBodyScroll() {
+  if (++scrollLocks === 1) document.body.style.overflow = 'hidden';
+}
+function unlockBodyScroll() {
+  scrollLocks = Math.max(0, scrollLocks - 1);
+  if (scrollLocks === 0) document.body.style.overflow = '';
+}
+
+/** Escape закрывает модалку; фокус возвращается туда, откуда её открыли;
+ *  фон под модалкой не прокручивается. */
 export function useModalKeys(onClose?: () => void) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
+    lockBodyScroll();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.stopPropagation(); closeRef.current?.(); }
     };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
+      unlockBodyScroll();
       opener?.focus?.();
     };
   }, []);
@@ -112,11 +126,15 @@ function ConfirmDialog({ message, opts, onDone }: {
   const okRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { okRef.current?.focus(); }, []);
   useEffect(() => {
+    lockBodyScroll();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.stopPropagation(); onDone(false); }
     };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      unlockBodyScroll();
+    };
   }, [onDone]);
   return (
     <div className="fin-overlay" onClick={() => onDone(false)}>

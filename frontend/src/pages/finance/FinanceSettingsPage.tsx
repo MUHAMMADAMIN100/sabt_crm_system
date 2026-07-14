@@ -342,7 +342,7 @@ function Palette({ color, setColor }: { color: string; setColor: (c: string) => 
       <div className="flex" style={{ flexWrap: 'wrap' }}>
         {COLOR_PALETTE.map((c) => (
           <button key={c} type="button" onClick={() => setColor(c)}
-            style={{ width: 26, height: 26, borderRadius: 7, background: c, cursor: 'pointer', border: color === c ? '2px solid #16191d' : '2px solid transparent' }} />
+            style={{ width: 26, height: 26, borderRadius: 7, background: c, cursor: 'pointer', border: color === c ? '2px solid var(--text)' : '2px solid transparent' }} />
         ))}
       </div>
     </div>
