@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '@/services/api.service'
 import { PageLoader } from '@/components/ui'
-import { CalendarDays } from 'lucide-react'
+import { CalendarDays, Plus } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/auth.store'
@@ -86,6 +86,8 @@ export default function DevProjectsBoard() {
 
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOverStage, setDragOverStage] = useState<number | null>(null)
+  // «+» в заголовке колонки: выбрать проект и поставить на этот этап без dnd.
+  const [addStage, setAddStage] = useState<number | null>(null)
 
   const handleDrop = (stageNum: number) => {
     setDragOverStage(null)
@@ -112,7 +114,7 @@ export default function DevProjectsBoard() {
   return (
     <>
       <p className="text-xs text-surface-500 dark:text-surface-400">
-        Этапы разработки · {canMove ? 'перетащите карточку на этап или смените этап селектом · ' : ''}клик — открыть проект · наведите на заголовок колонки, чтобы увидеть описание этапа
+        Этапы разработки · {canMove ? 'перетащите карточку на этап или добавьте проект через «+» в колонке · ' : ''}клик — открыть проект · наведите на заголовок колонки, чтобы увидеть описание этапа
       </p>
       <div className="flex gap-3 overflow-x-auto pb-3 items-start">
         {DEV_STAGES.map(stage => {
@@ -120,9 +122,12 @@ export default function DevProjectsBoard() {
           return (
             <div
               key={stage.num}
-              onDragOver={e => { e.preventDefault(); setDragOverStage(stage.num) }}
+              // dropEffect='move' + preventDefault на drop подтверждают браузеру
+              // успешный перенос — иначе он играет анимацию «возврата призрака»
+              // (~300 мс), и перенос выглядит как лаг.
+              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverStage(stage.num) }}
               onDragLeave={() => setDragOverStage(prev => (prev === stage.num ? null : prev))}
-              onDrop={() => handleDrop(stage.num)}
+              onDrop={e => { e.preventDefault(); handleDrop(stage.num) }}
               className={clsx(
                 'w-[250px] shrink-0 rounded-xl p-2 transition-colors',
                 dragOverStage === stage.num
@@ -134,7 +139,15 @@ export default function DevProjectsBoard() {
                 <span className="text-xs font-semibold text-surface-700 dark:text-surface-200 truncate">
                   <span className="text-primary-600 dark:text-primary-400">[{stage.pct}%]</span> {stage.label}
                 </span>
-                <span className="text-[10px] font-semibold w-5 h-5 shrink-0 rounded-full bg-surface-200 dark:bg-surface-700 text-surface-600 dark:text-surface-300 inline-flex items-center justify-center">{items.length}</span>
+                <span className="flex items-center gap-1 shrink-0">
+                  <span className="text-[10px] font-semibold w-5 h-5 rounded-full bg-surface-200 dark:bg-surface-700 text-surface-600 dark:text-surface-300 inline-flex items-center justify-center">{items.length}</span>
+                  {canMove && (
+                    <button type="button" title="Поставить проект на этот этап" onClick={() => setAddStage(stage.num)}
+                      className="w-5 h-5 inline-flex items-center justify-center rounded text-surface-400 hover:text-surface-700 hover:bg-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-200 transition-colors">
+                      <Plus size={12} />
+                    </button>
+                  )}
+                </span>
               </div>
               <div className="space-y-2 min-h-[60px]">
                 {items.length === 0
@@ -143,7 +156,8 @@ export default function DevProjectsBoard() {
                     <div
                       key={p.id}
                       draggable={canMove}
-                      onDragStart={() => setDragId(p.id)}
+                      // setData обязателен — без него Firefox вообще не начинает dnd.
+                      onDragStart={e => { e.dataTransfer.setData('text/plain', p.id); e.dataTransfer.effectAllowed = 'move'; setDragId(p.id) }}
                       onDragEnd={() => { setDragId(null); setDragOverStage(null) }}
                       onClick={() => navigate(`/projects/${p.id}`)}
                       className={clsx(
@@ -160,13 +174,15 @@ export default function DevProjectsBoard() {
                         </span>
                         <span title="Прогресс по задачам проекта">{Number(p.progress) || 0}% задач</span>
                       </div>
+                      {/* Селект — только на мобильных: там нет перетаскивания.
+                          На десктопе этап меняют dnd или «+» в колонке. */}
                       {canMove && (
                         <select
                           value={stageOf(p)}
                           onClick={e => e.stopPropagation()}
                           onChange={e => { e.stopPropagation(); moveMut.mutate({ id: p.id, devStage: Number(e.target.value) }) }}
-                          className="mt-2 w-full text-[11px] rounded-md border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-1.5 py-1"
-                          title="Сменить этап без перетаскивания"
+                          className="sm:hidden mt-2 w-full text-[11px] rounded-md border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-1.5 py-1"
+                          title="Сменить этап"
                         >
                           {DEV_STAGES.map(s => <option key={s.num} value={s.num}>[{s.pct}%] {s.label}</option>)}
                         </select>
@@ -178,6 +194,68 @@ export default function DevProjectsBoard() {
           )
         })}
       </div>
+
+      {addStage !== null && (
+        <AddToStageModal
+          stage={DEV_STAGES.find(s => s.num === addStage)!}
+          projects={devProjects}
+          stageOf={stageOf}
+          onClose={() => setAddStage(null)}
+          onPick={id => { moveMut.mutate({ id, devStage: addStage }); setAddStage(null) }}
+        />
+      )}
     </>
+  )
+}
+
+/** «+» в колонке: выбрать dev-проект из списка и поставить на этот этап. */
+function AddToStageModal({ stage, projects, stageOf, onPick, onClose }: {
+  stage: { num: number; pct: number; label: string }
+  projects: any[]
+  stageOf: (p: any) => number
+  onPick: (id: string) => void
+  onClose: () => void
+}) {
+  // По умолчанию — первый проект, который ещё не на этом этапе.
+  const candidates = projects.filter(p => stageOf(p) !== stage.num)
+  const [selected, setSelected] = useState<string>(candidates[0]?.id ?? '')
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label="Поставить проект на этап"
+        className="w-full max-w-sm rounded-xl bg-white dark:bg-surface-800 shadow-xl p-4 space-y-3"
+        onClick={e => e.stopPropagation()}>
+        <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
+          На этап <span className="text-primary-600 dark:text-primary-400">[{stage.pct}%]</span> {stage.label}
+        </h3>
+        {candidates.length === 0 ? (
+          <p className="text-sm text-surface-500 dark:text-surface-400">Все проекты разработки уже на этом этапе.</p>
+        ) : (
+          <select value={selected} onChange={e => setSelected(e.target.value)} autoFocus
+            className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2">
+            {candidates.map(p => {
+              const cur = DEV_STAGES.find(s => s.num === stageOf(p))
+              return <option key={p.id} value={p.id}>{p.name} · {p.projectType} — сейчас [{cur?.pct}%]</option>
+            })}
+          </select>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
+            Отмена
+          </button>
+          <button type="button" disabled={!selected || candidates.length === 0}
+            onClick={() => selected && onPick(selected)}
+            className="btn-primary text-sm disabled:opacity-50">
+            Поставить на этап
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
