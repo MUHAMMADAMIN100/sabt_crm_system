@@ -11,6 +11,9 @@ export enum FinanceProjectDirection {
 export enum FinanceProjectStatus {
   LEAD = 'lead',
   ACTIVE = 'active',
+  /** Клиент приостановил работу — неизвестно, продолжит ли: деньги и
+   *  напоминания заморожены, раз в 2 недели ревизия «спросить клиента». */
+  PAUSED = 'paused',
   DONE = 'done',
   ARCHIVED = 'archived',
 }

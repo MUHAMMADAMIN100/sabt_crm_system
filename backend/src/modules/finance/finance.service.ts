@@ -85,6 +85,12 @@ function smmAnchor(p: { cycleAnchor?: string | null; contractDate?: string | nul
   return p.cycleAnchor || p.contractDate || null;
 }
 
+/** Проект «в деньгах»: участвует в планах/прогнозах. Архив, лиды и
+ *  ПАУЗА (клиент приостановил, неизвестно вернётся ли) — не участвуют. */
+function isEarning(p: { archived?: boolean; status?: string | null }): boolean {
+  return !p.archived && p.status !== 'lead' && p.status !== 'paused';
+}
+
 const DEFAULT_ACCOUNTS = [
   { key: 'alif', name: 'Alif', position: 0 },
   { key: 'dushanbe_city', name: 'Dushanbe City', position: 1 },
@@ -212,6 +218,8 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "paidMarks" jsonb`);
     // День оплаты подписки/аренды — для напоминаний.
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "dueDay" int`);
+    // Дата постановки проекта на паузу (статус 'paused').
+    await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "pausedAt" date`);
     // Архивные счета: скрыты из карточек и селектов, история цела.
     await run(`ALTER TABLE finance_accounts ADD COLUMN IF NOT EXISTS "archived" boolean NOT NULL DEFAULT false`);
 
@@ -701,10 +709,11 @@ export class FinanceService implements OnModuleInit {
     }> = this.byCategoryList(monthIncome, m);
     const expenseByCategory = this.byCategoryList(monthExpense, m);
 
-    // План/факт дохода по направлениям.
+    // План/факт дохода по направлениям (пауза и лиды — вне денег).
     const dirs = ['smm', 'development', 'design'];
+    const pausedIds = new Set(m.projects.filter(p => p.status === 'paused').map(p => p.id));
     const incomePlan = dirs.map(dir => {
-      const projs = m.projects.filter(p => p.direction === dir && !p.archived && p.status !== 'lead');
+      const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
       const ids = new Set(projs.map(p => p.id));
       const plan = r2(projs.reduce((s, p) => s + Number(p.tariff), 0));
       const fact = r2(planned
@@ -720,7 +729,7 @@ export class FinanceService implements OnModuleInit {
     // SMM 1/2 не задваивали его; направление без операций получает строку с нулём.
     for (const dir of dirs) {
       const ids = new Set(m.projects
-        .filter(p => p.direction === dir && !p.archived && p.status !== 'lead')
+        .filter(p => p.direction === dir && isEarning(p))
         .map(p => p.id));
       const planMonth = r2(planned
         .filter(pp => pp.ym === ym && pp.projectId && ids.has(pp.projectId)
@@ -764,20 +773,20 @@ export class FinanceService implements OnModuleInit {
     ];
 
     const expectedIncome = r2(planned
-      .filter(p => p.status === 'expected' && p.projectId)
+      .filter(p => p.status === 'expected' && p.projectId && !pausedIds.has(p.projectId))
       .reduce((s, p) => s + Number(p.amount), 0));
 
     // Доход: ожидается ещё в ЭТОМ месяце, прогноз следующего месяца
     // (SMM — тарифы активных проектов: цикл повторяется каждый месяц;
     // Dev/Design — ожидаемые планы матриц на следующий месяц) и за всё время.
     const expectedThisMonth = r2(planned
-      .filter(pp => pp.projectId && pp.status === 'expected' && pp.ym === ym)
+      .filter(pp => pp.projectId && pp.status === 'expected' && pp.ym === ym && !pausedIds.has(pp.projectId))
       .reduce((s, pp) => s + Number(pp.amount), 0));
     const nextYm = shiftYm(ym, 1);
     const smmForecast = r2(m.projects
-      .filter(p => p.direction === 'smm' && !p.archived && p.status !== 'lead')
+      .filter(p => p.direction === 'smm' && isEarning(p))
       .reduce((s, p) => s + Number(p.tariff), 0));
-    const otherIds = new Set(m.projects.filter(p => p.direction !== 'smm' && !p.archived).map(p => p.id));
+    const otherIds = new Set(m.projects.filter(p => p.direction !== 'smm' && !p.archived && p.status !== 'paused').map(p => p.id));
     const otherForecast = r2(planned
       .filter(pp => pp.projectId && otherIds.has(pp.projectId) && pp.status === 'expected' && pp.ym === nextYm)
       .reduce((s, pp) => s + Number(pp.amount), 0));
@@ -853,15 +862,18 @@ export class FinanceService implements OnModuleInit {
     const planned = await this.ppRepo.find();
     const dirs = ['smm', 'development', 'design'];
     return dirs.map(dir => {
-      const projs = m.projects.filter(p => p.direction === dir && !p.archived && p.status !== 'lead');
+      const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
       const ids = new Set(projs.map(p => p.id));
       const forMonth = planned.filter(p => p.ym === ym && p.projectId && ids.has(p.projectId));
       const received = r2(forMonth.filter(p => p.status === 'received' && p.receivedTxId).reduce((s, p) => s + Number(p.amount), 0));
       const expected = r2(forMonth.filter(p => p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0));
+      const paused = m.projects.filter(p => p.direction === dir && !p.archived && p.status === 'paused');
       return {
         direction: dir, received,
         plan: r2(projs.reduce((s, p) => s + Number(p.tariff), 0)),
         projectCount: projs.length, expected,
+        pausedCount: paused.length,
+        pausedTariff: r2(paused.reduce((s, p) => s + Number(p.tariff), 0)),
       };
     });
   }
@@ -873,7 +885,8 @@ export class FinanceService implements OnModuleInit {
 
     if (direction === 'smm') {
       const projects = m.projects.filter(p => p.direction === 'smm');
-      const active = projects.filter(p => !p.archived);
+      // Пауза — вне рабочей таблицы (фронт показывает их отдельной группой).
+      const active = projects.filter(p => !p.archived && p.status !== 'paused');
       const archived = projects.filter(p => p.archived);
       // Планы, попавшие в ячейки строк, — для честных итогов частей в tfoot.
       const displayedPlans: FinancePlannedPayment[] = [];
@@ -955,7 +968,7 @@ export class FinanceService implements OnModuleInit {
     }
 
     if (direction === 'development') {
-      const active = m.projects.filter(p => p.direction === 'development' && !p.archived);
+      const active = m.projects.filter(p => p.direction === 'development' && !p.archived && p.status !== 'paused');
       const winStart = start || this.defaultStart(active, planned);
       const months = Array.from({ length: 6 }, (_, i) => shiftYm(winStart, i));
       const { rows, totals } = this.buildMatrix(active, planned, months);
@@ -967,7 +980,7 @@ export class FinanceService implements OnModuleInit {
     }
 
     if (direction === 'design') {
-      const designAll = m.projects.filter(p => p.direction === 'design' && !p.archived);
+      const designAll = m.projects.filter(p => p.direction === 'design' && !p.archived && p.status !== 'paused');
       const simpleClients = designAll.filter(p => !p.multiMonth);
       const matrixClients = designAll.filter(p => p.multiMonth);
       const winStart = start || this.defaultStart(designAll, planned);
@@ -1442,7 +1455,7 @@ export class FinanceService implements OnModuleInit {
     try {
       const p = await this.projRepo.findOne({ where: { id: projectId } });
       const tariff = Number(p?.tariff) || 0;
-      if (!p || p.direction !== 'smm' || p.archived || tariff <= 0) return;
+      if (!p || p.direction !== 'smm' || p.archived || p.status === 'paused' || tariff <= 0) return;
 
       const plans = await this.ppRepo.find({ where: { projectId } });
       const received = plans.filter(x => x.status === 'received');
@@ -1884,12 +1897,12 @@ export class FinanceService implements OnModuleInit {
   async createProject(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Название обязательно');
     const direction = ['smm', 'development', 'design'].includes(dto.direction) ? dto.direction : 'smm';
-    const status = ['lead', 'active', 'done', 'archived'].includes(dto.status) ? dto.status : 'active';
+    const status = ['lead', 'active', 'paused', 'done', 'archived'].includes(dto.status) ? dto.status : 'active';
     const position = await this.projRepo.count();
     return this.projRepo.save(this.projRepo.create({
       name: dto.name.trim(), direction, tariff: Number(dto.tariff) || 0, note: dto.note ?? null,
       contractDate: dto.contractDate ?? null, archived: !!dto.archived, multiMonth: !!dto.multiMonth,
-      status, position,
+      status, pausedAt: status === 'paused' ? todayISO() : null, position,
     }));
   }
   async updateProject(id: string, dto: any) {
@@ -1907,8 +1920,37 @@ export class FinanceService implements OnModuleInit {
     }
     if (dto.archived !== undefined) p.archived = !!dto.archived;
     if (dto.multiMonth !== undefined) p.multiMonth = !!dto.multiMonth;
-    if (dto.status !== undefined && ['lead', 'active', 'done', 'archived'].includes(dto.status)) p.status = dto.status;
+    if (dto.status !== undefined && ['lead', 'active', 'paused', 'done', 'archived'].includes(dto.status)) {
+      const prev = p.status;
+      if (dto.status === 'paused' && prev !== 'paused') {
+        p.pausedAt = todayISO();
+      } else if (prev === 'paused' && dto.status !== 'paused') {
+        await this.resumeFromPause(p);
+      }
+      p.status = dto.status;
+    }
     return this.projRepo.save(p);
+  }
+
+  /** Возврат проекта с паузы: сроки замороженных ожидаемых платежей и якорь
+   *  SMM-цикла сдвигаются на длительность паузы — без ложной «просрочки»
+   *  за время простоя. Планы без dueDate (ячейки матриц Dev/Design) не
+   *  трогаем — их месяцы правят вручную. */
+  private async resumeFromPause(p: FinanceProject) {
+    const pausedAt = p.pausedAt;
+    p.pausedAt = null;
+    if (!pausedAt) return;
+    const shift = Math.max(0, Math.round(
+      (Date.parse(todayISO() + 'T00:00:00Z') - Date.parse(pausedAt + 'T00:00:00Z')) / 86400000));
+    if (shift <= 0) return;
+    const pps = await this.ppRepo.find({ where: { projectId: p.id, status: 'expected' } });
+    const shifted = pps.filter(pp => pp.dueDate);
+    for (const pp of shifted) {
+      pp.dueDate = addDays(pp.dueDate as string, shift);
+      pp.ym = ymOf(pp.dueDate);
+    }
+    if (shifted.length) await this.ppRepo.save(shifted);
+    if (p.cycleAnchor) p.cycleAnchor = addDays(p.cycleAnchor, shift);
   }
   async removeProject(id: string) {
     const incomeTxs = await this.txRepo.find({ where: { projectId: id, type: FinanceTxType.INCOME } as any });

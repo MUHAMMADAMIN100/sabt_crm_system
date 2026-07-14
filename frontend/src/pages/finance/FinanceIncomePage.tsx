@@ -43,6 +43,7 @@ export default function FinanceIncomePage() {
               <div className="value" style={{ fontSize: 26, fontWeight: 700 }}>{money(cash)}</div>
               <div className="mini muted" style={{ marginTop: 6 }}>
                 {projects} проектов{expected > 0 ? ` · ожидается ${money(expected)}` : ''}
+                {(d.pausedCount ?? 0) > 0 ? <span style={{ color: 'var(--amber)' }}> · на паузе {d.pausedCount}</span> : null}
               </div>
               <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
             </div>

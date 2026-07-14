@@ -38,9 +38,16 @@ export class FinanceProject {
   @Column({ type: 'boolean', default: false })
   archived: boolean;
 
-  /** Статус жизненного цикла: lead | active | done | archived. */
+  /** Статус жизненного цикла: lead | active | paused | done | archived.
+   *  paused — клиент приостановил работу: проект уходит из планов/прогнозов
+   *  и напоминаний, раз в 2 недели приходит ревизия «уточнить у клиента». */
   @Column({ type: 'varchar', length: 16, nullable: true, default: 'active' })
   status: string | null;
+
+  /** Дата постановки на паузу — для «на паузе с …», ревизий раз в 2 недели
+   *  и сдвига сроков замороженных платежей при возврате в работу. */
+  @Column({ type: 'date', nullable: true })
+  pausedAt: string | null;
 
   /** design: брендбук/логобук — оплата по месяцам (матрица), иначе разовая. */
   @Column({ type: 'boolean', default: false })

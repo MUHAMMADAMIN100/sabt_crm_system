@@ -128,8 +128,29 @@ export class FinanceScheduler {
     const pp = await this.checkProjectPayments(today);
     const subs = await this.checkSubscriptionsDue(today);
     const salary = await this.checkSalaryDue(today);
-    due = pp.due + subs.due + salary.due;
-    notified = pp.notified + subs.notified + salary.notified;
+    const paused = await this.checkPausedRevisions(today);
+    due = pp.due + subs.due + salary.due + paused.due;
+    notified = pp.notified + subs.notified + salary.notified + paused.notified;
+    return { due, notified };
+  }
+
+  /** Ревизия пауз: каждые 14 дней с даты постановки напоминаем уточнить у
+   *  клиента, продолжает ли он, — чтобы «заморозка» не стала забвением. */
+  private async checkPausedRevisions(today: string): Promise<{ due: number; notified: number }> {
+    const paused = (await this.projRepo.find()).filter(p => !p.archived && p.status === 'paused' && p.pausedAt);
+    let due = 0, notified = 0;
+    for (const p of paused) {
+      const days = daysUntil(p.pausedAt as string, today); // прошло дней с паузы
+      if (days <= 0 || days % 14 !== 0) continue;
+      due++;
+      const weeks = Math.round(days / 7);
+      notified += await this.notifyFinanceUsers({
+        title: 'Проект на паузе — пора уточнить',
+        message: `${p.name}: на паузе уже ${weeks} нед. (с ${formatRu(p.pausedAt as string)}, тариф ${fmtMoney(Number(p.tariff))}/мес). Уточните у клиента, продолжаем ли работу.`,
+        alertKey: `fin-paused:${p.id}:${days}`,
+        link: directionLink(p.direction),
+      });
+    }
     return { due, notified };
   }
 
@@ -144,7 +165,8 @@ export class FinanceScheduler {
     let notified = 0;
     for (const pp of due) {
       const project = projects.get(pp.projectId as string);
-      if (!project || project.archived) continue;
+      // Пауза: платежи заморожены — не напоминаем, пока проект не вернут.
+      if (!project || project.archived || project.status === 'paused') continue;
       const days = daysUntil(today, pp.dueDate as string);
       const what = pp.partNo === 2 ? 'вторая часть' : 'платёж';
       const when = days > 0

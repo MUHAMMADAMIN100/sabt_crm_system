@@ -78,7 +78,8 @@ export function ProjectFormModal({ project, direction, onClose }: {
         <div className="field"><label>Дата контракта</label><input type="date" value={contractDate} onChange={(e) => setContractDate(e.target.value)} /></div>
         <div className="field"><label>Статус</label>
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="lead">Лид</option><option value="active">Активный</option><option value="done">Завершён</option>
+            <option value="lead">Лид</option><option value="active">Активный</option>
+            <option value="paused">На паузе</option><option value="done">Завершён</option>
             {status === 'archived' && <option value="archived">Архив</option>}
           </select>
         </div>

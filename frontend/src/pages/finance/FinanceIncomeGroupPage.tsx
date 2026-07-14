@@ -82,13 +82,73 @@ function Stat({ label, value, cls, sub }: { label: string; value: string; cls?: 
   );
 }
 
-function RowActions({ onEdit, onArchive, onDelete }: { onEdit: () => void; onArchive: () => void; onDelete: () => void }) {
+function RowActions({ onEdit, onPause, onArchive, onDelete }: { onEdit: () => void; onPause?: () => void; onArchive: () => void; onDelete: () => void }) {
   return (
     <td className="num nowrap">
       <button className="btn ghost sm" title="Редактировать" onClick={onEdit}><FinIcon name="edit" size={15} /></button>
+      {onPause && <button className="btn ghost sm" title="На паузу (клиент приостановил — деньги и напоминания замораживаются)" onClick={onPause}><FinIcon name="pause" size={15} /></button>}
       <button className="btn ghost sm" title="В архив (больше не работаем)" onClick={onArchive}><FinIcon name="archive" size={15} /></button>
       <button className="btn ghost sm danger" title="Удалить проект" onClick={onDelete}><FinIcon name="trash" size={15} /></button>
     </td>
+  );
+}
+
+/** Свёрнутая группа «На паузе»: клиент приостановил — проект вне планов,
+ *  прогнозов и напоминаний; раз в 2 недели приходит ревизия «уточнить».
+ *  Возврат в работу сдвигает сроки замороженных платежей на время паузы. */
+function PausedProjects({ direction }: { direction: string }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const { data: all = [] } = useQuery({ queryKey: ['finref', 'projects'], queryFn: () => financeApi.projects() });
+  const projects = (all as any[]).filter((p) => p.direction === direction && !p.archived && p.status === 'paused');
+  if (projects.length === 0) return null;
+
+  async function resume(p: any) {
+    try {
+      await financeApi.updateProject(p.id, { status: 'active' });
+      toast.success(`«${p.name}» возвращён в работу — сроки платежей сдвинуты на время паузы`);
+      invalidateFinanceAll(qc);
+    } catch (e) { toast.error(apiErr(e)); }
+  }
+
+  const pausedFor = (iso?: string | null) => {
+    const d = iso ? daysUntil(iso) : null; // отрицательное — дней назад
+    if (d === null || d >= 0) return null;
+    const weeks = Math.floor(-d / 7);
+    return weeks > 0 ? `${weeks} нед.` : `${-d} дн.`;
+  };
+  const tariffSum = projects.reduce((s, p) => s + (Number(p.tariff) || 0), 0);
+
+  return (
+    <>
+      <button className="btn ghost sm" style={{ marginTop: 16, color: 'var(--amber)' }} onClick={() => setOpen((v) => !v)}>
+        <FinIcon name="pause" size={14} /> На паузе ({projects.length} · {money(tariffSum)}/мес)
+      </button>
+      {open && (
+        <div className="table-wrap" style={{ marginTop: 10 }}>
+          <table>
+            <thead><tr><th>Проект</th><th>На паузе с</th><th className="num">Тариф</th><th style={{ width: 200 }} /></tr></thead>
+            <tbody>
+              {projects.map((p) => (
+                <tr key={p.id} style={{ opacity: 0.8 }}>
+                  <td><b>{p.name}</b> <span className="badge wait" style={{ marginLeft: 8 }}>на паузе</span></td>
+                  <td className="muted nowrap">
+                    {p.pausedAt ? formatDate(p.pausedAt) : '—'}
+                    {pausedFor(p.pausedAt) ? <span className="mini muted"> · {pausedFor(p.pausedAt)}</span> : null}
+                  </td>
+                  <td className="num muted">{money(p.tariff)}</td>
+                  <td className="num nowrap">
+                    <button className="btn ghost sm" title="Вернуть в работу (сроки платежей сдвинутся на время паузы)" onClick={() => resume(p)}>
+                      <FinIcon name="play" size={14} /> Вернуть в работу
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -264,6 +324,13 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
   async function archiveProject(p: any) {
     try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
+  async function pauseProject(p: any) {
+    try {
+      await financeApi.updateProject(p.id, { status: 'paused' });
+      toast.success(`«${p.name}» на паузе — вне планов и напоминаний; ревизия раз в 2 недели`);
+      invalidateFinanceAll(qc);
+    } catch (e) { toast.error(apiErr(e)); }
+  }
   // «↩» на полученной части: удаляем и операцию, и сам платёж — ячейка снова «+» (как в эталоне).
   async function undoPart(part: any) {
     try {
@@ -375,7 +442,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                   </button>
                 </td>
                 <td><NoteCell project={r.project} /></td>
-                <RowActions onEdit={() => setEditProject(r.project)} onArchive={() => archiveProject(r.project)} onDelete={() => removeProjectRow(r.project)} />
+                <RowActions onEdit={() => setEditProject(r.project)} onPause={() => pauseProject(r.project)} onArchive={() => archiveProject(r.project)} onDelete={() => removeProjectRow(r.project)} />
               </tr>
             ))}
           </tbody>
@@ -400,6 +467,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
         сдвигается на день оплаты, план следующего месяца создаётся автоматически.
       </p>
 
+      <PausedProjects direction="smm" />
       <ArchivedProjects projects={data.archived || []} />
 
       {planFor && <PayPartModal row={planFor.row} partNo={planFor.partNo} ym={ym} onClose={() => setPlanFor(null)} />}
@@ -530,6 +598,7 @@ function DevSection({ data, direction, archived, onShift }: { data: any; directi
           <MatrixSection rows={rows} months={data.months} totals={data.totals} direction={direction} onShift={onShift} />
         </>
       ) : <div className="card empty">Нет активных проектов</div>}
+      <PausedProjects direction={direction} />
       <ArchivedProjects projects={archived} />
     </>
   );
@@ -546,6 +615,13 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
   }
   async function archiveProject(p: any) {
     try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
+  }
+  async function pauseProject(p: any) {
+    try {
+      await financeApi.updateProject(p.id, { status: 'paused' });
+      toast.success(`«${p.name}» на паузе — вне планов и напоминаний; ревизия раз в 2 недели`);
+      invalidateFinanceAll(qc);
+    } catch (e) { toast.error(apiErr(e)); }
   }
 
   const monthTotal = (m: string) => (totals.perMonth || []).find((x: any) => x.ym === m)?.total ?? 0;
@@ -611,7 +687,7 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
                     );
                   })}
                   <td><NoteCell project={p} /></td>
-                  <RowActions onEdit={() => setEditProject(p)} onArchive={() => archiveProject(p)} onDelete={() => removeProjectRow(p)} />
+                  <RowActions onEdit={() => setEditProject(p)} onPause={() => pauseProject(p)} onArchive={() => archiveProject(p)} onDelete={() => removeProjectRow(p)} />
                 </tr>
               );
             })}
@@ -827,6 +903,7 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
         </>
       )}
 
+      <PausedProjects direction={direction} />
       <ArchivedProjects projects={archived} />
 
       {payFor && <RecordIncomeModal row={payFor} onClose={() => setPayFor(null)} />}
