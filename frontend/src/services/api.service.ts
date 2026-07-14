@@ -63,6 +63,8 @@ export const projectsApi = {
   create: (data: any) => api.post('/projects', data).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/projects/${id}`, data).then(r => r.data),
   archive: (id: string) => api.patch(`/projects/${id}/archive`).then(r => r.data),
+  // Этап разработки (доска «Разработка», [10%]…[100%]).
+  setDevStage: (id: string, devStage: number) => api.patch(`/projects/${id}/dev-stage`, { devStage }).then(r => r.data),
   sendPaymentRequest: (id: string, message?: string) =>
     api.post(`/projects/${id}/send-payment-request`, { message }).then(r => r.data),
   payments: (id: string) => api.get(`/projects/${id}/payments`).then(r => r.data),

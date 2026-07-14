@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeProjectStories, canManageAccess, userCan, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeDevBoard, canSeeProjectStories, canManageAccess, userCan, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
@@ -78,8 +78,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     // отдельный пункт скрываем. У sales_manager_dev — отдельный пункт сайдбара
     // (по запросу пользователя). Остальным ролям пункт не нужен.
     if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
-    // Доска проектов — список ролей SMM-производства + персональный грант КП.
-    if (item.to === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || userCan(user, 'content-plan.manage') || userCan(user, 'board.view')
+    // Доска проектов — SMM-производство + грант КП, плюс роли доски «Разработка»
+    // (топ и pm_dev — у него вид только по dev-проектам).
+    if (item.to === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || canSeeDevBoard(role, secondaryRole) || userCan(user, 'content-plan.manage') || userCan(user, 'board.view')
     // «Истории по проектам» — только сторисмейкер.
     if (item.to === '/project-stories') return canSeeProjectStories(role, secondaryRole)
     // «Доступы сотрудников» — только основатель/сооснователь/админ.

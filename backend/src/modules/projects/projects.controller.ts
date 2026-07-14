@@ -3,6 +3,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { SetDevStageDto } from './dto/set-dev-stage.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
@@ -48,6 +49,14 @@ export class ProjectsController {
   @RequirePerm('projects.edit')
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto, @Request() req) {
     return this.service.update(id, dto, req.user);
+  }
+
+  /** Этап разработки на доске «Разработка» ([10%]…[100%]). Доступ уже, чем
+   *  projects.edit: pm_dev двигает карточки, не имея права редактировать проект. */
+  @Patch(':id/dev-stage')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PM_DEV)
+  setDevStage(@Param('id') id: string, @Body() dto: SetDevStageDto, @Request() req) {
+    return this.service.setDevStage(id, dto.devStage, req.user);
   }
 
   @Patch(':id/archive')

@@ -409,6 +409,13 @@ export function canSeeWorkflowBoard(role?: string | null, secondaryRole?: string
   return WORKFLOW_BOARD_ROLES.includes(role || '') || WORKFLOW_BOARD_ROLES.includes(secondaryRole || '')
 }
 
+/** Вид «Разработка» на доске проектов — канбан dev-проектов по бизнес-этапам
+ *  [10%]…[100%]. Топ видит оба вида (переключатель), pm_dev — только этот. */
+export const DEV_BOARD_ROLES = ['admin', 'founder', 'co_founder', 'pm_dev']
+export function canSeeDevBoard(role?: string | null, secondaryRole?: string | null): boolean {
+  return DEV_BOARD_ROLES.includes(role || '') || DEV_BOARD_ROLES.includes(secondaryRole || '')
+}
+
 /** «Истории по проектам» — пункт только для сторисмейкера (отметка сторис по
  *  всем SMM-проектам). Остальные роли его не видят. */
 export function canSeeProjectStories(role?: string | null, secondaryRole?: string | null): boolean {
@@ -428,8 +435,9 @@ export function canAccessRoute(
   if (['/profile', '/notifications', '/'].includes(route)) return true
   // Онбординг — только менеджеры по продажам.
   if (route === '/onboarding') return role === 'sales_manager_smm' || role === 'sales_manager_dev'
-  // Глобальная доска проектов — SMM-производство/руководители/топ + грант КП.
-  if (route === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || userCan(u, 'content-plan.manage') || userCan(u, 'board.view')
+  // Глобальная доска проектов — SMM-производство/руководители/топ + грант КП,
+  // плюс pm_dev (его вид — «Разработка»).
+  if (route === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || canSeeDevBoard(role, secondaryRole) || userCan(u, 'content-plan.manage') || userCan(u, 'board.view')
   // «Истории по проектам» — только сторисмейкер.
   if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole)
   // «Доступы сотрудников» — только основатель/сооснователь/админ.

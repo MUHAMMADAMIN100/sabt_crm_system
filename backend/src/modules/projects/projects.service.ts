@@ -32,8 +32,9 @@ export class ProjectsService implements OnModuleInit {
 
   /** Авто-миграция:
    *   - jsonb-колонка brief для SMM-брифа клиента (CRUD /projects/:id/brief);
-   *   - varchar briefShareToken для публичной ссылки клиенту.
-   *  Идемпотентно — не требует отдельной миграции. */
+   *   - varchar briefShareToken для публичной ссылки клиенту;
+   *   - int devStage — этап разработки для доски «Разработка».
+   *  Идемпотентно — миграции дублируют это для чистого прод-деплоя. */
   async onModuleInit() {
     try {
       await this.repo.manager.query(
@@ -46,8 +47,11 @@ export class ProjectsService implements OnModuleInit {
         `CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_brief_share_token
          ON projects("briefShareToken") WHERE "briefShareToken" IS NOT NULL`,
       );
+      await this.repo.manager.query(
+        `ALTER TABLE projects ADD COLUMN IF NOT EXISTS "devStage" int`,
+      );
     } catch (e: any) {
-      this.logger.warn(`ALTER TABLE projects brief/briefShareToken failed: ${e?.message || e}`);
+      this.logger.warn(`ALTER TABLE projects brief/briefShareToken/devStage failed: ${e?.message || e}`);
     }
   }
 
@@ -1443,6 +1447,29 @@ export class ProjectsService implements OnModuleInit {
     this.gateway.broadcast('projects:changed', {});
     // Return fresh project with relations loaded
     return this.findOne(id);
+  }
+
+  /** Этап разработки на доске «Разработка»: только dev-проекты, 1..6.
+   *  Роли режет @Roles на контроллере (admin/founder/co_founder/pm_dev). */
+  async setDevStage(id: string, devStage: number, user?: { id: string; role: string; name?: string }) {
+    const project = await this.repo.findOne({ where: { id } });
+    if (!project) throw new NotFoundException('Project not found');
+    if (!DEV_PROJECT_TYPES.includes(project.projectType as string)) {
+      throw new BadRequestException('Этапы разработки применимы только к проектам разработки');
+    }
+    if (project.devStage === devStage) return { id, devStage };
+    await this.repo.update(id, { devStage });
+    await this.activityLog.log({
+      userId: user?.id,
+      userName: user?.name,
+      action: ActivityAction.PROJECT_UPDATE,
+      entity: 'project',
+      entityId: id,
+      entityName: project.name,
+      details: { devStage, prevDevStage: project.devStage ?? null },
+    });
+    this.gateway.broadcast('projects:changed', { projectId: id });
+    return { id, devStage };
   }
 
   async archive(id: string, user?: { id: string; role: string; name?: string }) {

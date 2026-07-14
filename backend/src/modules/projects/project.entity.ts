@@ -103,6 +103,11 @@ export class Project {
   @Column({ nullable: true })
   projectType: string;
 
+  /** Этап разработки 1..6 для доски «Разработка» ([10%] ТЗ → [100%] Внедрение).
+   *  Только у dev-проектов; null = этап не выставлен (доска показывает 1-й). */
+  @Column({ type: 'int', nullable: true })
+  devStage: number | null;
+
   @Column({ type: 'jsonb', nullable: true })
   smmData: Record<string, any>;
 

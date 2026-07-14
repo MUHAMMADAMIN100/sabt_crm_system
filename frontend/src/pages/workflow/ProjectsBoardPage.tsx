@@ -6,6 +6,8 @@ import { Plus, LayoutGrid, SlidersHorizontal, Trash2, Eraser, History } from 'lu
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
+import { canSeeWorkflowBoard, canSeeDevBoard, userCan } from '@/lib/permissions'
+import DevProjectsBoard from './DevProjectsBoard'
 import {
   STAGES, shortRole, CardFormModal, AdCampaignModal, WorkflowCardBadges,
   DeadlineSettingsModal, ContentPlanModal, GroupCardModal, ArchiveModal, predictTransition, canManageBoard, isMineCard,
@@ -15,12 +17,26 @@ import {
  * Глобальная «Доска проектов» — производственный канбан со всех SMM-
  * проектов сразу. Те же возможности, что во вкладке «Процесс работы»
  * (движок переходов, журнал, реклама), но карточки со всех проектов.
+ * Второй вид — «Разработка»: канбан dev-проектов по бизнес-этапам
+ * [10%]…[100%]. Топ переключается между видами, pm_dev видит только его.
  */
 export default function ProjectsBoardPage() {
   const qc = useQueryClient()
   const queryKey = ['workflow', 'all']
   const user = useAuthStore(s => s.user)
   const actor = { role: user?.role, secondaryRole: user?.secondaryRole, extraPermissions: user?.extraPermissions }
+
+  // Доступ к видам доски: SMM-производство и/или «Разработка».
+  const canSmm = canSeeWorkflowBoard(user?.role, user?.secondaryRole)
+    || userCan(actor as any, 'content-plan.manage') || userCan(actor as any, 'board.view')
+  const canDev = canSeeDevBoard(user?.role, user?.secondaryRole)
+  const [view, setView] = useState<'smm' | 'dev'>(() => {
+    if (!canSmm) return 'dev'
+    if (!canDev) return 'smm'
+    return localStorage.getItem('board-view') === 'dev' ? 'dev' : 'smm'
+  })
+  const showDev = view === 'dev' && canDev
+  const switchView = (v: 'smm' | 'dev') => { setView(v); localStorage.setItem('board-view', v) }
 
   const { data: cards, isLoading } = useQuery({
     queryKey,
@@ -29,11 +45,15 @@ export default function ProjectsBoardPage() {
     // страховка на случай разрыва сокета: доска синхронизируется без F5.
     refetchInterval: 12000,
     refetchOnWindowFocus: true,
+    // SMM-данные не грузим ни pm_dev'у, ни пока открыт вид «Разработка» —
+    // иначе поллинг раз в 12с продолжает дёргать невидимую доску.
+    enabled: canSmm && !showDev,
   })
 
   const { data: projects } = useQuery({
     queryKey: ['projects', 'smm-for-board'],
     queryFn: () => projectsApi.list(),
+    enabled: canSmm && !showDev,
   })
   const smmProjects = useMemo(
     () => (projects || []).filter((p: any) => p.projectType === 'SMM' && !p.isArchived),
@@ -58,7 +78,10 @@ export default function ProjectsBoardPage() {
     ro.observe(el)
     for (const child of Array.from(el.children)) ro.observe(child)
     return () => ro.disconnect()
-  }, [isLoading, mineOnly])
+    // showDev в deps обязателен: ветка «Разработка» размонтирует контейнер
+    // доски — без пересоздания observer прокси-скроллбар умирал после
+    // переключения видов.
+  }, [isLoading, mineOnly, showDev])
   // Присвоение равного scrollLeft не порождает события — цикла синхронизации нет.
   const syncFromBoard = () => {
     if (topScrollRef.current && boardScrollRef.current) topScrollRef.current.scrollLeft = boardScrollRef.current.scrollLeft
@@ -221,7 +244,7 @@ export default function ProjectsBoardPage() {
     </div>
   )
 
-  if (isLoading) return <PageLoader />
+  if (!showDev && isLoading) return <PageLoader />
 
   return (
     <div className="space-y-4">
@@ -229,7 +252,22 @@ export default function ProjectsBoardPage() {
         <div className="flex items-center gap-2">
           <LayoutGrid size={20} className="text-primary-600" />
           <h1 className="page-title">Доска проектов</h1>
+          {/* Переключатель видов — только тем, кому доступны оба. */}
+          {canSmm && canDev && (
+            <div className="ml-2 inline-flex rounded-lg overflow-hidden border border-surface-200 dark:border-surface-600">
+              {([['smm', 'SMM'], ['dev', 'Разработка']] as const).map(([v, label]) => (
+                <button key={v} type="button" onClick={() => switchView(v)}
+                  className={clsx('px-3 py-1 text-sm font-medium transition-colors',
+                    view === v
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+        {!showDev && (
         <div className="flex items-center gap-2 flex-wrap">
           <button type="button" onClick={() => setArchiveOpen(true)} title="Архив карточек, прошедших все этапы (опубл. > 6 дней)"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
@@ -258,7 +296,10 @@ export default function ProjectsBoardPage() {
             </button>
           )}
         </div>
+        )}
       </div>
+
+      {showDev ? <DevProjectsBoard /> : (<>
       <p className="text-xs text-surface-500 dark:text-surface-400">
         Производственный канбан SMM-проектов · переходы — через кнопки в карточке · перетаскивание разрешено только в «Реклама» · клик — открыть карточку
       </p>
@@ -377,6 +418,7 @@ export default function ProjectsBoardPage() {
           onSaved={() => { setGroupCard(null); qc.invalidateQueries({ queryKey }) }}
         />
       )}
+      </>)}
     </div>
   )
 }
