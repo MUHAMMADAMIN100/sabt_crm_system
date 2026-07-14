@@ -246,8 +246,8 @@ function TxCalendar({ ym, txns, onEdit, onAdd }: {
           {cells.map((iso, i) => {
             const list = iso ? (byDay.get(iso) ?? []) : [];
             const open = iso ? !!openDays[iso] : false;
-            // «ещё 1» не имеет смысла — тогда показываем все 6 сразу.
-            const collapsible = list.length > CAL_DAY_LIMIT + 1;
+            // Строго максимум 5 строк в дне — остальное под «ещё N».
+            const collapsible = list.length > CAL_DAY_LIMIT;
             const visible = collapsible && !open ? list.slice(0, CAL_DAY_LIMIT) : list;
             const dt = iso ? totals.day.get(iso) : undefined;
             return (
