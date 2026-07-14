@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '@/services/api.service'
@@ -101,11 +101,14 @@ export default function DevProjectsBoard() {
     }
   }, [openProjectId, openProject, isLoading])
 
-  const handleDrop = (stageNum: number) => {
+  const handleDrop = (stageNum: number, e: DragEvent<HTMLDivElement>) => {
     setDragOverStage(null)
-    if (!dragId) return
-    const project = devProjects.find((p: any) => p.id === dragId)
+    // id берём из dataTransfer, а не из состояния: при очень быстром броске
+    // setDragId из dragstart мог ещё не закоммититься — карточка «отскакивала».
+    const id = e.dataTransfer.getData('text/plain') || dragId
     setDragId(null)
+    if (!id) return
+    const project = devProjects.find((p: any) => p.id === id)
     if (!project || stageOf(project) === stageNum) return
     moveMut.mutate({ id: project.id, devStage: stageNum })
   }
@@ -134,12 +137,14 @@ export default function DevProjectsBoard() {
           return (
             <div
               key={stage.num}
-              // dropEffect='move' + preventDefault на drop подтверждают браузеру
-              // успешный перенос — иначе он играет анимацию «возврата призрака»
-              // (~300 мс), и перенос выглядит как лаг.
+              // По спецификации dnd колонка — валидная цель, только если отменены
+              // И dragenter, И dragover. Без dragenter быстрый бросок (отпускание
+              // раньше первого dragover) отклонялся — карточка отскакивала назад.
+              // dropEffect='move' + preventDefault на drop гасят анимацию возврата.
+              onDragEnter={e => { e.preventDefault(); setDragOverStage(stage.num) }}
               onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverStage(stage.num) }}
               onDragLeave={() => setDragOverStage(prev => (prev === stage.num ? null : prev))}
-              onDrop={e => { e.preventDefault(); handleDrop(stage.num) }}
+              onDrop={e => { e.preventDefault(); handleDrop(stage.num, e) }}
               className={clsx(
                 'w-[250px] shrink-0 rounded-xl p-2 transition-colors',
                 dragOverStage === stage.num
