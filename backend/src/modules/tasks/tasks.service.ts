@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Task, TaskStatus, TaskPriority, TASK_CLOSED_FOR_OVERDUE } from './task.entity';
@@ -17,13 +17,26 @@ import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
 import { TaskResultsService } from '../task-results/task-results.service';
 import { DailyReport } from '../reports/daily-report.entity';
-import { getSalesSegment, isSalesManager } from '../../common/sales-segment';
+import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES } from '../../common/sales-segment';
 
 const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR];
 const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.VIDEO_EDITOR, UserRole.ORGANIZER, UserRole.STORYMAKER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.VIDEOGRAPHER, UserRole.SCRIPTWRITER, UserRole.QA, UserRole.PUBLISHER, UserRole.TARGETOLOGIST, UserRole.EMPLOYEE];
 
 @Injectable()
-export class TasksService {
+export class TasksService implements OnModuleInit {
+  /** Идемпотентный DDL (на проде synchronize off): этап dev-доски у задач.
+   *  Миграция AddTaskDevStage дублирует это для чистого деплоя. */
+  async onModuleInit() {
+    try {
+      await this.repo.manager.query(
+        `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "devStage" int`,
+      );
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.warn(`ALTER TABLE tasks devStage failed: ${e?.message || e}`);
+    }
+  }
+
   constructor(
     @InjectRepository(Task) private repo: Repository<Task>,
     @InjectRepository(TaskAssignee) private assigneesRepo: Repository<TaskAssignee>,
@@ -56,9 +69,13 @@ export class TasksService {
     if (!projectId) return false;
     const proj = await this.projectRepo.findOne({
       where: { id: projectId },
-      select: ['id', 'managerId'] as any,
+      select: ['id', 'managerId', 'projectType'] as any,
     });
-    return !!proj && proj.managerId === userId;
+    if (!proj) return false;
+    // ПМ по разработке — PM-полномочия во всех dev-проектах: ставит
+    // задачи-замечания на других (в т.ч. карточки этапов dev-доски).
+    if (role === UserRole.PM_DEV && DEV_PROJECT_TYPES.includes(proj.projectType as string)) return true;
+    return proj.managerId === userId;
   }
 
   /** Auto-create a daily_report row when a task transitions to DONE. */

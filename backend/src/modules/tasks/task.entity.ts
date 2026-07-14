@@ -117,6 +117,12 @@ export class Task {
   @Column({ type: 'varchar', nullable: true })
   originStage: string | null;
 
+  /** Этап доски «Разработка» (1..6, [10%] ТЗ → [100%] Внедрение) — задача
+   *  создана как карточка этапа через «+» на dev-доске и видна в её колонке.
+   *  NULL — обычная задача, на доске не показывается. */
+  @Column({ type: 'int', nullable: true })
+  devStage: number | null;
+
   /** Технические детали для задач разработки. JSON чтобы не плодить
    *  колонки и легко расширять — теперь включает все нужные dev-ссылки. */
   @Column({ type: 'jsonb', nullable: true })

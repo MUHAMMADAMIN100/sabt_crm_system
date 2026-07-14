@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi } from '@/services/api.service'
+import { projectsApi, tasksApi } from '@/services/api.service'
 import { PageLoader } from '@/components/ui'
-import { CalendarDays, Plus } from 'lucide-react'
+import { CalendarDays, Plus, User as UserIcon } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/auth.store'
+import TaskDrawer from '@/components/tasks/TaskDrawer'
 
 /** Этапы разработки — бизнес-вехи с процентом готовности портфеля.
  *  Проценты в названиях колонок намеренно: открыв доску, сразу видно,
@@ -54,6 +55,21 @@ export default function DevProjectsBoard() {
     [projects],
   )
 
+  // Карточки этапов — задачи с devStage (создаются «+» в колонке). Живут в
+  // разделе «Задачи» как обычные задачи; здесь — их представление на доске.
+  const { data: allTasks } = useQuery({
+    queryKey: ['tasks', 'dev-board'],
+    queryFn: () => tasksApi.list(),
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
+  })
+  const devProjectIds = useMemo(() => new Set(devProjects.map((p: any) => p.id)), [devProjects])
+  const stageTasks = useMemo(
+    () => ((allTasks as any[]) || []).filter((t: any) =>
+      Number(t.devStage) >= 1 && t.status !== 'cancelled' && devProjectIds.has(t.projectId)),
+    [allTasks, devProjectIds],
+  )
+
   // Оптимистичные перемещения — оверлеем поверх данных, а не записью в кэш:
   // сокет-рефетч (projects:changed прилетает на любую правку проектов/задач)
   // иначе возвращал карточку в старую колонку, пока PATCH ещё в полёте.
@@ -98,10 +114,47 @@ export default function DevProjectsBoard() {
     },
   })
 
+  // Тот же паттерн оптимистичного оверлея — для карточек-задач этапов.
+  const [taskPending, setTaskPending] = useState<Record<string, number>>({})
+  const taskStageOf = (t: any) => taskPending[t.id] ?? clampStage(t.devStage)
+  const dropTaskPending = (id: string) => setTaskPending(s => { const n = { ...s }; delete n[id]; return n })
+  const taskSeq = useRef<Record<string, number>>({})
+  const taskMoveMut = useMutation({
+    mutationFn: ({ id, devStage }: { id: string; devStage: number }) => tasksApi.update(id, { devStage }),
+    onMutate: ({ id, devStage }) => {
+      taskSeq.current[id] = (taskSeq.current[id] || 0) + 1
+      setTaskPending(s => ({ ...s, [id]: devStage }))
+      return { seq: taskSeq.current[id] }
+    },
+    onError: (e: any, { id }, ctx) => {
+      if (ctx?.seq === taskSeq.current[id]) dropTaskPending(id)
+      toast.error(e?.response?.data?.message || 'Не удалось сменить этап')
+    },
+    onSuccess: async (_d, { id }, ctx) => {
+      await qc.invalidateQueries({ queryKey: ['tasks', 'dev-board'] })
+      if (ctx?.seq === taskSeq.current[id]) dropTaskPending(id)
+    },
+  })
+
+  const byStageTasks = useMemo(() => {
+    const map: Record<number, any[]> = {}
+    for (const s of DEV_STAGES) map[s.num] = []
+    for (const t of stageTasks) map[taskStageOf(t)].push(t)
+    for (const k of Object.keys(map)) {
+      map[Number(k)].sort((a, b) =>
+        String(a.title).localeCompare(String(b.title), 'ru') || String(a.id).localeCompare(String(b.id)))
+    }
+    return map
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageTasks, taskPending])
+
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOverStage, setDragOverStage] = useState<number | null>(null)
-  // «+» в заголовке колонки: выбрать проект и поставить на этот этап без dnd.
+  // «+» в заголовке колонки: форма новой карточки этапа (проект, заголовок,
+  // дедлайн, исполнители) — создаёт задачу с devStage.
   const [addStage, setAddStage] = useState<number | null>(null)
+  // Клик по карточке-задаче — быстрый просмотр в TaskDrawer.
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   // Клик по карточке — быстрый просмотр модалкой (полная страница — кнопкой внутри).
   // Храним только id: содержимое всегда берём из свежих данных запроса.
   const [openProjectId, setOpenProjectId] = useState<string | null>(null)
@@ -118,13 +171,26 @@ export default function DevProjectsBoard() {
   const handleDrop = (stageNum: number, e: DragEvent<HTMLDivElement>) => {
     setDragOverStage(null)
     // Два канала id: состояние (надёжно после тика dragstart) и dataTransfer
-    // (синхронный канал dnd). Валидируем оба поиском проекта: в dataTransfer
+    // (синхронный канал dnd). Валидируем оба поиском карточки: в dataTransfer
     // при перетаскивании ВЫДЕЛЕННОГО ТЕКСТА карточки прилетает текст, а не id.
+    // Префикс «task:» отличает карточку-задачу этапа от карточки проекта.
     const rawIds = [dragId, e.dataTransfer.getData('text/plain')].filter(Boolean) as string[]
     setDragId(null)
-    const project = rawIds.map(id => devProjects.find((p: any) => p.id === id)).find(Boolean)
-    if (!project || stageOf(project) === stageNum) return
-    moveMut.mutate({ id: project.id, devStage: stageNum })
+    for (const raw of rawIds) {
+      if (raw.startsWith('task:')) {
+        const t = stageTasks.find((x: any) => x.id === raw.slice(5))
+        if (t) {
+          if (taskStageOf(t) !== stageNum) taskMoveMut.mutate({ id: t.id, devStage: stageNum })
+          return
+        }
+      } else {
+        const project = devProjects.find((p: any) => p.id === raw)
+        if (project) {
+          if (stageOf(project) !== stageNum) moveMut.mutate({ id: project.id, devStage: stageNum })
+          return
+        }
+      }
+    }
   }
 
   const fmtDate = (iso?: string | null) =>
@@ -143,7 +209,7 @@ export default function DevProjectsBoard() {
   return (
     <>
       <p className="text-xs text-surface-500 dark:text-surface-400">
-        Этапы разработки · {canMove ? 'перетащите карточку на этап или добавьте проект через «+» в колонке · ' : ''}клик — быстрый просмотр проекта · наведите на заголовок колонки, чтобы увидеть описание этапа
+        Этапы разработки · {canMove ? 'перетащите карточку на этап · «+» в колонке — новая карточка · ' : ''}клик — быстрый просмотр · наведите на заголовок колонки, чтобы увидеть описание этапа
       </p>
       {/* items-start убран намеренно: колонки растягиваются на высоту самой
           высокой (+min-h) и ловят бросок по ВСЕЙ высоте доски. Раньше пустая
@@ -152,6 +218,7 @@ export default function DevProjectsBoard() {
       <div className="flex gap-3 overflow-x-auto pb-3 items-stretch min-h-[65vh]">
         {DEV_STAGES.map(stage => {
           const items = byStage[stage.num] || []
+          const taskItems = byStageTasks[stage.num] || []
           return (
             <div
               key={stage.num}
@@ -175,9 +242,9 @@ export default function DevProjectsBoard() {
                   <span className="text-primary-600 dark:text-primary-400">[{stage.pct}%]</span> {stage.label}
                 </span>
                 <span className="flex items-center gap-1 shrink-0">
-                  <span className="text-[10px] font-semibold w-5 h-5 rounded-full bg-surface-200 dark:bg-surface-700 text-surface-600 dark:text-surface-300 inline-flex items-center justify-center">{items.length}</span>
+                  <span className="text-[10px] font-semibold w-5 h-5 rounded-full bg-surface-200 dark:bg-surface-700 text-surface-600 dark:text-surface-300 inline-flex items-center justify-center">{items.length + taskItems.length}</span>
                   {canMove && (
-                    <button type="button" title="Поставить проект на этот этап" onClick={() => setAddStage(stage.num)}
+                    <button type="button" title="Новая карточка на этом этапе" onClick={() => setAddStage(stage.num)}
                       className="w-5 h-5 inline-flex items-center justify-center rounded text-surface-400 hover:text-surface-700 hover:bg-surface-200 dark:hover:bg-surface-700 dark:hover:text-surface-200 transition-colors">
                       <Plus size={12} />
                     </button>
@@ -185,7 +252,7 @@ export default function DevProjectsBoard() {
                 </span>
               </div>
               <div className="space-y-2 min-h-[60px] flex-1">
-                {items.length === 0
+                {items.length === 0 && taskItems.length === 0
                   ? <p className="text-[11px] text-surface-300 dark:text-surface-600 text-center py-4 select-none">Пусто</p>
                   : items.map((p: any) => (
                     <div
@@ -234,6 +301,62 @@ export default function DevProjectsBoard() {
                       )}
                     </div>
                   ))}
+                {/* Карточки-задачи этапа (создаются «+»): заголовок, проект,
+                    исполнитель, дедлайн. Клик — быстрый просмотр задачи. */}
+                {taskItems.map((t: any) => {
+                  const overdue = t.deadline && t.status !== 'done' &&
+                    new Date(t.deadline) < new Date(new Date().toDateString())
+                  const names: string[] = ((t.assignees || []).map((a: any) => a.user?.name).filter(Boolean))
+                  if (names.length === 0 && t.assignee?.name) names.push(t.assignee.name)
+                  return (
+                    <div
+                      key={t.id}
+                      draggable={canMove}
+                      onDragStart={e => {
+                        e.dataTransfer.setData('text/plain', 'task:' + t.id)
+                        e.dataTransfer.effectAllowed = 'move'
+                        setTimeout(() => setDragId('task:' + t.id), 0)
+                      }}
+                      onDragEnd={() => { setDragId(null); setDragOverStage(null) }}
+                      onClick={() => setOpenTaskId(t.id)}
+                      className={clsx(
+                        'rounded-lg bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 border-l-[3px] !border-l-primary-400 p-2.5 shadow-sm cursor-pointer select-none',
+                        'hover:border-primary-400 dark:hover:border-primary-500 transition-colors',
+                        dragId === 'task:' + t.id && 'opacity-50',
+                      )}
+                    >
+                      <p className={clsx('text-sm font-medium leading-snug',
+                        t.status === 'done' ? 'line-through text-surface-400 dark:text-surface-500' : 'text-surface-900 dark:text-surface-100')}>
+                        {t.title}
+                      </p>
+                      <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-0.5 truncate">{t.project?.name}</p>
+                      <div className="flex items-center justify-between mt-1.5 text-[11px] text-surface-500 dark:text-surface-400 gap-2">
+                        <span className="inline-flex items-center gap-1 min-w-0">
+                          {names.length > 0 && <>
+                            <UserIcon size={11} className="shrink-0" />
+                            <span className="truncate">{names[0]}{names.length > 1 ? ` +${names.length - 1}` : ''}</span>
+                          </>}
+                        </span>
+                        {t.deadline && (
+                          <span className={clsx('inline-flex items-center gap-1 shrink-0', overdue && 'text-red-500 font-semibold')}>
+                            <CalendarDays size={11} /> {fmtDate(t.deadline)}
+                          </span>
+                        )}
+                      </div>
+                      {canMove && (
+                        <select
+                          value={taskStageOf(t)}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => { e.stopPropagation(); taskMoveMut.mutate({ id: t.id, devStage: Number(e.target.value) }) }}
+                          className="sm:hidden mt-2 w-full text-[11px] rounded-md border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-1.5 py-1"
+                          title="Сменить этап"
+                        >
+                          {DEV_STAGES.map(s => <option key={s.num} value={s.num}>[{s.pct}%] {s.label}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )
@@ -241,14 +364,15 @@ export default function DevProjectsBoard() {
       </div>
 
       {addStage !== null && (
-        <AddToStageModal
+        <NewStageCardModal
           stage={DEV_STAGES.find(s => s.num === addStage)!}
           projects={devProjects}
-          stageOf={stageOf}
           onClose={() => setAddStage(null)}
-          onPick={id => { moveMut.mutate({ id, devStage: addStage }); setAddStage(null) }}
+          onCreated={() => { qc.invalidateQueries({ queryKey: ['tasks', 'dev-board'] }); setAddStage(null) }}
         />
       )}
+
+      <TaskDrawer taskId={openTaskId} onClose={() => setOpenTaskId(null)} />
 
       {openProject && (
         <ProjectQuickModal
@@ -357,54 +481,129 @@ function ProjectQuickModal({ project: p, stageNum, canMove, onStage, onOpenPage,
   )
 }
 
-/** «+» в колонке: выбрать dev-проект из списка и поставить на этот этап. */
-function AddToStageModal({ stage, projects, stageOf, onPick, onClose }: {
+/** «+» в колонке: новая карточка этапа — создаёт ЗАДАЧУ в выбранном проекте
+ *  (исполнители получают обычные уведомления о задаче, задача видна в разделе
+ *  «Задачи» и на странице проекта) и показывает её карточкой в этой колонке. */
+function NewStageCardModal({ stage, projects, onClose, onCreated }: {
   stage: { num: number; pct: number; label: string }
   projects: any[]
-  stageOf: (p: any) => number
-  onPick: (id: string) => void
   onClose: () => void
+  onCreated: () => void
 }) {
-  // По умолчанию — первый проект, который ещё не на этом этапе.
-  const candidates = projects.filter(p => stageOf(p) !== stage.num)
-  const [selected, setSelected] = useState<string>(candidates[0]?.id ?? '')
+  const user = useAuthStore(s => s.user)
+  const [projectId, setProjectId] = useState('')
+  const [title, setTitle] = useState('')
+  const [deadline, setDeadline] = useState('')
+  const [assignees, setAssignees] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  const project = projects.find((p: any) => p.id === projectId)
+  // Кандидаты в исполнители: участники проекта + менеджер + текущий пользователь.
+  const people = useMemo(() => {
+    if (!project) return [] as any[]
+    const seen = new Map<string, any>()
+    for (const m of [...(project.members || []), project.manager, user].filter(Boolean)) {
+      if (m?.id && !seen.has(m.id)) seen.set(m.id, m)
+    }
+    return [...seen.values()]
+  }, [project, user])
+  const toggleAssignee = (id: string) =>
+    setAssignees(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
+
+  async function save() {
+    if (!projectId || !title.trim() || busy) return
+    setBusy(true)
+    try {
+      await tasksApi.create({
+        projectId,
+        title: title.trim(),
+        deadline: deadline || undefined,
+        assigneeIds: assignees.length ? assignees : undefined,
+        devStage: stage.num,
+      })
+      toast.success('Карточка создана')
+      onCreated()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Не удалось создать карточку')
+      setBusy(false)
+    }
+  }
+
   return (
     // Закрытие по mousedown на самом оверлее: click-закрытие ловило отпускание
     // мыши при выделении текста, начатом внутри диалога.
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div role="dialog" aria-modal="true" aria-label="Поставить проект на этап"
-        className="w-full max-w-sm rounded-xl bg-white dark:bg-surface-800 shadow-xl p-4 space-y-3"
+      <div role="dialog" aria-modal="true" aria-label={`Новая карточка — ${stage.label}`}
+        className="w-full max-w-md rounded-xl bg-white dark:bg-surface-800 shadow-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}>
-        <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
-          На этап <span className="text-primary-600 dark:text-primary-400">[{stage.pct}%]</span> {stage.label}
-        </h3>
-        {candidates.length === 0 ? (
-          <p className="text-sm text-surface-500 dark:text-surface-400">Все проекты разработки уже на этом этапе.</p>
-        ) : (
-          <select value={selected} onChange={e => setSelected(e.target.value)} autoFocus
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">
+            Новая карточка — <span className="text-primary-600 dark:text-primary-400">[{stage.pct}%]</span> {stage.label}
+          </h3>
+          <button type="button" aria-label="Закрыть" onClick={onClose}
+            className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-surface-400 hover:text-surface-700 hover:bg-surface-100 dark:hover:bg-surface-700 dark:hover:text-surface-200 transition-colors">✕</button>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-surface-600 dark:text-surface-300 mb-1">Проект *</label>
+          <select value={projectId} autoFocus
+            onChange={e => { setProjectId(e.target.value); setAssignees([]) }}
             className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2">
-            {candidates.map(p => {
-              const cur = DEV_STAGES.find(s => s.num === stageOf(p))
-              return <option key={p.id} value={p.id}>{p.name} · {p.projectType} — сейчас [{cur?.pct}%]</option>
-            })}
+            <option value="">— Выберите проект —</option>
+            {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name} · {p.projectType}</option>)}
           </select>
-        )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-surface-600 dark:text-surface-300 mb-1">Заголовок *</label>
+          <input value={title} onChange={e => setTitle(e.target.value)}
+            placeholder="Например: Настроить деплой на прод"
+            className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-surface-600 dark:text-surface-300 mb-1">Дедлайн</label>
+          <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)}
+            className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-surface-600 dark:text-surface-300 mb-1">
+            Исполнители <span className="text-surface-400">(можно несколько)</span>
+          </label>
+          {!project ? (
+            <p className="text-xs text-surface-400 dark:text-surface-500 border border-dashed border-surface-200 dark:border-surface-600 rounded-lg px-2.5 py-2">— Сначала выберите проект —</p>
+          ) : people.length === 0 ? (
+            <p className="text-xs text-surface-400 dark:text-surface-500">У проекта нет участников — карточку можно создать без исполнителя.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+              {people.map((m: any) => (
+                <button key={m.id} type="button" onClick={() => toggleAssignee(m.id)}
+                  className={clsx('px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                    assignees.includes(m.id)
+                      ? 'bg-primary-600 border-primary-600 text-white'
+                      : 'bg-surface-50 dark:bg-surface-700 border-surface-200 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:border-primary-400')}>
+                  {m.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" onClick={onClose}
             className="px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
             Отмена
           </button>
-          <button type="button" disabled={!selected || candidates.length === 0}
-            onClick={() => selected && onPick(selected)}
+          <button type="button" disabled={!projectId || !title.trim() || busy} onClick={save}
             className="btn-primary text-sm disabled:opacity-50">
-            Поставить на этап
+            {busy ? 'Сохраняю…' : 'Сохранить'}
           </button>
         </div>
       </div>
