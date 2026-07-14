@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { projectsApi, employeesApi, smmTariffsApi, riskApi } from '@/services/api.service'
@@ -7,7 +7,7 @@ import { userCan } from '@/lib/permissions'
 import { useTranslation } from '@/i18n'
 import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar, Pagination } from '@/components/ui'
 import { Plus, Search, FolderKanban, Archive, Trash2, Edit, Users, ChevronDown, X, Check, Banknote, Calendar as CalIcon } from 'lucide-react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { format, formatDistanceToNow } from 'date-fns'
@@ -504,6 +504,31 @@ export default function ProjectsPage() {
   )
 }
 
+/** Предупреждение о дубле имени проекта. Отдельный компонент с useWatch —
+ *  чтобы гигантская ProjectForm не ре-рендерилась на каждый символ имени.
+ *  Подписка на useQuery(['projects']) реактивна: кэш обновился (интервал,
+ *  чужое создание) — предупреждение пересчитается. Не блокирует сохранение:
+ *  одноимённые сайт+CRM для одного клиента бывают осознанно (кейс «Архидея»).
+ *  Ограничение: список отфильтрован ролевой видимостью — одноимённый проект
+ *  чужого направления менеджер продаж не увидит. */
+function DupNameWarning({ control, excludeId }: { control: any; excludeId?: string }) {
+  const name = useWatch({ control, name: 'name' })
+  const { data: list } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
+  const dup = useMemo(() => {
+    const n = String(name || '').trim().toLowerCase()
+    if (!n) return null
+    return (list || []).find((p: any) =>
+      String(p.name || '').trim().toLowerCase() === n && p.id !== excludeId && !p.isArchived) || null
+  }, [name, list, excludeId])
+  if (!dup) return null
+  const info = [dup.projectType, dup.manager?.name].filter(Boolean).join(' · ')
+  return (
+    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+      ⚠ Проект с таким названием уже есть{info ? ` (${info})` : ''} — проверьте, не дубль ли это.
+    </p>
+  )
+}
+
 function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: ProjectFormProps) {
   const { register, handleSubmit, reset, watch, setValue, getValues, control, formState: { errors } } = useForm()
   const { t } = useTranslation()
@@ -779,6 +804,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             <label className="label">{t('projects.name')} *</label>
             <input {...register('name', { required: true })} className="input" placeholder={t('projects.name')} />
             {errors.name && <p className="text-xs text-red-500 mt-1">Обязательное поле</p>}
+            {!errors.name && <DupNameWarning control={control} excludeId={initial?.id} />}
           </div>
           <CollapsibleField
             className="sm:col-span-2"

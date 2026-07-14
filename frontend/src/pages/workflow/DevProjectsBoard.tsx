@@ -88,6 +88,18 @@ export default function DevProjectsBoard() {
   const [dragOverStage, setDragOverStage] = useState<number | null>(null)
   // «+» в заголовке колонки: выбрать проект и поставить на этот этап без dnd.
   const [addStage, setAddStage] = useState<number | null>(null)
+  // Клик по карточке — быстрый просмотр модалкой (полная страница — кнопкой внутри).
+  // Храним только id: содержимое всегда берём из свежих данных запроса.
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null)
+  const openProject = openProjectId ? devProjects.find((p: any) => p.id === openProjectId) ?? null : null
+  // Проект исчез с доски (удалили/архивировали/сменили тип) — закрываем модалку,
+  // иначе она жила бы на устаревшем снапшоте и мутировала мёртвый проект.
+  useEffect(() => {
+    if (openProjectId && !openProject && !isLoading) {
+      setOpenProjectId(null)
+      toast('Проект больше не на доске — карточка закрыта')
+    }
+  }, [openProjectId, openProject, isLoading])
 
   const handleDrop = (stageNum: number) => {
     setDragOverStage(null)
@@ -114,7 +126,7 @@ export default function DevProjectsBoard() {
   return (
     <>
       <p className="text-xs text-surface-500 dark:text-surface-400">
-        Этапы разработки · {canMove ? 'перетащите карточку на этап или добавьте проект через «+» в колонке · ' : ''}клик — открыть проект · наведите на заголовок колонки, чтобы увидеть описание этапа
+        Этапы разработки · {canMove ? 'перетащите карточку на этап или добавьте проект через «+» в колонке · ' : ''}клик — быстрый просмотр проекта · наведите на заголовок колонки, чтобы увидеть описание этапа
       </p>
       <div className="flex gap-3 overflow-x-auto pb-3 items-start">
         {DEV_STAGES.map(stage => {
@@ -159,7 +171,7 @@ export default function DevProjectsBoard() {
                       // setData обязателен — без него Firefox вообще не начинает dnd.
                       onDragStart={e => { e.dataTransfer.setData('text/plain', p.id); e.dataTransfer.effectAllowed = 'move'; setDragId(p.id) }}
                       onDragEnd={() => { setDragId(null); setDragOverStage(null) }}
-                      onClick={() => navigate(`/projects/${p.id}`)}
+                      onClick={() => setOpenProjectId(p.id)}
                       className={clsx(
                         'rounded-lg bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 p-2.5 shadow-sm cursor-pointer',
                         'hover:border-primary-400 dark:hover:border-primary-500 transition-colors',
@@ -204,7 +216,111 @@ export default function DevProjectsBoard() {
           onPick={id => { moveMut.mutate({ id, devStage: addStage }); setAddStage(null) }}
         />
       )}
+
+      {openProject && (
+        <ProjectQuickModal
+          project={openProject}
+          stageNum={stageOf(openProject)}
+          canMove={canMove}
+          onStage={n => moveMut.mutate({ id: openProject.id, devStage: n })}
+          onOpenPage={() => navigate(`/projects/${openProject.id}`)}
+          onClose={() => setOpenProjectId(null)}
+        />
+      )}
     </>
+  )
+}
+
+/** Быстрый просмотр проекта с доски: сводка + смена этапа, без ухода со страницы. */
+function ProjectQuickModal({ project: p, stageNum, canMove, onStage, onOpenPage, onClose }: {
+  project: any
+  stageNum: number
+  canMove: boolean
+  onStage: (n: number) => void
+  onOpenPage: () => void
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const fmt = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+  const stage = DEV_STAGES.find(s => s.num === stageNum)
+  const progress = Math.max(0, Math.min(100, Number(p.progress) || 0))
+
+  return (
+    // mousedown вместо click — см. AddToStageModal: иначе выделение описания
+    // с отпусканием за краем диалога закрывало модалку.
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div role="dialog" aria-modal="true" aria-label={p.name}
+        className="w-full max-w-md rounded-xl bg-white dark:bg-surface-800 shadow-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100 leading-snug">{p.name}</h3>
+            <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">{p.projectType}{p.manager?.name ? ` · менеджер: ${p.manager.name}` : ''}</p>
+          </div>
+          <button type="button" aria-label="Закрыть" onClick={onClose}
+            className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-surface-400 hover:text-surface-700 hover:bg-surface-100 dark:hover:bg-surface-700 dark:hover:text-surface-200 transition-colors">✕</button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-surface-400 dark:text-surface-500">Сроки</p>
+            <p className="text-surface-800 dark:text-surface-200 mt-0.5">{fmt(p.startDate)} — {fmt(p.endDate)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-surface-400 dark:text-surface-500">Участники</p>
+            <p className="text-surface-800 dark:text-surface-200 mt-0.5">{Array.isArray(p.members) ? p.members.length : 0} чел.</p>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between text-[11px] text-surface-500 dark:text-surface-400 mb-1">
+            <span>Прогресс по задачам</span><span>{progress}%</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-surface-100 dark:bg-surface-700 overflow-hidden">
+            <div className="h-full rounded-full bg-primary-500" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[11px] uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Этап разработки</p>
+          {canMove ? (
+            <select value={stageNum} onChange={e => onStage(Number(e.target.value))}
+              className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2">
+              {DEV_STAGES.map(s => <option key={s.num} value={s.num}>[{s.pct}%] {s.label}</option>)}
+            </select>
+          ) : (
+            <p className="text-sm text-surface-800 dark:text-surface-200">
+              <span className="text-primary-600 dark:text-primary-400">[{stage?.pct}%]</span> {stage?.label}
+            </p>
+          )}
+          {stage && <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-1">{stage.hint}</p>}
+        </div>
+
+        {p.description && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Описание</p>
+            <p className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-line max-h-32 overflow-y-auto">{p.description}</p>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
+            Закрыть
+          </button>
+          <button type="button" onClick={onOpenPage} className="btn-primary text-sm">
+            Открыть страницу проекта
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -226,7 +342,10 @@ function AddToStageModal({ stage, projects, stageOf, onPick, onClose }: {
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+    // Закрытие по mousedown на самом оверлее: click-закрытие ловило отпускание
+    // мыши при выделении текста, начатом внутри диалога.
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <div role="dialog" aria-modal="true" aria-label="Поставить проект на этап"
         className="w-full max-w-sm rounded-xl bg-white dark:bg-surface-800 shadow-xl p-4 space-y-3"
         onClick={e => e.stopPropagation()}>
