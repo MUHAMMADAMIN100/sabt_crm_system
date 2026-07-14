@@ -49,13 +49,27 @@ export function FinLoadError({ onRetry, text }: { onRetry: () => void; text?: st
 
 // Блокировка прокрутки фона под модалкой. Счётчик — из-за вложенных модалок
 // (конфирм поверх формы): фон разблокируется, только когда закрыта последняя.
+// ВАЖНО: страница приложения скроллится НЕ через body, а внутри <main>
+// лэйаута (h-screen overflow-hidden + main.overflow-y-auto) — лочим оба.
+// Модалки календаря фиксируют фон, потому что рендерятся порталом в body;
+// финансовые живут внутри main, поэтому без лока main фон продолжал ехать.
 let scrollLocks = 0;
+let mainPrevOverflow = '';
 function lockBodyScroll() {
-  if (++scrollLocks === 1) document.body.style.overflow = 'hidden';
+  if (++scrollLocks > 1) return;
+  document.body.style.overflow = 'hidden';
+  const main = document.querySelector('main');
+  if (main) {
+    mainPrevOverflow = (main as HTMLElement).style.overflow;
+    (main as HTMLElement).style.overflow = 'hidden';
+  }
 }
 function unlockBodyScroll() {
   scrollLocks = Math.max(0, scrollLocks - 1);
-  if (scrollLocks === 0) document.body.style.overflow = '';
+  if (scrollLocks > 0) return;
+  document.body.style.overflow = '';
+  const main = document.querySelector('main');
+  if (main) (main as HTMLElement).style.overflow = mainPrevOverflow;
 }
 
 /** Escape закрывает модалку; фокус возвращается туда, откуда её открыли;
