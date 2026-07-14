@@ -971,7 +971,10 @@ export class FinanceService implements OnModuleInit {
       const active = m.projects.filter(p => p.direction === 'development' && !p.archived && p.status !== 'paused');
       const winStart = start || this.defaultStart(active, planned);
       const months = Array.from({ length: 6 }, (_, i) => shiftYm(winStart, i));
-      const { rows, totals } = this.buildMatrix(active, planned, months);
+      // Даты операций — для «когда получили» на полученных планах ячеек.
+      const devIncome = this.active(await this.txRepo.find({ where: { type: FinanceTxType.INCOME } as any }));
+      const txDates = new Map(devIncome.map(t => [t.id, t.date]));
+      const { rows, totals } = this.buildMatrix(active, planned, months, txDates);
       const ids = new Set(active.map(p => p.id));
       const cm = currentYm();
       const stExpected = r2(planned.filter(x => x.projectId && ids.has(x.projectId) && x.ym === cm && x.status === 'expected').reduce((s, x) => s + Number(x.amount), 0));
@@ -996,7 +999,7 @@ export class FinanceService implements OnModuleInit {
           paid: clientPaid(p.id),
         };
       });
-      const matrix = { ...this.buildMatrix(matrixClients, planned, months), months };
+      const matrix = { ...this.buildMatrix(matrixClients, planned, months, new Map(allIncome.map(t => [t.id, t.date]))), months };
 
       const cm = currentYm();
       const { from, to } = monthRange(cm);
@@ -1079,8 +1082,9 @@ export class FinanceService implements OnModuleInit {
     return ms[0] ?? currentYm();
   }
 
-  /** Матрица «проект × месяц»: строки с ячейками и итоги по месяцам. */
-  private buildMatrix(clients: FinanceProject[], planned: FinancePlannedPayment[], months: string[]) {
+  /** Матрица «проект × месяц»: строки с ячейками и итоги по месяцам.
+   *  txDates — дата операции по receivedTxId: «когда получили» в ячейке. */
+  private buildMatrix(clients: FinanceProject[], planned: FinancePlannedPayment[], months: string[], txDates?: Map<string, string>) {
     const ids = new Set(clients.map(c => c.id));
     const rows = clients.map(p => {
       const pPlans = planned.filter(x => x.projectId === p.id);
@@ -1090,7 +1094,10 @@ export class FinanceService implements OnModuleInit {
         const cp = pPlans.filter(x => x.ym === mm);
         return {
           ym: mm,
-          plans: cp.map(x => ({ id: x.id, amount: Number(x.amount), status: x.status, txId: x.receivedTxId, dueDate: x.dueDate ?? null })),
+          plans: cp.map(x => ({
+            id: x.id, amount: Number(x.amount), status: x.status, txId: x.receivedTxId, dueDate: x.dueDate ?? null,
+            receivedAt: x.receivedTxId ? (txDates?.get(x.receivedTxId) ?? null) : null,
+          })),
           received: r2(cp.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0)),
           expected: r2(cp.filter(x => x.status === 'expected').reduce((s, x) => s + Number(x.amount), 0)),
         };

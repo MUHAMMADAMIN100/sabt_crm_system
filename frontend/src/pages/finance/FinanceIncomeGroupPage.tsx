@@ -669,13 +669,17 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
                         {plans.length === 0 ? (
                           <button className="btn ghost sm" title="Добавить поступление" onClick={() => setCellFor({ row: r, ym: m })}><FinIcon name="plus" size={14} /></button>
                         ) : (
-                          <div className="flex" style={{ justifyContent: 'flex-end', flexWrap: 'wrap', gap: 4 }}>
+                          // Столбиком, а не в ряд: три оплаты в ячейке растягивали
+                          // колонку месяца на всю таблицу.
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                             {plans.map((pl) => (
                               <button
                                 key={pl.id}
                                 className={'badge ' + (pl.status === 'received' ? 'ok' : 'wait')}
                                 style={{ cursor: 'pointer' }}
-                                title={pl.status === 'received' ? 'Получено — нажмите для управления' : 'Запланировано — нажмите, чтобы отметить оплату'}
+                                title={pl.status === 'received'
+                                  ? `Получено${pl.receivedAt ? ' ' + formatDate(pl.receivedAt) : ''} — нажмите для управления`
+                                  : 'Запланировано — нажмите, чтобы отметить оплату'}
                                 onClick={() => setCellFor({ row: r, ym: m, plan: pl })}
                               >
                                 {pl.status === 'received' && <FinIcon name="check" size={12} />} {money(pl.amount)}
@@ -779,7 +783,10 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
           <>
             <div className="modal-body">
               {plan.status === 'received' ? (
-                <p>Поступление <b>{money(plan.amount)}</b> отмечено как полученное.</p>
+                <p>
+                  Поступление <b>{money(plan.amount)}</b> получено
+                  {plan.receivedAt ? <> <b>{formatDate(plan.receivedAt)}</b></> : null}.
+                </p>
               ) : (
                 <>
                   <p>Запланировано <b>{money(plan.amount)}</b>. Отметить как полученное?</p>
