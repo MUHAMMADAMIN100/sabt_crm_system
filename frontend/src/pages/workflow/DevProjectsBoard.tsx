@@ -409,9 +409,9 @@ function ProjectQuickModal({ project: p, stageNum, canMove, onStage, onOpenPage,
   const progress = Math.max(0, Math.min(100, Number(p.progress) || 0))
 
   return (
-    // mousedown вместо click — см. AddToStageModal: иначе выделение описания
-    // с отпусканием за краем диалога закрывало модалку.
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+    // mousedown вместо click — иначе выделение описания с отпусканием за
+    // краем диалога закрывало модалку. Фон — лёгкое размытие вместо чёрного.
+    <div className="fixed inset-0 z-50 bg-surface-900/20 backdrop-blur-sm flex items-center justify-center p-4"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <div role="dialog" aria-modal="true" aria-label={p.name}
         className="w-full max-w-md rounded-xl bg-white dark:bg-surface-800 shadow-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto"
@@ -537,7 +537,8 @@ function NewStageCardModal({ stage, projects, onClose, onCreated }: {
   return (
     // Закрытие по mousedown на самом оверлее: click-закрытие ловило отпускание
     // мыши при выделении текста, начатом внутри диалога.
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+    // Фон — лёгкое размытие вместо чёрного затемнения (как у TaskDrawer).
+    <div className="fixed inset-0 z-50 bg-surface-900/20 backdrop-blur-sm flex items-center justify-center p-4"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <div role="dialog" aria-modal="true" aria-label={`Новая карточка — ${stage.label}`}
         className="w-full max-w-md rounded-xl bg-white dark:bg-surface-800 shadow-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto"
