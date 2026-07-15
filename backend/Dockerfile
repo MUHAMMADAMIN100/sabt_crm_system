@@ -18,7 +18,7 @@ RUN npm install --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 
 # Create uploads directories
-RUN mkdir -p uploads/avatars uploads/files && \
+RUN mkdir -p uploads/avatars uploads/files uploads/models && \
     chown -R node:node /app
 
 # Run as non-root user

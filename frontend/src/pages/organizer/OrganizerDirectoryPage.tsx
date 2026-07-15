@@ -1,14 +1,19 @@
 // Справочники организатора съёмок: Клиенты / Модели / Места.
 // Один компонент на три раздела (kind), полный CRUD. Доступ — грант
 // organizer.directory (организатор, руководитель SMM, топ).
-import { useState } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { organizerApi } from '@/services/api.service'
 import { ConfirmDialog, Modal } from '@/components/ui'
-import { Plus, Search, Edit, Trash2, Contact, PersonStanding, MapPin, ExternalLink } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Contact, PersonStanding, MapPin, ExternalLink, ImagePlus, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 type Kind = 'clients' | 'models' | 'places'
+
+// Фронт может быть на другом домене (Vercel), чем backend (Railway) — фото
+// строим по полному URL, как аватары (см. components/ui Avatar).
+const UPLOADS_BASE = import.meta.env.VITE_API_URL || ''
+const modelPhotoUrl = (filename: string) => `${UPLOADS_BASE}/uploads/models/${filename}`
 
 interface Field {
   key: string
@@ -16,6 +21,10 @@ interface Field {
   required?: boolean
   textarea?: boolean
   money?: boolean
+  /** Загрузка фотографии (только для моделей). */
+  photo?: boolean
+  /** Ограничение длины текстового поля (совпадает с varchar в БД). */
+  maxLength?: number
   placeholder?: string
   /** Выпадающий список вместо текстового поля. */
   options?: { value: string; label: string }[]
@@ -43,11 +52,14 @@ const CONFIGS: Record<Kind, { title: string; subtitle: string; icon: any; addLab
     icon: PersonStanding,
     addLabel: 'Модель',
     fields: [
+      { key: 'photo', label: 'Фотография', photo: true },
       { key: 'name', label: 'Имя', required: true },
       { key: 'gender', label: 'Пол', options: [{ value: 'female', label: 'Женский' }, { value: 'male', label: 'Мужской' }] },
       { key: 'phone', label: 'Телефон', placeholder: '+992 …' },
       { key: 'instagram', label: 'Instagram', placeholder: '@…' },
-      { key: 'look', label: 'Типаж / описание', textarea: true, placeholder: 'возраст, внешность, опыт…' },
+      { key: 'age', label: 'Возраст', placeholder: 'например, 25', maxLength: 60 },
+      { key: 'appearance', label: 'Внешность', textarea: true, placeholder: 'рост, телосложение, цвет волос, глаза…' },
+      { key: 'experience', label: 'Опыт', textarea: true, placeholder: 'съёмки, показы, портфолио…' },
       { key: 'rate', label: 'Ставка за съёмку, с.', money: true },
       { key: 'note', label: 'Заметка', textarea: true },
     ],
@@ -92,8 +104,8 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
     onError: showErr,
   })
 
-  // Колонки таблицы: все поля кроме заметки/типажа (длинные — только в форме).
-  const columns = cfg.fields.filter(f => !f.textarea)
+  // Колонки таблицы: все поля кроме длинных (textarea) и фото — они только в форме.
+  const columns = cfg.fields.filter(f => !f.textarea && !f.photo)
 
   return (
     <div className="space-y-4">
@@ -147,9 +159,12 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
                 {columns.map((c, i) => (
                   <td key={c.key} className="px-4 py-2.5 align-middle">
                     {i === 0 ? (
-                      <div>
-                        <span className="font-semibold text-surface-900 dark:text-surface-100">{r[c.key]}</span>
-                        {r.note && <p className="text-[11px] text-surface-400 truncate max-w-[220px]" title={r.note}>{r.note}</p>}
+                      <div className="flex items-center gap-2.5">
+                        {kind === 'models' && <ModelThumb photo={r.photo} name={r.name} />}
+                        <div className="min-w-0">
+                          <span className="font-semibold text-surface-900 dark:text-surface-100">{r[c.key]}</span>
+                          {r.note && <p className="text-[11px] text-surface-400 truncate max-w-[220px]" title={r.note}>{r.note}</p>}
+                        </div>
                       </div>
                     ) : c.options ? (
                       <span className="text-surface-600 dark:text-surface-300">{c.options.find(o => o.value === r[c.key])?.label ?? '—'}</span>
@@ -206,10 +221,13 @@ function DirectoryModal({ kind, cfg, row, onClose, onSaved }: {
     Object.fromEntries(cfg.fields.map(f => [f.key, row?.[f.key] != null ? String(row[f.key]) : ''])),
   )
   const [busy, setBusy] = useState(false)
+  // Загрузка фото идёт асинхронно внутри PhotoPicker; пока имя файла не пришло,
+  // сохранять нельзя — иначе запись уйдёт с photo=null и фото потеряется.
+  const [photoBusy, setPhotoBusy] = useState(false)
   const set = (k: string, v: string) => setForm(prev => ({ ...prev, [k]: v }))
 
   async function save() {
-    if (!form.name?.trim() || busy) return
+    if (!form.name?.trim() || busy || photoBusy) return
     setBusy(true)
     const payload: Record<string, any> = {}
     for (const f of cfg.fields) {
@@ -233,7 +251,9 @@ function DirectoryModal({ kind, cfg, row, onClose, onSaved }: {
         {cfg.fields.map(f => (
           <div key={f.key}>
             <label className="label">{f.label}{f.required && ' *'}</label>
-            {f.options ? (
+            {f.photo ? (
+              <PhotoPicker value={form[f.key] || ''} onChange={v => set(f.key, v)} onBusyChange={setPhotoBusy} />
+            ) : f.options ? (
               <select value={form[f.key]} onChange={e => set(f.key, e.target.value)} className="input text-sm">
                 <option value="">—</option>
                 {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -244,19 +264,152 @@ function DirectoryModal({ kind, cfg, row, onClose, onSaved }: {
             ) : (
               <input value={form[f.key]} onChange={e => set(f.key, e.target.value)}
                 placeholder={f.placeholder} inputMode={f.money ? 'decimal' : undefined}
-                className="input text-sm" />
+                maxLength={f.maxLength} className="input text-sm" />
             )}
           </div>
         ))}
       </div>
-      <div className="flex justify-end gap-2 mt-5">
+      <div className="flex items-center justify-end gap-2 mt-5">
+        {photoBusy && <span className="text-xs text-surface-400 mr-auto">Фото загружается…</span>}
         <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-sm bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600">
           Отмена
         </button>
-        <button onClick={save} disabled={!form.name?.trim() || busy} className="btn-primary text-sm disabled:opacity-50">
+        <button onClick={save} disabled={!form.name?.trim() || busy || photoBusy} className="btn-primary text-sm disabled:opacity-50">
           {row ? 'Сохранить' : 'Добавить'}
         </button>
       </div>
     </Modal>
+  )
+}
+
+// Типы, которые принимает бэкенд (organizer-directory.controller fileFilter).
+// Проверяем на клиенте, чтобы не было «мигнул превью → сервер отверг».
+const PHOTO_ACCEPT = ['image/jpeg', 'image/png', 'image/webp']
+
+/** Миниатюра модели в списке. Если файл не отдаётся (404 — например, после
+ *  редеплоя на эфемерном диске), плавно откатываемся на плейсхолдер, а не на
+ *  «сломанную картинку» браузера (тот же приём, что в общем Avatar). */
+function ModelThumb({ photo, name }: { photo?: string | null; name?: string }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { setFailed(false) }, [photo])
+
+  if (photo && !failed) {
+    return (
+      <img
+        src={modelPhotoUrl(photo)}
+        alt={name}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="w-9 h-9 rounded-full object-cover shrink-0 bg-surface-100 dark:bg-surface-700"
+      />
+    )
+  }
+  return (
+    <span className="w-9 h-9 rounded-full bg-surface-100 dark:bg-surface-700 flex items-center justify-center shrink-0">
+      <PersonStanding size={16} className="text-surface-400" />
+    </span>
+  )
+}
+
+/** Загрузка фото модели: превью-плейсхолдер, мгновенный локальный предпросмотр
+ *  при выборе, фоновая загрузка на сервер. В value хранится имя файла.
+ *  onBusyChange поднимает статус загрузки в модалку — пока фото грузится,
+ *  кнопка «Сохранить» заблокирована, иначе запись ушла бы с photo=null. */
+function PhotoPicker({ value, onChange, onBusyChange }: {
+  value: string; onChange: (filename: string) => void; onBusyChange?: (busy: boolean) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  // Локальный предпросмотр (objectURL) до/во время загрузки — картинка видна сразу.
+  const [preview, setPreview] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  // Сервер вернул 404 на сохранённое фото → показываем плейсхолдер, не «битую» картинку.
+  const [imgFailed, setImgFailed] = useState(false)
+  // objectURL надо явно освобождать — иначе каждый выбор файла течёт в памяти.
+  const objectUrlRef = useRef<string | null>(null)
+
+  const revokeLocal = () => {
+    if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null }
+  }
+  // Освобождаем последний objectURL при размонтировании (закрытии модалки).
+  useEffect(() => revokeLocal, [])
+  // Сбрасываем флаг «битой картинки», когда меняется сохранённое имя файла.
+  useEffect(() => { setImgFailed(false) }, [value])
+
+  const setUploading = (b: boolean) => { setBusy(b); onBusyChange?.(b) }
+  const shownUrl = preview || (value && !imgFailed ? modelPhotoUrl(value) : null)
+
+  async function pick(file?: File) {
+    if (!file) return
+    if (!PHOTO_ACCEPT.includes(file.type)) { toast.error('Только JPG, PNG или WEBP'); return }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Файл слишком большой (макс. 5 МБ)'); return }
+    revokeLocal()
+    const localUrl = URL.createObjectURL(file)
+    objectUrlRef.current = localUrl
+    setPreview(localUrl)
+    setImgFailed(false)
+    setUploading(true)
+    try {
+      const { filename } = await organizerApi.uploadPhoto(file)
+      onChange(filename)
+    } catch (e) {
+      revokeLocal()
+      setPreview(null)
+      showErr(e)
+    } finally {
+      setUploading(false)
+      // Сбрасываем value инпута, иначе повторный выбор того же файла (ретрай
+      // после ошибки сети) не вызовет onChange.
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  function clear(e: MouseEvent) {
+    e.stopPropagation()
+    revokeLocal()
+    setPreview(null)
+    setImgFailed(false)
+    onChange('')
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
+  return (
+    <div className="flex items-center gap-4">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="relative w-24 h-32 rounded-lg overflow-hidden border-2 border-dashed border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 hover:border-primary-400 dark:hover:border-primary-500 flex items-center justify-center shrink-0 transition-colors"
+        title={shownUrl ? 'Заменить фото' : 'Загрузить фото'}
+      >
+        {shownUrl ? (
+          <img src={shownUrl} alt="Фото модели" onError={() => setImgFailed(true)} className="w-full h-full object-cover" />
+        ) : (
+          <div className="flex flex-col items-center gap-1 text-surface-400">
+            <ImagePlus size={22} />
+            <span className="text-[10px]">Фото</span>
+          </div>
+        )}
+        {busy && (
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+            <Loader2 size={20} className="animate-spin text-white" />
+          </div>
+        )}
+      </button>
+      <div className="text-xs space-y-1.5">
+        <button type="button" onClick={() => inputRef.current?.click()} className="block text-primary-600 dark:text-primary-400 hover:underline">
+          {shownUrl ? 'Заменить' : 'Загрузить фото'}
+        </button>
+        {shownUrl && (
+          <button type="button" onClick={clear} className="block text-red-500 hover:underline">Удалить</button>
+        )}
+        <p className="text-[11px] text-surface-400">JPG / PNG / WEBP, до 5 МБ</p>
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={e => pick(e.target.files?.[0])}
+      />
+    </div>
   )
 }

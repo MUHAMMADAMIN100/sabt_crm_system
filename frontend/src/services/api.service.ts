@@ -480,4 +480,13 @@ export const organizerApi = {
     api.patch(`/organizer-directory/${kind}/${id}`, data).then(r => r.data),
   remove: (kind: string, id: string) =>
     api.delete(`/organizer-directory/${kind}/${id}`).then(r => r.data),
+  // Фото модели — multipart/form-data. Возвращает { filename }, которое
+  // затем сохраняется в поле photo при создании/обновлении записи.
+  uploadPhoto: (file: File) => {
+    const fd = new FormData()
+    fd.append('photo', file)
+    return api.post('/organizer-directory/models/photo', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data as { filename: string })
+  },
 }

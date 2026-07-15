@@ -52,9 +52,25 @@ export class OrgModel {
   @Column({ type: 'varchar', length: 120, nullable: true })
   instagram: string | null;
 
-  /** Типаж / описание внешности. */
+  /** Типаж / описание внешности (legacy — единое поле, разбито на age/appearance/experience). */
   @Column({ type: 'text', nullable: true })
   look: string | null;
+
+  /** Возраст (может быть диапазоном: «25», «25-30»). */
+  @Column({ type: 'varchar', length: 60, nullable: true })
+  age: string | null;
+
+  /** Внешность: рост, телосложение, цвет волос и т.п. */
+  @Column({ type: 'text', nullable: true })
+  appearance: string | null;
+
+  /** Опыт: съёмки, показы, портфолио. */
+  @Column({ type: 'text', nullable: true })
+  experience: string | null;
+
+  /** Фотография модели — filename в /uploads/models. */
+  @Column({ type: 'varchar', length: 300, nullable: true })
+  photo: string | null;
 
   /** Ставка за съёмку, сомони. */
   @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })

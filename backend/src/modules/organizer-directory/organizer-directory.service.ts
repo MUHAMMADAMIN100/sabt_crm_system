@@ -32,6 +32,16 @@ export class OrganizerDirectoryService implements OnModuleInit {
       note text, "createdAt" timestamptz NOT NULL DEFAULT now())`);
     // Таблица на проде могла быть создана до появления пола.
     await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "gender" varchar(10)`);
+    // Разбили единое поле «Типаж» на возраст / внешность / опыт + фото модели.
+    await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "age" varchar(60)`);
+    await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "appearance" text`);
+    await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "experience" text`);
+    await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "photo" varchar(300)`);
+    // Старые записи: переносим объединённый «Типаж» во «Внешность», чтобы не потерять данные.
+    // Миграция самоочищающаяся — обнуляем look в той же строке, иначе onModuleInit
+    // на каждом рестарте заново копировал бы look в appearance и воскрешал бы
+    // текст, который пользователь намеренно удалил.
+    await run(`UPDATE org_models SET "appearance" = "look", "look" = NULL WHERE ("appearance" IS NULL OR "appearance" = '') AND "look" IS NOT NULL AND "look" <> ''`);
     await run(`CREATE TABLE IF NOT EXISTS org_places (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(200) NOT NULL,
       address varchar(300), contact varchar(200), price numeric(15,2), link varchar(300),
@@ -48,7 +58,7 @@ export class OrganizerDirectoryService implements OnModuleInit {
   /** Разрешённые поля каждого справочника — защита от мусора в body. */
   private static FIELDS: Record<string, string[]> = {
     clients: ['name', 'company', 'phone', 'instagram', 'telegram', 'address', 'note'],
-    models: ['name', 'gender', 'phone', 'instagram', 'look', 'rate', 'note'],
+    models: ['name', 'gender', 'phone', 'instagram', 'age', 'appearance', 'experience', 'photo', 'rate', 'note'],
     places: ['name', 'address', 'contact', 'price', 'link', 'note'],
   };
 
@@ -61,6 +71,15 @@ export class OrganizerDirectoryService implements OnModuleInit {
         out[f] = dto[f] === null || dto[f] === '' ? null : (Number.isFinite(n) ? Math.round(n * 100) / 100 : null);
       } else if (f === 'gender') {
         out[f] = dto[f] === 'female' || dto[f] === 'male' ? dto[f] : null;
+      } else if (f === 'photo') {
+        // Только безопасное имя файла (uuid.ext) — из него строится URL
+        // /uploads/models/<photo>. Отсекаем пути и traversal (`../`).
+        const raw = typeof dto[f] === 'string' ? dto[f].trim() : '';
+        out[f] = /^[A-Za-z0-9._-]{1,120}$/.test(raw) ? raw : null;
+      } else if (f === 'age') {
+        // Колонка varchar(60): обрезаем, иначе длинная вставка → Postgres 22001 → 500.
+        const v = typeof dto[f] === 'string' ? dto[f].trim().slice(0, 60) : '';
+        out[f] = v === '' ? null : v;
       } else {
         const v = typeof dto[f] === 'string' ? dto[f].trim() : dto[f];
         out[f] = v === '' ? null : v;
