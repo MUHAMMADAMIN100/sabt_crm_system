@@ -39,6 +39,19 @@ export class OrganizerDirectoryService implements OnModuleInit {
     await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "photo" varchar(300)`);
     // «Знание языков» вместо «Заметки» в форме моделей (колонка note остаётся с данными).
     await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "languages" varchar(200)`);
+    // Ставка модели: numeric → varchar(100) — организатору нужны диапазоны
+    // («400–600») и текст. Конвертация строго одноразовая (guard по типу
+    // колонки), старые числа теряют хвост «.00».
+    await run(`DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'org_models' AND column_name = 'rate'
+                     AND data_type = 'numeric') THEN
+          ALTER TABLE org_models ALTER COLUMN rate TYPE varchar(100)
+            USING CASE WHEN rate IS NULL THEN NULL
+                       ELSE regexp_replace(rate::text, '\\.?0+$', '') END;
+        END IF;
+      END $$`);
     // Старые записи: переносим объединённый «Типаж» во «Внешность», чтобы не потерять данные.
     // Миграция самоочищающаяся — обнуляем look в той же строке, иначе onModuleInit
     // на каждом рестарте заново копировал бы look в appearance и воскрешал бы
@@ -69,9 +82,14 @@ export class OrganizerDirectoryService implements OnModuleInit {
     const out: Record<string, any> = {};
     for (const f of OrganizerDirectoryService.FIELDS[kind]) {
       if (dto[f] === undefined) continue;
-      if (f === 'rate' || f === 'price') {
+      if (f === 'price') {
         const n = Number(dto[f]);
         out[f] = dto[f] === null || dto[f] === '' ? null : (Number.isFinite(n) ? Math.round(n * 100) / 100 : null);
+      } else if (f === 'rate') {
+        // Ставка модели — свободный текст («400–600», «договорная»), varchar(100).
+        const v = typeof dto[f] === 'string' ? dto[f].trim().slice(0, 100)
+          : dto[f] == null ? '' : String(dto[f]).slice(0, 100);
+        out[f] = v === '' ? null : v;
       } else if (f === 'gender') {
         out[f] = dto[f] === 'female' || dto[f] === 'male' ? dto[f] : null;
       } else if (f === 'photo') {
@@ -96,9 +114,9 @@ export class OrganizerDirectoryService implements OnModuleInit {
     const repo = this.repoOf(kind);
     const where = search?.trim() ? { name: ILike(`%${search.trim()}%`) } : {};
     const rows = await repo.find({ where, order: { createdAt: 'DESC' } });
+    // rate моделей — теперь текст, не приводим к числу; price мест — деньги.
     return rows.map((r: any) => ({
       ...r,
-      ...(r.rate !== undefined ? { rate: r.rate === null ? null : Number(r.rate) } : {}),
       ...(r.price !== undefined ? { price: r.price === null ? null : Number(r.price) } : {}),
     }));
   }

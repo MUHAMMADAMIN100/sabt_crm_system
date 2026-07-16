@@ -76,9 +76,11 @@ export class OrgModel {
   @Column({ type: 'varchar', length: 200, nullable: true })
   languages: string | null;
 
-  /** Ставка за съёмку, сомони. */
-  @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
-  rate: number | null;
+  /** Ставка за съёмку — свободный текст: «400», «400–600», «договорная».
+   *  Было numeric, конвертирована в varchar (просьба организатора: нужны
+   *  диапазоны и символы, а не только число). */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  rate: string | null;
 
   /** Legacy: поле убрано из формы моделей (заменено на languages),
    *  колонка сохранена, чтобы не терять старые данные. */

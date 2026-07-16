@@ -60,7 +60,9 @@ const CONFIGS: Record<Kind, { title: string; subtitle: string; icon: any; addLab
       { key: 'age', label: 'Возраст', placeholder: 'например, 25', maxLength: 60 },
       { key: 'appearance', label: 'Внешность', textarea: true, placeholder: 'рост, телосложение, цвет волос, глаза…' },
       { key: 'experience', label: 'Опыт', textarea: true, placeholder: 'съёмки, показы, портфолио…' },
-      { key: 'rate', label: 'Ставка за съёмку, с.', money: true },
+      // Свободный текст, не money: организатору нужны диапазоны и символы
+      // («400–600», «договорная») — числовой инпут не давал их ввести.
+      { key: 'rate', label: 'Ставка за съёмку, с.', placeholder: '400, 400-600, договорная…', maxLength: 100 },
       // «Заметка» убрана по просьбе организатора — вместо неё знание языков.
       { key: 'languages', label: 'Знание языков', placeholder: 'русский, английский, таджикский…', maxLength: 200 },
     ],
