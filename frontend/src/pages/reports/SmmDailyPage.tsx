@@ -19,11 +19,14 @@ interface DailyItem {
   text: string
   project: string | null
   onTime: boolean | null
+  /** Минуты «в работе»: от получения (этап/назначение) до продвижения вперёд. */
+  spentMinutes: number | null
 }
 interface DailyEmployee {
   id: string; name: string; avatar: string | null
   role: string; secondaryRole: string | null
   stagesDone: number; returns: number; storiesTotal: number; tasksDone: number; hours: number
+  spentMinutes: number
   items: DailyItem[]
 }
 interface DailyReport {
@@ -53,6 +56,13 @@ const dayLabel = (iso: string) => {
 // иначе при просмотре из другого пояса событ'я «уезжали» бы в соседний день.
 const timeLabel = (at: string) =>
   new Date(at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dushanbe' })
+
+// «5 ч 20 м» / «45 м» из минут. Время календарное (ночь не вычитается).
+const fmtDur = (min: number) => {
+  const h = Math.floor(min / 60), m = Math.round(min % 60)
+  if (h > 0) return m > 0 ? `${h} ч ${m} м` : `${h} ч`
+  return `${m} м`
+}
 
 const KIND_META: Record<DailyItem['kind'], { icon: any; cls: string }> = {
   stage:  { icon: Trello,     cls: 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' },
@@ -163,6 +173,7 @@ function EmployeeCard({ e }: { e: DailyEmployee }) {
   if (e.storiesTotal > 0) chips.push({ label: `Историй: ${e.storiesTotal}`, cls: 'bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400' })
   if (e.tasksDone > 0) chips.push({ label: `Задач: ${e.tasksDone}`, cls: 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400' })
   if (e.returns > 0) chips.push({ label: `Возвратов: ${e.returns}`, cls: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' })
+  if (e.spentMinutes > 0) chips.push({ label: `⏱ ${fmtDur(e.spentMinutes)}`, cls: 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300' })
 
   return (
     <div className={clsx('card', idle && 'opacity-80')}>
@@ -207,6 +218,11 @@ function EmployeeCard({ e }: { e: DailyEmployee }) {
                     {it.text}
                     {it.onTime === true && <span className="text-green-600 dark:text-green-400 text-xs ml-1.5">✓ в срок</span>}
                     {it.onTime === false && <span className="text-red-500 text-xs ml-1.5">позже срока</span>}
+                    {it.spentMinutes != null && it.spentMinutes > 0 && (
+                      <span className="text-xs text-surface-400 ml-1.5" title="От получения работы до продвижения вперёд (календарное время)">
+                        ⏱ {fmtDur(it.spentMinutes)}
+                      </span>
+                    )}
                   </p>
                   {it.project && <p className="text-[11px] text-surface-400 truncate">{it.project}</p>}
                 </div>

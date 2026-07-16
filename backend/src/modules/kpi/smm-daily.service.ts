@@ -40,6 +40,10 @@ export interface SmmDailyItem {
   project: string | null;
   /** Для этапов доски: уложился ли в дедлайн карточки (null — дедлайна нет). */
   onTime: boolean | null;
+  /** Сколько минут работа провела у исполнителя: от попадания на его этап
+   *  (или назначения задачи) до продвижения вперёд. null — начало неизвестно.
+   *  Время календарное: ночь и выходные не вычитаются. */
+  spentMinutes: number | null;
 }
 
 export interface SmmDailyEmployee {
@@ -53,6 +57,8 @@ export interface SmmDailyEmployee {
   storiesTotal: number;
   tasksDone: number;
   hours: number;
+  /** Суммарное время на закрытые за день этапы/задачи, минут. */
+  spentMinutes: number;
   items: SmmDailyItem[];
 }
 
@@ -70,6 +76,14 @@ function todayISO(): string {
 /** Календарная дата (Душанбе) для timestamp'а — для сравнения с дедлайном. */
 function dushanbeDate(ts: string | Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date(ts));
+}
+
+/** Минуты между двумя timestamp'ами (>=0), null если старт неизвестен. */
+function minutesBetween(from: string | Date | null | undefined, to: string | Date): number | null {
+  if (!from) return null;
+  const ms = new Date(to).getTime() - new Date(from).getTime();
+  if (!Number.isFinite(ms)) return null;
+  return Math.max(0, Math.round(ms / 60_000));
 }
 
 /**
@@ -132,11 +146,24 @@ export class SmmDailyService {
       manager.query(
         `${this.kpi.boardEventsCte()}
          SELECT ev.uid, ev."fromStage", ev."toStage", ev.title, ev.units, ev.at, ev.dl::text AS dl,
-                p.name AS project
+                p.name AS project,
+                entered."createdAt" AS entered_at
          FROM ev
          LEFT JOIN unit_events ue ON ue.id = ev.id
          LEFT JOIN workflow_cards wc ON wc.id = ue."cardId"
          LEFT JOIN projects p ON p.id = wc."projectId"
+         -- Когда карточка ПОПАЛА на закрываемый этап (последний вход до
+         -- продвижения): с этого момента считается время работы исполнителя.
+         LEFT JOIN LATERAL (
+           SELECT e2."createdAt"
+           FROM unit_events e2
+           WHERE e2."cardId" = ue."cardId"
+             AND e2.action = 'stage_enter'
+             AND e2."toStage" = ev."fromStage"
+             AND e2."createdAt" < ev.at
+           ORDER BY e2."createdAt" DESC
+           LIMIT 1
+         ) entered ON true
          WHERE ev.uid = ANY($1::text[])
          ORDER BY ev.at ASC`,
         [ids, dayStart, new Date(dayEnd.getTime() - 1)],
@@ -164,10 +191,12 @@ export class SmmDailyService {
         [date, ids],
       ).catch(this.fallback('истории')),
       // 4а) Задачи, закрытые сотрудником (по журналу действий — кто перевёл в done).
+      //     task_created — старт таймера, если у закрывшего нет своего шага.
       manager.query(
         `SELECT al."userId"::text AS uid,
                 COALESCE(t.title, al."entityName", 'Задача') AS title,
-                al."createdAt" AS at, p.name AS project, al."entityId" AS task_id
+                al."createdAt" AS at, p.name AS project, al."entityId" AS task_id,
+                t."createdAt" AS task_created
          FROM activity_logs al
          LEFT JOIN tasks t ON t.id::text = al."entityId"
          LEFT JOIN projects p ON p.id = t."projectId"
@@ -179,12 +208,20 @@ export class SmmDailyService {
         [ids, dayStart, dayEnd],
       ).catch(this.fallback('закрытые задачи')),
       // 4б) Выполненные ШАГИ задач (multi-assignee: «моя часть готова»).
+      //     started_at — когда работа дошла до этого шага: doneAt предыдущего
+      //     шага, а для первого шага — создание задачи.
       manager.query(
         `SELECT ta."userId"::text AS uid, t.title, ta."doneAt" AS at,
-                p.name AS project, ta."taskId"::text AS task_id
+                p.name AS project, ta."taskId"::text AS task_id,
+                COALESCE(prev."prevDone", t."createdAt") AS started_at
          FROM task_assignees ta
          JOIN tasks t ON t.id = ta."taskId"
          LEFT JOIN projects p ON p.id = t."projectId"
+         LEFT JOIN LATERAL (
+           SELECT MAX(p2."doneAt") AS "prevDone"
+           FROM task_assignees p2
+           WHERE p2."taskId" = ta."taskId" AND p2.position < ta.position AND p2."isDone" = true
+         ) prev ON true
          WHERE ta."userId" = ANY($1::uuid[])
            AND ta."isDone" = true
            AND ta."doneAt" >= $2 AND ta."doneAt" < $3
@@ -206,6 +243,11 @@ export class SmmDailyService {
     // Финальное закрытие задачи «съедает» дубль от шага той же задачи тем же
     // человеком (последний шаг = закрытие: оба журнала пишут одно действие).
     const closedKeys = new Set(taskCloses.map((r: any) => `${r.uid}:${r.task_id}`));
+    // Длительность СВОЕГО шага закрывшего — точнее, чем «от создания задачи»
+    // (в полное время входила бы работа предыдущих исполнителей).
+    const stepSpent = new Map<string, number | null>(
+      taskSteps.map((r: any) => [`${r.uid}:${r.task_id}`, minutesBetween(r.started_at, r.at)]),
+    );
 
     const byUser = new Map<string, SmmDailyEmployee>();
     for (const u of roster) {
@@ -213,10 +255,15 @@ export class SmmDailyService {
         id: u.id, name: u.name, avatar: (u as any).avatar ?? null,
         role: u.role, secondaryRole: (u as any).secondaryRole ?? null,
         stagesDone: 0, returns: 0, storiesTotal: 0, tasksDone: 0,
-        hours: hoursBy.get(u.id) ?? 0, items: [],
+        hours: hoursBy.get(u.id) ?? 0, spentMinutes: 0, items: [],
       });
     }
-    const push = (uid: string, item: SmmDailyItem) => byUser.get(uid)?.items.push(item);
+    const push = (uid: string, item: SmmDailyItem) => {
+      const e = byUser.get(uid);
+      if (!e) return;
+      e.items.push(item);
+      e.spentMinutes += item.spentMinutes ?? 0;
+    };
 
     for (const r of stages) {
       const e = byUser.get(r.uid); if (!e) continue;
@@ -229,6 +276,7 @@ export class SmmDailyService {
         text: `«${r.title || 'Карточка'}» — ${fromLabel ? `${fromLabel} → ` : ''}${toLabel}${units > 1 ? ` · ${units} шт` : ''}`,
         project: r.project ?? null,
         onTime: r.dl ? dushanbeDate(r.at) <= String(r.dl).slice(0, 10) : null,
+        spentMinutes: minutesBetween(r.entered_at, r.at),
       });
     }
 
@@ -238,7 +286,7 @@ export class SmmDailyService {
       push(r.uid, {
         at: new Date(r.at).toISOString(), kind: 'return',
         text: `«${r.title || 'Карточка'}» — ${r.action === 'qa_rework' ? 'вернул(а) на доработку с проверки' : 'зафиксировал(а) правки клиента'}`,
-        project: r.project ?? null, onTime: null,
+        project: r.project ?? null, onTime: null, spentMinutes: null,
       });
     }
 
@@ -250,17 +298,20 @@ export class SmmDailyService {
         // Историям время не пишется — ставим конец дня, чтобы шли после этапов.
         at: new Date(dayEnd.getTime() - 1).toISOString(), kind: 'story',
         text: `Истории — ${cnt} шт`,
-        project: r.project ?? null, onTime: null,
+        project: r.project ?? null, onTime: null, spentMinutes: null,
       });
     }
 
     for (const r of taskCloses) {
       const e = byUser.get(r.uid); if (!e) continue;
       e.tasksDone += 1;
+      // Свой шаг закрывшего — точный таймер; иначе от создания задачи.
+      const own = stepSpent.get(`${r.uid}:${r.task_id}`);
       push(r.uid, {
         at: new Date(r.at).toISOString(), kind: 'task',
         text: `Задача «${r.title}» выполнена`,
         project: r.project ?? null, onTime: null,
+        spentMinutes: own ?? minutesBetween(r.task_created, r.at),
       });
     }
 
@@ -272,6 +323,7 @@ export class SmmDailyService {
         at: new Date(r.at).toISOString(), kind: 'task',
         text: `Задача «${r.title}» — своя часть выполнена`,
         project: r.project ?? null, onTime: null,
+        spentMinutes: minutesBetween(r.started_at, r.at),
       });
     }
 

@@ -17,6 +17,13 @@ function formatRu(iso: string): string {
 const esc = (s: string) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/** «5 ч 20 м» / «45 м» из минут. */
+function fmtDur(min: number): string {
+  const h = Math.floor(min / 60), m = Math.round(min % 60);
+  if (h > 0) return m > 0 ? `${h} ч ${m} м` : `${h} ч`;
+  return `${m} м`;
+}
+
 /** Ежевечерняя автоотправка основателю: что сделала СММ-команда за день.
  *  Дубли гасятся alertKey'ем по дате (перезапуск сервера не спамит). */
 @Injectable()
@@ -89,7 +96,8 @@ export class SmmDailyScheduler {
       const parts = [
         badge(e.stagesDone, 'этап.'), badge(e.storiesTotal, 'истор.'),
         badge(e.tasksDone, 'задач'), badge(e.returns, 'возвр.'),
-        e.hours > 0 ? `${e.hours} ч` : '',
+        e.spentMinutes > 0 ? `⏱ ${fmtDur(e.spentMinutes)} на задачи` : '',
+        e.hours > 0 ? `${e.hours} ч в системе` : '',
       ].filter(Boolean).join(' · ');
       const idle = !parts;
       return `<tr>
@@ -116,6 +124,7 @@ export class SmmDailyScheduler {
         e.stagesDone > 0 ? `этапов ${e.stagesDone}` : '',
         e.storiesTotal > 0 ? `историй ${e.storiesTotal}` : '',
         e.tasksDone > 0 ? `задач ${e.tasksDone}` : '',
+        e.spentMinutes > 0 ? `⏱ ${fmtDur(e.spentMinutes)}` : '',
       ].filter(Boolean).join(', ');
       return `• <b>${esc(e.name)}</b>: ${parts || 'нет активности'}`;
     });
