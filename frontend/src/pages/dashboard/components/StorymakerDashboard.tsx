@@ -63,10 +63,13 @@ export default function StorymakerDashboard() {
   )
 
   // Проекты с дневным планом > 0 — только они участвуют в подсчёте «закрыто».
+  // План дня считается ВЫПОЛНЕННЫМ уже при одной истории (просьба Фарзоны/
+  // руководства — та же логика, что зелёные квадраты в календаре).
+  // «Ждут сторис» — только проекты, где за сегодня 0.
   const tracked = smmProjects.filter((p: any) => dailyTarget(p) > 0)
-  const doneToday = tracked.filter((p: any) => (todayByProject[p.id] || 0) >= dailyTarget(p))
+  const doneToday = tracked.filter((p: any) => (todayByProject[p.id] || 0) > 0)
   const pending = tracked
-    .filter((p: any) => (todayByProject[p.id] || 0) < dailyTarget(p))
+    .filter((p: any) => (todayByProject[p.id] || 0) === 0)
     .sort((a: any, b: any) => (todayByProject[a.id] || 0) - (todayByProject[b.id] || 0))
 
   return (
