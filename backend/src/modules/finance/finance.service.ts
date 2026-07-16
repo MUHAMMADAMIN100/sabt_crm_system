@@ -303,6 +303,29 @@ export class FinanceService implements OnModuleInit {
       FROM finance_accounts a WHERE t."accountId" IS NULL AND t.account IS NOT NULL AND a.key = t.account`);
     // Legacy: сотрудники со статусом 'inactive' → 'fired'.
     await run(`UPDATE finance_employees SET status = 'fired' WHERE status = 'inactive'`);
+
+    // Разовая миграция (просьба владельца, 16.07.2026): июль-2026 фактически
+    // выплачен полностью (частично старыми «общими» авансами), но после их
+    // обнуления строки снова показали «Выплатить». Закрываем месяц
+    // снапшотами БЕЗ создания операций. Маркер в finance_activity
+    // гарантирует однократность (повторные рестарты — no-op).
+    try {
+      const mark = 'SYSTEM auto-close-2026-07';
+      const done = await this.ds.query(
+        `SELECT 1 FROM finance_activity WHERE route = $1 LIMIT 1`, [mark],
+      );
+      if (!done.length) {
+        const res = await this.closeSalaryMonth('2026-07');
+        await this.ds.query(
+          `INSERT INTO finance_activity (action, route, details)
+           VALUES ('Июль 2026 закрыт автоматически (миграция: месяц был выплачен фактически)', $1, $2::jsonb)`,
+          [mark, JSON.stringify({ closed: res.closed })],
+        );
+        this.logger.log(`salary auto-close 2026-07: closed ${res.closed}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`salary auto-close migration failed: ${String(e?.message || e).slice(0, 160)}`);
+    }
   }
 
   private async seedDefaults() {
