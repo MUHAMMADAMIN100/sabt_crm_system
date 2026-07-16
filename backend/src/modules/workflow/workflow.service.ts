@@ -347,12 +347,21 @@ export class WorkflowService implements OnModuleInit {
       || hasGrant(actor, 'content-plan.manage');
   }
 
-  /** RBAC действия выхода этапа (ТЗ §12). */
-  private assertCanAct(action: string, actor: Actor) {
+  /** Производственные действия, которые ИСПОЛНИТЕЛЬ своей карточки может
+   *  выполнять независимо от роли в профиле. Частая причина «у вас нет
+   *  доступа»: сотруднику не проставили роль (employee) или вторую роль —
+   *  и он не мог сдать собственную работу. Контрольные действия
+   *  (QA/согласование/публикация) остаются строго ролевыми. */
+  private static SELF_ACTIONS = ['shoot_done', 'editing_done', 'cover_done', 'layout_done'];
+
+  /** RBAC действия выхода этапа (ТЗ §12). card — для допуска исполнителя
+   *  собственной карточки к производственным действиям. */
+  private assertCanAct(action: string, actor: Actor, card?: WorkflowCard) {
     if (this.isManager(actor)) return;
     const allowed = ACTION_ROLES[action] || [];
     if (allowed.includes(actor.role)) return;
     if (actor.secondaryRole && allowed.includes(actor.secondaryRole)) return;
+    if (card && WorkflowService.SELF_ACTIONS.includes(action) && this.isAssignee(card, actor.id)) return;
     throw new ForbiddenException('У вас нет прав на это действие для текущего этапа');
   }
 
@@ -1366,7 +1375,7 @@ export class WorkflowService implements OnModuleInit {
     // org_confirm проверяется по роли ТЕКУЩЕГО этапа (этап меняется), остальные —
     // по фиксированной карте действий.
     if (action === 'org_confirm') this.assertStageRole(card.stage, actor);
-    else this.assertCanAct(action, actor);
+    else this.assertCanAct(action, actor, card);
 
     switch (action) {
       case 'confirm_plan':        await this.confirmPlan(card, payload, actor); break;
@@ -1457,12 +1466,22 @@ export class WorkflowService implements OnModuleInit {
     if (card.kind !== 'reels' && card.kind !== 'macros') throw new BadRequestException('Не групповая карточка');
     await this.assertCanAccessCard(card, viewer);
     const actor = await this.loadActor(viewer.id);
-    this.assertStageRole(card.stage, actor);
     const next = GROUP_NEXT[card.kind]?.[card.stage];
     if (!next) throw new BadRequestException('Нет следующего этапа');
     const items = card.items || [];
     const item = items.find((i: any) => i.id === itemId);
     if (!item) throw new NotFoundException('Элемент не найден');
+    // Роль-владелец этапа ИЛИ исполнитель самого элемента на производственных
+    // этапах: дизайнер/видеограф/монтажёр может продвинуть СВОЮ работу вперёд,
+    // даже если группа стоит на чужом этапе или роль в профиле не заполнена.
+    // Контрольные этапы (проверка/согласование/публикация) — строго по ролям.
+    const PRODUCTION_STAGES = ['organization', 'shooting', 'editing', 'design'];
+    const isItemAssignee = item.assigneeId === actor.id
+      || (Array.isArray(item.assigneeIds) && item.assigneeIds.includes(actor.id))
+      || (Array.isArray(item.editorIds) && item.editorIds.includes(actor.id));
+    if (!(PRODUCTION_STAGES.includes(card.stage) && isItemAssignee)) {
+      this.assertStageRole(card.stage, actor);
+    }
     await this.spawnIndividualCard(card, item, next, actor);
     const rest = items.filter((i: any) => i.id !== itemId);
     if (rest.length === 0) await this.repo.delete(card.id);

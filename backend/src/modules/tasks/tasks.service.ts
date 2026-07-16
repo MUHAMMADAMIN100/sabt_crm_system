@@ -692,7 +692,16 @@ export class TasksService implements OnModuleInit {
       task.assigneeId !== user.id &&
       task.createdById !== user.id
     ) {
-      throw new ForbiddenException('Not allowed');
+      // Со-исполнитель (в task_assignees, но не первый/основной) — тоже
+      // исполнитель СВОЕЙ задачи: раньше получал «Not allowed» при попытке
+      // двигать её статус вперёд.
+      const isCoAssignee = await this.assigneesRepo
+        .createQueryBuilder('ta')
+        .where('ta."taskId" = :id AND ta."userId" = :uid', { id, uid: user.id })
+        .getCount();
+      if (!isCoAssignee) {
+        throw new ForbiddenException('У вас нет доступа к этой задаче — вы не её исполнитель и не автор');
+      }
     }
 
     // SCOPE менять может ТОЛЬКО основатель/сооснователь (это их фича
