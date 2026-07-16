@@ -80,6 +80,22 @@ function bonusOf(e: { bonuses?: Record<string, number> | null }, ym: string): nu
   return r2(Number((e.bonuses || {})[ym]) || 0);
 }
 
+/** Аванс сотрудника за месяц (помесячно, как бонус). Legacy-колонка advance
+ *  в расчётах больше не участвует (решение владельца: обнулить историю). */
+function advanceOf(e: { advances?: Record<string, number> | null }, ym: string): number {
+  return r2(Number((e.advances || {})[ym]) || 0);
+}
+
+/** Штраф сотрудника за месяц — вычитается из «к выплате». */
+function fineOf(e: { fines?: Record<string, number> | null }, ym: string): number {
+  return r2(Number((e.fines || {})[ym]) || 0);
+}
+
+/** Снапшот выплаченного месяца (месяц заморожен, правки его не меняют). */
+function snapOf(e: { salarySnapshots?: Record<string, any> | null }, ym: string) {
+  return (e.salarySnapshots || {})[ym] || null;
+}
+
 /** Действующий якорь SMM-цикла: дата последней полной оплаты или дата контракта. */
 function smmAnchor(p: { cycleAnchor?: string | null; contractDate?: string | null }): string | null {
   return p.cycleAnchor || p.contractDate || null;
@@ -206,6 +222,16 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "hireDate" date`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "bonuses" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "category" varchar(80)`);
+    // Помесячные авансы/штрафы + снапшоты выплаченных месяцев (месяцы независимы).
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "advances" jsonb`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "fines" jsonb`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salarySnapshots" jsonb`);
+    // Журнал активности финансов (кто/что/когда) — пишет интерцептор.
+    await run(`CREATE TABLE IF NOT EXISTS finance_activity (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      "userId" uuid, action varchar(160) NOT NULL, route varchar(200) NOT NULL,
+      details jsonb, "createdAt" timestamptz NOT NULL DEFAULT now())`);
+    await run(`CREATE INDEX IF NOT EXISTS idx_fin_activity_created ON finance_activity ("createdAt" DESC)`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "icon" varchar(40)`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "counterparty" varchar(200)`);
@@ -747,13 +773,14 @@ export class FinanceService implements OnModuleInit {
     }
     incomeByCategory.sort((a, b) => b.total - a.total || (b.plan ?? 0) - (a.plan ?? 0));
 
-    // Зарплата (бонусы месяца входят в «к выплате»).
+    // Зарплата (бонусы/авансы/штрафы месяца входят в «к выплате»; помесячно).
     const activeEmps = m.employees.filter(e => e.status === 'active');
     const salaryFund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
-    const salaryAdvances = r2(activeEmps.reduce((s, e) => s + Number(e.advance), 0));
-    const salaryBonuses = r2(activeEmps.reduce((s, e) => s + bonusOf(e, ym), 0));
+    const salaryAdvances = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).advance) || 0) : advanceOf(e, ym)), 0));
+    const salaryBonuses = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).bonus) || 0) : bonusOf(e, ym)), 0));
+    const salaryFinesOv = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).fine) || 0) : fineOf(e, ym)), 0));
     const salaryPaid = this.sum(monthExpense.filter(t => this.groupOf(t, m) === 'salary'));
-    const salaryToPay = r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances - salaryPaid));
+    const salaryToPay = r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances - salaryFinesOv - salaryPaid));
 
     // Аренда/подписки.
     const subsMonthly = r2(subs.filter(s => s.active).reduce((s, x) => s + Number(x.amount), 0));
@@ -767,7 +794,7 @@ export class FinanceService implements OnModuleInit {
     const expensePlan = [
       // План ЗП — полное обязательство месяца (фонд + бонусы − авансы), а не
       // остаток: после выплат «потрачено 31 750 / план 0» выглядело нонсенсом.
-      { group: 'salary', plan: r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances)), fact: salaryPaid },
+      { group: 'salary', plan: r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances - salaryFinesOv)), fact: salaryPaid },
       { group: 'rent_subs', plan: subsMonthly, fact: rentSubFact },
       { group: 'debts', plan: debtPlan, fact: debtFact },
     ];
@@ -1125,16 +1152,18 @@ export class FinanceService implements OnModuleInit {
 
     const activeEmps = m.employees.filter(e => e.status === 'active');
     const salaryFund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
-    const salaryAdvances = r2(activeEmps.reduce((s, e) => s + Number(e.advance), 0));
-    const salaryBonuses = r2(activeEmps.reduce((s, e) => s + bonusOf(e, ym), 0));
+    // Авансы/штрафы — помесячные; выплаченный месяц заморожен снапшотом.
+    const salaryAdvances = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).advance) || 0) : advanceOf(e, ym)), 0));
+    const salaryBonuses = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).bonus) || 0) : bonusOf(e, ym)), 0));
+    const salaryFines = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).fine) || 0) : fineOf(e, ym)), 0));
     const salarySpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'salary'));
-    // Сотрудники, у которых месяц закрыт (выплачен остаток «оклад + бонус −
-    // аванс»; аванс уже на руках) — для подсветки карточки.
+    // Сотрудники, у которых месяц закрыт — снапшот выплаты, либо остаток 0.
     const salaryPaidCount = activeEmps.filter(e => {
+      if (snapOf(e, ym)) return true;
       const gross = r2(Number(e.salary) + bonusOf(e, ym));
       if (gross <= 0) return false;
-      const due = r2(Math.max(0, gross - Number(e.advance)));
-      if (due <= 0) return true; // аванс покрыл всё
+      const due = r2(Math.max(0, gross - advanceOf(e, ym) - fineOf(e, ym)));
+      if (due <= 0) return true; // аванс/штраф покрыли всё
       const paid = monthExp.filter(t => t.employeeId === e.id).reduce((s, t) => s + Number(t.amount), 0);
       // Полкопейки допуска — сумма float'ов может недотянуть до r2-округлённого due.
       return paid >= due - 0.005;
@@ -1166,7 +1195,7 @@ export class FinanceService implements OnModuleInit {
 
     return {
       ym,
-      salary: { spent: salarySpent, count: activeEmps.length, paidCount: salaryPaidCount, bonuses: salaryBonuses, toPay: r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances - salarySpent)) },
+      salary: { spent: salarySpent, count: activeEmps.length, paidCount: salaryPaidCount, bonuses: salaryBonuses, fines: salaryFines, toPay: r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances - salaryFines - salarySpent)) },
       subscriptions: { spent: subsSpent, count: subsCount, paidCount: subsPaidCount, monthly: subMonthly, toPay: subsToPay },
       debts: { spent: debtsSpent, count: debtCount, remaining: totalRemaining, dueMonth, monthly: debtsMonthly },
       other: { spent: otherSpent },
@@ -1183,30 +1212,50 @@ export class FinanceService implements OnModuleInit {
       const paidOf = (id: string) => r2(monthExp.filter(t => t.employeeId === id).reduce((s, t) => s + Number(t.amount), 0));
       const activeEmps = emps.filter(e => e.status === 'active');
       const rows = activeEmps.map(e => {
+        // Выплаченный месяц ЗАМОРОЖЕН снапшотом: любые будущие правки оклада/
+        // бонусов/авансов/штрафов его не меняют — месяцы независимы.
+        const snap = snapOf(e, ym);
+        if (snap) {
+          return {
+            id: e.id, name: e.name, role: e.role, category: e.category ?? null,
+            hireDate: e.hireDate,
+            salary: r2(Number(snap.salary) || 0), advance: r2(Number(snap.advance) || 0),
+            bonus: r2(Number(snap.bonus) || 0), fine: r2(Number(snap.fine) || 0),
+            status: e.status, paid: r2(Number(snap.paid) || 0), toPay: 0,
+            frozen: true, paidAt: snap.paidAt ?? null,
+          };
+        }
         const paid = paidOf(e.id);
         const bonus = bonusOf(e, ym);
+        const advance = advanceOf(e, ym);
+        const fine = fineOf(e, ym);
         return {
           id: e.id, name: e.name, role: e.role, category: e.category ?? null,
           hireDate: e.hireDate, salary: Number(e.salary),
-          advance: Number(e.advance), bonus, status: e.status, paid,
-          // Аванс вычитается и по-строчно — иначе подытог групп противоречил
-          // карточке «К выплате за месяц» (фонд + бонусы − авансы − выплачено).
-          toPay: r2(Math.max(0, Number(e.salary) + bonus - Number(e.advance) - paid)),
+          advance, bonus, fine, status: e.status, paid,
+          // Аванс/штраф вычитаются и по-строчно — иначе подытог групп
+          // противоречил бы карточке «К выплате за месяц».
+          toPay: r2(Math.max(0, Number(e.salary) + bonus - advance - fine - paid)),
+          frozen: false, paidAt: null,
         };
       });
-      const fund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
-      const advances = r2(activeEmps.reduce((s, e) => s + Number(e.advance), 0));
-      const bonuses = r2(activeEmps.reduce((s, e) => s + bonusOf(e, ym), 0));
-      const paid = r2(activeEmps.reduce((s, e) => s + paidOf(e.id), 0));
+      const fund = r2(rows.reduce((s, e) => s + Number(e.salary), 0));
+      const advances = r2(rows.reduce((s, e) => s + Number(e.advance), 0));
+      const bonuses = r2(rows.reduce((s, e) => s + Number(e.bonus), 0));
+      const fines = r2(rows.reduce((s, e) => s + Number(e.fine || 0), 0));
+      const paid = r2(rows.reduce((s, e) => s + Number(e.paid), 0));
+      // Все выплачены → фронт автоматически показывает следующий месяц.
+      const allPaid = rows.length > 0 && rows.every(r => r.frozen || r.toPay <= 0);
       return {
         kind: 'salary',
-        cards: { fund, advances, bonuses, paid, toPay: r2(Math.max(0, fund + bonuses - advances - paid)) },
+        cards: { fund, advances, bonuses, fines, paid, toPay: r2(rows.reduce((s, e) => s + Number(e.toPay), 0)) },
         rows,
+        allPaid,
         // Полный набор полей: модалка редактирования открывается и из этой
-        // таблицы — усечённая строка затирала category/advance/hireDate.
+        // таблицы — усечённая строка затирала category/hireDate.
         fired: emps.filter(e => e.status !== 'active').map(e => ({
           id: e.id, name: e.name, role: e.role, category: e.category ?? null,
-          hireDate: e.hireDate, salary: Number(e.salary), advance: Number(e.advance), status: e.status,
+          hireDate: e.hireDate, salary: Number(e.salary), advance: advanceOf(e, ym), status: e.status,
         })),
       };
     }
@@ -1380,7 +1429,39 @@ export class FinanceService implements OnModuleInit {
     }
     const saved = await this.txRepo.save(this.txRepo.create(base));
     await this.syncSmmPartLink(saved.id);
+    // Выплата ЗП: если остаток месяца закрыт — фиксируем снапшот (месяц
+    // замораживается, будущие правки бонусов/авансов его не меняют).
+    if (saved.type === FinanceTxType.EXPENSE && saved.employeeId) {
+      await this.refreshSalarySnapshot(saved.employeeId, ymOf(saved.date));
+    }
     return saved;
+  }
+
+  /** Пересчитать снапшот выплаченного месяца сотрудника: закрыт остаток —
+   *  фиксируем (или обновляем paid); выплату откатили — размораживаем. */
+  private async refreshSalarySnapshot(employeeId: string, ym: string) {
+    const e = await this.empRepo.findOne({ where: { id: employeeId } });
+    if (!e) return;
+    const { from, to } = monthRange(ym);
+    const monthExp = this.active(await this.txRepo.find({
+      where: { date: Between(from, to), type: FinanceTxType.EXPENSE, employeeId } as any,
+    }));
+    const paid = r2(monthExp.reduce((s, t) => s + Number(t.amount), 0));
+    const snap = snapOf(e, ym);
+    // Параметры месяца: из снапшота (если уже был), иначе живые значения.
+    const salary = snap ? r2(Number(snap.salary) || 0) : r2(Number(e.salary) || 0);
+    const bonus = snap ? r2(Number(snap.bonus) || 0) : bonusOf(e, ym);
+    const advance = snap ? r2(Number(snap.advance) || 0) : advanceOf(e, ym);
+    const fine = snap ? r2(Number(snap.fine) || 0) : fineOf(e, ym);
+    const due = r2(Math.max(0, salary + bonus - advance - fine));
+    const map = { ...(e.salarySnapshots || {}) };
+    if (due > 0 && paid >= due - 0.005) {
+      map[ym] = { salary, bonus, advance, fine, paid, paidAt: snap?.paidAt || todayISO() };
+    } else {
+      delete map[ym];
+    }
+    e.salarySnapshots = Object.keys(map).length ? map : null;
+    await this.empRepo.save(e);
   }
 
   async updateTransaction(id: string, dto: any) {
@@ -1411,7 +1492,17 @@ export class FinanceService implements OnModuleInit {
     if (patch.categoryId !== undefined) patch.category = patch.categoryId ? (await this.catRepo.findOne({ where: { id: patch.categoryId } }))?.name ?? null : null;
     await this.txRepo.update(id, patch);
     await this.syncSmmPartLink(id);
-    return this.txRepo.findOne({ where: { id } });
+    // Правка выплаты ЗП (сумма/дата/сотрудник) — пересчитать снапшоты
+    // затронутых месяцев: и старого сотрудника/месяца, и нового.
+    const after = await this.txRepo.findOne({ where: { id } });
+    const touched = new Set<string>();
+    if (t.employeeId) touched.add(`${t.employeeId}:${ymOf(t.date)}`);
+    if (after?.employeeId) touched.add(`${after.employeeId}:${ymOf(after.date)}`);
+    for (const key of touched) {
+      const [empId, ym] = key.split(':');
+      await this.refreshSalarySnapshot(empId, ym);
+    }
+    return after;
   }
 
   async removeTransaction(id: string) {
@@ -1423,6 +1514,8 @@ export class FinanceService implements OnModuleInit {
       else { p.status = 'expected'; p.receivedTxId = null; await this.ppRepo.save(p); }
     }
     await this.txRepo.delete(id);
+    // Удалённая выплата ЗП — снапшот месяца пересчитывается (разморозка).
+    if (tx?.employeeId) await this.refreshSalarySnapshot(tx.employeeId, ymOf(tx.date));
     // Удалённая оплата могла быть той, что двигала якорь SMM-цикла.
     const projectId = tx?.projectId ?? linked.find(x => x.projectId)?.projectId ?? null;
     if (projectId) await this.resyncSmmAfterUndo(projectId);
@@ -1801,6 +1894,8 @@ export class FinanceService implements OnModuleInit {
       if (txs.length) await repo.delete(txs.map(t => t.id));
       return txs.length;
     });
+    // Откат выплат ЗП за месяц — размораживаем снапшот.
+    if (dto.employeeId) await this.refreshSalarySnapshot(dto.employeeId, dto.ym);
     return { ok: true, removed };
   }
 
@@ -1996,16 +2091,52 @@ export class FinanceService implements OnModuleInit {
 
   /** Задать бонус сотрудника за месяц (0 — убрать). Хранится в jsonb bonuses,
    *  расход создаётся отдельно — при выплате, вместе с окладом. */
+  /** Журнал активности финансов: кто/что/когда (пишет интерцептор). */
+  async listActivity(limit = 50, offset = 0) {
+    const l = Math.min(200, Math.max(1, Number(limit) || 50));
+    const o = Math.max(0, Number(offset) || 0);
+    const rows = await this.ds.query(
+      `SELECT a.id, a.action, a.route, a.details, a."createdAt", a."userId",
+              u.name AS "userName", u.avatar AS "userAvatar"
+       FROM finance_activity a
+       LEFT JOIN users u ON u.id = a."userId"
+       ORDER BY a."createdAt" DESC
+       LIMIT $1 OFFSET $2`,
+      [l, o],
+    ).catch(() => []);
+    const totalRow = await this.ds.query(`SELECT COUNT(*)::int AS count FROM finance_activity`).catch(() => [{ count: 0 }]);
+    return { rows, total: totalRow?.[0]?.count ?? 0 };
+  }
+
   async setEmployeeBonus(id: string, dto: { ym?: string; amount?: any }) {
+    return this.setEmployeeMonthField(id, 'bonuses', dto, 'Бонус');
+  }
+
+  /** Аванс за месяц (помесячно, как бонус). */
+  async setEmployeeAdvance(id: string, dto: { ym?: string; amount?: any }) {
+    return this.setEmployeeMonthField(id, 'advances', dto, 'Аванс');
+  }
+
+  /** Штраф за месяц — вычитается из «к выплате». */
+  async setEmployeeFine(id: string, dto: { ym?: string; amount?: any }) {
+    return this.setEmployeeMonthField(id, 'fines', dto, 'Штраф');
+  }
+
+  private async setEmployeeMonthField(
+    id: string, field: 'bonuses' | 'advances' | 'fines',
+    dto: { ym?: string; amount?: any }, label: string,
+  ) {
     const e = await this.empRepo.findOne({ where: { id } });
     if (!e) throw new NotFoundException('Сотрудник не найден');
     const ym = dto.ym || currentYm();
+    // Выплаченный месяц заморожен — менять его суммы нельзя (месяцы независимы).
+    if (snapOf(e, ym)) throw new BadRequestException('Месяц уже выплачен и зафиксирован — правки недоступны');
     const amount = r2(Number(dto.amount) || 0);
-    if (amount < 0) throw new BadRequestException('Бонус не может быть отрицательным');
-    const map = { ...(e.bonuses || {}) };
+    if (amount < 0) throw new BadRequestException(`${label} не может быть отрицательным`);
+    const map = { ...((e as any)[field] || {}) };
     if (amount > 0) map[ym] = amount;
     else delete map[ym];
-    e.bonuses = Object.keys(map).length ? map : null;
+    (e as any)[field] = Object.keys(map).length ? map : null;
     return this.empRepo.save(e);
   }
 

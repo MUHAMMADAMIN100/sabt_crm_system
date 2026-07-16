@@ -16,15 +16,17 @@ import { TelegramModule } from '../telegram/telegram.module';
 import { FinanceService } from './finance.service';
 import { FinanceScheduler } from './finance.scheduler';
 import { FinanceController } from './finance.controller';
+import { FinanceActivity } from './entities/finance-activity.entity';
+import { FinanceActivityInterceptor } from './finance-activity.interceptor';
 
 @Module({
   imports: [TypeOrmModule.forFeature([
     FinanceTransaction, FinanceAccount, FinanceCategory,
     FinanceProject, FinanceEmployee, FinanceSubscription, FinanceDebt,
-    FinancePlannedPayment, FinanceAsset, FinanceBackup, User,
+    FinancePlannedPayment, FinanceAsset, FinanceBackup, FinanceActivity, User,
   ]), NotificationsModule, TelegramModule],
   controllers: [FinanceController],
-  providers: [FinanceService, FinanceScheduler],
+  providers: [FinanceService, FinanceScheduler, FinanceActivityInterceptor],
   exports: [FinanceService],
 })
 export class FinanceModule {}

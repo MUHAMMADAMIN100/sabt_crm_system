@@ -21,9 +21,27 @@ export class FinanceEmployee {
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   salary: number;
 
-  /** Типовой аванс (выдан) — вычитается из «к выплате» в зарплатной ведомости. */
+  /** LEGACY: старый «общий» аванс. Больше не участвует в расчётах —
+   *  авансы теперь помесячные (advances). Колонка оставлена ради данных. */
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   advance: number;
+
+  /** Авансы по месяцам: { '2026-08': 500 }. Каждый месяц начинается с нуля. */
+  @Column({ type: 'jsonb', nullable: true })
+  advances: Record<string, number> | null;
+
+  /** Штрафы по месяцам: { '2026-08': 200 }. Вычитаются из «к выплате». */
+  @Column({ type: 'jsonb', nullable: true })
+  fines: Record<string, number> | null;
+
+  /** Снапшоты выплаченных месяцев: { '2026-07': { salary, bonus, advance,
+   *  fine, paid, paidAt } }. Выплаченный месяц ЗАМОРОЖЕН — любые будущие
+   *  правки оклада/бонусов/авансов его не меняют (месяцы независимы). */
+  @Column({ type: 'jsonb', nullable: true })
+  salarySnapshots: Record<string, {
+    salary: number; bonus: number; advance: number; fine: number;
+    paid: number; paidAt: string;
+  }> | null;
 
   /** Дата приёма на работу (ISO). */
   @Column({ type: 'date', nullable: true })

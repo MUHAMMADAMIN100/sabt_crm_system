@@ -1,6 +1,6 @@
 // Статья расхода /finance/expense/:kind (salary | rent_subs | debts | other) —
 // порт fin-webrand/src/pages/ExpenseGroup.tsx (ТЗ 4.2–4.5).
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -39,7 +39,7 @@ export default function FinanceExpenseGroupPage() {
         <div><h1 className="flex" style={{ color: g.color }}><FinIcon name={g.icon} size={22} /> <span style={{ color: 'var(--text)' }}>{g.label}</span></h1><p>Детализация и быстрая оплата</p></div>
         <MonthNav ym={ym} onChange={setYm} />
       </div>
-      {kind === 'salary' && <SalaryList ym={ym} />}
+      {kind === 'salary' && <SalaryList ym={ym} onYmChange={setYm} />}
       {kind === 'rent_subs' && <SubsList ym={ym} />}
       {kind === 'debts' && <DebtsList ym={ym} />}
     </div>
@@ -104,7 +104,7 @@ function OtherExpenseList({ ym }: { ym: string }) {
 
 // ─── 4.2 Зарплата ────────────────────────────────────────
 
-function SalaryList({ ym }: { ym: string }) {
+function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) => void }) {
   const qc = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'expenseDetail', 'salary', ym],
@@ -115,9 +115,22 @@ function SalaryList({ ym }: { ym: string }) {
   const [empFor, setEmpFor] = useState<any | 'new' | null>(null);
   const [showFired, setShowFired] = useState(false);
 
-  const cards = data?.cards ?? { fund: 0, advances: 0, bonuses: 0, paid: 0, toPay: 0 };
+  const cards = data?.cards ?? { fund: 0, advances: 0, bonuses: 0, fines: 0, paid: 0, toPay: 0 };
   const rows: any[] = data?.rows ?? [];
   const fired: any[] = data?.fired ?? [];
+
+  // Все выплачены → автоматически показываем следующий месяц с чистыми
+  // бонусами/авансами/штрафами. Один раз на месяц за сессию, и только
+  // начиная с текущего месяца (листание назад по истории не трогаем).
+  const jumpedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data?.allPaid || !onYmChange) return;
+    if (ym < currentYm()) return;
+    if (jumpedFor.current === ym) return;
+    jumpedFor.current = ym;
+    onYmChange(shiftYm(ym, 1));
+    toast.success('Зарплата за месяц выплачена полностью — открыт следующий месяц');
+  }, [data?.allPaid, ym, onYmChange]);
 
   // Группировка по категориям: именованные по алфавиту, «Без категории» последней.
   const groups = useMemo(() => {
@@ -153,8 +166,8 @@ function SalaryList({ ym }: { ym: string }) {
   }
 
   function exportCsv() {
-    const header = ['Сотрудник', 'Группа', 'Должность', 'Оклад', 'Бонус', 'Аванс', 'Выплачено', 'К выплате'];
-    const body = rows.map((e) => [e.name, e.category, e.role, e.salary, e.bonus, e.advance, e.paid, e.toPay]);
+    const header = ['Сотрудник', 'Группа', 'Должность', 'Оклад', 'Бонус', 'Аванс', 'Штраф', 'Выплачено', 'К выплате'];
+    const body = rows.map((e) => [e.name, e.category, e.role, e.salary, e.bonus, e.advance, e.fine ?? 0, e.paid, e.toPay]);
     downloadCsv(`salary-${ym}.csv`, [header, ...body]);
   }
 
@@ -164,10 +177,11 @@ function SalaryList({ ym }: { ym: string }) {
         <div className="card stat">
           <div className="label">Фонд ЗП / мес</div><div className="value">{money(cards.fund)}</div>
           {(cards.bonuses ?? 0) > 0 && <div className="sub">+ бонусы {money(cards.bonuses)}</div>}
+          {(cards.fines ?? 0) > 0 && <div className="sub">− штрафы {money(cards.fines)}</div>}
         </div>
         <div className="card stat"><div className="label">Авансы (выдано)</div><div className="value">{money(cards.advances)}</div></div>
         <div className="card stat"><div className="label">Выплачено за месяц</div><div className="value pos">{money(cards.paid)}</div></div>
-        <div className="card stat"><div className="label">К выплате за месяц</div><div className="value neg">{money(cards.toPay)}</div><div className="sub">фонд + бонусы − авансы − выплачено</div></div>
+        <div className="card stat"><div className="label">К выплате за месяц</div><div className="value neg">{money(cards.toPay)}</div><div className="sub">фонд + бонусы − авансы − штрафы − выплачено</div></div>
       </div>
 
       <div className="toolbar">
@@ -189,29 +203,32 @@ function SalaryList({ ym }: { ym: string }) {
                 <thead>
                   <tr>
                     <th style={{ minWidth: 160 }}>ФИО</th><th>Должность</th><th>Дата приёма</th>
-                    <th className="num" style={{ width: 96 }}>ЗП</th><th className="num" style={{ width: 96 }}>Аванс</th>
-                    <th className="num" style={{ width: 110 }}>Бонус</th>
+                    <th className="num" style={{ width: 96 }}>ЗП</th><th className="num" style={{ width: 100 }}>Аванс</th>
+                    <th className="num" style={{ width: 100 }}>Бонус</th>
+                    <th className="num" style={{ width: 100 }}>Штраф</th>
                     <th style={{ minWidth: 150 }}>Статус</th><th style={{ width: 60 }} />
                   </tr>
                 </thead>
                 <tbody>
                   {list.map((e) => {
-                    // Месяц закрыт, когда выплачен остаток «оклад + бонус − аванс»
-                    // (аванс уже на руках). Полкопейки допуска — float-суммы.
+                    // Выплаченный месяц заморожен снапшотом (frozen с бэка) —
+                    // суммы зафиксированы, правки недоступны. Для «живого»
+                    // месяца — остаток «оклад + бонус − аванс − штраф».
                     const gross = Math.round(((Number(e.salary) || 0) + (Number(e.bonus) || 0)) * 100) / 100;
-                    const due = Math.max(0, Math.round((gross - (Number(e.advance) || 0)) * 100) / 100);
-                    const isPaid = gross > 0 && (due <= 0 || e.paid >= due - 0.005);
+                    const due = Math.max(0, Math.round((gross - (Number(e.advance) || 0) - (Number(e.fine) || 0)) * 100) / 100);
+                    const isPaid = e.frozen || (gross > 0 && (due <= 0 || e.paid >= due - 0.005));
                     return (
                       <tr key={e.id} onDoubleClick={() => openEmp(e)}>
                         <td><b>{e.name}</b></td>
                         <td className="muted">{e.role ?? '—'}</td>
                         <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
                         <td className="num">{money(e.salary)}</td>
-                        <td className="num muted">{e.advance ? money(e.advance) : '—'}</td>
-                        <td className="num"><BonusCell row={e} ym={ym} /></td>
+                        <td className="num"><MonthAmountCell row={e} ym={ym} field="advance" /></td>
+                        <td className="num"><MonthAmountCell row={e} ym={ym} field="bonus" /></td>
+                        <td className="num"><MonthAmountCell row={e} ym={ym} field="fine" /></td>
                         <td>
                           {isPaid
-                            ? <span className="flex"><span className="badge ok"><FinIcon name="check" size={13} /> выплачено</span><button className="btn ghost sm" title="Отменить выплату" onClick={() => cancelSalaryMonth(e)}><FinIcon name="undo" size={15} /></button></span>
+                            ? <span className="flex"><span className="badge ok" title={e.paidAt ? `Выплачено ${formatDate(e.paidAt)} — месяц зафиксирован` : 'Месяц закрыт'}><FinIcon name="check" size={13} /> выплачено</span><button className="btn ghost sm" title="Отменить выплату" onClick={() => cancelSalaryMonth(e)}><FinIcon name="undo" size={15} /></button></span>
                             : <button className="btn primary sm" onClick={() => setPayFor(e)}>Выплатить</button>}
                         </td>
                         <td className="num"><button className="btn ghost sm" title="Редактировать" onClick={() => openEmp(e)}><FinIcon name="edit" size={15} /></button></td>
@@ -225,6 +242,7 @@ function SalaryList({ ym }: { ym: string }) {
                     <td className="num"><b>{money(sum(e => Number(e.salary)))}</b></td>
                     <td className="num"><b>{money(sum(e => Number(e.advance)))}</b></td>
                     <td className="num"><b>{money(sum(e => Number(e.bonus)))}</b></td>
+                    <td className="num"><b>{money(sum(e => Number(e.fine)))}</b></td>
                     <td colSpan={2} className="num nowrap">к выплате <b>{money(sum(e => Number(e.toPay)))}</b></td>
                   </tr>
                 </tfoot>
@@ -242,6 +260,7 @@ function SalaryList({ ym }: { ym: string }) {
           <span className="mini muted nowrap">Фонд ЗП <b style={{ color: 'var(--text)' }}>{money(cards.fund)}</b></span>
           <span className="mini muted nowrap">Авансы <b style={{ color: 'var(--text)' }}>{money(cards.advances)}</b></span>
           <span className="mini muted nowrap">Бонусы <b style={{ color: 'var(--text)' }}>{money(cards.bonuses ?? 0)}</b></span>
+          <span className="mini muted nowrap">Штрафы <b style={{ color: 'var(--text)' }}>{money(cards.fines ?? 0)}</b></span>
           <span className="mini muted nowrap">Выплачено <b className="pos">{money(cards.paid)}</b></span>
           <span className="mini muted nowrap">К выплате <b className="neg">{money(cards.toPay)}</b></span>
         </div>
@@ -279,22 +298,35 @@ function SalaryList({ ym }: { ym: string }) {
   );
 }
 
-/** Инлайн-бонус за месяц: вводится прямо в таблице, входит в «к выплате».
+/** Инлайн-сумма месяца (аванс/бонус/штраф) прямо в таблице. Помесячно —
+ *  правки одного месяца не трогают другие; выплаченный месяц заморожен.
  *  Расход создаётся не здесь, а при выплате — вместе с окладом. */
-function BonusCell({ row, ym }: { row: any; ym: string }) {
+const MONTH_FIELDS = {
+  bonus: { api: (id: string, d: any) => financeApi.setEmployeeBonus(id, d), title: 'Бонус за этот месяц — прибавляется к сумме к выплате' },
+  advance: { api: (id: string, d: any) => financeApi.setEmployeeAdvance(id, d), title: 'Аванс, выданный в этом месяце — вычитается из суммы к выплате' },
+  fine: { api: (id: string, d: any) => financeApi.setEmployeeFine(id, d), title: 'Штраф за этот месяц — вычитается из суммы к выплате' },
+} as const;
+
+function MonthAmountCell({ row, ym, field }: { row: any; ym: string; field: keyof typeof MONTH_FIELDS }) {
   const qc = useQueryClient();
+  const value = Number(row[field]) || 0;
+  // Выплаченный месяц зафиксирован — только чтение.
+  if (row.frozen) {
+    return <span className={field === 'fine' && value ? 'neg' : 'muted'} title="Месяц выплачен и зафиксирован">{value ? money(value) : '—'}</span>;
+  }
+  const cfg = MONTH_FIELDS[field];
   return (
     <input
-      key={`${row.id}-${ym}-${row.bonus ?? 0}`}
+      key={`${row.id}-${ym}-${field}-${value}`}
       className="cell-input" inputMode="decimal" placeholder="—"
-      style={{ textAlign: 'right', minWidth: 70 }}
-      defaultValue={row.bonus ? row.bonus : ''}
-      title="Бонус за этот месяц — прибавляется к сумме к выплате"
+      style={{ textAlign: 'right', minWidth: 70, ...(field === 'fine' && value ? { color: 'var(--red, #dc2626)' } : {}) }}
+      defaultValue={value ? value : ''}
+      title={cfg.title}
       onBlur={async (e) => {
         const v = Math.max(0, parseFloat(e.target.value.replace(',', '.')) || 0);
-        if (v === (Number(row.bonus) || 0)) return;
+        if (v === value) return;
         try {
-          await financeApi.setEmployeeBonus(row.id, { ym, amount: v });
+          await cfg.api(row.id, { ym, amount: v });
           invalidateFinance(qc);
         } catch (err) { toast.error(apiErr(err)); }
       }}

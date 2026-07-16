@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Request,
+  Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, UseInterceptors, Request,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { FinanceService } from './finance.service';
@@ -31,6 +31,7 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { RemoveMonthExpensesDto } from './dto/remove-month-expenses.dto';
+import { FinanceActivityInterceptor } from './finance-activity.interceptor';
 
 /** Финансовый модуль — только основатель и сооснователь (право finance.manage). */
 @ApiTags('Finance')
@@ -41,6 +42,9 @@ import { RemoveMonthExpensesDto } from './dto/remove-month-expenses.dto';
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard, FinanceAccessGuard)
 @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
 @RequirePerm('finance.manage')
+// Журнал активности: каждый успешный POST/PATCH/DELETE пишется в
+// finance_activity (кто/что/когда) — вкладка «Активность».
+@UseInterceptors(FinanceActivityInterceptor)
 @Controller('finance')
 export class FinanceController {
   constructor(
@@ -142,12 +146,22 @@ export class FinanceController {
   @Post('projects/:id/cancel-payments') cancelProjectPayments(@Param('id') id: string) { return this.service.cancelProjectPayments(id); }
 
   // ─── Справочники: Сотрудники ─────────────────────────────────────
+  /** Журнал активности финансов: кто, что и когда менял. */
+  @Get('activity')
+  listActivity(@Query('limit') limit?: string, @Query('offset') offset?: string) {
+    return this.service.listActivity(Number(limit) || 50, Number(offset) || 0);
+  }
+
   @Get('employees') listEmployees() { return this.service.listEmployees(); }
   @Post('employees') createEmployee(@Body() dto: CreateEmployeeDto) { return this.service.createEmployee(dto); }
   @Patch('employees/:id') updateEmployee(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) { return this.service.updateEmployee(id, dto); }
   @Delete('employees/:id') removeEmployee(@Param('id') id: string) { return this.service.removeEmployee(id); }
   /** Бонус сотрудника за месяц (входит в «к выплате»; 0 — снять). */
   @Post('employees/:id/bonus') setEmployeeBonus(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeBonus(id, dto); }
+  /** Аванс за месяц (помесячно, как бонус; 0 — снять). */
+  @Post('employees/:id/advance') setEmployeeAdvance(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeAdvance(id, dto); }
+  /** Штраф за месяц (вычитается из «к выплате»; 0 — снять). */
+  @Post('employees/:id/fine') setEmployeeFine(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeFine(id, dto); }
 
   // ─── Справочники: Аренда/подписки ────────────────────────────────
   @Get('subscriptions') listSubscriptions() { return this.service.listSubscriptions(); }

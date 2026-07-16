@@ -369,6 +369,11 @@ export const financeApi = {
   updateEmployee: (id: string, data: any) => api.patch(`/finance/employees/${id}`, data).then(r => r.data),
   removeEmployee: (id: string) => api.delete(`/finance/employees/${id}`).then(r => r.data),
   setEmployeeBonus: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/bonus`, data).then(r => r.data),
+  // Помесячные аванс и штраф (как бонус; 0 — снять).
+  setEmployeeAdvance: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/advance`, data).then(r => r.data),
+  setEmployeeFine: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/fine`, data).then(r => r.data),
+  // Журнал активности финансов (кто/что/когда).
+  activity: (limit = 50, offset = 0) => api.get('/finance/activity', { params: { limit, offset } }).then(r => r.data),
 
   // Инвентарь
   assets: () => api.get('/finance/assets').then(r => r.data),

@@ -105,7 +105,6 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
   const [category, setCategory] = useState(employee?.category ?? '');
   const [hireDate, setHireDate] = useState(employee?.hireDate ?? '');
   const [salary, setSalary] = useState(employee != null ? String(employee.salary ?? '') : '');
-  const [advance, setAdvance] = useState(employee != null ? String(employee.advance ?? '') : '');
   const [status, setStatus] = useState<string>(employee?.status ?? 'active');
   const [busy, setBusy] = useState(false);
 
@@ -113,9 +112,11 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
+      // Аванс из формы убран: авансы теперь помесячные — правятся прямо в
+      // зарплатной ведомости за конкретный месяц.
       const p = {
         name: name.trim(), role: role.trim() || null, category: category.trim() || null,
-        hireDate: hireDate || null, salary: num(salary), advance: num(advance), status,
+        hireDate: hireDate || null, salary: num(salary), status,
       };
       if (isEdit) await financeApi.updateEmployee(employee.id, p);
       else await financeApi.createEmployee(p);
@@ -157,7 +158,7 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
       </div>
       <div className="form-grid">
         <div className="field"><label>ЗП / мес</label><input inputMode="decimal" value={salary} onChange={(e) => setSalary(e.target.value)} /></div>
-        <div className="field"><label>Аванс</label><input inputMode="decimal" value={advance} onChange={(e) => setAdvance(e.target.value)} /></div>
+        <div className="field"><label>Аванс</label><input disabled value="" placeholder="помесячно — в ведомости" title="Авансы теперь указываются за конкретный месяц прямо в зарплатной таблице" /></div>
       </div>
       <div className="form-grid">
         <div className="field"><label>Дата приёма</label><input type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)} /></div>

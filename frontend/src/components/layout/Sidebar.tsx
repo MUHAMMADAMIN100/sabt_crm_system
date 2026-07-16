@@ -20,6 +20,7 @@ const FINANCE_SUBNAV = [
   { to: '/finance/expense', label: 'Расход', icon: TrendingDown },
   { to: '/finance/transactions', label: 'Транзакции', icon: ArrowLeftRight },
   { to: '/finance/inventory', label: 'Инвентарь', icon: Package },
+  { to: '/finance/activity', label: 'Активность', icon: RotateCcw },
   { to: '/finance/settings', label: 'Настройки', icon: SlidersHorizontal },
 ]
 
