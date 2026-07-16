@@ -2091,6 +2091,33 @@ export class FinanceService implements OnModuleInit {
 
   /** Задать бонус сотрудника за месяц (0 — убрать). Хранится в jsonb bonuses,
    *  расход создаётся отдельно — при выплате, вместе с окладом. */
+  /** Закрыть зарплатный месяц: зафиксировать ВСЕХ активных сотрудников как
+   *  выплаченных (снапшот), НЕ создавая расходных операций. Для случаев,
+   *  когда деньги фактически выданы (авансы/наличные), а система показывает
+   *  остаток — например, после обнуления старых общих авансов. */
+  async closeSalaryMonth(ym: string) {
+    const emps = await this.empRepo.find();
+    const { from, to } = monthRange(ym);
+    const monthExp = this.active(await this.txRepo.find({
+      where: { date: Between(from, to), type: FinanceTxType.EXPENSE } as any,
+    }));
+    let closed = 0;
+    for (const e of emps) {
+      if (e.status !== 'active' || snapOf(e, ym)) continue;
+      const paid = r2(monthExp.filter(t => t.employeeId === e.id).reduce((s, t) => s + Number(t.amount), 0));
+      const map = { ...(e.salarySnapshots || {}) };
+      map[ym] = {
+        salary: r2(Number(e.salary) || 0), bonus: bonusOf(e, ym),
+        advance: advanceOf(e, ym), fine: fineOf(e, ym),
+        paid, paidAt: todayISO(),
+      };
+      e.salarySnapshots = map;
+      await this.empRepo.save(e);
+      closed++;
+    }
+    return { ok: true, closed };
+  }
+
   /** Журнал активности финансов: кто/что/когда (пишет интерцептор). */
   async listActivity(limit = 50, offset = 0) {
     const l = Math.min(200, Math.max(1, Number(limit) || 50));

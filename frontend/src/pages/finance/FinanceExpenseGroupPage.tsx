@@ -187,6 +187,18 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
       <div className="toolbar">
         <span className="chip"><FinIcon name="receipt" size={14} /> Выплата ЗП — каждое 10-е число месяца</span>
         <div className="grow" />
+        {/* Всё выдано фактически (авансы/наличные), а система показывает
+            остаток — фиксируем месяц выплаченным без создания операций. */}
+        {!data?.allPaid && rows.length > 0 && (
+          <button className="btn sm" onClick={async () => {
+            if (!(await finConfirm('Отметить месяц полностью выплаченным? Все сотрудники будут зафиксированы как «выплачено», суммы месяца заморозятся. Расходные операции НЕ создаются.', { confirmLabel: 'Закрыть месяц' }))) return;
+            try {
+              await financeApi.closeSalaryMonth(ym);
+              invalidateFinance(qc);
+              toast.success('Месяц закрыт — все сотрудники отмечены выплаченными');
+            } catch (err) { toast.error(apiErr(err)); }
+          }}><FinIcon name="check" size={14} /> Закрыть месяц</button>
+        )}
         <button className="btn sm" onClick={exportCsv}>Экспорт CSV</button>
         <button className="btn primary" onClick={() => setEmpFor('new')}><FinIcon name="plus" size={16} /> Сотрудник</button>
       </div>

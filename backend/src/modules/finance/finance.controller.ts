@@ -162,6 +162,9 @@ export class FinanceController {
   @Post('employees/:id/advance') setEmployeeAdvance(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeAdvance(id, dto); }
   /** Штраф за месяц (вычитается из «к выплате»; 0 — снять). */
   @Post('employees/:id/fine') setEmployeeFine(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeFine(id, dto); }
+  /** Закрыть месяц: все активные сотрудники фиксируются выплаченными
+   *  (снапшот) без создания операций — деньги уже выданы фактически. */
+  @Post('salary/close-month') closeSalaryMonth(@Body() dto: SetEmployeeBonusDto) { return this.service.closeSalaryMonth(dto.ym || currentYm()); }
 
   // ─── Справочники: Аренда/подписки ────────────────────────────────
   @Get('subscriptions') listSubscriptions() { return this.service.listSubscriptions(); }
