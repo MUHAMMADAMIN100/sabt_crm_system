@@ -10,11 +10,16 @@ interface CollapsibleSectionProps {
   children: ReactNode
   defaultOpen?: boolean
   className?: string
+  /** false — не запоминать свёрнутость между визитами. Для ключевых рабочих
+   *  блоков: случайный клик по заголовку «прятал» таблицу навсегда, и это
+   *  выглядело как пустой дашборд. */
+  persist?: boolean
 }
 
-export function CollapsibleSection({ id, title, children, defaultOpen = true, className }: CollapsibleSectionProps) {
+export function CollapsibleSection({ id, title, children, defaultOpen = true, className, persist = true }: CollapsibleSectionProps) {
   const storageKey = `dash-collapse:${id}`
   const [open, setOpen] = useState<boolean>(() => {
+    if (!persist) return defaultOpen
     try {
       const v = localStorage.getItem(storageKey)
       if (v === '1') return true
@@ -24,8 +29,9 @@ export function CollapsibleSection({ id, title, children, defaultOpen = true, cl
   })
 
   useEffect(() => {
+    if (!persist) return
     try { localStorage.setItem(storageKey, open ? '1' : '0') } catch {}
-  }, [open, storageKey])
+  }, [open, storageKey, persist])
 
   return (
     <div className={clsx('card', className)}>

@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Query, Request, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { AnalyticsService } from './analytics.service';
@@ -107,7 +107,7 @@ export class AnalyticsController {
 
   @Get('sales')
   @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
-  getSalesStats() { return this.service.getSalesStats(); }
+  getSalesStats(@Request() req) { return this.service.getSalesStats(req.user?.role); }
 
   @Get('payroll')
   @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)

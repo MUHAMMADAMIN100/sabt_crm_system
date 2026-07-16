@@ -163,11 +163,9 @@ export default function SalesDashboard() {
   const userId = useAuthStore(s => s.user?.id)
   // Wave 16: модалка с подробностями для кликнутой метрики KPI.
   const [openedKpiItem, setOpenedKpiItem] = useState<{ key: string; label: string } | null>(null)
-  // Сегмент МП: СММ → SMM-проекты, разработка → «Web сайт».
-  const segmentType =
-    role === 'sales_manager_dev' ? 'Web сайт'
-    : role === 'sales_manager_smm' ? 'SMM'
-    : null
+  // Сегмент МП фильтрует БЭКЕНД (/analytics/sales по роли): СММ-менеджер
+  // получает только SMM-проекты, МП-разработки — все dev-подтипы. Старый
+  // фронтовый фильтр к тому же терял dev-подтипы (учитывал только «Web сайт»).
 
   const qc = useQueryClient()
   // Кэш per-user (чтобы данные другого пользователя не подтекали при
@@ -250,8 +248,7 @@ export default function SalesDashboard() {
   // Считаем список проектов на каждом рендере — useMemo здесь оборачивал
   // в стейл-ссылку и из-за этого первый рендер показывал «5 из 5» с пустой
   // таблицей до клика по фильтру. Стоимость пересчёта мизерная.
-  const allSegmentProjects = ((data?.projects || []) as any[])
-    .filter(p => !segmentType || p.projectType === segmentType)
+  const allSegmentProjects = (data?.projects || []) as any[]
   const projects = (() => {
     if (filter === 'overdue')     return allSegmentProjects.filter(p => p.isOverdue)
     if (filter === 'upcoming')    return allSegmentProjects.filter(p => p.isUpcoming)
@@ -350,8 +347,10 @@ export default function SalesDashboard() {
         />
       )}
 
-      {/* Projects table */}
+      {/* Projects table — не персистим свёрнутость: главный рабочий блок МП
+          не должен «пропадать навсегда» после случайного клика по заголовку. */}
       <CollapsibleSection
+        persist={false}
         id="sales-projects"
         title={
           <div className="flex items-center justify-between w-full">

@@ -12,6 +12,7 @@ import { SalaryHistory } from '../employees/salary-history.entity';
 import { WorkSession } from '../auth/work-session.entity';
 import { ProjectAd, BudgetSource } from '../project-ads/project-ad.entity';
 import { StoryLog } from '../stories/story.entity';
+import { getSalesSegment } from '../../common/sales-segment';
 
 @Injectable()
 export class AnalyticsService {
@@ -443,12 +444,18 @@ export class AnalyticsService {
     };
   }
 
-  /** Sales-manager dashboard data: every project with money + collections context */
-  async getSalesStats() {
-    const projects = await this.projectRepo.find({
+  /** Sales-manager dashboard data: every project with money + collections context.
+   *  МП видит ТОЛЬКО проекты своего направления (СММ ↔ разработка) — и в
+   *  таблице, и в итогах/графиках; топ-роли — всё. */
+  async getSalesStats(viewerRole?: string) {
+    const allProjects = await this.projectRepo.find({
       relations: ['manager', 'salesManager'],
       order: { createdAt: 'DESC' },
     });
+    const segment = getSalesSegment(viewerRole);
+    const projects = segment
+      ? allProjects.filter(p => segment.projectTypes.includes(p.projectType as string))
+      : allProjects;
 
     // Дата последней полученной оплаты — колонка «Дата оплаты» в SalesDashboard
     // (тот же агрегат, что в projects.service.findAll).
@@ -511,21 +518,27 @@ export class AnalyticsService {
       };
     });
 
-    // Revenue by month (last 6 months) — from project_payments
+    // Revenue by month (last 6 months) — from project_payments.
+    // Для МП график тоже строго по проектам его направления.
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
     sixMonthsAgo.setDate(1);
     sixMonthsAgo.setHours(0, 0, 0, 0);
 
-    const monthlyRows = await this.paymentRepo
+    const revenueQb = this.paymentRepo
       .createQueryBuilder('pp')
       .select(`TO_CHAR(pp."paidAt", 'YYYY-MM')`, 'month')
       .addSelect('SUM(pp.amount)', 'total')
       .addSelect('COUNT(*)', 'count')
       .where('pp."paidAt" >= :from', { from: sixMonthsAgo })
       .groupBy('month')
-      .orderBy('month', 'ASC')
-      .getRawMany();
+      .orderBy('month', 'ASC');
+    if (segment) {
+      const ids = projects.map(p => p.id);
+      if (ids.length === 0) revenueQb.andWhere('1 = 0');
+      else revenueQb.andWhere('pp."projectId" IN (:...ids)', { ids });
+    }
+    const monthlyRows = await revenueQb.getRawMany();
 
     const monthlyRevenue = monthlyRows.map(r => ({
       month: r.month as string,
