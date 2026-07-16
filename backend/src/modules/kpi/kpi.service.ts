@@ -56,7 +56,8 @@ const STAGE_RANK: Record<string, number> = {
 const STAGE_RANK_VALUES = Object.entries(STAGE_RANK)
   .map(([s, r]) => `('${s}',${r})`).join(',');
 
-const STAGE_LABELS: Record<string, string> = {
+// export: русские названия этапов нужны и ежедневному отчёту СММ (SmmDailyService).
+export const STAGE_LABELS: Record<string, string> = {
   content_plan: 'Контент-план', organization: 'Организация', shooting: 'Съёмка',
   editing: 'Монтаж', design: 'Дизайн', internal_review: 'Внутренняя проверка',
   client_approval: 'Согласование с клиентом', ready_to_publish: 'Готово к публикации',
@@ -159,7 +160,11 @@ export class KpiService {
    *  Не считаем: карточки-обложки в источнике 1 (их создание пишет событие от
    *  автора плана — фантомный зачёт), КП-инструкцию и перенос в «Рекламу»
    *  (это ручной drag руководителя, а не производственный этап). */
-  private boardEventsCte(): string {
+  // public: ту же базу «выполненных этапов» использует ежедневный отчёт СММ
+  // (SmmDailyService). Дедуп DISTINCT ON действует ВНУТРИ переданного окна:
+  // при повторном проходе этапа после доработки в другой день сумма дневных
+  // отчётов может быть больше месячного KPI — это ожидаемо.
+  boardEventsCte(): string {
     return `WITH stage_rank(stage, r) AS (VALUES ${STAGE_RANK_VALUES}),
       fwd AS (
         SELECT DISTINCT ON (e."cardId", e."toStage")

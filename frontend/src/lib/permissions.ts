@@ -356,6 +356,12 @@ export function canManageAccess(role?: string | null): boolean {
   return role === 'admin' || role === 'founder' || role === 'co_founder'
 }
 
+/** «Отчёты СММ» (ежедневный автоотчёт команды) — по требованию основателя
+ *  видит ТОЛЬКО основатель (пока). */
+export function canSeeSmmDaily(role?: string | null): boolean {
+  return role === 'founder'
+}
+
 /** Комбинированный лейбл ролей: «Видеограф / Монтажёр». */
 export function getCombinedRoleLabel(
   role: string | undefined | null,
@@ -442,6 +448,8 @@ export function canAccessRoute(
   if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole)
   // «Доступы сотрудников» — только основатель/сооснователь/админ.
   if (route === '/employee-access') return canManageAccess(role)
+  // «Отчёты СММ» (ежедневный автоотчёт) — только основатель.
+  if (route === '/smm-daily') return canSeeSmmDaily(role)
   // Финансы и все подстраницы — по гранту finance.manage.
   if (route === '/finance' || route.startsWith('/finance/')) return userCan(u, 'finance.manage')
   // Справочники организатора съёмок (клиенты/модели/места).

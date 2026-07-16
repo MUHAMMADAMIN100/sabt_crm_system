@@ -54,6 +54,7 @@ const EmployeeAccessPage = lazy(() => import('@/pages/access/EmployeeAccessPage'
 const EmployeeDetailPage = lazy(() => import('@/pages/employees/EmployeeDetailPage'))
 const CalendarPage      = lazy(() => import('@/pages/calendar/CalendarPage'))
 const ReportsPage       = lazy(() => import('@/pages/reports/ReportsPage'))
+const SmmDailyPage      = lazy(() => import('@/pages/reports/SmmDailyPage'))
 const AnalyticsPage     = lazy(() => import('@/pages/analytics/AnalyticsPage'))
 const NotificationsPage = lazy(() => import('@/pages/notifications/NotificationsPage'))
 const ProfilePage       = lazy(() => import('@/pages/profile/ProfilePage'))
@@ -138,6 +139,7 @@ export default function App() {
           <Route path="employees/:id" element={<RoleGuard><EmployeeDetailPage /></RoleGuard>} />
           <Route path="calendar" element={<RoleGuard><CalendarPage /></RoleGuard>} />
           <Route path="reports" element={<RoleGuard><ReportsPage /></RoleGuard>} />
+          <Route path="smm-daily" element={<RoleGuard><SmmDailyPage /></RoleGuard>} />
           <Route path="analytics" element={<RoleGuard><AnalyticsPage /></RoleGuard>} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="profile" element={<ProfilePage />} />

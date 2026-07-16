@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { KpiService } from './kpi.service';
+import { SmmDailyService } from './smm-daily.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
@@ -10,13 +11,24 @@ import { UserRole } from '../users/user.entity';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('kpi')
 export class KpiController {
-  constructor(private kpi: KpiService) {}
+  constructor(
+    private kpi: KpiService,
+    private smmDaily: SmmDailyService,
+  ) {}
 
   /** KPI всех сотрудников за период. Для дашборда основателя. */
   @Get('all')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   getAll(@Query('from') from?: string, @Query('to') to?: string) {
     return this.kpi.getAllKpi(from, to);
+  }
+
+  /** Ежедневный автоотчёт по СММ-команде: что каждый сделал за день.
+   *  По требованию основателя видит ТОЛЬКО основатель (пока). */
+  @Get('smm-daily')
+  @Roles(UserRole.FOUNDER)
+  getSmmDaily(@Query('date') date?: string) {
+    return this.smmDaily.getDaily(date);
   }
 
   /** KPI конкретного юзера.

@@ -2,14 +2,14 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeDevBoard, canSeeProjectStories, canManageAccess, userCan, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeDevBoard, canSeeProjectStories, canManageAccess, canSeeSmmDaily, userCan, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, UserPlus,
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
   Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal,
-  Package, PersonStanding, MapPin,
+  Package, PersonStanding, MapPin, ClipboardList,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -52,6 +52,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/project-stories', icon: ImageIcon,     label: 'Истории по проектам', permission: 'stories.manage' },
     { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
     { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
+    // Ежедневный автоотчёт по СММ-команде — только основатель.
+    { to: '/smm-daily',     icon: ClipboardList,   label: 'Отчёты СММ',        permission: 'reports.view' },
     { to: '/analytics',     icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },
     { to: '/archive',       icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
     { to: '/employees',     icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
@@ -85,6 +87,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     if (item.to === '/project-stories') return canSeeProjectStories(role, secondaryRole)
     // «Доступы сотрудников» — только основатель/сооснователь/админ.
     if (item.to === '/employee-access') return canManageAccess(role)
+    // «Отчёты СММ» (ежедневный автоотчёт) — только основатель.
+    if (item.to === '/smm-daily') return canSeeSmmDaily(role)
     // Права роли + персональные гранты (например clients.view от clients.create).
     return userCan(user, item.permission)
   })
