@@ -389,20 +389,25 @@ function PayoutModal({ row, kind, ym, onClose }: { row: any; kind: 'advance' | '
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
         <div className="modal-head"><h3>{title} · {row.name}</h3><button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
-        <div className="form-grid">
-          <div className="field"><label>Сумма, с.</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-          <div className="field"><label>Дата</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        <div className="modal-body">
+          <div className="form-grid">
+            <div className="field"><label>Сумма, сомони</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+            <div className="field"><label>Дата</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+          </div>
+          <div className="field"><label>Со счёта</label>
+            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+              {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <p className="mini muted" style={{ margin: 0 }}>
+            Деньги спишутся со счёта сразу — операция появится в журнале.{' '}
+            {kind === 'advance' ? 'Аванс уменьшит остаток финальной выплаты.' : 'Бонус — сверх оклада.'}
+          </p>
         </div>
-        <div className="field"><label>Счёт списания</label>
-          <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-            {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </div>
-        <p className="mini muted">Деньги спишутся со счёта сразу — операция появится в журнале. {kind === 'advance' ? 'Аванс уменьшит остаток финальной выплаты.' : 'Бонус — сверх оклада, остаток финальной выплаты не уменьшает.'}</p>
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Отмена</button>
+        <div className="modal-foot">
+          <button className="btn ghost" onClick={onClose}>Отмена</button>
           <button className="btn primary" disabled={!(amt > 0) || !accountId || busy} onClick={save}>{title}</button>
         </div>
       </div>
