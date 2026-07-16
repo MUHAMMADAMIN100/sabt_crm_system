@@ -14,8 +14,9 @@ export default function ProjectStoriesPage() {
           Отмечайте количество сторис по каждому SMM-проекту за каждый день.
         </p>
       </div>
-      {/* Режим сторисмейкера: хотя бы одна сторис за день — зелёный. */}
-      <StoryCalendar greenAnyProgress />
+      {/* Режим сторисмейкера: хотя бы одна сторис за день — зелёный.
+          allowFuture — можно отмечать сторис заранее, на будущие дни. */}
+      <StoryCalendar greenAnyProgress allowFuture />
     </div>
   )
 }

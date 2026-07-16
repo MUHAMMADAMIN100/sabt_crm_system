@@ -34,6 +34,7 @@ const SALES_GREETINGS = [
 const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
 const MyWorkflowCards = lazy(() => import('./components/MyWorkflowCards'))
 const StorymakerDashboard = lazy(() => import('./components/StorymakerDashboard'))
+const UpcomingPublications = lazy(() => import('./components/UpcomingPublications'))
 
 
 // ── Helpers for story dot colors ──────────────────────────────────
@@ -179,6 +180,10 @@ export default function DashboardPage() {
         <Suspense fallback={<PageLoader />}>
           <FounderDashboard />
         </Suspense>
+        {/* Видеоролики к публикации на ближайшие 1–2 дня — видно руководству. */}
+        <Suspense fallback={null}>
+          <UpcomingPublications />
+        </Suspense>
         {/* Назначенные лично карточки доски — виджет сам скрыт, если их нет. */}
         <Suspense fallback={null}>
           <MyWorkflowCards />
@@ -199,6 +204,13 @@ export default function DashboardPage() {
         <Suspense fallback={<PageLoader />}>
           <PMDashboard />
         </Suspense>
+        {/* Видеоролики к публикации на ближайшие 1–2 дня — для руководителя СММ
+            (публикатор ему подчиняется по этапу «Готово к публикации»). */}
+        {(role === 'smm_director' || user?.secondaryRole === 'publisher') && (
+          <Suspense fallback={null}>
+            <UpcomingPublications />
+          </Suspense>
+        )}
         {/* Руководитель СММ/видео — штатный исполнитель этапов проверки/
             согласования; назначенные ему карточки показываем и в его кабинете. */}
         <Suspense fallback={null}>
@@ -235,6 +247,12 @@ export default function DashboardPage() {
             {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
           </p>
         </div>
+        {/* Сторисмейкер со второй ролью «публикатор» тоже видит ролики к публикации. */}
+        {(role === 'publisher' || user?.secondaryRole === 'publisher') && (
+          <Suspense fallback={null}>
+            <UpcomingPublications />
+          </Suspense>
+        )}
         <Suspense fallback={<PageLoader />}>
           <StorymakerDashboard />
         </Suspense>
@@ -243,6 +261,7 @@ export default function DashboardPage() {
   }
 
   if (isWorkerView) {
+    const isPublisher = role === 'publisher' || user?.secondaryRole === 'publisher'
     return (
       <div className="space-y-6">
         <div>
@@ -251,6 +270,12 @@ export default function DashboardPage() {
             {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
           </p>
         </div>
+        {/* Видеоролики к публикации на ближайшие 1–2 дня — кабинет публикатора. */}
+        {isPublisher && (
+          <Suspense fallback={null}>
+            <UpcomingPublications />
+          </Suspense>
+        )}
         <Suspense fallback={null}>
           <MyWorkflowCards />
         </Suspense>

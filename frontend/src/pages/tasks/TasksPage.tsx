@@ -613,7 +613,7 @@ export default function TasksPage() {
 
       {showStoryWidget && (
         <div className="lg:col-span-1">
-          <StoryCalendar compact />
+          <StoryCalendar compact allowFuture />
         </div>
       )}
       </div>{/* end grid */}

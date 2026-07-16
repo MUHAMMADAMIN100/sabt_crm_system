@@ -61,7 +61,8 @@ const CONFIGS: Record<Kind, { title: string; subtitle: string; icon: any; addLab
       { key: 'appearance', label: 'Внешность', textarea: true, placeholder: 'рост, телосложение, цвет волос, глаза…' },
       { key: 'experience', label: 'Опыт', textarea: true, placeholder: 'съёмки, показы, портфолио…' },
       { key: 'rate', label: 'Ставка за съёмку, с.', money: true },
-      { key: 'note', label: 'Заметка', textarea: true },
+      // «Заметка» убрана по просьбе организатора — вместо неё знание языков.
+      { key: 'languages', label: 'Знание языков', placeholder: 'русский, английский, таджикский…', maxLength: 200 },
     ],
   },
   places: {
@@ -163,7 +164,8 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
                         {kind === 'models' && <ModelThumb photo={r.photo} name={r.name} />}
                         <div className="min-w-0">
                           <span className="font-semibold text-surface-900 dark:text-surface-100">{r[c.key]}</span>
-                          {r.note && <p className="text-[11px] text-surface-400 truncate max-w-[220px]" title={r.note}>{r.note}</p>}
+                          {/* У моделей заметка убрана из формы — старые не показываем. */}
+                          {kind !== 'models' && r.note && <p className="text-[11px] text-surface-400 truncate max-w-[220px]" title={r.note}>{r.note}</p>}
                         </div>
                       </div>
                     ) : c.options ? (

@@ -37,6 +37,8 @@ export class OrganizerDirectoryService implements OnModuleInit {
     await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "appearance" text`);
     await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "experience" text`);
     await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "photo" varchar(300)`);
+    // «Знание языков» вместо «Заметки» в форме моделей (колонка note остаётся с данными).
+    await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "languages" varchar(200)`);
     // Старые записи: переносим объединённый «Типаж» во «Внешность», чтобы не потерять данные.
     // Миграция самоочищающаяся — обнуляем look в той же строке, иначе onModuleInit
     // на каждом рестарте заново копировал бы look в appearance и воскрешал бы
@@ -58,7 +60,8 @@ export class OrganizerDirectoryService implements OnModuleInit {
   /** Разрешённые поля каждого справочника — защита от мусора в body. */
   private static FIELDS: Record<string, string[]> = {
     clients: ['name', 'company', 'phone', 'instagram', 'telegram', 'address', 'note'],
-    models: ['name', 'gender', 'phone', 'instagram', 'age', 'appearance', 'experience', 'photo', 'rate', 'note'],
+    // «note» убран по просьбе организатора — вместо заметки «Знание языков».
+    models: ['name', 'gender', 'phone', 'instagram', 'age', 'appearance', 'experience', 'photo', 'languages', 'rate'],
     places: ['name', 'address', 'contact', 'price', 'link', 'note'],
   };
 
@@ -76,9 +79,10 @@ export class OrganizerDirectoryService implements OnModuleInit {
         // /uploads/models/<photo>. Отсекаем пути и traversal (`../`).
         const raw = typeof dto[f] === 'string' ? dto[f].trim() : '';
         out[f] = /^[A-Za-z0-9._-]{1,120}$/.test(raw) ? raw : null;
-      } else if (f === 'age') {
-        // Колонка varchar(60): обрезаем, иначе длинная вставка → Postgres 22001 → 500.
-        const v = typeof dto[f] === 'string' ? dto[f].trim().slice(0, 60) : '';
+      } else if (f === 'age' || f === 'languages') {
+        // varchar(60)/varchar(200): обрезаем, иначе длинная вставка → Postgres 22001 → 500.
+        const max = f === 'age' ? 60 : 200;
+        const v = typeof dto[f] === 'string' ? dto[f].trim().slice(0, max) : '';
         out[f] = v === '' ? null : v;
       } else {
         const v = typeof dto[f] === 'string' ? dto[f].trim() : dto[f];

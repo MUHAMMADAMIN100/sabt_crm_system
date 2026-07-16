@@ -434,6 +434,10 @@ export const workflowApi = {
   /** Глобальная занятость дат (публикации/съёмки всех проектов) — для
    *  подсветки календаря при планировании. */
   publicationLoad: () => api.get('/workflow/publication-load').then(r => r.data),
+  /** Видеоролики, запланированные к публикации на ближайшие N дней (по
+   *  умолчанию 1–2 дня) — для кабинета публикатора и дашбордов. */
+  upcomingPublications: (days = 2) =>
+    api.get('/workflow/upcoming-publications', { params: { days } }).then(r => r.data),
   create: (projectId: string, data: any) => api.post(`/workflow/project/${projectId}`, data).then(r => r.data),
   /** M3: сгенерировать план месяца из тарифа (рилсы + макеты). */
   generatePlan: (projectId: string, month?: string) =>

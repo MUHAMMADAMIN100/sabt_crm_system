@@ -450,6 +450,14 @@ export class AnalyticsService {
       order: { createdAt: 'DESC' },
     });
 
+    // Дата последней полученной оплаты — колонка «Дата оплаты» в SalesDashboard
+    // (тот же агрегат, что в projects.service.findAll).
+    const payRows: Array<{ projectId: string; last: string }> = await this.projectRepo.manager.query(
+      `SELECT "projectId", MAX("paidAt")::text AS last FROM project_payments
+       WHERE amount > 0 GROUP BY "projectId"`,
+    ).catch(() => []);
+    const payMap: Record<string, string> = Object.fromEntries(payRows.map(r => [r.projectId, r.last]));
+
     const now = new Date();
     const twoWeeks = new Date(now.getTime() + 14 * 86400000);
 
@@ -491,6 +499,7 @@ export class AnalyticsService {
         // Используется в SalesDashboard: МП может редактировать дату следующей
         // оплаты прямо из таблицы; cron-напоминание создаётся отдельно.
         nextPaymentDate: p.nextPaymentDate || null,
+        lastPaymentAt: payMap[p.id] ?? null,
         managerName: p.manager?.name || null,
         salesManagerName: p.salesManager?.name || null,
         salesManagerId: p.salesManagerId || null,

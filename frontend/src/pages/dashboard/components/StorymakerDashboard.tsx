@@ -142,9 +142,10 @@ export default function StorymakerDashboard() {
         </div>
 
         {/* Календарь — отметка сторис прямо отсюда.
-            Режим сторисмейкера: хотя бы одна сторис за день — зелёный. */}
+            Режим сторисмейкера: хотя бы одна сторис за день — зелёный.
+            allowFuture — можно отмечать сторис заранее, на будущие дни. */}
         <div className="lg:col-span-2">
-          <StoryCalendar greenAnyProgress />
+          <StoryCalendar greenAnyProgress allowFuture />
         </div>
       </div>
     </div>

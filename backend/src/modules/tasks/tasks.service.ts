@@ -448,6 +448,9 @@ export class TasksService implements OnModuleInit {
   }
 
   async create(dto: CreateTaskDto, userId: string, userRole?: string) {
+    if (!dto.deadline) {
+      throw new BadRequestException('Укажите дедлайн задачи');
+    }
     // Workers (non-PM) can only create tasks assigned to themselves.
     // НО: если пользователь — реальный менеджер целевого проекта (по
     // project.managerId), он тоже может назначать на других, даже когда
@@ -672,6 +675,11 @@ export class TasksService implements OnModuleInit {
 
   async update(id: string, dto: UpdateTaskDto, user: { id: string; role: string; name?: string }) {
     const task = await this.findOne(id);
+
+    // Дедлайн нельзя очистить — только перенести на другую дату.
+    if ('deadline' in (dto as any) && !(dto as any).deadline) {
+      throw new BadRequestException('Дедлайн нельзя очистить');
+    }
 
     // Workers can only update tasks assigned to them OR created by them
     // (МП по продажам создаёт задачи в календаре — должен их редактировать).

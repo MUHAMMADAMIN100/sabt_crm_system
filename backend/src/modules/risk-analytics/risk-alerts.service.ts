@@ -9,6 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { RiskAnalyticsService } from './risk-analytics.service';
 import { ProjectsService } from '../projects/projects.service';
+import { DEV_PROJECT_TYPES } from '../../common/sales-segment';
 
 /** Wave 6: оркестратор алертов по операционным рискам.
  *  Каждый чекер собирает данные → определяет триггеры → шлёт уведомления
@@ -34,6 +35,7 @@ export class RiskAlertsService {
       this.checkPmOverload(),
       this.checkTariffOveruse(),
       this.checkPaymentApproaching(),
+      this.checkPaymentFollowUp(),
       this.checkWeekNoContent(),
       this.checkTooManyPmReviews(),
       this.checkLaunchIncomplete(),
@@ -198,6 +200,69 @@ export class RiskAlertsService {
           link: `/projects/${p.id}`,
           data: { alertKey: `payment-soon:${p.id}:${dateStr}`, projectId: p.id },
         }, 24).catch(() => {});
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // 4b. Две недели после полученной оплаты — напоминание менеджеру продаж
+  //     связаться с клиентом (по просьбе отдела продаж). Ровно один раз на
+  //     каждый платёж: чекер ловит платежи с paidAt = сегодня−14 дней,
+  //     дедуп по alertKey с id платежа.
+  // ─────────────────────────────────────────────────────────────────────
+  async checkPaymentFollowUp() {
+    // Дата по Душанбе — сервер живёт в UTC.
+    const todayIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
+    const target = new Date(todayIso + 'T00:00:00Z');
+    target.setUTCDate(target.getUTCDate() - 14);
+    const targetIso = target.toISOString().slice(0, 10);
+
+    // Диапазон в 3 дня (14..16 дней назад) — страховка от пропущенного прогона
+    // крона (рестарт/даунтайм): напоминание не потеряется. От дублей защищает
+    // alertKey с id платежа + dedupHours 96 ниже.
+    const rows: Array<{
+      id: string; projectId: string; amount: string; name: string;
+      salesManagerId: string | null; projectType: string | null;
+    }> = await this.projectRepo.manager.query(
+      `SELECT pp.id, pp."projectId", pp.amount, p.name, p."salesManagerId", p."projectType"
+       FROM project_payments pp
+       JOIN projects p ON p.id = pp."projectId"
+       WHERE pp."paidAt" BETWEEN $1::date - INTERVAL '2 days' AND $1::date
+         AND pp.amount > 0 AND p."isArchived" = false`,
+      [targetIso],
+    ).catch(() => []);
+    if (rows.length === 0) return;
+
+    const salesManagers = await this.userRepo.find({
+      where: {
+        role: In([UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV]),
+        isActive: true,
+        isBlocked: false,
+      },
+    });
+    const fmt = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
+
+    for (const r of rows) {
+      const recipients = new Set<string>();
+      if (r.salesManagerId) recipients.add(r.salesManagerId);
+      // Менеджеры продаж строго своего направления: SMM → МП-СММ, dev-типы →
+      // МП-разработки. Проекты вне сегментов (например, Дизайн) — только
+      // закреплённому МП, чтобы не спамить чужое направление.
+      const wantRole = r.projectType === 'SMM'
+        ? UserRole.SALES_MANAGER_SMM
+        : DEV_PROJECT_TYPES.includes(r.projectType || '') ? UserRole.SALES_MANAGER_DEV : null;
+      if (wantRole) salesManagers.filter(s => s.role === wantRole).forEach(s => recipients.add(s.id));
+
+      for (const rid of recipients) {
+        await this.notificationsService.createIfNotRecent({
+          userId: rid,
+          type: NotificationType.PAYMENT_REMINDER,
+          title: '💰 2 недели после оплаты',
+          message: `Проект «${r.name}»: оплата ${fmt.format(Number(r.amount) || 0)} смн получена 2 недели назад — свяжитесь с клиентом.`,
+          link: `/projects/${r.projectId}`,
+          data: { alertKey: `paid-14d:${r.id}`, projectId: r.projectId },
+          // 96 ч > 3-дневного окна выборки — один платёж = одно уведомление.
+        }, 96).catch(() => {});
       }
     }
   }

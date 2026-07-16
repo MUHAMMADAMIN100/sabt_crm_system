@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -43,13 +43,20 @@ export class StoriesService {
   }
 
   async upsert(employeeId: string, projectId: string, date: string, storiesCount: number) {
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new BadRequestException('Некорректная дата (ожидается формат YYYY-MM-DD)');
+    }
+    // UI-лимиты на количество сторис в день сняты для сторисмейкера — защитный
+    // кламп на бэке, чтобы нельзя было записать мусор/отрицательные значения.
+    const safeStoriesCount = Math.max(0, Math.min(30, Math.round(Number(storiesCount) || 0)));
+
     let log = await this.repo.findOne({ where: { employeeId, projectId, date } });
     const isUpdate = !!log;
 
     if (log) {
-      log.storiesCount = storiesCount;
+      log.storiesCount = safeStoriesCount;
     } else {
-      log = this.repo.create({ employeeId, projectId, date, storiesCount });
+      log = this.repo.create({ employeeId, projectId, date, storiesCount: safeStoriesCount });
     }
     const saved = await this.repo.save(log);
 
@@ -58,7 +65,7 @@ export class StoriesService {
       action: ActivityAction.STORY_UPDATE,
       entity: 'project',
       entityId: projectId,
-      details: { date, storiesCount, isUpdate },
+      details: { date, storiesCount: safeStoriesCount, isUpdate },
     });
 
     this.gateway.broadcast('stories:changed', { projectId, employeeId, date });

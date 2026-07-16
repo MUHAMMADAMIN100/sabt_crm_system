@@ -72,10 +72,16 @@ export class OrgModel {
   @Column({ type: 'varchar', length: 300, nullable: true })
   photo: string | null;
 
+  /** Знание языков: «русский, английский…». Заменило «Заметку» в форме. */
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  languages: string | null;
+
   /** Ставка за съёмку, сомони. */
   @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
   rate: number | null;
 
+  /** Legacy: поле убрано из формы моделей (заменено на languages),
+   *  колонка сохранена, чтобы не терять старые данные. */
   @Column({ type: 'text', nullable: true })
   note: string | null;
 

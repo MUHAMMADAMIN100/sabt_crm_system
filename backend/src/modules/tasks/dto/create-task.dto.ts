@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsNumber, IsInt, IsUUID, IsBoolean, IsArray, Min, Max, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsDateString, IsNumber, IsInt, IsUUID, IsBoolean, IsArray, IsNotEmpty, Min, Max, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { TaskPriority, TaskStatus, TaskScope } from '../task.entity';
 import { PartialType } from '@nestjs/mapped-types';
@@ -21,7 +21,7 @@ export class CreateTaskDto {
   @ApiProperty({ enum: TaskPriority, required: false }) @IsOptional() @IsEnum(TaskPriority) priority?: TaskPriority;
   @ApiProperty({ enum: TaskStatus, required: false }) @IsOptional() @IsEnum(TaskStatus) status?: TaskStatus;
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() startDate?: string;
-  @ApiProperty({ required: false }) @IsOptional() @IsDateString() deadline?: string;
+  @ApiProperty() @IsDateString() @IsNotEmpty() deadline: string;
   /** Этап доски «Разработка» (1..6) — карточка этапа, созданная с dev-доски. */
   @ApiProperty({ required: false }) @IsOptional() @IsInt() @Min(1) @Max(6) devStage?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() estimatedHours?: number;

@@ -442,18 +442,29 @@ export default function ProjectsPage() {
                   <Users size={12} />
                   <span>{p.members?.length || 0} {t('projects.members')}</span>
                 </div>
-                {p.endDate && (
+                {/* Дедлайн проекта скрыт для менеджера продаж (по просьбе отдела). */}
+                {!isSalesManagerView && p.endDate && (
                   <span>{t('projects.until')} {format(new Date(p.endDate), 'dd.MM.yyyy')}</span>
                 )}
               </div>
 
-              {isSalesManagerView && p.nextPaymentDate && (
-                <div className="flex items-center gap-1 mt-2 text-[11px] font-medium text-surface-600 dark:text-surface-400">
-                  <Banknote size={12} />
-                  <span>
-                    Следующая оплата: {format(new Date(p.nextPaymentDate), 'dd.MM.yyyy')}
-                    {p.monthlyFee ? ` — ${Number(p.monthlyFee).toLocaleString('ru-RU')} смн` : ''}
-                  </span>
+              {isSalesManagerView && (p.lastPaymentAt || p.nextPaymentDate) && (
+                <div className="mt-2 space-y-0.5 text-[11px] font-medium text-surface-600 dark:text-surface-400">
+                  {p.lastPaymentAt && (
+                    <div className="flex items-center gap-1">
+                      <Banknote size={12} />
+                      <span>Оплата получена: {format(new Date(p.lastPaymentAt), 'dd.MM.yyyy')}</span>
+                    </div>
+                  )}
+                  {p.nextPaymentDate && (
+                    <div className="flex items-center gap-1">
+                      <Banknote size={12} />
+                      <span>
+                        Следующая оплата: {format(new Date(p.nextPaymentDate), 'dd.MM.yyyy')}
+                        {p.monthlyFee ? ` — ${Number(p.monthlyFee).toLocaleString('ru-RU')} смн` : ''}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 

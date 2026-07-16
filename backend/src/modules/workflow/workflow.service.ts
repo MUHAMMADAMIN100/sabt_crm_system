@@ -107,6 +107,13 @@ const DEADLINE_OFFSETS: Record<string, Record<string, number>> = {
   static: { design: 5, internal_review: 3, client_approval: 2, ready_to_publish: 1 },
 };
 
+/** ISO-дата ('YYYY-MM-DD') + delta дней (тот же паттерн, что в finance.service). */
+function addDaysISO(iso: string, delta: number): string {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
 @Injectable()
 export class WorkflowService implements OnModuleInit {
   private readonly logger = new Logger(WorkflowService.name);
@@ -1112,6 +1119,101 @@ export class WorkflowService implements OnModuleInit {
       }
     }
     return out;
+  }
+
+  /** Видеоролики (рилсы), запланированные к публикации на ближайшие N дней
+   *  (по умолчанию 1–2 дня) — для кабинета публикатора. Публикатор видит
+   *  ВСЮ доску (как и роли из canSeeWholeBoard); остальным — только их зона
+   *  видимости (как в visibleAllCards). Единицы: одиночные карточки-рилсы
+   *  и элементы групповых карточек kind='reels' (макеты — не видео, пропуск;
+   *  kp — дубль группы, пропуск). */
+  async upcomingPublications(viewer: Viewer, days = 2): Promise<Array<{
+    cardId: string; itemId?: string; title: string; projectId: string; project: string;
+    publishDate: string; stage: string; ready: boolean; published: boolean; assigneeId: string | null;
+  }>> {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
+    // days=2 → «сегодня и завтра» (окно включает обе границы): days-1.
+    const endDate = addDaysISO(today, Math.max(0, days - 1));
+
+    const u = await this.userRepo.findOne({ where: { id: viewer.id } });
+    const isPublisher = viewer.role === 'publisher' || u?.secondaryRole === 'publisher';
+    const seeAll = isPublisher || await this.canSeeWholeBoard(viewer);
+
+    const projects = await this.projectRepo.createQueryBuilder('p')
+      .select(['p.id', 'p.name', 'p.managerId'])
+      .where('p."isArchived" = false')
+      .andWhere(`p."projectType" = 'SMM'`)
+      .getMany();
+    if (projects.length === 0) return [];
+    const nameMap = new Map(projects.map(p => [p.id, p.name]));
+
+    const cards = await this.repo.find({ where: { projectId: In(projects.map(p => p.id)) } });
+
+    let visible = cards;
+    if (!seeAll) {
+      const memberRows: Array<{ projectsId: string }> = await this.repo.manager.query(
+        `SELECT "projectsId" FROM project_members WHERE "usersId" = $1`,
+        [viewer.id],
+      );
+      const myProjectIds = new Set<string>([
+        ...projects.filter(p => (p as any).managerId === viewer.id).map(p => p.id),
+        ...memberRows.map(r => r.projectsId),
+      ]);
+      visible = cards.filter(c => myProjectIds.has(c.projectId) || this.isAssignee(c, viewer.id));
+    }
+
+    const day = (v: any): string | null => {
+      if (!v) return null;
+      const s = String(v).slice(0, 10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+    };
+    const inWindow = (d: string | null): d is string => !!d && d >= today && d <= endDate;
+
+    type Row = {
+      cardId: string; itemId?: string; title: string; projectId: string; project: string;
+      publishDate: string; stage: string; ready: boolean; published: boolean; assigneeId: string | null;
+    };
+    const out: Row[] = [];
+
+    for (const c of visible) {
+      if (c.kind === 'reels') {
+        for (const it of (c.items || []) as any[]) {
+          const d = day(it?.publishDate);
+          if (!inWindow(d)) continue;
+          out.push({
+            cardId: c.id,
+            itemId: it?.id,
+            title: it?.title || 'Reels',
+            projectId: c.projectId,
+            project: nameMap.get(c.projectId) || 'Проект',
+            publishDate: d,
+            stage: c.stage,
+            ready: c.stage === 'ready_to_publish',
+            published: c.stage === 'published',
+            assigneeId: it?.assigneeId || c.assigneeId || null,
+          });
+        }
+        continue;
+      }
+      if (c.kind != null) continue; // 'kp' — дубль группы, 'macros' — не видео
+      if (c.type === 'cover') continue;
+      if (!this.isReelsCard(c)) continue;
+      const d = day(c.publishDate);
+      if (!inWindow(d)) continue;
+      out.push({
+        cardId: c.id,
+        title: c.title,
+        projectId: c.projectId,
+        project: nameMap.get(c.projectId) || 'Проект',
+        publishDate: d,
+        stage: c.stage,
+        ready: c.stage === 'ready_to_publish',
+        published: c.stage === 'published',
+        assigneeId: c.assigneeId || null,
+      });
+    }
+
+    return out.sort((a, b) => a.publishDate.localeCompare(b.publishDate));
   }
 
   async update(id: string, dto: any, viewer: Viewer) {

@@ -429,11 +429,20 @@ export default function ProjectDetailPage() {
           <p className="text-2xl font-bold text-surface-900 dark:text-surface-100">{participantCount}</p>
           <p className="text-xs text-surface-500 dark:text-surface-400">{t('projects.participants')}</p>
         </div>
-        <div className="card text-center">
-          <Calendar size={18} className="text-surface-500 mx-auto mb-1" />
-          <p className="text-sm font-bold text-surface-900 dark:text-surface-100">{project.endDate ? format(new Date(project.endDate), 'dd.MM.yyyy') : '—'}</p>
-          <p className="text-xs text-surface-500 dark:text-surface-400">{t('projects.deadline')}</p>
-        </div>
+        {/* МП вместо дедлайна проекта видит дату последней оплаты (по просьбе отдела продаж). */}
+        {['sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '') ? (
+          <div className="card text-center">
+            <Calendar size={18} className="text-surface-500 mx-auto mb-1" />
+            <p className="text-sm font-bold text-surface-900 dark:text-surface-100">{(project as any).lastPaymentAt ? format(new Date((project as any).lastPaymentAt), 'dd.MM.yyyy') : '—'}</p>
+            <p className="text-xs text-surface-500 dark:text-surface-400">Дата оплаты</p>
+          </div>
+        ) : (
+          <div className="card text-center">
+            <Calendar size={18} className="text-surface-500 mx-auto mb-1" />
+            <p className="text-sm font-bold text-surface-900 dark:text-surface-100">{project.endDate ? format(new Date(project.endDate), 'dd.MM.yyyy') : '—'}</p>
+            <p className="text-xs text-surface-500 dark:text-surface-400">{t('projects.deadline')}</p>
+          </div>
+        )}
         <div className="card">
           <div className="flex justify-between mb-1">
             <span className="text-xs text-surface-500 dark:text-surface-400">{t('projects.progress')}</span>
@@ -703,6 +712,8 @@ export default function ProjectDetailPage() {
                   <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.startDate ? format(new Date(project.startDate), 'dd.MM.yyyy') : '—'}</p>
                 </div>
               </div>
+              {/* Дата завершения скрыта от МП — вместе с дедлайном (просьба отдела продаж). */}
+              {!['sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '') && (
               <div className="flex items-start gap-3">
                 <Calendar size={16} className="text-red-400 mt-0.5 shrink-0" />
                 <div>
@@ -710,6 +721,7 @@ export default function ProjectDetailPage() {
                   <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.endDate ? format(new Date(project.endDate), 'dd.MM.yyyy') : '—'}</p>
                 </div>
               </div>
+              )}
               <div className="flex items-start gap-3">
                 <CheckSquare size={16} className="text-primary-500 mt-0.5 shrink-0" />
                 <div>

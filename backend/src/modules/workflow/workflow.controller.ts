@@ -51,6 +51,13 @@ export class WorkflowController {
     return this.service.publicationLoad();
   }
 
+  /** Видеоролики, запланированные к публикации на ближайшие N дней (для
+   *  кабинета публикатора и дашбордов руководства). */
+  @Get('upcoming-publications')
+  upcoming(@Request() req, @Query('days') days?: string) {
+    return this.service.upcomingPublications(req.user, Math.min(7, Math.max(1, Number(days) || 2)));
+  }
+
   /** Очистить всю доску (для тестов) — только руководитель. */
   @Post('clear')
   clearAll(@Request() req) {

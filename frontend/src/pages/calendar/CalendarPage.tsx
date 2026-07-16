@@ -37,6 +37,37 @@ const SCOPE_LABEL: Record<string, string> = {
 
 type ScopeFilter = '' | 'personal' | 'business' | 'general'
 
+/** Тумблер «выполнено / не выполнено» — маленький круглый значок слева от
+ *  названия события. Залитый зелёный, если задача done; иначе контурный,
+ *  зеленеет при наведении. Рендерится внутри карточки-<button> события,
+ *  поэтому оформлен как <span role="button"> (вложенный <button> невалиден). */
+function TaskStatusToggle({ done, onToggle }: { done: boolean; onToggle: (e: React.SyntheticEvent) => void }) {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onToggle(e)
+    }
+  }
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={handleKeyDown}
+      title={done ? 'Отметить как невыполненную' : 'Отметить как выполненную'}
+      className={clsx(
+        // after:-inset — увеличенная зона клика без изменения видимого кружка.
+        'shrink-0 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border transition-colors relative after:absolute after:-inset-1.5 after:content-[\'\'] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500',
+        done
+          ? 'bg-green-500 border-green-500 text-white'
+          : 'border-surface-300 dark:border-surface-600 text-transparent hover:border-green-500 hover:text-green-500',
+      )}
+    >
+      <Check size={9} strokeWidth={3} />
+    </span>
+  )
+}
+
 export default function CalendarPage() {
   const [current, setCurrent] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
@@ -155,12 +186,37 @@ export default function CalendarPage() {
   /** Может ли текущий пользователь подтверждать задачи. */
   const canApprove = ['founder', 'co_founder', 'admin'].includes(user?.role || '')
 
+  /** Может ли текущий пользователь переключать статус задачи одним кликом
+   *  прямо на карточке события в календаре. Зеркалит серверные правила
+   *  PATCH /tasks/:id (иначе тумблер будет упираться в 403). */
+  const canToggleTask = (e: any) =>
+    e.type === 'task' && !!e.taskId && (e.assigneeId === user?.id || e.createdById === user?.id || isManagerPlus)
+
   // Смена статуса задачи прямо из модалки на Календаре. Инвалидируем
   // все ключи где задача отображается — статус виден синхронно в Проекте,
   // на странице Задач, в Календаре и в карточке задачи.
   const statusMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       tasksApi.update(id, { status }),
+    onMutate: async ({ id, status }) => {
+      await qc.cancelQueries({ queryKey: ['calendar', from, to, scopeFilter] })
+      const previous = qc.getQueryData(['calendar', from, to, scopeFilter])
+      qc.setQueryData(['calendar', from, to, scopeFilter], (old: any[]) => {
+        if (!Array.isArray(old)) return old
+        return old.map((ev: any) =>
+          ev.taskId === id
+            ? { ...ev, status, progress: status === 'done' ? 100 : status === 'in_progress' ? 50 : 0 }
+            : ev,
+        )
+      })
+      return { previous }
+    },
+    onError: (err: any, _vars, ctx) => {
+      qc.setQueryData(['calendar', from, to, scopeFilter], ctx?.previous)
+      // Сообщение бэка важно: например «Загрузите результат работы…» —
+      // без него исполнитель не поймёт, почему галочка «откатилась».
+      toast.error(err?.response?.data?.message || 'Не удалось изменить статус')
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['calendar'] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
@@ -170,7 +226,6 @@ export default function CalendarPage() {
       qc.invalidateQueries({ queryKey: ['project'] })
       toast.success('Статус обновлён')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось изменить статус'),
   })
 
   // Drag-and-drop: при сбросе задачи на другой день — обновляем deadline.
@@ -459,6 +514,8 @@ export default function CalendarPage() {
             newDeadline.setHours(hour, oldDate.getMinutes() || 0, 0, 0)
             updateTask.mutate({ id: evt.taskId, data: { deadline: newDeadline.toISOString() } })
           }}
+          canToggle={canToggleTask}
+          onToggleStatus={(e) => statusMut.mutate({ id: e.taskId, status: e.status === 'done' ? 'in_progress' : 'done' })}
         />
       ) : (
       <>
@@ -533,8 +590,18 @@ export default function CalendarPage() {
                           colorClass,
                           isDraggable && 'cursor-grab active:cursor-grabbing',
                           draggingEventId === e.id && 'opacity-40',
+                          e.status === 'done' && 'opacity-60 line-through',
                         )}
                       >
+                        {canToggleTask(e) && (
+                          <TaskStatusToggle
+                            done={e.status === 'done'}
+                            onToggle={(ev) => {
+                              ev.stopPropagation()
+                              statusMut.mutate({ id: e.taskId, status: e.status === 'done' ? 'in_progress' : 'done' })
+                            }}
+                          />
+                        )}
                         {e.scope === 'personal' && <Lock className="shrink-0" size={9} />}
                         <span className="truncate flex-1 min-w-0">{e.title}</span>
                         {/* Прогресс % — только для основателя/сооснователя. */}
@@ -604,12 +671,22 @@ export default function CalendarPage() {
                           type="button"
                           onClick={ev => { ev.stopPropagation(); openEvent(e) }}
                           className={clsx(
-                            'text-left text-xs px-2 py-1 rounded border truncate font-medium',
+                            'flex items-center gap-1 text-left text-xs px-2 py-1 rounded border font-medium',
                             colorClass,
+                            e.status === 'done' && 'opacity-60 line-through',
                           )}
                         >
-                          {e.scope === 'personal' && <Lock className="inline mr-0.5" size={10} />}
-                          {e.title}
+                          {canToggleTask(e) && (
+                            <TaskStatusToggle
+                              done={e.status === 'done'}
+                              onToggle={(ev) => {
+                                ev.stopPropagation()
+                                statusMut.mutate({ id: e.taskId, status: e.status === 'done' ? 'in_progress' : 'done' })
+                              }}
+                            />
+                          )}
+                          {e.scope === 'personal' && <Lock className="shrink-0" size={10} />}
+                          <span className="truncate flex-1 min-w-0">{e.title}</span>
                         </button>
                       )
                     })}
@@ -867,8 +944,18 @@ export default function CalendarPage() {
                   className={clsx(
                     'flex items-center gap-2 w-full text-left text-sm px-3 py-2 rounded-lg border font-medium',
                     colorClass,
+                    e.status === 'done' && 'opacity-60 line-through',
                   )}
                 >
+                  {canToggleTask(e) && (
+                    <TaskStatusToggle
+                      done={e.status === 'done'}
+                      onToggle={(ev) => {
+                        ev.stopPropagation()
+                        statusMut.mutate({ id: e.taskId, status: e.status === 'done' ? 'in_progress' : 'done' })
+                      }}
+                    />
+                  )}
                   {e.scope === 'personal' && <Lock size={12} className="shrink-0" />}
                   <span className="flex-1 min-w-0 truncate">{e.title}</span>
                   {e.type === 'task' && typeof e.progress === 'number' && (
@@ -952,7 +1039,7 @@ const WK_MIN = 8
 const WK_MAX = 21
 
 function WeekView({
-  weekStart, events, canCreate, onSlotClick, onEventClick, onMoveEvent,
+  weekStart, events, canCreate, onSlotClick, onEventClick, onMoveEvent, canToggle, onToggleStatus,
 }: {
   weekStart: Date
   events: any[]
@@ -961,6 +1048,10 @@ function WeekView({
   onEventClick: (e: any) => void
   /** Перетаскивание задачи в конкретный день+час. Меняет полную дату дедлайна. */
   onMoveEvent?: (event: any, day: Date, hour: number) => void
+  /** Может ли пользователь переключать статус этого события одним кликом. */
+  canToggle?: (e: any) => boolean
+  /** Переключить статус задачи (done ↔ in_progress). */
+  onToggleStatus?: (e: any) => void
 }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
   const slotHour = (e: any) => {
@@ -1072,8 +1163,15 @@ function WeekView({
                       className={clsx(
                         'flex items-center gap-1 w-full text-left text-[11px] px-1.5 py-0.5 rounded border font-medium',
                         colorClass,
+                        e.status === 'done' && 'opacity-60 line-through',
                       )}
                     >
+                      {canToggle?.(e) && (
+                        <TaskStatusToggle
+                          done={e.status === 'done'}
+                          onToggle={(ev) => { ev.stopPropagation(); onToggleStatus?.(e) }}
+                        />
+                      )}
                       {e.scope === 'personal' && <Lock size={9} className="shrink-0" />}
                       <span className="truncate flex-1 min-w-0">{e.title}</span>
                     </button>
@@ -1149,8 +1247,15 @@ function WeekView({
                           colorClass,
                           draggable && 'cursor-grab active:cursor-grabbing',
                           draggingId === e.id && 'opacity-50',
+                          e.status === 'done' && 'opacity-60 line-through',
                         )}
                       >
+                        {canToggle?.(e) && (
+                          <TaskStatusToggle
+                            done={e.status === 'done'}
+                            onToggle={(ev) => { ev.stopPropagation(); onToggleStatus?.(e) }}
+                          />
+                        )}
                         {e.scope === 'personal' && <Lock size={9} className="shrink-0" />}
                         <span className="text-[10px] tabular-nums opacity-70 shrink-0">{eventTime}</span>
                         <span className="truncate flex-1 min-w-0">{e.title}</span>
@@ -1232,7 +1337,9 @@ function FounderQuickTaskForm({
   // Дата + время дедлайна. Из initialDeadline: полный ISO → дата+время,
   // короткая дата (YYYY-MM-DD) → дата + время по умолчанию 12:00.
   const initDeadline = useMemo(() => {
-    if (!initialDeadline) return { date: '', time: '12:00' }
+    // Дедлайн обязателен — если форма открыта без предзаполненной даты
+    // (создание без выбранного дня), подставляем сегодняшнюю дату.
+    if (!initialDeadline) return { date: format(new Date(), 'yyyy-MM-dd'), time: '12:00' }
     if (initialDeadline.includes('T')) {
       const dt = new Date(initialDeadline)
       if (!isNaN(dt.getTime())) {
@@ -1282,6 +1389,10 @@ function FounderQuickTaskForm({
     if (!title.trim()) { toast.error('Укажите название задачи'); return }
     if (scope === 'business' && selectedIds.length === 0) {
       toast.error('Выберите хотя бы одного исполнителя')
+      return
+    }
+    if (!deadlineDate) {
+      toast.error('Укажите дедлайн задачи')
       return
     }
     onSubmit({
@@ -1571,7 +1682,7 @@ function FounderQuickTaskForm({
           время оставляем native (он терпимый), только стилизован. */}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="label">Дата дедлайна</label>
+          <label className="label">Дата дедлайна *</label>
           <DatePicker value={deadlineDate} onChange={setDeadlineDate} />
         </div>
         <div>

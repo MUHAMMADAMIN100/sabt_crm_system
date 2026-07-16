@@ -16,6 +16,10 @@ interface StoryCalendarProps {
    *  (без градаций «< половины / ≥ половины»). Руководительские виды
    *  (adminAll/employeeId) сохраняют градацию выполнения плана. */
   greenAnyProgress?: boolean
+  /** Разрешить отмечать будущие дни (сторисмейкер может публиковать заранее).
+   *  Не влияет на isReadonly — руководительские виды (adminAll/employeeId)
+   *  остаются доступными только для просмотра. */
+  allowFuture?: boolean
 }
 
 const FALLBACK_TARGET = 3 // used only if project has no smmData.storiesPerDay
@@ -27,7 +31,7 @@ function getDailyTarget(project: any): number {
   return Number.isFinite(v) && v > 0 ? Math.min(v, 12) : FALLBACK_TARGET
 }
 
-export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyProgress }: StoryCalendarProps) {
+export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyProgress, allowFuture }: StoryCalendarProps) {
   const [current, setCurrent] = useState(new Date())
   const [selectedProject, setSelectedProject] = useState<any>(null)
   const [animMap, setAnimMap] = useState<Record<string, 'pop' | 'unpop'>>({})
@@ -233,6 +237,12 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
     upsertStory.mutate({ projectId, date: dateStr, storiesCount: Math.max(0, newCount) })
   }
 
+  /** Отметить ещё одну сторис сверх дневного плана (дневной лимит снят). */
+  const handleAddExtra = (projectId: string, dateStr: string, currentCount: number) => {
+    if (isReadonly) return
+    upsertStory.mutate({ projectId, date: dateStr, storiesCount: currentCount + 1 })
+  }
+
   /** Checkbox color: filled vs target. */
   const getCheckboxColor = (index: number, count: number, target: number) => {
     if (index > count) return 'bg-surface-200 dark:bg-surface-600'
@@ -412,6 +422,9 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
           const count = projectStories[dateKey] || 0
           const past = day < new Date() && !isToday(day)
           const future = day > new Date() && !isToday(day)
+          // allowFuture (сторисмейкер) снимает блокировку будущих дней —
+          // остальные виды (руководительские/readonly) её сохраняют.
+          const blockedFuture = future && !allowFuture
 
           return (
             <div
@@ -420,7 +433,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
                 'rounded-lg p-0.5 flex flex-col items-center gap-0.5',
                 isToday(day) && 'ring-1 ring-primary-400',
                 past && count === 0 && 'bg-red-50 dark:bg-red-900/20',
-                future && 'opacity-50',
+                blockedFuture && 'opacity-50',
               )}
             >
               <span className={clsx('text-[9px] font-medium', isToday(day) ? 'text-primary-600 dark:text-primary-400' : 'text-surface-500 dark:text-surface-400')}>
@@ -439,27 +452,64 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
                   </div>
                 )
               })()}
-              <div className={clsx('flex flex-wrap justify-center gap-1', dailyTarget > 4 && 'max-w-[52px]')}>
-                {Array.from({ length: dailyTarget }, (_, idx) => idx + 1).map(i => {
-                  const animKey = `${dateKey}-${i}`
-                  const animType = animMap[animKey]
-                  return (
-                    <button
-                      key={i}
-                      disabled={isReadonly || future}
-                      onClick={() => !future && handleCheck(selectedProject.id, dateKey, i, count, dailyTarget)}
-                      className={clsx(
-                        'w-4 h-4 rounded-sm transition-colors duration-200',
-                        getCheckboxColor(i, count, dailyTarget),
-                        i <= count && 'shadow-sm',
-                        !isReadonly && !future && 'hover:scale-125 cursor-pointer',
-                        (isReadonly || future) && 'cursor-default',
-                        animType === 'pop'   && 'story-checkbox-pop',
-                        animType === 'unpop' && 'story-checkbox-unpop',
-                      )}
-                    />
-                  )
-                })}
+              <div className="flex flex-wrap items-center justify-center gap-1">
+                <div className={clsx('flex flex-wrap justify-center gap-1', dailyTarget > 4 && 'max-w-[52px]')}>
+                  {Array.from({ length: dailyTarget }, (_, idx) => idx + 1).map(i => {
+                    const animKey = `${dateKey}-${i}`
+                    const animType = animMap[animKey]
+                    return (
+                      <button
+                        key={i}
+                        // При превышении плана чекбоксы инертны: клик по клетке
+                        // «схлопывал» бы счёт (7 → 2). Убавление — кнопкой «−».
+                        disabled={isReadonly || blockedFuture || count > dailyTarget}
+                        onClick={() => !blockedFuture && count <= dailyTarget && handleCheck(selectedProject.id, dateKey, i, count, dailyTarget)}
+                        className={clsx(
+                          'w-4 h-4 rounded-sm transition-colors duration-200',
+                          getCheckboxColor(i, count, dailyTarget),
+                          i <= count && 'shadow-sm',
+                          !isReadonly && !blockedFuture && count <= dailyTarget && 'hover:scale-125 cursor-pointer',
+                          (isReadonly || blockedFuture || count > dailyTarget) && 'cursor-default',
+                          animType === 'pop'   && 'story-checkbox-pop',
+                          animType === 'unpop' && 'story-checkbox-unpop',
+                        )}
+                      />
+                    )
+                  })}
+                </div>
+                {/* Больше плана — чекбоксов свыше dailyTarget не рисуем, показываем число. */}
+                {count > dailyTarget && (
+                  <span className="text-[9px] font-bold text-green-600 dark:text-green-400 leading-none">
+                    {count}
+                  </span>
+                )}
+                {/* Сверх плана: «+» добавляет, «−» убавляет по одной. */}
+                {!isReadonly && !blockedFuture && count > dailyTarget && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      upsertStory.mutate({ projectId: selectedProject.id, date: dateKey, storiesCount: count - 1 })
+                    }}
+                    title="Убрать одну сторис"
+                    className="w-4 h-4 rounded-sm bg-surface-200 dark:bg-surface-600 hover:bg-surface-300 dark:hover:bg-surface-500 flex items-center justify-center text-[10px] font-bold leading-none text-surface-600 dark:text-surface-300 cursor-pointer"
+                  >
+                    −
+                  </button>
+                )}
+                {!isReadonly && !blockedFuture && count >= dailyTarget && count < 30 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleAddExtra(selectedProject.id, dateKey, count)
+                    }}
+                    title="Добавить ещё одну сторис сверх плана"
+                    className="w-4 h-4 rounded-sm bg-surface-200 dark:bg-surface-600 hover:bg-surface-300 dark:hover:bg-surface-500 flex items-center justify-center text-[10px] font-bold leading-none text-surface-600 dark:text-surface-300 cursor-pointer"
+                  >
+                    +
+                  </button>
+                )}
               </div>
             </div>
           )

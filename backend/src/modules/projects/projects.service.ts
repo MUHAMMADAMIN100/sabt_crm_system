@@ -681,7 +681,21 @@ export class ProjectsService implements OnModuleInit {
         where: { userId },
         select: ['id', 'isStoryMaker'] as any,
       }).catch(() => null);
-      const isStoryMaker = !!emp?.isStoryMaker;
+      // Роль storymaker (основная или вторая) равнозначна флагу isStoryMaker:
+      // раньше роль без флага давала усечённый список — сторисмейкер не видел
+      // все SMM-проекты для отметки историй. secondaryRole добираем ЛЕНИВО —
+      // только когда ветка вообще может сработать (не привилегированная роль,
+      // не сегмент продаж), чтобы не добавлять запрос каждому вызову списка.
+      let isStoryMaker = !!emp?.isStoryMaker || role === 'storymaker';
+      if (!isStoryMaker
+        && !['admin', 'founder', 'co_founder', 'smm_director', 'organizer', 'pm_dev'].includes(role)
+        && !getSalesSegment(role)) {
+        const userRow = await this.userRepo.findOne({
+          where: { id: userId },
+          select: ['id', 'secondaryRole'] as any,
+        }).catch(() => null);
+        isStoryMaker = (userRow as any)?.secondaryRole === 'storymaker';
+      }
 
       if (hasGrant(requestUser as any, 'projects.view')) {
         // Персональный грант «Проекты — просмотр» — видит ВСЕ проекты компании
@@ -765,6 +779,20 @@ export class ProjectsService implements OnModuleInit {
         (p as any).lastActivityAt = times.length
           ? new Date(Math.max(...times)).toISOString()
           : null;
+      }
+
+      // Дата последней полученной оплаты — менеджер продаж видит на карточке
+      // «дату оплаты» вместо дедлайна проекта.
+      const payRows = await this.repo.manager.query(
+        `SELECT "projectId", MAX("paidAt")::text AS last FROM project_payments
+         WHERE "projectId" = ANY($1::uuid[]) AND amount > 0 GROUP BY "projectId"`,
+        [projIds],
+      );
+      const payMap: Record<string, string> = Object.fromEntries(
+        (payRows as Array<{ projectId: string; last: string }>).map(r => [r.projectId, r.last]),
+      );
+      for (const p of projects) {
+        (p as any).lastPaymentAt = payMap[p.id] ?? null;
       }
     }
 
@@ -873,6 +901,14 @@ export class ProjectsService implements OnModuleInit {
         project.tasks = project.tasks.filter(t => !storyTaskIds.has(t.id));
       }
     }
+    // Дата последней полученной оплаты (для карточки «Дата оплаты» у МП).
+    const payRow = await this.repo.manager.query(
+      `SELECT MAX("paidAt")::text AS last FROM project_payments
+       WHERE "projectId" = $1 AND amount > 0`,
+      [id],
+    ).catch(() => [] as any[]);
+    (project as any).lastPaymentAt = payRow?.[0]?.last ?? null;
+
     return requestUserRole ? this.stripFinance(project, requestUserRole) : project;
   }
 

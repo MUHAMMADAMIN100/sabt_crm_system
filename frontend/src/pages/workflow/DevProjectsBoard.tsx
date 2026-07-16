@@ -516,7 +516,7 @@ function NewStageCardModal({ stage, projects, onClose, onCreated }: {
     setAssignees(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
 
   async function save() {
-    if (!projectId || !title.trim() || busy) return
+    if (!projectId || !title.trim() || !deadline || busy) return
     setBusy(true)
     try {
       await tasksApi.create({
@@ -569,7 +569,7 @@ function NewStageCardModal({ stage, projects, onClose, onCreated }: {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-surface-600 dark:text-surface-300 mb-1">Дедлайн</label>
+          <label className="block text-xs font-medium text-surface-600 dark:text-surface-300 mb-1">Дедлайн *</label>
           <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)}
             className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2" />
         </div>
@@ -602,7 +602,7 @@ function NewStageCardModal({ stage, projects, onClose, onCreated }: {
             className="px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors">
             Отмена
           </button>
-          <button type="button" disabled={!projectId || !title.trim() || busy} onClick={save}
+          <button type="button" disabled={!projectId || !title.trim() || !deadline || busy} onClick={save}
             className="btn-primary text-sm disabled:opacity-50">
             {busy ? 'Сохраняю…' : 'Сохранить'}
           </button>

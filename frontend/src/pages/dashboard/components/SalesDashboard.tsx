@@ -386,8 +386,8 @@ export default function SalesDashboard() {
                 <th className="pb-2 font-medium text-right">Бюджет</th>
                 <th className="pb-2 font-medium text-right">Оплачено</th>
                 <th className="pb-2 font-medium text-right">Остаток</th>
+                <th className="pb-2 font-medium">Дата оплаты</th>
                 <th className="pb-2 font-medium">След. оплата</th>
-                <th className="pb-2 font-medium">Дедлайн</th>
                 <th className="pb-2 font-medium">Статус</th>
               </tr>
             </thead>
@@ -444,6 +444,17 @@ export default function SalesDashboard() {
                   )}>
                     {fmt(p.remaining)}
                   </td>
+                  {/* Дата последней полученной оплаты (вместо дедлайна проекта —
+                      убран из вида МП по просьбе отдела продаж). */}
+                  <td className="py-2 pr-3 whitespace-nowrap">
+                    {p.lastPaymentAt ? (
+                      <span className="text-xs text-surface-600 dark:text-surface-400">
+                        {format(new Date(p.lastPaymentAt), 'dd.MM.yy')}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-surface-400">—</span>
+                    )}
+                  </td>
                   <td className="py-2 pr-3 whitespace-nowrap">
                     <InlineEditCell
                       mode="date"
@@ -459,27 +470,6 @@ export default function SalesDashboard() {
                       }}
                       width="w-28"
                     />
-                  </td>
-                  <td className="py-2 pr-3 whitespace-nowrap">
-                    {isSmmSales ? (
-                      <InlineEditCell
-                        mode="date"
-                        value={p.endDate ? String(p.endDate).slice(0, 10) : ''}
-                        onSave={(v) => patch(p.id, { endDate: v || null })}
-                        formatter={(v) => v ? format(new Date(v), 'dd.MM.yy') : '—'}
-                        width="w-28"
-                      />
-                    ) : p.endDate ? (
-                      <span className={clsx(
-                        'text-xs',
-                        p.isOverdue ? 'text-red-500 font-semibold' : p.isUpcoming ? 'text-surface-600 dark:text-surface-400' : 'text-surface-500 dark:text-surface-400',
-                      )}>
-                        {p.isOverdue && '🔴 '}{p.isUpcoming && '🟠 '}
-                        {format(new Date(p.endDate), 'dd.MM.yy')}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-surface-400">—</span>
-                    )}
                   </td>
                   <td className="py-2 whitespace-nowrap">
                     {isSmmSales ? (
