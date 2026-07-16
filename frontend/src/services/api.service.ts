@@ -65,6 +65,9 @@ export const projectsApi = {
   archive: (id: string) => api.patch(`/projects/${id}/archive`).then(r => r.data),
   // Этап разработки (доска «Разработка», [10%]…[100%]).
   setDevStage: (id: string, devStage: number) => api.patch(`/projects/${id}/dev-stage`, { devStage }).then(r => r.data),
+  // Архив историй сторисмейкера (не настоящий архив проекта).
+  setStoriesArchived: (id: string, archived: boolean) =>
+    api.patch(`/projects/${id}/stories-archive`, { archived }).then(r => r.data),
   sendPaymentRequest: (id: string, message?: string) =>
     api.post(`/projects/${id}/send-payment-request`, { message }).then(r => r.data),
   payments: (id: string) => api.get(`/projects/${id}/payments`).then(r => r.data),

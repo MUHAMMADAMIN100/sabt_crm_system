@@ -4,6 +4,7 @@ import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { SetDevStageDto } from './dto/set-dev-stage.dto';
+import { SetStoriesArchiveDto } from './dto/set-stories-archive.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
@@ -57,6 +58,14 @@ export class ProjectsController {
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PM_DEV)
   setDevStage(@Param('id') id: string, @Body() dto: SetDevStageDto, @Request() req) {
     return this.service.setDevStage(id, dto.devStage, req.user);
+  }
+
+  /** Архив историй сторисмейкера (не настоящий архив проекта). Доступ:
+   *  сторисмейкер (двигает свой кабинет) + руководитель SMM + топ. */
+  @Patch(':id/stories-archive')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.STORYMAKER)
+  setStoriesArchived(@Param('id') id: string, @Body() dto: SetStoriesArchiveDto, @Request() req) {
+    return this.service.setStoriesArchived(id, dto.archived, req.user);
   }
 
   @Patch(':id/archive')

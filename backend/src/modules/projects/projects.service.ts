@@ -50,6 +50,9 @@ export class ProjectsService implements OnModuleInit {
       await this.repo.manager.query(
         `ALTER TABLE projects ADD COLUMN IF NOT EXISTS "devStage" int`,
       );
+      await this.repo.manager.query(
+        `ALTER TABLE projects ADD COLUMN IF NOT EXISTS "storiesArchived" boolean NOT NULL DEFAULT false`,
+      );
     } catch (e: any) {
       this.logger.warn(`ALTER TABLE projects brief/briefShareToken/devStage failed: ${e?.message || e}`);
     }
@@ -1506,6 +1509,30 @@ export class ProjectsService implements OnModuleInit {
     });
     this.gateway.broadcast('projects:changed', { projectId: id });
     return { id, devStage };
+  }
+
+  /** Архив историй: скрыть/вернуть SMM-проект в кабинете сторисмейкера.
+   *  НЕ настоящее архивирование — проект остаётся активным везде, кроме
+   *  списков историй и напоминаний «нет историй». */
+  async setStoriesArchived(id: string, archived: boolean, user?: { id: string; role: string; name?: string }) {
+    const project = await this.repo.findOne({ where: { id } });
+    if (!project) throw new NotFoundException('Project not found');
+    if (project.projectType !== 'SMM') {
+      throw new BadRequestException('Архив историй применим только к SMM-проектам');
+    }
+    if (project.storiesArchived === archived) return { id, storiesArchived: archived };
+    await this.repo.update(id, { storiesArchived: archived });
+    await this.activityLog.log({
+      userId: user?.id,
+      userName: user?.name,
+      action: ActivityAction.PROJECT_UPDATE,
+      entity: 'project',
+      entityId: id,
+      entityName: project.name,
+      details: { storiesArchived: archived },
+    });
+    this.gateway.broadcast('projects:changed', { projectId: id });
+    return { id, storiesArchived: archived };
   }
 
   async archive(id: string, user?: { id: string; role: string; name?: string }) {

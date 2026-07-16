@@ -88,6 +88,8 @@ export class StoriesService {
       .leftJoinAndSelect('p.members', 'members')
       .where('p.projectType = :type', { type: 'SMM' })
       .andWhere('p.isArchived = false')
+      // Архив историй: проект больше не требует сторис — не напоминаем.
+      .andWhere('p."storiesArchived" = false')
       .andWhere('p.managerId IS NOT NULL')
       .getMany();
 

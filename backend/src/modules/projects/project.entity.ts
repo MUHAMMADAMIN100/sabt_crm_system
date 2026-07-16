@@ -108,6 +108,12 @@ export class Project {
   @Column({ type: 'int', nullable: true })
   devStage: number | null;
 
+  /** Архив ИСТОРИЙ: проект больше не требует публикации сторис — скрывается
+   *  из кабинета сторисмейкера и из напоминаний «нет историй». Сам проект
+   *  при этом остаётся активным (задачи/доска/финансы не затрагиваются). */
+  @Column({ type: 'boolean', default: false })
+  storiesArchived: boolean;
+
   @Column({ type: 'jsonb', nullable: true })
   smmData: Record<string, any>;
 

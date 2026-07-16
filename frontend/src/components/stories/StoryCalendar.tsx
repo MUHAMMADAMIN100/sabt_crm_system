@@ -5,8 +5,9 @@ import { useAuthStore } from '@/store/auth.store'
 import { Avatar } from '@/components/ui'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ArrowLeft, Archive, Undo2 } from 'lucide-react'
 import clsx from 'clsx'
+import toast from 'react-hot-toast'
 
 interface StoryCalendarProps {
   employeeId?: string
@@ -109,7 +110,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
     },
   })
 
-  const activeProjects = useMemo(() => {
+  const scopedProjects = useMemo(() => {
     // Завершённые проекты тоже остаются в календаре — нужно для истории
     // и аналитики. Скрываем только архивные.
     // Истории — это SMM-инструмент. Не-SMM проекты (веб-сайты, CRM,
@@ -136,6 +137,29 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
       p.members?.some((m: any) => m.id === user?.id) || p.managerId === user?.id,
     )
   }, [projects, user, employeeId, adminAll])
+
+  // Архив историй: проект больше не требует сторис (флаг storiesArchived,
+  // НЕ настоящий архив проекта). Активный список и вкладка «Архив».
+  const activeProjects = useMemo(
+    () => scopedProjects.filter((p: any) => !p.storiesArchived), [scopedProjects])
+  const storiesArchivedProjects = useMemo(
+    () => scopedProjects.filter((p: any) => p.storiesArchived), [scopedProjects])
+  const [archiveView, setArchiveView] = useState(false)
+  // Кто может архивировать истории: сторисмейкер + руководитель SMM + топ.
+  const canArchiveStories = !employeeId && (
+    user?.isStoryMaker
+    || ['storymaker', 'smm_director', 'admin', 'founder', 'co_founder'].includes(user?.role || '')
+    || ['storymaker', 'smm_director'].includes(user?.secondaryRole || '')
+  )
+  const archiveMut = useMutation({
+    mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
+      projectsApi.setStoriesArchived(id, archived),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      toast.success(v.archived ? 'Проект убран в архив историй' : 'Проект возвращён в работу')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось сохранить'),
+  })
 
   // Build story map: projectId -> dateKey -> count
   const storyMap = useMemo(() => {
@@ -275,11 +299,27 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
           </div>
         </div>
 
-        {activeProjects.length === 0 ? (
-          <p className="text-xs text-surface-400 dark:text-surface-500 text-center py-4">Нет активных проектов</p>
+        {/* Вкладки «Активные / Архив» — архив историй сторисмейкера. */}
+        {(canArchiveStories || storiesArchivedProjects.length > 0) && (
+          <div className="flex gap-1.5 mb-3">
+            <button onClick={() => setArchiveView(false)} className={clsx(
+              'px-3 py-1 rounded-full text-xs font-medium transition-colors',
+              !archiveView ? 'bg-primary-600 text-white' : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+            )}>Активные</button>
+            <button onClick={() => setArchiveView(true)} className={clsx(
+              'px-3 py-1 rounded-full text-xs font-medium transition-colors inline-flex items-center gap-1',
+              archiveView ? 'bg-primary-600 text-white' : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+            )}><Archive size={11} /> Архив{storiesArchivedProjects.length > 0 ? ` (${storiesArchivedProjects.length})` : ''}</button>
+          </div>
+        )}
+
+        {(archiveView ? storiesArchivedProjects : activeProjects).length === 0 ? (
+          <p className="text-xs text-surface-400 dark:text-surface-500 text-center py-4">
+            {archiveView ? 'Архив пуст' : 'Нет активных проектов'}
+          </p>
         ) : (
           <div className="space-y-2">
-            {activeProjects.map((project: any) => {
+            {(archiveView ? storiesArchivedProjects : activeProjects).map((project: any) => {
               const total = projectTotals[project.id] || 0
               const pm = storyMap[project.id] || {}
               const daysWithStories = Object.values(pm).filter((c: any) => c > 0).length
@@ -325,24 +365,54 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <div className="flex gap-1">
-                      {Array.from({ length: dailyTarget }, (_, idx) => idx + 1).map(i => {
-                        let dotColor: string
-                        if (todayCount === 0) {
-                          dotColor = 'bg-red-500'
-                        } else if (i <= todayCount) {
-                          if (greenAnyProgress || todayCount >= dailyTarget) dotColor = 'bg-green-500'
-                          else if (todayCount / dailyTarget >= 0.5) dotColor = 'bg-surface-400'
-                          else dotColor = 'bg-surface-400'
-                        } else {
-                          dotColor = 'bg-surface-300 dark:bg-surface-600'
-                        }
-                        return <div key={i} className={clsx('w-3 h-3 rounded-full transition-colors duration-300', dotColor)} />
-                      })}
-                    </div>
-                    <span className="text-[9px] font-semibold text-surface-400 dark:text-surface-500 min-w-[26px] text-right">
-                      {todayCount}/{dailyTarget}
-                    </span>
+                    {!archiveView && (
+                      <>
+                        <div className="flex gap-1">
+                          {Array.from({ length: dailyTarget }, (_, idx) => idx + 1).map(i => {
+                            let dotColor: string
+                            if (todayCount === 0) {
+                              dotColor = 'bg-red-500'
+                            } else if (i <= todayCount) {
+                              if (greenAnyProgress || todayCount >= dailyTarget) dotColor = 'bg-green-500'
+                              else if (todayCount / dailyTarget >= 0.5) dotColor = 'bg-surface-400'
+                              else dotColor = 'bg-surface-400'
+                            } else {
+                              dotColor = 'bg-surface-300 dark:bg-surface-600'
+                            }
+                            return <div key={i} className={clsx('w-3 h-3 rounded-full transition-colors duration-300', dotColor)} />
+                          })}
+                        </div>
+                        <span className="text-[9px] font-semibold text-surface-400 dark:text-surface-500 min-w-[26px] text-right">
+                          {todayCount}/{dailyTarget}
+                        </span>
+                      </>
+                    )}
+                    {canArchiveStories && (
+                      // span[role=button]: вложенный <button> в <button> невалиден.
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        title={archiveView ? 'Вернуть в работу' : 'Истории больше не нужны — в архив'}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          archiveMut.mutate({ id: project.id, archived: !archiveView })
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault(); e.stopPropagation()
+                            archiveMut.mutate({ id: project.id, archived: !archiveView })
+                          }
+                        }}
+                        className={clsx(
+                          'ml-1.5 p-1.5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                          archiveView
+                            ? 'text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30'
+                            : 'text-surface-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20',
+                        )}
+                      >
+                        {archiveView ? <Undo2 size={14} /> : <Archive size={14} />}
+                      </span>
+                    )}
                   </div>
                 </button>
               )
