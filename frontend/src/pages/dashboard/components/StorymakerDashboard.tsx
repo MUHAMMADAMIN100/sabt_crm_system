@@ -37,8 +37,10 @@ export default function StorymakerDashboard() {
   })
 
   // Все активные SMM-проекты — рабочее поле сторисмейкера.
+  // storiesArchived — архив историй: проект больше не требует сторис,
+  // в план/«ждут сторис»/«нужно сегодня» не входит.
   const smmProjects = useMemo(
-    () => (projects || []).filter((p: any) => !p.isArchived && p.projectType === 'SMM'),
+    () => (projects || []).filter((p: any) => !p.isArchived && p.projectType === 'SMM' && !p.storiesArchived),
     [projects],
   )
 
