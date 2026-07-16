@@ -86,6 +86,16 @@ function advanceOf(e: { advances?: Record<string, number> | null }, ym: string):
   return r2(Number((e.advances || {})[ym]) || 0);
 }
 
+/** Классификация зарплатной операции по комментарию: аванс и бонус
+ *  ВЫДАЮТСЯ СРАЗУ отдельными операциями (просьба владельца), финальная
+ *  выплата — всё остальное. */
+function isAdvanceTx(t: { comment?: string | null }): boolean {
+  return (t.comment || '').trim().toLowerCase().startsWith('аванс');
+}
+function isBonusTx(t: { comment?: string | null }): boolean {
+  return (t.comment || '').trim().toLowerCase().startsWith('бонус');
+}
+
 /** Штраф сотрудника за месяц — вычитается из «к выплате». */
 function fineOf(e: { fines?: Record<string, number> | null }, ym: string): number {
   return r2(Number((e.fines || {})[ym]) || 0);
@@ -796,14 +806,33 @@ export class FinanceService implements OnModuleInit {
     }
     incomeByCategory.sort((a, b) => b.total - a.total || (b.plan ?? 0) - (a.plan ?? 0));
 
-    // Зарплата (бонусы/авансы/штрафы месяца входят в «к выплате»; помесячно).
+    // Зарплата: построчно, с учётом снапшотов (замороженный месяц — остаток 0,
+    // план = фактически выплаченному). Аванс/бонус — выдачи операциями.
     const activeEmps = m.employees.filter(e => e.status === 'active');
     const salaryFund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
-    const salaryAdvances = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).advance) || 0) : advanceOf(e, ym)), 0));
-    const salaryBonuses = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).bonus) || 0) : bonusOf(e, ym)), 0));
-    const salaryFinesOv = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).fine) || 0) : fineOf(e, ym)), 0));
     const salaryPaid = this.sum(monthExpense.filter(t => this.groupOf(t, m) === 'salary'));
-    const salaryToPay = r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances - salaryFinesOv - salaryPaid));
+    let salaryToPayAcc = 0, salaryPlanAcc = 0, salaryAdvAcc = 0, salaryBonAcc = 0;
+    for (const e of activeEmps) {
+      const snap = snapOf(e, ym);
+      if (snap) {
+        salaryPlanAcc += r2(Number(snap.paid) || 0);
+        salaryAdvAcc += r2(Number(snap.advance) || 0);
+        salaryBonAcc += r2(Number(snap.bonus) || 0);
+        continue;
+      }
+      const txs = monthExpense.filter(t => t.employeeId === e.id);
+      const paid = r2(txs.reduce((s, t) => s + Number(t.amount), 0));
+      const adv = r2(txs.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
+      const bon = r2(txs.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
+      const due = r2(Math.max(0, Number(e.salary) + bon - fineOf(e, ym)));
+      salaryPlanAcc += due;
+      salaryToPayAcc += Math.max(0, due - paid);
+      salaryAdvAcc += adv; salaryBonAcc += bon;
+    }
+    const salaryToPay = r2(salaryToPayAcc);
+    const salaryPlan = r2(salaryPlanAcc);
+    const salaryAdvances = r2(salaryAdvAcc);
+    const salaryBonuses = r2(salaryBonAcc);
 
     // Аренда/подписки.
     const subsMonthly = r2(subs.filter(s => s.active).reduce((s, x) => s + Number(x.amount), 0));
@@ -817,7 +846,7 @@ export class FinanceService implements OnModuleInit {
     const expensePlan = [
       // План ЗП — полное обязательство месяца (фонд + бонусы − авансы), а не
       // остаток: после выплат «потрачено 31 750 / план 0» выглядело нонсенсом.
-      { group: 'salary', plan: r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances - salaryFinesOv)), fact: salaryPaid },
+      { group: 'salary', plan: salaryPlan, fact: salaryPaid },
       { group: 'rent_subs', plan: subsMonthly, fact: rentSubFact },
       { group: 'debts', plan: debtPlan, fact: debtFact },
     ];
@@ -1175,22 +1204,34 @@ export class FinanceService implements OnModuleInit {
 
     const activeEmps = m.employees.filter(e => e.status === 'active');
     const salaryFund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
-    // Авансы/штрафы — помесячные; выплаченный месяц заморожен снапшотом.
-    const salaryAdvances = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).advance) || 0) : advanceOf(e, ym)), 0));
-    const salaryBonuses = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).bonus) || 0) : bonusOf(e, ym)), 0));
-    const salaryFines = r2(activeEmps.reduce((s, e) => s + (snapOf(e, ym) ? r2(Number(snapOf(e, ym).fine) || 0) : fineOf(e, ym)), 0));
     const salarySpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'salary'));
-    // Сотрудники, у которых месяц закрыт — снапшот выплаты, либо остаток 0.
-    const salaryPaidCount = activeEmps.filter(e => {
-      if (snapOf(e, ym)) return true;
-      const gross = r2(Number(e.salary) + bonusOf(e, ym));
-      if (gross <= 0) return false;
-      const due = r2(Math.max(0, gross - advanceOf(e, ym) - fineOf(e, ym)));
-      if (due <= 0) return true; // аванс/штраф покрыли всё
-      const paid = monthExp.filter(t => t.employeeId === e.id).reduce((s, t) => s + Number(t.amount), 0);
+    // Построчно, с учётом снапшотов (замороженный месяц: остаток 0).
+    // Аванс/бонус — фактические выдачи операциями (входят в «выплачено»);
+    // обязательство = оклад + бонусы − штраф.
+    let salaryAdvances = 0, salaryBonuses = 0, salaryFines = 0, salaryToPayAgg = 0, salaryPaidCount = 0;
+    for (const e of activeEmps) {
+      const snap = snapOf(e, ym);
+      if (snap) {
+        salaryAdvances += r2(Number(snap.advance) || 0);
+        salaryBonuses += r2(Number(snap.bonus) || 0);
+        salaryFines += r2(Number(snap.fine) || 0);
+        salaryPaidCount++;
+        continue;
+      }
+      const txs = monthExp.filter(t => t.employeeId === e.id);
+      const paid = r2(txs.reduce((s, t) => s + Number(t.amount), 0));
+      const adv = r2(txs.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
+      const bon = r2(txs.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
+      const fine = fineOf(e, ym);
+      const due = r2(Math.max(0, Number(e.salary) + bon - fine));
+      const toPay = r2(Math.max(0, due - paid));
+      salaryAdvances += adv; salaryBonuses += bon; salaryFines += fine; salaryToPayAgg += toPay;
+      const gross = r2(Number(e.salary) + bon);
       // Полкопейки допуска — сумма float'ов может недотянуть до r2-округлённого due.
-      return paid >= due - 0.005;
-    }).length;
+      if (gross > 0 && (due <= 0 || paid >= due - 0.005)) salaryPaidCount++;
+    }
+    salaryAdvances = r2(salaryAdvances); salaryBonuses = r2(salaryBonuses);
+    salaryFines = r2(salaryFines); salaryToPayAgg = r2(salaryToPayAgg);
 
     const activeSubs = subs.filter(s => s.active);
     const subsCount = activeSubs.length;
@@ -1218,7 +1259,7 @@ export class FinanceService implements OnModuleInit {
 
     return {
       ym,
-      salary: { spent: salarySpent, count: activeEmps.length, paidCount: salaryPaidCount, bonuses: salaryBonuses, fines: salaryFines, toPay: r2(Math.max(0, salaryFund + salaryBonuses - salaryAdvances - salaryFines - salarySpent)) },
+      salary: { spent: salarySpent, count: activeEmps.length, paidCount: salaryPaidCount, bonuses: salaryBonuses, fines: salaryFines, toPay: salaryToPayAgg },
       subscriptions: { spent: subsSpent, count: subsCount, paidCount: subsPaidCount, monthly: subMonthly, toPay: subsToPay },
       debts: { spent: debtsSpent, count: debtCount, remaining: totalRemaining, dueMonth, monthly: debtsMonthly },
       other: { spent: otherSpent },
@@ -1233,10 +1274,14 @@ export class FinanceService implements OnModuleInit {
     if (kind === 'salary') {
       const emps = await this.empRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
       const paidOf = (id: string) => r2(monthExp.filter(t => t.employeeId === id).reduce((s, t) => s + Number(t.amount), 0));
+      // Авансы и бонусы ВЫДАЮТСЯ СРАЗУ отдельными операциями — колонки
+      // показывают фактически выданное за месяц (по комментарию операции).
+      const advPaidOf = (id: string) => r2(monthExp.filter(t => t.employeeId === id && isAdvanceTx(t)).reduce((s, t) => s + Number(t.amount), 0));
+      const bonPaidOf = (id: string) => r2(monthExp.filter(t => t.employeeId === id && isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
       const activeEmps = emps.filter(e => e.status === 'active');
       const rows = activeEmps.map(e => {
         // Выплаченный месяц ЗАМОРОЖЕН снапшотом: любые будущие правки оклада/
-        // бонусов/авансов/штрафов его не меняют — месяцы независимы.
+        // бонусов/штрафов его не меняют — месяцы независимы.
         const snap = snapOf(e, ym);
         if (snap) {
           return {
@@ -1249,16 +1294,17 @@ export class FinanceService implements OnModuleInit {
           };
         }
         const paid = paidOf(e.id);
-        const bonus = bonusOf(e, ym);
-        const advance = advanceOf(e, ym);
-        const fine = fineOf(e, ym);
+        const advance = advPaidOf(e.id); // уже выдано (входит в paid)
+        const bonus = bonPaidOf(e.id);   // уже выдано (входит в paid)
+        const fine = fineOf(e, ym);      // удерживается при финальной выплате
         return {
           id: e.id, name: e.name, role: e.role, category: e.category ?? null,
           hireDate: e.hireDate, salary: Number(e.salary),
           advance, bonus, fine, status: e.status, paid,
-          // Аванс/штраф вычитаются и по-строчно — иначе подытог групп
-          // противоречил бы карточке «К выплате за месяц».
-          toPay: r2(Math.max(0, Number(e.salary) + bonus - advance - fine - paid)),
+          // Обязательство месяца = оклад + выданные бонусы − штраф; аванс и
+          // бонус уже внутри «выплачено», поэтому остаток = оклад − штраф −
+          // (финальные выплаты + авансы).
+          toPay: r2(Math.max(0, Number(e.salary) + bonus - fine - paid)),
           frozen: false, paidAt: null,
         };
       });
@@ -1470,13 +1516,15 @@ export class FinanceService implements OnModuleInit {
       where: { date: Between(from, to), type: FinanceTxType.EXPENSE, employeeId } as any,
     }));
     const paid = r2(monthExp.reduce((s, t) => s + Number(t.amount), 0));
+    const advance = r2(monthExp.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
+    const bonus = r2(monthExp.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
     const snap = snapOf(e, ym);
     // Параметры месяца: из снапшота (если уже был), иначе живые значения.
     const salary = snap ? r2(Number(snap.salary) || 0) : r2(Number(e.salary) || 0);
-    const bonus = snap ? r2(Number(snap.bonus) || 0) : bonusOf(e, ym);
-    const advance = snap ? r2(Number(snap.advance) || 0) : advanceOf(e, ym);
     const fine = snap ? r2(Number(snap.fine) || 0) : fineOf(e, ym);
-    const due = r2(Math.max(0, salary + bonus - advance - fine));
+    // Аванс/бонус уже выданы операциями (входят в paid): обязательство =
+    // оклад + бонусы − штраф.
+    const due = r2(Math.max(0, salary + bonus - fine));
     const map = { ...(e.salarySnapshots || {}) };
     if (due > 0 && paid >= due - 0.005) {
       map[ym] = { salary, bonus, advance, fine, paid, paidAt: snap?.paidAt || todayISO() };

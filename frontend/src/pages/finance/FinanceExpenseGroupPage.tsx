@@ -112,6 +112,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   });
   const { data: fullEmployees } = useQuery({ queryKey: ['finref', 'employees'], queryFn: () => financeApi.employees() });
   const [payFor, setPayFor] = useState<any | null>(null);
+  const [payoutFor, setPayoutFor] = useState<{ row: any; kind: 'advance' | 'bonus' } | null>(null);
   const [empFor, setEmpFor] = useState<any | 'new' | null>(null);
   const [showFired, setShowFired] = useState(false);
 
@@ -235,8 +236,8 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                         <td className="muted">{e.role ?? '—'}</td>
                         <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
                         <td className="num">{money(e.salary)}</td>
-                        <td className="num"><MonthAmountCell row={e} ym={ym} field="advance" /></td>
-                        <td className="num"><MonthAmountCell row={e} ym={ym} field="bonus" /></td>
+                        <td className="num"><MonthAmountCell row={e} ym={ym} field="advance" onPayout={() => setPayoutFor({ row: e, kind: 'advance' })} /></td>
+                        <td className="num"><MonthAmountCell row={e} ym={ym} field="bonus" onPayout={() => setPayoutFor({ row: e, kind: 'bonus' })} /></td>
                         <td className="num"><MonthAmountCell row={e} ym={ym} field="fine" /></td>
                         <td>
                           {isPaid
@@ -305,44 +306,107 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
       )}
 
       {payFor && <SalaryPayModal row={payFor} ym={ym} onClose={() => setPayFor(null)} />}
+      {payoutFor && <PayoutModal row={payoutFor.row} kind={payoutFor.kind} ym={ym} onClose={() => setPayoutFor(null)} />}
       {empFor && <EmployeeFormModal employee={empFor === 'new' ? undefined : empFor} categories={knownCategories} onClose={() => setEmpFor(null)} />}
     </>
   );
 }
 
-/** Инлайн-сумма месяца (аванс/бонус/штраф) прямо в таблице. Помесячно —
- *  правки одного месяца не трогают другие; выплаченный месяц заморожен.
- *  Расход создаётся не здесь, а при выплате — вместе с окладом. */
-const MONTH_FIELDS = {
-  bonus: { api: (id: string, d: any) => financeApi.setEmployeeBonus(id, d), title: 'Бонус за этот месяц — прибавляется к сумме к выплате' },
-  advance: { api: (id: string, d: any) => financeApi.setEmployeeAdvance(id, d), title: 'Аванс, выданный в этом месяце — вычитается из суммы к выплате' },
-  fine: { api: (id: string, d: any) => financeApi.setEmployeeFine(id, d), title: 'Штраф за этот месяц — вычитается из суммы к выплате' },
-} as const;
-
-function MonthAmountCell({ row, ym, field }: { row: any; ym: string; field: keyof typeof MONTH_FIELDS }) {
+/** Ячейка месяца в зарплатной таблице.
+ *  Штраф — число (удерживается при финальной выплате, правится инлайн).
+ *  Аванс/бонус — ФАКТИЧЕСКИЕ выдачи: деньги списываются со счёта сразу
+ *  отдельной операцией («+» открывает мини-форму выдачи); в ячейке — сумма
+ *  выданного за месяц. Выплаченный месяц заморожен — только чтение. */
+function MonthAmountCell({ row, ym, field, onPayout }: {
+  row: any; ym: string; field: 'advance' | 'bonus' | 'fine'; onPayout?: () => void;
+}) {
   const qc = useQueryClient();
   const value = Number(row[field]) || 0;
-  // Выплаченный месяц зафиксирован — только чтение.
   if (row.frozen) {
     return <span className={field === 'fine' && value ? 'neg' : 'muted'} title="Месяц выплачен и зафиксирован">{value ? money(value) : '—'}</span>;
   }
-  const cfg = MONTH_FIELDS[field];
+  if (field === 'fine') {
+    return (
+      <input
+        key={`${row.id}-${ym}-fine-${value}`}
+        className="cell-input" inputMode="decimal" placeholder="—"
+        style={{ textAlign: 'right', minWidth: 70, ...(value ? { color: 'var(--red, #dc2626)' } : {}) }}
+        defaultValue={value ? value : ''}
+        title="Штраф за этот месяц — удерживается при финальной выплате ЗП"
+        onBlur={async (e) => {
+          const v = Math.max(0, parseFloat(e.target.value.replace(',', '.')) || 0);
+          if (v === value) return;
+          try {
+            await financeApi.setEmployeeFine(row.id, { ym, amount: v });
+            invalidateFinance(qc);
+          } catch (err) { toast.error(apiErr(err)); }
+        }}
+      />
+    );
+  }
+  const label = field === 'advance' ? 'Выдать аванс' : 'Выплатить бонус';
   return (
-    <input
-      key={`${row.id}-${ym}-${field}-${value}`}
-      className="cell-input" inputMode="decimal" placeholder="—"
-      style={{ textAlign: 'right', minWidth: 70, ...(field === 'fine' && value ? { color: 'var(--red, #dc2626)' } : {}) }}
-      defaultValue={value ? value : ''}
-      title={cfg.title}
-      onBlur={async (e) => {
-        const v = Math.max(0, parseFloat(e.target.value.replace(',', '.')) || 0);
-        if (v === value) return;
-        try {
-          await cfg.api(row.id, { ym, amount: v });
-          invalidateFinance(qc);
-        } catch (err) { toast.error(apiErr(err)); }
-      }}
-    />
+    <span className="flex" style={{ justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
+      {value ? <span>{money(value)}</span> : <span className="muted">—</span>}
+      <button className="btn ghost sm" title={`${label} — операция спишется со счёта сразу`} onClick={onPayout}>
+        <FinIcon name="plus" size={13} />
+      </button>
+    </span>
+  );
+}
+
+/** Выдача аванса/бонуса: создаёт расходную операцию СРАЗУ (деньги выходят
+ *  со счёта в момент выдачи). Комментарий «Аванс»/«Бонус» — по нему колонка
+ *  и математика узнают тип выплаты. */
+function PayoutModal({ row, kind, ym, onClose }: { row: any; kind: 'advance' | 'bonus'; ym: string; onClose: () => void }) {
+  useModalKeys(onClose);
+  const qc = useQueryClient();
+  const accounts = useFinAccounts();
+  const categories = useFinCategories();
+  const [amount, setAmount] = useState('');
+  const [date, setDate] = useState(ym === currentYm() ? todayISO() : `${ym}-15`);
+  const [accountId, setAccountId] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
+
+  const title = kind === 'advance' ? 'Выдать аванс' : 'Выплатить бонус';
+  const comment = kind === 'advance' ? 'Аванс' : 'Бонус';
+  const amt = parseFloat(amount.replace(',', '.'));
+  async function save() {
+    if (!(amt > 0) || !accountId || busy) return;
+    setBusy(true);
+    const salaryCat = categories.find((c: any) => c.key === 'salary');
+    try {
+      await financeApi.createOperation({
+        type: 'expense', amount: amt, date, accountId,
+        categoryId: salaryCat?.id, employeeId: row.id, comment,
+      });
+      invalidateFinance(qc);
+      toast.success(`${title}: ${money(amt)} — операция создана`);
+      onClose();
+    } catch (err) { toast.error(apiErr(err)); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <div className="modal-head"><h3>{title} · {row.name}</h3><button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
+        <div className="form-grid">
+          <div className="field"><label>Сумма, с.</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+          <div className="field"><label>Дата</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        </div>
+        <div className="field"><label>Счёт списания</label>
+          <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+            {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+        <p className="mini muted">Деньги спишутся со счёта сразу — операция появится в журнале. {kind === 'advance' ? 'Аванс уменьшит остаток финальной выплаты.' : 'Бонус — сверх оклада, остаток финальной выплаты не уменьшает.'}</p>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Отмена</button>
+          <button className="btn primary" disabled={!(amt > 0) || !accountId || busy} onClick={save}>{title}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
