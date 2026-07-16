@@ -385,7 +385,7 @@ export default function SalesDashboard() {
                 <th className="pb-2 font-medium text-right">Бюджет</th>
                 <th className="pb-2 font-medium text-right">Оплачено</th>
                 <th className="pb-2 font-medium text-right">Остаток</th>
-                <th className="pb-2 font-medium">Дата оплаты</th>
+                <th className="pb-2 pl-5 font-medium">Дата оплаты</th>
                 <th className="pb-2 font-medium">След. оплата</th>
                 <th className="pb-2 font-medium">Статус</th>
               </tr>
@@ -444,10 +444,11 @@ export default function SalesDashboard() {
                     {fmt(p.remaining)}
                   </td>
                   {/* Дата последней полученной оплаты (вместо дедлайна проекта —
-                      убран из вида МП по просьбе отдела продаж). */}
-                  <td className="py-2 pr-3 whitespace-nowrap">
+                      убран из вида МП по просьбе отдела продаж). pl-5 — зазор от
+                      прижатого вправо «Остатка», жирный шрифт — просьба МП. */}
+                  <td className="py-2 pl-5 pr-3 whitespace-nowrap">
                     {p.lastPaymentAt ? (
-                      <span className="text-xs text-surface-600 dark:text-surface-400">
+                      <span className="text-xs font-bold text-surface-700 dark:text-surface-300">
                         {format(new Date(p.lastPaymentAt), 'dd.MM.yy')}
                       </span>
                     ) : (

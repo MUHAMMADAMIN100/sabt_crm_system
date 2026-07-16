@@ -448,7 +448,11 @@ export class AnalyticsService {
    *  МП видит ТОЛЬКО проекты своего направления (СММ ↔ разработка) — и в
    *  таблице, и в итогах/графиках; топ-роли — всё. */
   async getSalesStats(viewerRole?: string) {
+    // Архивные проекты в панели продаж не показываем (просьба отдела продаж):
+    // это рабочий список, закрытые проекты живут в «Архиве». Итоги считаются
+    // по тому же списку — цифры всегда сходятся с таблицей.
     const allProjects = await this.projectRepo.find({
+      where: { isArchived: false },
       relations: ['manager', 'salesManager'],
       order: { createdAt: 'DESC' },
     });
