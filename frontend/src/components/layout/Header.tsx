@@ -218,7 +218,9 @@ export default function Header({ onMenuClick }: HeaderProps) {
             )}
           </button>
           {notifOpen && (
-            <div className="absolute right-0 top-full mt-1 w-[340px] sm:w-[380px] max-w-[calc(100vw-1rem)] bg-surface-50 dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 z-50 animate-slide-down flex flex-col max-h-[70vh] origin-top-right">
+            // Мобильный: панель фиксируется на всю ширину экрана под шапкой —
+            // absolute right-0 от колокольчика уводил её за левый край.
+            <div className="fixed inset-x-2 top-[60px] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-1 sm:w-[380px] bg-surface-50 dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 z-50 animate-slide-down flex flex-col max-h-[70vh] origin-top sm:origin-top-right">
               <div className="flex items-center justify-between px-4 py-3 border-b border-surface-100 dark:border-surface-700 shrink-0">
                 <h3 className="font-semibold text-sm text-surface-900 dark:text-surface-100">Уведомления</h3>
                 {(allNotifications ?? []).some((n: any) => !n.isRead) && (
