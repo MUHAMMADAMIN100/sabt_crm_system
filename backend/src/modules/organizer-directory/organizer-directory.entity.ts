@@ -76,10 +76,15 @@ export class OrgModel {
   @Column({ type: 'varchar', length: 200, nullable: true })
   languages: string | null;
 
-  /** Ссылка на видео с участием модели (портфолио для клиентов).
-   *  Хранится нормализованной: только http(s)://, см. sanitize(). */
+  /** Legacy: одиночная ссылка на видео. Зеркалит videoLinks[0] при каждом
+   *  сохранении (см. sanitize) — колонка сохранена для совместимости. */
   @Column({ type: 'varchar', length: 500, nullable: true })
   videoLink: string | null;
+
+  /** Ссылки на видео с участием модели (портфолио для клиентов) — до 10 шт.
+   *  Каждая нормализована: только http(s)://, см. sanitize(). */
+  @Column({ type: 'jsonb', nullable: true })
+  videoLinks: string[] | null;
 
   /** Ставка за съёмку — свободный текст: «400», «400–600», «договорная».
    *  Было numeric, конвертирована в varchar (просьба организатора: нужны

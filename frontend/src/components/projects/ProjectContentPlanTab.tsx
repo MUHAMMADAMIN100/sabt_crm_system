@@ -168,11 +168,11 @@ export default function ProjectContentPlanTab({ projectId }: { projectId: string
 
       <div className="flex items-center gap-3 flex-wrap">
         <div className="inline-flex items-center gap-1 text-xs text-gray-500"><Filter size={12} /> Фильтры:</div>
-        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 text-sm">
+        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-100 dark:bg-surface-700/60 text-sm">
           <option value="">Все типы</option>
           {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 text-sm">
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-100 dark:bg-surface-700/60 text-sm">
           <option value="">Все статусы</option>
           {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>

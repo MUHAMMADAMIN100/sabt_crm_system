@@ -32,6 +32,9 @@ interface Field {
   /** Поле-ссылка: в таблице рендерится кликабельной (новая вкладка),
    *  при сохранении без схемы дописывается https://. */
   link?: boolean
+  /** Список из НЕСКОЛЬКИХ ссылок (jsonb-массив): редактор с «+ Добавить
+   *  ссылку», в таблице — «видео 1 · видео 2 · …». */
+  links?: boolean
   /** Короткая подпись для шапки таблицы (если label слишком длинный). */
   shortLabel?: string
 }
@@ -66,8 +69,8 @@ const CONFIGS: Record<Kind, { title: string; subtitle: string; icon: any; addLab
       { key: 'age', label: 'Возраст', placeholder: 'например, 25', maxLength: 60 },
       { key: 'appearance', label: 'Внешность', textarea: true, placeholder: 'рост, телосложение, цвет волос, глаза…' },
       { key: 'experience', label: 'Опыт', textarea: true, placeholder: 'съёмки, показы, портфолио…' },
-      // Ссылка на видео с участием модели — показать клиентам её работу.
-      { key: 'videoLink', label: 'Ссылка на видео (работа модели)', shortLabel: 'Видео', link: true, placeholder: 'https://instagram.com/reel/…', maxLength: 500 },
+      // Ссылки на видео с участием модели — показать клиентам её работы.
+      { key: 'videoLinks', label: 'Ссылки на видео (работы модели)', shortLabel: 'Видео', links: true, placeholder: 'https://instagram.com/reel/…', maxLength: 500 },
       // Свободный текст, не money: организатору нужны диапазоны и символы
       // («400–600», «договорная») — числовой инпут не давал их ввести.
       { key: 'rate', label: 'Ставка за съёмку, с.', placeholder: '400, 400-600, договорная…', maxLength: 100 },
@@ -182,13 +185,23 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
                       <span className="text-surface-600 dark:text-surface-300">{c.options.find(o => o.value === r[c.key])?.label ?? '—'}</span>
                     ) : c.money ? (
                       <span className="tabular-nums whitespace-nowrap">{r[c.key] != null ? `${nf.format(r[c.key])} с.` : '—'}</span>
+                    ) : c.links ? (
+                      Array.isArray(r[c.key]) && r[c.key].length ? (
+                        <div className="flex flex-col gap-0.5">
+                          {r[c.key].map((u: string, li: number) => (
+                            <a key={li} href={u} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                              title={u}
+                              className="inline-flex items-center gap-1 text-primary-600 hover:underline whitespace-nowrap">
+                              <Video size={12} /> {r[c.key].length > 1 ? `видео ${li + 1}` : 'смотреть видео'}
+                            </a>
+                          ))}
+                        </div>
+                      ) : <span className="text-surface-400">—</span>
                     ) : c.link && r[c.key] ? (
                       <a href={r[c.key]} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
                         title={r[c.key]}
                         className="inline-flex items-center gap-1 text-primary-600 hover:underline whitespace-nowrap">
-                        {c.key === 'videoLink'
-                          ? <><Video size={12} /> смотреть видео</>
-                          : <><ExternalLink size={12} /> открыть</>}
+                        <ExternalLink size={12} /> открыть
                       </a>
                     ) : (
                       <span className="text-surface-600 dark:text-surface-300">{r[c.key] || '—'}</span>
@@ -233,8 +246,18 @@ function DirectoryModal({ kind, cfg, row, onClose, onSaved }: {
   kind: Kind; cfg: (typeof CONFIGS)[Kind]; row?: any; onClose: () => void; onSaved: () => void
 }) {
   const [form, setForm] = useState<Record<string, string>>(() =>
-    Object.fromEntries(cfg.fields.map(f => [f.key, row?.[f.key] != null ? String(row[f.key]) : ''])),
+    Object.fromEntries(cfg.fields.filter(f => !f.links).map(f => [f.key, row?.[f.key] != null ? String(row[f.key]) : ''])),
   )
+  // Поля-списки ссылок (videoLinks) — отдельное состояние-массив.
+  // Fallback на legacy videoLink — для записей, сохранённых до миграции.
+  const linksField = cfg.fields.find(f => f.links)
+  const [links, setLinks] = useState<string[]>(() => {
+    if (!linksField) return []
+    const arr = Array.isArray(row?.[linksField.key]) ? row[linksField.key].filter(Boolean) : []
+    if (arr.length) return arr
+    if (row?.videoLink) return [row.videoLink]
+    return ['']
+  })
   const [busy, setBusy] = useState(false)
   // Загрузка фото идёт асинхронно внутри PhotoPicker; пока имя файла не пришло,
   // сохранять нельзя — иначе запись уйдёт с photo=null и фото потеряется.
@@ -245,12 +268,17 @@ function DirectoryModal({ kind, cfg, row, onClose, onSaved }: {
     if (!form.name?.trim() || busy || photoBusy) return
     setBusy(true)
     const payload: Record<string, any> = {}
+    // Ссылка без схемы («youtube.com/…») → дописываем https://, чтобы клик
+    // вёл точно на видео, а не на относительный путь внутри CRM.
+    const normLink = (v: string) => /^https?:\/\//i.test(v) ? v : `https://${v.replace(/^\/+/, '')}`
     for (const f of cfg.fields) {
+      if (f.links) {
+        payload[f.key] = links.map(v => v.trim()).filter(Boolean).map(normLink)
+        continue
+      }
       const v = form[f.key]?.trim() ?? ''
       if (f.money) payload[f.key] = v === '' ? null : parseFloat(v.replace(',', '.'))
-      // Ссылка без схемы («youtube.com/…») → дописываем https://, чтобы клик
-      // вёл точно на видео, а не на относительный путь внутри CRM.
-      else if (f.link && v !== '' && !/^https?:\/\//i.test(v)) payload[f.key] = `https://${v.replace(/^\/+/, '')}`
+      else if (f.link && v !== '') payload[f.key] = normLink(v)
       else payload[f.key] = v === '' ? null : v
     }
     try {
@@ -272,6 +300,8 @@ function DirectoryModal({ kind, cfg, row, onClose, onSaved }: {
             <label className="label">{f.label}{f.required && ' *'}</label>
             {f.photo ? (
               <PhotoPicker value={form[f.key] || ''} onChange={v => set(f.key, v)} onBusyChange={setPhotoBusy} />
+            ) : f.links ? (
+              <LinksEditor links={links} onChange={setLinks} placeholder={f.placeholder} maxLength={f.maxLength} />
             ) : f.options ? (
               <select value={form[f.key]} onChange={e => set(f.key, e.target.value)} className="input text-sm">
                 <option value="">—</option>
@@ -298,6 +328,38 @@ function DirectoryModal({ kind, cfg, row, onClose, onSaved }: {
         </button>
       </div>
     </Modal>
+  )
+}
+
+/** Редактор списка ссылок: строка на каждую ссылку + «＋ Добавить ссылку»,
+ *  крестик убирает строку. Пустые строки отбрасываются при сохранении. */
+function LinksEditor({ links, onChange, placeholder, maxLength }: {
+  links: string[]; onChange: (l: string[]) => void; placeholder?: string; maxLength?: number
+}) {
+  const set = (i: number, v: string) => onChange(links.map((x, idx) => (idx === i ? v : x)))
+  const remove = (i: number) => onChange(links.filter((_, idx) => idx !== i))
+  return (
+    <div className="space-y-2">
+      {links.map((v, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input
+            value={v}
+            onChange={e => set(i, e.target.value)}
+            placeholder={placeholder}
+            maxLength={maxLength}
+            className="input text-sm flex-1"
+          />
+          <button type="button" title="Убрать ссылку" onClick={() => remove(i)}
+            className="p-1.5 rounded-lg text-surface-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0 transition-colors">
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+      <button type="button" onClick={() => onChange([...links, ''])}
+        className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline">
+        <Plus size={13} /> Добавить ссылку
+      </button>
+    </div>
   )
 }
 

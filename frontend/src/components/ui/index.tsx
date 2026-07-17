@@ -408,20 +408,28 @@ export function Pagination({ page, total, pageSize, onChange }: {
   const totalPages = Math.ceil(total / pageSize)
   if (totalPages <= 1) return null
 
-  // Build page numbers with ellipsis
+  // Окно из 10 номеров страниц, сдвигается вокруг текущей:
+  // «1 2 3 … 10 … 50», дальше «1 … 8 9 … 17 … 50» и т.д.
+  const WINDOW = 10
   const pages: (number | '...')[] = []
-  if (totalPages <= 7) {
+  if (totalPages <= WINDOW + 2) {
     for (let i = 1; i <= totalPages; i++) pages.push(i)
   } else {
-    pages.push(1)
-    if (page > 3) pages.push('...')
-    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i)
-    if (page < totalPages - 2) pages.push('...')
-    pages.push(totalPages)
+    const start = Math.max(1, Math.min(page - 4, totalPages - WINDOW + 1))
+    const end = start + WINDOW - 1
+    if (start > 1) {
+      pages.push(1)
+      if (start > 2) pages.push('...')
+    }
+    for (let i = start; i <= end; i++) pages.push(i)
+    if (end < totalPages) {
+      if (end < totalPages - 1) pages.push('...')
+      pages.push(totalPages)
+    }
   }
 
   return (
-    <div className="flex items-center justify-center gap-1 pt-3">
+    <div className="flex items-center justify-center flex-wrap gap-1 pt-3">
       <button
         onClick={() => onChange(page - 1)} disabled={page <= 1}
         className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-surface-500 dark:text-surface-400"

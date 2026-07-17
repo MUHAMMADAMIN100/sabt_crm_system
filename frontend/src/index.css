@@ -163,19 +163,21 @@
   .btn-ghost     { @apply btn text-surface-600 hover:bg-surface-100 hover:text-surface-900; }
   .dark .btn-ghost { @apply text-surface-300 hover:bg-surface-700 hover:text-white; }
 
-  /* Инпут — флэт, тонкая граница, focus-ring без translate-Y. */
+  /* Инпут — флэт, тонкая граница, focus-ring без translate-Y.
+     Фон СВЕТЛО-СЕРЫЙ (заметно отличается от подложки карточки/модалки),
+     чтобы поле ввода читалось как поле — просьба команды. */
   .input {
-    @apply w-full px-3 py-2 bg-surface-50 border border-surface-200 rounded-lg text-sm text-surface-900
+    @apply w-full px-3 py-2 bg-surface-100 border border-surface-200 rounded-lg text-sm text-surface-900
            placeholder:text-surface-400 min-h-[36px]
            focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20;
     transition: border-color 120ms ease, box-shadow 150ms ease, background-color 120ms ease;
   }
   .input:hover:not(:focus):not(:disabled) { @apply border-surface-300; }
   .dark .input {
-    @apply bg-surface-800 border-surface-700 text-surface-100 placeholder:text-surface-500
+    @apply bg-surface-700/60 border-surface-600 text-surface-100 placeholder:text-surface-500
            focus:border-primary-400 focus:ring-primary-400/20;
   }
-  .dark .input:hover:not(:focus):not(:disabled) { @apply border-surface-600; }
+  .dark .input:hover:not(:focus):not(:disabled) { @apply border-surface-500; }
 
   /* Native date / datetime inputs render smaller text + weird heights on mobile
    * Safari/Chrome by default. Force matching size with other .input fields. */

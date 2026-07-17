@@ -530,7 +530,7 @@ export default function TasksPage() {
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       {canChangeStatus ? (
                         <select value={task.status} onChange={e => updateStatusMut.mutate({ id: task.id, status: e.target.value })}
-                          className="text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-surface-50 dark:bg-surface-800 dark:text-surface-200">
+                          className="text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-surface-100 dark:bg-surface-700/60 dark:text-surface-200">
                           {ALL_STATUSES.map(s => (
                             <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>
                           ))}

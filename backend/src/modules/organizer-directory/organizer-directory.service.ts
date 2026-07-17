@@ -41,6 +41,12 @@ export class OrganizerDirectoryService implements OnModuleInit {
     await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "languages" varchar(200)`);
     // Ссылка на видео с участием модели (портфолио для клиентов).
     await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "videoLink" varchar(500)`);
+    // Несколько ссылок на видео (jsonb-массив). Одиночная legacy-ссылка
+    // переносится в массив один раз; sanitize() держит колонки зеркальными
+    // (videoLink = videoLinks[0]), поэтому UPDATE не воскрешает удалённое.
+    await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "videoLinks" jsonb`);
+    await run(`UPDATE org_models SET "videoLinks" = jsonb_build_array("videoLink")
+      WHERE "videoLinks" IS NULL AND "videoLink" IS NOT NULL AND "videoLink" <> ''`);
     // Ставка модели: numeric → varchar(100) — организатору нужны диапазоны
     // («400–600») и текст. Конвертация строго одноразовая (guard по типу
     // колонки), старые числа теряют хвост «.00».
@@ -76,9 +82,26 @@ export class OrganizerDirectoryService implements OnModuleInit {
   private static FIELDS: Record<string, string[]> = {
     clients: ['name', 'company', 'phone', 'instagram', 'telegram', 'address', 'note'],
     // «note» убран по просьбе организатора — вместо заметки «Знание языков».
-    models: ['name', 'gender', 'phone', 'instagram', 'age', 'appearance', 'experience', 'photo', 'languages', 'rate', 'videoLink'],
+    // ВАЖНО: 'videoLinks' идёт ПОСЛЕ 'videoLink' — при отправке обоих полей
+    // массив побеждает (перезаписывает зеркало, см. sanitize).
+    models: ['name', 'gender', 'phone', 'instagram', 'age', 'appearance', 'experience', 'photo', 'languages', 'rate', 'videoLink', 'videoLinks'],
     places: ['name', 'address', 'contact', 'price', 'link', 'note'],
   };
+
+  /** Нормализация ссылки на видео: в href попадает только http(s)://
+   *  (никаких javascript: и прочих схем); без схемы дописываем https://,
+   *  чтобы клик вёл точно на видео, а не на относительный путь. */
+  private normalizeVideoLink(raw: string): string {
+    const s = raw.slice(0, 500);
+    const withScheme = /^https?:\/\//i.test(s) ? s : `https://${s.replace(/^\/+/, '')}`;
+    let valid = false;
+    try {
+      const u = new URL(withScheme);
+      valid = (u.protocol === 'http:' || u.protocol === 'https:') && !!u.hostname && u.hostname.includes('.');
+    } catch { valid = false; }
+    if (!valid) throw new BadRequestException('Некорректная ссылка на видео — вставьте адрес вида https://…');
+    return withScheme.slice(0, 500);
+  }
 
   private sanitize(kind: string, dto: any): Record<string, any> {
     const out: Record<string, any> = {};
@@ -100,22 +123,30 @@ export class OrganizerDirectoryService implements OnModuleInit {
         const raw = typeof dto[f] === 'string' ? dto[f].trim() : '';
         out[f] = /^[A-Za-z0-9._-]{1,120}$/.test(raw) ? raw : null;
       } else if (f === 'videoLink') {
-        // Ссылка на видео с работой модели. В href попадает только http(s)://
-        // (никаких javascript: и прочих схем); без схемы дописываем https://,
-        // чтобы клик вёл точно на видео, а не на относительный путь. Явно
-        // некорректную ссылку не глотаем молча — 400 с понятным текстом.
-        const raw = typeof dto[f] === 'string' ? dto[f].trim().slice(0, 500) : '';
-        if (raw === '') { out[f] = null; }
-        else {
-          const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw.replace(/^\/+/, '')}`;
-          let valid = false;
-          try {
-            const u = new URL(withScheme);
-            valid = (u.protocol === 'http:' || u.protocol === 'https:') && !!u.hostname && u.hostname.includes('.');
-          } catch { valid = false; }
-          if (!valid) throw new BadRequestException('Некорректная ссылка на видео — вставьте адрес вида https://…');
-          out[f] = withScheme.slice(0, 500);
+        // Legacy-поле одиночной ссылки (старые клиенты API). Зеркалим в
+        // массив, если массив в этом же запросе не прислан.
+        const raw = typeof dto[f] === 'string' ? dto[f].trim() : '';
+        const norm = raw === '' ? null : this.normalizeVideoLink(raw);
+        out[f] = norm;
+        if (dto.videoLinks === undefined) out.videoLinks = norm ? [norm] : null;
+      } else if (f === 'videoLinks') {
+        // Несколько ссылок на видео: массив строк, каждая нормализуется
+        // (только http(s)://, без схемы дописываем https://), дубли и пустые
+        // отбрасываем, максимум 10. Явный мусор — 400, не глотаем молча.
+        const arrRaw = Array.isArray(dto[f]) ? dto[f] : (dto[f] == null ? [] : [dto[f]]);
+        const seen = new Set<string>();
+        const links: string[] = [];
+        for (const item of arrRaw) {
+          const raw = typeof item === 'string' ? item.trim() : '';
+          if (!raw) continue;
+          const norm = this.normalizeVideoLink(raw);
+          if (!seen.has(norm)) { seen.add(norm); links.push(norm); }
+          if (links.length >= 10) break;
         }
+        out[f] = links.length ? links : null;
+        // Зеркало для legacy-колонки — первая ссылка (или null). Благодаря
+        // этому boot-миграция videoLink→videoLinks не воскрешает удалённое.
+        out.videoLink = links[0] ?? null;
       } else if (f === 'age' || f === 'languages') {
         // varchar(60)/varchar(200): обрезаем, иначе длинная вставка → Postgres 22001 → 500.
         const max = f === 'age' ? 60 : 200;

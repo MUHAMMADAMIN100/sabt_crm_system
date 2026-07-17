@@ -293,7 +293,7 @@ export default function DevProjectsBoard() {
                           value={stageOf(p)}
                           onClick={e => e.stopPropagation()}
                           onChange={e => { e.stopPropagation(); moveMut.mutate({ id: p.id, devStage: Number(e.target.value) }) }}
-                          className="sm:hidden mt-2 w-full text-[11px] rounded-md border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-1.5 py-1"
+                          className="sm:hidden mt-2 w-full text-[11px] rounded-md border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-1.5 py-1"
                           title="Сменить этап"
                         >
                           {DEV_STAGES.map(s => <option key={s.num} value={s.num}>[{s.pct}%] {s.label}</option>)}
@@ -348,7 +348,7 @@ export default function DevProjectsBoard() {
                           value={taskStageOf(t)}
                           onClick={e => e.stopPropagation()}
                           onChange={e => { e.stopPropagation(); taskMoveMut.mutate({ id: t.id, devStage: Number(e.target.value) }) }}
-                          className="sm:hidden mt-2 w-full text-[11px] rounded-md border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-1.5 py-1"
+                          className="sm:hidden mt-2 w-full text-[11px] rounded-md border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-1.5 py-1"
                           title="Сменить этап"
                         >
                           {DEV_STAGES.map(s => <option key={s.num} value={s.num}>[{s.pct}%] {s.label}</option>)}
@@ -449,7 +449,7 @@ function ProjectQuickModal({ project: p, stageNum, canMove, onStage, onOpenPage,
           <p className="text-[11px] uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Этап разработки</p>
           {canMove ? (
             <select value={stageNum} onChange={e => onStage(Number(e.target.value))}
-              className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2">
+              className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2">
               {DEV_STAGES.map(s => <option key={s.num} value={s.num}>[{s.pct}%] {s.label}</option>)}
             </select>
           ) : (
@@ -555,7 +555,7 @@ function NewStageCardModal({ stage, projects, onClose, onCreated }: {
           <label className="block text-xs font-medium text-surface-600 dark:text-surface-300 mb-1">Проект *</label>
           <select value={projectId} autoFocus
             onChange={e => { setProjectId(e.target.value); setAssignees([]) }}
-            className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2">
+            className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2">
             <option value="">— Выберите проект —</option>
             {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name} · {p.projectType}</option>)}
           </select>
@@ -565,13 +565,13 @@ function NewStageCardModal({ stage, projects, onClose, onCreated }: {
           <label className="block text-xs font-medium text-surface-600 dark:text-surface-300 mb-1">Заголовок *</label>
           <input value={title} onChange={e => setTitle(e.target.value)}
             placeholder="Например: Настроить деплой на прод"
-            className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2" />
+            className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2" />
         </div>
 
         <div>
           <label className="block text-xs font-medium text-surface-600 dark:text-surface-300 mb-1">Дедлайн *</label>
           <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)}
-            className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2" />
+            className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2" />
         </div>
 
         <div>

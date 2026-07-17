@@ -335,7 +335,7 @@ function MembersManager({ team, allEmployees, onClose }: {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
         <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Поиск по имени..." className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-50 dark:bg-gray-900 text-sm" />
+          placeholder="Поиск по имени..." className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-100 dark:bg-surface-700/60 text-sm" />
       </div>
 
       <div className="text-xs text-gray-500 flex items-center justify-between">

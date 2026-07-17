@@ -142,8 +142,10 @@
 /* Form */
 .fin-root .field { display: flex; flex-direction: column; gap: 6px; }
 .fin-root .field label { font-size: 12px; color: var(--muted); font-weight: 600; }
+/* Фон полей — surface-2 (светло-серый): поле ввода отличимо от белой
+   карточки/модалки (в тёмной теме surface-2 тоже светлее поверхности). */
 .fin-root input, .fin-root select, .fin-root textarea { font-family: inherit; font-size: 14px; padding: 9px 11px; border: 1px solid var(--border);
-  border-radius: var(--radius-sm); background: var(--surface); color: var(--text); width: 100%; outline: none; }
+  border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); width: 100%; outline: none; }
 .fin-root input:focus, .fin-root select:focus, .fin-root textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .fin-root input[type="checkbox"] { width: 16px; height: 16px; padding: 0; }
 .fin-root .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }

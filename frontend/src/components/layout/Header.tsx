@@ -179,7 +179,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
       {/* Desktop Search */}
       <div className="flex-1 max-w-lg hidden sm:block relative" ref={searchRef}>
-        <div className="flex items-center gap-2 bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-lg px-3 py-1.5">
+        <div className="flex items-center gap-2 bg-surface-100 dark:bg-surface-700/60 border border-surface-200 dark:border-surface-600 rounded-lg px-3 py-1.5">
           <Search size={14} className="text-surface-400" />
           <input
             type="text"

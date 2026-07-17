@@ -280,25 +280,25 @@ export default function ProjectsPage() {
 
         {/* Wave 16: расширенные фильтры (TZ п.13) */}
         <div className="flex flex-wrap items-center gap-2">
-          <select value={filterTariff} onChange={e => setFilterTariff(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 text-xs">
+          <select value={filterTariff} onChange={e => setFilterTariff(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-100 dark:bg-surface-700/60 text-xs">
             <option value="">Все тарифы</option>
             {(tariffsList ?? []).map((t: any) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
-          <select value={filterPm} onChange={e => setFilterPm(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 text-xs">
+          <select value={filterPm} onChange={e => setFilterPm(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-100 dark:bg-surface-700/60 text-xs">
             <option value="">Все PM</option>
             {pmList.map((e: any) => (
               <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>
             ))}
           </select>
-          <select value={filterRisk} onChange={e => setFilterRisk(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 text-xs">
+          <select value={filterRisk} onChange={e => setFilterRisk(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-100 dark:bg-surface-700/60 text-xs">
             <option value="">Любой риск</option>
             <option value="red">🔥 Red</option>
             <option value="yellow">⚠️ Yellow</option>
             <option value="green">✓ Green</option>
           </select>
-          <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 text-xs">
+          <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="px-2.5 py-1 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-100 dark:bg-surface-700/60 text-xs">
             <option value="">Все оплаты</option>
             <option value="pending">Ожидает</option>
             <option value="invoice_sent">Счёт отправлен</option>

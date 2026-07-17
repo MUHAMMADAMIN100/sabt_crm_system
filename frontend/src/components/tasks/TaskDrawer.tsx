@@ -179,7 +179,7 @@ export default function TaskDrawer({
                     <select
                       value={task.status}
                       onChange={(e) => statusMut.mutate(e.target.value)}
-                      className="text-sm border border-surface-200 dark:border-surface-600 rounded-lg px-2.5 py-1 bg-surface-50 dark:bg-surface-900 focus:outline-none focus:ring-2 focus:ring-primary-200"
+                      className="text-sm border border-surface-200 dark:border-surface-600 rounded-lg px-2.5 py-1 bg-surface-100 dark:bg-surface-700/60 focus:outline-none focus:ring-2 focus:ring-primary-200"
                     >
                       {ALL_STATUSES.map(s => (
                         <option key={s} value={s}>{labels[s]}</option>
