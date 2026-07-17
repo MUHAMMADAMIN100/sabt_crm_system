@@ -114,6 +114,14 @@ export class Project {
   @Column({ type: 'boolean', default: false })
   storiesArchived: boolean;
 
+  /** Служебный проект «Одноразовые съёмки» (карточки съёмок без клиентского
+   *  проекта). Единственный в системе — частичный unique-индекс
+   *  ux_projects_one_off_system. Резолвится workflow-модулем по этому флагу
+   *  (не по имени), скрыт из списков проектов, удаление запрещено.
+   *  В DTO не выставляется (ValidationPipe whitelist+forbidNonWhitelisted). */
+  @Column({ type: 'boolean', default: false })
+  isOneOffSystem: boolean;
+
   @Column({ type: 'jsonb', nullable: true })
   smmData: Record<string, any>;
 

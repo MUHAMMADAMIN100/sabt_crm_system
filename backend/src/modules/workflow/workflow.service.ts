@@ -7,7 +7,7 @@ import { In, Repository } from 'typeorm';
 import { WorkflowCard, WORKFLOW_STAGES } from './workflow-card.entity';
 import { ShootSession } from './shoot-session.entity';
 import { UnitEvent } from './unit-event.entity';
-import { Project } from '../projects/project.entity';
+import { Project, ProjectStatus } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 import { SmmTariff } from '../smm-tariffs/smm-tariff.entity';
 import { AppGateway } from '../gateway/app.gateway';
@@ -35,6 +35,11 @@ const ALL_ACCESS = ['admin', 'founder', 'co_founder'];
  *  удалять карточки, назначать исполнителей, заполнять КП и съёмку).
  *  Остальные роли — только смена статуса своих карточек. */
 const MANAGE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'organizer'];
+
+/** Служебный проект для «одноразовых съёмок» — карточек без клиентского
+ *  проекта. Создаётся автоматически при первом использовании; фронт шлёт
+ *  sentinel projectId='one-off'. */
+const ONE_OFF_PROJECT_NAME = 'Одноразовые съёмки';
 
 /** Человекочитаемые названия этапов (для журнала и уведомлений). */
 const STAGE_LABELS: Record<string, string> = {
@@ -221,6 +226,29 @@ export class WorkflowService implements OnModuleInit {
           "updatedAt" timestamp NOT NULL DEFAULT NOW()
         );
       `);
+      // Служебный проект «Одноразовые съёмки»: устойчивый флаг-маркер вместо
+      // поиска по имени (имя проектов не уникально и редактируется CRUD'ом).
+      // Частичный unique-индекс гарантирует единственность служебного проекта
+      // и делает рабочим catch-перечитывание в oneOffProjectId() при гонке.
+      await this.repo.manager.query(
+        `ALTER TABLE projects ADD COLUMN IF NOT EXISTS "isOneOffSystem" boolean NOT NULL DEFAULT false`,
+      );
+      await this.repo.manager.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS ux_projects_one_off_system
+         ON projects ("isOneOffSystem") WHERE "isOneOffSystem" = true`,
+      );
+      // Адопция проекта, созданного ранней версией фичи (поиск по имени):
+      // помечаем флагом самый старый подходящий, если флага ещё ни у кого нет.
+      await this.repo.manager.query(
+        `UPDATE projects SET "isOneOffSystem" = true
+         WHERE id = (
+           SELECT id FROM projects
+           WHERE name = $1 AND "storiesArchived" = true
+             AND NOT EXISTS (SELECT 1 FROM projects WHERE "isOneOffSystem" = true)
+           ORDER BY "createdAt" ASC LIMIT 1
+         )`,
+        [ONE_OFF_PROJECT_NAME],
+      );
     } catch (e: any) {
       this.logger.warn(`workflow_cards migration failed: ${e?.message || e}`);
     }
@@ -588,8 +616,44 @@ export class WorkflowService implements OnModuleInit {
 
   // ─── CRUD ─────────────────────────────────────────────────────────────
 
+  /** Служебный проект «Одноразовые съёмки»: find-or-create по флагу
+   *  isOneOffSystem (НЕ по имени — имя не уникально, редактируется CRUD'ом
+   *  и позволило бы «перехватить» one-off карточки чужим проектом).
+   *  storiesArchived=true — историй по нему не бывает, сторисмейкеру и
+   *  напоминаниям «нет историй» он не должен мешать. */
+  private async oneOffProjectId(): Promise<string> {
+    let p = await this.projectRepo.findOne({ where: { isOneOffSystem: true } });
+    if (!p) {
+      try {
+        p = await this.projectRepo.save(this.projectRepo.create({
+          name: ONE_OFF_PROJECT_NAME,
+          description: 'Служебный проект: сюда попадают карточки «одноразовых съёмок» — съёмок без клиентского проекта.',
+          projectType: 'SMM',
+          status: ProjectStatus.IN_PROGRESS,
+          storiesArchived: true,
+          isOneOffSystem: true,
+        }));
+      } catch {
+        // Гонка двух одновременных созданий: частичный unique-индекс
+        // ux_projects_one_off_system роняет вторую вставку — перечитываем
+        // победителя по флагу.
+        p = await this.projectRepo.findOne({ where: { isOneOffSystem: true } });
+        if (!p) throw new BadRequestException('Не удалось создать проект «Одноразовые съёмки»');
+      }
+    } else if (p.isArchived) {
+      // Служебный проект заархивировали вручную — возвращаем на доску,
+      // иначе новые одноразовые карточки будут невидимы (listAll фильтрует
+      // архив). Флаг гарантирует, что это именно служебный проект.
+      await this.projectRepo.update(p.id, { isArchived: false });
+    }
+    return p.id;
+  }
+
   async create(projectId: string, dto: any, viewer: Viewer) {
     await this.assertCanManage(viewer);
+    // «Одноразовая съёмка» — карточка без клиентского проекта: складываем
+    // в служебный проект (создаётся при первом использовании).
+    if (projectId === 'one-off') projectId = await this.oneOffProjectId();
     const title = String(dto?.title || '').trim();
     if (!title) throw new BadRequestException('Заголовок обязателен');
     const stage = WORKFLOW_STAGES.includes(dto?.stage) ? dto.stage : 'content_plan';

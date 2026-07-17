@@ -446,6 +446,8 @@ export function canAccessRoute(
   if (route === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || canSeeDevBoard(role, secondaryRole) || userCan(u, 'content-plan.manage') || userCan(u, 'board.view')
   // «Истории по проектам» — только сторисмейкер.
   if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole)
+  // «Заметки» (личные задачи с календарём) — только сторисмейкер.
+  if (route === '/my-notes') return canSeeProjectStories(role, secondaryRole)
   // «Доступы сотрудников» — только основатель/сооснователь/админ.
   if (route === '/employee-access') return canManageAccess(role)
   // «Отчёты СММ» (ежедневный автоотчёт) — только основатель.

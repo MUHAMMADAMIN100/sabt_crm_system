@@ -507,3 +507,14 @@ export const organizerApi = {
     }).then(r => r.data as { filename: string })
   },
 }
+
+/** Личные заметки («Заметки» сторисмейкера). Бэк всегда скоупит по
+ *  владельцу из JWT — API возвращает и меняет только СВОИ заметки. */
+export const notesApi = {
+  list: () => api.get('/my-notes').then(r => r.data),
+  create: (data: { text: string; date?: string | null }) =>
+    api.post('/my-notes', data).then(r => r.data),
+  update: (id: string, data: { text?: string; date?: string | null; done?: boolean }) =>
+    api.patch(`/my-notes/${id}`, data).then(r => r.data),
+  remove: (id: string) => api.delete(`/my-notes/${id}`).then(r => r.data),
+}

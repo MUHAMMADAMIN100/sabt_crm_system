@@ -671,7 +671,10 @@ export class ProjectsService implements OnModuleInit {
       .loadRelationCountAndMap('p.doneTaskCount', 'p.tasks', 'doneTask', qb =>
         qb.where('doneTask.status = :s', { s: 'done' }),
       )
-      .where('p.isArchived = :archived', { archived });
+      .where('p.isArchived = :archived', { archived })
+      // Служебный проект «Одноразовые съёмки» — не показываем в списках
+      // проектов/аналитике/продажах: его карточки живут на доске проектов.
+      .andWhere('p."isOneOffSystem" = false');
 
     // RBAC: filter by role using SUBQUERY (not the joined members table)
     // so leftJoinAndSelect still loads ALL members in the result
@@ -1582,6 +1585,12 @@ export class ProjectsService implements OnModuleInit {
 
   async remove(id: string, user?: { id: string; role: string; name?: string }) {
     const p = await this.findOne(id);
+
+    // Служебный проект одноразовых съёмок удалять нельзя — его карточки
+    // на доске осиротеют, а следующая one-off карточка пересоздаст проект.
+    if (p.isOneOffSystem) {
+      throw new BadRequestException('Служебный проект «Одноразовые съёмки» нельзя удалить');
+    }
 
     // Доступ к удалению: founder/co_founder/admin — без ограничений;
     // smm_director — только SMM-проекты. Прочие роли — нельзя.

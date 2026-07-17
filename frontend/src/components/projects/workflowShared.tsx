@@ -324,7 +324,7 @@ export function CardFormModal({
   const singleProject = !!project
   const effectiveStage = card?.stage || stage
   const isContentPlan = !card && effectiveStage === 'content_plan'
-  const { register, handleSubmit, control, watch, formState: { errors } } = useForm({
+  const { register, handleSubmit, control, watch, setValue, formState: { errors } } = useForm({
     defaultValues: {
       projectId: card?.projectId || project?.id || '',
       title: card?.title || '',
@@ -342,6 +342,13 @@ export function CardFormModal({
   const watchedType = watch('type')
   const projList = singleProject ? [project] : (projects || [])
   const activeProjectId = singleProject ? project.id : selectedProjectId
+
+  // «Одноразовая съёмка» — съёмка без клиентского проекта: выбор проекта
+  // становится необязательным, бэк складывает карточку в служебный проект
+  // «Одноразовые съёмки» (sentinel projectId='one-off').
+  const [oneOff, setOneOff] = useState(false)
+  const showOneOff = !card && !singleProject && effectiveStage === 'shooting'
+  const projectPicked = oneOff ? true : !!activeProjectId
 
   // Исполнители — ВСЕ пользователи с ролью, валидной для этапа (не только
   // участники проекта), как в групповой форме. + текущий назначенный.
@@ -399,7 +406,7 @@ export function CardFormModal({
         </p>
       )}
       <form
-        onSubmit={handleSubmit((data: any) => onSubmit(activeProjectId, {
+        onSubmit={handleSubmit((data: any) => onSubmit(oneOff ? 'one-off' : activeProjectId, {
           title: data.title,
           description: data.description || null,
           deadline: data.deadline || null,
@@ -414,12 +421,37 @@ export function CardFormModal({
         <fieldset disabled={!canManage} className="space-y-4 border-0 p-0 m-0 min-w-0 disabled:opacity-100">
         {!singleProject && (
           <div>
-            <label className="label">Проект *</label>
-            <select {...register('projectId', { required: true })} className="input" disabled={!!card}>
+            <label className="label">Проект {oneOff ? '' : '*'}</label>
+            <select {...register('projectId', { required: !oneOff })} className="input" disabled={!!card || oneOff}>
               <option value="">— Выберите проект —</option>
               {(projects || []).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {/* Проект открытой карточки может отсутствовать в списке
+                  (служебный «Одноразовые съёмки» скрыт из списков проектов) —
+                  добавляем option, чтобы селект показывал реальное имя. */}
+              {card?.projectId && !(projects || []).some((p: any) => p.id === card.projectId) && (
+                <option value={card.projectId}>{card.project?.name || 'Одноразовые съёмки'}</option>
+              )}
             </select>
-            {errors.projectId && <p className="text-xs text-red-500 mt-1">Выберите проект</p>}
+            {errors.projectId && !oneOff && <p className="text-xs text-red-500 mt-1">Выберите проект</p>}
+            {showOneOff && (
+              <div className="mt-2">
+                <label className="inline-flex items-center gap-2 text-sm text-surface-700 dark:text-surface-300 cursor-pointer">
+                  <input type="checkbox" className="w-4 h-4" checked={oneOff}
+                    onChange={e => {
+                      setOneOff(e.target.checked)
+                      // Сбрасываем уже выбранный проект: карточка поедет в
+                      // «Одноразовые съёмки», серый селект не должен врать.
+                      if (e.target.checked) setValue('projectId', '')
+                    }} />
+                  Одноразовая съёмка <span className="text-surface-400 font-normal">— без клиентского проекта</span>
+                </label>
+                {oneOff && (
+                  <p className="text-[11px] text-surface-400 mt-1">
+                    Карточка попадёт в служебный проект «Одноразовые съёмки» — выбирать проект не нужно.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
         {isContentPlan && (
@@ -459,7 +491,7 @@ export function CardFormModal({
           </div>
           <div>
             <label className="label">Исполнители <span className="text-surface-400 font-normal">(можно несколько)</span></label>
-            {!activeProjectId ? (
+            {!projectPicked ? (
               <p className="input flex items-center text-surface-400 min-h-[38px]">— Сначала выберите проект —</p>
             ) : canManage ? (
               <div className="max-h-32 overflow-y-auto rounded-lg border border-surface-200 dark:border-surface-700 divide-y divide-surface-100 dark:divide-surface-700">
@@ -481,7 +513,7 @@ export function CardFormModal({
         {showEditors && (
           <div>
             <label className="label">Монтаж <span className="text-surface-400 font-normal">— монтажёры (можно несколько)</span></label>
-            {!activeProjectId ? (
+            {!projectPicked ? (
               <p className="input flex items-center text-surface-400 min-h-[38px]">— Сначала выберите проект —</p>
             ) : canManage ? (
               <>

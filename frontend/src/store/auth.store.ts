@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import api, { markJustAuthed, isJustAuthed, tokenStore } from '@/lib/api'
 import { syncThemeFromServer, resetTheme } from '@/lib/theme'
+import { queryClient } from '@/lib/queryClient'
 
 export type UserRole =
   | 'admin'
@@ -138,6 +139,10 @@ export const useAuthStore = create<AuthState>()(
         try { localStorage.removeItem('auth-storage') } catch {}
         try { localStorage.removeItem('token') } catch {} // legacy ключ
         tokenStore.clear()
+        // React Query кэш ОБЯЗАТЕЛЬНО чистим: иначе следующий пользователь
+        // на этом же устройстве увидит из кэша чужие приватные данные
+        // (личные заметки, финансы) до завершения своих refetch'ей.
+        try { queryClient.clear() } catch {}
         resetTheme()
         set({ authenticated: false, user: null })
       },

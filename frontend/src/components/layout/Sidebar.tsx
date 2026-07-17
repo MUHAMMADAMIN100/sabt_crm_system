@@ -9,7 +9,7 @@ import {
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, UserPlus,
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
   Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal,
-  Package, PersonStanding, MapPin, ClipboardList,
+  Package, PersonStanding, MapPin, ClipboardList, StickyNote,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -51,6 +51,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/projects',      icon: FolderKanban,    label: t('nav.projects'),   permission: 'projects.view' },
     { to: '/workflow-board', icon: Trello,         label: 'Доска проектов',    permission: 'projects.view' },
     { to: '/project-stories', icon: ImageIcon,     label: 'Истории по проектам', permission: 'stories.manage' },
+    { to: '/my-notes',      icon: StickyNote,      label: 'Заметки',           permission: 'dashboard' },
     { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
     { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
     // Ежедневный автоотчёт по СММ-команде — только основатель.
@@ -86,6 +87,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     if (item.to === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || canSeeDevBoard(role, secondaryRole) || userCan(user, 'content-plan.manage') || userCan(user, 'board.view')
     // «Истории по проектам» — только сторисмейкер.
     if (item.to === '/project-stories') return canSeeProjectStories(role, secondaryRole)
+    // «Заметки» (личные задачи) — только сторисмейкер.
+    if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole)
     // «Доступы сотрудников» — только основатель/сооснователь/админ.
     if (item.to === '/employee-access') return canManageAccess(role)
     // «Отчёты СММ» (ежедневный автоотчёт) — только основатель.
