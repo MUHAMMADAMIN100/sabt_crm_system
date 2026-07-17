@@ -200,6 +200,18 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
             } catch (err) { toast.error(apiErr(err)); }
           }}><FinIcon name="check" size={14} /> Закрыть месяц</button>
         )}
+        {/* Месяц закрыт (заморожен) — можно переоткрыть, чтобы поправить
+            авансы/бонусы/штрафы. Выплаты не удаляются, счета не трогаются. */}
+        {rows.some((e: any) => e.frozen) && (
+          <button className="btn sm" onClick={async () => {
+            if (!(await finConfirm('Переоткрыть месяц? Заморозка снимется, можно будет править авансы/бонусы/штрафы. Выплаты НЕ удаляются, деньги со счетов НЕ трогаются.', { confirmLabel: 'Переоткрыть' }))) return;
+            try {
+              await financeApi.reopenSalaryMonth(ym);
+              invalidateFinance(qc);
+              toast.success('Месяц переоткрыт — можно вносить правки');
+            } catch (err) { toast.error(apiErr(err)); }
+          }}><FinIcon name="undo" size={14} /> Переоткрыть месяц</button>
+        )}
         <button className="btn sm" onClick={exportCsv}>Экспорт CSV</button>
         <button className="btn primary" onClick={() => setEmpFor('new')}><FinIcon name="plus" size={16} /> Сотрудник</button>
       </div>

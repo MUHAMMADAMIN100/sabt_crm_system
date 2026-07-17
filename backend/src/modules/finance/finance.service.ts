@@ -2242,6 +2242,24 @@ export class FinanceService implements OnModuleInit {
     return { ok: true, closed };
   }
 
+  /** Переоткрыть месяц ЗП: снять заморозку (удалить снапшоты выплаченного
+   *  месяца) БЕЗ удаления зарплатных операций и без движения денег.
+   *  Нужно, чтобы поправить/дозаполнить авансы/бонусы/штрафы за уже
+   *  закрытый месяц (во frozen-месяц их не впишешь). Балансы не меняются. */
+  async reopenSalaryMonth(ym: string) {
+    const emps = await this.empRepo.find();
+    let reopened = 0;
+    for (const e of emps) {
+      if (!snapOf(e, ym)) continue;
+      const map = { ...(e.salarySnapshots || {}) };
+      delete map[ym];
+      e.salarySnapshots = Object.keys(map).length ? map : null;
+      await this.empRepo.save(e);
+      reopened++;
+    }
+    return { ok: true, reopened };
+  }
+
   /** Журнал активности финансов: кто/что/когда (пишет интерцептор). */
   async listActivity(limit = 50, offset = 0) {
     const l = Math.min(200, Math.max(1, Number(limit) || 50));

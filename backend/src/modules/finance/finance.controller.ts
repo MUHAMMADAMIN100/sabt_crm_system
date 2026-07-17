@@ -165,6 +165,9 @@ export class FinanceController {
   /** Закрыть месяц: все активные сотрудники фиксируются выплаченными
    *  (снапшот) без создания операций — деньги уже выданы фактически. */
   @Post('salary/close-month') closeSalaryMonth(@Body() dto: SetEmployeeBonusDto) { return this.service.closeSalaryMonth(dto.ym || currentYm()); }
+  /** Переоткрыть месяц: снять заморозку (не удаляя выплаты, без движения
+   *  денег) — чтобы поправить авансы/бонусы/штрафы за закрытый месяц. */
+  @Post('salary/reopen-month') reopenSalaryMonth(@Body() dto: SetEmployeeBonusDto) { return this.service.reopenSalaryMonth(dto.ym || currentYm()); }
 
   // ─── Справочники: Аренда/подписки ────────────────────────────────
   @Get('subscriptions') listSubscriptions() { return this.service.listSubscriptions(); }

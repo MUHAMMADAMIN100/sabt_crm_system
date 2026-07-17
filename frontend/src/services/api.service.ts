@@ -374,6 +374,7 @@ export const financeApi = {
   setEmployeeFine: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/fine`, data).then(r => r.data),
   // Закрыть месяц: все сотрудники — «выплачено» (снапшот, без операций).
   closeSalaryMonth: (ym: string) => api.post('/finance/salary/close-month', { ym }).then(r => r.data),
+  reopenSalaryMonth: (ym: string) => api.post('/finance/salary/reopen-month', { ym }).then(r => r.data),
   // Журнал активности финансов (кто/что/когда).
   activity: (limit = 50, offset = 0) => api.get('/finance/activity', { params: { limit, offset } }).then(r => r.data),
 
