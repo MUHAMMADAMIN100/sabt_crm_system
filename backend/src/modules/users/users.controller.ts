@@ -11,6 +11,7 @@ import { UserRole } from './user.entity';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { BlockUserDto } from './dto/block-user.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
+import { RegisterFcmDto } from './dto/register-fcm.dto';
 import { GRANTABLE } from '../auth/permissions';
 
 /** Безопасный конфиг для загрузки аватарок: только PNG/JPEG/WEBP,
@@ -127,6 +128,19 @@ export class UsersController {
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   cleanupOrphanedUsers() {
     return this.usersService.cleanupOrphanedUsers();
+  }
+
+  /** FCM-токены мобильного приложения: регистрация при входе, удаление при
+   *  выходе. Доступно любому авторизованному — каждый регистрирует своё
+   *  устройство. Спецификация согласована с мобильным разработчиком. */
+  @Post('register-fcm')
+  registerFcm(@Request() req, @Body() dto: RegisterFcmDto) {
+    return this.usersService.registerFcmToken(req.user.id, dto.token);
+  }
+
+  @Post('unregister-fcm')
+  unregisterFcm(@Request() req, @Body() dto: RegisterFcmDto) {
+    return this.usersService.unregisterFcmToken(req.user.id, dto.token);
   }
 
   @Patch('me/avatar')

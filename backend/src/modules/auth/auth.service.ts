@@ -57,6 +57,14 @@ export class AuthService implements OnModuleInit {
     } catch (e: any) {
       this.logger.warn(`extraPermissions column add failed: ${e?.message || e}`);
     }
+    try {
+      // FCM-токены устройств мобильного приложения (пуш-уведомления).
+      await this.userRepo.manager.query(
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "fcmTokens" jsonb`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`fcmTokens column add failed: ${e?.message || e}`);
+    }
   }
 
   // ─── Refresh tokens ──────────────────────────────────────────────────

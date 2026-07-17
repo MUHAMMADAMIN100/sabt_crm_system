@@ -21,3 +21,7 @@ coverage/
 # Локальные настройки Claude Code (могут содержать секреты в allowlist) —
 # НИКОГДА не коммитить.
 .claude/settings.local.json
+
+# Firebase service account (секретный ключ FCM-пушей) — НИКОГДА не коммитить.
+firebase-service-account.json
+*service-account*.json

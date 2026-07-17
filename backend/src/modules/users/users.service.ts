@@ -329,6 +329,29 @@ export class UsersService {
     return this.findOne(id);
   }
 
+  /** Регистрация FCM-токена устройства (мобильное приложение). Мульти-девайс:
+   *  до 5 токенов на пользователя, старые вытесняются. */
+  async registerFcmToken(userId: string, token: string) {
+    // Колонка select:false — читаем явно.
+    const user = await this.repo.findOne({ where: { id: userId }, select: ['id', 'fcmTokens'] as any });
+    if (!user) throw new NotFoundException('Пользователь не найден');
+    const tokens = (user.fcmTokens || []).filter(t => t !== token);
+    tokens.push(token);
+    while (tokens.length > 5) tokens.shift();
+    await this.repo.update(userId, { fcmTokens: tokens });
+    return { success: true };
+  }
+
+  /** Удаление FCM-токена при выходе из аккаунта — пуши на устройство
+   *  перестают приходить. */
+  async unregisterFcmToken(userId: string, token: string) {
+    const user = await this.repo.findOne({ where: { id: userId }, select: ['id', 'fcmTokens'] as any });
+    if (!user) throw new NotFoundException('Пользователь не найден');
+    const tokens = (user.fcmTokens || []).filter(t => t !== token);
+    await this.repo.update(userId, { fcmTokens: tokens.length ? tokens : null });
+    return { success: true };
+  }
+
   async updateAvatar(id: string, avatar: string, actor?: { id: string; role?: string }) {
     const user = await this.findOne(id);
     // Security: смена аватарки другого пользователя должна проходить через

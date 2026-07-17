@@ -91,6 +91,14 @@ export class User {
   @Column({ type: 'jsonb', nullable: true })
   extraPermissions: string[] | null;
 
+  /** FCM-токены устройств мобильного приложения (мульти-девайс, максимум 5).
+   *  Регистрирует POST /users/register-fcm. select:false — колонка не
+   *  попадает ни в какие выборки/ответы API; читается только явным select
+   *  в register/unregister/sendPush (@Exclude не спасает для plain-объектов). */
+  @Exclude()
+  @Column({ type: 'jsonb', nullable: true, select: false })
+  fcmTokens: string[] | null;
+
   /** Персональная тема интерфейса в формате realtimecolors —
    *  5 hex-цветов через дефис: text-background-primary-secondary-accent
    *  (например "18181b-fafafa-4f46e5-71717a-22c55e"). NULL — дефолт.
