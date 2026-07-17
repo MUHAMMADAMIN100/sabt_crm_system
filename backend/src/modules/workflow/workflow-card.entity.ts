@@ -45,6 +45,10 @@ export class WorkflowCard {
   @Column({ type: 'date', nullable: true })
   deadline: string | null;
 
+  /** Время дедлайна «HH:MM» — уточнение к дате (просрочка считается по дате). */
+  @Column({ type: 'varchar', length: 5, nullable: true })
+  deadlineTime: string | null;
+
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'assigneeId' })
   assignee: User | null;
@@ -134,6 +138,10 @@ export class WorkflowCard {
   /** Целевая дата публикации — основа обратного планирования дедлайнов. */
   @Column({ type: 'date', nullable: true })
   publishDate: string | null;
+
+  /** Время публикации «HH:MM» — уточнение к дате. */
+  @Column({ type: 'varchar', length: 5, nullable: true })
+  publishTime: string | null;
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   publishedAt: Date | null;

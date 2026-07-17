@@ -268,13 +268,13 @@ export function WorkflowCardBadges({ card }: { card: any }) {
         </span>
       ) : deadline && (isOverdue ? (
         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
-          Просрочено: {format(deadline, 'dd.MM.yyyy')}
+          Просрочено: {format(deadline, 'dd.MM.yyyy')}{card.deadlineTime ? ` ${card.deadlineTime}` : ''}
         </span>
       ) : (
-        <span className="text-[10px] text-surface-500 dark:text-surface-400">до {format(deadline, 'dd.MM.yyyy')}</span>
+        <span className="text-[10px] text-surface-500 dark:text-surface-400">до {format(deadline, 'dd.MM.yyyy')}{card.deadlineTime ? ` ${card.deadlineTime}` : ''}</span>
       ))}
       {card.publishDate && !card.publishedAt && (
-        <span className="text-[10px] text-surface-400 dark:text-surface-500">пуб. {format(parseISO(card.publishDate), 'dd.MM')}</span>
+        <span className="text-[10px] text-surface-400 dark:text-surface-500">пуб. {format(parseISO(card.publishDate), 'dd.MM')}{card.publishTime ? ` ${card.publishTime}` : ''}</span>
       )}
     </div>
     {isWorkGroup && totalItems > 0 && (
@@ -331,9 +331,11 @@ export function CardFormModal({
       description: card?.description || '',
       contentType: card?.contentType || '',
       deadline: card?.deadline || '',
+      deadlineTime: card?.deadlineTime || '',
       assigneeId: card?.assigneeId || '',
       type: card?.type || 'reels',
       publishDate: card?.publishDate || '',
+      publishTime: card?.publishTime || '',
       needsIntro: card?.needsIntro ?? true,
     },
   })
@@ -410,9 +412,11 @@ export function CardFormModal({
           title: data.title,
           description: data.description || null,
           deadline: data.deadline || null,
+          deadlineTime: data.deadlineTime || null,
           assigneeId: selectedAssignees[0] || null,
           assigneeIds: selectedAssignees,
           publishDate: data.publishDate || null,
+          publishTime: data.publishTime || null,
           ...(showEditors ? { editorIds: selectedEditors } : {}),
           ...(isContentPlan ? { type: data.type, needsCover: true, needsIntro: data.type === 'reels' ? !!data.needsIntro : false } : {}),
         }))}
@@ -478,16 +482,27 @@ export function CardFormModal({
           <input {...register('title', { required: true })} className="input" placeholder="Например: Reels — рецепт фирменного плова" />
           {errors.title && <p className="text-xs text-red-500 mt-1">Обязательное поле</p>}
         </div>
-        <div>
-          <label className="label">Дата публикации</label>
-          <Controller name="publishDate" control={control}
-            render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
+        <div className="grid grid-cols-[1fr_auto] gap-3">
+          <div>
+            <label className="label">Дата публикации</label>
+            <Controller name="publishDate" control={control}
+              render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
+          </div>
+          <div>
+            <label className="label">Время</label>
+            <input type="time" {...register('publishTime')} className="input w-28" />
+          </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="label">Дедлайн этапа</label>
-            <Controller name="deadline" control={control}
-              render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
+            {/* flex-wrap: в узкой ячейке время переносится под дату, не
+                наезжая на соседнюю колонку «Исполнители». */}
+            <div className="flex flex-wrap gap-2">
+              <Controller name="deadline" control={control}
+                render={({ field }) => <DatePicker className="flex-1 min-w-[150px]" value={(field.value as string) || ''} onChange={field.onChange} />} />
+              <input type="time" {...register('deadlineTime')} title="Время дедлайна" className="input w-24" />
+            </div>
           </div>
           <div>
             <label className="label">Исполнители <span className="text-surface-400 font-normal">(можно несколько)</span></label>
@@ -1088,7 +1103,10 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
         {isOpen && (
           <div className="px-3 pb-3 space-y-2">
             <div><label className="label text-xs">Тема</label><input className="input" value={it.title || ''} onChange={e => setItem(list, setList, idx, { title: e.target.value })} /></div>
-            <div><label className="label text-xs">Дата публикации</label><DatePicker value={it.publishDate || ''} minDate={todayIso} onChange={(v: string) => setItem(list, setList, idx, { publishDate: v })} marks={occupiedMarks(kind, idx)} /></div>
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <div><label className="label text-xs">Дата публикации</label><DatePicker value={it.publishDate || ''} minDate={todayIso} onChange={(v: string) => setItem(list, setList, idx, { publishDate: v })} marks={occupiedMarks(kind, idx)} /></div>
+              <div><label className="label text-xs">Время</label><input type="time" className="input w-24" value={it.publishTime || ''} onChange={e => setItem(list, setList, idx, { publishTime: e.target.value })} /></div>
+            </div>
             <div><label className="label text-xs">Описание</label><textarea className="input min-h-[60px]" value={it.description || ''} onChange={e => setItem(list, setList, idx, { description: e.target.value })} /></div>
           </div>
         )}
@@ -1286,7 +1304,7 @@ export function GroupCardModal({ card, project, actor, onClose, onSaved }: {
               </p>
               {it.publishDate && (
                 <span className="text-[11px] text-surface-400 shrink-0 text-right">
-                  Дата публикации<br />{fmtDate(it.publishDate)}
+                  Дата публикации<br />{fmtDate(it.publishDate)}{it.publishTime ? ` ${it.publishTime}` : ''}
                 </span>
               )}
             </div>

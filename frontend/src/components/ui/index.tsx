@@ -408,24 +408,28 @@ export function Pagination({ page, total, pageSize, onChange }: {
   const totalPages = Math.ceil(total / pageSize)
   if (totalPages <= 1) return null
 
-  // Окно из 10 номеров страниц, сдвигается вокруг текущей:
-  // «1 2 3 … 10 … 50», дальше «1 … 8 9 … 17 … 50» и т.д.
-  const WINDOW = 10
+  // Три блока одновременно: первые 7, средние 5, последние 7 —
+  // «1 2 3 4 5 6 7 … 15 16 17 18 19 … 26 27 28 29 30 31 32».
+  // Средний блок центрируется на текущей странице, когда она в «дыре»
+  // между блоками (иначе до неё нельзя дойти по номерам); в остальных
+  // случаях — на середине диапазона. До 19 страниц — все подряд.
+  const HEAD = 7, MID = 5, TAIL = 7
   const pages: (number | '...')[] = []
-  if (totalPages <= WINDOW + 2) {
+  if (totalPages <= HEAD + MID + TAIL) {
     for (let i = 1; i <= totalPages; i++) pages.push(i)
   } else {
-    const start = Math.max(1, Math.min(page - 4, totalPages - WINDOW + 1))
-    const end = start + WINDOW - 1
-    if (start > 1) {
-      pages.push(1)
-      if (start > 2) pages.push('...')
-    }
-    for (let i = start; i <= end; i++) pages.push(i)
-    if (end < totalPages) {
-      if (end < totalPages - 1) pages.push('...')
-      pages.push(totalPages)
-    }
+    for (let i = 1; i <= HEAD; i++) pages.push(i)
+    const gapStart = HEAD + 1
+    const gapEnd = totalPages - TAIL
+    let mStart = (page > HEAD && page <= gapEnd)
+      ? page - Math.floor(MID / 2)
+      : Math.round((gapStart + gapEnd) / 2) - Math.floor(MID / 2)
+    mStart = Math.max(gapStart, Math.min(mStart, gapEnd - MID + 1))
+    const mEnd = mStart + MID - 1
+    if (mStart > gapStart) pages.push('...')
+    for (let i = mStart; i <= mEnd; i++) pages.push(i)
+    if (mEnd < gapEnd) pages.push('...')
+    for (let i = totalPages - TAIL + 1; i <= totalPages; i++) pages.push(i)
   }
 
   return (

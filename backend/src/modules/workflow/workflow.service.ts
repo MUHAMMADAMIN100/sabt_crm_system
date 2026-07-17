@@ -112,6 +112,12 @@ const DEADLINE_OFFSETS: Record<string, Record<string, number>> = {
   static: { design: 5, internal_review: 3, client_approval: 2, ready_to_publish: 1 },
 };
 
+/** Валидация времени «HH:MM» (00:00–23:59); мусор → null. */
+function timeOf(v: any): string | null {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(s) ? s : null;
+}
+
 /** ISO-дата ('YYYY-MM-DD') + delta дней (тот же паттерн, что в finance.service). */
 function addDaysISO(iso: string, delta: number): string {
   const d = new Date(iso + 'T00:00:00Z');
@@ -187,6 +193,9 @@ export class WorkflowService implements OnModuleInit {
         `ADD COLUMN IF NOT EXISTS confirmed boolean NOT NULL DEFAULT false`,
         `ADD COLUMN IF NOT EXISTS "assigneeIds" jsonb`,
         `ADD COLUMN IF NOT EXISTS "editorIds" jsonb`,
+        // Время к датам доски («HH:MM»): дедлайн этапа и публикация.
+        `ADD COLUMN IF NOT EXISTS "deadlineTime" varchar(5)`,
+        `ADD COLUMN IF NOT EXISTS "publishTime" varchar(5)`,
       ];
       for (const c of cols) {
         await this.repo.manager.query(`ALTER TABLE workflow_cards ${c}`);
@@ -568,6 +577,7 @@ export class WorkflowService implements OnModuleInit {
       description: c.description,
       contentType: c.contentType,
       deadline: c.deadline,
+      deadlineTime: c.deadlineTime,
       stage: c.stage,
       position: c.position,
       assigneeId: c.assigneeId,
@@ -597,6 +607,7 @@ export class WorkflowService implements OnModuleInit {
       introUrl: c.introUrl,
       publishedUrl: c.publishedUrl,
       publishDate: c.publishDate,
+      publishTime: c.publishTime,
       publishedAt: c.publishedAt,
       shootDate: c.shootDate,
       shootTime: c.shootTime,
@@ -683,6 +694,7 @@ export class WorkflowService implements OnModuleInit {
       description: dto?.description ? String(dto.description).slice(0, 5000) : null,
       contentType: dto?.contentType ? String(dto.contentType).slice(0, 30) : null,
       deadline: dto?.deadline || null,
+      deadlineTime: timeOf(dto?.deadlineTime),
       assigneeId: assigneeIds[0] || null,
       assigneeIds: assigneeIds.length ? assigneeIds : null,
       editorIds: editorIds.length ? editorIds : null,
@@ -691,6 +703,7 @@ export class WorkflowService implements OnModuleInit {
       createdById: viewer.id,
       type,
       publishDate: dto?.publishDate || null,
+      publishTime: timeOf(dto?.publishTime),
       needsCover: pastPlanning ? false : (dto?.needsCover !== undefined ? !!dto.needsCover : true),
       needsIntro: pastPlanning ? false : (dto?.needsIntro !== undefined ? !!dto.needsIntro : true),
       designDone: pastPlanning,
@@ -931,6 +944,7 @@ export class WorkflowService implements OnModuleInit {
         itemKind,
         title: String(it.title || '').slice(0, 300),
         publishDate: it.publishDate || null,
+        publishTime: timeOf(it.publishTime),
         description: it.description ? String(it.description).slice(0, 5000) : null,
         assigneeId: it.assigneeId || null,
         assigneeName: it.assigneeName || null,
@@ -1302,7 +1316,9 @@ export class WorkflowService implements OnModuleInit {
     if (dto.description !== undefined) patch.description = dto.description ? String(dto.description).slice(0, 5000) : null;
     if (dto.contentType !== undefined) patch.contentType = dto.contentType ? String(dto.contentType).slice(0, 30) : null;
     if (dto.deadline !== undefined) patch.deadline = dto.deadline || null;
+    if (dto.deadlineTime !== undefined) patch.deadlineTime = timeOf(dto.deadlineTime);
     if (dto.publishDate !== undefined) patch.publishDate = dto.publishDate || null;
+    if (dto.publishTime !== undefined) patch.publishTime = timeOf(dto.publishTime);
     if (dto.type !== undefined && (dto.type === 'reels' || dto.type === 'static')) patch.type = dto.type;
     if (dto.needsCover !== undefined) patch.needsCover = !!dto.needsCover;
     if (dto.needsIntro !== undefined) patch.needsIntro = !!dto.needsIntro;
@@ -1584,6 +1600,7 @@ export class WorkflowService implements OnModuleInit {
       position: Number(max) + 1,
       status: 'active',
       publishDate: item.publishDate || null,
+      publishTime: timeOf(item.publishTime),
       // Авто-дедлайн убран: дедлайн этапа ставит руководитель вручную
       // (иначе расчёт от даты публикации мог попасть в прошлое).
       deadline: null,
@@ -1984,8 +2001,8 @@ export class WorkflowService implements OnModuleInit {
       `📌 <b>${this.escTg(card.title)}</b>${typeLabel ? ` (${typeLabel})` : ''}`,
       project ? `📁 Проект: ${this.escTg(project.name)}` : '',
       card.description ? `📝 ${this.escTg(card.description)}` : '',
-      card.deadline ? `📅 Дедлайн: ${fmtDate(card.deadline)}` : '',
-      card.publishDate ? `🗓 Публикация: ${fmtDate(card.publishDate)}` : '',
+      card.deadline ? `📅 Дедлайн: ${fmtDate(card.deadline)}${card.deadlineTime ? `, ${card.deadlineTime}` : ''}` : '',
+      card.publishDate ? `🗓 Публикация: ${fmtDate(card.publishDate)}${card.publishTime ? `, ${card.publishTime}` : ''}` : '',
       shoot ? `🎥 Съёмка: ${shoot}` : '',
     ].filter(Boolean);
     return lines.length ? '\n' + lines.join('\n') : '';
