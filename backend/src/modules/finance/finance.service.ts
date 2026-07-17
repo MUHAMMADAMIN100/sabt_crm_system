@@ -35,6 +35,18 @@ function monthRange(ym: string): { from: string; to: string } {
 
 const ymOf = (iso: string): string => (iso || '').slice(0, 7);
 
+/** Период зарплатной ведомости для даты — цикл «10-е → 10-е»: дата на/до
+ *  10-го числа относится к ПРЕДЫДУЩЕМУ месяцу (цикл закрывается 10-го),
+ *  после 10-го — к текущему. Используется как дефолт месяца начисления ЗП,
+ *  когда явный salaryYm не задан. Только для зарплаты. */
+function salaryPeriodOf(iso: string): string {
+  const s = (iso || '').slice(0, 10);
+  const [y, m, d] = s.split('-').map(Number);
+  if (!y || !m || !d) return ymOf(iso);
+  if (d <= 10) { const dt = new Date(y, m - 2, 1); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; }
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+
 /** Сегодня по Душанбе — сервер (Railway) живёт в UTC: операции с 00:00 до
  *  05:00 местного получали бы вчерашнюю дату, а на стыке месяцев уезжали бы
  *  в прошлый месяц (авансы, циклы, «текущий месяц» автопланов). */
@@ -1526,10 +1538,11 @@ export class FinanceService implements OnModuleInit {
         base.employeeId = dto.employeeId ?? null;
         base.debtId = dto.debtId ?? null;
         base.subscriptionId = dto.subscriptionId ?? null;
-        // Месяц начисления ЗП: явный из формы, иначе — по дате операции.
+        // Месяц начисления ЗП: явный из формы, иначе — по правилу «10-е → 10-е»
+        // (зарплатный период даты), а не по календарному месяцу.
         if (base.employeeId) {
           base.salaryYm = (typeof dto.salaryYm === 'string' && /^\d{4}-\d{2}$/.test(dto.salaryYm))
-            ? dto.salaryYm : ymOf(date);
+            ? dto.salaryYm : salaryPeriodOf(date);
         }
       }
     }

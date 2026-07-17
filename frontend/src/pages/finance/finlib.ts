@@ -27,6 +27,17 @@ export function todayISO(): string {
 export const ymOf = (iso: string): string => (iso || '').slice(0, 7)
 export const currentYm = (): string => ymOf(todayISO())
 
+/** Период зарплатной ведомости для даты — цикл «10-е → 10-е»: дата на/до
+ *  10-го числа относится к ПРЕДЫДУЩЕМУ месяцу (тот цикл закрывается 10-го),
+ *  после 10-го — к текущему. Только для ЗП. */
+export function salaryPeriodOf(iso: string): string {
+  const [y, m, d] = (iso || '').slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return ymOf(iso)
+  if (d <= 10) { const dt = new Date(y, m - 2, 1); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}` }
+  return `${y}-${String(m).padStart(2, '0')}`
+}
+export const currentSalaryYm = (): string => salaryPeriodOf(todayISO())
+
 /** Сдвиг месяца yyyy-mm на delta месяцев. */
 export function shiftYm(ym: string, delta: number): string {
   const [y, m] = ym.split('-').map(Number)

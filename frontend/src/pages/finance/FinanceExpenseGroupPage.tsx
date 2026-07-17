@@ -5,7 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { money, currentYm, todayISO, formatDate, monthLabel, shiftYm, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP } from './finlib';
+import { money, currentYm, currentSalaryYm, todayISO, formatDate, monthLabel, shiftYm, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP } from './finlib';
 import { FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinance } from './FinKit';
 import { EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
 import FinIcon, { CatIcon } from './FinIcon';
@@ -14,7 +14,9 @@ import './finance.css';
 
 export default function FinanceExpenseGroupPage() {
   const { kind } = useParams<{ kind: string }>();
-  const [ym, setYm] = useState(currentYm());
+  // Зарплатная ведомость живёт циклами «10-е → 10-е» — по умолчанию
+  // открываем текущий зарплатный период (для остальных статей — календарный).
+  const [ym, setYm] = useState(kind === 'salary' ? currentSalaryYm() : currentYm());
 
   if (kind === 'other') {
     return (
@@ -126,7 +128,8 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   const jumpedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!data?.allPaid || !onYmChange) return;
-    if (ym < currentYm()) return;
+    // Зарплатный период «10-е → 10-е»: не автопрыгаем с прошлых периодов.
+    if (ym < currentSalaryYm()) return;
     if (jumpedFor.current === ym) return;
     jumpedFor.current = ym;
     onYmChange(shiftYm(ym, 1));
