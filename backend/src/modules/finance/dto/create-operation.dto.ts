@@ -1,4 +1,4 @@
-import { IsEnum, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
+import { IsEnum, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -48,4 +48,9 @@ export class CreateOperationDto {
 
   @ApiPropertyOptional() @IsOptional() @IsUUID()
   subscriptionId?: string;
+
+  /** Месяц начисления зарплаты ('YYYY-MM') — для зарплатных операций.
+   *  Отделяет «за какой месяц» от даты фактической выплаты. */
+  @ApiPropertyOptional() @IsOptional() @Matches(/^\d{4}-\d{2}$/)
+  salaryYm?: string;
 }

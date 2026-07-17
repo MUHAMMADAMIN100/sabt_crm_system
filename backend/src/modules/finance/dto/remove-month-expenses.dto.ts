@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID, Matches } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /** Снятие расходов месяца по сотруднику или подписке одной транзакцией
@@ -12,4 +12,9 @@ export class RemoveMonthExpensesDto {
 
   @ApiPropertyOptional() @IsOptional() @IsUUID()
   subscriptionId?: string;
+
+  /** Только определённый тип выплаты ЗП: 'advance' — авансы, 'bonus' — бонусы.
+   *  Без него удаляются все зарплатные операции месяца (полная отмена). */
+  @ApiPropertyOptional({ enum: ['advance', 'bonus'] }) @IsOptional() @IsIn(['advance', 'bonus'])
+  kind?: 'advance' | 'bonus';
 }

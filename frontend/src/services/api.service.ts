@@ -340,7 +340,7 @@ export const financeApi = {
   updateTransaction: (id: string, data: any) => api.patch(`/finance/transactions/${id}`, data).then(r => r.data),
   removeTransaction: (id: string) => api.delete(`/finance/transactions/${id}`).then(r => r.data),
   // Снять расходы месяца по сотруднику/подписке одной транзакцией на бэке.
-  removeMonthExpenses: (data: { ym: string; employeeId?: string; subscriptionId?: string }) =>
+  removeMonthExpenses: (data: { ym: string; employeeId?: string; subscriptionId?: string; kind?: 'advance' | 'bonus' }) =>
     api.post('/finance/operations/remove-month', data).then(r => r.data),
 
   // Счета

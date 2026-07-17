@@ -82,6 +82,15 @@ export class FinanceTransaction {
   @Column({ type: 'text', nullable: true })
   comment: string | null;
 
+  /** Месяц НАЧИСЛЕНИЯ зарплатной операции ('YYYY-MM'). Разводит «за какой
+   *  месяц зарплата» и «когда фактически выплачено» (поле date). Заполняется
+   *  только для зарплатных операций (employeeId != null, тип expense);
+   *  движение денег/баланс/журнал всегда по date. NULL у старых строк —
+   *  fallback на месяц из date. */
+  @Index()
+  @Column({ type: 'varchar', length: 7, nullable: true })
+  salaryYm: string | null;
+
   // ─── Legacy-поля (совместимость со старым журналом) ──────────────
   /** Legacy enum-счёт. Новые записи используют accountId. */
   @Column({ type: 'varchar', length: 32, nullable: true })

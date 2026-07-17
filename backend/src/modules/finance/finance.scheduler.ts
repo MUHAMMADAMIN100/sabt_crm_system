@@ -232,14 +232,33 @@ export class FinanceScheduler {
 
     const [y, m] = ym.split('-').map(Number);
     const lastDay = new Date(y, m, 0).getDate();
-    const monthTx = await this.txRepo.find({
-      where: { type: FinanceTxType.EXPENSE, date: Between(`${ym}-01`, `${ym}-${String(lastDay).padStart(2, '0')}`) } as any,
-    });
-    const paid = monthTx.filter(t => t.employeeId).reduce((s, t) => s + Number(t.amount), 0);
-    const fund = emps.reduce((s, e) => s + Number(e.salary), 0);
-    const advances = emps.reduce((s, e) => s + Number(e.advance), 0);
-    const bonuses = emps.reduce((s, e) => s + (Number((e.bonuses || {})[ym]) || 0), 0);
-    const toPay = Math.round(Math.max(0, fund + bonuses - advances - paid) * 100) / 100;
+    const from = `${ym}-01`, to = `${ym}-${String(lastDay).padStart(2, '0')}`;
+    // Выплаты месяца НАЧИСЛЕНИЯ (salaryYm, с fallback на дату), без отменённых.
+    const monthTx = (await this.txRepo.createQueryBuilder('t')
+      .where('t.type = :type', { type: FinanceTxType.EXPENSE })
+      .andWhere('t."employeeId" IS NOT NULL')
+      .andWhere(`COALESCE(t.status,'completed') <> 'cancelled'`)
+      .andWhere('(t."salaryYm" = :ym OR (t."salaryYm" IS NULL AND t.date BETWEEN :from AND :to))', { ym, from, to })
+      .getMany());
+    // Остаток к выплате: по каждому сотруднику, закрытые (снапшот) месяцы —
+    // пропускаем; аванс/бонус уже входят в выплаты, обязательство = оклад +
+    // бонус − штраф (помесячные мапы — «за месяц начисления»).
+    let toPay = 0;
+    for (const e of emps) {
+      if ((e.salarySnapshots || {})[ym]) continue;
+      const empTx = monthTx.filter(t => t.employeeId === e.id);
+      const paidE = empTx.reduce((s, t) => s + Number(t.amount), 0);
+      // Бонус для обязательства берём из ОПЕРАЦИЙ (комментарий «Бонус»), как
+      // зарплатная таблица: бонус уже входит в paidE, поэтому должен входить и
+      // в due, иначе выданный бонус занижал бы «к выплате» (или гасил напоминание).
+      const bonus = empTx
+        .filter(t => (t.comment || '').trim().toLowerCase().startsWith('бонус'))
+        .reduce((s, t) => s + Number(t.amount), 0);
+      const fine = Number((e.fines || {})[ym]) || 0;
+      const due = Math.max(0, Number(e.salary) + bonus - fine);
+      toPay += Math.max(0, due - paidE);
+    }
+    toPay = Math.round(toPay * 100) / 100;
     if (toPay <= 0) return { due: 0, notified: 0 };
 
     const notified = await this.notifyFinanceUsers({

@@ -89,12 +89,12 @@ export default function FinanceTransactionsPage() {
     try {
       const res = await financeApi.transactions({ pageSize: 100000, search: dq || undefined, type: typeFilter || undefined });
       const rows: Array<Array<string | number | null>> = [
-        ['Дата', 'Тип', 'Категория', 'Описание', 'Сумма', 'Со счёта', 'На счёт', 'Проект', 'Сотрудник', 'Долг'],
+        ['Дата', 'Тип', 'Категория', 'Описание', 'Сумма', 'Со счёта', 'На счёт', 'Проект', 'Сотрудник', 'Месяц ЗП', 'Долг'],
         ...((res?.items ?? []) as any[]).map((t: any) => [
           String(t.date || '').slice(0, 10), TYPE_LABEL[t.type] ?? t.type, t.categoryName, t.comment,
           t.amount, t.type === 'transfer' ? t.fromAccountName : (t.type === 'expense' ? t.accountName : null),
           t.type === 'transfer' ? t.toAccountName : (t.type !== 'expense' ? t.accountName : null),
-          t.projectName, t.employeeName, t.debtName,
+          t.projectName, t.employeeName, t.employeeId ? (t.salaryYm ?? String(t.date || '').slice(0, 7)) : null, t.debtName,
         ]),
       ];
       downloadCsv(`transactions-${todayISO()}.csv`, rows);
@@ -155,6 +155,7 @@ export default function FinanceTransactionsPage() {
                   <th className="num" style={{ width: 120 }}>Сумма</th>
                   <th style={{ width: 130 }}>Со счёта</th>
                   <th style={{ width: 130 }}>На счёт</th>
+                  <th style={{ width: 120 }} title="Месяц начисления зарплаты — за какой месяц выплата">Месяц ЗП</th>
                   <th style={{ width: 56 }} />
                 </tr>
               </thead>
@@ -370,6 +371,11 @@ function TxRow({ t, accounts, categories, patch, remove }: {
         : <span className="muted mini">—</span>}</td>
       <td>{toActive
         ? <AccountSelect value={toValue} accounts={accounts} onChange={(v) => patch(t.id, t.type === 'transfer' ? { toAccountId: v } : { accountId: v })} />
+        : <span className="muted mini">—</span>}</td>
+      <td>{t.employeeId
+        ? <input type="month" className="cell-input" value={t.salaryYm ?? String(t.date || '').slice(0, 7)}
+            title="Месяц начисления — за какой месяц эта выплата попадёт в таблицу ЗП"
+            onChange={(e) => e.target.value && patch(t.id, { salaryYm: e.target.value })} />
         : <span className="muted mini">—</span>}</td>
       <td className="num">
         <button className="btn ghost sm row-actions" title="Удалить" onClick={confirmRemove}><FinIcon name="trash" size={14} /></button>

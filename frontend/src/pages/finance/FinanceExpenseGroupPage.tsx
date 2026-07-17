@@ -349,9 +349,22 @@ function MonthAmountCell({ row, ym, field, onPayout }: {
     );
   }
   const label = field === 'advance' ? 'Выдать аванс' : 'Выплатить бонус';
+  async function removeIssued() {
+    const word = field === 'advance' ? 'авансы' : 'бонусы';
+    if (!(await finConfirm(`Удалить ${word} за этот месяц у «${row.name}»? Операции удалятся из журнала, деньги вернутся на счёт.`, { confirmLabel: 'Удалить', danger: true }))) return;
+    try {
+      await financeApi.removeMonthExpenses({ ym, employeeId: row.id, kind: field });
+      invalidateFinance(qc);
+    } catch (err) { toast.error(apiErr(err)); }
+  }
   return (
     <span className="flex" style={{ justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
       {value ? <span>{money(value)}</span> : <span className="muted">—</span>}
+      {value > 0 && (
+        <button className="btn ghost sm" title={`Удалить ${field === 'advance' ? 'авансы' : 'бонусы'} за месяц`} onClick={removeIssued}>
+          <FinIcon name="close" size={13} />
+        </button>
+      )}
       <button className="btn ghost sm" title={`${label} — операция спишется со счёта сразу`} onClick={onPayout}>
         <FinIcon name="plus" size={13} />
       </button>
@@ -368,7 +381,9 @@ function PayoutModal({ row, kind, ym, onClose }: { row: any; kind: 'advance' | '
   const accounts = useFinAccounts();
   const categories = useFinCategories();
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(ym === currentYm() ? todayISO() : `${ym}-15`);
+  // Дата платежа — реальная (по умолчанию сегодня), месяц начисления — из таблицы.
+  const [date, setDate] = useState(todayISO());
+  const [salaryYm, setSalaryYm] = useState(ym);
   const [accountId, setAccountId] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
@@ -382,7 +397,7 @@ function PayoutModal({ row, kind, ym, onClose }: { row: any; kind: 'advance' | '
     const salaryCat = categories.find((c: any) => c.key === 'salary');
     try {
       await financeApi.createOperation({
-        type: 'expense', amount: amt, date, accountId,
+        type: 'expense', amount: amt, date, accountId, salaryYm: salaryYm || undefined,
         categoryId: salaryCat?.id, employeeId: row.id, comment,
       });
       invalidateFinance(qc);
@@ -398,16 +413,19 @@ function PayoutModal({ row, kind, ym, onClose }: { row: any; kind: 'advance' | '
         <div className="modal-body">
           <div className="form-grid">
             <div className="field"><label>Сумма, сомони</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-            <div className="field"><label>Дата</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+            <div className="field"><label>Дата выплаты</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
           </div>
-          <div className="field"><label>Со счёта</label>
-            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+          <div className="form-grid">
+            <div className="field"><label>Месяц начисления (за какой месяц)</label><input type="month" value={salaryYm} onChange={(e) => setSalaryYm(e.target.value)} /></div>
+            <div className="field"><label>Со счёта</label>
+              <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
           </div>
           <p className="mini muted" style={{ margin: 0 }}>
-            Деньги спишутся со счёта сразу — операция появится в журнале.{' '}
-            {kind === 'advance' ? 'Аванс уменьшит остаток финальной выплаты.' : 'Бонус — сверх оклада.'}
+            «Дата выплаты» — когда деньги ушли со счёта; «Месяц начисления» — за какой месяц.{' '}
+            {kind === 'advance' ? 'Аванс уменьшит остаток финальной выплаты того же месяца.' : 'Бонус — сверх оклада.'}
           </p>
         </div>
         <div className="modal-foot">
@@ -426,7 +444,10 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
   const categories = useFinCategories();
   const remaining = Math.max(0, row.toPay ?? 0);
   const [amount, setAmount] = useState(String(remaining || row.salary || ''));
-  const [date, setDate] = useState(`${ym}-10`); // выплата 10-го числа
+  // Дата платежа — реальная (когда деньги ушли со счёта), по умолчанию сегодня.
+  const [date, setDate] = useState(todayISO());
+  // Месяц начисления — за какой месяц эта зарплата (по умолчанию — таблица).
+  const [salaryYm, setSalaryYm] = useState(ym);
   const [accountId, setAccountId] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
@@ -438,7 +459,7 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
     const salaryCat = categories.find((c: any) => c.key === 'salary');
     try {
       await financeApi.createOperation({
-        type: 'expense', amount: amt, date, accountId,
+        type: 'expense', amount: amt, date, accountId, salaryYm: salaryYm || undefined,
         categoryId: salaryCat?.id, employeeId: row.id, comment: 'Зарплата',
       });
       invalidateFinance(qc);
@@ -455,13 +476,17 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
             <div className="field"><label>Сумма, сомони</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
             <div className="field"><label>Дата выплаты</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
           </div>
-          <div className="field"><label>Со счёта</label>
-            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+          <div className="form-grid">
+            <div className="field"><label>Месяц начисления (за какой месяц)</label><input type="month" value={salaryYm} onChange={(e) => setSalaryYm(e.target.value)} /></div>
+            <div className="field"><label>Со счёта</label>
+              <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
           </div>
           <p className="mini muted" style={{ margin: 0 }}>
-            По умолчанию — 10-е число месяца. Остаток к выплате: {money(remaining)}
+            «Дата выплаты» — когда деньги ушли (влияет на баланс счёта). «Месяц начисления» —
+            за какой месяц зарплата (в этот месяц она попадёт в таблицу). Остаток к выплате: {money(remaining)}
             {(Number(row.bonus) || 0) > 0 ? <> (оклад {money(row.salary)} + бонус {money(row.bonus)})</> : null}.
           </p>
         </div>

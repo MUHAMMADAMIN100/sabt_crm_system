@@ -306,6 +306,11 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_transactions ALTER COLUMN status TYPE varchar(16) USING status::text`);
     await run(`ALTER TABLE finance_transactions ALTER COLUMN status SET DEFAULT 'completed'`);
     await run(`ALTER TABLE finance_transactions ALTER COLUMN "paymentMethod" TYPE varchar(16) USING "paymentMethod"::text`);
+    // Месяц начисления ЗП: колонка + бэкфилл (месяц из даты) для старых
+    // зарплатных операций — картина не меняется, значение становится явным.
+    await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "salaryYm" varchar(7)`);
+    await run(`UPDATE finance_transactions SET "salaryYm" = to_char("date", 'YYYY-MM')
+      WHERE "employeeId" IS NOT NULL AND type = 'expense' AND "salaryYm" IS NULL`);
 
     await this.seedDefaults();
     // Бэкфилл: старые записи с enum-счётом → на новый accountId по ключу.
@@ -314,27 +319,31 @@ export class FinanceService implements OnModuleInit {
     // Legacy: сотрудники со статусом 'inactive' → 'fired'.
     await run(`UPDATE finance_employees SET status = 'fired' WHERE status = 'inactive'`);
 
-    // Разовая миграция (просьба владельца, 16.07.2026): июль-2026 фактически
-    // выплачен полностью (частично старыми «общими» авансами), но после их
-    // обнуления строки снова показали «Выплатить». Закрываем месяц
-    // снапшотами БЕЗ создания операций. Маркер в finance_activity
-    // гарантирует однократность (повторные рестарты — no-op).
+    // Разовая правка (18.07.2026): ранее июль-2026 был принудительно «закрыт»
+    // снапшотами (когда месяц ЗП определялся датой операции). С вводом
+    // «месяца начисления» (salaryYm) июль снова становится ОТКРЫТЫМ месяцем —
+    // пересчитываем снапшот июля по операциям месяца начисления: где выплат
+    // нет, заморозка снимается и можно вносить авансы/штрафы/бонусы за июль.
+    // Балансы НЕ затрагиваются (снапшоты денег не двигают). Маркер в
+    // finance_activity — однократность; старый маркер auto-close-2026-07
+    // оставлен как есть, повторно месяц не закрываем.
     try {
-      const mark = 'SYSTEM auto-close-2026-07';
+      const mark = 'SYSTEM reopen-2026-07-salaryYm';
       const done = await this.ds.query(
         `SELECT 1 FROM finance_activity WHERE route = $1 LIMIT 1`, [mark],
       );
       if (!done.length) {
-        const res = await this.closeSalaryMonth('2026-07');
+        const emps = await this.empRepo.find();
+        for (const e of emps) await this.refreshSalarySnapshot(e.id, '2026-07');
         await this.ds.query(
           `INSERT INTO finance_activity (action, route, details)
-           VALUES ('Июль 2026 закрыт автоматически (миграция: месяц был выплачен фактически)', $1, $2::jsonb)`,
-          [mark, JSON.stringify({ closed: res.closed })],
+           VALUES ('Июль 2026 переоткрыт (ввод «месяца начисления» зарплаты)', $1, '{}'::jsonb)`,
+          [mark],
         );
-        this.logger.log(`salary auto-close 2026-07: closed ${res.closed}`);
+        this.logger.log('salary reopen 2026-07 (salaryYm) done');
       }
     } catch (e: any) {
-      this.logger.warn(`salary auto-close migration failed: ${String(e?.message || e).slice(0, 160)}`);
+      this.logger.warn(`salary reopen migration failed: ${String(e?.message || e).slice(0, 160)}`);
     }
   }
 
@@ -714,6 +723,20 @@ export class FinanceService implements OnModuleInit {
     return txs.filter(t => t.status !== FinanceTxStatus.CANCELLED);
   }
 
+  /** Зарплатные операции МЕСЯЦА НАЧИСЛЕНИЯ ym: salaryYm = ym, а для старых
+   *  операций без salaryYm — по дате (fallback). Деньги/баланс/журнал живут
+   *  по date; здесь — только атрибуция «за какой месяц». Отменённые исключены. */
+  private async salaryTxForMonth(ym: string, employeeId?: string): Promise<FinanceTransaction[]> {
+    const { from, to } = monthRange(ym);
+    const qb = this.txRepo.createQueryBuilder('t')
+      .where('t.type = :type', { type: FinanceTxType.EXPENSE })
+      .andWhere('t."employeeId" IS NOT NULL')
+      .andWhere(`COALESCE(t.status,'completed') <> 'cancelled'`)
+      .andWhere('(t."salaryYm" = :ym OR (t."salaryYm" IS NULL AND t.date BETWEEN :from AND :to))', { ym, from, to });
+    if (employeeId) qb.andWhere('t."employeeId" = :eid', { eid: employeeId });
+    return qb.getMany();
+  }
+
   /** Пожизненный баланс счёта = startBalance + приходы − расходы + переводы. */
   private lifetimeBalance(a: FinanceAccount, txs: FinanceTransaction[]): number {
     let bal = Number(a.startBalance);
@@ -810,7 +833,10 @@ export class FinanceService implements OnModuleInit {
     // план = фактически выплаченному). Аванс/бонус — выдачи операциями.
     const activeEmps = m.employees.filter(e => e.status === 'active');
     const salaryFund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
+    // «Потрачено на ЗП» — движение денег по ДАТЕ (для карточки расхода/сверки
+    // со счётом). Обязательство и остаток к выплате — по месяцу НАЧИСЛЕНИЯ.
     const salaryPaid = this.sum(monthExpense.filter(t => this.groupOf(t, m) === 'salary'));
+    const salaryAccrualTx = await this.salaryTxForMonth(ym);
     let salaryToPayAcc = 0, salaryPlanAcc = 0, salaryAdvAcc = 0, salaryBonAcc = 0;
     for (const e of activeEmps) {
       const snap = snapOf(e, ym);
@@ -820,7 +846,7 @@ export class FinanceService implements OnModuleInit {
         salaryBonAcc += r2(Number(snap.bonus) || 0);
         continue;
       }
-      const txs = monthExpense.filter(t => t.employeeId === e.id);
+      const txs = salaryAccrualTx.filter(t => t.employeeId === e.id);
       const paid = r2(txs.reduce((s, t) => s + Number(t.amount), 0));
       const adv = r2(txs.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
       const bon = r2(txs.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
@@ -1208,6 +1234,8 @@ export class FinanceService implements OnModuleInit {
     // Построчно, с учётом снапшотов (замороженный месяц: остаток 0).
     // Аванс/бонус — фактические выдачи операциями (входят в «выплачено»);
     // обязательство = оклад + бонусы − штраф.
+    // По месяцу НАЧИСЛЕНИЯ (salaryYm), а не по дате выплаты.
+    const salarySummaryTx = await this.salaryTxForMonth(ym);
     let salaryAdvances = 0, salaryBonuses = 0, salaryFines = 0, salaryToPayAgg = 0, salaryPaidCount = 0;
     for (const e of activeEmps) {
       const snap = snapOf(e, ym);
@@ -1218,7 +1246,7 @@ export class FinanceService implements OnModuleInit {
         salaryPaidCount++;
         continue;
       }
-      const txs = monthExp.filter(t => t.employeeId === e.id);
+      const txs = salarySummaryTx.filter(t => t.employeeId === e.id);
       const paid = r2(txs.reduce((s, t) => s + Number(t.amount), 0));
       const adv = r2(txs.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
       const bon = r2(txs.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
@@ -1273,11 +1301,14 @@ export class FinanceService implements OnModuleInit {
 
     if (kind === 'salary') {
       const emps = await this.empRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
-      const paidOf = (id: string) => r2(monthExp.filter(t => t.employeeId === id).reduce((s, t) => s + Number(t.amount), 0));
+      // Зарплатная таблица собирается по МЕСЯЦУ НАЧИСЛЕНИЯ (salaryYm), а не по
+      // дате: выплата за июнь 10 июля попадает в июньскую таблицу.
+      const salaryTx = await this.salaryTxForMonth(ym);
+      const paidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id).reduce((s, t) => s + Number(t.amount), 0));
       // Авансы и бонусы ВЫДАЮТСЯ СРАЗУ отдельными операциями — колонки
       // показывают фактически выданное за месяц (по комментарию операции).
-      const advPaidOf = (id: string) => r2(monthExp.filter(t => t.employeeId === id && isAdvanceTx(t)).reduce((s, t) => s + Number(t.amount), 0));
-      const bonPaidOf = (id: string) => r2(monthExp.filter(t => t.employeeId === id && isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
+      const advPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isAdvanceTx(t)).reduce((s, t) => s + Number(t.amount), 0));
+      const bonPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
       const activeEmps = emps.filter(e => e.status === 'active');
       const rows = activeEmps.map(e => {
         // Выплаченный месяц ЗАМОРОЖЕН снапшотом: любые будущие правки оклада/
@@ -1435,6 +1466,7 @@ export class FinanceService implements OnModuleInit {
       const cat = t.categoryId ? m.cat.get(t.categoryId) : null;
       return {
         id: t.id, date: t.date, type: t.type, amount: Number(t.amount), status: t.status, comment: t.comment,
+        salaryYm: t.salaryYm ?? null,
         categoryId: t.categoryId, categoryName: cat?.name ?? (t.category ?? null),
         categoryIcon: cat?.icon ?? null, categoryColor: cat?.color ?? null,
         group: this.groupOf(t, m),
@@ -1494,14 +1526,19 @@ export class FinanceService implements OnModuleInit {
         base.employeeId = dto.employeeId ?? null;
         base.debtId = dto.debtId ?? null;
         base.subscriptionId = dto.subscriptionId ?? null;
+        // Месяц начисления ЗП: явный из формы, иначе — по дате операции.
+        if (base.employeeId) {
+          base.salaryYm = (typeof dto.salaryYm === 'string' && /^\d{4}-\d{2}$/.test(dto.salaryYm))
+            ? dto.salaryYm : ymOf(date);
+        }
       }
     }
     const saved = await this.txRepo.save(this.txRepo.create(base));
     await this.syncSmmPartLink(saved.id);
-    // Выплата ЗП: если остаток месяца закрыт — фиксируем снапшот (месяц
-    // замораживается, будущие правки бонусов/авансов его не меняют).
+    // Выплата ЗП: если остаток месяца НАЧИСЛЕНИЯ закрыт — фиксируем снапшот
+    // (месяц замораживается, будущие правки бонусов/авансов его не меняют).
     if (saved.type === FinanceTxType.EXPENSE && saved.employeeId) {
-      await this.refreshSalarySnapshot(saved.employeeId, ymOf(saved.date));
+      await this.refreshSalarySnapshot(saved.employeeId, saved.salaryYm ?? ymOf(saved.date));
     }
     return saved;
   }
@@ -1511,10 +1548,8 @@ export class FinanceService implements OnModuleInit {
   private async refreshSalarySnapshot(employeeId: string, ym: string) {
     const e = await this.empRepo.findOne({ where: { id: employeeId } });
     if (!e) return;
-    const { from, to } = monthRange(ym);
-    const monthExp = this.active(await this.txRepo.find({
-      where: { date: Between(from, to), type: FinanceTxType.EXPENSE, employeeId } as any,
-    }));
+    // Операции месяца НАЧИСЛЕНИЯ (по salaryYm, с fallback на дату для старых).
+    const monthExp = await this.salaryTxForMonth(ym, employeeId);
     const paid = r2(monthExp.reduce((s, t) => s + Number(t.amount), 0));
     const advance = r2(monthExp.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
     const bonus = r2(monthExp.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
@@ -1543,7 +1578,7 @@ export class FinanceService implements OnModuleInit {
       if (!Number.isFinite(a) || a <= 0) throw new BadRequestException('Сумма должна быть больше нуля');
     }
     const patch: any = {};
-    for (const k of ['amount', 'date', 'comment', 'categoryId', 'accountId', 'fromAccountId', 'toAccountId', 'projectId', 'employeeId', 'debtId', 'subscriptionId', 'type']) {
+    for (const k of ['amount', 'date', 'comment', 'categoryId', 'accountId', 'fromAccountId', 'toAccountId', 'projectId', 'employeeId', 'debtId', 'subscriptionId', 'type', 'salaryYm']) {
       if (dto[k] !== undefined) patch[k] = dto[k];
     }
     // Смена типа чистит неприменимые поля (§5.11): income/expense/saving не имеют
@@ -1553,13 +1588,20 @@ export class FinanceService implements OnModuleInit {
       if (patch.type === FinanceTxType.TRANSFER) {
         patch.accountId = patch.accountId ?? null;
         patch.categoryId = patch.categoryId ?? null;
-        patch.projectId = null; patch.employeeId = null; patch.debtId = null; patch.subscriptionId = null;
+        patch.projectId = null; patch.employeeId = null; patch.debtId = null; patch.subscriptionId = null; patch.salaryYm = null;
       } else {
         patch.fromAccountId = null; patch.toAccountId = null;
         if (patch.type !== FinanceTxType.INCOME) patch.projectId = patch.projectId ?? null;
-        if (patch.type !== FinanceTxType.EXPENSE) { patch.employeeId = null; patch.debtId = null; patch.subscriptionId = null; }
+        if (patch.type !== FinanceTxType.EXPENSE) { patch.employeeId = null; patch.debtId = null; patch.subscriptionId = null; patch.salaryYm = null; }
       }
     }
+    // salaryYm имеет смысл только для expense с сотрудником (зеркально
+    // createOperation): не пишем «мёртвый» salaryYm и чистим его при снятии
+    // сотрудника у расхода. 'employeeId' in patch — снятие (employeeId=null)
+    // чистит, а обычная правка ЗП (employeeId не прислан) сохраняет.
+    const effType = patch.type ?? t.type;
+    const effEmp = 'employeeId' in patch ? patch.employeeId : t.employeeId;
+    if (effType !== FinanceTxType.EXPENSE || !effEmp) patch.salaryYm = null;
     if (patch.categoryId !== undefined) patch.category = patch.categoryId ? (await this.catRepo.findOne({ where: { id: patch.categoryId } }))?.name ?? null : null;
     await this.txRepo.update(id, patch);
     await this.syncSmmPartLink(id);
@@ -1567,8 +1609,8 @@ export class FinanceService implements OnModuleInit {
     // затронутых месяцев: и старого сотрудника/месяца, и нового.
     const after = await this.txRepo.findOne({ where: { id } });
     const touched = new Set<string>();
-    if (t.employeeId) touched.add(`${t.employeeId}:${ymOf(t.date)}`);
-    if (after?.employeeId) touched.add(`${after.employeeId}:${ymOf(after.date)}`);
+    if (t.employeeId) touched.add(`${t.employeeId}:${t.salaryYm ?? ymOf(t.date)}`);
+    if (after?.employeeId) touched.add(`${after.employeeId}:${after.salaryYm ?? ymOf(after.date)}`);
     for (const key of touched) {
       const [empId, ym] = key.split(':');
       await this.refreshSalarySnapshot(empId, ym);
@@ -1585,8 +1627,8 @@ export class FinanceService implements OnModuleInit {
       else { p.status = 'expected'; p.receivedTxId = null; await this.ppRepo.save(p); }
     }
     await this.txRepo.delete(id);
-    // Удалённая выплата ЗП — снапшот месяца пересчитывается (разморозка).
-    if (tx?.employeeId) await this.refreshSalarySnapshot(tx.employeeId, ymOf(tx.date));
+    // Удалённая выплата ЗП — снапшот месяца НАЧИСЛЕНИЯ пересчитывается (разморозка).
+    if (tx?.employeeId) await this.refreshSalarySnapshot(tx.employeeId, tx.salaryYm ?? ymOf(tx.date));
     // Удалённая оплата могла быть той, что двигала якорь SMM-цикла.
     const projectId = tx?.projectId ?? linked.find(x => x.projectId)?.projectId ?? null;
     if (projectId) await this.resyncSmmAfterUndo(projectId);
@@ -1954,16 +1996,27 @@ export class FinanceService implements OnModuleInit {
 
   /** Снять расходы месяца по сотруднику или подписке одной транзакцией
    *  (отмена выплаты ЗП / оплаты позиции — замена клиентского цикла удалений). */
-  async removeMonthExpenses(dto: { ym: string; employeeId?: string; subscriptionId?: string }) {
+  async removeMonthExpenses(dto: { ym: string; employeeId?: string; subscriptionId?: string; kind?: 'advance' | 'bonus' }) {
     if (!dto.employeeId && !dto.subscriptionId) throw new BadRequestException('Укажите сотрудника или подписку');
     if (dto.employeeId && dto.subscriptionId) throw new BadRequestException('Либо сотрудник, либо подписка');
     const { from, to } = monthRange(dto.ym);
     const removed = await this.ds.transaction(async (em) => {
       const repo = em.getRepository(FinanceTransaction);
-      const where: any = { type: FinanceTxType.EXPENSE, date: Between(from, to) };
-      if (dto.employeeId) where.employeeId = dto.employeeId;
-      else where.subscriptionId = dto.subscriptionId;
-      const txs = await repo.find({ where });
+      let txs: FinanceTransaction[];
+      if (dto.employeeId) {
+        // Отмена выплаты ЗП — по МЕСЯЦУ НАЧИСЛЕНИЯ (salaryYm), с fallback на
+        // дату для старых операций без salaryYm.
+        txs = await repo.createQueryBuilder('t')
+          .where('t.type = :type', { type: FinanceTxType.EXPENSE })
+          .andWhere('t."employeeId" = :eid', { eid: dto.employeeId })
+          .andWhere('(t."salaryYm" = :ym OR (t."salaryYm" IS NULL AND t.date BETWEEN :from AND :to))', { ym: dto.ym, from, to })
+          .getMany();
+        // kind — удалить только авансы или только бонусы (по комментарию).
+        if (dto.kind === 'advance') txs = txs.filter(isAdvanceTx);
+        else if (dto.kind === 'bonus') txs = txs.filter(isBonusTx);
+      } else {
+        txs = await repo.find({ where: { type: FinanceTxType.EXPENSE, date: Between(from, to), subscriptionId: dto.subscriptionId } as any });
+      }
       if (txs.length) await repo.delete(txs.map(t => t.id));
       return txs.length;
     });
@@ -2170,10 +2223,8 @@ export class FinanceService implements OnModuleInit {
    *  остаток — например, после обнуления старых общих авансов. */
   async closeSalaryMonth(ym: string) {
     const emps = await this.empRepo.find();
-    const { from, to } = monthRange(ym);
-    const monthExp = this.active(await this.txRepo.find({
-      where: { date: Between(from, to), type: FinanceTxType.EXPENSE } as any,
-    }));
+    // Выплаченное за месяц — по МЕСЯЦУ НАЧИСЛЕНИЯ (salaryYm), с fallback на дату.
+    const monthExp = await this.salaryTxForMonth(ym);
     let closed = 0;
     for (const e of emps) {
       if (e.status !== 'active' || snapOf(e, ym)) continue;
