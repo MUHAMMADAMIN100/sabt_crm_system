@@ -37,14 +37,14 @@ export class NotificationsService implements OnModuleInit {
       if (envJson) {
         admin.initializeApp({ credential: admin.credential.cert(JSON.parse(envJson)) });
         this.fcmEnabled = true;
-        this.logger.log('FCM: Firebase Admin инициализирован из FIREBASE_SERVICE_ACCOUNT_JSON');
+        this.logger.warn('✅ FCM: Firebase Admin инициализирован из FIREBASE_SERVICE_ACCOUNT_JSON — мобильные пуши включены');
         return;
       }
       const saPath = path.join(process.cwd(), 'firebase-service-account.json');
       if (fs.existsSync(saPath)) {
         admin.initializeApp({ credential: admin.credential.cert(JSON.parse(fs.readFileSync(saPath, 'utf8'))) });
         this.fcmEnabled = true;
-        this.logger.log('FCM: Firebase Admin инициализирован из firebase-service-account.json');
+        this.logger.warn('✅ FCM: Firebase Admin инициализирован из firebase-service-account.json — мобильные пуши включены');
         return;
       }
       // Намеренно БЕЗ фолбэка на Application Default Credentials: на Railway
