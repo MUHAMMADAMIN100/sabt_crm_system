@@ -69,6 +69,8 @@ export class NotificationsService implements OnModuleInit {
       notification: { title, body },
       data: { link: link || '' },
     });
+    // warn — чтобы каждая отправка была видна в прод-логах по поиску «FCM».
+    this.logger.warn(`FCM: пуш «${title}» → user ${userId}: доставлено ${res.successCount}/${tokens.length}`);
     if (res.failureCount > 0) {
       // Убираем ТОЛЬКО заведомо мёртвые токены — канонический код
       // registration-token-not-registered (invalid-argument бывает и при

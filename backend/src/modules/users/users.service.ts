@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { User, UserRole } from './user.entity';
@@ -331,6 +331,10 @@ export class UsersService {
 
   /** Регистрация FCM-токена устройства (мобильное приложение). Мульти-девайс:
    *  до 5 токенов на пользователя, старые вытесняются. */
+  // warn-уровень: прод-логгер показывает только warn+ — это операционные
+  // статус-строки для отладки пушей по поиску «FCM» в Railway-логах.
+  private readonly fcmLogger = new Logger('FCM');
+
   async registerFcmToken(userId: string, token: string) {
     // Колонка select:false — читаем явно.
     const user = await this.repo.findOne({ where: { id: userId }, select: ['id', 'fcmTokens'] as any });
@@ -339,6 +343,7 @@ export class UsersService {
     tokens.push(token);
     while (tokens.length > 5) tokens.shift();
     await this.repo.update(userId, { fcmTokens: tokens });
+    this.fcmLogger.warn(`FCM: токен устройства зарегистрирован (user ${userId}, устройств: ${tokens.length})`);
     return { success: true };
   }
 
@@ -349,6 +354,7 @@ export class UsersService {
     if (!user) throw new NotFoundException('Пользователь не найден');
     const tokens = (user.fcmTokens || []).filter(t => t !== token);
     await this.repo.update(userId, { fcmTokens: tokens.length ? tokens : null });
+    this.fcmLogger.warn(`FCM: токен устройства удалён (user ${userId}, осталось: ${tokens.length})`);
     return { success: true };
   }
 
