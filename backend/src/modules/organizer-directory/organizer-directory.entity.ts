@@ -76,6 +76,11 @@ export class OrgModel {
   @Column({ type: 'varchar', length: 200, nullable: true })
   languages: string | null;
 
+  /** Ссылка на видео с участием модели (портфолио для клиентов).
+   *  Хранится нормализованной: только http(s)://, см. sanitize(). */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  videoLink: string | null;
+
   /** Ставка за съёмку — свободный текст: «400», «400–600», «договорная».
    *  Было numeric, конвертирована в varchar (просьба организатора: нужны
    *  диапазоны и символы, а не только число). */

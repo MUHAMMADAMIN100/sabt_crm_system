@@ -2,10 +2,11 @@
 // Один компонент на три раздела (kind), полный CRUD. Доступ — грант
 // organizer.directory (организатор, руководитель SMM, топ).
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { organizerApi } from '@/services/api.service'
 import { ConfirmDialog, Modal } from '@/components/ui'
-import { Plus, Search, Edit, Trash2, Contact, PersonStanding, MapPin, ExternalLink, ImagePlus, Loader2 } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Contact, PersonStanding, MapPin, ExternalLink, ImagePlus, Loader2, X, Video } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 type Kind = 'clients' | 'models' | 'places'
@@ -28,6 +29,11 @@ interface Field {
   placeholder?: string
   /** Выпадающий список вместо текстового поля. */
   options?: { value: string; label: string }[]
+  /** Поле-ссылка: в таблице рендерится кликабельной (новая вкладка),
+   *  при сохранении без схемы дописывается https://. */
+  link?: boolean
+  /** Короткая подпись для шапки таблицы (если label слишком длинный). */
+  shortLabel?: string
 }
 
 const CONFIGS: Record<Kind, { title: string; subtitle: string; icon: any; addLabel: string; fields: Field[] }> = {
@@ -60,6 +66,8 @@ const CONFIGS: Record<Kind, { title: string; subtitle: string; icon: any; addLab
       { key: 'age', label: 'Возраст', placeholder: 'например, 25', maxLength: 60 },
       { key: 'appearance', label: 'Внешность', textarea: true, placeholder: 'рост, телосложение, цвет волос, глаза…' },
       { key: 'experience', label: 'Опыт', textarea: true, placeholder: 'съёмки, показы, портфолио…' },
+      // Ссылка на видео с участием модели — показать клиентам её работу.
+      { key: 'videoLink', label: 'Ссылка на видео (работа модели)', shortLabel: 'Видео', link: true, placeholder: 'https://instagram.com/reel/…', maxLength: 500 },
       // Свободный текст, не money: организатору нужны диапазоны и символы
       // («400–600», «договорная») — числовой инпут не давал их ввести.
       { key: 'rate', label: 'Ставка за съёмку, с.', placeholder: '400, 400-600, договорная…', maxLength: 100 },
@@ -77,7 +85,7 @@ const CONFIGS: Record<Kind, { title: string; subtitle: string; icon: any; addLab
       { key: 'address', label: 'Адрес' },
       { key: 'contact', label: 'Контакт (администратор, телефон)' },
       { key: 'price', label: 'Стоимость аренды, с.', money: true },
-      { key: 'link', label: 'Ссылка (карта / instagram)', placeholder: 'https://…' },
+      { key: 'link', label: 'Ссылка (карта / instagram)', link: true, placeholder: 'https://…' },
       { key: 'note', label: 'Заметка', textarea: true },
     ],
   },
@@ -141,7 +149,7 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
             <tr className="border-b border-surface-200 dark:border-surface-700 text-left">
               {columns.map(c => (
                 <th key={c.key} className="px-4 py-2.5 text-[11px] uppercase tracking-wide text-surface-400 font-semibold whitespace-nowrap">
-                  {c.money ? c.label.replace(', с.', '') : c.label}
+                  {c.shortLabel || (c.money ? c.label.replace(', с.', '') : c.label)}
                 </th>
               ))}
               <th className="px-4 py-2.5 w-20" />
@@ -174,10 +182,13 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
                       <span className="text-surface-600 dark:text-surface-300">{c.options.find(o => o.value === r[c.key])?.label ?? '—'}</span>
                     ) : c.money ? (
                       <span className="tabular-nums whitespace-nowrap">{r[c.key] != null ? `${nf.format(r[c.key])} с.` : '—'}</span>
-                    ) : c.key === 'link' && r.link ? (
-                      <a href={r.link} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                        className="inline-flex items-center gap-1 text-primary-600 hover:underline">
-                        <ExternalLink size={12} /> открыть
+                    ) : c.link && r[c.key] ? (
+                      <a href={r[c.key]} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                        title={r[c.key]}
+                        className="inline-flex items-center gap-1 text-primary-600 hover:underline whitespace-nowrap">
+                        {c.key === 'videoLink'
+                          ? <><Video size={12} /> смотреть видео</>
+                          : <><ExternalLink size={12} /> открыть</>}
                       </a>
                     ) : (
                       <span className="text-surface-600 dark:text-surface-300">{r[c.key] || '—'}</span>
@@ -236,7 +247,11 @@ function DirectoryModal({ kind, cfg, row, onClose, onSaved }: {
     const payload: Record<string, any> = {}
     for (const f of cfg.fields) {
       const v = form[f.key]?.trim() ?? ''
-      payload[f.key] = f.money ? (v === '' ? null : parseFloat(v.replace(',', '.'))) : (v === '' ? null : v)
+      if (f.money) payload[f.key] = v === '' ? null : parseFloat(v.replace(',', '.'))
+      // Ссылка без схемы («youtube.com/…») → дописываем https://, чтобы клик
+      // вёл точно на видео, а не на относительный путь внутри CRM.
+      else if (f.link && v !== '' && !/^https?:\/\//i.test(v)) payload[f.key] = `https://${v.replace(/^\/+/, '')}`
+      else payload[f.key] = v === '' ? null : v
     }
     try {
       if (row) await organizerApi.update(kind, row.id, payload)
@@ -290,22 +305,73 @@ function DirectoryModal({ kind, cfg, row, onClose, onSaved }: {
 // Проверяем на клиенте, чтобы не было «мигнул превью → сервер отверг».
 const PHOTO_ACCEPT = ['image/jpeg', 'image/png', 'image/webp']
 
+/** Полноэкранный просмотр фото (лайтбокс): тёмный фон, закрытие по клику
+ *  мимо, крестику или Esc. Портал в body — поверх модалки редактирования. */
+function ImageLightbox({ src, alt, onClose }: { src: string; alt?: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+    }
+    // capture: перехватываем Esc раньше модалки под лайтбоксом, иначе один
+    // Esc закрыл бы и просмотр фото, и форму редактирования разом.
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [onClose])
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[400] bg-black/85 flex items-center justify-center p-4 sm:p-8 animate-fade-in"
+      onClick={e => { e.stopPropagation(); onClose() }}
+      role="dialog" aria-modal="true" aria-label={alt || 'Просмотр фото'}
+    >
+      <img
+        src={src}
+        alt={alt || 'Фото'}
+        onClick={e => e.stopPropagation()}
+        className="max-w-full max-h-[90vh] rounded-xl object-contain shadow-2xl select-none"
+      />
+      <button
+        type="button"
+        onClick={e => { e.stopPropagation(); onClose() }}
+        title="Закрыть (Esc)"
+        className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/25 text-white transition-colors"
+      >
+        <X size={20} />
+      </button>
+    </div>,
+    document.body,
+  )
+}
+
 /** Миниатюра модели в списке. Если файл не отдаётся (404 — например, после
  *  редеплоя на эфемерном диске), плавно откатываемся на плейсхолдер, а не на
  *  «сломанную картинку» браузера (тот же приём, что в общем Avatar). */
 function ModelThumb({ photo, name }: { photo?: string | null; name?: string }) {
   const [failed, setFailed] = useState(false)
+  const [zoom, setZoom] = useState(false)
   useEffect(() => { setFailed(false) }, [photo])
 
   if (photo && !failed) {
     return (
-      <img
-        src={modelPhotoUrl(photo)}
-        alt={name}
-        loading="lazy"
-        onError={() => setFailed(true)}
-        className="w-9 h-9 rounded-full object-cover shrink-0 bg-surface-100 dark:bg-surface-700"
-      />
+      <>
+        {/* Клик по миниатюре — фото в полном размере (stopPropagation, чтобы
+            не сработал dblclick-редактор строки). */}
+        <button
+          type="button"
+          title="Показать фото"
+          onClick={e => { e.stopPropagation(); setZoom(true) }}
+          onDoubleClick={e => e.stopPropagation()}
+          className="shrink-0 rounded-full cursor-zoom-in focus-visible:ring-2 focus-visible:ring-primary-500 outline-none"
+        >
+          <img
+            src={modelPhotoUrl(photo)}
+            alt={name}
+            loading="lazy"
+            onError={() => setFailed(true)}
+            className="w-9 h-9 rounded-full object-cover bg-surface-100 dark:bg-surface-700"
+          />
+        </button>
+        {zoom && <ImageLightbox src={modelPhotoUrl(photo)} alt={name} onClose={() => setZoom(false)} />}
+      </>
     )
   }
   return (
@@ -326,6 +392,8 @@ function PhotoPicker({ value, onChange, onBusyChange }: {
   // Локальный предпросмотр (objectURL) до/во время загрузки — картинка видна сразу.
   const [preview, setPreview] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Клик по фото — просмотр в полном размере (замена — по ссылке «Заменить»).
+  const [zoom, setZoom] = useState(false)
   // Сервер вернул 404 на сохранённое фото → показываем плейсхолдер, не «битую» картинку.
   const [imgFailed, setImgFailed] = useState(false)
   // objectURL надо явно освобождать — иначе каждый выбор файла течёт в памяти.
@@ -378,11 +446,13 @@ function PhotoPicker({ value, onChange, onBusyChange }: {
 
   return (
     <div className="flex items-center gap-4">
+      {/* Клик по загруженному фото — просмотр в полном размере (лайтбокс);
+          замена — по ссылке «Заменить» справа. Без фото клик открывает выбор файла. */}
       <button
         type="button"
-        onClick={() => inputRef.current?.click()}
-        className="relative w-24 h-32 rounded-lg overflow-hidden border-2 border-dashed border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 hover:border-primary-400 dark:hover:border-primary-500 flex items-center justify-center shrink-0 transition-colors"
-        title={shownUrl ? 'Заменить фото' : 'Загрузить фото'}
+        onClick={() => (shownUrl ? setZoom(true) : inputRef.current?.click())}
+        className={`relative w-24 h-32 rounded-lg overflow-hidden border-2 border-dashed border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 hover:border-primary-400 dark:hover:border-primary-500 flex items-center justify-center shrink-0 transition-colors ${shownUrl ? 'cursor-zoom-in' : ''}`}
+        title={shownUrl ? 'Показать в полном размере' : 'Загрузить фото'}
       >
         {shownUrl ? (
           <img src={shownUrl} alt="Фото модели" onError={() => setImgFailed(true)} className="w-full h-full object-cover" />
@@ -398,6 +468,7 @@ function PhotoPicker({ value, onChange, onBusyChange }: {
           </div>
         )}
       </button>
+      {zoom && shownUrl && <ImageLightbox src={shownUrl} alt="Фото модели" onClose={() => setZoom(false)} />}
       <div className="text-xs space-y-1.5">
         <button type="button" onClick={() => inputRef.current?.click()} className="block text-primary-600 dark:text-primary-400 hover:underline">
           {shownUrl ? 'Заменить' : 'Загрузить фото'}

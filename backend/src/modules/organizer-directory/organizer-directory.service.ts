@@ -39,6 +39,8 @@ export class OrganizerDirectoryService implements OnModuleInit {
     await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "photo" varchar(300)`);
     // «Знание языков» вместо «Заметки» в форме моделей (колонка note остаётся с данными).
     await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "languages" varchar(200)`);
+    // Ссылка на видео с участием модели (портфолио для клиентов).
+    await run(`ALTER TABLE org_models ADD COLUMN IF NOT EXISTS "videoLink" varchar(500)`);
     // Ставка модели: numeric → varchar(100) — организатору нужны диапазоны
     // («400–600») и текст. Конвертация строго одноразовая (guard по типу
     // колонки), старые числа теряют хвост «.00».
@@ -74,7 +76,7 @@ export class OrganizerDirectoryService implements OnModuleInit {
   private static FIELDS: Record<string, string[]> = {
     clients: ['name', 'company', 'phone', 'instagram', 'telegram', 'address', 'note'],
     // «note» убран по просьбе организатора — вместо заметки «Знание языков».
-    models: ['name', 'gender', 'phone', 'instagram', 'age', 'appearance', 'experience', 'photo', 'languages', 'rate'],
+    models: ['name', 'gender', 'phone', 'instagram', 'age', 'appearance', 'experience', 'photo', 'languages', 'rate', 'videoLink'],
     places: ['name', 'address', 'contact', 'price', 'link', 'note'],
   };
 
@@ -97,6 +99,23 @@ export class OrganizerDirectoryService implements OnModuleInit {
         // /uploads/models/<photo>. Отсекаем пути и traversal (`../`).
         const raw = typeof dto[f] === 'string' ? dto[f].trim() : '';
         out[f] = /^[A-Za-z0-9._-]{1,120}$/.test(raw) ? raw : null;
+      } else if (f === 'videoLink') {
+        // Ссылка на видео с работой модели. В href попадает только http(s)://
+        // (никаких javascript: и прочих схем); без схемы дописываем https://,
+        // чтобы клик вёл точно на видео, а не на относительный путь. Явно
+        // некорректную ссылку не глотаем молча — 400 с понятным текстом.
+        const raw = typeof dto[f] === 'string' ? dto[f].trim().slice(0, 500) : '';
+        if (raw === '') { out[f] = null; }
+        else {
+          const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw.replace(/^\/+/, '')}`;
+          let valid = false;
+          try {
+            const u = new URL(withScheme);
+            valid = (u.protocol === 'http:' || u.protocol === 'https:') && !!u.hostname && u.hostname.includes('.');
+          } catch { valid = false; }
+          if (!valid) throw new BadRequestException('Некорректная ссылка на видео — вставьте адрес вида https://…');
+          out[f] = withScheme.slice(0, 500);
+        }
       } else if (f === 'age' || f === 'languages') {
         // varchar(60)/varchar(200): обрезаем, иначе длинная вставка → Postgres 22001 → 500.
         const max = f === 'age' ? 60 : 200;
