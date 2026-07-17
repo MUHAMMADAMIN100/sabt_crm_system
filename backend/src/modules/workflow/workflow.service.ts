@@ -1880,7 +1880,51 @@ export class WorkflowService implements OnModuleInit {
     const roles = STAGE_ROLES[stage] || [];
     if (roles.length === 0) return;
     const ids = await this.findProjectUsersByRole(projectId, roles);
-    await this.notify(ids, title, message, projectId, this.cardButtons(cardId));
+    // Telegram получает ПОЛНУЮ сводку карточки (описание, сроки, съёмка) —
+    // просьба владельца: из бота должно быть понятно, что именно делать.
+    const tgExtra = await this.cardTgDetails(cardId);
+    await this.notify(ids, title, message, projectId, this.cardButtons(cardId), tgExtra);
+  }
+
+  /** HTML-эскейп для Telegram (parse_mode HTML). */
+  private escTg(s: string): string {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  /** Подробная сводка карточки для Telegram-уведомлений: тип, проект,
+   *  ПОЛНОЕ описание, дедлайн, публикация, съёмка. Пустая строка, если
+   *  карточка не найдена. */
+  private async cardTgDetails(cardId?: string): Promise<string> {
+    if (!cardId) return '';
+    const card = await this.repo.findOne({ where: { id: cardId } }).catch(() => null);
+    if (!card) return '';
+    const project = card.projectId
+      ? await this.projectRepo.findOne({ where: { id: card.projectId } }).catch(() => null)
+      : null;
+    const fmtDate = (d?: string | null) => {
+      if (!d) return '';
+      const s = String(d).slice(0, 10);
+      const [y, m, day] = s.split('-');
+      return (y && m && day) ? `${day}.${m}.${y}` : s;
+    };
+    const typeLabel = card.kind === 'reels' ? 'Группа рилсов'
+      : card.kind === 'macros' ? 'Группа макетов'
+      : card.type === 'reels' ? 'Рилс'
+      : card.type === 'cover' ? 'Обложка/заставка'
+      : card.type === 'static' ? 'Макет' : '';
+    const shootDate = fmtDate(card.shootDate);
+    const shoot = shootDate
+      ? `${shootDate}${card.shootTime ? `, ${card.shootTime}` : ''}${card.shootLocation ? ` · ${this.escTg(card.shootLocation)}` : ''}`
+      : '';
+    const lines = [
+      `📌 <b>${this.escTg(card.title)}</b>${typeLabel ? ` (${typeLabel})` : ''}`,
+      project ? `📁 Проект: ${this.escTg(project.name)}` : '',
+      card.description ? `📝 ${this.escTg(card.description)}` : '',
+      card.deadline ? `📅 Дедлайн: ${fmtDate(card.deadline)}` : '',
+      card.publishDate ? `🗓 Публикация: ${fmtDate(card.publishDate)}` : '',
+      shoot ? `🎥 Съёмка: ${shoot}` : '',
+    ].filter(Boolean);
+    return lines.length ? '\n' + lines.join('\n') : '';
   }
 
   /** Все активные пользователи с одной из ролей (основной или второй) —
@@ -1935,12 +1979,14 @@ export class WorkflowService implements OnModuleInit {
   }
 
   /** Уведомление в приложении (колокол) + Telegram (ТЗ §6 R15).
-   *  buttons — опциональные inline-кнопки для Telegram. */
-  private async notify(userIds: string[], title: string, message: string, projectId: string, buttons?: { text: string; callback_data: string }[][]) {
+   *  buttons — опциональные inline-кнопки для Telegram.
+   *  tgExtra — подробная сводка карточки ТОЛЬКО для Telegram (колокол
+   *  остаётся кратким, у него своя детализация в UI). */
+  private async notify(userIds: string[], title: string, message: string, projectId: string, buttons?: { text: string; callback_data: string }[][], tgExtra?: string) {
     const unique = [...new Set(userIds.filter(Boolean))];
     for (const uid of unique) {
       await this.createInApp(uid, title, message);
-      this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}`, buttons).catch(() => {});
+      this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}${tgExtra || ''}`, buttons).catch(() => {});
     }
   }
 
@@ -1960,10 +2006,11 @@ export class WorkflowService implements OnModuleInit {
     ).catch(() => []);
     if (!dirs.length) return;
     const buttons = opts.buttons ? this.cardButtons(cardId) : undefined;
+    const tgExtra = await this.cardTgDetails(cardId);
     for (const d of dirs) {
       if (actorId && d.id === actorId) continue; // не дублируем собственное действие
       await this.createInApp(d.id, opts.title, opts.message);
-      this.telegram.sendToUser(d.id, `<b>${opts.title}</b>\n${opts.message}`, buttons).catch(() => {});
+      this.telegram.sendToUser(d.id, `<b>${opts.title}</b>\n${opts.message}${tgExtra}`, buttons).catch(() => {});
       if (opts.email && d.email) {
         this.mail.sendGenericNotification(d.email, d.name || 'Руководитель', opts.title, opts.message).catch(() => {});
       }
@@ -2025,17 +2072,18 @@ export class WorkflowService implements OnModuleInit {
     ].filter(Boolean);
     const message = lines.join('\n');
 
-    // Telegram — подробное сообщение.
+    // Telegram — подробное сообщение (HTML-эскейп: описание/названия могут
+    // содержать <, & — без эскейпа Telegram молча отклонял бы сообщение).
     const tg = [
       `<b>${title}</b>`,
-      `📌 <b>${details.title}</b>${typeLabel ? ` (${typeLabel})` : ''}`,
-      `📁 Проект: ${projectName}`,
-      details.note ? `🎞 ${details.note}` : '',
+      `📌 <b>${this.escTg(details.title)}</b>${typeLabel ? ` (${typeLabel})` : ''}`,
+      `📁 Проект: ${this.escTg(projectName)}`,
+      details.note ? `🎞 ${this.escTg(details.note)}` : '',
       deadline ? `📅 Дедлайн: ${deadline}` : '',
       publishDate ? `🗓 Публикация: ${publishDate}` : '',
       shoot ? `🎥 Съёмка: ${shoot}` : '',
-      details.description ? `📝 ${details.description}` : '',
-      actorName ? `👤 Назначил: ${actorName}` : '',
+      details.description ? `📝 ${this.escTg(details.description)}` : '',
+      actorName ? `👤 Назначил: ${this.escTg(actorName)}` : '',
     ].filter(Boolean).join('\n');
 
     for (const uid of unique) {
@@ -2068,9 +2116,10 @@ export class WorkflowService implements OnModuleInit {
     const title = `↩ Доработка (${backLabel})`;
     const message = `«${card.title}» — на доработку: ${comment}`;
     const ids = [...new Set([card.assigneeId, ...((card.assigneeIds as string[]) || [])].filter(Boolean) as string[])];
+    const tgExtra = await this.cardTgDetails(card.id);
     for (const uid of ids) {
       await this.createInApp(uid, title, message);
-      this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}\n📋 ${source}${actorName ? ` · ${actorName}` : ''}`, this.cardButtons(card.id)).catch(() => {});
+      this.telegram.sendToUser(uid, `<b>${title}</b>\n${message}\n📋 ${source}${actorName ? ` · ${actorName}` : ''}${tgExtra}`, this.cardButtons(card.id)).catch(() => {});
       const u = await this.userRepo.findOne({ where: { id: uid } }).catch(() => null);
       if (u?.email) {
         const body = `Карточка <strong>«${card.title}»</strong> (проект «${project?.name || ''}») отправлена на доработку — этап «${backLabel}».<br><br>💬 Комментарий (${source}): ${comment}<br><br>Откройте «Доску проектов», исправьте и отметьте «Сделал».`;
