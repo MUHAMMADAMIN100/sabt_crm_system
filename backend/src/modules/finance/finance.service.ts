@@ -1795,7 +1795,9 @@ export class FinanceService implements OnModuleInit {
       return txRepo.save(txRepo.create({
         type: FinanceTxType.INCOME, amount: Number(pp.amount), date, accountId,
         projectId: pp.projectId, categoryId: cat?.id ?? null, category: cat?.name ?? null,
-        comment: comment ?? 'Оплата проекта', status: FinanceTxStatus.COMPLETED,
+        // Имя проекта в описании — в журнале видно, ЗА ЧТО пришли деньги.
+        comment: comment ?? (project?.name ? `Оплата проекта — ${project.name}` : 'Оплата проекта'),
+        status: FinanceTxStatus.COMPLETED,
       }));
     }
     const cat = await catRepo.findOne({ where: { key: 'debt' } });

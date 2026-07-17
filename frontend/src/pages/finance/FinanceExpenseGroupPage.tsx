@@ -228,8 +228,12 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                     // суммы зафиксированы, правки недоступны. Для «живого»
                     // месяца — остаток «оклад + бонус − аванс − штраф».
                     const gross = Math.round(((Number(e.salary) || 0) + (Number(e.bonus) || 0)) * 100) / 100;
-                    const due = Math.max(0, Math.round((gross - (Number(e.advance) || 0) - (Number(e.fine) || 0)) * 100) / 100);
-                    const isPaid = e.frozen || (gross > 0 && (due <= 0 || e.paid >= due - 0.005));
+                    // «Выплачено» — ТОЛЬКО когда закрыта вся зарплата месяца.
+                    // Берём toPay с бэка (оклад + бонус − штраф − выплачено;
+                    // аванс уже входит в «выплачено»). Раньше аванс считался
+                    // дважды (в paid и вычетом из остатка) — одна выдача
+                    // аванса ошибочно помечала сотрудника «выплачено».
+                    const isPaid = e.frozen || (gross > 0 && Number(e.toPay) <= 0.005);
                     return (
                       <tr key={e.id} onDoubleClick={() => openEmp(e)}>
                         <td><b>{e.name}</b></td>
