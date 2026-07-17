@@ -994,6 +994,7 @@ function ClientCardModal({ clientId, onClose, onOpenFull }: {
   const STATUS_LABELS: Record<string, string> = {
     new: 'Новый', waiting: 'Ожидание ответа', negotiating: 'В переговорах',
     proposal: 'Предложение', won: 'Клиент', lost: 'Отказ', on_hold: 'На паузе',
+    unknown: 'Неизвестно',
   }
   const row = (label: string, value: any) => value ? (
     <div className="flex gap-3 py-1.5 border-b border-surface-100 dark:border-surface-700/60 last:border-0">

@@ -12,6 +12,10 @@ export enum ClientLeadStatus {
   WON         = 'won',           // Сделка закрыта / клиент
   LOST        = 'lost',          // Отказ
   ON_HOLD     = 'on_hold',       // На паузе
+  /** Неизвестно — статус для направления разработки (просьба МП по dev).
+   *  На проде значение добавляется в pg-enum идемпотентным ALTER TYPE
+   *  в ClientsService.onModuleInit. */
+  UNKNOWN     = 'unknown',       // Неизвестно
 }
 
 export enum ClientLeadInterest {

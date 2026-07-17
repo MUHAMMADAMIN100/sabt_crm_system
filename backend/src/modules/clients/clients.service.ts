@@ -41,6 +41,7 @@ const STATUS_ORDER: Record<string, number> = {
   // терминальные — не считаются прогрессом
   lost:        -1,
   on_hold:     -1,
+  unknown:     -1,
 };
 
 /** Порядок этапов онбординга. cancelled = -1 значит «отмена не считается
@@ -93,6 +94,15 @@ export class ClientsService implements OnModuleInit {
       );
     } catch (e: any) {
       this.logger.warn(`ALTER TYPE for LEAD_PROGRESS failed: ${e?.message || e}`);
+    }
+    // Статус «Неизвестно» (направление разработки): на проде synchronize
+    // выключен — значение в pg-enum добавляем идемпотентно сами.
+    try {
+      await this.activityRepo.manager.query(
+        `ALTER TYPE "client_leads_status_enum" ADD VALUE IF NOT EXISTS 'unknown'`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`ALTER TYPE for client_leads_status 'unknown' failed: ${e?.message || e}`);
     }
     try {
       await this.activityRepo.manager.query(`
@@ -243,8 +253,11 @@ export class ClientsService implements OnModuleInit {
     const deltaOf = (toOrder: number | undefined, fromOrder: number | undefined): 0 | 1 | -1 => {
       const t = toOrder ?? 0;
       const f = fromOrder ?? 0;
-      // cancelled/lost/on_hold == -1 → не учитываем переходы в них.
-      if (t <= 0) return 0;
+      // cancelled/lost/on_hold/unknown == -1 → не учитываем переходы ни В них,
+      // ни ИЗ них: иначе цикл «активный → unknown → активный» давал бы чистый
+      // +1 KPI за круг (вход = 0, выход = +1). f < 0 (не <= 0): f = 0 — это
+      // легитимное «лид создан сразу с продвинутым статусом», ему +1 положен.
+      if (t <= 0 || f < 0) return 0;
       // Из «нулевого» состояния (создание лида с уже выставленным этапом)
       // в реальный этап = +1.
       if (t > f) return 1;

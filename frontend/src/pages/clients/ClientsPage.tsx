@@ -50,7 +50,19 @@ const STATUS_OPTIONS: { value: string; label: string; color: string }[] = [
   { value: 'won',         label: 'Клиент ✓',           color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
   { value: 'lost',        label: 'Отказ',              color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
   { value: 'on_hold',     label: 'На паузе',           color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
+  // «Неизвестно» — статус направления разработки (просьба МП по dev).
+  // МП по СММ его не видит ни в фильтрах, ни в форме — см. statusOptionsFor.
+  { value: 'unknown',     label: 'Неизвестно',         color: 'bg-surface-100 text-surface-500 dark:bg-surface-700 dark:text-surface-300' },
 ]
+
+/** Статусы, доступные конкретной роли: «Неизвестно» — только для направления
+ *  разработки (МП по dev, руководство). МП по СММ опцию не видит, но если
+ *  лид уже в этом статусе (выставил основатель) — показываем, чтобы селект
+ *  не «съел» значение молча. */
+function statusOptionsFor(role?: string | null, currentStatus?: string) {
+  return STATUS_OPTIONS.filter(s =>
+    s.value !== 'unknown' || role !== 'sales_manager_smm' || currentStatus === 'unknown')
+}
 
 type InterestIcon = typeof Circle
 const INTEREST_OPTIONS: { value: string; label: string; Icon: InterestIcon; color: string }[] = [
@@ -484,7 +496,7 @@ export default function ClientsPage() {
           Все
           {stats?.total !== undefined && <> · {stats.total}</>}
         </button>
-        {STATUS_OPTIONS.map(s => {
+        {statusOptionsFor(role).map(s => {
           const n = stats?.byStatus?.[s.value]
           const active = status === s.value
           return (
@@ -809,6 +821,8 @@ export default function ClientsPage() {
 }
 
 function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loading, onAddToOnboarding }: any) {
+  // Роль — для скрытия статуса «Неизвестно» у МП по СММ (статус dev-направления).
+  const formRole = useAuthStore(s => s.user?.role)
   // Старые лиды могли иметь contactInfo одной строкой — раскладываем
   // эвристически: строка с @ — Instagram, с собакой — email, остальное — телефон.
   const parseLegacyContactInfo = (raw: string) => {
@@ -968,7 +982,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
           <div>
             <label className="label">Статус *</label>
             <select {...register('status')} className="input">
-              {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              {statusOptionsFor(formRole, initial?.status).map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </div>
           <div>
