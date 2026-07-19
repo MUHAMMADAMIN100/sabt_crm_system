@@ -368,7 +368,8 @@ function MonthAmountCell({ row, ym, field, onPayout }: {
     const word = field === 'advance' ? 'авансы' : 'бонусы';
     if (!(await finConfirm(`Удалить ${word} за этот месяц у «${row.name}»? Операции удалятся из журнала, деньги вернутся на счёт.`, { confirmLabel: 'Удалить', danger: true }))) return;
     try {
-      await financeApi.removeMonthExpenses({ ym, employeeId: row.id, kind: field });
+      // Сюда попадаем только для advance/bonus (у 'fine' — ранний return выше).
+      await financeApi.removeMonthExpenses({ ym, employeeId: row.id, kind: field as 'advance' | 'bonus' });
       invalidateFinance(qc);
     } catch (err) { toast.error(apiErr(err)); }
   }
