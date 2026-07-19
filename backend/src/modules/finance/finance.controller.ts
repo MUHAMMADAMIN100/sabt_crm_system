@@ -79,6 +79,15 @@ export class FinanceController {
   @Get('accounts/balances')
   accountsBalances() { return this.service.accountsBalances(); }
 
+  /** Разбивка карточки по под-типам (мини-окно при наведении на категорию). */
+  @Get('breakdown')
+  breakdown(
+    @Query('ym') ym: string, @Query('kind') kind: string,
+    @Query('id') id?: string, @Query('txType') txType?: string,
+  ) {
+    return this.service.breakdown(ym || currentYm(), kind || 'category', id || '', txType);
+  }
+
   // ─── Транзакции ──────────────────────────────────────────────────
   @Get('transactions')
   transactions(

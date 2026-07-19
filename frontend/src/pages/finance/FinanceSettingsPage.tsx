@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
 import { money, todayISO, formatDate, INCOME_GROUPS, TYPE_LABEL, COLOR_PALETTE, apiErr } from './finlib';
-import FinIcon, { CatIcon } from './FinIcon';
+import FinIcon, { CatIcon, PICKER_ICONS } from './FinIcon';
 import { FinModal, FinLoading, FinLoadError, finConfirm, invalidateFinanceAll } from './FinKit';
 import { ProjectFormModal, EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
 import { financeApi } from '@/services/api.service';
@@ -391,12 +391,13 @@ function CategoryModal({ category, onClose }: { category?: any; onClose: () => v
   const [name, setName] = useState(category?.name ?? '');
   const [type, setType] = useState(category?.type ?? 'expense');
   const [color, setColor] = useState(category?.color ?? COLOR_PALETTE[4]);
+  const [icon, setIcon] = useState<string>(category?.icon ?? 'box');
   const [busy, setBusy] = useState(false);
   async function save() {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const p = { name: name.trim(), type, color };
+      const p = { name: name.trim(), type, color, icon };
       if (category) await financeApi.updateCategory(category.id, p);
       else await financeApi.createCategory(p);
       invalidateFinanceAll(qc);
@@ -420,6 +421,23 @@ function CategoryModal({ category, onClose }: { category?: any; onClose: () => v
         </select>
       </div>
       <Palette color={color} setColor={setColor} />
+      <IconPicker icon={icon} setIcon={setIcon} color={color} />
     </FinModal>
+  );
+}
+
+function IconPicker({ icon, setIcon, color }: { icon: string; setIcon: (v: string) => void; color: string }) {
+  return (
+    <div className="field"><label>Иконка</label>
+      <div className="flex" style={{ flexWrap: 'wrap', gap: 8 }}>
+        {PICKER_ICONS.map((n) => (
+          <button key={n} type="button" onClick={() => setIcon(n)}
+            title={n}
+            style={{ padding: 0, border: icon === n ? '2px solid var(--text)' : '2px solid transparent', borderRadius: 9, background: 'transparent', cursor: 'pointer' }}>
+            <CatIcon icon={n} color={color} size={30} />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

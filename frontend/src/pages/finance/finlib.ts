@@ -94,17 +94,17 @@ export interface GroupMeta { key: string; label: string; icon: string; color: st
 
 export const INCOME_GROUPS: GroupMeta[] = [
   { key: 'smm', label: 'SMM', icon: 'smm', color: '#16a34a' },
-  { key: 'development', label: 'Development', icon: 'development', color: '#0ea5e9' },
+  { key: 'development', label: 'Development', icon: 'development', color: '#2563eb' },
   { key: 'design', label: 'Design', icon: 'design', color: '#a855f7' },
 ]
 
 export const EXPENSE_GROUPS: GroupMeta[] = [
-  { key: 'salary', label: 'Зарплата', icon: 'salary', color: '#f97316' },
-  { key: 'rent_subs', label: 'Аренда и подписки', icon: 'building', color: '#e11d48' },
-  { key: 'debts', label: 'Долги', icon: 'receipt', color: '#d97706' },
+  { key: 'salary', label: 'Зарплата', icon: 'banknote', color: '#f59e0b' },
+  { key: 'rent_subs', label: 'Аренда и подписки', icon: 'building', color: '#8b5cf6' },
+  { key: 'debts', label: 'Долги', icon: 'receipt', color: '#e11d48' },
 ]
 
-export const OTHER_GROUP: GroupMeta = { key: 'other', label: 'Прочее', icon: 'arrowRight', color: '#64748b' }
+export const OTHER_GROUP: GroupMeta = { key: 'other', label: 'Прочее', icon: 'box', color: '#64748b' }
 
 export const TYPE_LABEL: Record<string, string> = {
   income: 'Доход',

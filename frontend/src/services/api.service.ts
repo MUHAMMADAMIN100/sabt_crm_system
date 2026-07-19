@@ -333,6 +333,9 @@ export const financeApi = {
   expenseSummary: (ym: string) => api.get('/finance/expense/summary', { params: { ym } }).then(r => r.data),
   expenseDetail: (kind: string, ym: string, start?: string) => api.get(`/finance/expense/detail/${kind}`, { params: { ym, start } }).then(r => r.data),
   accountsBalances: () => api.get('/finance/accounts/balances').then(r => r.data),
+  /** Разбивка карточки по под-типам (мини-окно при наведении). */
+  breakdown: (params: { ym: string; kind: string; id?: string; txType?: string }) =>
+    api.get('/finance/breakdown', { params }).then(r => r.data),
 
   // Транзакции
   transactions: (params?: any) => api.get('/finance/transactions', { params }).then(r => r.data),

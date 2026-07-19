@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import './finance.css';
 import { money, currentYm, monthLabel, INCOME_GROUPS } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
+import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
 import { FinLoading, FinLoadError } from './FinKit';
 import { financeApi } from '@/services/api.service';
@@ -36,7 +37,7 @@ export default function FinanceIncomePage() {
           const projects = d.projectCount ?? 0;
           const expected = d.expected ?? 0;
           return (
-            <div className="card clickable" key={g.key} onClick={() => navigate(`/finance/income/${g.key}`)}>
+            <BreakdownHover className="card clickable" key={g.key} ym={ym} kind="direction" id={g.key} title={g.label} color={g.color} icon={g.icon} onClick={() => navigate(`/finance/income/${g.key}`)}>
               <div className="summary-head">
                 <span className="t" style={{ color: g.color }}><CatIcon icon={g.icon} color={g.color} size={30} /> {g.label}</span>
               </div>
@@ -46,7 +47,7 @@ export default function FinanceIncomePage() {
                 {(d.pausedCount ?? 0) > 0 ? <span style={{ color: 'var(--amber)' }}> · на паузе {d.pausedCount}</span> : null}
               </div>
               <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
-            </div>
+            </BreakdownHover>
           );
         })}
       </div>

@@ -40,11 +40,27 @@ const PATHS: Record<string, ReactNode> = {
   percent: <><line x1="6" y1="18" x2="18" y2="6" /><circle cx="7.5" cy="7.5" r="2" /><circle cx="16.5" cy="16.5" r="2" /></>,
   target: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" /></>,
   dots: <><circle cx="5" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="19" cy="12" r="1.3" /></>,
+  // новые иконки категорий (стиль референса: сетка 24, скруглённые концы)
+  banknote: <><rect x="2.5" y="6.5" width="19" height="11" rx="2" /><circle cx="12" cy="12" r="2.4" /><path d="M6 10.5v3" /><path d="M18 10.5v3" /></>,
+  creditCard: <><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><line x1="2.5" y1="9.5" x2="21.5" y2="9.5" /><line x1="6" y1="14" x2="10" y2="14" /></>,
+  megaphone: <><path d="M4 10v4h3l9 4V6L7 10H4z" /><path d="M7 14v3a1.8 1.8 0 0 0 3.2 1.1" /><path d="M18.5 9.5a3.5 3.5 0 0 1 0 5" /></>,
+  box: <><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" /><path d="M4 7.5l8 4.5 8-4.5" /><path d="M12 12v9" /></>,
+  piggy: <><path d="M4 12a6 5 0 0 1 6-5h3a6 5 0 0 1 6 5v1a6 5 0 0 1-2 3.6V19h-3v-1.5h-2V19H9v-1.5a6 5 0 0 1-2-3.6H5a1 1 0 0 1-1-1z" /><circle cx="9" cy="11.5" r="0.8" /><path d="M13 7c0-1.5 1.5-2.5 3-2" /></>,
+  megaphone2: <><path d="M3 11l14-6v14L3 13z" /><path d="M7 13v3.5a1.5 1.5 0 0 0 3 .4" /></>,
+  shield: <><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" /><polyline points="9 12 11 14 15 10" /></>,
+  split: <><path d="M4 6h4l5 6H4" /><path d="M4 18h4l5-6" /><polyline points="16 8 20 8 20 4" /><line x1="13" y1="12" x2="20" y2="8" /><polyline points="16 16 20 16 20 20" /><line x1="13" y1="12" x2="20" y2="16" /></>,
   // пустые состояния / статусы
   folder: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
   checkCircle: <><circle cx="12" cy="12" r="9" /><polyline points="8.5 12 11 14.5 16 9" /></>,
   wallet: <><rect x="3" y="6" width="18" height="13" rx="2.5" /><path d="M3 9h18" /><circle cx="16.5" cy="13" r="1.2" /></>,
 };
+
+/** Иконки, доступные для выбора у категории (в настройках). */
+export const PICKER_ICONS = [
+  'banknote', 'currency', 'piggy', 'creditCard', 'wallet', 'percent', 'receipt',
+  'megaphone', 'smm', 'development', 'design', 'target', 'building', 'car', 'printer',
+  'box', 'shield', 'split', 'transactions', 'income', 'expense', 'undo', 'dots',
+] as const;
 
 export default function FinIcon({ name, size = 18, className, style }: {
   name: string; size?: number; className?: string; style?: CSSProperties;

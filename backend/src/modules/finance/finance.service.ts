@@ -140,22 +140,22 @@ const DEFAULT_CATEGORIES: Array<Partial<FinanceCategory>> = [
   { name: 'SMM', type: 'income', key: 'smm', builtin: true, icon: 'smm', color: '#16a34a', position: 0 },
   { name: 'SMM часть 1', type: 'income', key: 'smm1', builtin: true, icon: 'smm', color: '#16a34a', position: 1 },
   { name: 'SMM часть 2', type: 'income', key: 'smm2', builtin: true, icon: 'smm', color: '#22c55e', position: 2 },
-  { name: 'Development', type: 'income', key: 'development', builtin: true, icon: 'development', color: '#0ea5e9', position: 3 },
+  { name: 'Development', type: 'income', key: 'development', builtin: true, icon: 'development', color: '#2563eb', position: 3 },
   { name: 'Design', type: 'income', key: 'design', builtin: true, icon: 'design', color: '#a855f7', position: 4 },
-  { name: 'Возврат долга', type: 'income', key: 'debt_return', builtin: true, icon: 'plus', color: '#14b8a6', position: 5 },
-  { name: 'Прочее', type: 'income', key: null, builtin: false, icon: 'dots', color: '#64748b', position: 6 },
+  { name: 'Возврат долга', type: 'income', key: 'debt_return', builtin: true, icon: 'undo', color: '#14b8a6', position: 5 },
+  { name: 'Прочее', type: 'income', key: null, builtin: false, icon: 'box', color: '#64748b', position: 6 },
   // Расходы
-  { name: 'Зарплата', type: 'expense', key: 'salary', builtin: true, icon: 'salary', color: '#f97316', position: 7 },
-  { name: 'Реклама (ADS)', type: 'expense', key: null, builtin: false, icon: 'target', color: '#ef4444', position: 8 },
-  { name: 'Аренда', type: 'expense', key: 'rent', builtin: true, icon: 'building', color: '#e11d48', position: 9 },
-  { name: 'Подписки', type: 'expense', key: 'subscription', builtin: true, icon: 'transactions', color: '#d946ef', position: 10 },
-  { name: 'Транспорт', type: 'expense', key: null, builtin: false, icon: 'car', color: '#0891b2', position: 11 },
-  { name: 'Печать', type: 'expense', key: null, builtin: false, icon: 'printer', color: '#7c3aed', position: 12 },
+  { name: 'Зарплата', type: 'expense', key: 'salary', builtin: true, icon: 'banknote', color: '#f59e0b', position: 7 },
+  { name: 'Реклама (ADS)', type: 'expense', key: null, builtin: false, icon: 'megaphone', color: '#ef4444', position: 8 },
+  { name: 'Аренда', type: 'expense', key: 'rent', builtin: true, icon: 'building', color: '#8b5cf6', position: 9 },
+  { name: 'Подписки', type: 'expense', key: 'subscription', builtin: true, icon: 'creditCard', color: '#ec4899', position: 10 },
+  { name: 'Транспорт', type: 'expense', key: null, builtin: false, icon: 'car', color: '#06b6d4', position: 11 },
+  { name: 'Печать', type: 'expense', key: null, builtin: false, icon: 'printer', color: '#6366f1', position: 12 },
   { name: 'Налоги', type: 'expense', key: null, builtin: false, icon: 'percent', color: '#b45309', position: 13 },
-  { name: 'Долг', type: 'expense', key: 'debt', builtin: true, icon: 'receipt', color: '#d97706', position: 14 },
-  { name: 'Прочее', type: 'expense', key: null, builtin: false, icon: 'dots', color: '#64748b', position: 15 },
+  { name: 'Долг', type: 'expense', key: 'debt', builtin: true, icon: 'receipt', color: '#e11d48', position: 14 },
+  { name: 'Прочее', type: 'expense', key: null, builtin: false, icon: 'box', color: '#64748b', position: 15 },
   // Накопление
-  { name: 'Накопление', type: 'saving', key: null, builtin: false, icon: 'income', color: '#7c3aed', position: 16 },
+  { name: 'Накопление', type: 'saving', key: null, builtin: false, icon: 'piggy', color: '#10b981', position: 16 },
 ];
 
 /** Направление → системный ключ категории дохода. */
@@ -325,6 +325,45 @@ export class FinanceService implements OnModuleInit {
       WHERE "employeeId" IS NOT NULL AND type = 'expense' AND "salaryYm" IS NULL`);
 
     await this.seedDefaults();
+
+    // Разовое обновление иконок/цветов дефолтных категорий (стиль референса,
+    // разные цвета). Каждый UPDATE срабатывает ТОЛЬКО если иконка/цвет ещё
+    // старые дефолтные — ручные правки пользователя не затрагиваем.
+    // Маркер в finance_activity гарантирует однократность.
+    try {
+      const mark = 'SYSTEM category-icons-v2';
+      const done = await this.ds.query(`SELECT 1 FROM finance_activity WHERE route = $1 LIMIT 1`, [mark]);
+      if (!done.length) {
+        const upd = async (sql: string, params: any[]) => { try { await this.ds.query(sql, params); } catch (e: any) { this.logger.warn(`cat-icon upd: ${String(e?.message || e).slice(0, 120)}`); } };
+        // ВАЖНО: иконку и цвет обновляем РАЗДЕЛЬНО, каждый — только если
+        // соответствующее старое значение ещё дефолтное. Иначе комбинированный
+        // UPDATE по одному лишь old-icon затирал бы кастомный ЦВЕТ (цвет можно
+        // было менять и раньше через палитру, иконку — нет).
+        await upd(`UPDATE finance_categories SET color=$1 WHERE key='development' AND color=$2`, ['#2563eb', '#0ea5e9']);
+        await upd(`UPDATE finance_categories SET icon=$1 WHERE key='debt_return' AND icon=$2`, ['undo', 'plus']);
+        await upd(`UPDATE finance_categories SET icon=$1 WHERE key='salary' AND icon=$2`, ['banknote', 'salary']);
+        await upd(`UPDATE finance_categories SET color=$1 WHERE key='salary' AND color=$2`, ['#f59e0b', '#f97316']);
+        await upd(`UPDATE finance_categories SET color=$1 WHERE key='rent' AND color=$2`, ['#8b5cf6', '#e11d48']);
+        await upd(`UPDATE finance_categories SET icon=$1 WHERE key='subscription' AND icon=$2`, ['creditCard', 'transactions']);
+        await upd(`UPDATE finance_categories SET color=$1 WHERE key='subscription' AND color=$2`, ['#ec4899', '#d946ef']);
+        await upd(`UPDATE finance_categories SET color=$1 WHERE key='debt' AND color=$2`, ['#e11d48', '#d97706']);
+        // Не-builtin дефолты — по имени+типу, если иконка/цвет ещё дефолтные.
+        await upd(`UPDATE finance_categories SET icon=$1 WHERE name='Реклама (ADS)' AND type='expense' AND icon=$2`, ['megaphone', 'target']);
+        await upd(`UPDATE finance_categories SET color=$1 WHERE name='Транспорт' AND type='expense' AND color=$2`, ['#06b6d4', '#0891b2']);
+        await upd(`UPDATE finance_categories SET color=$1 WHERE name='Печать' AND type='expense' AND color=$2`, ['#6366f1', '#7c3aed']);
+        await upd(`UPDATE finance_categories SET icon=$1 WHERE name='Накопление' AND type='saving' AND icon=$2`, ['piggy', 'income']);
+        await upd(`UPDATE finance_categories SET color=$1 WHERE name='Накопление' AND type='saving' AND color=$2`, ['#10b981', '#7c3aed']);
+        await upd(`UPDATE finance_categories SET icon=$1 WHERE name='Прочее' AND icon=$2`, ['box', 'dots']);
+        await this.ds.query(
+          `INSERT INTO finance_activity (action, route, details) VALUES ('Иконки/цвета категорий обновлены (стиль референса)', $1, '{}'::jsonb)`,
+          [mark],
+        );
+        this.logger.log('finance category icons v2 applied');
+      }
+    } catch (e: any) {
+      this.logger.warn(`category-icons migration failed: ${String(e?.message || e).slice(0, 160)}`);
+    }
+
     // Бэкфилл: старые записи с enum-счётом → на новый accountId по ключу.
     await run(`UPDATE finance_transactions t SET "accountId" = a.id
       FROM finance_accounts a WHERE t."accountId" IS NULL AND t.account IS NOT NULL AND a.key = t.account`);
@@ -964,6 +1003,73 @@ export class FinanceService implements OnModuleInit {
         icon: c?.icon ?? null, color: c?.color ?? null, total: r2(total),
       };
     }).sort((a, b) => b.total - a.total);
+  }
+
+  /** Разбивка карточки на под-типы для мини-окна при наведении.
+   *  kind='category' (id=categoryId | 'none' для «Без категории», txType),
+   *  kind='group' (id=salary|rent_subs|debts|other — статьи расхода),
+   *  kind='direction' (id=smm|development|design — направления дохода).
+   *  Считается по РЕАЛЬНЫМ операциям месяца (как карточки), деньги не трогаем. */
+  async breakdown(ym: string, kind: string, id: string, txType?: string) {
+    const { from, to } = monthRange(ym);
+    const m = await this.maps();
+    const agg = new Map<string, number>();
+    const add = (label: string, amount: number) => agg.set(label, r2((agg.get(label) || 0) + Number(amount)));
+
+    // Направление дохода: карточки считают ПЛАНОВЫЕ оплаты по месяцу плана
+    // (pp.ym, received) только по «зарабатывающим» проектам — разбивка должна
+    // считать ТАК ЖЕ, иначе сумма окна разойдётся с числом карточки (поздняя
+    // оплата в другом месяце, доход по проекту на паузе, доход без плана).
+    if (kind === 'direction') {
+      const ids = new Set(m.projects.filter(p => p.direction === id && isEarning(p)).map(p => p.id));
+      const planned = await this.ppRepo.find();
+      let count = 0;
+      for (const p of planned) {
+        if (p.ym !== ym || p.status !== 'received' || !p.projectId || !ids.has(p.projectId)) continue;
+        add(m.proj.get(p.projectId)?.name || 'Без проекта', Number(p.amount));
+        count++;
+      }
+      return this.finalizeBreakdown(agg, count);
+    }
+
+    // Категория / статья расхода — по РЕАЛЬНЫМ операциям месяца (совпадает
+    // с суммами карточек, которые тоже по операциям и дате).
+    const all = this.active(await this.txRepo.find({ where: { date: Between(from, to) } as any }));
+    let txs: FinanceTransaction[] = [];
+    let salaryMode = false;
+    if (kind === 'category') {
+      const t = txType === 'income' ? FinanceTxType.INCOME : FinanceTxType.EXPENSE;
+      txs = all.filter(x => x.type === t && ((id && id !== 'none') ? x.categoryId === id : !x.categoryId));
+      salaryMode = !!id && m.cat.get(id)?.key === 'salary';
+    } else if (kind === 'group') {
+      if (id === 'other') {
+        txs = all.filter(x => x.type === FinanceTxType.EXPENSE && !['salary', 'rent_subs', 'debts'].includes(this.groupOf(x, m) || ''));
+      } else {
+        txs = all.filter(x => x.type === FinanceTxType.EXPENSE && this.groupOf(x, m) === id);
+        salaryMode = id === 'salary';
+      }
+    }
+
+    const labelOf = (t: FinanceTransaction): string => {
+      if (salaryMode) return isAdvanceTx(t) ? 'Авансы' : isBonusTx(t) ? 'Бонусы' : 'Зарплата';
+      // Подписки/аренда: имя позиции хранится в комментарии операции.
+      if (kind === 'group' && id === 'rent_subs') return (t.comment || '').trim() || 'Аренда/подписка';
+      if (kind === 'group' && id === 'debts') return (t.debtId && m.debt.get(t.debtId)?.name) || (t.comment || '').trim() || 'Долг';
+      return (t.comment || '').trim() || 'Без описания';
+    };
+    for (const t of txs) add(labelOf(t), Number(t.amount));
+    return this.finalizeBreakdown(agg, txs.length);
+  }
+
+  /** Сборка результата разбивки: сортировка по убыванию, топ-8 + «Прочее». */
+  private finalizeBreakdown(agg: Map<string, number>, count: number) {
+    const rows = [...agg.entries()].map(([label, amount]) => ({ label, amount })).sort((a, b) => b.amount - a.amount);
+    const total = r2(rows.reduce((s, r) => s + r.amount, 0));
+    const TOP = 8;
+    const items = rows.length > TOP
+      ? [...rows.slice(0, TOP), { label: 'Прочее', amount: r2(rows.slice(TOP).reduce((s, r) => s + r.amount, 0)) }]
+      : rows;
+    return { items, total, count };
   }
 
   private sortByDateDesc(txs: FinanceTransaction[]): FinanceTransaction[] {

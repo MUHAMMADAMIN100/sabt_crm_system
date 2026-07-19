@@ -8,6 +8,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAx
 import './finance.css';
 import { money, currentYm, monthLabel, apiErr, INCOME_GROUPS, EXPENSE_GROUPS } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
+import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
 import TxTable from './TxTable';
 import TransactionModal from './TransactionModal';
@@ -105,7 +106,7 @@ export default function FinanceOverviewPage() {
           title="Доход за месяц" hint="все операции месяца · по категориям"
           legendRight="получено / получим за месяц"
           icon="income" color="var(--green)" total={income}
-          rows={incCats} onClick={() => navigate('/finance/income')}
+          rows={incCats} ym={ym} txType="income" onClick={() => navigate('/finance/income')}
           footerRows={[
             { label: 'Прогноз на приходящий месяц', value: `≈ ${money(stats.forecastNextMonth || 0)}` },
             { label: 'Доход за всё время', value: money(stats.incomeAllTime || 0), cls: 'pos' },
@@ -114,7 +115,7 @@ export default function FinanceOverviewPage() {
         <SummaryContainer
           title="Расход за месяц" hint="все операции месяца · по категориям"
           icon="expense" color="var(--red)" total={expense}
-          rows={expCats} onClick={() => navigate('/finance/expense')}
+          rows={expCats} ym={ym} txType="expense" onClick={() => navigate('/finance/expense')}
           footerRows={[
             { label: 'Регулярные обязательства / мес', value: money((stats.salaryToPay || 0) + (stats.subsMonthly || 0)) },
             { label: 'Расход за всё время', value: money(stats.expenseAllTime || 0), cls: 'neg' },
@@ -184,10 +185,10 @@ export default function FinanceOverviewPage() {
           <div className="brk-legend"><span>только проекты · за месяц</span><span>получено / план</span></div>
           <div className="brk">
             {incomeRows.map((r) => (
-              <div className="brk-row" key={r.key}>
+              <BreakdownHover key={r.key} className="brk-row" ym={ym} kind="direction" id={r.key} title={r.label} color={r.color} icon={r.icon}>
                 <span className="name" style={{ color: r.color }}><CatIcon icon={r.icon} color={r.color} size={22} /><span style={{ color: 'var(--text)' }}>{r.label}</span></span>
                 <span className="num"><span className="muted" style={{ fontWeight: 500 }}>{money(r.fact)}</span> / {money(r.plan)}</span>
-              </div>
+              </BreakdownHover>
             ))}
           </div>
           <div className="between" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
@@ -204,10 +205,10 @@ export default function FinanceOverviewPage() {
           <div className="brk-legend"><span>план месяца по статьям</span><span>потрачено / план</span></div>
           <div className="brk">
             {expenseRows.map((r) => (
-              <div className="brk-row" key={r.key}>
+              <BreakdownHover key={r.key} className="brk-row" ym={ym} kind="group" id={r.key} title={r.label} color={r.color} icon={r.icon}>
                 <span className="name" style={{ color: r.color }}><CatIcon icon={r.icon} color={r.color} size={22} /><span style={{ color: 'var(--text)' }}>{r.label}</span></span>
                 <span className="num"><span className="muted" style={{ fontWeight: 500 }}>{money(r.fact)}</span> / {money(r.plan)}</span>
-              </div>
+              </BreakdownHover>
             ))}
           </div>
           {/* «Потрачено за месяц» дублировало заголовок верхней карточки —
@@ -257,10 +258,11 @@ export default function FinanceOverviewPage() {
 // rows приходят из overview.incomeByCategory/expenseByCategory:
 // {categoryId,name,icon,color,total,plan?} — plan есть только у базовых категорий
 // направлений дохода (план месяца из таблиц направлений) → строка «получено / получим».
-function SummaryContainer({ title, hint, legendRight, icon, color, total, rows, onClick, footerRows }: {
+function SummaryContainer({ title, hint, legendRight, icon, color, total, rows, onClick, footerRows, ym, txType }: {
   title: string; hint?: string; legendRight?: string; icon: string; color: string; total: number;
   rows: any[]; onClick: () => void;
   footerRows?: Array<{ label: string; value: string; cls?: string }>;
+  ym?: string; txType?: 'income' | 'expense';
 }) {
   return (
     <div className="card clickable" onClick={onClick}>
@@ -272,14 +274,18 @@ function SummaryContainer({ title, hint, legendRight, icon, color, total, rows, 
       <div className="brk">
         {rows.length === 0 && <div className="mini muted" style={{ padding: '6px 0' }}>Нет операций</div>}
         {rows.map((r) => (
-          <div className="brk-row" key={r.categoryId ?? 'none'}>
+          <BreakdownHover
+            key={r.categoryId ?? 'none'} className="brk-row"
+            ym={ym || ''} kind="category" id={r.categoryId ?? 'none'} txType={txType}
+            title={r.name ?? 'Без категории'} color={r.color} icon={r.icon}
+          >
             <span className="name" style={{ color: r.color }}>
               <CatIcon icon={r.icon} color={r.color} size={22} /><span style={{ color: 'var(--text)' }}>{r.name ?? 'Без категории'}</span>
             </span>
             {r.plan > 0
               ? <span className="num"><span className="muted" style={{ fontWeight: 500 }}>{money(r.total)}</span> / {money(r.plan)}</span>
               : <span className="num">{money(r.total)}</span>}
-          </div>
+          </BreakdownHover>
         ))}
       </div>
       {footerRows && footerRows.length > 0 && (
