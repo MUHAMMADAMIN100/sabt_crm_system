@@ -68,14 +68,17 @@ export class ProjectsController {
     return this.service.setStoriesArchived(id, dto.archived, req.user);
   }
 
+  /** Архив/восстановление — по гранту projects.archive: нативные роли те же,
+   *  что раньше в @Roles, плюс персональная выдача через «Доступы
+   *  сотрудников» (области ролей сужаются в сервисе). */
   @Patch(':id/archive')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+  @RequirePerm('projects.archive')
   archive(@Param('id') id: string, @Request() req) {
     return this.service.archive(id, req.user);
   }
 
   @Patch(':id/restore')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+  @RequirePerm('projects.archive')
   restore(@Param('id') id: string, @Request() req) {
     return this.service.restore(id, req.user);
   }

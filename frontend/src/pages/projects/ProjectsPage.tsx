@@ -402,14 +402,18 @@ export default function ProjectsPage() {
                     </div>
                   </div>
                 )}
-                {(isManagerPlus || canCreateProject || userCan(user, 'projects.edit')) && (
+                {(isManagerPlus || canCreateProject || userCan(user, 'projects.edit') || userCan(user, 'projects.archive')) && (
                   <div className="flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={(e) => { e.stopPropagation(); setEditProject(p) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded text-surface-500 dark:text-surface-400" title="Редактировать"><Edit size={13} /></button>
+                    {(isManagerPlus || canCreateProject || userCan(user, 'projects.edit')) && (
+                      <button onClick={(e) => { e.stopPropagation(); setEditProject(p) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded text-surface-500 dark:text-surface-400" title="Редактировать"><Edit size={13} /></button>
+                    )}
+                    {/* Архив — по гранту projects.archive (нативно у создающих
+                        ролей; выдаётся и отдельно — напр. ПМ по разработке). */}
+                    {(canCreateProject || userCan(user, 'projects.archive')) && (
+                      <button onClick={(e) => { e.stopPropagation(); archiveMut.mutate(p.id) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded text-surface-500 dark:text-surface-400" title="Архив"><Archive size={13} /></button>
+                    )}
                     {canCreateProject && (
-                      <>
-                        <button onClick={(e) => { e.stopPropagation(); archiveMut.mutate(p.id) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded text-surface-500 dark:text-surface-400" title="Архив"><Archive size={13} /></button>
-                        <button onClick={(e) => { e.stopPropagation(); setDeleteId(p.id) }} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500 dark:text-red-400" title="Удалить"><Trash2 size={13} /></button>
-                      </>
+                      <button onClick={(e) => { e.stopPropagation(); setDeleteId(p.id) }} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500 dark:text-red-400" title="Удалить"><Trash2 size={13} /></button>
                     )}
                   </div>
                 )}

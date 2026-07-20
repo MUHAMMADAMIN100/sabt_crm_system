@@ -1548,6 +1548,10 @@ export class ProjectsService implements OnModuleInit {
     if (archiveSegment && project.projectType !== archiveSegment.projectType) {
       throw new ForbiddenException('Вы можете архивировать только проекты своего направления');
     }
+    // ПМ по разработке (грант projects.archive) — только dev-проекты.
+    if (user?.role === 'pm_dev' && !DEV_PROJECT_TYPES.includes(project.projectType as string)) {
+      throw new ForbiddenException('Проект-менеджер по разработке может архивировать только проекты разработки');
+    }
     await this.repo.update(id, { isArchived: true, status: ProjectStatus.ARCHIVED });
     await this.activityLog.log({
       action: ActivityAction.PROJECT_ARCHIVE,
@@ -1567,6 +1571,10 @@ export class ProjectsService implements OnModuleInit {
     const restoreSegment = getSalesSegment(user?.role);
     if (restoreSegment && project.projectType !== restoreSegment.projectType) {
       throw new ForbiddenException('Вы можете восстанавливать только проекты своего направления');
+    }
+    // ПМ по разработке (грант projects.archive) — только dev-проекты.
+    if (user?.role === 'pm_dev' && !DEV_PROJECT_TYPES.includes(project.projectType as string)) {
+      throw new ForbiddenException('Проект-менеджер по разработке может восстанавливать только проекты разработки');
     }
     // При восстановлении НЕ форсируем COMPLETED — возвращаем в IN_PROGRESS
     // как safe default. Если был completed до архива — пользователь может

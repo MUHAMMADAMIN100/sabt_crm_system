@@ -16,6 +16,10 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'projects.view':   { label: 'Проекты — просмотр',          category: 'Проекты', roles: [...TOP, 'smm_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'] },
   'projects.create': { label: 'Проекты — добавление',        category: 'Проекты', roles: [...TOP, 'smm_director', 'sales_manager_smm', 'sales_manager_dev'] },
   'projects.edit':   { label: 'Проекты — редактирование',    category: 'Проекты', roles: [...TOP, 'smm_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'] },
+  // Архив/восстановление проектов. Нативно — те же роли, что были в @Roles
+  // эндпоинта; грантом можно выдать другим (напр. проект-менеджеру по
+  // разработке — он архивирует только dev-проекты, см. projects.service).
+  'projects.archive': { label: 'Проекты — архивирование',    category: 'Проекты', roles: [...TOP, 'smm_director', 'sales_manager_smm', 'sales_manager_dev'] },
 
   // ─── Доска проектов ────────────────────────────────────────────────
   'board.view':          { label: 'Доска проектов — просмотр (все статусы)',            category: 'Доска проектов', roles: [...TOP, 'smm_director', 'video_director', 'organizer'] },
