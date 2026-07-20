@@ -115,10 +115,11 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
   const [fLang, setFLang] = useState('')
   const [fAgeFrom, setFAgeFrom] = useState('')
   const [fAgeTo, setFAgeTo] = useState('')
-  const [fRateMax, setFRateMax] = useState('')
+  const [fRateFrom, setFRateFrom] = useState('')
+  const [fRateTo, setFRateTo] = useState('')
   const [fVideo, setFVideo] = useState('')
-  const hasFilters = !!(fGender || fLang || fAgeFrom || fAgeTo || fRateMax || fVideo)
-  const resetFilters = () => { setFGender(''); setFLang(''); setFAgeFrom(''); setFAgeTo(''); setFRateMax(''); setFVideo('') }
+  const hasFilters = !!(fGender || fLang || fAgeFrom || fAgeTo || fRateFrom || fRateTo || fVideo)
+  const resetFilters = () => { setFGender(''); setFLang(''); setFAgeFrom(''); setFAgeTo(''); setFRateFrom(''); setFRateTo(''); setFVideo('') }
 
   /** Первое число из свободного текста («300-400» → 300, «договорная» → null). */
   const firstNum = (v: any): number | null => {
@@ -148,16 +149,22 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
       const age = firstNum(r.age)
       if (fAgeFrom && (age === null || age < Number(fAgeFrom))) return false
       if (fAgeTo && (age === null || age > Number(fAgeTo))) return false
-      if (fRateMax) {
-        const rate = firstNum(r.rate)
-        if (rate === null || rate > Number(fRateMax)) return false
+      if (fRateFrom || fRateTo) {
+        // Ставка — свободный текст («400», «300-400», «договорная»). Берём все
+        // числа и сравниваем ДИАПАЗОНАМИ с перекрытием: «300-400» попадает и в
+        // «от 350», и в «до 350». Без чисел («договорная») — скрываем.
+        const nums = (String(r.rate ?? '').match(/\d+/g) || []).map(Number)
+        if (!nums.length) return false
+        const rMin = Math.min(...nums), rMax = Math.max(...nums)
+        if (fRateFrom && rMax < Number(fRateFrom)) return false
+        if (fRateTo && rMin > Number(fRateTo)) return false
       }
       const vids = Array.isArray(r.videoLinks) && r.videoLinks.length > 0
       if (fVideo === 'yes' && !vids) return false
       if (fVideo === 'no' && vids) return false
       return true
     })
-  }, [rows, kind, fGender, fLang, fAgeFrom, fAgeTo, fRateMax, fVideo])
+  }, [rows, kind, fGender, fLang, fAgeFrom, fAgeTo, fRateFrom, fRateTo, fVideo])
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['organizer', kind] })
 
@@ -210,8 +217,10 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
               placeholder="Возраст от" className="input text-sm w-[104px]" title="Минимальный возраст" />
             <input value={fAgeTo} onChange={e => setFAgeTo(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
               placeholder="до" className="input text-sm w-[72px]" title="Максимальный возраст" />
-            <input value={fRateMax} onChange={e => setFRateMax(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
-              placeholder="Ставка до, с." className="input text-sm w-[120px]" title="Максимальная ставка за съёмку (у «договорной» ставки числа нет — при фильтре она скрывается)" />
+            <input value={fRateFrom} onChange={e => setFRateFrom(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
+              placeholder="Ставка от" className="input text-sm w-[104px]" title="Минимальная ставка за съёмку" />
+            <input value={fRateTo} onChange={e => setFRateTo(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
+              placeholder="до, с." className="input text-sm w-[84px]" title="Максимальная ставка за съёмку (у «договорной» числа нет — при фильтре она скрывается)" />
             <select value={fVideo} onChange={e => setFVideo(e.target.value)} className="input text-sm w-auto" title="Наличие видео с работой">
               <option value="">Видео: все</option>
               <option value="yes">С видео</option>
