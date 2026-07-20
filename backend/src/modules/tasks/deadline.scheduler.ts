@@ -52,6 +52,15 @@ const STAGE_LABELS_WF: Record<string, string> = {
   ads: 'Реклама',
 }
 
+/** Проверочные этапы: исполнители карточки свою работу уже СДАЛИ, карточка
+ *  ждёт владельца этапа. Просрочку шлём ему (по роли), а не исполнителям —
+ *  иначе дизайнер, сдавший макет, продолжал получать «просрочено». */
+const REVIEW_STAGE_ROLES: Record<string, UserRole[]> = {
+  internal_review: [UserRole.QA],
+  client_approval: [UserRole.SMM_DIRECTOR],
+  ready_to_publish: [UserRole.PUBLISHER],
+}
+
 @Injectable()
 export class DeadlineScheduler implements OnModuleInit {
   private readonly logger = new Logger(DeadlineScheduler.name)
@@ -303,11 +312,19 @@ export class DeadlineScheduler implements OnModuleInit {
     this.logger.log('Checking overdue workflow cards...')
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
     const cards = await this.workflowRepo.find({ relations: ['assignee'] })
+    // Источник правды — card.deadline: moveToStage синхронизирует его со
+    // сроком ТЕКУЩЕГО этапа при каждом переходе (или чистит прошедший
+    // авто-срок), ручная правка на доске пишет тоже его. Сырой stageDeadlines
+    // НЕ читаем: замороженный авто-план игнорирует ручные правки и воскрешал
+    // бы прошлые даты, которые moveToStage намеренно очистил. Тот же источник
+    // используют дашборд /workflow/overdue и бейджи карточек — без рассинхрона.
+    const effDeadline = (c: WorkflowCard): string | null => c.deadline || null
     const overdue = cards.filter(c => {
-      if (!c.deadline || c.kind === 'kp') return false
+      const dl = effDeadline(c)
+      if (!dl || c.kind === 'kp') return false
       if (['published', 'ads'].includes(c.stage)) return false
       if (['done', 'published'].includes((c.status as string) || '')) return false
-      const d = new Date(c.deadline); d.setHours(0, 0, 0, 0)
+      const d = new Date(dl); d.setHours(0, 0, 0, 0)
       return d < todayStart
     })
     if (overdue.length === 0) { this.logger.log('No overdue workflow cards'); return }
@@ -320,21 +337,52 @@ export class DeadlineScheduler implements OnModuleInit {
       { role: UserRole.SMM_DIRECTOR, isActive: true },
       { role: UserRole.ORGANIZER, isActive: true },
     ] })
+    // Владельцы проверочных этапов (QA / рук. СММ / публикатор) — по основной
+    // или второй роли, НО в рамках проекта карточки (участник или менеджер),
+    // как в notifyStageRole: иначе каждый QA компании получал бы просрочки
+    // чужих проектов. Кэш по projectId+roles — крон крутит много карточек.
+    const reviewOwnerCache = new Map<string, string[]>()
+    const findReviewOwners = async (projectId: string, roles: UserRole[]): Promise<string[]> => {
+      const key = `${projectId}:${roles.join(',')}`
+      if (!reviewOwnerCache.has(key)) {
+        const rows: Array<{ id: string }> = await this.userRepo.manager.query(
+          `SELECT u.id FROM users u
+           WHERE u."isActive" = true AND u."isBlocked" = false
+             AND (u.role = ANY($2) OR u."secondaryRole" = ANY($2))
+             AND (
+               EXISTS (SELECT 1 FROM project_members pm WHERE pm."projectsId" = $1 AND pm."usersId" = u.id)
+               OR EXISTS (SELECT 1 FROM projects p WHERE p.id = $1 AND p."managerId" = u.id)
+             )`,
+          [projectId, roles],
+        ).catch(() => [])
+        reviewOwnerCache.set(key, rows.map(r => r.id))
+      }
+      return reviewOwnerCache.get(key)!
+    }
 
     let sent = 0, escalated = 0
     for (const card of overdue) {
       const proj = projMap.get(card.projectId)
       const projectName = proj?.name || '—'
-      const dl = new Date(card.deadline); dl.setHours(0, 0, 0, 0)
+      const dl = new Date(effDeadline(card)!); dl.setHours(0, 0, 0, 0)
       const daysOverdue = Math.max(1, Math.floor((todayStart.getTime() - dl.getTime()) / 86400000))
       const daysWord = daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней'
       const sendExternal = daysOverdue <= 14
       const stageLabel = STAGE_LABELS_WF[card.stage] || card.stage
       const emailBody = `Карточка <b>«${card.title}»</b> (проект «${projectName}», этап «${stageLabel}») просрочена на <b>${daysOverdue} ${daysWord}</b>.<br>Откройте «Доску проектов», чтобы закрыть этап.`
 
+      // На проверочных этапах исполнители работу уже сдали — просрочку шлём
+      // владельцам этапа по роли (в рамках проекта); на производственных —
+      // исполнителям, как раньше. Если владельца в проекте нет — карточку
+      // всё равно видят менеджер проекта (ниже) и эскалация лидам (>= 3 дней).
       const assigneeIds = new Set<string>()
-      if (card.assigneeId) assigneeIds.add(card.assigneeId)
-      if (Array.isArray(card.assigneeIds)) card.assigneeIds.forEach(id => id && assigneeIds.add(id))
+      const ownerRoles = REVIEW_STAGE_ROLES[card.stage]
+      if (ownerRoles) {
+        for (const id of await findReviewOwners(card.projectId, ownerRoles)) assigneeIds.add(id)
+      } else {
+        if (card.assigneeId) assigneeIds.add(card.assigneeId)
+        if (Array.isArray(card.assigneeIds)) card.assigneeIds.forEach(id => id && assigneeIds.add(id))
+      }
 
       for (const uid of assigneeIds) {
         await this.pushOverdueNotify(uid, '🔴 Карточка просрочена',

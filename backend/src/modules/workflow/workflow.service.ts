@@ -1890,20 +1890,31 @@ export class WorkflowService implements OnModuleInit {
       `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
       [card.projectId, newStage],
     );
-    // Авто-дедлайн убран: при переходе НЕ подставляем дедлайн из stageDeadlines,
-    // сохраняем тот, что выставлен вручную.
-    const deadline = card.deadline || null;
+    // Дедлайн НОВОГО этапа: из авто-плана этапов (stageDeadlines от даты
+    // публикации), но только если срок ещё впереди — прошедший авто-срок
+    // давал бы мгновенную «просрочку» нового этапа. Иначе дедлайн ЧИСТИТСЯ:
+    // просрочка закрытого этапа не должна тянуться за карточкой и сыпаться
+    // исполнителю, который свою работу уже сдал (руководитель при
+    // необходимости ставит срок нового этапа вручную).
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
+    const autoDl = (card.stageDeadlines as Record<string, string> | null)?.[newStage] || null;
+    const deadline = autoDl && autoDl >= today ? autoDl : null;
     const fromStage = card.stage;
-    await this.repo.update(card.id, { stage: newStage, position: Number(max) + 1, deadline });
+    // KPI-снимок (meta.deadline) — срок ЗАКРЫТОГО этапа: pre-move значение
+    // card.deadline (repo.update сущность не мутирует). on_time в KPI
+    // сравнивает момент завершения этапа с ЕГО сроком; новый card.deadline
+    // относится уже к следующему этапу и в снимок попадать не должен.
+    const closedDl = card.deadline || null;
+    await this.repo.update(card.id, { stage: newStage, position: Number(max) + 1, deadline, deadlineTime: null });
     // units — сколько единиц контента продвинулось (у групповой карточки это
-    // все её элементы); deadline — снимок срока этапа на момент перехода.
+    // все её элементы); deadline — снимок срока ЗАКРЫТОГО этапа.
     // Оба поля читает KPI («этапов выполнено» / «соблюдено дедлайнов»).
     const units = (card.kind === 'reels' || card.kind === 'macros')
       ? Math.max(1, ((card.items as any[]) || []).length) : 1;
     await this.logEvent(card.id, 'stage_enter', {
       fromStage, toStage: newStage, actor,
       message: opts.message || `Этап: ${STAGE_LABELS[newStage] || newStage}`,
-      meta: { units, deadline },
+      meta: { units, deadline: closedDl },
     });
     // R15: уведомление роли нового этапа + текущим исполнителям — с кнопками
     // «Сделал/Не сделал» в Telegram (нельзя для финальных этапов).
