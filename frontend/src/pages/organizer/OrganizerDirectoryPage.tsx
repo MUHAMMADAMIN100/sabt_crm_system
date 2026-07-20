@@ -1,7 +1,7 @@
 // Справочники организатора съёмок: Клиенты / Модели / Места.
 // Один компонент на три раздела (kind), полный CRUD. Доступ — грант
 // organizer.directory (организатор, руководитель SMM, топ).
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { organizerApi } from '@/services/api.service'
@@ -110,6 +110,55 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
     queryFn: () => organizerApi.list(kind, search || undefined),
   })
 
+  // ── Фильтры моделей (клиентские — список небольшой и загружен целиком) ──
+  const [fGender, setFGender] = useState('')
+  const [fLang, setFLang] = useState('')
+  const [fAgeFrom, setFAgeFrom] = useState('')
+  const [fAgeTo, setFAgeTo] = useState('')
+  const [fRateMax, setFRateMax] = useState('')
+  const [fVideo, setFVideo] = useState('')
+  const hasFilters = !!(fGender || fLang || fAgeFrom || fAgeTo || fRateMax || fVideo)
+  const resetFilters = () => { setFGender(''); setFLang(''); setFAgeFrom(''); setFAgeTo(''); setFRateMax(''); setFVideo('') }
+
+  /** Первое число из свободного текста («300-400» → 300, «договорная» → null). */
+  const firstNum = (v: any): number | null => {
+    const m = String(v ?? '').match(/\d+/)
+    return m ? Number(m[0]) : null
+  }
+
+  // Языки для селекта — собираем из данных («русский, английский и таджикский
+  // с акцентом» → русский / английский / таджикский).
+  const langOptions = useMemo(() => {
+    if (kind !== 'models') return []
+    const set = new Set<string>()
+    for (const r of rows) {
+      for (const part of String(r.languages || '').split(/[,;]|\sи\s/)) {
+        const t = part.trim().toLowerCase().replace(/\s*с акцентом.*$/, '')
+        if (t) set.add(t)
+      }
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'ru'))
+  }, [rows, kind])
+
+  const filtered = useMemo(() => {
+    if (kind !== 'models') return rows
+    return rows.filter((r: any) => {
+      if (fGender && r.gender !== fGender) return false
+      if (fLang && !String(r.languages || '').toLowerCase().includes(fLang)) return false
+      const age = firstNum(r.age)
+      if (fAgeFrom && (age === null || age < Number(fAgeFrom))) return false
+      if (fAgeTo && (age === null || age > Number(fAgeTo))) return false
+      if (fRateMax) {
+        const rate = firstNum(r.rate)
+        if (rate === null || rate > Number(fRateMax)) return false
+      }
+      const vids = Array.isArray(r.videoLinks) && r.videoLinks.length > 0
+      if (fVideo === 'yes' && !vids) return false
+      if (fVideo === 'no' && vids) return false
+      return true
+    })
+  }, [rows, kind, fGender, fLang, fAgeFrom, fAgeTo, fRateMax, fVideo])
+
   const invalidate = () => qc.invalidateQueries({ queryKey: ['organizer', kind] })
 
   const removeMut = useMutation({
@@ -136,14 +185,47 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
         </button>
       </div>
 
-      <div className="relative max-w-xs">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Поиск по имени…"
-          className="input pl-9 text-sm"
-        />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative max-w-xs">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Поиск по имени…"
+            className="input pl-9 text-sm"
+          />
+        </div>
+        {kind === 'models' && (
+          <>
+            <select value={fGender} onChange={e => setFGender(e.target.value)} className="input text-sm w-auto" title="Фильтр по полу">
+              <option value="">Пол: все</option>
+              <option value="female">Женский</option>
+              <option value="male">Мужской</option>
+            </select>
+            <select value={fLang} onChange={e => setFLang(e.target.value)} className="input text-sm w-auto max-w-[180px]" title="Фильтр по знанию языка">
+              <option value="">Язык: любой</option>
+              {langOptions.map(l => <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>)}
+            </select>
+            <input value={fAgeFrom} onChange={e => setFAgeFrom(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
+              placeholder="Возраст от" className="input text-sm w-[104px]" title="Минимальный возраст" />
+            <input value={fAgeTo} onChange={e => setFAgeTo(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
+              placeholder="до" className="input text-sm w-[72px]" title="Максимальный возраст" />
+            <input value={fRateMax} onChange={e => setFRateMax(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
+              placeholder="Ставка до, с." className="input text-sm w-[120px]" title="Максимальная ставка за съёмку (у «договорной» ставки числа нет — при фильтре она скрывается)" />
+            <select value={fVideo} onChange={e => setFVideo(e.target.value)} className="input text-sm w-auto" title="Наличие видео с работой">
+              <option value="">Видео: все</option>
+              <option value="yes">С видео</option>
+              <option value="no">Без видео</option>
+            </select>
+            {hasFilters && (
+              <button type="button" onClick={resetFilters}
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline">
+                <X size={13} /> Сбросить
+              </button>
+            )}
+            <span className="text-xs text-surface-400">{filtered.length} из {rows.length}</span>
+          </>
+        )}
       </div>
 
       <div className="card overflow-x-auto p-0">
@@ -167,7 +249,12 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
                 Пусто — добавьте первую запись кнопкой «＋ {cfg.addLabel}»
               </td></tr>
             )}
-            {rows.map((r: any) => (
+            {!isLoading && rows.length > 0 && filtered.length === 0 && (
+              <tr><td colSpan={columns.length + 1} className="px-4 py-10 text-center text-surface-400">
+                Ничего не найдено по фильтрам
+              </td></tr>
+            )}
+            {filtered.map((r: any) => (
               <tr key={r.id} onDoubleClick={() => setModal(r)}
                 className="border-b border-surface-100 dark:border-surface-700/60 last:border-0 hover:bg-surface-50 dark:hover:bg-surface-700/40 cursor-pointer">
                 {columns.map((c, i) => (
