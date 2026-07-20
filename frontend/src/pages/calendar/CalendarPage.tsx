@@ -152,9 +152,9 @@ export default function CalendarPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || t('common.error')),
   })
 
-  // Удаление задачи из edit-формы founder
+  // Удаление задачи из edit-формы календаря
   const deleteTaskMut = useMutation({
-    mutationFn: (id: string) => tasksApi.remove(id, 'Удалено основателем из календаря'),
+    mutationFn: (id: string) => tasksApi.remove(id, 'Удалено из календаря'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['calendar'] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
@@ -350,7 +350,9 @@ export default function CalendarPage() {
         return
       }
       const isOwnTask = e.taskId && (e.createdById === user?.id || e.assigneeId === user?.id)
-      if (isFounderView && isOwnTask) setEditingTaskId(e.taskId)
+      // Свою задачу редактируют по клику и менеджерские роли (рук. СММ /
+      // рук. видео), не только основатель и МП — CRUD своих задач.
+      if ((isFounderView || isManagerPlus) && isOwnTask) setEditingTaskId(e.taskId)
       else setDetailEventId(e.id)
     } else if (e.link) {
       window.location.href = e.link
@@ -770,8 +772,9 @@ export default function CalendarPage() {
         </Modal>
       )}
 
-      {/* Edit-модалка для founder при клике на свою задачу */}
-      {isFounderView && editingTaskId && (
+      {/* Edit-модалка при клике на СВОЮ задачу: основатель, МП и менеджерские
+          роли (рук. СММ / рук. видео). */}
+      {(isFounderView || isManagerPlus) && editingTaskId && (
         <Modal
           open={!!editingTaskId}
           onClose={() => setEditingTaskId(null)}
