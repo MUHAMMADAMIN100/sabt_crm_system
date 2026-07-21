@@ -12,13 +12,17 @@ import clsx from 'clsx'
  *  (1 SMM, 1 дизайнер, и т.д.). Порядок задаёт визуальный приоритет.
  *  Имя группы показывается в форме как «🎨 Дизайнеры». */
 const ASSIGNEE_GROUPS: Array<{ id: string; label: string; roles: string[] }> = [
+  { id: 'smm',        label: '📱 SMM-специалисты',      roles: ['smm_specialist'] },
+  { id: 'stories',    label: '📸 Сторисмейкеры',        roles: ['storymaker'] },
+  { id: 'scripts',    label: '✍️ Сценаристы',           roles: ['scriptwriter'] },
   { id: 'design',     label: '🎨 Дизайнеры',           roles: ['designer'] },
   { id: 'video',      label: '🎬 Видеографы',           roles: ['videographer'] },
   { id: 'editors',    label: '🎞 Монтажёры',            roles: ['video_editor'] },
   { id: 'organizers', label: '📋 Организаторы',         roles: ['organizer'] },
-  { id: 'smm',        label: '📱 SMM',                  roles: ['smm_specialist'] },
-  { id: 'stories',    label: '📸 Сторисмейкеры',        roles: ['storymaker'] },
-  { id: 'dev',        label: '💻 Разработчики',         roles: ['developer'] },
+  { id: 'targeting',  label: '🎯 Таргетологи',          roles: ['targetologist'] },
+  { id: 'publishers', label: '📤 Публикаторы',          roles: ['publisher'] },
+  { id: 'qa',         label: '✅ Контроль качества',    roles: ['qa'] },
+  { id: 'dev',        label: '💻 Разработка',           roles: ['developer', 'pm_dev'] },
   { id: 'sales',      label: '💰 Менеджеры по продажам',roles: ['sales_manager_smm', 'sales_manager_dev'] },
   { id: 'directors',  label: '👔 Руководители направлений', roles: ['smm_director', 'video_director'] },
   { id: 'leadership', label: '👑 Руководство',          roles: ['admin', 'founder', 'co_founder'] },
@@ -63,21 +67,39 @@ export default function TaskForm({
   // Watch the selected projectId so we can filter assignees by project members
   const selectedProjectId = useWatch({ control, name: 'projectId' }) || fixedProjectId
 
-  // Filter employees: members of the selected project + project manager
-  // (менеджер проекта тоже должен быть доступен в дропдауне assignee/reviewer
-  // даже если он не числится в списке members).
-  const filteredEmployees = useMemo(() => {
-    if (!employees) return []
-    if (!selectedProjectId || !projects) return employees
-    const project = projects.find((p: any) => p.id === selectedProjectId)
-    if (!project) return employees
-    const allowedIds = new Set<string>(
-      (project.members || []).map((m: any) => m.id),
+  // Исполнителем можно назначить любого действующего сотрудника — список не
+  // режется до команды проекта (иначе у проекта, где в команде один менеджер,
+  // в дропдауне оставался только он). Участников выбранного проекта помечаем
+  // бейджем «команда проекта» и поднимаем наверх внутри своих групп.
+  const assignableEmployees = useMemo(() => {
+    return (employees || []).filter((e: any) => {
+      // Без учётной записи назначать нельзя — assigneeId ссылается на users.
+      if (!(e.userId || e.user?.id)) return false
+      if ((e.status || 'active') === 'inactive') return false
+      if (e.user && (e.user.isBlocked || e.user.isActive === false)) return false
+      return true
+    })
+  }, [employees])
+
+  // Поиск по списку исполнителей — он теперь общекорпоративный, без фильтра
+  // легко потерять нужного человека.
+  const [assigneeSearch, setAssigneeSearch] = useState('')
+  const shownEmployees = useMemo(() => {
+    const q = assigneeSearch.trim().toLowerCase()
+    if (!q) return assignableEmployees
+    return assignableEmployees.filter((e: any) =>
+      String(e.fullName || e.name || '').toLowerCase().includes(q) ||
+      String(e.position || '').toLowerCase().includes(q),
     )
-    if (project.managerId) allowedIds.add(project.managerId)
-    if (allowedIds.size === 0) return employees
-    return employees.filter((e: any) => allowedIds.has(e.userId || e.id))
-  }, [employees, selectedProjectId, projects])
+  }, [assignableEmployees, assigneeSearch])
+
+  const teamIds = useMemo(() => {
+    const ids = new Set<string>()
+    const project = (projects || []).find((p: any) => p.id === selectedProjectId)
+    for (const m of project?.members || []) ids.add(m.id)
+    if (project?.managerId) ids.add(project.managerId)
+    return ids
+  }, [selectedProjectId, projects])
 
   useEffect(() => {
     if (initial) {
@@ -207,18 +229,24 @@ export default function TaskForm({
                 (можно выбрать нескольких — задача завершится когда все отметят свою часть)
               </span>
             </label>
-            {!selectedProjectId ? (
-              <div className="input bg-surface-50 dark:bg-surface-800 cursor-not-allowed text-surface-400 text-sm">
-                Сначала выберите проект
-              </div>
-            ) : filteredEmployees.length === 0 ? (
-              <p className="text-xs text-surface-600 dark:text-surface-400">Сначала добавьте сотрудника как участника проекта</p>
+            {assignableEmployees.length === 0 ? (
+              <p className="text-xs text-surface-600 dark:text-surface-400">Нет доступных сотрудников</p>
             ) : (
-              <AssigneeGroupedList
-                employees={filteredEmployees}
-                selected={selectedAssignees}
-                onToggle={toggleAssignee}
-              />
+              <>
+                <input
+                  type="text"
+                  value={assigneeSearch}
+                  onChange={e => setAssigneeSearch(e.target.value)}
+                  placeholder="Поиск по имени или должности…"
+                  className="input text-sm mb-2"
+                />
+                <AssigneeGroupedList
+                  employees={shownEmployees}
+                  selected={selectedAssignees}
+                  onToggle={toggleAssignee}
+                  teamIds={teamIds}
+                />
+              </>
             )}
             {selectedAssignees.length > 0 && (
               <AssigneeQueueEditor
@@ -258,7 +286,7 @@ export default function TaskForm({
               <label className="label">Проверяющий (PM/reviewer)</label>
               <select {...register('reviewerId')} className="input">
                 <option value="">— Не назначен —</option>
-                {(employees || []).map((e: any) => (
+                {assignableEmployees.map((e: any) => (
                   <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName || e.name}</option>
                 ))}
               </select>
@@ -408,10 +436,13 @@ function AssigneeQueueEditor({ queue, employees, setQueue }: {
 /** Сгруппированный по специализации список исполнителей.
  *  Каждая группа сворачиваемая, заголовок показывает общий счётчик и
  *  сколько уже выбрано из этой группы. */
-function AssigneeGroupedList({ employees, selected, onToggle }: {
+function AssigneeGroupedList({ employees, selected, onToggle, teamIds }: {
   employees: any[]
   selected: string[]
   onToggle: (uid: string) => void
+  /** Участники выбранного проекта — идут первыми в своей группе и получают
+   *  бейдж «в команде». Назначить при этом можно кого угодно. */
+  teamIds?: Set<string>
 }) {
   // Группируем по user.role (+ secondaryRole — сотрудник с двумя ролями,
   // например «Видеограф / Монтажёр», появляется в ОБЕИХ группах).
@@ -433,8 +464,17 @@ function AssigneeGroupedList({ employees, selected, onToggle }: {
       }
       if (!primaryGroup && !secondaryGroup) buckets[OTHER_GROUP.id].push(e)
     }
+    // Внутри группы: участники проекта сверху, дальше по алфавиту.
+    for (const id of Object.keys(buckets)) {
+      buckets[id].sort((a: any, b: any) => {
+        const at = teamIds?.has(a.userId || a.id) ? 0 : 1
+        const bt = teamIds?.has(b.userId || b.id) ? 0 : 1
+        if (at !== bt) return at - bt
+        return String(a.fullName || a.name || '').localeCompare(String(b.fullName || b.name || ''), 'ru')
+      })
+    }
     return buckets
-  }, [employees])
+  }, [employees, teamIds])
 
   // По умолчанию все группы развёрнуты
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -500,6 +540,12 @@ function AssigneeGroupedList({ employees, selected, onToggle }: {
                         {isSel && <Check size={10} className="text-white" strokeWidth={3} />}
                       </span>
                       <span className="text-sm flex-1 truncate">{e.fullName || e.name}</span>
+                      {teamIds?.has(uid) && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 shrink-0"
+                          title="Участник выбранного проекта">
+                          в команде
+                        </span>
+                      )}
                       {e.position && <span className="text-xs text-surface-400 truncate">— {e.position}</span>}
                     </li>
                   )

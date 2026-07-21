@@ -1143,14 +1143,11 @@ export default function ProjectDetailPage() {
               else createTask.mutate({ ...data, projectId: id })
             }}
             onClose={() => { setShowTaskForm(false); setEditingTask(null) }}
-            // Передаём в форму участников проекта + менеджера проекта
-            // (менеджер должен иметь возможность назначить себя проверяющим
-            // или исполнителем, даже если он не числится в members).
-            employees={(employees || []).filter((e: any) => {
-              const eid = e.userId || e.id
-              return (project?.members || []).some((m: any) => m.id === eid)
-                || project?.managerId === eid
-            })}
+            // Исполнителем можно назначить любого сотрудника — команда проекта
+            // не ограничивает список (иначе в проекте с одним участником некому
+            // ставить задачу). Участники проекта помечаются бейджем «в команде».
+            employees={employees || []}
+            projects={project ? [project] : []}
             loading={createTask.isPending || updateTask.isPending}
             initial={editingTask}
             fixedProjectId={id}

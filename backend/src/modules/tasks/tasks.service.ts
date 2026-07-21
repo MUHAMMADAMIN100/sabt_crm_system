@@ -685,10 +685,13 @@ export class TasksService implements OnModuleInit {
     // (МП по продажам создаёт задачи в календаре — должен их редактировать).
     // Исключение: если пользователь — реальный менеджер проекта задачи,
     // он имеет PM-полномочия и может редактировать любую задачу в нём.
+    // Проверка deny-by-default: ограничение действует на ВСЕХ, у кого нет
+    // PM-полномочий в этом проекте. Раньше здесь был список WORKER_ROLES, и
+    // роли вне него (developer, pm_dev) обходили проверку целиком — правили
+    // любую чужую задачу.
     const isPmHere = await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
     if (
       !isPmHere &&
-      WORKER_ROLES.includes(user.role as UserRole) &&
       task.assigneeId !== user.id &&
       task.createdById !== user.id
     ) {
