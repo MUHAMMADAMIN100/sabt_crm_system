@@ -69,6 +69,23 @@ const STAGE_ROLES: Record<string, string[]> = {
   ads: ['targetologist'],
 };
 
+/** Кому этап принадлежит С ТОЧКИ ЗРЕНИЯ KPI. Отличается от STAGE_ROLES тем,
+ *  что включает SMM-специалиста: он ведёт контент-план и публикации наравне
+ *  со сценаристом и публикатором, но уведомления по этим этапам ему не шлём —
+ *  поэтому список отдельный, а не расширение STAGE_ROLES. */
+const KPI_STAGE_ROLES: Record<string, string[]> = {
+  content_plan: ['scriptwriter', 'smm_specialist'],
+  organization: ['organizer'],
+  shooting: ['video_director', 'videographer'],
+  editing: ['video_editor'],
+  design: ['designer'],
+  internal_review: ['qa'],
+  client_approval: ['smm_director'],
+  ready_to_publish: ['publisher', 'smm_specialist'],
+  published: [],
+  ads: ['targetologist'],
+};
+
 /** Маршрут групповой карточки (Рилсы/Макеты) по этапам. Группа едет целиком;
  *  каждый элемент можно вынести отдельно (advanceItem) на тот же next-этап. */
 const GROUP_NEXT: Record<string, Record<string, string>> = {
@@ -710,6 +727,18 @@ export class WorkflowService implements OnModuleInit {
       status: 'active',
     });
     const saved = await this.repo.save(card);
+    // Появление карточки в колонке — это тоже приход работы к владельцам
+    // этапа. Без этого события карточки, заведённые сразу в «Дизайн» или
+    // «Контент-план», не попадали бы в KPI их исполнителей.
+    await this.logEvent(saved.id, 'stage_enter', {
+      fromStage: null, toStage: stage,
+      actor: await this.loadActor(viewer.id).catch(() => undefined as any),
+      message: `Создана карточка: ${STAGE_LABELS[stage] || stage}`,
+      meta: {
+        units: 1, deadline: saved.deadline || null,
+        owners: await this.stageOwners(projectId, stage, assigneeIds),
+      },
+    });
     // R15: уведомление ВСЕМ назначенным при создании — in-app + Telegram + Email.
     if (assigneeIds.length || editorIds.length) {
       const actor = await this.loadActor(viewer.id);
@@ -1080,10 +1109,26 @@ export class WorkflowService implements OnModuleInit {
         `SELECT COALESCE(MAX(position), -1)::int AS max FROM workflow_cards WHERE "projectId" = $1 AND stage = $2`,
         [projectId, initialStage],
       );
-      await this.repo.save(this.repo.create({
+      const savedGroup = await this.repo.save(this.repo.create({
         projectId, kind, title, stage: initialStage,
         position: Number(max) + 1, createdById: viewer.id, status: 'active', items,
       }));
+      // Группа появилась сразу на рабочем этапе (макеты → «Дизайн», рилсы →
+      // «Организация») — это приход работы к владельцам этапа. Без события
+      // KPI дизайнеров и организаторов не видел бы их основную загрузку.
+      const groupAssignees = (items || [])
+        .flatMap((it: any) => [it?.assigneeId, ...(it?.assigneeIds || [])])
+        .filter(Boolean) as string[];
+      await this.logEvent(savedGroup.id, 'stage_enter', {
+        fromStage: null, toStage: initialStage,
+        actor: await this.loadActor(viewer.id).catch(() => undefined as any),
+        message: `Создана группа: ${STAGE_LABELS[initialStage] || initialStage}`,
+        meta: {
+          units: Math.max(1, (items || []).length),
+          deadline: savedGroup.deadline || null,
+          owners: await this.stageOwners(projectId, initialStage, groupAssignees),
+        },
+      });
     }
   }
 
@@ -1424,6 +1469,12 @@ export class WorkflowService implements OnModuleInit {
       const actor = await this.loadActor(viewer.id);
       await this.logEvent(id, 'stage_enter', {
         fromStage: card.stage, toStage: 'ads', actor, message: 'Перенос в «Реклама»',
+        meta: {
+          units: 1, deadline: card.deadline || null,
+          owners: await this.stageOwners(card.projectId, 'ads', [
+            card.assigneeId, ...((card.assigneeIds as string[]) || []),
+          ]),
+        },
       });
     }
 
@@ -1526,7 +1577,10 @@ export class WorkflowService implements OnModuleInit {
       createdById: actor.id,
     });
     const saved = await this.repo.save(cover);
-    await this.logEvent(saved.id, 'stage_enter', { toStage: 'design', actor, message: 'Создана карточка обложки/заставки' });
+    await this.logEvent(saved.id, 'stage_enter', {
+      toStage: 'design', actor, message: 'Создана карточка обложки/заставки',
+      meta: { owners: await this.stageOwners(reel.projectId, 'design') },
+    });
     await this.notifyStageRole(reel.projectId, 'design', `🎨 Обложка/заставка: ${reel.title}`, 'Создана карточка обложки/заставки рилса', saved.id);
   }
 
@@ -1625,7 +1679,10 @@ export class WorkflowService implements OnModuleInit {
     await this.logEvent(saved.id, 'stage_enter', {
       fromStage: group.stage, toStage: stage, actor,
       message: `Из контент-плана → ${STAGE_LABELS[stage] || stage}`,
-      meta: { units: 1, deadline: group.deadline || null },
+      meta: {
+        units: 1, deadline: group.deadline || null,
+        owners: await this.stageOwners(group.projectId, stage, assigneeIds),
+      },
     });
     await this.notifyStageRole(group.projectId, stage, `➡️ ${STAGE_LABELS[stage] || stage}`, `«${saved.title}» на этапе «${STAGE_LABELS[stage] || stage}»`, saved.id);
     if (assigneeIds.length) await this.notifyAssigned(assigneeIds, {
@@ -1748,7 +1805,13 @@ export class WorkflowService implements OnModuleInit {
     const coverUrl = payload?.coverUrl || card.coverUrl || null;
     const introUrl = payload?.introUrl || card.introUrl || null;
     await this.repo.update(card.id, { coverUrl, introUrl, status: 'done' });
-    await this.logEvent(card.id, 'cover_done', { actor, message: 'Обложка/заставка готова' });
+    // meta.deadline — снимок срока на момент сдачи: KPI по нему решает,
+    // сделана ли обложка в срок. Без снимка сравнение шло бы с текущим
+    // сроком карточки, который к тому времени мог смениться.
+    await this.logEvent(card.id, 'cover_done', {
+      actor, message: 'Обложка/заставка готова',
+      meta: { units: 1, deadline: card.deadline || null },
+    });
     if (card.parentCardId) {
       await this.repo.update(card.parentCardId, { designDone: true });
       await this.runJoinCheck(card.parentCardId, actor);
@@ -1911,10 +1974,16 @@ export class WorkflowService implements OnModuleInit {
     // Оба поля читает KPI («этапов выполнено» / «соблюдено дедлайнов»).
     const units = (card.kind === 'reels' || card.kind === 'macros')
       ? Math.max(1, ((card.items as any[]) || []).length) : 1;
+    // owners — кому эта работа адресована на НОВОМ этапе. KPI считает по ним
+    // «сколько пришло в работу»; актуальный состав проекта на момент перехода
+    // позже уже не восстановить.
+    const owners = await this.stageOwners(card.projectId, newStage, [
+      card.assigneeId, ...((card.assigneeIds as string[]) || []),
+    ]);
     await this.logEvent(card.id, 'stage_enter', {
       fromStage, toStage: newStage, actor,
       message: opts.message || `Этап: ${STAGE_LABELS[newStage] || newStage}`,
-      meta: { units, deadline: closedDl },
+      meta: { units, deadline: closedDl, owners },
     });
     // R15: уведомление роли нового этапа + текущим исполнителям — с кнопками
     // «Сделал/Не сделал» в Telegram (нельзя для финальных этапов).
@@ -2032,6 +2101,36 @@ export class WorkflowService implements OnModuleInit {
        ORDER BY name ASC`,
       [clean],
     );
+  }
+
+  /** Кому адресована работа на этапе — снимок для KPI, пишется в meta.owners
+   *  события stage_enter. Логика: роль-владелец этапа сужается до конкретных
+   *  исполнителей карточки, если они назначены и подходят по роли; иначе —
+   *  все подходящие участники проекта. Пустой массив, если у этапа нет роли
+   *  (published) или в проекте некому его вести.
+   *
+   *  KPI («Работа по доске») строит по этому полю знаменатель: сколько работы
+   *  человеку пришло. Без снимка пришлось бы гадать по текущему составу
+   *  проекта, который со временем меняется. */
+  private async stageOwners(
+    projectId: string,
+    stage: string,
+    explicitIds: (string | null | undefined)[] = [],
+  ): Promise<string[]> {
+    const roles = KPI_STAGE_ROLES[stage] || [];
+    const explicit = Array.from(new Set(explicitIds.filter(Boolean) as string[]));
+    // У этапа нет профильной роли (например «Опубликовано») — работа
+    // адресована только явно назначенным, если они есть.
+    if (roles.length === 0) return explicit;
+    const byRole = await this.findProjectUsersByRole(projectId, roles).catch(() => [] as string[]);
+    if (explicit.length) {
+      const narrowed = explicit.filter(id => byRole.includes(id));
+      if (narrowed.length) return narrowed;
+      // Профильных исполнителей в проекте нет — работу делает тот, кого
+      // назначили, даже если его роль формально не «владелец» этапа.
+      if (byRole.length === 0) return explicit;
+    }
+    return byRole;
   }
 
   /** Активные пользователи проекта (участник или менеджер) с одной из ролей. */

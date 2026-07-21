@@ -104,6 +104,11 @@ export default function EmployeesKpiWidget() {
       ? arr.filter(k => group.roles.includes(k.role))
       : arr
     return filteredList.sort((a, b) => {
+      // Сотрудники без данных за период — в конец списка: их 0% не оценка,
+      // а отсутствие работы, и мешать их с реальными нулями нельзя.
+      const aNo = a.noData || a.items.length === 0
+      const bNo = b.noData || b.items.length === 0
+      if (aNo !== bNo) return aNo ? 1 : -1
       if (a.overallPercent !== b.overallPercent) return b.overallPercent - a.overallPercent
       const an = empByUserId.get(a.userId)?.fullName || ''
       const bn = empByUserId.get(b.userId)?.fullName || ''

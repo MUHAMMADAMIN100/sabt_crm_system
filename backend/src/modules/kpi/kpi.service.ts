@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { User, UserRole } from '../users/user.entity';
@@ -28,6 +28,8 @@ export interface UserKpi {
   periodFrom: string;
   periodTo: string;
   overallPercent: number;
+  /** Ни одной метрики за период — оценки нет (не путать с нулём). */
+  noData?: boolean;
   items: KpiItem[];
 }
 
@@ -104,6 +106,8 @@ function targetsFor(role: string): RoleTargets {
 
 @Injectable()
 export class KpiService {
+  private readonly logger = new Logger(KpiService.name);
+
   constructor(
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
@@ -203,6 +207,167 @@ export class KpiService {
       ev AS (SELECT * FROM fwd UNION ALL SELECT * FROM covers)`;
   }
 
+  /** «Работа по доске» — основная метрика производственных ролей.
+   *
+   *  Модель: «взял в работу → должен сдать». Каждый вход карточки на этап —
+   *  это работа, адресованная владельцам этапа (meta.owners, снимок на момент
+   *  входа). Дальше смотрим, что с ней стало:
+   *    · карточка ушла с этапа в срок      → зачёт 1.0 за единицу;
+   *    · ушла с опозданием                 → зачёт 0.5;
+   *    · всё ещё на этапе, срок прошёл     → зачёт 0, но в плане учитывается;
+   *    · всё ещё на этапе, срок не наступил (или срока нет) → НЕ учитывается
+   *      вовсе — незавершённая работа не занижает процент.
+   *  Уход с этапа засчитывается в любую сторону: возврат на доработку — это
+   *  тоже результат работы проверяющего, и без этого одна карточка попадала бы
+   *  в план дважды (пришла → вернул → пришла снова).
+   *
+   *  $1 = массив userId, $2/$3 = границы периода, $4 = сегодня (Душанбе).
+   *
+   *  owners старых событий (до появления снимка) восстанавливаем по факту:
+   *  кто увёл карточку с этапа, иначе текущие исполнители карточки. Поэтому
+   *  давние периоды считаются приблизительно, свежие — точно. */
+  private boardDeliveryCte(): string {
+    return `WITH stage_rank(stage, r) AS (VALUES ${STAGE_RANK_VALUES}),
+      arrivals AS (
+        -- DISTINCT ON (карточка, этап): один этап одной карточки — одна
+        -- единица работы за период, сколько бы раз её ни возвращали на
+        -- доработку. Иначе «пинг-понг» между этапами накручивал бы объём.
+        -- Берём ПОСЛЕДНИЙ приход: по нему и судим, чем всё кончилось.
+        SELECT DISTINCT ON (e."cardId", e."toStage")
+               e.id, e."cardId", e."toStage" AS stage, e."createdAt" AS at,
+               COALESCE((e.meta->>'units')::int, 1) AS units,
+               NULLIF(NULLIF(e.meta->'owners', 'null'::jsonb), '[]'::jsonb) AS owners_json,
+               c.stage AS cur_stage, c.deadline AS cur_deadline, c.title AS title,
+               c."assigneeId" AS cur_assignee, c."assigneeIds" AS cur_assignees
+        FROM unit_events e
+        -- LEFT JOIN: карточку могли удалить, но заработанный KPI не должен
+        -- задним числом исчезать из закрытого периода.
+        LEFT JOIN workflow_cards c ON c.id = e."cardId"
+        WHERE e.action = 'stage_enter'
+          AND e."createdAt" BETWEEN $2 AND $3
+          AND COALESCE(c.kind, '') <> 'kp'
+        ORDER BY e."cardId", e."toStage", e."createdAt" DESC, e.id DESC
+      ),
+      closed AS (
+        SELECT a.*, x."createdAt" AS closed_at, x."actorId"::text AS closer,
+               NULLIF(COALESCE(x.meta->>'deadline', a.cur_deadline::text), '')::date AS dl
+        FROM arrivals a
+        LEFT JOIN LATERAL (
+          SELECT e2."createdAt", e2."actorId", e2.meta
+          FROM unit_events e2
+          WHERE e2."cardId" = a."cardId"
+            -- >=, а не >: уход с этапа может быть записан в ту же секунду,
+            -- что и приход (быстрая цепочка действий). Само событие прихода
+            -- сюда не попадёт — у него другой fromStage.
+            AND e2."createdAt" >= a.at
+            AND (
+              (e2.action = 'stage_enter' AND e2."fromStage" = a.stage)
+              OR (e2.action = 'cover_done' AND a.stage = 'design')
+            )
+          -- id в сортировке — детерминированный тай-брейк, когда два события
+          -- записаны в одну и ту же миллисекунду.
+          ORDER BY e2."createdAt" ASC, e2.id ASC
+          LIMIT 1
+        ) x ON TRUE
+      ),
+      scored AS (
+        SELECT c.*,
+          CASE
+            -- Терминальные этапы («Реклама», «Опубликовано») выхода не имеют:
+            -- работа считается сделанной самим фактом прихода — кампания
+            -- заведена, публикация вышла. Срок здесь не с чем сравнивать:
+            -- снимок meta.deadline у такого события относится к ПРЕДЫДУЩЕМУ
+            -- этапу, поэтому просрочку на них не считаем.
+            WHEN c.stage IN ('ads', 'published') THEN 1.0
+            WHEN c.closed_at IS NOT NULL AND (c.dl IS NULL OR c.closed_at::date <= c.dl) THEN 1.0
+            WHEN c.closed_at IS NOT NULL THEN 0.5
+            ELSE 0.0
+          END AS weight,
+          (
+            c.stage IN ('ads', 'published')
+            OR c.closed_at IS NOT NULL
+            OR (c.cur_stage = c.stage AND c.cur_deadline IS NOT NULL AND c.cur_deadline < $4::date)
+          ) AS counted,
+          COALESCE(
+            c.owners_json,
+            CASE WHEN c.closer IS NOT NULL THEN jsonb_build_array(c.closer) END,
+            NULLIF(
+              COALESCE(c.cur_assignees, '[]'::jsonb)
+                || CASE WHEN c.cur_assignee IS NOT NULL
+                        THEN jsonb_build_array(c.cur_assignee::text) ELSE '[]'::jsonb END,
+              '[]'::jsonb)
+          ) AS own_json
+        FROM closed c
+      ),
+      board AS (
+        -- DISTINCT: один и тот же человек не должен получить одну работу
+        -- дважды, если он попал в список ответственных повторно (assigneeId
+        -- продублирован в assigneeIds, дубли в снимке owners).
+        SELECT DISTINCT ON (s.id, o.uid) s.*, o.uid
+        FROM scored s
+        CROSS JOIN LATERAL jsonb_array_elements_text(s.own_json) AS o(uid)
+        WHERE s.counted AND s.own_json IS NOT NULL
+      )`;
+  }
+
+  /** «План сторис» — основная метрика сторисмейкера. Единица учёта —
+   *  проекто-день: за каждый день периода каждый закреплённый за человеком
+   *  SMM-проект должен получить хотя бы одну историю.
+   *    · закрыл сам                → в плане и в зачёте;
+   *    · закрыл другой участник    → не в плане (команда подстраховала);
+   *    · не закрыл никто           → в плане, без зачёта.
+   *  Дни после сегодняшнего в план не идут — текущий месяц не выглядит
+   *  проваленным из-за ещё не наступивших дней.
+   *
+   *  $1 = userId, $2/$3 = границы периода, $4 = сегодня (Душанбе),
+   *  $5 = покрывает ли сотрудник ВСЕ SMM-проекты (флаг «сторисмейкер»). */
+  private storiesPlanSql(): string {
+    return `WITH bounds AS (SELECT $2::date AS d_from, LEAST($3::date, $4::date) AS d_to),
+      days AS (
+        SELECT generate_series(b.d_from, b.d_to, interval '1 day')::date AS day
+        FROM bounds b WHERE b.d_to >= b.d_from
+      ),
+      proj AS (
+        SELECT p.id, p."createdAt"::date AS since
+        FROM projects p
+        WHERE p."isArchived" = false
+          AND COALESCE(p."storiesArchived", false) = false
+          AND p."projectType" = 'SMM'
+          AND CASE WHEN p."smmData"->>'storiesPerDay' ~ '^[0-9]+$'
+                   THEN (p."smmData"->>'storiesPerDay')::int ELSE 3 END > 0
+          AND (
+            $5::boolean
+            OR EXISTS (SELECT 1 FROM project_members pm
+                       WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid)
+          )
+      ),
+      -- Дни до появления проекта в системе в план не идут: нельзя было
+      -- выкладывать истории по проекту, которого ещё не было.
+      grid AS (
+        SELECT proj.id AS pid, days.day
+        FROM proj CROSS JOIN days
+        WHERE days.day >= proj.since
+      ),
+      logs AS (
+        SELECT sl."projectId" AS pid, sl.date::date AS day,
+               SUM(CASE WHEN sl."employeeId" = $1::uuid THEN sl."storiesCount" ELSE 0 END) AS mine,
+               SUM(sl."storiesCount") AS total
+        FROM story_logs sl, bounds b
+        WHERE sl.date::date BETWEEN b.d_from AND b.d_to
+        GROUP BY 1, 2
+      )
+      SELECT
+        COUNT(*) FILTER (WHERE COALESCE(l.mine, 0) > 0)::int AS closed,
+        COUNT(*) FILTER (WHERE COALESCE(l.total, 0) = 0 OR COALESCE(l.mine, 0) > 0)::int AS planned
+      FROM grid g LEFT JOIN logs l ON l.pid = g.pid AND l.day = g.day`;
+  }
+
+  /** Сегодняшняя дата в часовом поясе компании (Душанбе). Все суточные
+   *  сравнения в KPI идут по ней, а не по UTC-дате сервера. */
+  private todayLocal(): string {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
+  }
+
   /** KPI одного юзера. Внутри использует bulk-методы (с массивом из одного
    *  id) — переиспользуем код. */
   async getUserKpi(userId: string, from?: string, to?: string): Promise<UserKpi | null> {
@@ -279,16 +444,16 @@ export class KpiService {
          GROUP BY "managerId"`,
         [userIds],
       ),
-      // Доска проектов: ЭТАПЫ, закрытые сотрудником за период (не только
-      // публикация). Фильтр по сотрудникам — ПОСЛЕ дедупликации, иначе при
-      // доработке зачёт мог бы уйти не последнему исполнителю.
+      // Доска проектов: «взял в работу → сдал». План — сколько работы пришло
+      // человеку на его этап, зачёт — что он с ней успел сделать.
       this.projectRepo.manager.query(
-        `${this.boardEventsCte()}
-         SELECT uid, SUM(units)::int AS done_count,
-                SUM(CASE WHEN dl IS NULL OR at::date <= dl THEN units ELSE 0 END)::int AS on_time_count
-         FROM ev WHERE uid = ANY($1::text[]) GROUP BY uid`,
-        [userIds, periodFrom, periodTo],
-      ).catch(() => [] as any[]),
+        `${this.boardDeliveryCte()}
+         SELECT uid,
+                SUM(units)::int AS planned,
+                ROUND(SUM(units * weight), 2)::float AS earned
+         FROM board WHERE uid = ANY($1::text[]) GROUP BY uid`,
+        [userIds, periodFrom, periodTo, this.todayLocal()],
+      ).catch(e => { this.logger.warn(`board KPI query failed: ${e?.message || e}`); return [] as any[]; }),
     ]);
 
     // 3) Индексируем по userId для быстрого доступа
@@ -302,8 +467,34 @@ export class KpiService {
     for (const r of storyRows) storiesByUid.set(r.uid, Number(r.total) || 0);
     const projectsByUid = new Map<string, number>();
     for (const r of projectRows) projectsByUid.set(r.uid, Number(r.cnt) || 0);
-    const boardByUid = new Map<string, { done: number; onTime: number }>();
-    for (const r of boardRows) boardByUid.set(r.uid, { done: Number(r.done_count) || 0, onTime: Number(r.on_time_count) || 0 });
+    const boardByUid = new Map<string, { planned: number; earned: number }>();
+    for (const r of boardRows) {
+      boardByUid.set(r.uid, { planned: Number(r.planned) || 0, earned: Number(r.earned) || 0 });
+    }
+
+    // 3b) Сторисмейкеры — план сторис по проекто-дням, запрос на каждого.
+    // Флаг isStoryMaker в employees означает «ведёт истории по ВСЕМ активным
+    // SMM-проектам»; без флага человек отвечает только за свои проекты.
+    const storyUserIds = userIds.filter(uid => {
+      const u = userMap.get(uid);
+      return u && isStoryMaker(u);
+    });
+    const storyPlanByUid = new Map<string, { closed: number; planned: number }>();
+    if (storyUserIds.length) {
+      const emps = await this.employeeRepo.find({ where: { userId: In(storyUserIds) } })
+        .catch(() => [] as Employee[]);
+      const coversAll = new Map<string, boolean>(
+        emps.map(e => [e.userId, !!e.isStoryMaker] as [string, boolean]),
+      );
+      await Promise.all(storyUserIds.map(async (uid) => {
+        const rows = await this.storyRepo.manager.query(
+          this.storiesPlanSql(),
+          [uid, periodFrom, periodTo, this.todayLocal(), coversAll.get(uid) ?? false],
+        ).catch(e => { this.logger.warn(`stories KPI query failed: ${e?.message || e}`); return [] as any[]; });
+        const r = rows?.[0];
+        if (r) storyPlanByUid.set(uid, { closed: Number(r.closed) || 0, planned: Number(r.planned) || 0 });
+      }));
+    }
 
     // 4) Для МП — запросы к ClientsService, параллельно
     const salesIds = userIds.filter(uid => {
@@ -329,42 +520,23 @@ export class KpiService {
       const targets = targetsFor(user.role);
       const t = tasksByUid.get(uid) || { done: 0, onTime: 0 };
       const actDays = activityByUid.get(uid) || 0;
-      const stories = storiesByUid.get(uid) || 0;
-      const projects = projectsByUid.get(uid) || 0;
 
       const items: KpiItem[] = [];
 
-      // Wave 14: убрали tasks_done и hours_logged — они показывали 0 за период
-      // и читались как баг рассинхрона с БД (StatCard рядом считает по всему
-      // времени и показывает другие числа). Оставляем только deadline_rate
-      // и activity_days как универсальные. Подсчёт `t.done`/`hours` ниже
-      // всё ещё нужен для deadline_rate.
+      // Роли задач — разработка и продажи: доской они не пользуются, их
+      // дисциплина считается по задачам (для продаж плюс воронка ниже).
+      // Все остальные производственные роли живут ТОЛЬКО доской, сторисмейкер —
+      // ТОЛЬКО сторис. «Активные дни» из оценки убраны: вход в систему не
+      // является работой.
+      const isTaskRole = SALES_ROLES.has(user.role)
+        || user.role === UserRole.DEVELOPER
+        || user.role === UserRole.PM_DEV;
+      // Сторисмейкер по основной роли оценивается только сторис. Если
+      // сторисмейкер — вторая роль (например, дизайнер + сторис), человек
+      // получает обе метрики: и доску, и сторис.
+      const isPureStoryMaker = user.role === UserRole.STORYMAKER;
 
-      // KPI по Доске проектов — для всех ролей, КРОМЕ менеджеров продаж и
-      // разработчиков (они остаются на задачах).
-      const isBoardRole = !SALES_ROLES.has(user.role) && user.role !== UserRole.DEVELOPER;
-      if (isBoardRole) {
-        const board = boardByUid.get(uid) || { done: 0, onTime: 0 };
-        const cardsTarget = this.scaleTarget(targets.tasksDone, days);
-        items.push({
-          key: 'cards_done',
-          label: 'Этапов выполнено',
-          target: cardsTarget,
-          value: board.done,
-          percent: Math.min(100, Math.round(board.done / cardsTarget * 100)),
-          done: board.done >= cardsTarget,
-        });
-        const dr = board.done > 0 ? Math.round((board.onTime / board.done) * 100) : 0;
-        items.push({
-          key: 'deadline_rate',
-          label: 'Соблюдено дедлайнов',
-          target: targets.deadlineRate,
-          value: dr,
-          percent: board.done > 0 ? Math.min(100, Math.round(dr / targets.deadlineRate * 100)) : 0,
-          done: board.done > 0 && dr >= targets.deadlineRate,
-        });
-      } else {
-        // Разработчики / менеджеры продаж — соблюдение дедлайнов по задачам.
+      if (isTaskRole) {
         const deadlineRate = t.done > 0 ? Math.round((t.onTime / t.done) * 100) : 0;
         items.push({
           key: 'deadline_rate',
@@ -374,42 +546,47 @@ export class KpiService {
           percent: t.done > 0 ? Math.min(100, Math.round(deadlineRate / targets.deadlineRate * 100)) : 0,
           done: t.done > 0 && deadlineRate >= targets.deadlineRate,
         });
+        const activityTarget = Math.min(days, this.scaleTarget(targets.activityDays, days));
+        items.push({
+          key: 'activity_days',
+          label: 'Активных дней',
+          target: activityTarget,
+          value: actDays,
+          percent: Math.min(100, Math.round(actDays / activityTarget * 100)),
+          done: actDays >= activityTarget,
+        });
+      } else if (!isPureStoryMaker) {
+        // «Работа по доске»: план — что пришло к нему на этап, зачёт — что
+        // сдано (в срок 1.0, с опозданием 0.5). Если работы не приходило,
+        // метрика не добавляется вовсе — ноль в такой ситуации был бы ложью.
+        const board = boardByUid.get(uid);
+        if (board && board.planned > 0) {
+          const percent = Math.min(100, Math.round((board.earned / board.planned) * 100));
+          items.push({
+            key: 'board_delivery',
+            label: 'Работа по доске',
+            target: board.planned,
+            value: Math.round(board.earned * 10) / 10,
+            percent,
+            done: percent >= 100,
+          });
+        }
       }
 
-      const activityTarget = Math.min(days, this.scaleTarget(targets.activityDays, days));
-      items.push({
-        key: 'activity_days',
-        label: 'Активных дней',
-        target: activityTarget,
-        value: actDays,
-        percent: Math.min(100, Math.round(actDays / activityTarget * 100)),
-        done: actDays >= activityTarget,
-      });
-
-      // Бонус-метрики по роли. Истории ведёт только сторисмейкер — у
-      // SMM-специалиста этой метрики нет (цели по историям к нему не относятся).
-      // Вторая роль «сторисмейкер» тоже даёт метрику (базовая норма 80/30дн).
+      // Сторис — проекто-дни: сколько дней-проектов закрыто из закреплённых.
       if (isStoryMaker(user)) {
-        const storiesTarget = this.scaleTarget(targets.storiesPosted ?? 80, days);
-        items.push({
-          key: 'stories_posted',
-          label: 'Историй опубликовано',
-          target: storiesTarget,
-          value: stories,
-          percent: Math.min(100, Math.round(stories / storiesTarget * 100)),
-          done: stories >= storiesTarget,
-        });
-      }
-
-      if (PM_ROLES.has(user.role) && targets.projectsManaged) {
-        items.push({
-          key: 'projects_managed',
-          label: 'Проектов под управлением',
-          target: targets.projectsManaged,
-          value: projects,
-          percent: Math.min(100, Math.round(projects / targets.projectsManaged * 100)),
-          done: projects >= targets.projectsManaged,
-        });
+        const sp = storyPlanByUid.get(uid);
+        if (sp && sp.planned > 0) {
+          const percent = Math.min(100, Math.round((sp.closed / sp.planned) * 100));
+          items.push({
+            key: 'stories_plan',
+            label: 'План сторис',
+            target: sp.planned,
+            value: sp.closed,
+            percent,
+            done: percent >= 100,
+          });
+        }
       }
 
       if (SALES_ROLES.has(user.role)) {
@@ -433,6 +610,9 @@ export class KpiService {
         periodFrom: periodFrom.toISOString(),
         periodTo: periodTo.toISOString(),
         overallPercent: Math.min(100, Math.max(0, overall)),
+        // Работы за период не было (отпуск, больничный, новичок, роль вне
+        // доски) — это не ноль, а отсутствие оценки. Фронт показывает «—».
+        noData: items.length === 0,
         items,
       } as UserKpi;
     }).filter(Boolean) as UserKpi[];
@@ -473,7 +653,10 @@ export class KpiService {
     // Нормализуем ключ: SalesDashboard передаёт `new_companies` (без префикса),
     // EmployeeKpiCard — `sales_new_companies` (с префиксом). Внутри switch
     // всегда работаем с префиксом sales_*. Универсальные метрики остаются как есть.
-    const UNIVERSAL_KEYS = new Set(['deadline_rate', 'activity_days', 'stories_posted', 'projects_managed', 'cards_done']);
+    const UNIVERSAL_KEYS = new Set([
+      'deadline_rate', 'activity_days', 'stories_posted', 'projects_managed', 'cards_done',
+      'board_delivery', 'stories_plan',
+    ]);
     const isBoardRole = user.role !== UserRole.SALES_MANAGER_SMM
       && user.role !== UserRole.SALES_MANAGER_DEV
       && user.role !== UserRole.DEVELOPER
@@ -507,6 +690,81 @@ export class KpiService {
       : (metric.startsWith('sales_') ? metric : `sales_${metric}`);
 
     switch (normalized) {
+      // ─── Работа по доске: что пришло в работу и чем закончилось ───────
+      case 'board_delivery': {
+        const rows: any[] = await this.projectRepo.manager.query(
+          `${this.boardDeliveryCte()}
+           SELECT id, title, stage, at, units, weight, closed_at, dl
+           FROM board WHERE uid = $1::text ORDER BY at DESC`,
+          [userId, periodFrom, periodTo, this.todayLocal()],
+        ).catch(() => []);
+        return rows.map(r => {
+          const w = Number(r.weight);
+          const status = w >= 1 ? '✓ сдано в срок'
+            : w > 0 ? '⚠ сдано с опозданием'
+            : '✖ не сдано, срок прошёл';
+          const units = Number(r.units) || 1;
+          return {
+            id: r.id,
+            title: r.title || 'Карточка удалена',
+            subtitle: `${STAGE_LABELS[r.stage] || r.stage}${units > 1 ? ` · ${units} шт.` : ''} · ${status}`,
+            date: r.closed_at ? new Date(r.closed_at).toISOString()
+              : (r.at ? new Date(r.at).toISOString() : null),
+            link: '/workflow-board',
+            meta: { weight: w, units, deadline: r.dl, arrivedAt: r.at },
+          };
+        });
+      }
+
+      // ─── План сторис: по каждому проекто-дню периода ──────────────────
+      case 'stories_plan': {
+        const emp = await this.employeeRepo.findOne({ where: { userId } }).catch(() => null);
+        const rows: any[] = await this.storyRepo.manager.query(
+          `WITH bounds AS (SELECT $2::date AS d_from, LEAST($3::date, $4::date) AS d_to),
+           days AS (
+             SELECT generate_series(b.d_from, b.d_to, interval '1 day')::date AS day
+             FROM bounds b WHERE b.d_to >= b.d_from
+           ),
+           proj AS (
+             SELECT p.id, p.name, p."createdAt"::date AS since FROM projects p
+             WHERE p."isArchived" = false
+               AND COALESCE(p."storiesArchived", false) = false
+               AND p."projectType" = 'SMM'
+               AND CASE WHEN p."smmData"->>'storiesPerDay' ~ '^[0-9]+$'
+                        THEN (p."smmData"->>'storiesPerDay')::int ELSE 3 END > 0
+               AND ($5::boolean OR EXISTS (
+                 SELECT 1 FROM project_members pm
+                 WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid))
+           ),
+           logs AS (
+             SELECT sl."projectId" AS pid, sl.date::date AS day,
+                    SUM(CASE WHEN sl."employeeId" = $1::uuid THEN sl."storiesCount" ELSE 0 END)::int AS mine,
+                    SUM(sl."storiesCount")::int AS total
+             FROM story_logs sl, bounds b
+             WHERE sl.date::date BETWEEN b.d_from AND b.d_to
+             GROUP BY 1, 2
+           )
+           SELECT proj.id AS pid, proj.name, days.day,
+                  COALESCE(l.mine, 0) AS mine, COALESCE(l.total, 0) AS total
+           FROM proj CROSS JOIN days
+           LEFT JOIN logs l ON l.pid = proj.id AND l.day = days.day
+           WHERE days.day >= proj.since
+             AND (COALESCE(l.total, 0) = 0 OR COALESCE(l.mine, 0) > 0)
+           ORDER BY days.day DESC, proj.name ASC`,
+          [userId, periodFrom, periodTo, this.todayLocal(), !!emp?.isStoryMaker],
+        ).catch(() => []);
+        return rows.map(r => ({
+          id: `${r.pid}-${r.day}`,
+          title: r.name || 'Проект',
+          subtitle: Number(r.mine) > 0
+            ? `✓ закрыто · ${r.mine} ${Number(r.mine) === 1 ? 'история' : 'историй'}`
+            : '✖ историй не было',
+          date: r.day ? new Date(r.day).toISOString() : null,
+          link: '/project-stories',
+          meta: { mine: Number(r.mine), total: Number(r.total) },
+        }));
+      }
+
       // ─── Sales: продвижения по воронке ────────────────────────────────
       // Источник №1 — lead_progress (новая таблица, без enum), №2 —
       // activity_logs (legacy). Берём оба, дедуплицируем по дате+лиду.

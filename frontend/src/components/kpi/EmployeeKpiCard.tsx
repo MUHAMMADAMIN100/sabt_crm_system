@@ -63,12 +63,16 @@ export interface UserKpi {
   periodFrom: string
   periodTo: string
   overallPercent: number
+  /** За период не было ни одной измеримой работы — оценки нет, а не ноль. */
+  noData?: boolean
   items: KpiItem[]
 }
 
 /** Иконка для каждого ключа метрики. tasks_done и hours_logged выпилены
  *  в Wave 14 — оставлены fallback'ом на случай старых клиентов в очереди. */
 const KEY_ICON: Record<string, any> = {
+  board_delivery: CheckSquare,
+  stories_plan: Camera,
   cards_done: CheckSquare,
   deadline_rate: Target,
   activity_days: Activity,
@@ -79,6 +83,13 @@ const KEY_ICON: Record<string, any> = {
   sales_cold_calls: Phone,
   sales_personal_emails: Mail,
   sales_meetings: Calendar,
+}
+
+/** Пояснение к метрике под прогресс-баром — из «1.5 / 3» само по себе
+ *  непонятно, откуда взялась половина. */
+const METRIC_HINT: Record<string, string> = {
+  board_delivery: 'Карточки, пришедшие к вам на этап: сдано в срок — 1, с опозданием — половина, просрочено и не сдано — 0.',
+  stories_plan: 'Проекты × дни: за день по каждому вашему проекту нужна хотя бы одна история.',
 }
 
 function colorByPercent(p: number): string {
@@ -187,6 +198,51 @@ export default function EmployeeKpiCard({
     />
   )
 
+  // Работы за период не было — показываем прочерк, а не 0%: ноль читается
+  // как «плохо работал», хотя оценивать нечего (отпуск, новичок, роль без
+  // карточек и сторис).
+  const noData = kpi.noData || kpi.items.length === 0
+  // Переключатель периода нужен и когда данных нет — иначе из состояния
+  // «нет данных» не выбраться на странице сотрудника.
+  const periodSwitch = showPeriodSelector && (
+    <div className="flex gap-1">
+      {(['today', 'week', 'month', 'prev_month'] as KpiPeriod[]).map(p => (
+        <button
+          key={p}
+          type="button"
+          onClick={() => setInternalPeriod(p)}
+          className={clsx(
+            'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+            (externalPeriod ?? internalPeriod) === p
+              ? 'bg-primary-600 text-white'
+              : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
+          )}
+        >
+          {KPI_PERIOD_LABELS[p]}
+        </button>
+      ))}
+    </div>
+  )
+  if (noData) {
+    return compact
+      ? <span className="text-xs text-surface-400 dark:text-surface-500" title="За выбранный период работы для оценки не было">— нет данных</span>
+      : (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl font-semibold text-surface-300 dark:text-surface-600">—</span>
+            <div>
+              <p className="text-sm font-medium text-surface-600 dark:text-surface-300">Нет данных за период</p>
+              <p className="text-xs text-surface-400 dark:text-surface-500">
+                {new Date(kpi.periodFrom).toLocaleDateString('ru-RU')}{' — '}
+                {new Date(kpi.periodTo).toLocaleDateString('ru-RU')}: работы для оценки не было
+              </p>
+            </div>
+          </div>
+          {periodSwitch}
+        </div>
+      )
+  }
+
   if (compact) {
     return (
       <>
@@ -223,8 +279,6 @@ export default function EmployeeKpiCard({
   }
 
   // Full mode
-  // Активный период для подсветки в selector'е (если selector внутренний).
-  const activePeriod = externalPeriod ?? internalPeriod
   return (
     <>
     <div className="space-y-3">
@@ -241,25 +295,7 @@ export default function EmployeeKpiCard({
             </p>
           </div>
         </div>
-        {showPeriodSelector && (
-          <div className="flex gap-1">
-            {(['today', 'week', 'month', 'prev_month'] as KpiPeriod[]).map(p => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setInternalPeriod(p)}
-                className={clsx(
-                  'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
-                  activePeriod === p
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
-                )}
-              >
-                {KPI_PERIOD_LABELS[p]}
-              </button>
-            ))}
-          </div>
-        )}
+        {periodSwitch}
       </div>
       <div className="space-y-2">
         {kpi.items.map(it => {
@@ -296,6 +332,11 @@ export default function EmployeeKpiCard({
                   style={{ width: `${Math.min(100, it.percent)}%` }}
                 />
               </div>
+              {METRIC_HINT[it.key] && (
+                <p className="text-[10px] text-surface-400 dark:text-surface-500 leading-snug">
+                  {METRIC_HINT[it.key]}
+                </p>
+              )}
             </button>
           )
         })}
