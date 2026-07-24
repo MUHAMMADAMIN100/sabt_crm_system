@@ -2052,6 +2052,38 @@ export class WorkflowService implements OnModuleInit {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  /** Форматирование ИИ-брифа макета/дизайна для Telegram: заголовки разделов
+   *  (ОСНОВНОЙ ЗАГОЛОВОК, ТЕКСТ, СТА, СПИСОК УСЛУГ, ВИЗУАЛ …) — жирным, а
+   *  разорванный на короткие строки текст под ними склеивается в сплошную
+   *  строку, чтобы бриф читался нормальным текстом на всю ширину, а не
+   *  «столбиком». Телефон переносит длинную строку сам. Возвращает уже
+   *  экранированный HTML (parse_mode HTML). */
+  private formatBriefForTg(raw: string): string {
+    const src = String(raw ?? '').trim();
+    if (!src) return '';
+    // Заголовок раздела: короткая строка целиком из ЗАГЛАВНЫХ кириллических
+    // букв (плюс цифры/пробел/дефис/слэш), напр. «СПИСОК УСЛУГ», «СТА».
+    const isHeader = (l: string) => {
+      const t = l.replace(/:\s*$/, '').trim();
+      return t.length > 0 && t.length <= 32
+        && /[А-ЯЁ]/.test(t) && /^[А-ЯЁ0-9 \-/]+$/.test(t);
+    };
+    // Пункт списка/визуала — оставляем на своей строке.
+    const isList = (l: string) => /^\s*(✓|✔|[-–—•*·]|\d+[.)])/.test(l);
+    const out: string[] = [];
+    let buf: string[] = [];
+    const flush = () => { if (buf.length) { out.push(this.escTg(buf.join(' '))); buf = []; } };
+    for (const rawLine of src.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) { flush(); continue; }
+      if (isHeader(line)) { flush(); out.push(`<b>${this.escTg(line.replace(/:\s*$/, ''))}</b>`); }
+      else if (isList(line)) { flush(); out.push(this.escTg(line)); }
+      else { buf.push(line); }
+    }
+    flush();
+    return out.join('\n');
+  }
+
   /** Подробная сводка карточки для Telegram-уведомлений: тип, проект,
    *  ПОЛНОЕ описание, дедлайн, публикация, съёмка. Пустая строка, если
    *  карточка не найдена. */
@@ -2080,7 +2112,7 @@ export class WorkflowService implements OnModuleInit {
     const lines = [
       `📌 <b>${this.escTg(card.title)}</b>${typeLabel ? ` (${typeLabel})` : ''}`,
       project ? `📁 Проект: ${this.escTg(project.name)}` : '',
-      card.description ? `📝 ${this.escTg(card.description)}` : '',
+      card.description ? `📝 ${this.formatBriefForTg(card.description)}` : '',
       card.deadline ? `📅 Дедлайн: ${fmtDate(card.deadline)}${card.deadlineTime ? `, ${card.deadlineTime}` : ''}` : '',
       card.publishDate ? `🗓 Публикация: ${fmtDate(card.publishDate)}${card.publishTime ? `, ${card.publishTime}` : ''}` : '',
       shoot ? `🎥 Съёмка: ${shoot}` : '',

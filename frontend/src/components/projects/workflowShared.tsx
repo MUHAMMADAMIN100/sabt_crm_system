@@ -345,11 +345,13 @@ export function CardFormModal({
   const projList = singleProject ? [project] : (projects || [])
   const activeProjectId = singleProject ? project.id : selectedProjectId
 
-  // «Одноразовая съёмка» — съёмка без клиентского проекта: выбор проекта
-  // становится необязательным, бэк складывает карточку в служебный проект
-  // «Одноразовые съёмки» (sentinel projectId='one-off').
+  // «Одноразовая съёмка/дизайн» — карточка без клиентского проекта: выбор
+  // проекта необязателен, бэк складывает её в служебный проект (sentinel
+  // projectId='one-off'). Доступно на входных этапах «Съёмка» и «Дизайн».
   const [oneOff, setOneOff] = useState(false)
-  const showOneOff = !card && !singleProject && effectiveStage === 'shooting'
+  const showOneOff = !card && !singleProject
+    && (effectiveStage === 'shooting' || effectiveStage === 'design')
+  const oneOffLabel = effectiveStage === 'design' ? 'Одноразовый дизайн' : 'Одноразовая съёмка'
   const projectPicked = oneOff ? true : !!activeProjectId
 
   // Исполнители — ВСЕ пользователи с ролью, валидной для этапа (не только
@@ -447,11 +449,11 @@ export function CardFormModal({
                       // «Одноразовые съёмки», серый селект не должен врать.
                       if (e.target.checked) setValue('projectId', '')
                     }} />
-                  Одноразовая съёмка <span className="text-surface-400 font-normal">— без клиентского проекта</span>
+                  {oneOffLabel} <span className="text-surface-400 font-normal">— без клиентского проекта</span>
                 </label>
                 {oneOff && (
                   <p className="text-[11px] text-surface-400 mt-1">
-                    Карточка попадёт в служебный проект «Одноразовые съёмки» — выбирать проект не нужно.
+                    Карточка попадёт в служебный проект «Одноразовые» — выбирать проект не нужно.
                   </p>
                 )}
               </div>

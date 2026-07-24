@@ -9,36 +9,66 @@ const api = axios.create({
 })
 
 /** Bearer-токен fallback на случай когда third-party cookies не работают
- *  (Chrome с anti-tracking, incognito, разные домены frontend/backend).
- *  Храним в sessionStorage:
- *    - живёт только в одной вкладке (закрыл — токен умер),
- *    - не доступен другим вкладкам/доменам,
- *    - не сохраняется между сессиями браузера.
- *  Безопаснее localStorage: автологин при следующем визите невозможен.
- *  Refresh-токен НЕ храним в JS-окружении — после истечения access (15 мин)
- *  в браузерах без cookies юзеру придётся перелогиниться. */
+ *  (Chrome с anti-tracking, incognito, разные домены frontend/backend —
+ *  наш случай: фронт на Vercel, бэк на Railway).
+ *  Храним в localStorage (по просьбе владельца — постоянный вход на устройстве):
+ *    - переживает закрытие/перезапуск браузера → сотрудник не логинится заново;
+ *    - refresh-токен живёт 30 дней (см. REFRESH_COOKIE_OPTS на бэке), поэтому
+ *      при следующем заходе access молча обновляется через /auth/refresh;
+ *    - «Выйти» полностью чистит хранилище (tokenStore.clear()).
+ *  Компромисс: на общем компьютере сессия сохранится, пока не нажать «Выйти».
+ *  Читаем и из sessionStorage — плавная миграция со старой схемы: у кого токен
+ *  остался в session, он подхватится и перепишется в localStorage. */
 const TOKEN_KEY = 'sabt-access-token'
 const REFRESH_KEY = 'sabt-refresh-token'
+const readEither = (key: string): string | null => {
+  try {
+    const local = localStorage.getItem(key)
+    if (local) return local
+    // Миграция со старой схемы: токен остался в sessionStorage (до перехода
+    // на localStorage). Переносим его в localStorage при первом чтении, иначе
+    // он потеряется при перезапуске браузера и юзеру пришлось бы войти заново.
+    const session = sessionStorage.getItem(key)
+    if (session) { try { localStorage.setItem(key, session) } catch {} }
+    return session
+  } catch { return null }
+}
 export const tokenStore = {
   getAccess(): string | null {
-    try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null }
+    return readEither(TOKEN_KEY)
   },
   getRefresh(): string | null {
-    try { return sessionStorage.getItem(REFRESH_KEY) } catch { return null }
+    return readEither(REFRESH_KEY)
   },
   set(accessToken?: string | null, refreshToken?: string | null) {
     try {
-      if (accessToken)  sessionStorage.setItem(TOKEN_KEY, accessToken)
-      if (refreshToken) sessionStorage.setItem(REFRESH_KEY, refreshToken)
+      if (accessToken)  localStorage.setItem(TOKEN_KEY, accessToken)
+      if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken)
     } catch {}
   },
   clear() {
     try {
+      localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(REFRESH_KEY)
+      // Подчищаем и старое место хранения, чтобы не всплыло при миграции.
       sessionStorage.removeItem(TOKEN_KEY)
       sessionStorage.removeItem(REFRESH_KEY)
     } catch {}
   },
 }
+
+// Одноразовая миграция при загрузке приложения: у пользователей со старой
+// версии токены остались в sessionStorage. Переносим ОБА сразу (не дожидаясь
+// цикла refresh — иначе refresh-токен потерялся бы при закрытии браузера, и
+// постоянный вход не сработал бы для тех, кто уже был в системе).
+try {
+  for (const k of [TOKEN_KEY, REFRESH_KEY]) {
+    if (!localStorage.getItem(k)) {
+      const s = sessionStorage.getItem(k)
+      if (s) localStorage.setItem(k, s)
+    }
+  }
+} catch {}
 
 /** Окно «грейс-периода» после успешного login/refresh. Auth store зовёт
  *  markJustAuthed() сразу после установки cookie. В течение этого окна

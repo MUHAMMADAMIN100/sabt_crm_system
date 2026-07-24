@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowApi, projectsApi } from '@/services/api.service'
 import { ConfirmDialog, Avatar, PageLoader } from '@/components/ui'
-import { Plus, LayoutGrid, SlidersHorizontal, Trash2, Eraser, History } from 'lucide-react'
+import { Plus, LayoutGrid, SlidersHorizontal, Trash2, Eraser, History, ChevronRight, Folder } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
@@ -121,6 +121,15 @@ export default function ProjectsBoardPage() {
   const [clearConfirm, setClearConfirm] = useState(false)
   const [kp, setKp] = useState<any>(null)          // 'new' | КП-карточка | null
   const [groupCard, setGroupCard] = useState<any>(null)
+  // «Опубликовано»: карточки сгруппированы в папки по проектам, свёрнуты по
+  // умолчанию (список этой колонки самый длинный). Храним раскрытые папки.
+  const [openFolders, setOpenFolders] = useState<Set<string>>(new Set())
+  const toggleFolder = (pid: string) =>
+    setOpenFolders(prev => {
+      const next = new Set(prev)
+      next.has(pid) ? next.delete(pid) : next.add(pid)
+      return next
+    })
   const isBoss = ['admin', 'founder', 'co_founder', 'smm_director'].includes(user?.role || '')
   const canManage = canManageBoard(actor)
   const showModal = !!editCard || !!createStage
@@ -244,6 +253,41 @@ export default function ProjectsBoardPage() {
     </div>
   )
 
+  // «Опубликовано» — папки по проектам (свёрнуты). Порядок карточек внутри
+  // сохраняется тот, что задал byStage (по дате публикации, новые сверху);
+  // проекты сортируем по имени.
+  const renderPublishedFolders = (items: any[]) => {
+    const groups = new Map<string, { name: string; cards: any[] }>()
+    for (const c of items) {
+      const pid = c.projectId || 'no-project'
+      if (!groups.has(pid)) groups.set(pid, { name: c.project?.name || 'Без проекта', cards: [] })
+      groups.get(pid)!.cards.push(c)
+    }
+    const ordered = [...groups.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name, 'ru'))
+    return (
+      <div className="space-y-1.5">
+        {ordered.map(([pid, g]) => {
+          const open = openFolders.has(pid)
+          return (
+            <div key={pid} className="rounded-lg bg-surface-100/60 dark:bg-surface-700/30">
+              <button
+                type="button"
+                onClick={() => toggleFolder(pid)}
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-left hover:bg-surface-200/60 dark:hover:bg-surface-700/60 rounded-lg transition-colors"
+              >
+                <ChevronRight size={13} className={clsx('shrink-0 text-surface-400 transition-transform', open && 'rotate-90')} />
+                <Folder size={13} className="shrink-0 text-primary-500" />
+                <span className="text-[12px] font-semibold text-surface-700 dark:text-surface-200 truncate flex-1">{g.name}</span>
+                <span className="text-[10px] font-semibold min-w-[18px] h-[18px] px-1 rounded-full bg-surface-200 dark:bg-surface-600 text-surface-600 dark:text-surface-300 inline-flex items-center justify-center shrink-0">{g.cards.length}</span>
+              </button>
+              {open && <div className="space-y-2 px-1 pb-1.5">{g.cards.map(renderCard)}</div>}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   if (!showDev && isLoading) return <PageLoader />
 
   return (
@@ -344,7 +388,9 @@ export default function ProjectsBoardPage() {
               <div className="space-y-2 min-h-[60px]">
                 {items.length === 0
                   ? <p className="text-[11px] text-surface-300 dark:text-surface-600 text-center py-4 select-none">Пусто</p>
-                  : items.map(renderCard)}
+                  : stage.key === 'published'
+                    ? renderPublishedFolders(items)
+                    : items.map(renderCard)}
               </div>
             </div>
           )

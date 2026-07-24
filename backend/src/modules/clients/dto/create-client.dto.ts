@@ -67,10 +67,11 @@ export class CreateClientDto {
   channel?: string;
 
   /** Тип звонка для KPI «Холодные звонки». Селект в форме клиента —
-   *  Холодный / Нейтральный / Горячий. Считается KPI только когда 'cold'. */
-  @ApiPropertyOptional({ enum: ['cold', 'neutral', 'hot'] })
+   *  Холодный / Нейтральный / Горячий / Повторный звонок. Считается KPI
+   *  только когда 'cold' (повторный на KPI не влияет). */
+  @ApiPropertyOptional({ enum: ['cold', 'neutral', 'hot', 'repeat'] })
   @IsOptional() @IsString() @MaxLength(20)
-  callType?: 'cold' | 'neutral' | 'hot';
+  callType?: 'cold' | 'neutral' | 'hot' | 'repeat';
 
   /** Статус персонального письма для KPI «Персональные письма».
    *   sent — «Написал» (+1 в KPI за сегодня)

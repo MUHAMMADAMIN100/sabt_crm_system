@@ -1025,6 +1025,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
               <option value="cold">Холодный</option>
               <option value="neutral">Нейтральный</option>
               <option value="hot">Горячий</option>
+              <option value="repeat">Повторный звонок</option>
             </select>
             <p className="text-[11px] text-surface-400 mt-1">
               «Холодный» → +1 в KPI «Холодные звонки» за сегодня
