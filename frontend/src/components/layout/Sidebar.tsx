@@ -9,7 +9,7 @@ import {
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, UserPlus,
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
   Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal,
-  Package, PersonStanding, MapPin, ClipboardList, StickyNote,
+  Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -52,6 +52,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/workflow-board', icon: Trello,         label: 'Доска проектов',    permission: 'projects.view' },
     { to: '/project-stories', icon: ImageIcon,     label: 'Истории по проектам', permission: 'stories.manage' },
     { to: '/my-notes',      icon: StickyNote,      label: 'Заметки',           permission: 'dashboard' },
+    // Поручения от руководства — есть у КАЖДОГО сотрудника (permission
+    // 'dashboard' есть у всех ролей), поэтому раздел виден всем.
+    { to: '/tasks',         icon: ClipboardCheck,  label: 'Задачи от руководителя', permission: 'tasks.view' },
     { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
     { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
     // Ежедневный автоотчёт по СММ-команде — только основатель.

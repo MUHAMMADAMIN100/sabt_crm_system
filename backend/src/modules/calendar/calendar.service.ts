@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task } from '../tasks/task.entity';
@@ -28,6 +28,8 @@ function computeTaskProgress(t: Task): number {
 
 @Injectable()
 export class CalendarService {
+  private readonly logger = new Logger(CalendarService.name);
+
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
@@ -45,6 +47,13 @@ export class CalendarService {
   ) {
     if (from && to && new Date(from) > new Date(to)) {
       throw new BadRequestException('from date must be before to date');
+    }
+    // Фронт присылает границы датами без времени ('2026-07-31'). Postgres
+    // трактует такую верхнюю границу как 00:00, из-за чего ВСЁ, что назначено
+    // на последний день позже полуночи (встреча в 15:00, повторный звонок,
+    // дедлайн задачи), выпадало из выборки. Растягиваем `to` до конца суток.
+    if (to && /^\d{4}-\d{2}-\d{2}$/.test(to.trim())) {
+      to = `${to.trim()} 23:59:59.999`;
     }
     const taskQb = this.taskRepo
       .createQueryBuilder('t')
@@ -156,6 +165,29 @@ export class CalendarService {
       leads = await leadQb.getMany();
     }
 
+    // Повторные звонки (repeatCallAt) — отдельные события, рисуются оранжевым.
+    // Видимость та же, что у встреч: свои — менеджеру, все — руководству.
+    let repeatLeads: ClientLead[] = [];
+    if (showClientMeetings && (salesSegment || isTop)) {
+      const rcQb = this.leadRepo
+        .createQueryBuilder('c')
+        .leftJoinAndSelect('c.owner', 'owner')
+        .where('c."repeatCallAt" IS NOT NULL')
+        .andWhere('c."repeatCallAt" BETWEEN :from AND :to', { from, to })
+        .andWhere(`c.status NOT IN ('won', 'lost')`);
+      if (salesSegment) {
+        rcQb.andWhere('c.ownerId = :leadViewer', { leadViewer: viewerId ?? null });
+      } else if (employeeId) {
+        rcQb.andWhere('c.ownerId = :empId', { empId: employeeId });
+      }
+      // catch — защита на первый деплой, пока идемпотентный DDL ещё не добавил
+      // колонку repeatCallAt. Ошибку логируем, а не глотаем молча.
+      repeatLeads = await rcQb.getMany().catch((e: any) => {
+        this.logger.warn(`repeatCallAt events query failed: ${e?.message || e}`);
+        return [] as ClientLead[];
+      });
+    }
+
     const [tasks, projects] = await Promise.all([taskQb.getMany(), projectQb.getMany()]);
 
     const clientMeetingEvents = leads.map(c => {
@@ -172,6 +204,25 @@ export class CalendarService {
         date: iso,
         startDate: iso,
         type: 'client_meeting',
+        status: c.status,
+        assigneeName: c.owner?.name,
+        assigneeId: c.ownerId,
+        createdById: c.ownerId,
+        scope: 'personal',
+        link: `/clients?id=${c.id}`,
+      };
+    });
+
+    const repeatCallEvents = repeatLeads.map(c => {
+      const iso = new Date(c.repeatCallAt as Date).toISOString();
+      return {
+        id: `client-repeat-call-${c.id}`,
+        clientId: c.id,
+        title: `Повторно позвонить: ${c.name}`,
+        description: c.nextStep || null,
+        date: iso,
+        startDate: iso,
+        type: 'client_repeat_call',
         status: c.status,
         assigneeName: c.owner?.name,
         assigneeId: c.ownerId,
@@ -232,6 +283,7 @@ export class CalendarService {
     return [
       ...taskEvents,
       ...clientMeetingEvents,
+      ...repeatCallEvents,
       ...projectStartEvents,
       ...projectEndEvents,
     ].sort(

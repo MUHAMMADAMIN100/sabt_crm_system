@@ -20,6 +20,12 @@ import { DailyReport } from '../reports/daily-report.entity';
 import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES } from '../../common/sales-segment';
 
 const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR];
+/** Управляющие роли — их задачи попадают в раздел «Задачи от руководителя».
+ *  Массив строк: подставляется в SQL-параметр (u.role = ANY(...)). */
+const MANAGEMENT_ROLES: string[] = [
+  UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
+  UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
+];
 const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.VIDEO_EDITOR, UserRole.ORGANIZER, UserRole.STORYMAKER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.VIDEOGRAPHER, UserRole.SCRIPTWRITER, UserRole.QA, UserRole.PUBLISHER, UserRole.TARGETOLOGIST, UserRole.EMPLOYEE];
 
 @Injectable()
@@ -745,17 +751,34 @@ export class TasksService implements OnModuleInit {
     const isSelfCreated = task.createdById === user.id && task.assigneeId === user.id;
 
     // Workers (except SMM) cannot directly set status to DONE without uploading
-    // at least one result file/note. SMM-специалист и автор-исполнитель
-    // собственной задачи могут закрывать без файлов.
+    // at least one result file/note. SMM-специалист, автор-исполнитель
+    // собственной задачи и поручения ОТ РУКОВОДСТВА могут закрывать без файлов
+    // (последнее — раздел «Задачи от руководителя»: это поручения, а не
+    // производственные работы с артефактом).
     if (
       dto.status === TaskStatus.DONE &&
       WORKER_ROLES.includes(user.role as UserRole) &&
       !isSmmSpecialist &&
       !isSelfCreated
     ) {
-      const resultCount = await this.taskResultsService.countByTask(id);
-      if (resultCount === 0) {
-        throw new BadRequestException('Загрузите результат работы перед тем как отметить задачу выполненной');
+      // Роль автора запрашиваем ЛЕНИВО — только когда правило иначе сработает,
+      // чтобы не ходить в users на каждом апдейте статуса.
+      let isFromManagement = false;
+      if (task.createdById && task.createdById !== user.id) {
+        const creator = await this.userRepo.findOne({
+          where: { id: task.createdById },
+          select: ['id', 'role', 'secondaryRole'] as any,
+        }).catch(() => null);
+        isFromManagement = !!creator && (
+          MANAGEMENT_ROLES.includes(creator.role as string)
+          || MANAGEMENT_ROLES.includes((creator as any).secondaryRole as string)
+        );
+      }
+      if (!isFromManagement) {
+        const resultCount = await this.taskResultsService.countByTask(id);
+        if (resultCount === 0) {
+          throw new BadRequestException('Загрузите результат работы перед тем как отметить задачу выполненной');
+        }
       }
     }
 
@@ -976,6 +999,59 @@ export class TasksService implements OnModuleInit {
       .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
       .orderBy('t.deadline', 'ASC', 'NULLS LAST');
 
+    const tasks = await qb.getMany();
+    if (tasks.length > 0) {
+      const map = await this.loadAssignees(tasks.map(t => t.id));
+      for (const t of tasks) (t as any).assignees = map.get(t.id) || [];
+    }
+    return tasks;
+  }
+
+  /** Задачи ОТ РУКОВОДСТВА, назначенные сотруднику. Раздел «Задачи от
+   *  руководителя»: основатель/сооснователь/админ/руководители направлений
+   *  ставят задачу — сотрудник видит её и меняет статус. Личные задачи,
+   *  созданные самим сотрудником, и задачи от коллег сюда не попадают. */
+  async getTasksFromManagement(userId: string) {
+    const qb = this.repo.createQueryBuilder('t')
+      .leftJoinAndSelect('t.assignee', 'assignee')
+      .leftJoinAndSelect('t.createdBy', 'createdBy')
+      .leftJoinAndSelect('t.project', 'project')
+      .where(
+        `(t."assigneeId" = :uid
+          OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta."taskId" = t.id AND ta."userId" = :uid))`,
+        { uid: userId },
+      )
+      // Автор — управляющая роль и это не сам сотрудник. Фильтруем по уже
+      // присоединённому createdBy, без отдельного подзапроса к users.
+      .andWhere(`t."createdById" IS NOT NULL AND t."createdById" <> :uid`)
+      .andWhere(
+        // Синтаксис СВОЙСТВ TypeORM (createdBy.secondaryRole), не сырые
+        // кавычки: иначе алиас не резолвится и запрос падает.
+        `(createdBy.role = ANY(:mgmt) OR createdBy.secondaryRole = ANY(:mgmt))`,
+        { mgmt: MANAGEMENT_ROLES },
+      )
+      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
+      .orderBy('t.deadline', 'ASC', 'NULLS LAST');
+    const tasks = await qb.getMany();
+    if (tasks.length > 0) {
+      const map = await this.loadAssignees(tasks.map(t => t.id));
+      for (const t of tasks) (t as any).assignees = map.get(t.id) || [];
+    }
+    return tasks;
+  }
+
+  /** Задачи, которые ВЫДАЛ текущий пользователь (вкладка «Я выдал») — чтобы
+   *  видеть, на каком статусе задача у каждого сотрудника. */
+  async getTasksAssignedByMe(userId: string) {
+    const qb = this.repo.createQueryBuilder('t')
+      .leftJoinAndSelect('t.assignee', 'assignee')
+      .leftJoinAndSelect('t.createdBy', 'createdBy')
+      .leftJoinAndSelect('t.project', 'project')
+      .where('t."createdById" = :uid', { uid: userId })
+      // Свои личные заметки-задачи в этот список не тянем.
+      .andWhere(`t.scope <> 'personal'`)
+      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
+      .orderBy('t.deadline', 'ASC', 'NULLS LAST');
     const tasks = await qb.getMany();
     if (tasks.length > 0) {
       const map = await this.loadAssignees(tasks.map(t => t.id));

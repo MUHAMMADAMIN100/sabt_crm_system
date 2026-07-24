@@ -72,6 +72,20 @@ export class TasksController {
     return this.service.getMyTasks(req.user.id);
   }
 
+  /** Раздел «Задачи от руководителя»: поручения, выданные сотруднику
+   *  основателем/сооснователем/админом/руководителями направлений. */
+  @Get('from-management')
+  getFromManagement(@Request() req) {
+    return this.service.getTasksFromManagement(req.user.id);
+  }
+
+  /** Вкладка «Я выдал» — задачи, поставленные текущим пользователем: видно,
+   *  на каком статусе задача у каждого сотрудника. */
+  @Get('assigned-by-me')
+  getAssignedByMe(@Request() req) {
+    return this.service.getTasksAssignedByMe(req.user.id);
+  }
+
   @Get('overdue')
   @Roles(ADMIN, FOUNDER, CO_FOUNDER, SMM_DIRECTOR, VIDEO_DIRECTOR)
   getOverdue(@Request() req) { return this.service.getOverdueTasks(req.user); }

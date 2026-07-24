@@ -135,8 +135,17 @@ export class ClientsService implements OnModuleInit {
       await this.repo.manager.query(
         `ALTER TABLE client_leads ADD COLUMN IF NOT EXISTS "callType" varchar`,
       );
+      // Повторный звонок — отдельная дата+время (не путать с встречей
+      // nextContactAt). Рисуется в календаре менеджера оранжевым.
+      await this.repo.manager.query(
+        `ALTER TABLE client_leads ADD COLUMN IF NOT EXISTS "repeatCallAt" timestamp with time zone`,
+      );
+      await this.repo.manager.query(
+        `CREATE INDEX IF NOT EXISTS idx_client_leads_repeat_call
+         ON client_leads("repeatCallAt") WHERE "repeatCallAt" IS NOT NULL`,
+      );
     } catch (e: any) {
-      this.logger.warn(`ALTER TABLE client_leads callType failed: ${e?.message || e}`);
+      this.logger.warn(`ALTER TABLE client_leads callType/repeatCallAt failed: ${e?.message || e}`);
     }
     try {
       // lead_actions — журнал действий менеджера-СОБЫТИЙ (а не состояний).

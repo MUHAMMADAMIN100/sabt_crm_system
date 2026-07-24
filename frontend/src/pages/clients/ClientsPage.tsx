@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal, EmptyState, PageLoader, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Edit, Trash2, List, LayoutGrid, Phone, Instagram, Mail, Calendar as CalendarIcon, Flame, Snowflake, Sun, User as UserIcon, AlertCircle, Circle, Check } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, List, LayoutGrid, Phone, PhoneCall, Instagram, Mail, Calendar as CalendarIcon, Flame, Snowflake, Sun, User as UserIcon, AlertCircle, Circle, Check } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker, DateTimePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
@@ -859,6 +859,8 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
     // настенное время YYYY-MM-DDTHH:mm, поэтому конвертируем UTC→локаль
     // через date-fns (иначе показывало бы время на −5ч от заданного).
     nextContactAt: initial?.nextContactAt ? format(new Date(initial.nextContactAt), "yyyy-MM-dd'T'HH:mm") : '',
+    // Повторный звонок — та же конвертация UTC→локальное время для пикера.
+    repeatCallAt: initial?.repeatCallAt ? format(new Date(initial.repeatCallAt), "yyyy-MM-dd'T'HH:mm") : '',
     rejectionReason: initial?.rejectionReason || '',
   } })
 
@@ -881,6 +883,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
     lastContactAt: data.lastContactAt || null,
     // datetime-local → ISO. Если время не выбрано, бэкенд получит null.
     nextContactAt: data.nextContactAt ? new Date(data.nextContactAt).toISOString() : null,
+    repeatCallAt: data.repeatCallAt ? new Date(data.repeatCallAt).toISOString() : null,
     // Старое поле больше не редактируется напрямую, но оставляем его в payload
     // как «собранный текст» — для бэк-совместимости с местами, где оно ещё читается.
     contactInfo: [data.contactPhone, data.contactInstagram, data.contactEmail]
@@ -1025,7 +1028,13 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
               <option value="cold">Холодный</option>
               <option value="neutral">Нейтральный</option>
               <option value="hot">Горячий</option>
-              <option value="repeat">Повторный звонок</option>
+              {/* Легаси: у части лидов остался тип «Повторный звонок» с прошлой
+                  версии. Показываем его, только если он реально стоит — иначе
+                  селект был бы пустым и значение молча терялось при сохранении.
+                  Повторный звонок теперь задаётся отдельным полем с датой. */}
+              {watch('callType') === 'repeat' && (
+                <option value="repeat">Повторный звонок (устаревшее — задайте дату ниже)</option>
+              )}
             </select>
             <p className="text-[11px] text-surface-400 mt-1">
               «Холодный» → +1 в KPI «Холодные звонки» за сегодня
@@ -1058,6 +1067,16 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
               render={({ field }) => <DateTimePicker value={field.value || ''} onChange={field.onChange} />} />
             <p className="text-[10px] text-surface-400 mt-1">
               Появится в Календаре на выбранный час и придёт напоминание.
+            </p>
+          </div>
+          <div>
+            <label className="label inline-flex items-center gap-1">
+              <PhoneCall size={12} className="text-orange-500" /> Повторный звонок
+            </label>
+            <Controller name="repeatCallAt" control={control}
+              render={({ field }) => <DateTimePicker value={field.value || ''} onChange={field.onChange} />} />
+            <p className="text-[10px] text-surface-400 mt-1">
+              В вашем Календаре на этот день и час появится оранжевая отметка «Повторно позвонить».
             </p>
           </div>
           <CollapsibleField

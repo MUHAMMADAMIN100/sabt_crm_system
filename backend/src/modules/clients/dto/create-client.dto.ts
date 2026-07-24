@@ -63,6 +63,12 @@ export class CreateClientDto {
   @ApiPropertyOptional() @IsOptional() @IsISO8601()
   nextContactAt?: string;
 
+  /** Дата+время повторного звонка — отдельно от встречи. Очищается передачей
+   *  null (форма шлёт именно null, когда менеджер снял напоминание);
+   *  пустая строка не является валидной датой и будет отклонена. */
+  @ApiPropertyOptional() @IsOptional() @IsISO8601()
+  repeatCallAt?: string | null;
+
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(50)
   channel?: string;
 

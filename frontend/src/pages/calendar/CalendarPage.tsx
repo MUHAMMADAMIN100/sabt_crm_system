@@ -20,6 +20,9 @@ const TYPE_COLORS: Record<string, string> = {
   project_end:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50',
   task:          'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50',
   client_meeting:'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50',
+  // 🟠 Повторный звонок клиенту — отдельная оранжевая отметка, чтобы менеджер
+  // сразу видел: в этот день и час надо перезвонить.
+  client_repeat_call: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-300 dark:border-orange-800',
 }
 
 // Scope чипы для задач — нужны для визуальной идентификации в календаре.
@@ -294,11 +297,12 @@ export default function CalendarPage() {
   const projectEvents = (events || []).filter((e: any) => {
     if (isPersonalView) {
       // МП по продажам — встречи с клиентами из онбординга всегда показываем.
-      if (e.type === 'client_meeting') return true
+      if (e.type === 'client_meeting' || e.type === 'client_repeat_call') return true
       if (e.type !== 'task') return false
       return e.assigneeId === user?.id || e.createdById === user?.id
     }
-    return e.type === 'project_start' || e.type === 'project_end' || e.type === 'task' || e.type === 'client_meeting'
+    return e.type === 'project_start' || e.type === 'project_end' || e.type === 'task'
+      || e.type === 'client_meeting' || e.type === 'client_repeat_call'
   })
 
   const eventsForDay = (day: Date) =>
@@ -339,7 +343,7 @@ export default function CalendarPage() {
   // Открытие события: МП по СММ — переход на подробную страницу задачи;
   // своя задача founder'а → edit-форма; иначе → side drawer.
   const openEvent = (e: any) => {
-    if (e.type === 'client_meeting' && e.clientId) {
+    if ((e.type === 'client_meeting' || e.type === 'client_repeat_call') && e.clientId) {
       // Карточка клиента прямо в календаре — без перехода на Базу клиентов.
       setClientCardId(e.clientId)
       return
@@ -725,6 +729,9 @@ export default function CalendarPage() {
             </span>
           </>
         )}
+        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-300 dark:border-orange-800">
+          📞 Повторный звонок
+        </span>
         <span className="ml-auto text-[11px] text-surface-400 dark:text-surface-500">
           💡 Задачи можно перетаскивать на другой день
         </span>

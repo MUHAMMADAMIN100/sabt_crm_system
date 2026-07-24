@@ -122,6 +122,12 @@ export class ClientLead {
   @Column({ type: 'timestamp with time zone', nullable: true })
   nextContactAt: Date;
 
+  /** Дата+время ПОВТОРНОГО звонка клиенту — отдельно от встречи
+   *  (nextContactAt). Показывается в календаре менеджера оранжевым
+   *  событием «Повторно позвонить». На KPI встреч не влияет. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  repeatCallAt: Date | null;
+
   /** Канал общения: whatsapp, instagram, telegram, email, call, ... */
   @Column({ nullable: true })
   channel: string;

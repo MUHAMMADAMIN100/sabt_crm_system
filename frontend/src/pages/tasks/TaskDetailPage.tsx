@@ -76,11 +76,11 @@ function slugifyForBranch(title: string): string {
     .slice(0, 50)
 }
 
+// Модель статусов — 4 значения (см. lib/taskStatus.ts). Промежуточных
+// 'review'/'returned' в системе нет: бэкенд отклоняет их с 400.
 const STATUS_FLOW: Record<string, string[]> = {
   new:         ['in_progress'],
-  in_progress: ['review'],
-  returned:    ['in_progress'],
-  review:      [],
+  in_progress: ['done'],
   done:        [],
   cancelled:   [],
 }
@@ -317,12 +317,15 @@ export default function TaskDetailPage() {
     },
   })
 
+  // Статуса «на проверке» в модели нет — исполнитель закрывает задачу сразу
+  // в «Готово». Бэкенд сам требует загруженный результат там, где это нужно
+  // (производственные задачи), и не требует для поручений от руководства.
   const submitForReview = useMutation<any, any, void>({
-    mutationFn: () => tasksApi.update(id!, { status: 'review' }),
+    mutationFn: () => tasksApi.update(id!, { status: 'done' }),
     onMutate: async () => {
       await qc.cancelQueries({ queryKey: ['task', id] })
       const previous = qc.getQueryData(['task', id])
-      qc.setQueryData(['task', id], (old: any) => old ? { ...old, status: 'review' } : old)
+      qc.setQueryData(['task', id], (old: any) => old ? { ...old, status: 'done' } : old)
       return { previous }
     },
     onError: (e: any, _v: any, context: any) => {
@@ -332,7 +335,7 @@ export default function TaskDetailPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['task', id] })
       invalidateAfterTaskChange(qc)
-      toast.success('Задача отправлена на проверку')
+      toast.success('Задача отмечена выполненной')
     },
   })
 
@@ -564,8 +567,8 @@ export default function TaskDetailPage() {
         </div>
       )}
 
-      {/* Worker actions: upload result + submit review */}
-      {!simplifiedView && isWorker && ['in_progress', 'returned'].includes(task.status) && (
+      {/* Действия исполнителя: загрузить результат + закрыть задачу */}
+      {!simplifiedView && isWorker && task.status === 'in_progress' && (
         <div className="card bg-primary-50 dark:bg-primary-900/10 border-primary-200 dark:border-primary-800">
           <p className="text-sm font-semibold text-primary-700 dark:text-primary-400 mb-3">
             {hasResult ? `Результатов загружено: ${resultCount}` : 'Загрузите результат работы'}
@@ -577,34 +580,20 @@ export default function TaskDetailPage() {
             >
               <Upload size={15} /> Загрузить результат
             </button>
-            {task.status === 'in_progress' && (
-              <button
-                onClick={() => submitForReview.mutate()}
-                disabled={submitForReview.isPending || !hasResult}
-                title={!hasResult ? 'Сначала загрузите результат' : ''}
-                className={clsx(
-                  'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
-                  hasResult
-                    ? 'bg-surface-500 text-white hover:bg-surface-600'
-                    : 'bg-surface-200 dark:bg-surface-700 text-surface-400 cursor-not-allowed'
-                )}
-              >
-                <Send size={15} /> Отправить на проверку
-              </button>
-            )}
-            {task.status === 'returned' && hasResult && (
-              <button
-                onClick={() => updateTask.mutate({ status: 'in_progress' })}
-                disabled={updateTask.isPending}
-                className="flex items-center gap-2 px-4 py-2 bg-surface-500 text-white rounded-xl text-sm font-medium hover:bg-surface-600 transition-colors"
-              >
-                Взять в работу
-              </button>
-            )}
+            {/* Кнопку не блокируем по наличию файла: для производственных
+                задач требование результата проверяет бэкенд и вернёт понятную
+                ошибку, а поручения от руководства закрываются без файла. */}
+            <button
+              onClick={() => submitForReview.mutate()}
+              disabled={submitForReview.isPending}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-60"
+            >
+              <Send size={15} /> Отметить выполненной
+            </button>
           </div>
           {canSubmitReviewNoResult && (
             <p className="text-xs text-surface-400 dark:text-surface-500 mt-2">
-              Кнопка «Отправить на проверку» станет активной после загрузки результата
+              По производственным задачам сначала загрузите результат — иначе закрыть не получится
             </p>
           )}
         </div>
@@ -766,9 +755,11 @@ export default function TaskDetailPage() {
                   onChange={e => updateTask.mutate({ status: e.target.value })}
                   className="input w-full text-sm"
                 >
-                  {['new','in_progress','review','returned','done','cancelled'].map(s => (
+                  {/* Только 4 реальных статуса: 'review'/'returned' бэкенд
+                      отклоняет (см. lib/taskStatus.ts). */}
+                  {['new','in_progress','done','cancelled'].map(s => (
                     <option key={s} value={s}>
-                      {({ new: 'Новая', in_progress: 'В работе', review: 'На проверке', returned: 'Возвращено', done: 'Готово', cancelled: 'Отменена' } as any)[s]}
+                      {({ new: 'Новая', in_progress: 'В работе', done: 'Готово', cancelled: 'Отменена' } as any)[s]}
                     </option>
                   ))}
                 </select>
