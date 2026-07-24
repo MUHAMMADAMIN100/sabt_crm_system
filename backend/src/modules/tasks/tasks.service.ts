@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Task, TaskStatus, TaskPriority, TASK_CLOSED_FOR_OVERDUE } from './task.entity';
@@ -26,10 +26,17 @@ const MANAGEMENT_ROLES: string[] = [
   UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
   UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
 ];
+/** Кто вправе ставить задачу «от основателя» и рассылать общую задачу всей
+ *  компании (сайт + email + Telegram каждому активному сотруднику). */
+const BROADCAST_ROLES: string[] = [
+  UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
+];
 const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.VIDEO_EDITOR, UserRole.ORGANIZER, UserRole.STORYMAKER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.VIDEOGRAPHER, UserRole.SCRIPTWRITER, UserRole.QA, UserRole.PUBLISHER, UserRole.TARGETOLOGIST, UserRole.EMPLOYEE];
 
 @Injectable()
 export class TasksService implements OnModuleInit {
+  private readonly logger = new Logger(TasksService.name);
+
   /** Идемпотентный DDL (на проде synchronize off): этап dev-доски у задач.
    *  Миграция AddTaskDevStage дублирует это для чистого деплоя. */
   async onModuleInit() {
@@ -482,6 +489,20 @@ export class TasksService implements OnModuleInit {
 
     const scope = (dto as any).scope as 'personal' | 'business' | 'general' | undefined;
     const isPersonal = scope === 'personal';
+
+    // «Общая задача от основателя» уходит рассылкой ВСЕЙ компании сразу по
+    // трём каналам (сайт, email, Telegram) и становится видна каждому. Форму
+    // с этим типом видят только основатель и со-основатель, но раньше сервер
+    // принимал scope='general' и fromFounder от кого угодно — любой сотрудник
+    // мог разослать компании письмо «от основателя» напрямую по API. Роль
+    // решает сервер, а не форма.
+    if (!BROADCAST_ROLES.includes(userRole || '')) {
+      if (scope === 'general') {
+        throw new ForbiddenException('Общие задачи может ставить только руководство');
+      }
+      dto.fromFounder = false;
+    }
+
     const isGeneral = scope === 'general';
     const isFromFounder = !!dto.fromFounder;
 
@@ -729,6 +750,12 @@ export class TasksService implements OnModuleInit {
         delete (dto as any).scope;
       }
     }
+    // Пометку «от основателя» на правке тоже ставит только руководство —
+    // иначе гейт на создании обходится вторым запросом PATCH.
+    if ((dto as any).fromFounder !== undefined && !BROADCAST_ROLES.includes(user.role)) {
+      delete (dto as any).fromFounder;
+    }
+
     // Смена типа задачи основателем — разрешаем принудительно очистить
     // исполнителей (иначе защита очереди syncAssignees бросит 400).
     const scopeChanged =
@@ -927,6 +954,20 @@ export class TasksService implements OnModuleInit {
     return this.findOne(id);
   }
 
+  /** Удаление задачи вместе с отвязкой её авто-отчётов.
+   *  Закрытая задача порождает запись в daily_reports с внешним ключом на
+   *  tasks — без каскада удаление падало с 500. Отчёт сотрудника сохраняем
+   *  (в нём его часы и описание), обнуляем только ссылку на задачу. Обе
+   *  операции — одной транзакцией: если параллельно кто-то закроет задачу и
+   *  создаст новый отчёт, откатится всё, и не останется отчётов с оборванной
+   *  ссылкой на живую задачу. */
+  private async deleteTaskWithReports(task: Task) {
+    await this.repo.manager.transaction(async trx => {
+      await trx.query(`UPDATE daily_reports SET "taskId" = NULL WHERE "taskId" = $1`, [task.id]);
+      await trx.remove(task);
+    });
+  }
+
   async remove(id: string) {
     const task = await this.findOne(id);
     const projectId = task.projectId;
@@ -936,7 +977,7 @@ export class TasksService implements OnModuleInit {
       entityId: id,
       entityName: task.title,
     });
-    await this.repo.remove(task);
+    await this.deleteTaskWithReports(task);
     await this.notificationsService.deleteByLink(`/tasks/${id}`);
     await this.projectsService.updateProgress(projectId);
     this.gateway.broadcast('tasks:changed', { projectId });
@@ -972,7 +1013,7 @@ export class TasksService implements OnModuleInit {
       entityName: task.title,
       details: { reason: cleanReason },
     });
-    await this.repo.remove(task);
+    await this.deleteTaskWithReports(task);
     await this.notificationsService.deleteByLink(`/tasks/${id}`);
     await this.projectsService.updateProgress(projectId);
     this.gateway.broadcast('tasks:changed', { projectId });

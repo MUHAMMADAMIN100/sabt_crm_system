@@ -95,8 +95,15 @@ export default function CalendarPage() {
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
   // МП по продажам получают календарь как у основателя, но без типа «Общая».
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
-  const isFounderView = user?.role === 'founder' || user?.role === 'co_founder' || isSalesManager
-  // Создавать задачи кликом по дню могут менеджерские роли и МП по продажам.
+  // Проект-менеджер по разработке ведёт в календаре свои задачи: форма с
+  // переключателем «Личная / Для бизнеса» (как у МП), без типа «Общая».
+  const isPmDev = user?.role === 'pm_dev'
+  const isFounderView = user?.role === 'founder' || user?.role === 'co_founder'
+    || isSalesManager || isPmDev
+  // Роли, которые ведут в календаре СВОИ задачи: форма без типа «Общая»,
+  // с выбором проекта и без пометки «от основателя».
+  const ownTasksCreator = isSalesManager || isPmDev
+  // Создавать задачи кликом по дню могут менеджерские роли, МП по продажам и ПМ.
   const canCreate = isManagerPlus || isFounderView
 
   // Диапазон загрузки событий зависит от режима: месяц или неделя.
@@ -291,6 +298,9 @@ export default function CalendarPage() {
     'founder', 'co_founder',
     'developer', 'designer', 'videographer', 'smm_specialist',
     'video_editor', 'organizer', 'storymaker', 'employee', 'sales_manager_smm', 'sales_manager_dev',
+    // ПМ по разработке ведёт личный календарь: только свои задачи (где он
+    // исполнитель или автор), без чужих задач команды.
+    'pm_dev',
   ]
   const isPersonalView = PERSONAL_VIEW_ROLES.includes(user?.role || '')
 
@@ -490,7 +500,7 @@ export default function CalendarPage() {
           { value: 'personal' as ScopeFilter, label: 'Личные',     icon: <Lock size={11} /> },
           { value: 'business' as ScopeFilter, label: 'Для бизнеса', icon: <Briefcase size={11} /> },
           { value: 'general'  as ScopeFilter, label: 'Общие',      icon: <Globe size={11} /> },
-        ].filter(opt => !isSalesManager || opt.value !== 'general').map(opt => (
+        ].filter(opt => !ownTasksCreator || opt.value !== 'general').map(opt => (
           <button
             key={opt.value || 'all'}
             onClick={() => setScopeFilter(opt.value)}
@@ -742,7 +752,7 @@ export default function CalendarPage() {
         <Modal
           open={showTaskForm}
           onClose={() => setShowTaskForm(false)}
-          title={`${isSalesManager ? 'Новая задача' : isFounderView ? 'Задача от основателя' : t('calendar.addTask')}${selectedDay ? ' — ' + format(selectedDay, 'dd.MM.yyyy') : ''}`}
+          title={`${ownTasksCreator ? 'Новая задача' : isFounderView ? 'Задача от основателя' : t('calendar.addTask')}${selectedDay ? ' — ' + format(selectedDay, 'dd.MM.yyyy') : ''}`}
           size="lg"
         >
           {isFounderView ? (
@@ -751,14 +761,15 @@ export default function CalendarPage() {
               loading={createTask.isPending}
               onClose={() => setShowTaskForm(false)}
               initialDeadline={createInitialDeadline}
-              allowGeneral={!isSalesManager}
-              projects={isSalesManager ? (projects || []) : undefined}
+              allowGeneral={!ownTasksCreator}
+              projects={ownTasksCreator ? (projects || []) : undefined}
+              defaultScope={isPmDev ? 'personal' : undefined}
               onSubmit={data => createTask.mutate({
                 ...data,
                 // deadline (дата+время) приходит из формы.
                 // fromFounder — только для бизнес/общих задач основателя;
-                // у МП по продажам задачи не помечаются «от основателя».
-                fromFounder: !isSalesManager && data.scope !== 'personal',
+                // у МП по продажам и ПМ задачи не помечаются «от основателя».
+                fromFounder: !ownTasksCreator && data.scope !== 'personal',
               })}
             />
           ) : (
@@ -853,8 +864,11 @@ export default function CalendarPage() {
               loading={editTaskMut.isPending || deleteTaskMut.isPending}
               onClose={() => setEditingTaskId(null)}
               initialDeadline={editingTaskFull.deadline || undefined}
-              allowGeneral={!isSalesManager}
-              projects={isSalesManager ? (projects || []) : undefined}
+              allowGeneral={!ownTasksCreator}
+              projects={ownTasksCreator ? (projects || []) : undefined}
+              // Смену scope backend разрешает только основателю, со-основателю
+              // и МП по продажам. ПМ тип менять не может — блокируем в форме.
+              lockScope={isPmDev}
               onDelete={() => {
                 if (confirm('Удалить задачу?')) deleteTaskMut.mutate(editingTaskFull.id)
               }}
@@ -887,9 +901,9 @@ export default function CalendarPage() {
                   // отправляем пустой массив чтобы backend очистил.
                   assigneeIds: data.scope === 'business' ? (data.assigneeIds || []) : [],
                   assigneeId: data.scope === 'business' ? data.assigneeId : null,
-                  // Проект — только в форме МП (у основателя поля нет —
+                  // Проект — только в формах МП и ПМ (у основателя поля нет —
                   // тогда projectId не трогаем). Для не-бизнес задач отвязываем.
-                  projectId: !isSalesManager
+                  projectId: !ownTasksCreator
                     ? undefined
                     : (data.scope === 'business' ? (data.projectId || null) : null),
                 },
@@ -1297,7 +1311,7 @@ function WeekView({
  */
 function FounderQuickTaskForm({
   employees, loading, onClose, onSubmit, onDelete, initial, initialDeadline,
-  allowGeneral = true, projects,
+  allowGeneral = true, projects, defaultScope, lockScope = false,
 }: {
   employees: any[]
   loading: boolean
@@ -1322,11 +1336,19 @@ function FounderQuickTaskForm({
   // Список доступных проектов. Если передан — в форме появляется выбор
   // проекта (для бизнес-задач). Не передаётся форме основателя.
   projects?: any[]
+  /** Тип задачи по умолчанию при СОЗДАНИИ (у ПМ — «Личная»). */
+  defaultScope?: 'personal' | 'business'
+  /** Запретить смену типа задачи (правка задачи ролью, которой backend
+   *  смену scope всё равно не разрешит). */
+  lockScope?: boolean
 }) {
   const isEdit = !!initial
   // Текущий пользователь — нужен для опции «Я сам» в списке исполнителей.
   const currentUser = useAuthStore(s => s.user)
-  const initialScope = initial?.scope || 'business'
+  // defaultScope — с какого типа открывается ФОРМА СОЗДАНИЯ. Проект-менеджер
+  // заводит календарь прежде всего под свои задачи, поэтому у него сразу
+  // «Личная»; у остальных по-прежнему «Для бизнеса».
+  const initialScope = initial?.scope || defaultScope || 'business'
   const [scope, setScope] = useState<'personal' | 'business' | 'general'>(
     !allowGeneral && initialScope === 'general' ? 'business' : initialScope,
   )
@@ -1430,7 +1452,10 @@ function FounderQuickTaskForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Селектор типа задачи — редактируемый и при создании, и при правке. */}
+      {/* Селектор типа задачи — редактируемый при создании. При правке он
+          блокируется тем, кому backend всё равно не даст сменить тип (ПМ):
+          иначе клик по «Личная/Общая» очищал список исполнителей, а сам тип
+          не менялся — задача тихо теряла исполнителя. */}
       <div>
         <label className="label">Тип задачи *</label>
         <div className={clsx('grid gap-2', allowGeneral ? 'grid-cols-3' : 'grid-cols-2')}>
@@ -1442,12 +1467,17 @@ function FounderQuickTaskForm({
             <button
               key={opt.v}
               type="button"
-              onClick={() => setScope(opt.v)}
+              disabled={lockScope}
+              title={lockScope ? 'Тип задачи менять нельзя' : undefined}
+              onClick={() => { if (!lockScope) setScope(opt.v) }}
               className={clsx(
                 'flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all',
                 scope === opt.v
                   ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
-                  : 'border-surface-200 dark:border-surface-700 hover:border-surface-300 dark:hover:border-surface-600 text-surface-600 dark:text-surface-400',
+                  : 'border-surface-200 dark:border-surface-700 text-surface-600 dark:text-surface-400',
+                lockScope
+                  ? 'opacity-60 cursor-not-allowed'
+                  : scope !== opt.v && 'hover:border-surface-300 dark:hover:border-surface-600',
               )}
             >
               {opt.icon}
