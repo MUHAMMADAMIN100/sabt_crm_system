@@ -142,6 +142,23 @@ function addDaysISO(iso: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Производственный прогресс по этапу (единая шкала общего порядка этапов):
+ *  100% только на «Опубликовано», до этого — по рангу этапа. «Монтаж» и
+ *  «Дизайн» — один ранг (параллельные ветки), поэтому дают одинаковый %.
+ *  content_plan 0 · organization 14 · shooting 29 · editing/design 43 ·
+ *  internal_review 57 · client_approval 71 · ready_to_publish 86 ·
+ *  published/ads 100. */
+const STAGE_PROGRESS_RANK: Record<string, number> = {
+  content_plan: 0, organization: 1, shooting: 2, editing: 3, design: 3,
+  internal_review: 4, client_approval: 5, ready_to_publish: 6, published: 7, ads: 7,
+};
+const PUBLISHED_RANK = 7;
+function stageProgressPct(stage: string): number {
+  const r = STAGE_PROGRESS_RANK[stage];
+  if (r === undefined) return 0;
+  return Math.min(100, Math.round((r / PUBLISHED_RANK) * 100));
+}
+
 @Injectable()
 export class WorkflowService implements OnModuleInit {
   private readonly logger = new Logger(WorkflowService.name);
@@ -493,10 +510,14 @@ export class WorkflowService implements OnModuleInit {
       relations: ['assignee', 'createdBy'],
       order: { stage: 'ASC', position: 'ASC', createdAt: 'ASC' },
     });
-    if (full) return cards.map(c => this.toDto(c));
+    // Прогресс считаем по ПОЛНОМУ набору карточек проекта (даже в «только свои»
+    // виде), иначе КП-агрегат недосчитал бы единицы.
+    const progress = this.computeProgressMap(cards);
+    const dto = (c: WorkflowCard) => ({ ...this.toDto(c), progressPct: progress.get(c.id) ?? 0 });
+    if (full) return cards.map(dto);
     const mine = cards.filter(c => this.isAssignee(c, viewer.id));
     if (mine.length === 0) throw new ForbiddenException('Нет доступа к доске этого проекта');
-    return mine.map(c => this.toDto(c));
+    return mine.map(dto);
   }
 
   async list(projectId: string, viewer: Viewer) {
@@ -544,8 +565,11 @@ export class WorkflowService implements OnModuleInit {
       visible = cards.filter(c => myProjectIds.has(c.projectId) || this.isAssignee(c, viewer.id));
     }
 
+    // Прогресс — по всем видимым карточкам (КП увидит единицы своего проекта).
+    const progress = this.computeProgressMap(cards);
     return visible.map(c => ({
       ...this.toDto(c),
+      progressPct: progress.get(c.id) ?? 0,
       project: { id: c.projectId, name: nameMap.get(c.projectId) || '' },
     }));
   }
@@ -584,6 +608,40 @@ export class WorkflowService implements OnModuleInit {
       where: { cardId },
       order: { createdAt: 'ASC' },
     });
+  }
+
+  /** Карта cardId → производственный прогресс (%). Одиночные и групповые
+   *  карточки — по своему этапу; КП — средний прогресс ВСЕХ единиц контента
+   *  проекта (элементы групп + вынесенные одиночные карточки, без обложек и
+   *  самого КП), 100% только когда все дошли до «Опубликовано». Считается по
+   *  полному набору карточек в scope, чтобы КП видел все свои единицы. */
+  private computeProgressMap(cards: WorkflowCard[]): Map<string, number> {
+    const map = new Map<string, number>();
+    const unitsByProject = new Map<string, number[]>();
+    const pushUnit = (pid: string, pct: number) => {
+      const arr = unitsByProject.get(pid) || [];
+      arr.push(pct);
+      unitsByProject.set(pid, arr);
+    };
+    for (const c of cards) {
+      if (c.kind === 'kp') continue; // КП — агрегатор, считаем ниже
+      const pct = stageProgressPct(c.stage);
+      map.set(c.id, pct);
+      if (c.type === 'cover') continue; // обложка — часть рилса, не единица
+      if (c.kind === 'reels' || c.kind === 'macros') {
+        const n = Math.max(1, Array.isArray(c.items) ? c.items.length : 1);
+        for (let i = 0; i < n; i++) pushUnit(c.projectId, pct);
+      } else {
+        pushUnit(c.projectId, pct);
+      }
+    }
+    // КП-карточки — среднее по единицам своего проекта.
+    for (const c of cards) {
+      if (c.kind !== 'kp') continue;
+      const units = unitsByProject.get(c.projectId) || [];
+      map.set(c.id, units.length ? Math.round(units.reduce((s, x) => s + x, 0) / units.length) : 0);
+    }
+    return map;
   }
 
   private toDto(c: WorkflowCard) {
@@ -1188,8 +1246,12 @@ export class WorkflowService implements OnModuleInit {
     if (mine.length === 0) return [];
     const projects = await this.projectRepo.find({ where: { id: In([...new Set(mine.map(c => c.projectId))]) } });
     const nameMap = new Map(projects.map(p => [p.id, p.name]));
+    // Прогресс — по ПОЛНОМУ набору карточек (cards), чтобы КП-агрегат видел все
+    // единицы; в кабинет отдаём только «мои», но с корректным progressPct.
+    const progress = this.computeProgressMap(cards);
     return mine.map(c => ({
       ...this.toDto(c),
+      progressPct: progress.get(c.id) ?? 0,
       project: { id: c.projectId, name: nameMap.get(c.projectId) || '' },
     }));
   }

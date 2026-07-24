@@ -265,22 +265,22 @@ export default function ProjectsBoardPage() {
     }
     const ordered = [...groups.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name, 'ru'))
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {ordered.map(([pid, g]) => {
           const open = openFolders.has(pid)
           return (
-            <div key={pid} className="rounded-lg bg-surface-100/60 dark:bg-surface-700/30">
+            <div key={pid} className="rounded-xl bg-surface-100/60 dark:bg-surface-700/30">
               <button
                 type="button"
                 onClick={() => toggleFolder(pid)}
-                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-left hover:bg-surface-200/60 dark:hover:bg-surface-700/60 rounded-lg transition-colors"
+                className="w-full flex items-center gap-2.5 px-3 py-3 text-left hover:bg-surface-200/60 dark:hover:bg-surface-700/60 rounded-xl transition-colors"
               >
-                <ChevronRight size={13} className={clsx('shrink-0 text-surface-400 transition-transform', open && 'rotate-90')} />
-                <Folder size={13} className="shrink-0 text-primary-500" />
-                <span className="text-[12px] font-semibold text-surface-700 dark:text-surface-200 truncate flex-1">{g.name}</span>
-                <span className="text-[10px] font-semibold min-w-[18px] h-[18px] px-1 rounded-full bg-surface-200 dark:bg-surface-600 text-surface-600 dark:text-surface-300 inline-flex items-center justify-center shrink-0">{g.cards.length}</span>
+                <ChevronRight size={18} className={clsx('shrink-0 text-surface-400 transition-transform', open && 'rotate-90')} />
+                <Folder size={20} className="shrink-0 text-primary-500" />
+                <span className="text-sm font-semibold text-surface-800 dark:text-surface-100 truncate flex-1">{g.name}</span>
+                <span className="text-[12px] font-bold min-w-[24px] h-[24px] px-1.5 rounded-full bg-surface-200 dark:bg-surface-600 text-surface-700 dark:text-surface-200 inline-flex items-center justify-center shrink-0">{g.cards.length}</span>
               </button>
-              {open && <div className="space-y-2 px-1 pb-1.5">{g.cards.map(renderCard)}</div>}
+              {open && <div className="space-y-2 px-1.5 pb-2">{g.cards.map(renderCard)}</div>}
             </div>
           )
         })}

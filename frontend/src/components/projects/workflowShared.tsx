@@ -210,7 +210,19 @@ export function WorkflowCardBadges({ card }: { card: any }) {
   const tl = typeLabel(card.contentType)
   const isGroup = card.kind === 'kp' || card.kind === 'reels' || card.kind === 'macros'
   const isWorkGroup = card.kind === 'reels' || card.kind === 'macros'
-  const pct = isGroup ? fillPercent(card) : 100
+  // Производственный прогресс по этапам (100% — «Опубликовано»). Считает бэк
+  // (progressPct): одиночные/группы — по своему этапу, КП — среднее по всем
+  // единицам проекта. Показываем на всех карточках, кроме обложек.
+  const progressPct: number | null =
+    typeof card.progressPct === 'number' && card.type !== 'cover' ? card.progressPct : null
+  const progressColor = (p: number) => p >= 100
+    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+    : p >= 60
+      ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+      : 'bg-surface-200 text-surface-600 dark:bg-surface-700 dark:text-surface-300'
+  // Заполненность формы (данные) — оставляем маленькой красной меткой только
+  // когда бриф заполнен не полностью: это контроль качества данных, не прогресс.
+  const fill = isGroup ? fillPercent(card) : 100
   // Исполнители групповой карточки: уникальные имена (с учётом нескольких на
   // элемент) + счётчик элементов с назначением.
   const groupItems: any[] = isWorkGroup ? (card.items || []) : []
@@ -243,9 +255,15 @@ export function WorkflowCardBadges({ card }: { card: any }) {
           {card.type === 'reels' ? 'Reels' : card.type === 'cover' ? 'Обложка' : 'Макет'}
         </span>
       )}
-      {isGroup && pct < 100 && (
-        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400" title="Заполнено не полностью">
-          {pct}%
+      {progressPct !== null && (
+        <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded', progressColor(progressPct))}
+          title="Производственный прогресс: 100% — на этапе «Опубликовано»">
+          {progressPct}%
+        </span>
+      )}
+      {isGroup && fill < 100 && (
+        <span className="text-[10px] font-semibold px-1 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400" title={`Бриф заполнен на ${fill}% — заполните данные`}>
+          ⚠ {fill}%
         </span>
       )}
       {card.kind === 'kp' && card.createdBy?.name && (
