@@ -82,7 +82,13 @@ const INTEREST_CHIPS: { value: string; label: string; Icon: InterestIcon; bg: st
 /** Города для селекта «Адрес». «Другое» открывает поле ручного ввода. */
 const ADDRESS_OPTIONS = ['Душанбе']
 const CHANNEL_OPTIONS = ['WhatsApp', 'Telegram', 'Instagram', 'Звонок', 'Email', 'Личная встреча']
-const SOURCE_OPTIONS = ['Instagram', 'Рекомендация', 'Холодный обзвон', 'Сайт', 'Реклама', 'Другое']
+const SOURCE_OPTIONS = [
+  'Instagram', 'Рекомендация', 'Холодный обзвон', 'Сайт', 'Реклама',
+  // Платный трафик разводим по площадкам: по «Рекламе» не видно, откуда
+  // пришёл лид — с таргета в Instagram или из WhatsApp.
+  'Таргет Instagram', 'Таргет WhatsApp',
+  'Другое',
+]
 const SPHERE_SUGGESTIONS = ['Ресторан', 'Кафе', 'Клиника', 'Школа', 'Салон красоты', 'Отель', 'Магазин', 'Блогер', 'Модель', 'SMM', 'Разработка', 'Другое']
 
 /** true, если дата (локально) — сегодня. Нужно для оптимистичного

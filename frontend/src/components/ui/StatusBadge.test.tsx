@@ -18,9 +18,21 @@ describe('StatusBadge', () => {
     expect(screen.getByText('Готово')).toBeInTheDocument()
   })
 
-  it('falls back to raw status string for unknown status', () => {
+  it('normalizes an unknown/legacy status to «В работе» instead of showing it raw', () => {
+    // 4-статусная модель: любое неизвестное значение (в т.ч. старые review /
+    // on_rework / approved) нормализуется в 'in_progress', чтобы в интерфейсе
+    // не всплывали технические строки из БД. См. normalizeTaskStatus().
     render(<StatusBadge status="unknown_status" />)
-    expect(screen.getByText('unknown_status')).toBeInTheDocument()
+    expect(screen.getByText('В работе')).toBeInTheDocument()
+    expect(screen.queryByText('unknown_status')).not.toBeInTheDocument()
+  })
+
+  it('normalizes legacy task statuses (review → В работе, published → Готово)', () => {
+    const { rerender } = render(<StatusBadge status="review" />)
+    expect(screen.getByText('В работе')).toBeInTheDocument()
+
+    rerender(<StatusBadge status="published" />)
+    expect(screen.getByText('Готово')).toBeInTheDocument()
   })
 
   it('renders project statuses correctly', () => {
