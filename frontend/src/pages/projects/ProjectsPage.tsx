@@ -201,14 +201,25 @@ export default function ProjectsPage() {
     onMutate: async (id: string) => {
       await qc.cancelQueries({ queryKey: ['projects'] })
       const previous = qc.getQueryData(['projects'])
-      qc.setQueryData(['projects'], (old: any[]) => old?.map((p: any) => p.id === id ? { ...p, isArchived: true } : p) ?? [])
+      // У менеджера продаж архив личный — проект просто уходит из ЕГО списка
+      // (у команды остаётся активным), поэтому убираем карточку сразу.
+      qc.setQueryData(['projects'], (old: any[]) => isSalesManagerView
+        ? (old?.filter((p: any) => p.id !== id) ?? [])
+        : (old?.map((p: any) => p.id === id ? { ...p, isArchived: true } : p) ?? []))
       return { previous }
     },
     onError: (_err: any, _id: any, context: any) => {
       qc.setQueryData(['projects'], context?.previous)
       toast.error(t('common.error'))
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); qc.invalidateQueries({ queryKey: ['projects-archived'] }); qc.invalidateQueries({ queryKey: ['analytics-dashboard'] }); toast.success(t('projects.archived')) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['projects-archived'] })
+      qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
+      toast.success(isSalesManagerView
+        ? 'Проект скрыт из вашего списка — команда продолжает работать'
+        : t('projects.archived'))
+    },
   })
 
   const deleteMut = useMutation({
@@ -410,7 +421,13 @@ export default function ProjectsPage() {
                     {/* Архив — по гранту projects.archive (нативно у создающих
                         ролей; выдаётся и отдельно — напр. ПМ по разработке). */}
                     {(canCreateProject || userCan(user, 'projects.archive')) && (
-                      <button onClick={(e) => { e.stopPropagation(); archiveMut.mutate(p.id) }} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded text-surface-500 dark:text-surface-400" title="Архив"><Archive size={13} /></button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); archiveMut.mutate(p.id) }}
+                        className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded text-surface-500 dark:text-surface-400"
+                        title={isSalesManagerView
+                          ? 'Скрыть из моего списка — у команды проект останется активным, вернуть можно в разделе «Архив»'
+                          : 'Архив'}
+                      ><Archive size={13} /></button>
                     )}
                     {canCreateProject && (
                       <button onClick={(e) => { e.stopPropagation(); setDeleteId(p.id) }} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500 dark:text-red-400" title="Удалить"><Trash2 size={13} /></button>

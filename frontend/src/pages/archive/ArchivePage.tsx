@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
+import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, EmptyState, ProgressBar } from '@/components/ui'
 import { RotateCcw, FolderKanban } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -19,6 +20,10 @@ const PROJECT_TYPE_FILTERS = [
 export default function ArchivePage() {
   const qc = useQueryClient()
   const { t } = useTranslation()
+  const user = useAuthStore(s => s.user)
+  // У менеджеров продаж «Архив» — личный список скрытых проектов, а не общий
+  // архив компании: они прячут проект только у себя (см. project_hidden).
+  const isPersonal = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
   const [projectType, setProjectType] = useState('')
 
   const { data: allProjects, isLoading } = useQuery({
@@ -45,7 +50,7 @@ export default function ArchivePage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['projects-archived'] })
       qc.invalidateQueries({ queryKey: ['projects'] })
-      toast.success(t('archive.restored'))
+      toast.success(isPersonal ? 'Проект возвращён в ваш список' : t('archive.restored'))
     },
   })
 
@@ -53,10 +58,16 @@ export default function ArchivePage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="page-title">{t('archive.title')}</h1>
+      <h1 className="page-title">{isPersonal ? 'Скрытые проекты' : t('archive.title')}</h1>
+      {isPersonal && (
+        <p className="text-xs text-surface-500 dark:text-surface-400 -mt-3">
+          Это ваш личный список: у команды эти проекты остаются активными.
+          «Восстановить» вернёт проект в ваш список проектов.
+        </p>
+      )}
 
       {/* Project type filter */}
-      {(allProjects?.length ?? 0) > 0 && (
+      {(allProjects?.length ?? 0) > 0 && !isPersonal && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Тип:</span>
           {PROJECT_TYPE_FILTERS.map(pt => (
@@ -75,7 +86,12 @@ export default function ArchivePage() {
       )}
 
       {!projects?.length ? (
-        <EmptyState title={t('archive.noArchived')} description={t('archive.noArchivedDesc')} />
+        <EmptyState
+          title={isPersonal ? 'Скрытых проектов нет' : t('archive.noArchived')}
+          description={isPersonal
+            ? 'Проекты, которые вы уберёте из своего списка кнопкой «Скрыть», появятся здесь.'
+            : t('archive.noArchivedDesc')}
+        />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map((p: any) => (

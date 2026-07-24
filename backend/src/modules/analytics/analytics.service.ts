@@ -12,7 +12,7 @@ import { SalaryHistory } from '../employees/salary-history.entity';
 import { WorkSession } from '../auth/work-session.entity';
 import { ProjectAd, BudgetSource } from '../project-ads/project-ad.entity';
 import { StoryLog } from '../stories/story.entity';
-import { getSalesSegment } from '../../common/sales-segment';
+import { getSalesSegment, isSalesManager } from '../../common/sales-segment';
 
 @Injectable()
 export class AnalyticsService {
@@ -447,7 +447,7 @@ export class AnalyticsService {
   /** Sales-manager dashboard data: every project with money + collections context.
    *  МП видит ТОЛЬКО проекты своего направления (СММ ↔ разработка) — и в
    *  таблице, и в итогах/графиках; топ-роли — всё. */
-  async getSalesStats(viewerRole?: string) {
+  async getSalesStats(viewerRole?: string, viewerId?: string) {
     // Архивные проекты в панели продаж не показываем (просьба отдела продаж):
     // это рабочий список, закрытые проекты живут в «Архиве». Итоги считаются
     // по тому же списку — цифры всегда сходятся с таблицей.
@@ -457,9 +457,22 @@ export class AnalyticsService {
       order: { createdAt: 'DESC' },
     });
     const segment = getSalesSegment(viewerRole);
-    const projects = segment
+    let projects = segment
       ? allProjects.filter(p => segment.projectTypes.includes(p.projectType as string))
       : allProjects;
+
+    // Личный архив менеджера продаж: скрытый им проект должен уйти и из панели
+    // «Продажи» (и из таблицы, и из сумм), иначе он «пропал из проектов, но
+    // остался в продажах» — как заметило ревью.
+    if (isSalesManager(viewerRole) && viewerId) {
+      const hiddenRows: Array<{ project_id: string }> = await this.projectRepo.manager
+        .query(`SELECT project_id FROM project_hidden WHERE user_id = $1`, [viewerId])
+        .catch(() => []);
+      if (hiddenRows.length) {
+        const hidden = new Set(hiddenRows.map(r => r.project_id));
+        projects = projects.filter(p => !hidden.has(p.id));
+      }
+    }
 
     // Дата последней полученной оплаты — колонка «Дата оплаты» в SalesDashboard
     // (тот же агрегат, что в projects.service.findAll).

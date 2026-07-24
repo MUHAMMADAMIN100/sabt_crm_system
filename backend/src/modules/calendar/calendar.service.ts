@@ -99,14 +99,15 @@ export class CalendarService {
     // назначены ему или это общие задачи (scope='general').
     const salesSegment = getSalesSegment(viewerRole);
     if (salesSegment) {
+      // Все типы сегмента, а не один дефолтный (у МП по разработке их пять).
       taskQb.andWhere(
-        `(project.projectType = :salesProjType
+        `(project.projectType IN (:...salesProjTypes)
           OR (t.projectId IS NULL AND (
             t."createdById" = :salesViewerId
             OR t.assigneeId = :salesViewerId
             OR t.scope = 'general'
           )))`,
-        { salesProjType: salesSegment.projectType, salesViewerId: viewerId ?? null },
+        { salesProjTypes: salesSegment.projectTypes, salesViewerId: viewerId ?? null },
       );
     }
 

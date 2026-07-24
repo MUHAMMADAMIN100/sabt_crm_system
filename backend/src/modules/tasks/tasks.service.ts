@@ -371,15 +371,18 @@ export class TasksService implements OnModuleInit {
     // назначены ему или это общие задачи (scope='general').
     const salesSegment = getSalesSegment(filters.viewerRole);
     if (salesSegment) {
+      // ВСЕ типы сегмента, а не один дефолтный: у МП по разработке их пять
+      // (Лендинг, Телеграм бот, CRM, Интернет магазин, legacy «Web сайт») —
+      // иначе он не видел задачи по своим же проектам других подтипов.
       qb.andWhere(
-        `(project.projectType = :salesProjType
+        `(project.projectType IN (:...salesProjTypes)
           OR (t.projectId IS NULL AND (
             t."createdById" = :salesViewerId
             OR t.assigneeId = :salesViewerId
             OR t.scope = 'general'
           )))`,
         {
-          salesProjType: salesSegment.projectType,
+          salesProjTypes: salesSegment.projectTypes,
           salesViewerId: filters.viewerId ?? null,
         },
       );

@@ -20,7 +20,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { MailService } from '../mail/mail.service';
-import { getSalesSegment, DEV_PROJECT_TYPES } from '../../common/sales-segment';
+import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES } from '../../common/sales-segment';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
@@ -52,6 +52,20 @@ export class ProjectsService implements OnModuleInit {
       );
       await this.repo.manager.query(
         `ALTER TABLE projects ADD COLUMN IF NOT EXISTS "storiesArchived" boolean NOT NULL DEFAULT false`,
+      );
+      // Личный архив: менеджер продаж убирает проект из СВОЕГО списка, у
+      // остальной команды проект остаётся активным. Общий архив (isArchived)
+      // это не заменяет — им пользуются руководство и руководитель СММ.
+      await this.repo.manager.query(
+        `CREATE TABLE IF NOT EXISTS project_hidden (
+           user_id uuid NOT NULL,
+           project_id uuid NOT NULL,
+           hidden_at timestamptz NOT NULL DEFAULT now(),
+           PRIMARY KEY (user_id, project_id)
+         )`,
+      );
+      await this.repo.manager.query(
+        `CREATE INDEX IF NOT EXISTS idx_project_hidden_user ON project_hidden(user_id)`,
       );
     } catch (e: any) {
       this.logger.warn(`ALTER TABLE projects brief/briefShareToken/devStage failed: ${e?.message || e}`);
@@ -671,10 +685,20 @@ export class ProjectsService implements OnModuleInit {
       .loadRelationCountAndMap('p.doneTaskCount', 'p.tasks', 'doneTask', qb =>
         qb.where('doneTask.status = :s', { s: 'done' }),
       )
-      .where('p.isArchived = :archived', { archived })
       // Служебный проект «Одноразовые съёмки» — не показываем в списках
       // проектов/аналитике/продажах: его карточки живут на доске проектов.
-      .andWhere('p."isOneOffSystem" = false');
+      .where('p."isOneOffSystem" = false');
+
+    // Для менеджера продаж «архив» — личный: он скрывает проект у себя, не
+    // трогая остальных. Поэтому в его личном архиве лежат ОБЫЧНЫЕ (не
+    // архивированные компанией) проекты, и общий флаг isArchived к списку не
+    // применяется — условие добавляется ниже, после определения роли.
+    const personalArchive = archived && isSalesManager(requestUser?.role);
+    if (!personalArchive) {
+      qb.andWhere('p.isArchived = :archived', { archived });
+    } else {
+      qb.andWhere('p.isArchived = false');
+    }
 
     // RBAC: filter by role using SUBQUERY (not the joined members table)
     // so leftJoinAndSelect still loads ALL members in the result
@@ -694,7 +718,7 @@ export class ProjectsService implements OnModuleInit {
       // не сегмент продаж), чтобы не добавлять запрос каждому вызову списка.
       let isStoryMaker = !!emp?.isStoryMaker || role === 'storymaker';
       if (!isStoryMaker
-        && !['admin', 'founder', 'co_founder', 'smm_director', 'organizer', 'pm_dev'].includes(role)
+        && !['admin', 'founder', 'co_founder', 'smm_director', 'organizer', 'pm_dev', 'video_director'].includes(role)
         && !getSalesSegment(role)) {
         const userRow = await this.userRepo.findOne({
           where: { id: userId },
@@ -703,24 +727,29 @@ export class ProjectsService implements OnModuleInit {
         isStoryMaker = (userRow as any)?.secondaryRole === 'storymaker';
       }
 
-      if (hasGrant(requestUser as any, 'projects.view')) {
-        // Персональный грант «Проекты — просмотр» — видит ВСЕ проекты компании
-        // (без сужения по роли/членству).
-      } else if (role === 'smm_director' || role === 'organizer') {
-        // Руководитель SMM и организатор видят ВСЕ SMM-проекты компании
-        // (управляющие роли производства). Не-SMM проекты им не показываем.
-        qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
-      } else if (role === 'pm_dev') {
-        // Проект-менеджер по разработке («тестировщик» направления) видит
-        // ВСЕ dev-проекты компании без членства — анализ и задачи-замечания.
-        qb.andWhere('p.projectType IN (:...devTypes)', { devTypes: DEV_PROJECT_TYPES });
-      } else if (getSalesSegment(role)) {
+      // ВАЖНО: направление проверяется ПЕРВЫМ и грантом не обходится. Роли
+      // ниже имеют 'projects.view' нативно, и раньше грант срабатывал раньше
+      // фильтра — менеджеру продаж по СММ показывались проекты разработки.
+      // Грант снимает ограничение по членству, но не по направлению.
+      if (getSalesSegment(role)) {
         // Менеджер продаж видит только проекты своего направления.
         // У МП-dev несколько подтипов (Лендинг, Телеграм бот, CRM,
         // Интернет магазин + legacy «Web сайт») → IN(...).
         qb.andWhere('p.projectType IN (:...salesTypes)', {
           salesTypes: getSalesSegment(role)!.projectTypes,
         });
+      } else if (role === 'smm_director' || role === 'organizer' || role === 'video_director') {
+        // Руководители SMM и видео + организатор видят ВСЕ SMM-проекты
+        // компании (управляющие роли производства; видеопродакшн живёт
+        // внутри SMM-проектов). Проекты разработки им не показываем.
+        qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
+      } else if (role === 'pm_dev') {
+        // Проект-менеджер по разработке («тестировщик» направления) видит
+        // ВСЕ dev-проекты компании без членства — анализ и задачи-замечания.
+        qb.andWhere('p.projectType IN (:...devTypes)', { devTypes: DEV_PROJECT_TYPES });
+      } else if (hasGrant(requestUser as any, 'projects.view')) {
+        // Персональный грант «Проекты — просмотр», выданный роли без своего
+        // направления — видит ВСЕ проекты компании.
       } else if (isStoryMaker) {
         // Сторисмейкер (флаг на Employee) — все активные SMM-проекты,
         // вне зависимости от членства. Как smm_director, но только в SMM.
@@ -739,6 +768,19 @@ export class ProjectsService implements OnModuleInit {
         );
       }
       // admin, founder & co_founder see all — no extra filter
+
+      // Личный архив менеджера продаж. Список активных проектов — без
+      // скрытых им; «Архив» (archived=true) для него — это и есть его личный
+      // список скрытых, а не общий архив компании (общий архив ведут
+      // руководство и руководитель СММ).
+      if (isSalesManager(role)) {
+        const hiddenSql = `SELECT ph.project_id FROM project_hidden ph WHERE ph.user_id = :hideUid`;
+        if (archived) {
+          qb.andWhere(`p.id IN (${hiddenSql})`, { hideUid: userId });
+        } else {
+          qb.andWhere(`p.id NOT IN (${hiddenSql})`, { hideUid: userId });
+        }
+      }
     }
 
     if (status) qb.andWhere('p.status = :status', { status });
@@ -1099,7 +1141,11 @@ export class ProjectsService implements OnModuleInit {
     const isSmmDirectorOnSmm = user.role === 'smm_director' && project.projectType === 'SMM';
     // Менеджер продаж управляет проектами своего направления полностью.
     const editSegment = getSalesSegment(user.role);
-    const isSalesOnOwnSegment = !!editSegment && project.projectType === editSegment.projectType;
+    // Сравниваем со ВСЕМИ типами сегмента: у МП по разработке их несколько
+    // (Лендинг, Телеграм бот, CRM, Интернет магазин, legacy «Web сайт»), а
+    // projectType — только дефолтный для создания.
+    const isSalesOnOwnSegment = !!editSegment
+      && editSegment.projectTypes.includes(project.projectType as string);
     // Менеджер проекта — НАЗНАЧАЕМЫЙ: любой сотрудник, выбранный в поле
     // «Менеджер проекта» (project.managerId), руководит этим проектом и
     // может редактировать его данные независимо от своей роли. Отдельной
@@ -1545,12 +1591,32 @@ export class ProjectsService implements OnModuleInit {
       throw new ForbiddenException('Руководитель SMM может архивировать только SMM-проекты');
     }
     const archiveSegment = getSalesSegment(user?.role);
-    if (archiveSegment && project.projectType !== archiveSegment.projectType) {
+    if (archiveSegment && !archiveSegment.projectTypes.includes(project.projectType as string)) {
       throw new ForbiddenException('Вы можете архивировать только проекты своего направления');
     }
     // ПМ по разработке (грант projects.archive) — только dev-проекты.
     if (user?.role === 'pm_dev' && !DEV_PROJECT_TYPES.includes(project.projectType as string)) {
       throw new ForbiddenException('Проект-менеджер по разработке может архивировать только проекты разработки');
+    }
+    // Менеджер продаж прячет проект ТОЛЬКО у себя: команда продолжает по нему
+    // работать, задачи и дедлайны живут дальше. Общий архив ведут руководство
+    // и руководитель СММ.
+    if (isSalesManager(user?.role) && user?.id) {
+      await this.repo.manager.query(
+        `INSERT INTO project_hidden (user_id, project_id) VALUES ($1, $2)
+         ON CONFLICT (user_id, project_id) DO NOTHING`,
+        [user.id, id],
+      );
+      await this.activityLog.log({
+        userId: user.id,
+        action: ActivityAction.PROJECT_ARCHIVE,
+        entity: 'project',
+        entityId: id,
+        entityName: project.name,
+        details: { personal: true, note: 'Скрыт из личного списка (проект остался активным)' },
+      });
+      this.gateway.broadcast('projects:changed', {});
+      return this.findOne(id);
     }
     await this.repo.update(id, { isArchived: true, status: ProjectStatus.ARCHIVED });
     await this.activityLog.log({
@@ -1569,12 +1635,30 @@ export class ProjectsService implements OnModuleInit {
       throw new ForbiddenException('Руководитель SMM может восстанавливать только SMM-проекты');
     }
     const restoreSegment = getSalesSegment(user?.role);
-    if (restoreSegment && project.projectType !== restoreSegment.projectType) {
+    if (restoreSegment && !restoreSegment.projectTypes.includes(project.projectType as string)) {
       throw new ForbiddenException('Вы можете восстанавливать только проекты своего направления');
     }
     // ПМ по разработке (грант projects.archive) — только dev-проекты.
     if (user?.role === 'pm_dev' && !DEV_PROJECT_TYPES.includes(project.projectType as string)) {
       throw new ForbiddenException('Проект-менеджер по разработке может восстанавливать только проекты разработки');
+    }
+    // Менеджеру продаж «восстановить» = вернуть проект в свой список.
+    // Общий флаг isArchived он не трогает — проект и не был архивирован.
+    if (isSalesManager(user?.role) && user?.id) {
+      await this.repo.manager.query(
+        `DELETE FROM project_hidden WHERE user_id = $1 AND project_id = $2`,
+        [user.id, id],
+      );
+      await this.activityLog.log({
+        userId: user.id,
+        action: ActivityAction.PROJECT_RESTORE,
+        entity: 'project',
+        entityId: id,
+        entityName: project.name,
+        details: { personal: true, note: 'Возвращён в личный список' },
+      });
+      this.gateway.broadcast('projects:changed', {});
+      return this.findOne(id);
     }
     // При восстановлении НЕ форсируем COMPLETED — возвращаем в IN_PROGRESS
     // как safe default. Если был completed до архива — пользователь может
@@ -1607,7 +1691,8 @@ export class ProjectsService implements OnModuleInit {
       const isTopAdmin = ['admin', 'founder', 'co_founder'].includes(role);
       const isSmmDirOnSmm = role === 'smm_director' && p.projectType === 'SMM';
       const removeSegment = getSalesSegment(role);
-      const isSalesOnOwnSegment = !!removeSegment && p.projectType === removeSegment.projectType;
+      const isSalesOnOwnSegment = !!removeSegment
+        && removeSegment.projectTypes.includes(p.projectType as string);
       if (!isTopAdmin && !isSmmDirOnSmm && !isSalesOnOwnSegment) {
         throw new ForbiddenException(
           role === 'smm_director'
@@ -1627,6 +1712,11 @@ export class ProjectsService implements OnModuleInit {
       entityId: id,
       entityName: p.name,
     });
+    // Личные скрытия удаляемого проекта — у таблицы нет FK, чистим руками,
+    // иначе строки останутся мусором навсегда.
+    await this.repo.manager
+      .query(`DELETE FROM project_hidden WHERE project_id = $1`, [id])
+      .catch(() => undefined);
     await this.repo.remove(p);
     this.gateway.broadcast('projects:changed', {});
     return { message: 'Project deleted' };

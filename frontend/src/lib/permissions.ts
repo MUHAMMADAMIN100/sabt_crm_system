@@ -181,6 +181,8 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view', 'calendar.create',
+    // «Архив» у менеджера продаж — его личный список скрытых проектов.
+    'archive.view',
     'analytics.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
@@ -192,6 +194,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view', 'calendar.create',
+    'archive.view',
     'analytics.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',

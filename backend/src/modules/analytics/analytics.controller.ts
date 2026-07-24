@@ -1,7 +1,8 @@
 import { Controller, Get, Query, Request, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
+import { CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { AnalyticsService } from './analytics.service';
+import { UserScopedCacheInterceptor, SkipCache } from './user-scoped-cache.interceptor';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
@@ -11,7 +12,7 @@ import { UserRole } from '../users/user.entity';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.VIDEO_DIRECTOR, UserRole.SMM_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
 @Controller('analytics')
-@UseInterceptors(CacheInterceptor)
+@UseInterceptors(UserScopedCacheInterceptor)
 export class AnalyticsController {
   constructor(private service: AnalyticsService) {}
 
@@ -107,7 +108,10 @@ export class AnalyticsController {
 
   @Get('sales')
   @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
-  getSalesStats(@Request() req) { return this.service.getSalesStats(req.user?.role); }
+  // Персональные данные (направление + личный архив менеджера) + мутируют при
+  // скрытии проекта — не кэшируем, иначе скрытие видно не сразу.
+  @SkipCache()
+  getSalesStats(@Request() req) { return this.service.getSalesStats(req.user?.role, req.user?.id); }
 
   @Get('payroll')
   @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
