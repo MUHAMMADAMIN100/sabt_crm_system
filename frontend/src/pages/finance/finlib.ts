@@ -1,3 +1,6 @@
+import { useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
+
 // Утилиты Fin System · WebRand: формат сомони, месяцы, таксономия групп.
 // Портировано из эталона fin-webrand/src/lib/{format,constants}.ts.
 
@@ -137,3 +140,44 @@ export function downloadCsv(filename: string, rows: Array<Array<string | number 
   a.click()
   URL.revokeObjectURL(a.href)
 }
+
+/** Выбранный месяц хранится в адресе страницы (?ym=2026-08).
+ *
+ *  Так он переживает переход в карточку («Расход» → «Зарплата»), кнопку
+ *  «назад» и обновление страницы: раньше карточка всегда открывалась на
+ *  текущем месяце, даже если в списке был выбран другой.
+ *
+ *  fallback — с какого месяца начинать, если в адресе ничего нет
+ *  (у зарплаты это currentSalaryYm, у остальных — currentYm).
+ */
+export function useYmParam(fallback?: string): [string, (ym: string) => void] {
+  const [params, setParams] = useSearchParams()
+  const raw = params.get('ym') || ''
+  const ym = /^\d{4}-\d{2}$/.test(raw) ? raw : (fallback || currentYm())
+  const setYm = useCallback((next: string) => {
+    setParams(prev => {
+      const p = new URLSearchParams(prev)
+      p.set('ym', next)
+      return p
+    }, { replace: true })
+  }, [setParams])
+  return [ym, setYm]
+}
+
+/** Тот же месяц дописываем к ссылке при переходе в карточку раздела. */
+export function withYm(path: string, ym: string): string {
+  return `${path}${path.includes('?') ? '&' : '?'}ym=${ym}`
+}
+
+/** Комментарий к зарплатной операции.
+ *
+ *  Тип операции (зарплата / аванс / бонус) бэкенд распознаёт по НАЧАЛУ
+ *  комментария, поэтому маркер обязан остаться первым словом, а заметка
+ *  пользователя дописывается после тире. Затрёшь маркер — операция выпадет
+ *  из своей колонки в ведомости и попортит расчёт «к выплате».
+ */
+export function salaryComment(marker: string, note?: string): string {
+  const clean = (note || '').trim()
+  return clean ? `${marker} — ${clean}` : marker
+}
+

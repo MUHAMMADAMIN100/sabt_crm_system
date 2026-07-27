@@ -366,3 +366,46 @@
 .dark .fin-brk-pop-head { border-bottom-color: #2b3440; }
 .dark .fin-brk-pop-row .l { color: #9aa6b4; }
 .dark .fin-brk-empty { color: #6b7684; }
+
+/* ─── История выплат сотрудника при наведении на имя ─────────────── */
+.fin-payout-name { cursor: help; border-bottom: 1px dashed #c7ccd4; }
+.dark .fin-payout-name { border-bottom-color: #3a4553; }
+
+.fin-payout-totals {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: #55606e;
+  padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid #eef0f4;
+}
+.fin-payout-totals b { font-variant-numeric: tabular-nums; color: #16191d; }
+.dark .fin-payout-totals { color: #9aa6b4; border-bottom-color: #2b3440; }
+.dark .fin-payout-totals b { color: #e7ecf3; }
+
+.fin-payout-row {
+  display: grid; grid-template-columns: auto auto 1fr auto; gap: 4px 8px;
+  align-items: center; padding: 5px 0; border-bottom: 1px dashed #f0f2f5;
+}
+.fin-payout-row:last-child { border-bottom: 0; }
+.dark .fin-payout-row { border-bottom-color: #262e38; }
+.fin-payout-row .kind {
+  font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+  background: #eef1f5; color: #55606e; white-space: nowrap;
+}
+/* Аванс — синий, бонус — зелёный (это поощрение), зарплата — нейтральная. */
+.fin-payout-row .kind.adv { background: #e8f0fe; color: #1a56db; }
+.fin-payout-row .kind.bon { background: #e7f7ed; color: #157347; }
+.dark .fin-payout-row .kind { background: #262e38; color: #9aa6b4; }
+.dark .fin-payout-row .kind.adv { background: #16273f; color: #7aa7f0; }
+.dark .fin-payout-row .kind.bon { background: #16301f; color: #63c68c; }
+.fin-payout-row .date { color: #55606e; white-space: nowrap; }
+.dark .fin-payout-row .date { color: #9aa6b4; }
+.fin-payout-row .amt { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.fin-payout-row .acc { grid-column: 1 / -1; font-size: 11px; color: #7c8797; }
+.fin-payout-row .ym { grid-column: 1 / -1; font-size: 11px; color: #97a0ad; margin-top: -3px; }
+.fin-payout-row .note {
+  grid-column: 1 / -1; font-size: 11px; color: #55606e; font-style: italic;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dark .fin-payout-row .acc,
+.dark .fin-payout-row .ym { color: #6b7684; }
+.dark .fin-payout-row .note { color: #9aa6b4; }
+.fin-payout-foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid #eef0f4; font-size: 11px; color: #97a0ad; }
+.dark .fin-payout-foot { border-top-color: #2b3440; color: #6b7684; }

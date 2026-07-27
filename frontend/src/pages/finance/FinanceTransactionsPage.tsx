@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { TYPE_LABEL, money, moneyBare, currentYm, todayISO, apiErr, downloadCsv } from './finlib';
+import { TYPE_LABEL, money, moneyBare, currentYm, todayISO, apiErr, downloadCsv , useYmParam } from './finlib';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
 import TransactionModal from './TransactionModal';
@@ -24,7 +24,7 @@ export default function FinanceTransactionsPage() {
   const [addType, setAddType] = useState<string | null>(null);
   // Вид: журнал-таблица или календарь месяца (карточки операций по дням).
   const [view, setView] = useState<'table' | 'calendar'>('table');
-  const [calYm, setCalYm] = useState(currentYm());
+  const [calYm, setCalYm] = useYmParam();
   const [editTx, setEditTx] = useState<any>(null);
   const [addDate, setAddDate] = useState<string | null>(null);
 

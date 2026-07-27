@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import './finance.css';
-import { money, currentYm, monthLabel, apiErr, INCOME_GROUPS, EXPENSE_GROUPS } from './finlib';
+import { money, currentYm, monthLabel, apiErr, INCOME_GROUPS, EXPENSE_GROUPS , useYmParam, withYm } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
@@ -16,7 +16,7 @@ import { FinLoading, FinLoadError, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
 
 export default function FinanceOverviewPage() {
-  const [ym, setYm] = useState(currentYm());
+  const [ym, setYm] = useYmParam();
   const [modal, setModal] = useState<{ open: boolean; initial?: any }>({ open: false });
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -106,7 +106,7 @@ export default function FinanceOverviewPage() {
           title="Доход за месяц" hint="все операции месяца · по категориям"
           legendRight="получено / получим за месяц"
           icon="income" color="var(--green)" total={income}
-          rows={incCats} ym={ym} txType="income" onClick={() => navigate('/finance/income')}
+          rows={incCats} ym={ym} txType="income" onClick={() => navigate(withYm('/finance/income', ym))}
           footerRows={[
             { label: 'Прогноз на приходящий месяц', value: `≈ ${money(stats.forecastNextMonth || 0)}` },
             { label: 'Доход за всё время', value: money(stats.incomeAllTime || 0), cls: 'pos' },
@@ -115,14 +115,14 @@ export default function FinanceOverviewPage() {
         <SummaryContainer
           title="Расход за месяц" hint="все операции месяца · по категориям"
           icon="expense" color="var(--red)" total={expense}
-          rows={expCats} ym={ym} txType="expense" onClick={() => navigate('/finance/expense')}
+          rows={expCats} ym={ym} txType="expense" onClick={() => navigate(withYm('/finance/expense', ym))}
           footerRows={[
             { label: 'Регулярные обязательства / мес', value: money((stats.salaryToPay || 0) + (stats.subsMonthly || 0)) },
             { label: 'Расход за всё время', value: money(stats.expenseAllTime || 0), cls: 'neg' },
           ]}
         />
         <div className="card">
-          <div className="summary-head"><span className="t">Overall</span></div>
+          <div className="summary-head"><span className="t">Структура расходов</span></div>
           {pie.length === 0 ? (
             <div className="empty" style={{ padding: 24 }}>Нет данных</div>
           ) : (
@@ -175,7 +175,7 @@ export default function FinanceOverviewPage() {
       )}
 
       <div className="cards grid-2" style={{ marginBottom: 22 }}>
-        <div className="card clickable" onClick={() => navigate('/finance/income')}>
+        <div className="card clickable" onClick={() => navigate(withYm('/finance/income', ym))}>
           <div className="summary-head">
             <span className="t" style={{ color: 'var(--green)' }}><FinIcon name="income" size={18} /> Доход по направлениям</span>
             {/* Главная цифра — фактически получено за месяц (сумма планов
@@ -197,7 +197,7 @@ export default function FinanceOverviewPage() {
           </div>
         </div>
 
-        <div className="card clickable" onClick={() => navigate('/finance/expense')}>
+        <div className="card clickable" onClick={() => navigate(withYm('/finance/expense', ym))}>
           <div className="summary-head">
             <span className="t" style={{ color: 'var(--red)' }}><FinIcon name="expense" size={18} /> Расход по статьям</span>
             <span className="total" style={{ color: 'var(--red)' }}>{money(expensePlanTotal)}</span>
@@ -221,22 +221,22 @@ export default function FinanceOverviewPage() {
       </div>
 
       <div className="cards grid-4" style={{ marginBottom: 22 }}>
-        <div className="card stat clickable" onClick={() => navigate('/finance/income')}>
+        <div className="card stat clickable" onClick={() => navigate(withYm('/finance/income', ym))}>
           <div className="label"><FinIcon name="income" size={15} /> Ожидается к получению</div>
           <div className="value pos">{money(stats.expectedIncome || 0)}</div>
           <div className="sub">план оплат по проектам</div>
         </div>
-        <div className="card stat clickable" onClick={() => navigate('/finance/expense/salary')}>
+        <div className="card stat clickable" onClick={() => navigate(withYm('/finance/expense/salary', ym))}>
           <div className="label"><FinIcon name="salary" size={15} /> К выплате ЗП за месяц</div>
           <div className="value">{money(stats.salaryToPay || 0)}</div>
           <div className="sub">фонд {money(stats.salaryFund || 0)}{(stats.salaryBonuses || 0) > 0 ? ` + бонусы ${money(stats.salaryBonuses)}` : ''} − авансы − выплачено</div>
         </div>
-        <div className="card stat clickable" onClick={() => navigate('/finance/expense/debts')}>
+        <div className="card stat clickable" onClick={() => navigate(withYm('/finance/expense/debts', ym))}>
           <div className="label"><FinIcon name="receipt" size={15} /> Всего должны</div>
           <div className="value neg">{money(stats.totalDebt || 0)}</div>
           <div className="sub">остаток по долгам</div>
         </div>
-        <div className="card stat clickable" onClick={() => navigate('/finance/expense/rent_subs')}>
+        <div className="card stat clickable" onClick={() => navigate(withYm('/finance/expense/rent_subs', ym))}>
           <div className="label"><FinIcon name="transactions" size={15} /> Регулярные / мес</div>
           <div className="value">{money(stats.subsMonthly || 0)}</div>
           <div className="sub">аренда + подписки</div>

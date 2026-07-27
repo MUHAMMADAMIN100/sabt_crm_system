@@ -5,18 +5,20 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { money, currentYm, currentSalaryYm, todayISO, formatDate, monthLabel, shiftYm, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP } from './finlib';
+import { money, currentYm, currentSalaryYm, todayISO, formatDate, monthLabel, shiftYm, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP , useYmParam, salaryComment } from './finlib';
 import { FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinance } from './FinKit';
 import { EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
+import PayoutHistoryHover from './PayoutHistoryHover';
 import './finance.css';
 
 export default function FinanceExpenseGroupPage() {
   const { kind } = useParams<{ kind: string }>();
   // Зарплатная ведомость живёт циклами «10-е → 10-е» — по умолчанию
   // открываем текущий зарплатный период (для остальных статей — календарный).
-  const [ym, setYm] = useState(kind === 'salary' ? currentSalaryYm() : currentYm());
+  // Месяц приходит из адреса (?ym=…) — тот же, что был выбран в «Расходах».
+  const [ym, setYm] = useYmParam(kind === 'salary' ? currentSalaryYm() : currentYm());
 
   if (kind === 'other') {
     return (
@@ -251,7 +253,13 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                     const isPaid = e.frozen || (gross > 0 && Number(e.toPay) <= 0.005);
                     return (
                       <tr key={e.id} onDoubleClick={() => openEmp(e)}>
-                        <td><b>{e.name}</b></td>
+                        <td>
+                          {/* Наведение на имя показывает историю выплат: что,
+                              когда, сколько и с какого счёта. */}
+                          <PayoutHistoryHover employeeId={e.id} name={e.name} className="fin-payout-name">
+                            <b>{e.name}</b>
+                          </PayoutHistoryHover>
+                        </td>
                         <td className="muted">{e.role ?? '—'}</td>
                         <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
                         <td className="num">{money(e.salary)}</td>
@@ -310,7 +318,11 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                 <tbody>
                   {fired.map((e) => (
                     <tr key={e.id} style={{ opacity: 0.7 }} onDoubleClick={() => openEmp(e)}>
-                      <td><b>{e.name}</b></td>
+                      <td>
+                        <PayoutHistoryHover employeeId={e.id} name={e.name} className="fin-payout-name">
+                          <b>{e.name}</b>
+                        </PayoutHistoryHover>
+                      </td>
                       <td className="muted">{e.role ?? '—'}</td>
                       <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
                       <td className="num muted">{money(e.salary)}</td>
@@ -401,6 +413,7 @@ function PayoutModal({ row, kind, ym, onClose }: { row: any; kind: 'advance' | '
   const [date, setDate] = useState(todayISO());
   const [salaryYm, setSalaryYm] = useState(ym);
   const [accountId, setAccountId] = useState('');
+  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
 
@@ -414,7 +427,8 @@ function PayoutModal({ row, kind, ym, onClose }: { row: any; kind: 'advance' | '
     try {
       await financeApi.createOperation({
         type: 'expense', amount: amt, date, accountId, salaryYm: salaryYm || undefined,
-        categoryId: salaryCat?.id, employeeId: row.id, comment,
+        // Заметка дописывается к маркеру типа — см. пояснение в SalaryPayModal.
+        categoryId: salaryCat?.id, employeeId: row.id, comment: salaryComment(comment, note),
       });
       invalidateFinance(qc);
       toast.success(`${title}: ${money(amt)} — операция создана`);
@@ -438,6 +452,9 @@ function PayoutModal({ row, kind, ym, onClose }: { row: any; kind: 'advance' | '
                 {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
+          </div>
+          <div className="field"><label>Комментарий</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="за что / как выдали — например «на лечение»" />
           </div>
           <p className="mini muted" style={{ margin: 0 }}>
             «Дата выплаты» — когда деньги ушли со счёта; «Месяц начисления» — за какой месяц.{' '}
@@ -465,6 +482,7 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
   // Месяц начисления — за какой месяц эта зарплата (по умолчанию — таблица).
   const [salaryYm, setSalaryYm] = useState(ym);
   const [accountId, setAccountId] = useState('');
+  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
 
@@ -476,7 +494,10 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
     try {
       await financeApi.createOperation({
         type: 'expense', amount: amt, date, accountId, salaryYm: salaryYm || undefined,
-        categoryId: salaryCat?.id, employeeId: row.id, comment: 'Зарплата',
+        // Тип операции распознаётся по началу комментария («Зарплата»/«Аванс»/
+        // «Бонус»), поэтому заметку ДОПИСЫВАЕМ, а не заменяем ею комментарий —
+        // иначе выплата перестала бы считаться зарплатой.
+        categoryId: salaryCat?.id, employeeId: row.id, comment: salaryComment('Зарплата', note),
       });
       invalidateFinance(qc);
       onClose();
@@ -499,6 +520,9 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
                 {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
+          </div>
+          <div className="field"><label>Комментарий</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="за что / как выдали — например «наличными на руки»" />
           </div>
           <p className="mini muted" style={{ margin: 0 }}>
             «Дата выплаты» — когда деньги ушли (влияет на баланс счёта). «Месяц начисления» —

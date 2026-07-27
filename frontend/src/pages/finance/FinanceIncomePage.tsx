@@ -1,9 +1,8 @@
 // Доход: обзор трёх направлений (SMM / Development / Design). Порт fin-webrand/src/pages/Income.tsx.
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import './finance.css';
-import { money, currentYm, monthLabel, INCOME_GROUPS } from './finlib';
+import { money, monthLabel, INCOME_GROUPS, useYmParam, withYm } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
@@ -11,7 +10,7 @@ import { FinLoading, FinLoadError } from './FinKit';
 import { financeApi } from '@/services/api.service';
 
 export default function FinanceIncomePage() {
-  const [ym, setYm] = useState(currentYm());
+  const [ym, setYm] = useYmParam();
   const navigate = useNavigate();
 
   const { data: dirs, isLoading, isError, refetch } = useQuery({
@@ -37,7 +36,7 @@ export default function FinanceIncomePage() {
           const projects = d.projectCount ?? 0;
           const expected = d.expected ?? 0;
           return (
-            <BreakdownHover className="card clickable" key={g.key} ym={ym} kind="direction" id={g.key} title={g.label} color={g.color} icon={g.icon} onClick={() => navigate(`/finance/income/${g.key}`)}>
+            <BreakdownHover className="card clickable" key={g.key} ym={ym} kind="direction" id={g.key} title={g.label} color={g.color} icon={g.icon} onClick={() => navigate(withYm(`/finance/income/${g.key}`, ym))}>
               <div className="summary-head">
                 <span className="t" style={{ color: g.color }}><CatIcon icon={g.icon} color={g.color} size={30} /> {g.label}</span>
               </div>

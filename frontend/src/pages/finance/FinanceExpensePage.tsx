@@ -1,9 +1,8 @@
 // Расход: обзор статей /finance/expense — порт fin-webrand/src/pages/Expense.tsx (ТЗ 4.1).
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
-import { money, currentYm, EXPENSE_GROUPS, OTHER_GROUP } from './finlib';
+import { money, EXPENSE_GROUPS, OTHER_GROUP, useYmParam, withYm } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
@@ -11,7 +10,7 @@ import { FinLoading, FinLoadError } from './FinKit';
 import './finance.css';
 
 export default function FinanceExpensePage() {
-  const [ym, setYm] = useState(currentYm());
+  const [ym, setYm] = useYmParam();
   const navigate = useNavigate();
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -59,7 +58,7 @@ export default function FinanceExpensePage() {
           const pp = paidProgress(g.key);
           const allPaid = !!pp && pp.total > 0 && pp.paid >= pp.total;
           return (
-            <BreakdownHover className="card clickable" key={g.key} ym={ym} kind="group" id={g.key} title={g.label} color={g.color} icon={g.icon} onClick={() => navigate(`/finance/expense/${g.key}`)}>
+            <BreakdownHover className="card clickable" key={g.key} ym={ym} kind="group" id={g.key} title={g.label} color={g.color} icon={g.icon} onClick={() => navigate(withYm(`/finance/expense/${g.key}`, ym))}>
               <div className="summary-head"><span className="t" style={{ color: g.color }}><CatIcon icon={g.icon} color={g.color} size={30} /> {g.label}</span></div>
               <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(groupValue(g.key))}</div>
               <div className="mini muted" style={{ marginTop: 6 }}>{subtitle(g.key)}</div>
@@ -74,7 +73,7 @@ export default function FinanceExpensePage() {
             </BreakdownHover>
           );
         })}
-        <BreakdownHover className="card clickable" ym={ym} kind="group" id="other" title={OTHER_GROUP.label} color={OTHER_GROUP.color} icon={OTHER_GROUP.icon} onClick={() => navigate('/finance/expense/other')}>
+        <BreakdownHover className="card clickable" ym={ym} kind="group" id="other" title={OTHER_GROUP.label} color={OTHER_GROUP.color} icon={OTHER_GROUP.icon} onClick={() => navigate(withYm('/finance/expense/other', ym))}>
           <div className="summary-head"><span className="t" style={{ color: OTHER_GROUP.color }}><CatIcon icon={OTHER_GROUP.icon} color={OTHER_GROUP.color} size={30} /> {OTHER_GROUP.label}</span></div>
           <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(data?.other?.spent ?? 0)}</div>
           <div className="mini muted" style={{ marginTop: 6 }}>реклама, транспорт, налоги…</div>

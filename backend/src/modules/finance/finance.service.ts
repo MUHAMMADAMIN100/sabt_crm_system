@@ -104,6 +104,15 @@ function advanceOf(e: { advances?: Record<string, number> | null }, ym: string):
 function isAdvanceTx(t: { comment?: string | null }): boolean {
   return (t.comment || '').trim().toLowerCase().startsWith('аванс');
 }
+/** Заметка пользователя без служебного маркера типа операции.
+ *  Маркер («Зарплата»/«Аванс»/«Бонус») обязан оставаться первым словом —
+ *  по нему операция и относится к своей колонке ведомости. */
+function salaryNoteOf(comment?: string | null): string | null {
+  const raw = (comment || '').trim();
+  const m = raw.match(/^(зарплата|аванс|бонус)[ \t]*[—–-][ \t]*(.+)$/i);
+  return m ? m[2].trim() || null : null;
+}
+
 function isBonusTx(t: { comment?: string | null }): boolean {
   return (t.comment || '').trim().toLowerCase().startsWith('бонус');
 }
@@ -2401,6 +2410,48 @@ export class FinanceService implements OnModuleInit {
   }
 
   /** Аванс за месяц (помесячно, как бонус). */
+  /** История выплат сотруднику: аванс/бонус/зарплата — что, когда, сколько
+   *  и с какого счёта. Отдельной таблицы не нужно: каждая выплата и так
+   *  создаёт операцию расхода с employeeId — читаем их.
+   *
+   *  months — за сколько последних месяцев начисления смотреть (по умолчанию
+   *  12): история нужна «за последнее время», а не за всю жизнь компании. */
+  async employeePayoutHistory(id: string, months = 12) {
+    const e = await this.empRepo.findOne({ where: { id } });
+    if (!e) throw new NotFoundException('Сотрудник не найден');
+    const m = await this.maps();
+    const txs = this.active(await this.txRepo.find({
+      where: { employeeId: id, type: FinanceTxType.EXPENSE } as any,
+      order: { date: 'DESC' },
+    }));
+    const minYm = shiftYm(currentYm(), -(months - 1));
+    const rows = txs
+      .map(t => {
+        const kind = isAdvanceTx(t) ? 'advance' : isBonusTx(t) ? 'bonus' : 'salary';
+        return {
+          id: t.id,
+          kind,
+          kindLabel: kind === 'advance' ? 'Аванс' : kind === 'bonus' ? 'Бонус' : 'Зарплата',
+          amount: r2(Number(t.amount)),
+          date: t.date,
+          salaryYm: t.salaryYm || ymOf(t.date),
+          accountName: (t.accountId && m.acc.get(t.accountId)?.name) || null,
+          // Заметка без служебного маркера — то, что ввёл пользователь.
+          note: salaryNoteOf(t.comment),
+        };
+      })
+      .filter(r => r.salaryYm >= minYm)
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+    const sum = (k: string) => r2(rows.filter(r => r.kind === k).reduce((s, r) => s + r.amount, 0));
+    return {
+      employeeId: id,
+      name: e.name,
+      rows,
+      totals: { advance: sum('advance'), bonus: sum('bonus'), salary: sum('salary'), all: r2(rows.reduce((s, r) => s + r.amount, 0)) },
+    };
+  }
+
   async setEmployeeAdvance(id: string, dto: { ym?: string; amount?: any }) {
     return this.setEmployeeMonthField(id, 'advances', dto, 'Аванс');
   }

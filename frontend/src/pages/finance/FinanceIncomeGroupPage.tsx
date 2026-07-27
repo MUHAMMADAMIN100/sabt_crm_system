@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, INCOME_GROUPS, apiErr, downloadCsv } from './finlib';
+import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, INCOME_GROUPS, apiErr, downloadCsv , useYmParam } from './finlib';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
 import { FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinanceAll } from './FinKit';
@@ -24,7 +24,8 @@ function useInvalidate() {
 export default function FinanceIncomeGroupPage() {
   const { direction } = useParams<{ direction: string }>();
   const g = INCOME_GROUPS.find((x) => x.key === direction);
-  const [ym, setYm] = useState(currentYm());
+  // Месяц приходит из адреса (?ym=…) — тот же, что был выбран в «Доходах».
+  const [ym, setYm] = useYmParam();
   const [start, setStart] = useState<string | undefined>(undefined);
   const [showNew, setShowNew] = useState(false);
 

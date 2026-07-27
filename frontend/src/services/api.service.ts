@@ -378,6 +378,8 @@ export const financeApi = {
   removeEmployee: (id: string) => api.delete(`/finance/employees/${id}`).then(r => r.data),
   setEmployeeBonus: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/bonus`, data).then(r => r.data),
   // Помесячные аванс и штраф (как бонус; 0 — снять).
+  employeePayouts: (id: string, months?: number) =>
+    api.get(`/finance/employees/${id}/payouts`, { params: months ? { months } : undefined }).then(r => r.data),
   setEmployeeAdvance: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/advance`, data).then(r => r.data),
   setEmployeeFine: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/fine`, data).then(r => r.data),
   // Закрыть месяц: все сотрудники — «выплачено» (снапшот, без операций).
