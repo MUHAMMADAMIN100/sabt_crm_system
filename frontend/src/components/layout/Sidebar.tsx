@@ -53,7 +53,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/project-stories', icon: ImageIcon,     label: 'Истории по проектам', permission: 'stories.manage' },
     { to: '/my-notes',      icon: StickyNote,      label: 'Заметки',           permission: 'dashboard' },
     // Поручения от руководства — есть у КАЖДОГО сотрудника (permission
-    // 'dashboard' есть у всех ролей), поэтому раздел виден всем.
+    // 'tasks.view' есть у всех ролей). Кроме основателя и со-основателя: они
+    // задачи выдают, а не получают, и следят за ними в Календаре (см. фильтр
+    // ниже). Сам маршрут им доступен — по ссылке из уведомления о закрытии
+    // задачи карточка должна открываться.
     { to: '/tasks',         icon: ClipboardCheck,  label: 'Задачи от руководителя', permission: 'tasks.view' },
     { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
     { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
@@ -96,6 +99,11 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     if (item.to === '/employee-access') return canManageAccess(role)
     // «Отчёты СММ» (ежедневный автоотчёт) — только основатель.
     if (item.to === '/smm-daily') return canSeeSmmDaily(role)
+    // «Задачи от руководителя» — раздел получателя поручений. Основателю и
+    // со-основателю он не нужен: выданные ими задачи видны в Календаре (там же
+    // исполнитель, статус и правка). Маршрут остаётся рабочим для ссылок из
+    // уведомлений — прячем только пункт меню.
+    if (item.to === '/tasks') return !isTopExec
     // Права роли + персональные гранты (например clients.view от clients.create).
     return userCan(user, item.permission)
   })
