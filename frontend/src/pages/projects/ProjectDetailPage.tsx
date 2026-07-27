@@ -13,6 +13,7 @@ import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import TaskDrawer from '@/components/tasks/TaskDrawer'
 import { isTaskOverdue } from '@/lib/taskStatus'
+import { projectTypeLabel } from '@/lib/projectType'
 import DeleteWithReasonDialog from '@/components/tasks/DeleteWithReasonDialog'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
@@ -686,7 +687,7 @@ export default function ProjectDetailPage() {
                   <Building2 size={16} className="text-surface-500 mt-0.5 shrink-0" />
                   <div>
                     <p className="text-xs text-surface-500 dark:text-surface-400">Тип проекта</p>
-                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{project.projectType}</p>
+                    <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{projectTypeLabel(project.projectType)}</p>
                   </div>
                 </div>
               )}
@@ -945,7 +946,8 @@ export default function ProjectDetailPage() {
             <label className="label mb-1">Тип проекта</label>
             <select value={projectForm.projectType || ''} onChange={e => setProjectForm((f: any) => ({ ...f, projectType: e.target.value }))} className="input w-full">
               <option value="">— Не указан —</option>
-              <option value="Web сайт">Web сайт</option>
+              {/* value — то, что лежит в БД, текст — то, что видит пользователь. */}
+              <option value="Web сайт">{projectTypeLabel('Web сайт')}</option>
               <option value="Дизайн">Дизайн</option>
               <option value="SMM">SMM</option>
             </select>

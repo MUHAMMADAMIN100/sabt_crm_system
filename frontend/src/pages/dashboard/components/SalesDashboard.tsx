@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { analyticsApi, projectsApi, clientsApi } from '@/services/api.service'
 import { DatePicker, DateRangePicker } from '@/components/ui/DatePicker'
 import { useAuthStore } from '@/store/auth.store'
+import { projectTypeLabel } from '@/lib/projectType'
 import { StatusBadge, ProgressBar, CollapsibleSection } from '@/components/ui'
 import { Calendar, CheckCircle2, Mail, Pencil } from 'lucide-react'
 import { format } from 'date-fns'
@@ -414,7 +415,7 @@ export default function SalesDashboard() {
                   </td>
                   <td className="py-2 pr-3">
                     {p.projectType && (
-                      <span className="text-[10px] bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-1.5 py-0.5 rounded-full whitespace-nowrap">{p.projectType}</span>
+                      <span className="text-[10px] bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-1.5 py-0.5 rounded-full whitespace-nowrap">{projectTypeLabel(p.projectType)}</span>
                     )}
                   </td>
                   <td className="py-2 pr-3 text-right font-medium text-surface-800 dark:text-surface-200 tabular-nums whitespace-nowrap">

@@ -22,6 +22,7 @@ import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { useChartColors } from '@/lib/theme'
+import { projectTypeLabel } from '@/lib/projectType'
 
 type FinancePeriod = 'this_month' | 'last_3_months' | 'this_year' | 'all_time'
 
@@ -626,7 +627,8 @@ function IncomeExpenseChart({ title, perProject, sectionId }: { title: string; p
               <>
                 <select value={projectType} onChange={e => { setProjectType(e.target.value); setProjectId('') }} className="input text-xs py-1.5 w-32">
                   <option value="">Все типы</option>
-                  <option value="Web сайт">Web сайт</option>
+                  {/* value — то, что лежит в БД, текст — то, что видит пользователь. */}
+                  <option value="Web сайт">{projectTypeLabel('Web сайт')}</option>
                   <option value="Дизайн">Дизайн</option>
                   <option value="SMM">SMM</option>
                 </select>

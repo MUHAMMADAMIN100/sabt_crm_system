@@ -31,6 +31,20 @@ export const DEV_PROJECT_SUBTYPES = [
  *  по разработке и проект-менеджера по разработке (pm_dev). */
 export const DEV_PROJECT_TYPES = ['Web сайт', ...DEV_PROJECT_SUBTYPES];
 
+/** Подписи типов проекта для текстов, которые видит пользователь.
+ *  В БД тип по-прежнему хранится как 'Web сайт' (по нему фильтруют сегменты
+ *  и доска «Разработка»), но в интерфейсе он называется «Разработка».
+ *  Фронтовый двойник — frontend/src/lib/projectType.ts. */
+const PROJECT_TYPE_LABELS: Record<string, string> = {
+  'Web сайт': 'Разработка',
+};
+
+/** Как тип проекта показывается пользователю (в текстах ошибок и письмах). */
+export function projectTypeLabel(type?: string | null): string {
+  if (!type) return '';
+  return PROJECT_TYPE_LABELS[type] || type;
+}
+
 /** Возвращает сегмент для роли МП либо null, если роль — не менеджер продаж. */
 export function getSalesSegment(role?: string | null): SalesSegment | null {
   if (role === 'sales_manager_smm') {

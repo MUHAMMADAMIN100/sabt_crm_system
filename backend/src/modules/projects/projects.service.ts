@@ -20,7 +20,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { MailService } from '../mail/mail.service';
-import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES } from '../../common/sales-segment';
+import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES, projectTypeLabel } from '../../common/sales-segment';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
@@ -989,7 +989,7 @@ export class ProjectsService implements OnModuleInit {
     const createSegment = getSalesSegment(userRole);
     if (createSegment && !createSegment.projectTypes.includes(dto.projectType as string)) {
       throw new ForbiddenException(
-        `Вы можете создавать только проекты типов: ${createSegment.projectTypes.join(', ')}`,
+        `Вы можете создавать только проекты типов: ${createSegment.projectTypes.map(projectTypeLabel).join(', ')}`,
       );
     }
     await this.validateManagerAssignment(dto.managerId, dto.projectType);

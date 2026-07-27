@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { projectsApi, employeesApi, smmTariffsApi, riskApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { userCan } from '@/lib/permissions'
+import { projectTypeLabel } from '@/lib/projectType'
 import { useTranslation } from '@/i18n'
 import { Modal, StatusBadge, EmptyState, PageLoader, ProgressBar, ConfirmDialog, Avatar, Pagination } from '@/components/ui'
 import { Plus, Search, FolderKanban, Archive, Trash2, Edit, Users, ChevronDown, X, Check, Banknote, Calendar as CalIcon } from 'lucide-react'
@@ -30,7 +31,8 @@ interface ProjectFormProps {
 
 const PROJECT_TYPE_FILTERS = [
   { value: '', label: 'Все типы' },
-  { value: 'Web сайт', label: 'Web сайт' },
+  // value — то, что лежит в БД, label — то, что видит пользователь.
+  { value: 'Web сайт', label: projectTypeLabel('Web сайт') },
   { value: 'Дизайн', label: 'Дизайн' },
   { value: 'SMM', label: 'SMM' },
 ]
@@ -371,9 +373,9 @@ export default function ProjectsPage() {
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setProjectType(p.projectType) }}
-                          title={`Показать только "${p.projectType}"`}
+                          title={`Показать только "${projectTypeLabel(p.projectType)}"`}
                           className="text-[10px] bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/50 px-1.5 py-0.5 rounded-full transition-colors"
-                        >{p.projectType}</button>
+                        >{projectTypeLabel(p.projectType)}</button>
                       )}
                     </div>
                     {isSalesManagerView && (p as any).lastActivityAt && (
@@ -863,7 +865,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
             ) : (
               <select {...register('projectType', { required: true })} className="input">
                 <option value="">— Выбрать тип —</option>
-                {PROJECT_TYPES.map(pt => <option key={pt} value={pt}>{pt}</option>)}
+                {PROJECT_TYPES.map(pt => <option key={pt} value={pt}>{projectTypeLabel(pt)}</option>)}
               </select>
             )}
             {errors.projectType && <p className="text-xs text-red-500 mt-1">Выберите тип проекта</p>}

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
 import { useAuthStore } from '@/store/auth.store'
+import { projectTypeLabel } from '@/lib/projectType'
 import { PageLoader, EmptyState, ProgressBar } from '@/components/ui'
 import { RotateCcw, FolderKanban } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -12,7 +13,8 @@ import clsx from 'clsx'
 
 const PROJECT_TYPE_FILTERS = [
   { value: '', label: 'Все типы' },
-  { value: 'Web сайт', label: 'Web сайт' },
+  // value — то, что лежит в БД, label — то, что видит пользователь.
+  { value: 'Web сайт', label: projectTypeLabel('Web сайт') },
   { value: 'Дизайн', label: 'Дизайн' },
   { value: 'SMM', label: 'SMM' },
 ]
@@ -107,9 +109,9 @@ export default function ArchivePage() {
                       <button
                         type="button"
                         onClick={() => setProjectType(p.projectType)}
-                        title={`Показать только "${p.projectType}"`}
+                        title={`Показать только "${projectTypeLabel(p.projectType)}"`}
                         className="text-[10px] bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/50 px-1.5 py-0.5 rounded-full transition-colors"
-                      >{p.projectType}</button>
+                      >{projectTypeLabel(p.projectType)}</button>
                     )}
                   </div>
                 </div>

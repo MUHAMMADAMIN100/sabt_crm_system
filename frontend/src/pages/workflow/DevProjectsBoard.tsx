@@ -7,6 +7,7 @@ import { CalendarDays, Plus, User as UserIcon } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/auth.store'
+import { projectTypeLabel } from '@/lib/projectType'
 import TaskDrawer from '@/components/tasks/TaskDrawer'
 
 /** Этапы разработки — бизнес-вехи с процентом готовности портфеля.
@@ -279,7 +280,7 @@ export default function DevProjectsBoard() {
                       )}
                     >
                       <p className="text-sm font-medium text-surface-900 dark:text-surface-100 leading-snug">{p.name}</p>
-                      <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-0.5">{p.projectType}{p.manager?.name ? ` · ${p.manager.name}` : ''}</p>
+                      <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-0.5">{projectTypeLabel(p.projectType)}{p.manager?.name ? ` · ${p.manager.name}` : ''}</p>
                       <div className="flex items-center justify-between mt-2 text-[11px] text-surface-500 dark:text-surface-400">
                         <span className="inline-flex items-center gap-1">
                           {p.endDate && <><CalendarDays size={11} /> {fmtDate(p.endDate)}</>}
@@ -419,7 +420,7 @@ function ProjectQuickModal({ project: p, stageNum, canMove, onStage, onOpenPage,
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100 leading-snug">{p.name}</h3>
-            <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">{p.projectType}{p.manager?.name ? ` · менеджер: ${p.manager.name}` : ''}</p>
+            <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">{projectTypeLabel(p.projectType)}{p.manager?.name ? ` · менеджер: ${p.manager.name}` : ''}</p>
           </div>
           <button type="button" aria-label="Закрыть" onClick={onClose}
             className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-surface-400 hover:text-surface-700 hover:bg-surface-100 dark:hover:bg-surface-700 dark:hover:text-surface-200 transition-colors">✕</button>
