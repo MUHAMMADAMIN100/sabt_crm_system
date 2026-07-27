@@ -54,11 +54,16 @@ export class UsersController {
   }
 
   // ─── Доступы сотрудников (персональные гранты) ────────────────────────
-  /** Каталог выдаваемых возможностей (ключ → подпись) — для UI. */
+  /** Каталог выдаваемых возможностей (ключ → подпись) — для UI.
+   *  roles отдаём тоже: по ним интерфейс отмечает возможности, которые у
+   *  сотрудника уже есть НАТИВНО по роли. Без этого у основателя (у которого
+   *  есть всё) матрица выглядела пустой — ни одной галочки. */
   @Get('access/catalog')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   accessCatalog() {
-    return Object.entries(GRANTABLE).map(([key, def]) => ({ key, label: def.label, category: def.category }));
+    return Object.entries(GRANTABLE).map(([key, def]) => ({
+      key, label: def.label, category: def.category, roles: def.roles,
+    }));
   }
 
   /** Список сотрудников с их ролью и персональными доступами. */

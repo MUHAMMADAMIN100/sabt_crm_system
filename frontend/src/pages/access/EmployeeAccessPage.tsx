@@ -4,6 +4,7 @@ import { usersApi } from '@/services/api.service'
 import { getRoleLabel } from '@/lib/permissions'
 import { Avatar, Modal } from '@/components/ui'
 import { ShieldCheck, Search, SlidersHorizontal } from 'lucide-react'
+import clsx from 'clsx'
 import toast from 'react-hot-toast'
 
 interface AccessUser {
@@ -11,7 +12,8 @@ interface AccessUser {
   secondaryRole?: string | null; position?: string | null
   extraPermissions: string[]; isActive: boolean
 }
-interface Cap { key: string; label: string; category: string }
+/** roles — роли, у которых возможность есть НАТИВНО (без персонального гранта). */
+interface Cap { key: string; label: string; category: string; roles?: string[] }
 
 /**
  * «Доступы сотрудников» — основатель/сооснователь/админ выдаёт сотрудникам
@@ -106,6 +108,18 @@ function AccessEditorModal({ user, caps, onClose, onSaved }: {
   const toggle = (key: string) =>
     setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
 
+  /** Возможность уже есть по роли (или по второй роли) — гранта не требует.
+   *  Такие отмечаем галочкой и блокируем: гранты только ДОБАВЛЯЮТ доступ,
+   *  снять право роли через эту матрицу нельзя, и «пустой» чекбокс у
+   *  основателя (у которого есть всё) только сбивал с толку. */
+  const isByRole = (c: Cap) => {
+    const roles = c.roles || []
+    return roles.includes(user.role) || (!!user.secondaryRole && roles.includes(user.secondaryRole))
+  }
+
+  const byRoleCount = caps.filter(isByRole).length
+  const totalCount = caps.filter(c => isByRole(c) || selected.has(c.key)).length
+
   // Группировка возможностей по категориям (порядок появления).
   const grouped = useMemo(() => {
     const map = new Map<string, Cap[]>()
@@ -116,8 +130,10 @@ function AccessEditorModal({ user, caps, onClose, onSaved }: {
   return (
     <Modal open onClose={onClose} title={`Доступы — ${user.name}`} size="xl">
       <p className="text-xs text-surface-500 dark:text-surface-400 mb-4">
-        {user.position || getRoleLabel(user.role)} · отмеченные возможности добавятся поверх роли.
-        Выбрано: <b className="text-surface-700 dark:text-surface-300">{selected.size}</b>
+        {user.position || getRoleLabel(user.role)} · доступно всего{' '}
+        <b className="text-surface-700 dark:text-surface-300">{totalCount}</b> из {caps.length}:
+        по роли — {byRoleCount}, выдано лично — {selected.size}.
+        {byRoleCount > 0 && ' Права роли отмечены и снятию не подлежат — гранты только добавляют доступ.'}
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
@@ -125,12 +141,35 @@ function AccessEditorModal({ user, caps, onClose, onSaved }: {
           <div key={category} className="rounded-xl border border-surface-200 dark:border-surface-700 p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">{category}</p>
             <div className="space-y-1.5">
-              {list.map(c => (
-                <label key={c.key} className="flex items-center gap-2 text-sm cursor-pointer text-surface-700 dark:text-surface-200">
-                  <input type="checkbox" className="w-4 h-4 shrink-0" checked={selected.has(c.key)} onChange={() => toggle(c.key)} />
-                  <span>{c.label}</span>
-                </label>
-              ))}
+              {list.map(c => {
+                const native = isByRole(c)
+                return (
+                  <label
+                    key={c.key}
+                    title={native ? 'Есть по роли — снять нельзя' : undefined}
+                    className={clsx(
+                      'flex items-center gap-2 text-sm',
+                      native
+                        ? 'cursor-default text-surface-500 dark:text-surface-400'
+                        : 'cursor-pointer text-surface-700 dark:text-surface-200',
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 shrink-0"
+                      checked={native || selected.has(c.key)}
+                      disabled={native}
+                      onChange={() => { if (!native) toggle(c.key) }}
+                    />
+                    <span className="min-w-0">{c.label}</span>
+                    {native && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400 shrink-0">
+                        по роли
+                      </span>
+                    )}
+                  </label>
+                )
+              })}
             </div>
           </div>
         ))}
