@@ -18,7 +18,7 @@ import { MailService } from '../mail/mail.service';
 import { hasGrant } from '../auth/permissions';
 
 interface Viewer { id: string; role: string }
-interface Actor { id: string; name: string; role: string; secondaryRole: string | null; extraPermissions?: string[] | null }
+interface Actor { id: string; name: string; role: string; secondaryRole: string | null; extraPermissions?: string[] | null; deniedPermissions: string[] | null }
 
 /** Роли, которые могут редактировать доску любого SMM-проекта.
  *  Остальным нужно быть менеджером или участником проекта. */
@@ -347,11 +347,11 @@ export class WorkflowService implements OnModuleInit {
    *  организатор и ADMIN-уровень (admin/founder/co_founder). Проверяем обе
    *  роли (основную и вторую) + персональный грант content-plan.manage. */
   private async assertCanManage(viewer: Viewer): Promise<void> {
-    if (MANAGE_ROLES.includes(viewer.role)) return;
+    // Роль, вторая роль, персональный грант и персональный ЗАПРЕТ — всё
+    // решает hasGrant. Отдельная проверка списка ролей была бы сильнее
+    // запрета и делала бы снятие доступа к доске бесполезным.
     const u = await this.userRepo.findOne({ where: { id: viewer.id } });
-    if (u?.secondaryRole && MANAGE_ROLES.includes(u.secondaryRole)) return;
-    // Персональный доступ «Контент-план» — выдаётся на странице «Доступы сотрудников».
-    if (hasGrant({ role: viewer.role, secondaryRole: u?.secondaryRole, extraPermissions: u?.extraPermissions }, 'content-plan.manage')) return;
+    if (hasGrant({ role: viewer.role, secondaryRole: u?.secondaryRole, extraPermissions: u?.extraPermissions, deniedPermissions: u?.deniedPermissions }, 'content-plan.manage')) return;
     throw new ForbiddenException('Изменять доску может только руководитель SMM или организатор');
   }
 
@@ -360,11 +360,10 @@ export class WorkflowService implements OnModuleInit {
    *  участник/менеджер проекта. Сами права на действие проверяет
    *  assertCanAct / assertStageRole. */
   private async assertCanAccessCard(card: WorkflowCard, viewer: Viewer): Promise<void> {
-    if (PRIVILEGED.includes(viewer.role) || MANAGE_ROLES.includes(viewer.role)) return;
     if (this.isAssignee(card, viewer.id)) return;
     // Персональный грант «полное управление доской» — доступ к любой карточке.
     const u = await this.userRepo.findOne({ where: { id: viewer.id } });
-    if (hasGrant({ role: viewer.role, secondaryRole: u?.secondaryRole, extraPermissions: u?.extraPermissions }, 'content-plan.manage')) return;
+    if (hasGrant({ role: viewer.role, secondaryRole: u?.secondaryRole, extraPermissions: u?.extraPermissions, deniedPermissions: u?.deniedPermissions }, 'content-plan.manage')) return;
     await this.assertCanEdit(card.projectId, viewer);
   }
 
@@ -406,6 +405,7 @@ export class WorkflowService implements OnModuleInit {
       role: u?.role || '',
       secondaryRole: u?.secondaryRole || null,
       extraPermissions: u?.extraPermissions || null,
+      deniedPermissions: u?.deniedPermissions || null,
     };
   }
 
@@ -413,9 +413,8 @@ export class WorkflowService implements OnModuleInit {
    *  organizer) ЛИБО сотрудник с персональным грантом «полное управление
    *  доской» — может выполнять действие любого этапа (все статусы). */
   private isManager(actor: Actor): boolean {
-    return MANAGE_ROLES.includes(actor.role)
-      || (!!actor.secondaryRole && MANAGE_ROLES.includes(actor.secondaryRole))
-      || hasGrant(actor, 'content-plan.manage');
+    // Только hasGrant: он же учитывает роль, вторую роль, грант и запрет.
+    return hasGrant(actor, 'content-plan.manage');
   }
 
   /** Производственные действия, которые ИСПОЛНИТЕЛЬ своей карточки может
@@ -485,10 +484,8 @@ export class WorkflowService implements OnModuleInit {
   /** Видит ли пользователь ВСЮ доску: роль из SEE_ALL (основная/вторая) ИЛИ
    *  персональный грант просмотра/полного управления доской. */
   private async canSeeWholeBoard(viewer: Viewer): Promise<boolean> {
-    if (SEE_ALL.includes(viewer.role)) return true;
     const u = await this.userRepo.findOne({ where: { id: viewer.id } });
-    if (u?.secondaryRole && SEE_ALL.includes(u.secondaryRole)) return true;
-    const g = { role: viewer.role, secondaryRole: u?.secondaryRole, extraPermissions: u?.extraPermissions };
+    const g = { role: viewer.role, secondaryRole: u?.secondaryRole, extraPermissions: u?.extraPermissions, deniedPermissions: u?.deniedPermissions };
     return hasGrant(g, 'board.view') || hasGrant(g, 'content-plan.manage');
   }
 

@@ -40,6 +40,9 @@ export interface User {
   isStoryMaker?: boolean
   /** Персональные доступы поверх роли (выдаёт основатель на «Доступах сотрудников»). */
   extraPermissions?: string[] | null
+  /** Персональные запреты — снимают право, которое есть по роли. Сильнее и роли,
+   *  и выданного гранта (см. userCan в lib/permissions.ts). */
+  deniedPermissions?: string[] | null
   position?: string | null
   department?: string | null
   isBlocked?: boolean

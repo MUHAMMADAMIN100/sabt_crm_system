@@ -85,6 +85,7 @@ export type Permission =
   | 'stories.manage'
   | 'organizer.directory'
   | 'time-tracker.use'
+  | 'notes.use'
   | 'tariffs.manage'
   | 'risks.view'
   | 'finance.manage'
@@ -102,7 +103,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'analytics.view', 'reports.view', 'reports.create', 'reports.edit.all',
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
-    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'clients.view', 'security-log.view', 'organizer.directory',
   ],
   founder: [
@@ -115,7 +116,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'analytics.view', 'reports.view', 'reports.create', 'reports.edit.all',
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
-    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
   ],
   co_founder: [
@@ -128,7 +129,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'analytics.view', 'reports.view', 'reports.create', 'reports.edit.all',
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
-    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
   ],
   // Руководитель по видеографии — менеджерский уровень для видео-
@@ -142,7 +143,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat', 'risks.view',
   ],
   // Руководитель SMM — полный доступ ко ВСЕМ SMM-проектам
@@ -156,7 +157,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use', 'notes.use',
     'ai.chat', 'tariffs.manage', 'risks.view', 'teams.manage', 'organizer.directory',
   ],
   smm_specialist: [
@@ -165,7 +166,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   designer: [
@@ -174,7 +175,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   sales_manager_smm: [
@@ -186,7 +187,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'analytics.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
     'clients.view',
   ],
@@ -198,7 +199,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'analytics.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
     'clients.view',
   ],
@@ -212,7 +213,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'analytics.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   developer: [
@@ -221,7 +222,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   // Видеограф — исполнитель производства контента, права как у дизайнера.
@@ -231,7 +232,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   // Монтажёр — исполнитель видео-продакшна.
@@ -241,7 +242,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   // Организатор — исполнитель (организация съёмок/мероприятий).
@@ -251,7 +252,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat', 'organizer.directory',
   ],
   // Сторисмейкер — ведение историй SMM-проектов. Доска проектов и Отчёты у
@@ -261,7 +262,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   // Сценарист / SMM-менеджер — владелец Контент-плана workflow-доски.
@@ -271,7 +272,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   // Контролёр качества — этап «Внутренняя проверка».
@@ -281,7 +282,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   // Публикатор — сбор материалов и публикация.
@@ -291,7 +292,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   // Таргетолог — запуск рекламы (этап «Реклама»).
@@ -301,7 +302,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   employee: [
@@ -310,7 +311,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view',
-    'notifications.view', 'profile.view', 'time-tracker.use',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
 }
@@ -341,12 +342,21 @@ export const GRANTABLE_FE: Record<string, { implies: string[] }> = {
   'clients.create':  { implies: ['clients.view'] },
 }
 
-type GrantUser = { role?: string | null; secondaryRole?: string | null; extraPermissions?: string[] | null } | null | undefined
+type GrantUser = {
+  role?: string | null
+  secondaryRole?: string | null
+  extraPermissions?: string[] | null
+  deniedPermissions?: string[] | null
+} | null | undefined
 
 /** Может ли пользователь выполнить действие: право роли ИЛИ персональный
- *  грант ИЛИ грант, открывающий это view-право (implies). */
+ *  грант ИЛИ грант, открывающий это view-право (implies).
+ *  Персональный ЗАПРЕТ сильнее всего — снимает и право роли, и грант
+ *  (та же логика, что в backend/src/modules/auth/permissions.ts). */
 export function userCan(user: GrantUser, permission: string): boolean {
   if (!user) return false
+  const denied = Array.isArray(user.deniedPermissions) ? user.deniedPermissions : []
+  if (denied.includes(permission)) return false
   if (hasPermissionAny(user.role as UserRole, user.secondaryRole as UserRole, permission as Permission)) return true
   const extra = Array.isArray(user.extraPermissions) ? user.extraPermissions : []
   if (extra.includes(permission)) return true
@@ -436,21 +446,22 @@ export function canAccessRoute(
   route: string,
   secondaryRole?: UserRole | null,
   extraPermissions?: string[] | null,
+  deniedPermissions?: string[] | null,
 ): boolean {
   if (!role) return false
-  const u = { role, secondaryRole, extraPermissions }
+  const u = { role, secondaryRole, extraPermissions, deniedPermissions }
 
   // Always allowed routes
   if (['/profile', '/notifications', '/'].includes(route)) return true
   // Онбординг — только менеджеры по продажам.
-  if (route === '/onboarding') return role === 'sales_manager_smm' || role === 'sales_manager_dev'
+  if (route === '/onboarding') return (role === 'sales_manager_smm' || role === 'sales_manager_dev') && userCan(u, 'clients.view')
   // Глобальная доска проектов — SMM-производство/руководители/топ + грант КП,
   // плюс pm_dev (его вид — «Разработка»).
   if (route === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || canSeeDevBoard(role, secondaryRole) || userCan(u, 'content-plan.manage') || userCan(u, 'board.view')
-  // «Истории по проектам» — только сторисмейкер.
-  if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole)
-  // «Заметки» (личные задачи с календарём) — только сторисмейкер.
-  if (route === '/my-notes') return canSeeProjectStories(role, secondaryRole)
+  // «Истории по проектам» и «Заметки» — только сторисмейкер, и лишь пока
+  // соответствующую возможность у него не отняли в «Доступах сотрудников».
+  if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole) && userCan(u, 'stories.manage')
+  if (route === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(u, 'notes.use')
   // «Доступы сотрудников» — только основатель/сооснователь/админ.
   if (route === '/employee-access') return canManageAccess(role)
   // «Отчёты СММ» (ежедневный автоотчёт) — только основатель.
@@ -462,8 +473,10 @@ export function canAccessRoute(
 
   // Detail pages — allow if user can view the parent
   if (route.startsWith('/projects/')) return userCan(u, 'projects.view')
-  if (route.startsWith('/tasks/')) return hasPermissionAny(role, secondaryRole, 'tasks.view')
-  if (route.startsWith('/employees/')) return hasPermissionAny(role, secondaryRole, 'employees.view')
+  // userCan, а не hasPermissionAny: иначе персональный запрет закрывал бы
+  // пункт меню, но страница по прямой ссылке всё равно открывалась.
+  if (route.startsWith('/tasks/')) return userCan(u, 'tasks.view')
+  if (route.startsWith('/employees/')) return userCan(u, 'employees.view')
 
   const perm = Object.entries(PERMISSION_TO_ROUTE).find(([_, r]) => r === route)?.[0] as Permission | undefined
   if (!perm) return true

@@ -3,31 +3,36 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { NotesService } from './notes.service';
+import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 
 /** Личные заметки («Заметки» сторисмейкера). Любой авторизованный работает
  *  ТОЛЬКО со своими заметками — userId всегда из JWT, поэтому приватность
  *  гарантирована на уровне каждой выборки. */
 @Controller('my-notes')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class NotesController {
   constructor(private service: NotesService) {}
 
   @Get()
+  @RequirePerm('notes.use')
   list(@Request() req) {
     return this.service.list(req.user.id);
   }
 
   @Post()
+  @RequirePerm('notes.use')
   create(@Body() dto: any, @Request() req) {
     return this.service.create(req.user.id, dto || {});
   }
 
   @Patch(':id')
+  @RequirePerm('notes.use')
   update(@Param('id') id: string, @Body() dto: any, @Request() req) {
     return this.service.update(id, req.user.id, dto || {});
   }
 
   @Delete(':id')
+  @RequirePerm('notes.use')
   remove(@Param('id') id: string, @Request() req) {
     return this.service.remove(id, req.user.id);
   }

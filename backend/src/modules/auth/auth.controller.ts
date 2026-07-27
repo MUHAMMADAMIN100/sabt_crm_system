@@ -10,6 +10,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { hasGrant } from './permissions';
 
 /** Имя httpOnly-куки, в которой хранится JWT. Cross-site (Vercel ↔ Railway)
  *  поэтому нужны SameSite=None + Secure. JavaScript прочитать не может. */
@@ -127,9 +128,9 @@ export class AuthController {
     @Query('type') type?: string,
     @Query('limit') limit?: string,
   ) {
-    // Только админ / основатель / со-основатель видят журнал безопасности.
-    const role = req.user?.role;
-    if (!['admin', 'founder', 'co_founder'].includes(role)) {
+    // Журнал безопасности — админ/основатель/со-основатель, либо кому его
+    // выдали персонально в «Доступах сотрудников» (и не отняли запретом).
+    if (!hasGrant(req.user, 'security-log.view')) {
       return { events: [] };
     }
     return this.authService.getSecurityLog({ type: type as any, limit: limit ? Number(limit) : undefined });

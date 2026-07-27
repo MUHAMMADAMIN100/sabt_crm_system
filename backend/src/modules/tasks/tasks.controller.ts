@@ -6,6 +6,7 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
+import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { UserRole } from '../users/user.entity';
 // PM_ROLES convenience list for decorator
 const { ADMIN, FOUNDER, CO_FOUNDER, VIDEO_DIRECTOR, SMM_DIRECTOR } = UserRole;
@@ -13,12 +14,13 @@ import { TaskStatus, TaskPriority } from './task.entity';
 
 @ApiTags('Tasks')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('tasks')
 export class TasksController {
   constructor(private service: TasksService) {}
 
   @Get()
+  @RequirePerm('tasks.view')
   findAll(
     @Query('projectId') projectId?: string,
     @Query('assigneeId') assigneeId?: string,
@@ -37,6 +39,7 @@ export class TasksController {
   }
 
   @Get('export/csv')
+  @RequirePerm('tasks.export')
   async exportCsv(
     @Query('projectId') projectId: string,
     @Query('assigneeId') assigneeId: string,
@@ -87,7 +90,7 @@ export class TasksController {
   }
 
   @Get('overdue')
-  @Roles(ADMIN, FOUNDER, CO_FOUNDER, SMM_DIRECTOR, VIDEO_DIRECTOR)
+  @RequirePerm('tasks.overdue.view')
   getOverdue(@Request() req) { return this.service.getOverdueTasks(req.user); }
 
   @Get('stats')
@@ -101,11 +104,13 @@ export class TasksController {
   }
 
   @Post()
+  @RequirePerm('tasks.create')
   create(@Body() dto: CreateTaskDto, @Request() req) {
     return this.service.create(dto, req.user.id, req.user.role);
   }
 
   @Patch(':id')
+  @RequirePerm('tasks.edit')
   update(@Param('id') id: string, @Body() dto: UpdateTaskDto, @Request() req) {
     return this.service.update(id, dto, req.user);
   }
@@ -121,19 +126,19 @@ export class TasksController {
   }
 
   @Post(':id/approve')
-  @Roles(ADMIN, FOUNDER, CO_FOUNDER, SMM_DIRECTOR, VIDEO_DIRECTOR)
+  @RequirePerm('tasks.approve')
   approve(@Param('id') id: string, @Request() req) {
     return this.service.approveTask(id, req.user);
   }
 
   @Post(':id/return')
-  @Roles(ADMIN, FOUNDER, CO_FOUNDER, SMM_DIRECTOR, VIDEO_DIRECTOR)
+  @RequirePerm('tasks.return')
   returnTask(@Param('id') id: string, @Body('reason') reason: string, @Request() req) {
     return this.service.returnTask(id, req.user, reason || 'Требует доработки');
   }
 
   @Post('bulk')
-  @Roles(ADMIN, FOUNDER, CO_FOUNDER, SMM_DIRECTOR, VIDEO_DIRECTOR)
+  @RequirePerm('tasks.bulk')
   bulk(
     @Body('ids') ids: string[],
     @Body('action') action: 'status' | 'delete' | 'assign',
@@ -144,6 +149,7 @@ export class TasksController {
   }
 
   @Delete(':id')
+  @RequirePerm('tasks.delete')
   remove(
     @Param('id') id: string,
     @Request() req,

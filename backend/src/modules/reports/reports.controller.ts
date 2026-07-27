@@ -61,16 +61,18 @@ export class ReportsController {
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 
   @Post()
+  @RequirePerm('reports.create')
   create(@Body() dto: { date: string; projectId?: string; taskId?: string; description: string; timeSpent: number; comments?: string; files?: string[] }, @Request() req) {
     return this.service.create(dto, req.user.id);
   }
 
   @Patch(':id')
+  @RequirePerm('reports.edit')
   update(@Param('id') id: string, @Body() dto: { date?: string; projectId?: string; taskId?: string; description?: string; timeSpent?: number; comments?: string; files?: string[] }, @Request() req) {
     return this.service.update(id, dto, req.user.id);
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @RequirePerm('reports.delete')
   remove(@Param('id') id: string) { return this.service.remove(id); }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canAccessRoute, hasPermission } from './permissions'
+import { canAccessRoute, hasPermission, userCan } from './permissions'
 import type { UserRole } from '@/store/auth.store'
 
 // «Задачи от руководителя»: /tasks и /tasks/:id — раньше маршрутов не было
@@ -27,5 +27,50 @@ describe('canAccessRoute — /tasks (раздел «Задачи от руков
 
   it('unauthenticated (no role) is denied /tasks', () => {
     expect(canAccessRoute(undefined, '/tasks')).toBe(false)
+  })
+})
+
+// Персональные запреты (deniedPermissions) — снимают право, которое есть по
+// роли. Правило обязано совпадать с backend hasGrant: запрет > роль > грант.
+describe('userCan — персональные запреты', () => {
+  const designer = { role: 'designer' as UserRole, secondaryRole: null }
+
+  it('право роли действует, пока его не отняли', () => {
+    expect(userCan({ ...designer }, 'calendar.view')).toBe(true)
+  })
+
+  it('запрет снимает право, которое даёт роль', () => {
+    expect(userCan({ ...designer, deniedPermissions: ['calendar.view'] }, 'calendar.view')).toBe(false)
+  })
+
+  it('запрет снимает и персонально выданный грант', () => {
+    const u = { ...designer, extraPermissions: ['clients.view'], deniedPermissions: ['clients.view'] }
+    expect(userCan(u, 'clients.view')).toBe(false)
+  })
+
+  it('выданный грант работает, пока не запрещён', () => {
+    expect(userCan({ ...designer, extraPermissions: ['clients.view'] }, 'clients.view')).toBe(true)
+  })
+
+  it('запрет одного ключа не задевает соседние', () => {
+    const u = { ...designer, deniedPermissions: ['calendar.view'] }
+    expect(userCan(u, 'calendar.view')).toBe(false)
+    expect(userCan(u, 'tasks.view')).toBe(true)
+  })
+
+  it('запрет перебивает и право второй роли', () => {
+    const u = { role: 'designer' as UserRole, secondaryRole: 'smm_director' as UserRole, deniedPermissions: ['analytics.view'] }
+    expect(userCan({ ...u, deniedPermissions: [] }, 'analytics.view')).toBe(true)
+    expect(userCan(u, 'analytics.view')).toBe(false)
+  })
+
+  it('запрет закрывает и маршрут, а не только пункт меню', () => {
+    expect(canAccessRoute('designer', '/calendar', null, [], [])).toBe(true)
+    expect(canAccessRoute('designer', '/calendar', null, [], ['calendar.view'])).toBe(false)
+  })
+
+  it('запрет закрывает страницу, открытую персональным грантом', () => {
+    expect(canAccessRoute('designer', '/clients', null, ['clients.view'], [])).toBe(true)
+    expect(canAccessRoute('designer', '/clients', null, ['clients.view'], ['clients.view'])).toBe(false)
   })
 })

@@ -91,10 +91,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     // Доска проектов — SMM-производство + грант КП, плюс роли доски «Разработка»
     // (топ и pm_dev — у него вид только по dev-проектам).
     if (item.to === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || canSeeDevBoard(role, secondaryRole) || userCan(user, 'content-plan.manage') || userCan(user, 'board.view')
-    // «Истории по проектам» — только сторисмейкер.
-    if (item.to === '/project-stories') return canSeeProjectStories(role, secondaryRole)
-    // «Заметки» (личные задачи) — только сторисмейкер.
-    if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole)
+    // «Истории по проектам» и «Заметки» — только сторисмейкер, и лишь пока
+    // возможность не отняли персонально в «Доступах сотрудников».
+    if (item.to === '/project-stories') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'stories.manage')
+    if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'notes.use')
     // «Доступы сотрудников» — только основатель/сооснователь/админ.
     if (item.to === '/employee-access') return canManageAccess(role)
     // «Отчёты СММ» (ежедневный автоотчёт) — только основатель.

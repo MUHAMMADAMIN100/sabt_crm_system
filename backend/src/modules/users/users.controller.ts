@@ -63,6 +63,7 @@ export class UsersController {
   accessCatalog() {
     return Object.entries(GRANTABLE).map(([key, def]) => ({
       key, label: def.label, category: def.category, roles: def.roles,
+      danger: !!def.danger,
     }));
   }
 
@@ -76,8 +77,12 @@ export class UsersController {
   /** Выдать/снять персональные доступы сотруднику. */
   @Patch(':id/access')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  setAccess(@Param('id') id: string, @Body() body: { permissions?: string[] }, @Request() req) {
-    return this.usersService.setAccess(id, body?.permissions || [], req.user?.role);
+  setAccess(
+    @Param('id') id: string,
+    @Body() body: { permissions?: string[]; denied?: string[] },
+    @Request() req,
+  ) {
+    return this.usersService.setAccess(id, body?.permissions || [], req.user, body?.denied || []);
   }
 
   @Get(':id')

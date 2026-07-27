@@ -3,13 +3,15 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { EmployeesService } from './employees.service';
 import { CreateEmployeeDto, UpdateEmployeeDto } from './dto/create-employee.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
+import { hasGrant } from '../auth/permissions';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
 import { EmployeeStatus } from './employee.entity';
 
 @ApiTags('Employees')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('employees')
 export class EmployeesController {
   constructor(private service: EmployeesService) {}
@@ -21,7 +23,7 @@ export class EmployeesController {
     @Query('status') status?: EmployeeStatus,
     @Request() req?,
   ) {
-    return this.service.findAll(search, department, status, req?.user?.role);
+    return this.service.findAll(search, department, status, req?.user);
   }
 
   @Get('departments')
@@ -32,17 +34,17 @@ export class EmployeesController {
 
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req) {
-    return this.service.findOne(id, req.user?.role);
+    return this.service.findOne(id, req.user);
   }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  create(@Body() dto: CreateEmployeeDto) { return this.service.create(dto); }
+  @RequirePerm('employees.create')
+  create(@Body() dto: CreateEmployeeDto, @Request() req) { return this.service.create(dto, req.user); }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @RequirePerm('employees.edit')
   update(@Param('id') id: string, @Body() dto: UpdateEmployeeDto, @Request() req) {
-    if ('salary' in dto && !['founder', 'co_founder'].includes(req.user?.role)) {
+    if ('salary' in dto && !hasGrant(req.user, 'employees.salary.view')) {
       throw new ForbiddenException('Только основатель или сооснователь может изменять зарплату сотрудника');
     }
     return this.service.update(id, dto, { id: req.user.id, name: req.user.name, role: req.user.role });
@@ -61,6 +63,6 @@ export class EmployeesController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  remove(@Param('id') id: string) { return this.service.remove(id); }
+  @RequirePerm('employees.delete')
+  remove(@Param('id') id: string, @Request() req) { return this.service.remove(id, req.user); }
 }

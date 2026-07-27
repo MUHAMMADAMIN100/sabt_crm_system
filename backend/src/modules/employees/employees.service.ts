@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource, FindOptionsWhere } from 'typeorm';
 import { Employee, EmployeeStatus } from './employee.entity';
@@ -11,6 +11,7 @@ import { ActivityAction } from '../activity-log/activity-log.entity';
 import { AppGateway } from '../gateway/app.gateway';
 import { MailService } from '../mail/mail.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { hasGrant } from '../auth/permissions';
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
@@ -72,14 +73,16 @@ export class EmployeesService implements OnModuleInit {
     }
   }
 
-  /** Strip salary from employee(s) for non-founder users */
-  private stripSalary<T extends Employee | Employee[]>(data: T, role?: string): T {
-    if (role === 'founder' || role === 'co_founder') return data;
+  /** Убрать зарплату у тех, кому она не положена. Нативно её видят только
+   *  основатель и со-основатель, но доступ можно выдать (или, наоборот,
+   *  отнять) персонально в «Доступах сотрудников» — см. hasGrant. */
+  private stripSalary<T extends Employee | Employee[]>(data: T, viewer?: any): T {
+    if (hasGrant(viewer, 'employees.salary.view')) return data;
     const strip = (e: any) => { if (e) delete e.salary; return e; };
     return Array.isArray(data) ? (data.map(strip) as T) : (strip(data) as T);
   }
 
-  async findAll(search?: string, department?: string, status?: EmployeeStatus, requestUserRole?: string) {
+  async findAll(search?: string, department?: string, status?: EmployeeStatus, viewer?: any) {
     const where: FindOptionsWhere<Employee> = {};
     if (department) where.department = department;
     if (status) where.status = status;
@@ -91,17 +94,41 @@ export class EmployeesService implements OnModuleInit {
     for (const emp of list) {
       if (!emp.avatar && emp.user?.avatar) emp.avatar = emp.user.avatar;
     }
-    return this.stripSalary(list, requestUserRole);
+    return this.stripSalary(list, viewer);
   }
 
-  async findOne(id: string, requestUserRole?: string) {
+  async findOne(id: string, viewer?: any) {
     const emp = await this.repo.findOne({ where: { id }, relations: ['user'] });
     if (!emp) throw new NotFoundException('Employee not found');
     if (!emp.avatar && emp.user?.avatar) emp.avatar = emp.user.avatar;
-    return requestUserRole ? this.stripSalary(emp, requestUserRole) : emp;
+    return viewer ? this.stripSalary(emp, viewer) : emp;
   }
 
-  async create(dto: CreateEmployeeDto) {
+  /** Привилегированные роли — их выдача равносильна передаче ключей от всей
+   *  системы, поэтому назначать их может только руководство. */
+  private static readonly ELEVATED_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER];
+
+  /** Актор — руководство (admin/founder/co_founder), а не сотрудник, которому
+   *  доступ к разделу «Сотрудники» выдали персональным грантом. */
+  private isTopActor(actor?: { role?: string }): boolean {
+    return EmployeesService.ELEVATED_ROLES.includes(actor?.role as UserRole);
+  }
+
+  /** Учётку основателя/со-основателя трогает только основатель/со-основатель.
+   *  Раньше эти эндпоинты были закрыты ролью, и проверка была не нужна; теперь
+   *  доступ к ним выдаётся галочкой в «Доступах сотрудников», поэтому защита
+   *  обязана быть внутри сервиса. */
+  private assertCanTouch(targetRole: string | undefined, actor?: { id?: string; role?: string }) {
+    const targetIsTop = targetRole === UserRole.FOUNDER || targetRole === UserRole.CO_FOUNDER;
+    const actorIsTop = actor?.role === 'founder' || actor?.role === 'co_founder';
+    if (targetIsTop && !actorIsTop) {
+      throw new ForbiddenException(
+        'Изменять учётную запись основателя или сооснователя может только основатель/сооснователь',
+      );
+    }
+  }
+
+  async create(dto: CreateEmployeeDto, actor?: { id?: string; role?: string }) {
     // Проверяем дубликат email в employees
     const existing = await this.repo.findOne({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Сотрудник с таким email уже существует');
@@ -109,11 +136,20 @@ export class EmployeesService implements OnModuleInit {
     // Resolve role: explicit > position-derived > default EMPLOYEE
     const explicitRole = (dto as any).role as UserRole | undefined;
     const derivedRole = this.positionToRole(dto.position);
-    const newRole = explicitRole || derivedRole || UserRole.EMPLOYEE;
+    let newRole = explicitRole || derivedRole || UserRole.EMPLOYEE;
 
-    // Вторая роль при создании: эндпоинт доступен только
-    // admin/founder/co_founder (см. @Roles в контроллере), поэтому
-    // отдельной проверки актёра не нужно. Валидируем значение.
+    // Сотрудник с грантом «Сотрудники — добавление» не может завести админа
+    // или основателя: иначе, зная пароль по умолчанию, он вошёл бы под новой
+    // учёткой и получил бы полный доступ. Привилегированные роли — только у
+    // руководства, остальным роль принудительно понижается.
+    if (EmployeesService.ELEVATED_ROLES.includes(newRole) && !this.isTopActor(actor)) {
+      newRole = derivedRole && !EmployeesService.ELEVATED_ROLES.includes(derivedRole)
+        ? derivedRole
+        : UserRole.EMPLOYEE;
+    }
+
+    // Вторая роль при создании — валидируем значение (привилегированные
+    // вторые роли запрещены всем, см. forbiddenSecondary).
     const rawSecondary = (dto as any).secondaryRole as string | undefined;
     const forbiddenSecondary = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER];
     const newSecondary: UserRole | null =
@@ -136,7 +172,9 @@ export class EmployeesService implements OnModuleInit {
       });
       savedUser = await this.userRepo.save(user);
     } else if (savedUser.role !== newRole || (savedUser.secondaryRole || null) !== newSecondary) {
-      // Update existing user's role to match
+      // У email уже есть учётка — «создание» превращается в смену её роли.
+      // Понижать основателя/со-основателя таким способом нельзя.
+      this.assertCanTouch(savedUser.role, actor);
       await this.userRepo.update(savedUser.id, { role: newRole, secondaryRole: newSecondary });
     }
 
@@ -162,6 +200,27 @@ export class EmployeesService implements OnModuleInit {
     const oldSalary = Number(emp.salary || 0);
     const oldUser = emp.userId ? await this.userRepo.findOne({ where: { id: emp.userId } }) : null;
     const oldRole = oldUser?.role;
+    // Учётку основателя/со-основателя правит только основатель/со-основатель.
+    this.assertCanTouch(oldRole, actor);
+
+    // Смена email и включение/отключение учётной записи — операции уровня
+    // администратора: подменив email, можно запросить сброс пароля на свой
+    // адрес и войти под чужой учёткой, а status=inactive мгновенно лишает
+    // человека доступа. Тому, кто правит карточки по гранту, это недоступно.
+    if (!this.isTopActor(actor)) {
+      const changesEmail = !!dto.email && !!oldUser && dto.email !== oldUser.email;
+      const changesStatus = dto.status !== undefined
+        && !!oldUser && (dto.status === 'active') !== oldUser.isActive;
+      if (changesEmail || changesStatus) {
+        throw new ForbiddenException(
+          'Менять email и статус учётной записи может только администратор или основатель',
+        );
+      }
+      // Сменить себе роль через карточку сотрудника тоже нельзя.
+      if ((dto as any).role && emp.userId && emp.userId === actor?.id) {
+        throw new ForbiddenException('Нельзя менять собственную роль');
+      }
+    }
 
     // Strip role/secondaryRole from dto before updating employee
     // (обе роли принадлежат User, а не Employee)
@@ -190,6 +249,11 @@ export class EmployeesService implements OnModuleInit {
       if (dto.status !== undefined) userUpdate.isActive = dto.status === 'active';
 
       // Determine new role: explicit role param > position-derived
+      if (newRoleParam && !this.isTopActor(actor)) {
+        // Роль сотрудника — это его права в системе. Раздача ролей остаётся
+        // за руководством, даже если правку карточек выдали грантом.
+        throw new ForbiddenException('Менять роль сотрудника может только администратор или основатель');
+      }
       if (newRoleParam) {
         // Only founder can explicitly set co_founder role — admin/co_founder cannot.
         // Only founder/co_founder can set admin/founder roles.
@@ -313,9 +377,18 @@ export class EmployeesService implements OnModuleInit {
     return updated;
   }
 
-  async remove(id: string) {
+  async remove(id: string, actor?: { id?: string; role?: string }) {
     const emp = await this.findOne(id);
     const userId = emp.userId;
+
+    // Удаление сотрудника сносит и его учётную запись. Основателя и
+    // со-основателя защищаем отдельно, себя удалить нельзя — иначе один
+    // выданный грант позволял обезглавить компанию.
+    const targetUser = userId ? await this.userRepo.findOne({ where: { id: userId } }) : null;
+    this.assertCanTouch(targetUser?.role, actor);
+    if (userId && actor?.id && userId === actor.id) {
+      throw new ForbiddenException('Нельзя удалить собственную учётную запись');
+    }
 
     await this.activityLog.log({
       action: ActivityAction.EMPLOYEE_DELETE,

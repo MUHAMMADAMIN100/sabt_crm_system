@@ -30,8 +30,9 @@ export const usersApi = {
   // Доступы сотрудников (персональные гранты поверх роли)
   accessCatalog: () => api.get('/users/access/catalog').then(r => r.data),
   listAccess: () => api.get('/users/access').then(r => r.data),
-  setAccess: (id: string, permissions: string[]) =>
-    api.patch(`/users/${id}/access`, { permissions }).then(r => r.data),
+  // permissions — что выдать поверх роли, denied — что отнять из прав роли.
+  setAccess: (id: string, permissions: string[], denied: string[] = []) =>
+    api.patch(`/users/${id}/access`, { permissions, denied }).then(r => r.data),
   // Аватары — multipart/form-data загрузка картинки
   uploadMyAvatar: (file: File) =>
     api.patch('/users/me/avatar', avatarFormData(file), {

@@ -26,11 +26,13 @@ export class ClientsController {
   constructor(private service: ClientsService) {}
 
   @Get('stats')
+  @RequirePerm('clients.view')
   getStats(@Request() req) {
     return this.service.stats(leadDirectionFor(req.user?.role));
   }
 
   @Get('kpi')
+  @RequirePerm('clients.view')
   getKpi(
     @Request() req,
     @Query('from') from?: string,
@@ -42,7 +44,7 @@ export class ClientsController {
   /** KPI всех менеджеров продаж — для виджета на дашборде основателя.
    *  Доступно только admin/founder/co_founder, остальные получат 403. */
   @Get('kpi/all')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @RequirePerm('clients.kpi.all')
   getKpiAll(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -54,6 +56,7 @@ export class ClientsController {
    *   - admin/founder/co_founder — любого МП;
    *   - сам менеджер — только свой userId. */
   @Get('kpi/user/:userId')
+  @RequirePerm('clients.view')
   async getKpiByUser(
     @Param('userId') userId: string,
     @Request() req,
@@ -79,6 +82,7 @@ export class ClientsController {
   }
 
   @Get()
+  @RequirePerm('clients.view')
   findAll(
     @Request() req,
     @Query('search') search?: string,
@@ -95,6 +99,7 @@ export class ClientsController {
   }
 
   @Get(':id')
+  @RequirePerm('clients.view')
   findOne(@Param('id') id: string, @Request() req) {
     return this.service.findOne(id, leadDirectionFor(req.user?.role));
   }
@@ -115,11 +120,13 @@ export class ClientsController {
   /** «Позвонить»: руководитель отмечает лидов для обзвона менеджером
    *  (flag=true), снимает отметку — руководитель или владелец (flag=false). */
   @Post('call-request')
+  @RequirePerm('clients.edit')
   callRequest(@Body() body: { ids: string[]; flag: boolean }, @Request() req) {
     return this.service.setCallRequest(body?.ids || [], !!body?.flag, req.user);
   }
 
   @Patch(':id')
+  @RequirePerm('clients.edit')
   update(@Param('id') id: string, @Body() dto: UpdateClientDto, @Request() req) {
     // Направление лида менять через update нельзя — оно фиксируется при создании.
     const { direction: _ignored, ...rest } = dto || {};
@@ -127,6 +134,7 @@ export class ClientsController {
   }
 
   @Delete(':id')
+  @RequirePerm('clients.delete')
   remove(@Param('id') id: string, @Request() req) {
     return this.service.removeWithAuth(id, req.user);
   }

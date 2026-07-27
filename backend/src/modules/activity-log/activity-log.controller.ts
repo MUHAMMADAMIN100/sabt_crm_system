@@ -12,6 +12,7 @@ export class ActivityLogController {
   constructor(private service: ActivityLogService) {}
 
   @Get()
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   findAll(
     @Query('userId')  userId?: string,
     @Query('action')  action?: ActivityAction,

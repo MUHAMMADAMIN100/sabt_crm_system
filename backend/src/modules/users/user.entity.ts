@@ -91,6 +91,12 @@ export class User {
   @Column({ type: 'jsonb', nullable: true })
   extraPermissions: string[] | null;
 
+  /** Персональные ЗАПРЕТЫ — снимают возможность, которая есть у сотрудника
+   *  по роли. Сильнее и роли, и выданного гранта (см. hasGrant). Список
+   *  ключей-возможностей (auth/permissions.ts GRANTABLE). */
+  @Column({ type: 'jsonb', nullable: true })
+  deniedPermissions: string[] | null;
+
   /** FCM-токены устройств мобильного приложения (мульти-девайс, максимум 5).
    *  Регистрирует POST /users/register-fcm. select:false — колонка не
    *  попадает ни в какие выборки/ответы API; читается только явным select

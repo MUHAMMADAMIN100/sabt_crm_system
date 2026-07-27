@@ -62,6 +62,6 @@ export class SmmTariffsController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @RequirePerm('tariffs.delete')
   remove(@Param('id') id: string) { return this.service.remove(id); }
 }

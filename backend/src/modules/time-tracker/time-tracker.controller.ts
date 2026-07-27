@@ -4,6 +4,7 @@ import { IsISO8601, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } fro
 import { Type } from 'class-transformer';
 import { TimeTrackerService } from './time-tracker.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 
 const PM_ROLES = new Set(['admin', 'founder', 'co_founder', 'smm_director', 'video_director']);
 
@@ -28,7 +29,7 @@ class LogTimeDto {
 
 @ApiTags('TimeTracker')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('time-tracker')
 export class TimeTrackerController {
   constructor(private service: TimeTrackerService) {}
@@ -81,16 +82,19 @@ export class TimeTrackerController {
   }
 
   @Post('start')
+  @RequirePerm('time-tracker.use')
   start(@Body() body: StartTimerDto, @Request() req) {
     return this.service.startTimer(body.taskId, req.user.id, req.user.role);
   }
 
   @Post('stop')
+  @RequirePerm('time-tracker.use')
   stop(@Request() req) {
     return this.service.stopTimer(req.user.id);
   }
 
   @Post('log')
+  @RequirePerm('time-tracker.use')
   log(@Body() body: LogTimeDto, @Request() req) {
     return this.service.logTime(body.taskId, req.user.id, req.user.role, body.timeSpent, body.date, body.description);
   }

@@ -58,6 +58,14 @@ export class AuthService implements OnModuleInit {
       this.logger.warn(`extraPermissions column add failed: ${e?.message || e}`);
     }
     try {
+      // Персональные ЗАПРЕТЫ доступов — снимают право, которое есть по роли.
+      await this.userRepo.manager.query(
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "deniedPermissions" jsonb`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`deniedPermissions column add failed: ${e?.message || e}`);
+    }
+    try {
       // FCM-токены устройств мобильного приложения (пуш-уведомления).
       await this.userRepo.manager.query(
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "fcmTokens" jsonb`,

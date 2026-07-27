@@ -3,17 +3,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usersApi } from '@/services/api.service'
 import { getRoleLabel } from '@/lib/permissions'
 import { Avatar, Modal } from '@/components/ui'
-import { ShieldCheck, Search, SlidersHorizontal } from 'lucide-react'
+import { ShieldCheck, Search, SlidersHorizontal, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 
 interface AccessUser {
   id: string; name: string; email: string; role: string
   secondaryRole?: string | null; position?: string | null
-  extraPermissions: string[]; isActive: boolean
+  extraPermissions: string[]; deniedPermissions?: string[]; isActive: boolean
 }
 /** roles — роли, у которых возможность есть НАТИВНО (без персонального гранта). */
-interface Cap { key: string; label: string; category: string; roles?: string[] }
+interface Cap { key: string; label: string; category: string; roles?: string[]; danger?: boolean }
 
 /**
  * «Доступы сотрудников» — основатель/сооснователь/админ выдаёт сотрудникам
@@ -74,6 +74,11 @@ export default function EmployeeAccessPage() {
                   +{u.extraPermissions.length} доступов
                 </span>
               )}
+              {(u.deniedPermissions?.length || 0) > 0 && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 shrink-0">
+                  −{u.deniedPermissions!.length} снято
+                </span>
+              )}
               <SlidersHorizontal size={16} className="text-surface-400 shrink-0" />
             </button>
           ))}
@@ -96,75 +101,122 @@ export default function EmployeeAccessPage() {
 function AccessEditorModal({ user, caps, onClose, onSaved }: {
   user: AccessUser; caps: Cap[]; onClose: () => void; onSaved: () => void
 }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set(user.extraPermissions))
-  useEffect(() => { setSelected(new Set(user.extraPermissions)) }, [user.id])
+  // granted — выдано лично поверх роли, denied — отнято из того, что даёт роль.
+  const [granted, setGranted] = useState<Set<string>>(new Set(user.extraPermissions))
+  const [denied, setDenied] = useState<Set<string>>(new Set(user.deniedPermissions))
+  useEffect(() => {
+    setGranted(new Set(user.extraPermissions))
+    setDenied(new Set(user.deniedPermissions))
+  }, [user.id])
+
+  const [search, setSearch] = useState('')
 
   const save = useMutation({
-    mutationFn: () => usersApi.setAccess(user.id, [...selected]),
+    mutationFn: () => usersApi.setAccess(user.id, [...granted], [...denied]),
     onSuccess: () => { toast.success('Доступы сохранены'); onSaved() },
     onError: () => toast.error('Не удалось сохранить доступы'),
   })
 
-  const toggle = (key: string) =>
-    setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
-
-  /** Возможность уже есть по роли (или по второй роли) — гранта не требует.
-   *  Такие отмечаем галочкой и блокируем: гранты только ДОБАВЛЯЮТ доступ,
-   *  снять право роли через эту матрицу нельзя, и «пустой» чекбокс у
-   *  основателя (у которого есть всё) только сбивал с толку. */
+  /** Возможность есть у сотрудника по роли (или по второй роли). */
   const isByRole = (c: Cap) => {
     const roles = c.roles || []
     return roles.includes(user.role) || (!!user.secondaryRole && roles.includes(user.secondaryRole))
   }
 
-  const byRoleCount = caps.filter(isByRole).length
-  const totalCount = caps.filter(c => isByRole(c) || selected.has(c.key)).length
+  /** Итог — ровно то же правило, что на сервере в hasGrant(). */
+  const hasAccess = (c: Cap) => !denied.has(c.key) && (isByRole(c) || granted.has(c.key))
 
-  // Группировка возможностей по категориям (порядок появления).
+  /** Галочка = «есть доступ». Снимаем: право роли уходит в запреты, выданный
+   *  грант просто убираем. Ставим: снимаем запрет, а если по роли не положено —
+   *  выдаём грант. */
+  const toggle = (c: Cap) => {
+    const key = c.key
+    const native = isByRole(c)
+    if (hasAccess(c)) {
+      setGranted(prev => { const n = new Set(prev); n.delete(key); return n })
+      if (native) setDenied(prev => new Set(prev).add(key))
+    } else {
+      setDenied(prev => { const n = new Set(prev); n.delete(key); return n })
+      if (!native) setGranted(prev => new Set(prev).add(key))
+    }
+  }
+
+  // «по роли» считаем только действующие — снятые учтены отдельной цифрой.
+  const byRoleCount = caps.filter(c => isByRole(c) && !denied.has(c.key)).length
+  const totalCount = caps.filter(hasAccess).length
+
+  // Группировка возможностей по категориям (порядок появления). Возможностей
+  // много, поэтому сверху есть поиск — пустые категории не показываем.
   const grouped = useMemo(() => {
+    const q = search.trim().toLowerCase()
     const map = new Map<string, Cap[]>()
-    for (const c of caps) { if (!map.has(c.category)) map.set(c.category, []); map.get(c.category)!.push(c) }
+    for (const c of caps) {
+      if (q && !c.label.toLowerCase().includes(q) && !c.category.toLowerCase().includes(q)) continue
+      if (!map.has(c.category)) map.set(c.category, [])
+      map.get(c.category)!.push(c)
+    }
     return [...map.entries()]
-  }, [caps])
+  }, [caps, search])
 
   return (
     <Modal open onClose={onClose} title={`Доступы — ${user.name}`} size="xl">
-      <p className="text-xs text-surface-500 dark:text-surface-400 mb-4">
-        {user.position || getRoleLabel(user.role)} · доступно всего{' '}
+      <p className="text-xs text-surface-500 dark:text-surface-400 mb-3">
+        {user.position || getRoleLabel(user.role)} · доступно{' '}
         <b className="text-surface-700 dark:text-surface-300">{totalCount}</b> из {caps.length}:
-        по роли — {byRoleCount}, выдано лично — {selected.size}.
-        {byRoleCount > 0 && ' Права роли отмечены и снятию не подлежат — гранты только добавляют доступ.'}
+        по роли — {byRoleCount}, выдано лично — {granted.size}, снято — {denied.size}.
+        {' '}Снимите галочку, чтобы отобрать доступ, поставьте — чтобы выдать.
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+      <div className="relative mb-3">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Найти возможность…"
+          className="input pl-9 text-sm py-1.5"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
         {grouped.map(([category, list]) => (
           <div key={category} className="rounded-xl border border-surface-200 dark:border-surface-700 p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">{category}</p>
             <div className="space-y-1.5">
               {list.map(c => {
                 const native = isByRole(c)
+                const has = hasAccess(c)
+                // Подпись состояния: откуда доступ взялся или почему его нет.
+                const mark = denied.has(c.key) ? 'снят'
+                  : granted.has(c.key) ? 'выдан'
+                    : native ? 'по роли' : null
                 return (
                   <label
                     key={c.key}
-                    title={native ? 'Есть по роли — снять нельзя' : undefined}
-                    className={clsx(
-                      'flex items-center gap-2 text-sm',
-                      native
-                        ? 'cursor-default text-surface-500 dark:text-surface-400'
-                        : 'cursor-pointer text-surface-700 dark:text-surface-200',
-                    )}
+                    title={c.danger ? 'Чувствительный доступ — выдавайте осознанно' : undefined}
+                    className="flex items-center gap-2 text-sm cursor-pointer text-surface-700 dark:text-surface-200"
                   >
                     <input
                       type="checkbox"
                       className="w-4 h-4 shrink-0"
-                      checked={native || selected.has(c.key)}
-                      disabled={native}
-                      onChange={() => { if (!native) toggle(c.key) }}
+                      checked={has}
+                      onChange={() => toggle(c)}
                     />
                     <span className="min-w-0">{c.label}</span>
-                    {native && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400 shrink-0">
-                        по роли
+                    {c.danger && (
+                      <span title="Чувствительный доступ" className="shrink-0 text-red-500 dark:text-red-400">
+                        <AlertTriangle size={13} />
+                      </span>
+                    )}
+                    {mark && (
+                      <span className={clsx(
+                        'text-[10px] px-1.5 py-0.5 rounded-full shrink-0',
+                        mark === 'снят'
+                          ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                          : mark === 'выдан'
+                            ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                            : 'bg-surface-100 text-surface-500 dark:bg-surface-700 dark:text-surface-400',
+                      )}>
+                        {mark}
                       </span>
                     )}
                   </label>

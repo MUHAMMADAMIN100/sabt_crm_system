@@ -9,7 +9,7 @@ import { AppGateway } from '../gateway/app.gateway';
 import { SecurityAuditService } from '../auth/security-audit.service';
 import { SecurityEventType } from '../auth/security-event.entity';
 import { RefreshToken } from '../auth/refresh-token.entity';
-import { sanitizeGrants } from '../auth/permissions';
+import { sanitizeGrants, hasGrant, GRANTABLE } from '../auth/permissions';
 
 @Injectable()
 export class UsersService {
@@ -59,26 +59,49 @@ export class UsersService {
       secondaryRole: u.secondaryRole || null,
       position: posByUser.get(u.id) || null,
       extraPermissions: Array.isArray(u.extraPermissions) ? u.extraPermissions : [],
+      deniedPermissions: Array.isArray(u.deniedPermissions) ? u.deniedPermissions : [],
       isActive: u.isActive,
     }));
   }
 
   /** Выдать/снять персональные доступы сотруднику. Мгновенно уведомляет его
-   *  клиент (socket access:changed) — тот сам перечитает /auth/me. */
-  async setAccess(id: string, permissions: any, actorRole?: string) {
+   *  клиент (socket access:changed) — тот сам перечитает /auth/me.
+   *
+   *  permissions — что ДОБАВИТЬ поверх роли, denied — что ОТНЯТЬ из того,
+   *  что есть по роли. Ключ, попавший в оба списка, оставляем только в
+   *  запретах: запрет сильнее (см. hasGrant). */
+  async setAccess(id: string, permissions: any, actor?: { id?: string; role?: string }, denied?: any) {
     const user = await this.findOne(id);
-    this.assertCanManage(user, actorRole);
-    const clean = sanitizeGrants(permissions);
-    await this.repo.update(id, { extraPermissions: clean.length ? clean : null });
+    this.assertCanManage(user, actor?.role);
+    // Себе доступы не правят: иначе админ выдавал бы себе то, что по замыслу
+    // доступно только основателю (финансы, ФОТ, зарплаты).
+    if (actor?.id && actor.id === id) {
+      throw new ForbiddenException('Свои собственные доступы менять нельзя — попросите основателя');
+    }
+    const cleanDenied = sanitizeGrants(denied);
+    const clean = sanitizeGrants(permissions).filter(k => !cleanDenied.includes(k));
+    // Выдать можно только то, что есть у самого выдающего. Иначе админ, у
+    // которого нет финансов, выдал бы их другому — и получил бы доступ через
+    // подставное лицо.
+    const actorUser = actor?.id ? await this.repo.findOne({ where: { id: actor.id } }) : null;
+    const notMine = clean.filter(k => !hasGrant(actorUser, k));
+    if (notMine.length > 0) {
+      const labels = notMine.map(k => GRANTABLE[k]?.label || k).join(', ');
+      throw new ForbiddenException(`Нельзя выдать доступ, которого нет у вас самих: ${labels}`);
+    }
+    await this.repo.update(id, {
+      extraPermissions: clean.length ? clean : null,
+      deniedPermissions: cleanDenied.length ? cleanDenied : null,
+    });
     await this.activityLog.log({
       action: ActivityAction.EMPLOYEE_UPDATE,
       entity: 'user',
       entityId: id,
       entityName: user.name,
-      details: { extraPermissions: clean },
+      details: { extraPermissions: clean, deniedPermissions: cleanDenied },
     }).catch(() => {});
     try { this.gateway.broadcast('access:changed', { userId: id }); } catch { /* best-effort */ }
-    return { id, extraPermissions: clean };
+    return { id, extraPermissions: clean, deniedPermissions: cleanDenied };
   }
 
   /** Защита: основателем/сооснователем может управлять только основатель

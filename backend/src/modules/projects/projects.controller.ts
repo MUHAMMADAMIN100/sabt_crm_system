@@ -84,19 +84,19 @@ export class ProjectsController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+  @RequirePerm('projects.delete')
   remove(@Param('id') id: string, @Request() req) {
     return this.service.remove(id, req.user);
   }
 
   @Get(':id/payments')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR)
+  @RequirePerm('projects.payments.view')
   listPayments(@Param('id') id: string) {
     return this.service.listPayments(id);
   }
 
   @Post(':id/send-payment-request')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+  @RequirePerm('projects.payments.request')
   sendPaymentRequest(
     @Param('id') id: string,
     @Body() body: { message?: string },
@@ -116,10 +116,7 @@ export class ProjectsController {
   }
 
   @Patch(':id/launch-checklist')
-  @Roles(
-    UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-    UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
-  )
+  @RequirePerm('projects.launch.manage')
   setManualLaunchItem(
     @Param('id') id: string,
     @Body() body: { item: string; value: boolean },
@@ -129,13 +126,8 @@ export class ProjectsController {
 
   // ─── SMM-бриф клиента (вкладка «Бриф» в карточке SMM-проекта) ─────
   @Patch(':id/brief')
-  @Roles(
-    UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-    UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
-    UserRole.SMM_SPECIALIST,
-    // Менеджеры продаж заполняют бриф клиента при заведении проекта.
-    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV,
-  )
+  // Менеджеры продаж заполняют бриф клиента при заведении проекта.
+  @RequirePerm('projects.brief.manage')
   saveBrief(
     @Param('id') id: string,
     @Body() body: any,
@@ -145,10 +137,7 @@ export class ProjectsController {
   }
 
   @Delete(':id/brief')
-  @Roles(
-    UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-    UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
-  )
+  @RequirePerm('projects.brief.clear')
   clearBrief(@Param('id') id: string, @Request() req) {
     return this.service.clearBrief(id, req.user);
   }

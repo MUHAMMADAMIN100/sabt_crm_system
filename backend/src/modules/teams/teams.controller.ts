@@ -17,6 +17,7 @@ class SetUserTeamDto {
   teamId?: string | null;
 }
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
 
@@ -28,7 +29,7 @@ const VIEWERS = [
 
 @ApiTags('Teams')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('teams')
 export class TeamsController {
   constructor(private service: TeamsService) {}
@@ -36,46 +37,46 @@ export class TeamsController {
   /** Список команд — может смотреть кто угодно из создающих проекты,
    *  чтобы видеть варианты в дропдауне формы проекта. */
   @Get()
-  @Roles(...VIEWERS)
+  @RequirePerm('teams.view')
   findAll(@Query('includeInactive') includeInactive?: string) {
     return this.service.findAll(includeInactive === 'true');
   }
 
   @Get(':id')
-  @Roles(...VIEWERS)
+  @RequirePerm('teams.view')
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 
   @Get(':id/members')
-  @Roles(...VIEWERS)
+  @RequirePerm('teams.view')
   members(@Param('id') id: string) { return this.service.getMembers(id); }
 
   /** CRUD команд — только основатель/сооснователь. */
   @Post()
-  @Roles(...TOP)
+  @RequirePerm('teams.manage')
   create(@Body() dto: CreateTeamDto, @Request() req) {
     return this.service.create(dto as any, req.user.id);
   }
 
   @Patch(':id')
-  @Roles(...TOP)
+  @RequirePerm('teams.manage')
   update(@Param('id') id: string, @Body() dto: UpdateTeamDto) {
     return this.service.update(id, dto as any);
   }
 
   @Delete(':id')
-  @Roles(...TOP)
+  @RequirePerm('teams.manage')
   remove(@Param('id') id: string) { return this.service.remove(id); }
 
   /** Установить состав команды (массово). Заменяет всех. */
   @Patch(':id/members')
-  @Roles(...TOP)
+  @RequirePerm('teams.manage')
   setMembers(@Param('id') id: string, @Body() body: SetMembersDto) {
     return this.service.setMembers(id, body.userIds || []);
   }
 
   /** Поменять команду одного сотрудника (или отвязать teamId=null). */
   @Patch('user/:userId')
-  @Roles(...TOP)
+  @RequirePerm('teams.manage')
   setUserTeam(@Param('userId') userId: string, @Body() body: SetUserTeamDto) {
     return this.service.setUserTeam(userId, body.teamId ?? null);
   }

@@ -9,6 +9,7 @@ import {
   ContentPlanStatus, ContentApprovalStatus, ContentItemType,
 } from './content-plan-item.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
 
@@ -23,7 +24,7 @@ const EDIT_ROLES = [
 
 @ApiTags('Content Plan')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('content-plan')
 export class ContentPlanController {
   constructor(private service: ContentPlanService) {}
@@ -52,18 +53,18 @@ export class ContentPlanController {
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 
   @Post()
-  @Roles(...EDIT_ROLES)
+  @RequirePerm('content-plan.create')
   create(@Body() dto: CreateContentPlanDto, @Request() req) {
     return this.service.create(dto as any, req.user?.id);
   }
 
   @Patch(':id')
-  @Roles(...EDIT_ROLES)
+  @RequirePerm('content-plan.edit')
   update(@Param('id') id: string, @Body() dto: UpdateContentPlanDto, @Request() req) {
     return this.service.update(id, dto as any, req.user?.id);
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR)
+  @RequirePerm('content-plan.delete')
   remove(@Param('id') id: string) { return this.service.remove(id); }
 }
