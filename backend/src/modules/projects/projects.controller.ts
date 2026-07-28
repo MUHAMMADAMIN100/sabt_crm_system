@@ -55,7 +55,7 @@ export class ProjectsController {
   /** Этап разработки на доске «Разработка» ([10%]…[100%]). Доступ уже, чем
    *  projects.edit: pm_dev двигает карточки, не имея права редактировать проект. */
   @Patch(':id/dev-stage')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PM_DEV)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.PM_DEV, UserRole.DEVELOPER)
   setDevStage(@Param('id') id: string, @Body() dto: SetDevStageDto, @Request() req) {
     return this.service.setDevStage(id, dto.devStage, req.user);
   }

@@ -430,7 +430,7 @@ export function canSeeWorkflowBoard(role?: string | null, secondaryRole?: string
 
 /** Вид «Разработка» на доске проектов — канбан dev-проектов по бизнес-этапам
  *  [10%]…[100%]. Топ видит оба вида (переключатель), pm_dev — только этот. */
-export const DEV_BOARD_ROLES = ['admin', 'founder', 'co_founder', 'pm_dev']
+export const DEV_BOARD_ROLES = ['admin', 'founder', 'co_founder', 'pm_dev', 'developer']
 export function canSeeDevBoard(role?: string | null, secondaryRole?: string | null): boolean {
   return DEV_BOARD_ROLES.includes(role || '') || DEV_BOARD_ROLES.includes(secondaryRole || '')
 }

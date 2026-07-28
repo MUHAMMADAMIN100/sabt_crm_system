@@ -33,6 +33,10 @@ const SALES_GREETINGS = [
 ]
 const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
 const MyWorkflowCards = lazy(() => import('./components/MyWorkflowCards'))
+// Кабинет команды разработки: производственные карточки доски и обычные
+// поручения — ДВУМЯ отдельными блоками, чтобы одно не терялось в другом.
+const MyDevCards = lazy(() => import('./components/MyDevCards'))
+const MyPlainTasks = lazy(() => import('./components/MyPlainTasks'))
 const StorymakerDashboard = lazy(() => import('./components/StorymakerDashboard'))
 const UpcomingPublications = lazy(() => import('./components/UpcomingPublications'))
 
@@ -153,6 +157,8 @@ export default function DashboardPage() {
   const isFounderView = ['admin', 'founder', 'co_founder'].includes(role)
   const isPMView = role === 'video_director' || role === 'smm_director'
   const isSalesView = role === 'sales_manager_smm' || role === 'sales_manager_dev'
+  // Команда разработки — разработчики и проект-менеджер по разработке.
+  const isDevTeam = role === 'developer' || role === 'pm_dev'
   const isWorkerView = ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'developer', 'videographer', 'scriptwriter', 'qa', 'publisher', 'targetologist', 'employee'].includes(role)
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(role)
   const isAdmin = ['admin', 'founder', 'co_founder'].includes(role)
@@ -279,6 +285,15 @@ export default function DashboardPage() {
         <Suspense fallback={null}>
           <MyWorkflowCards />
         </Suspense>
+        {/* Разработчику — его карточки этапов с доски «Разработка». */}
+        {isDevTeam && (
+          <Suspense fallback={null}>
+            <MyDevCards />
+          </Suspense>
+        )}
+        <Suspense fallback={null}>
+          <MyPlainTasks />
+        </Suspense>
       </div>
     )
   }
@@ -400,6 +415,14 @@ export default function DashboardPage() {
           {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
         </p>
       </div>
+
+      {/* Проект-менеджер по разработке: его карточки этапов. Обычные задачи
+          у него ниже своим блоком «Мои задачи» — дубля не делаем. */}
+      {isDevTeam && (
+        <Suspense fallback={null}>
+          <MyDevCards />
+        </Suspense>
+      )}
 
       {isManagerPlus && overview && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

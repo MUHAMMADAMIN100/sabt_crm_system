@@ -85,9 +85,10 @@ export class TasksService implements OnModuleInit {
       select: ['id', 'managerId', 'projectType'] as any,
     });
     if (!proj) return false;
-    // ПМ по разработке — PM-полномочия во всех dev-проектах: ставит
-    // задачи-замечания на других (в т.ч. карточки этапов dev-доски).
-    if (role === UserRole.PM_DEV && DEV_PROJECT_TYPES.includes(proj.projectType as string)) return true;
+    // Команда разработки — PM-полномочия во всех dev-проектах: ведёт доску
+    // «Разработка», создаёт карточки этапов и назначает их друг на друга.
+    if ((role === UserRole.PM_DEV || role === UserRole.DEVELOPER)
+      && DEV_PROJECT_TYPES.includes(proj.projectType as string)) return true;
     return proj.managerId === userId;
   }
 
