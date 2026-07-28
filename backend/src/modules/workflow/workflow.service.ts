@@ -2048,12 +2048,28 @@ export class WorkflowService implements OnModuleInit {
     // «Сделал/Не сделал» в Telegram (нельзя для финальных этапов).
     const actionable = !['published', 'ads'].includes(newStage);
     const buttons = actionable ? this.cardButtons(card.id) : undefined;
-    await this.notifyStageRole(card.projectId, newStage, `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» на этапе «${STAGE_LABELS[newStage] || newStage}»`, actionable ? card.id : undefined);
-    const assignees = [card.assigneeId, ...((card.assigneeIds as string[]) || [])].filter(Boolean) as string[];
+    const assigneesForStage = opts.skipAssigneeNotify ? [] : this.allAssigneeIds(card);
+    // Рассылка «по роли этапа» — всем профильным сотрудникам проекта. Тех, кто
+    // назначен на карточку лично, из неё исключаем: им ниже уходит адресное
+    // «можно приступать», два письма об одном событии — спам.
+    await this.notifyStageRole(card.projectId, newStage, `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» на этапе «${STAGE_LABELS[newStage] || newStage}»`, actionable ? card.id : undefined, assigneesForStage);
+    // ВАЖНО: у ГРУППОВОЙ карточки («Макеты», «Рилсы») исполнителей на самой
+    // карточке нет — они сидят внутри элементов (items[].assigneeIds). Раньше
+    // здесь смотрели только на карточку, поэтому дизайнер, назначенный на
+    // конкретный макет, момент «работа пришла ко мне» не получал вовсе.
+    const assignees = this.allAssigneeIds(card);
     // skipAssigneeNotify — когда вызывающий уже отправил исполнителям полное
     // «вам назначена карточка» (shootDone для монтажёров), не дублируем.
     if (assignees.length && !opts.skipAssigneeNotify) {
-      await this.notify(assignees, `➡️ ${STAGE_LABELS[newStage] || newStage}`, `Карточка «${card.title}» перешла на этап «${STAGE_LABELS[newStage] || newStage}»`, card.projectId, buttons);
+      // Полная сводка карточки в Telegram: из бота должно быть понятно, что
+      // именно делать, — это уведомление «приступай», а не просто «этап сменён».
+      const tgExtra = await this.cardTgDetails(actionable ? card.id : undefined);
+      await this.notify(
+        assignees,
+        `➡️ ${STAGE_LABELS[newStage] || newStage}`,
+        `Карточка «${card.title}» перешла на этап «${STAGE_LABELS[newStage] || newStage}» — можно приступать`,
+        card.projectId, buttons, tgExtra,
+      );
     }
     // Руководитель СММ (Навруз) — знает КАЖДЫЙ шаг. Email + кнопки на его
     // рабочих этапах (внутренняя проверка / согласование), иначе только CRM+TG.
@@ -2096,12 +2112,27 @@ export class WorkflowService implements OnModuleInit {
 
   /** Уведомить пользователей проекта с ролью-владельцем этапа.
    *  cardId — если передан, в Telegram добавляются кнопки «Сделал/Не сделал». */
-  private async notifyStageRole(projectId: string, stage: string, title: string, message: string, cardId?: string) {
+  private async notifyStageRole(projectId: string, stage: string, title: string, message: string, cardId?: string, exclude: string[] = []) {
     const roles = STAGE_ROLES[stage] || [];
     if (roles.length === 0) return;
-    const ids = await this.findProjectUsersByRole(projectId, roles);
+    let ids = await this.findProjectUsersByRole(projectId, roles);
+    // Страховка: в проект не добавили ни одного человека с ролью этапа —
+    // тогда о работе не узнал бы никто. Уведомляем всех активных сотрудников
+    // этой роли по компании. Пока в проекте есть свои — рассылка узкая,
+    // как и раньше, лишнего шума не будет.
+    if (ids.length === 0) {
+      ids = await this.findCompanyUsersByRole(roles);
+      if (ids.length) {
+        this.logger.warn(
+          `stage "${stage}" in project ${projectId}: в проекте нет ролей ${roles.join('/')} — уведомили ${ids.length} по компании`,
+        );
+      }
+    }
     // Telegram получает ПОЛНУЮ сводку карточки (описание, сроки, съёмка) —
     // просьба владельца: из бота должно быть понятно, что именно делать.
+    const skip = new Set(exclude);
+    ids = ids.filter(id => !skip.has(id));
+    if (ids.length === 0) return;
     const tgExtra = await this.cardTgDetails(cardId);
     await this.notify(ids, title, message, projectId, this.cardButtons(cardId), tgExtra);
   }
@@ -2225,6 +2256,18 @@ export class WorkflowService implements OnModuleInit {
   }
 
   /** Активные пользователи проекта (участник или менеджер) с одной из ролей. */
+  /** Активные сотрудники нужной роли по всей компании — запасной адресат,
+   *  когда в проекте никого с этой ролью нет (см. notifyStageRole). */
+  private async findCompanyUsersByRole(roles: string[]): Promise<string[]> {
+    const rows = await this.userRepo.manager.query(
+      `SELECT u.id FROM users u
+       WHERE u."isActive" = true AND u."isBlocked" = false
+         AND (u.role = ANY($1) OR u."secondaryRole" = ANY($1))`,
+      [roles],
+    ).catch(() => [] as any[]);
+    return rows.map((r: any) => r.id);
+  }
+
   private async findProjectUsersByRole(projectId: string, roles: string[]): Promise<string[]> {
     const rows = await this.userRepo.manager.query(
       `SELECT u.id FROM users u
@@ -2264,6 +2307,21 @@ export class WorkflowService implements OnModuleInit {
    *  buttons — опциональные inline-кнопки для Telegram.
    *  tgExtra — подробная сводка карточки ТОЛЬКО для Telegram (колокол
    *  остаётся кратким, у него своя детализация в UI). */
+  /** Все исполнители карточки: и назначенные на саму карточку, и назначенные
+   *  внутри элементов групповой карточки (items[].assigneeIds / editorIds).
+   *  Уведомления обязаны учитывать обоих — у групповой карточки («Макеты»,
+   *  «Рилсы») собственных исполнителей не бывает вовсе. */
+  private allAssigneeIds(card: WorkflowCard): string[] {
+    const ids: (string | null | undefined)[] = [
+      card.assigneeId, ...((card.assigneeIds as string[]) || []),
+    ];
+    for (const it of ((card.items as any[]) || [])) {
+      if (it?.assigneeId) ids.push(it.assigneeId);
+      if (Array.isArray(it?.assigneeIds)) ids.push(...it.assigneeIds);
+    }
+    return [...new Set(ids.filter(Boolean))] as string[];
+  }
+
   private async notify(userIds: string[], title: string, message: string, projectId: string, buttons?: { text: string; callback_data: string }[][], tgExtra?: string) {
     const unique = [...new Set(userIds.filter(Boolean))];
     for (const uid of unique) {
