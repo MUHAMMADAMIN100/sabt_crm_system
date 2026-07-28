@@ -48,6 +48,20 @@ export class TasksService implements OnModuleInit {
       // eslint-disable-next-line no-console
       console.warn(`ALTER TABLE tasks devStage failed: ${e?.message || e}`);
     }
+    try {
+      // Фактический момент закрытия задачи — база для KPI «сдано в срок».
+      await this.repo.manager.query(
+        `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "completedAt" timestamp`,
+      );
+      // Разовый бэкфилл уже закрытых задач: лучшая доступная оценка —
+      // время проверки, иначе время последнего изменения записи.
+      await this.repo.manager.query(
+        `UPDATE tasks SET "completedAt" = COALESCE("reviewedAt", "updatedAt")
+         WHERE status::text = 'done' AND "completedAt" IS NULL`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`ALTER TABLE tasks completedAt failed: ${e?.message || e}`);
+    }
   }
 
   constructor(
@@ -277,7 +291,7 @@ export class TasksService implements OnModuleInit {
     // Pipeline статусов упрощён до 4 (Wave 11) — промежуточного «review»
     // больше нет. Когда все стороны закончили — задача сразу DONE.
     if (allDone && task.status !== TaskStatus.DONE && task.status !== TaskStatus.CANCELLED) {
-      await this.repo.update(taskId, { status: TaskStatus.DONE });
+      await this.repo.update(taskId, { status: TaskStatus.DONE, completedAt: new Date() });
 
       await this.activityLog.log({
         userId: user.id,
@@ -826,6 +840,13 @@ export class TasksService implements OnModuleInit {
     }
     // Чистим assigneeIds из dto перед update — это не колонка
     const { assigneeIds: _aIds, ...patchForRepo } = dto as any;
+    // Фактический момент закрытия — фиксируем ровно при переходе в DONE и
+    // сбрасываем, если задачу переоткрыли. По нему KPI решает, сдано в срок
+    // или нет; время последнего изменения записи для этого не годится —
+    // любая поздняя правка делала бы сданное вовремя просроченным.
+    if (dto.status && dto.status !== oldStatus) {
+      patchForRepo.completedAt = dto.status === TaskStatus.DONE ? new Date() : null;
+    }
     await this.repo.update(id, patchForRepo);
     if (Array.isArray((dto as any).assigneeIds)) {
       await this.syncAssignees(id, incomingAssigneeIds || [], scopeChanged);
@@ -1162,6 +1183,7 @@ export class TasksService implements OnModuleInit {
       status: TaskStatus.DONE,
       reviewedById: user.id,
       reviewedAt: new Date(),
+      completedAt: new Date(),
     });
 
     // Уведомление исполнителя — только если это другой пользователь.

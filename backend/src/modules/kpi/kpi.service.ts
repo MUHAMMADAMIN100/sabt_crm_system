@@ -406,7 +406,7 @@ export class KpiService {
     // 2) Параллельно гонимся за всеми агрегациями.
     // Wave 14: убрали запрос hours/time_logs — метрика «Часов залогировано»
     // выпилена, считать её больше не нужно.
-    const [tasksRows, sessionRows, storyRows, projectRows, boardRows] = await Promise.all([
+    const [tasksRows, sessionRows, storyRows, projectRows, boardRows, deliveryRows] = await Promise.all([
       this.taskRepo.manager.query(
         `SELECT "assigneeId" AS uid,
                 COUNT(*)::int AS done_count,
@@ -454,6 +454,43 @@ export class KpiService {
          FROM board WHERE uid = ANY($1::text[]) GROUP BY uid`,
         [userIds, periodFrom, periodTo, this.todayLocal()],
       ).catch(e => { this.logger.warn(`board KPI query failed: ${e?.message || e}`); return [] as any[]; }),
+      // Сдача задач в срок — метрика команды разработки. Нормы «столько-то
+      // задач в месяц» у них нет: сколько выдали, столько и должны сдать.
+      // ПЛАН   — задачи со сроком в периоде, срок которых уже наступил
+      //          (ещё не наступивший срок не штрафуем) либо уже закрытые.
+      // ЗАЧЁТ  — сдано вовремя 1.0, с опозданием 0.4, не сдано 0.
+      // Задачи БЕЗ дедлайна не участвуют вовсе: соблюдать нечего, а иначе
+      // показатель накручивался бы бессрочными задачами.
+      // Исполнителем считается и основной (assigneeId), и любой из
+      // со-исполнителей (task_assignees) — на карточке доски их может быть
+      // несколько, и зачёт должен получить каждый.
+      this.taskRepo.manager.query(
+        `WITH mine AS (
+           SELECT t.id, t.deadline, t.status::text AS status,
+                  COALESCE(t."completedAt", t."reviewedAt", t."updatedAt") AS closed_at,
+                  u.uid
+           FROM tasks t
+           JOIN LATERAL (
+             SELECT t."assigneeId" AS uid
+             UNION
+             SELECT ta."userId" FROM task_assignees ta WHERE ta."taskId" = t.id
+           ) u ON u.uid IS NOT NULL
+           WHERE u.uid = ANY($1::uuid[])
+             AND t.status::text <> 'cancelled'
+             AND t.deadline IS NOT NULL
+             AND t.deadline BETWEEN $2 AND $3
+             AND (t.deadline <= $4 OR t.status::text = 'done')
+         )
+         SELECT uid,
+                COUNT(*)::int AS planned,
+                ROUND(SUM(
+                  CASE WHEN status <> 'done' THEN 0
+                       WHEN closed_at <= deadline THEN 1.0
+                       ELSE 0.4 END
+                ), 2)::float AS earned
+         FROM mine GROUP BY uid`,
+        [userIds, periodFrom, periodTo, new Date()],
+      ).catch(e => { this.logger.warn(`task delivery KPI query failed: ${e?.message || e}`); return [] as any[]; }),
     ]);
 
     // 3) Индексируем по userId для быстрого доступа
@@ -467,6 +504,10 @@ export class KpiService {
     for (const r of storyRows) storiesByUid.set(r.uid, Number(r.total) || 0);
     const projectsByUid = new Map<string, number>();
     for (const r of projectRows) projectsByUid.set(r.uid, Number(r.cnt) || 0);
+    const deliveryByUid = new Map<string, { planned: number; earned: number }>();
+    for (const r of deliveryRows) {
+      deliveryByUid.set(r.uid, { planned: Number(r.planned) || 0, earned: Number(r.earned) || 0 });
+    }
     const boardByUid = new Map<string, { planned: number; earned: number }>();
     for (const r of boardRows) {
       boardByUid.set(r.uid, { planned: Number(r.planned) || 0, earned: Number(r.earned) || 0 });
@@ -528,24 +569,42 @@ export class KpiService {
       // Все остальные производственные роли живут ТОЛЬКО доской, сторисмейкер —
       // ТОЛЬКО сторис. «Активные дни» из оценки убраны: вход в систему не
       // является работой.
-      const isTaskRole = SALES_ROLES.has(user.role)
-        || user.role === UserRole.DEVELOPER
-        || user.role === UserRole.PM_DEV;
+      const isDevTeam = user.role === UserRole.DEVELOPER || user.role === UserRole.PM_DEV;
+      const isTaskRole = SALES_ROLES.has(user.role) || isDevTeam;
       // Сторисмейкер по основной роли оценивается только сторис. Если
       // сторисмейкер — вторая роль (например, дизайнер + сторис), человек
       // получает обе метрики: и доску, и сторис.
       const isPureStoryMaker = user.role === UserRole.STORYMAKER;
 
       if (isTaskRole) {
-        const deadlineRate = t.done > 0 ? Math.round((t.onTime / t.done) * 100) : 0;
-        items.push({
-          key: 'deadline_rate',
-          label: 'Соблюдено дедлайнов',
-          target: targets.deadlineRate,
-          value: deadlineRate,
-          percent: t.done > 0 ? Math.min(100, Math.round(deadlineRate / targets.deadlineRate * 100)) : 0,
-          done: t.done > 0 && deadlineRate >= targets.deadlineRate,
-        });
+        if (isDevTeam) {
+          // Команда разработки: нормы «столько-то задач» нет — сколько выдали,
+          // столько и надо сдать. План — выданные задачи со сроком, зачёт —
+          // сдано вовремя 1.0, с опозданием 0.4. Процент «Соблюдено дедлайнов»
+          // им НЕ показываем: одна просрочка не должна бить дважды.
+          const d = deliveryByUid.get(uid);
+          if (d && d.planned > 0) {
+            const percent = Math.min(100, Math.round((d.earned / d.planned) * 100));
+            items.push({
+              key: 'task_delivery',
+              label: 'Задачи сдано в срок',
+              target: d.planned,
+              value: Math.round(d.earned * 10) / 10,
+              percent,
+              done: percent >= 100,
+            });
+          }
+        } else {
+          const deadlineRate = t.done > 0 ? Math.round((t.onTime / t.done) * 100) : 0;
+          items.push({
+            key: 'deadline_rate',
+            label: 'Соблюдено дедлайнов',
+            target: targets.deadlineRate,
+            value: deadlineRate,
+            percent: t.done > 0 ? Math.min(100, Math.round(deadlineRate / targets.deadlineRate * 100)) : 0,
+            done: t.done > 0 && deadlineRate >= targets.deadlineRate,
+          });
+        }
         const activityTarget = Math.min(days, this.scaleTarget(targets.activityDays, days));
         items.push({
           key: 'activity_days',

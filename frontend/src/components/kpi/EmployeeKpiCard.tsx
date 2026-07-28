@@ -72,6 +72,7 @@ export interface UserKpi {
  *  в Wave 14 — оставлены fallback'ом на случай старых клиентов в очереди. */
 const KEY_ICON: Record<string, any> = {
   board_delivery: CheckSquare,
+  task_delivery: CheckSquare,
   stories_plan: Camera,
   cards_done: CheckSquare,
   deadline_rate: Target,
@@ -89,6 +90,7 @@ const KEY_ICON: Record<string, any> = {
  *  непонятно, откуда взялась половина. */
 const METRIC_HINT: Record<string, string> = {
   board_delivery: 'Карточки, пришедшие к вам на этап: сдано в срок — 1, с опозданием — половина, просрочено и не сдано — 0.',
+  task_delivery: 'Выданные вам задачи со сроком: сдано вовремя — 1, с опозданием — 0,4, не сдано — 0. Задачи без срока не учитываются.',
   stories_plan: 'Проекты × дни: за день по каждому вашему проекту нужна хотя бы одна история.',
 }
 
