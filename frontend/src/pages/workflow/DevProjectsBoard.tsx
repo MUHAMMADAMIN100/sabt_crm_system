@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi, tasksApi } from '@/services/api.service'
+import { projectsApi, tasksApi, employeesApi } from '@/services/api.service'
 import { PageLoader } from '@/components/ui'
 import { CalendarDays, Plus, User as UserIcon } from 'lucide-react'
 import clsx from 'clsx'
@@ -24,6 +24,11 @@ export const DEV_STAGES: { num: number; pct: number; label: string; hint: string
 
 /** Типы dev-проектов — зеркало DEV_PROJECT_TYPES бэка (common/sales-segment). */
 const DEV_TYPES = ['Web сайт', 'Лендинг', 'Телеграм бот', 'CRM система', 'Интернет магазин']
+
+/** Кого можно назначить исполнителем карточки на доске «Разработка»:
+ *  вся команда разработки — разработчики и проект-менеджер по разработке.
+ *  Участие в проекте не требуется. */
+const DEV_ASSIGNEE_ROLES = ['developer', 'pm_dev']
 
 /** Кто двигает карточки — зеркало @Roles на PATCH /projects/:id/dev-stage. */
 const MOVE_ROLES = ['admin', 'founder', 'co_founder', 'pm_dev']
@@ -503,16 +508,31 @@ function NewStageCardModal({ stage, projects, onClose, onCreated }: {
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const project = projects.find((p: any) => p.id === projectId)
-  // Кандидаты в исполнители: участники проекта + менеджер + текущий пользователь.
+  // Кандидаты в исполнители — ВСЯ команда разработки, независимо от того,
+  // числится человек в участниках проекта или нет: раньше список резался до
+  // состава проекта, и в проекте без участников назначить было некого.
+  const { data: employees } = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => employeesApi.list(),
+  })
   const people = useMemo(() => {
-    if (!project) return [] as any[]
-    const seen = new Map<string, any>()
-    for (const m of [...(project.members || []), project.manager, user].filter(Boolean)) {
-      if (m?.id && !seen.has(m.id)) seen.set(m.id, m)
-    }
-    return [...seen.values()]
-  }, [project, user])
+    return (employees || [])
+      .filter((e: any) => {
+        // Назначать можно только тех, у кого есть учётная запись: в задаче
+        // хранится ссылка на пользователя, а не на карточку сотрудника.
+        const u = e.user
+        if (!u?.id) return false
+        if ((e.status || 'active') !== 'active') return false
+        if (u.isBlocked || u.isActive === false) return false
+        return DEV_ASSIGNEE_ROLES.includes(u.role)
+      })
+      .map((e: any) => ({
+        id: e.user.id,
+        name: e.fullName || e.user.name,
+        position: e.position || (e.user.role === 'pm_dev' ? 'Проект-менеджер' : 'Разработчик'),
+      }))
+      .sort((a: any, b: any) => a.name.localeCompare(b.name, 'ru'))
+  }, [employees])
   const toggleAssignee = (id: string) =>
     setAssignees(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
 
@@ -555,7 +575,7 @@ function NewStageCardModal({ stage, projects, onClose, onCreated }: {
         <div>
           <label className="block text-xs font-medium text-surface-600 dark:text-surface-300 mb-1">Проект *</label>
           <select value={projectId} autoFocus
-            onChange={e => { setProjectId(e.target.value); setAssignees([]) }}
+            onChange={e => setProjectId(e.target.value)}
             className="w-full text-sm rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700 text-surface-800 dark:text-surface-100 px-2.5 py-2">
             <option value="">— Выберите проект —</option>
             {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name} · {p.projectType}</option>)}
@@ -579,14 +599,15 @@ function NewStageCardModal({ stage, projects, onClose, onCreated }: {
           <label className="block text-xs font-medium text-surface-600 dark:text-surface-300 mb-1">
             Исполнители <span className="text-surface-400">(можно несколько)</span>
           </label>
-          {!project ? (
-            <p className="text-xs text-surface-400 dark:text-surface-500 border border-dashed border-surface-200 dark:border-surface-600 rounded-lg px-2.5 py-2">— Сначала выберите проект —</p>
-          ) : people.length === 0 ? (
-            <p className="text-xs text-surface-400 dark:text-surface-500">У проекта нет участников — карточку можно создать без исполнителя.</p>
+          {people.length === 0 ? (
+            <p className="text-xs text-surface-400 dark:text-surface-500">
+              В команде разработки пока нет сотрудников — карточку можно создать без исполнителя.
+            </p>
           ) : (
             <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
               {people.map((m: any) => (
                 <button key={m.id} type="button" onClick={() => toggleAssignee(m.id)}
+                  title={m.position}
                   className={clsx('px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
                     assignees.includes(m.id)
                       ? 'bg-primary-600 border-primary-600 text-white'
