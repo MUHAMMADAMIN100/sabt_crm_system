@@ -1646,15 +1646,17 @@ export class FinanceService implements OnModuleInit {
     months = Math.min(24, Math.max(3, Number(months) || 12));
     if (!['base', 'conservative', 'optimistic'].includes(scenario)) scenario = 'base';
     const yms = Array.from({ length: months }, (_, i) => shiftYm(start, i));
-    const [balances, projects, employees, subscriptions, debts, plans, allTx, adjustments] = await Promise.all([
+    const [balances, projects, employees, subscriptions, debts, plans, allTx, adjustments, categories] = await Promise.all([
       this.accountsBalances(), this.projRepo.find(), this.empRepo.find(), this.subRepo.find(),
       this.debtRepo.find(), this.ppRepo.find(), this.txRepo.find(), this.forecastAdjRepo.find({ order: { createdAt: 'DESC' } }),
+      this.catRepo.find(),
     ]);
     const txs = this.active(allTx);
     const projectMap = new Map(projects.map(p => [p.id, p]));
     const employeeMap = new Map(employees.map(e => [e.id, e]));
     const subscriptionMap = new Map(subscriptions.map(s => [s.id, s]));
     const debtMap = new Map(debts.map(d => [d.id, d]));
+    const categoryMap = new Map(categories.map(c => [c.id, c]));
     const incomeFactor = scenario === 'conservative' ? .75 : scenario === 'optimistic' ? 1.1 : 1;
     const expenseFactor = scenario === 'conservative' ? 1.1 : 1;
     // Строка месяца показывает факт + оставшийся прогноз. Поэтому начинаем
@@ -1672,6 +1674,13 @@ export class FinanceService implements OnModuleInit {
       const actualIncomeTx = actual.filter(t => t.type === FinanceTxType.INCOME);
       const actualExpenseTx = actual.filter(t => t.type === FinanceTxType.EXPENSE);
       const actualSaving = this.sum(actual.filter(t => t.type === FinanceTxType.SAVING));
+      const categoryKey = (t: FinanceTransaction) => t.categoryId ? categoryMap.get(t.categoryId)?.key ?? null : null;
+      // Старые/ручные операции могли быть записаны только в категорию, без
+      // ссылки на конкретного сотрудника/подписку/долг. Эти суммы тоже
+      // гасят обязательства месяца, распределяясь по строкам ниже.
+      let unlinkedSalaryPaid = this.sum(actualExpenseTx.filter(t => !t.employeeId && categoryKey(t) === 'salary'));
+      let unlinkedSubPaid = this.sum(actualExpenseTx.filter(t => !t.subscriptionId && ['rent', 'subscription'].includes(categoryKey(t) || '')));
+      let unlinkedDebtPaid = this.sum(actualExpenseTx.filter(t => !t.debtId && categoryKey(t) === 'debt'));
       for (const t of actualIncomeTx) {
         incomeSources.push({
           key: `actual:${t.id}`,
@@ -1705,22 +1714,40 @@ export class FinanceService implements OnModuleInit {
           incomeSources.push({ key: `recurring:${project.id}`, label: project.name, amount: r2(remaining * incomeFactor), kind: project.direction === 'maintenance' ? 'Обслуживание' : 'Регулярный доход' });
       }
       for (const employee of employees.filter(e => canProject && e.status === 'active')) {
-        const alreadyPaid = ym === currentYm() ? this.sum(txs.filter(t => t.type === FinanceTxType.EXPENSE && t.employeeId === employee.id &&
-          (t.salaryYm || salaryPeriodOf(t.date)) === ym)) : 0;
-        const amount = Math.max(0, salaryForMonth(employee, ym) + bonusOf(employee, ym) - fineOf(employee, ym) - alreadyPaid);
+        // Зарплата — денежный поток следующего месяца: начисление за июль
+        // выплачивается в августе. Закрытый снапшотом период уже оплачен.
+        const salaryYm = shiftYm(ym, -1);
+        if (employee.hireDate && ymOf(employee.hireDate) > salaryYm) continue;
+        if (snapOf(employee, salaryYm)) continue;
+        const exactPaid = this.sum(txs.filter(t => t.type === FinanceTxType.EXPENSE && t.employeeId === employee.id &&
+          (t.salaryYm || salaryPeriodOf(t.date)) === salaryYm));
+        const due = Math.max(0, salaryForMonth(employee, salaryYm) + bonusOf(employee, salaryYm) - fineOf(employee, salaryYm));
+        let amount = Math.max(0, due - exactPaid);
+        const covered = Math.min(amount, unlinkedSalaryPaid);
+        amount -= covered;
+        unlinkedSalaryPaid = r2(unlinkedSalaryPaid - covered);
         if (amount) expenseSources.push({ key: `salary:${employee.id}`, label: employee.name, amount: r2(amount * expenseFactor), kind: 'Зарплата · ожидается', salary: true });
       }
       for (const sub of subscriptions.filter(s => canProject && s.active && Number(s.amount) > 0)) {
-        const paid = ym === currentYm() ? this.sum(txs.filter(t => t.type === FinanceTxType.EXPENSE && t.subscriptionId === sub.id && ymOf(t.date) === ym)) : 0;
-        const amount = Math.max(0, Number(sub.amount) - paid);
+        const markedPaid = (sub.paidMarks || []).some(x => x.ym === ym);
+        const exactPaid = this.sum(actualExpenseTx.filter(t => t.subscriptionId === sub.id));
+        let amount = markedPaid ? 0 : Math.max(0, Number(sub.amount) - exactPaid);
+        const covered = Math.min(amount, unlinkedSubPaid);
+        amount -= covered;
+        unlinkedSubPaid = r2(unlinkedSubPaid - covered);
         if (amount) expenseSources.push({ key: `sub:${sub.id}`, label: sub.name, amount: r2(amount * expenseFactor), kind: 'Подписка / аренда' });
       }
       for (const debt of debts) {
         if (!canProject) continue;
         const remaining = debtRemaining.get(debt.id) || 0;
         if (remaining <= 0) continue;
-        const scheduled = plans.filter(p => p.ym === ym && p.status === 'expected' && p.debtId === debt.id).reduce((s, p) => s + Number(p.amount), 0);
-        const amount = Math.min(remaining, scheduled || Number(debt.monthlyPayment) || 0);
+        const scheduled = plans.filter(p => p.ym === ym && p.debtId === debt.id).reduce((s, p) => s + Number(p.amount), 0);
+        const exactPaid = this.sum(actualExpenseTx.filter(t => t.debtId === debt.id));
+        let dueThisMonth = Math.max(0, (scheduled || Number(debt.monthlyPayment) || 0) - exactPaid);
+        const covered = Math.min(dueThisMonth, unlinkedDebtPaid);
+        dueThisMonth -= covered;
+        unlinkedDebtPaid = r2(unlinkedDebtPaid - covered);
+        const amount = Math.min(remaining, dueThisMonth);
         if (amount > 0) {
           expenseSources.push({ key: `debt:${debt.id}`, label: debt.name, amount: r2(amount * expenseFactor), kind: 'Погашение долга' });
           debtRemaining.set(debt.id, r2(remaining - amount));
