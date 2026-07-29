@@ -1740,6 +1740,7 @@ export class FinanceService implements OnModuleInit {
       const plannedExpense = r2(Math.max(0, expense - actualExpense));
       const closingBalance = r2(opening + income - expense + actualSaving);
       const row = { ym, openingBalance: opening, income, expense, net: r2(income - expense), closingBalance,
+        balanceNow: ym === currentYm() ? Number(balances.total.balance) : null,
         actualIncome, actualExpense, plannedIncome, plannedExpense,
         incomeSources, expenseSources, warning: closingBalance < 0 };
       opening = closingBalance;
