@@ -58,14 +58,20 @@ export default function FinancePlanningPage() {
           <Tooltip content={<PlanChartTooltip />} /><Legend iconType="circle" />
           <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1.5} />
           <Area type="monotone" dataKey="closingBalance" name="Остаток" stroke="#2563eb" fill="url(#balanceFill)" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} activeDot={{ r: 5 }} />
-          <Bar dataKey="income" name="Доход" fill="#22c55e" radius={[6, 6, 0, 0]} maxBarSize={30} />
-          <Bar dataKey="expense" name="Расход" fill="#fb7185" radius={[6, 6, 0, 0]} maxBarSize={30} />
+          <Bar dataKey="actualIncome" name="Доход · факт" stackId="income" fill="#16a34a" maxBarSize={30} />
+          <Bar dataKey="plannedIncome" name="Доход · план" stackId="income" fill="#86efac" radius={[6, 6, 0, 0]} maxBarSize={30} />
+          <Bar dataKey="actualExpense" name="Расход · факт" stackId="expense" fill="#e11d48" maxBarSize={30} />
+          <Bar dataKey="plannedExpense" name="Расход · план" stackId="expense" fill="#fda4af" radius={[6, 6, 0, 0]} maxBarSize={30} />
         </ComposedChart></ResponsiveContainer>
         </div></div>
       </div>
-      <div className="table-wrap"><table><thead><tr><th>Месяц</th><th>Доход</th><th>Расход</th><th>Результат</th><th>Остаток</th></tr></thead><tbody>
+      <div className="table-wrap"><table><thead><tr><th>Месяц</th><th>Доход · факт / план</th><th>Расход · факт / план</th><th>Результат</th><th>Прогноз остатка</th></tr></thead><tbody>
         {data.rows.map((r: any) => <Fragment key={r.ym}><tr className="clickable" aria-expanded={expanded === r.ym} onClick={() => setExpanded(expanded === r.ym ? null : r.ym)}>
-          <td><strong>{monthLabel(r.ym, true)}</strong></td><td className="pos">{money(r.income)}</td><td className="neg">{money(r.expense)}</td><td>{money(r.net, true)}</td><td className={r.closingBalance < 0 ? 'neg' : ''}><strong>{money(r.closingBalance)}</strong></td>
+          <td><strong>{monthLabel(r.ym, true)}</strong></td>
+          <td><FlowCell tone="income" actual={r.actualIncome} planned={r.plannedIncome} total={r.income} /></td>
+          <td><FlowCell tone="expense" actual={r.actualExpense} planned={r.plannedExpense} total={r.expense} /></td>
+          <td><FlowCell actual={r.actualIncome - r.actualExpense} planned={r.plannedIncome - r.plannedExpense} total={r.net} signed /></td>
+          <td className={r.closingBalance < 0 ? 'neg' : ''}><strong>{money(r.closingBalance)}</strong></td>
         </tr>{expanded === r.ym && <tr className="fin-plan-detail-row"><td colSpan={5}><div className="fin-plan-detail">
           <SourceList title="Доходы" tone="income" rows={r.incomeSources} remove={(id) => remove.mutate(id)} />
           <SourceList title="Расходы" tone="expense" rows={r.expenseSources} remove={(id) => remove.mutate(id)} />
@@ -143,9 +149,24 @@ function PlanChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   const values = Object.fromEntries(payload.map((p: any) => [p.dataKey, Number(p.value)]));
   return <div className="fin-chart-tooltip"><strong>{monthLabel(label, true)}</strong>
-    <div><span className="income-dot" />Доход <b>{money(values.income)}</b></div>
-    <div><span className="expense-dot" />Расход <b>{money(values.expense)}</b></div>
+    <div><span className="income-dot" />Доход · факт <b>{money(values.actualIncome)}</b></div>
+    <div><span className="income-plan-dot" />Доход · план <b>{money(values.plannedIncome)}</b></div>
+    <div><span className="expense-dot" />Расход · факт <b>{money(values.actualExpense)}</b></div>
+    <div><span className="expense-plan-dot" />Расход · план <b>{money(values.plannedExpense)}</b></div>
     <div><span className="balance-dot" />Остаток <b>{money(values.closingBalance)}</b></div>
+  </div>;
+}
+
+function FlowCell({ actual, planned, total, tone, signed = false }: {
+  actual: number; planned: number; total: number; tone?: 'income' | 'expense'; signed?: boolean;
+}) {
+  const hasFact = Math.abs(Number(actual) || 0) > .004;
+  const hasPlan = Math.abs(Number(planned) || 0) > .004;
+  const shown = hasFact ? actual : total;
+  const cls = tone === 'income' ? 'pos' : tone === 'expense' ? 'neg' : Number(shown) < 0 ? 'neg' : '';
+  return <div className={`fin-plan-flow-cell ${cls}`}>
+    <strong>{money(shown, signed)}</strong>
+    <small>{hasFact ? 'факт' : 'план'}{hasFact && hasPlan ? ` · план ${money(planned, signed)}` : ''}</small>
   </div>;
 }
 

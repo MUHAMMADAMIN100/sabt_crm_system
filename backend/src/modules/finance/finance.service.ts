@@ -1734,9 +1734,13 @@ export class FinanceService implements OnModuleInit {
       }
       const income = r2(incomeSources.reduce((s, x) => s + x.amount, 0));
       const expense = r2(expenseSources.reduce((s, x) => s + x.amount, 0));
+      const actualIncome = this.sum(actualIncomeTx);
+      const actualExpense = this.sum(actualExpenseTx);
+      const plannedIncome = r2(Math.max(0, income - actualIncome));
+      const plannedExpense = r2(Math.max(0, expense - actualExpense));
       const closingBalance = r2(opening + income - expense + actualSaving);
       const row = { ym, openingBalance: opening, income, expense, net: r2(income - expense), closingBalance,
-        actualIncome: this.sum(actualIncomeTx), actualExpense: this.sum(actualExpenseTx),
+        actualIncome, actualExpense, plannedIncome, plannedExpense,
         incomeSources, expenseSources, warning: closingBalance < 0 };
       opening = closingBalance;
       return row;
