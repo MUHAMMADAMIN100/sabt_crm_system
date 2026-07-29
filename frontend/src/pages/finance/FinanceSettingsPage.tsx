@@ -132,6 +132,7 @@ export default function FinanceSettingsPage() {
       <div className="section-title">Счета и стартовые балансы</div>
       <div className="card">
         <p className="mini muted" style={{ marginTop: 0 }}>Стартовый баланс = сколько было на счёте на момент запуска. Текущий = старт + операции. Архивные счета скрыты из карточек и селектов.</p>
+        <div className="table-wrap fin-table-embedded">
         <table>
           <thead><tr><th>Счёт</th><th className="num">Стартовый</th><th className="num">Текущий</th><th /></tr></thead>
           <tbody>
@@ -158,6 +159,7 @@ export default function FinanceSettingsPage() {
             ))}
           </tbody>
         </table>
+        </div>
         <button className="btn sm" style={{ marginTop: 12 }} onClick={() => setModal(<AccountModal onClose={() => setModal(null)} />)}><FinIcon name="plus" size={14} /> Счёт</button>
       </div>
 

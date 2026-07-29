@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import toast from 'react-hot-toast';
@@ -49,7 +50,8 @@ export default function FinancePlanningPage() {
       </div>
       <div className="card fin-plan-chart">
         <div className="fin-plan-chart-head"><div><strong>Денежный поток</strong><span>Столбцы — поступления и выплаты, синяя область — прогноз остатка</span></div><span className="fin-plan-scenario">{scenarios[scenario]}</span></div>
-        <ResponsiveContainer width="100%" height={320}><ComposedChart data={data.rows}>
+        <div className="fin-plan-chart-scroll"><div className="fin-plan-chart-canvas" style={{ minWidth: Math.max(680, data.rows.length * 76) }}>
+        <ResponsiveContainer width="100%" height={320}><ComposedChart data={data.rows} margin={{ top: 8, right: 12, bottom: 4, left: 0 }}>
           <defs><linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563eb" stopOpacity={.22}/><stop offset="95%" stopColor="#2563eb" stopOpacity={.015}/></linearGradient></defs>
           <CartesianGrid strokeDasharray="4 5" vertical={false} stroke="#94a3b833" /><XAxis dataKey="ym" tickFormatter={(v) => monthLabel(v)} axisLine={false} tickLine={false} />
           <YAxis tickFormatter={(v) => `${Math.round(v / 1000)}к`} axisLine={false} tickLine={false} width={52} />
@@ -59,14 +61,15 @@ export default function FinancePlanningPage() {
           <Bar dataKey="income" name="Доход" fill="#22c55e" radius={[6, 6, 0, 0]} maxBarSize={30} />
           <Bar dataKey="expense" name="Расход" fill="#fb7185" radius={[6, 6, 0, 0]} maxBarSize={30} />
         </ComposedChart></ResponsiveContainer>
+        </div></div>
       </div>
       <div className="table-wrap"><table><thead><tr><th>Месяц</th><th>Доход</th><th>Расход</th><th>Результат</th><th>Остаток</th></tr></thead><tbody>
-        {data.rows.map((r: any) => <><tr key={r.ym} className="clickable" onClick={() => setExpanded(expanded === r.ym ? null : r.ym)}>
+        {data.rows.map((r: any) => <Fragment key={r.ym}><tr className="clickable" aria-expanded={expanded === r.ym} onClick={() => setExpanded(expanded === r.ym ? null : r.ym)}>
           <td><strong>{monthLabel(r.ym, true)}</strong></td><td className="pos">{money(r.income)}</td><td className="neg">{money(r.expense)}</td><td>{money(r.net, true)}</td><td className={r.closingBalance < 0 ? 'neg' : ''}><strong>{money(r.closingBalance)}</strong></td>
-        </tr>{expanded === r.ym && <tr key={`${r.ym}-detail`}><td colSpan={5}><div className="fin-plan-detail">
+        </tr>{expanded === r.ym && <tr className="fin-plan-detail-row"><td colSpan={5}><div className="fin-plan-detail">
           <SourceList title="Доходы" tone="income" rows={r.incomeSources} remove={(id) => remove.mutate(id)} />
           <SourceList title="Расходы" tone="expense" rows={r.expenseSources} remove={(id) => remove.mutate(id)} />
-        </div></td></tr>}</>)}
+        </div></td></tr>}</Fragment>)}
       </tbody></table></div>
       {adding && <AdjustmentModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); qc.invalidateQueries({ queryKey: ['finance', 'forecast'] }); }} />}
     </div>
@@ -87,26 +90,46 @@ function SourceList({ title, tone, rows, remove }: { title: string; tone: 'incom
 }
 
 function SalaryGroup({ group }: { group: any }) {
+  const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
   const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!open || pinned) return;
     pinTimer.current = setTimeout(() => setPinned(true), 5_500);
     return () => { if (pinTimer.current) clearTimeout(pinTimer.current); };
   }, [open, pinned]);
-  const enter = () => setOpen(true);
-  const leave = () => { if (!pinned) setOpen(false); };
+  const enter = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    const r = anchorRef.current?.getBoundingClientRect();
+    if (r) {
+      const width = Math.min(410, window.innerWidth - 16);
+      const estimatedHeight = Math.min(390, window.innerHeight * .7);
+      const roomBelow = window.innerHeight - r.bottom - 8;
+      const above = roomBelow < estimatedHeight && r.top - 8 >= estimatedHeight;
+      const top = above ? r.top - 8 : roomBelow >= estimatedHeight ? r.bottom + 8 : 8;
+      setPos({ top, left: Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8)), above });
+    }
+    setOpen(true);
+  };
+  const leave = () => {
+    if (pinned) return;
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  };
   const close = (e: MouseEvent) => { e.stopPropagation(); setPinned(false); setOpen(false); };
-  return <div className="fin-plan-source has-popover" onMouseEnter={enter} onMouseLeave={leave}>
+  return <div ref={anchorRef} className="fin-plan-source has-popover" onMouseEnter={enter} onMouseLeave={leave}>
     <span>{group.label}<small>{group.kind}</small></span><b>{money(group.amount)}</b>
-    {open && <div className={`fin-salary-popover open${pinned ? ' pinned' : ''}`} onClick={e => e.stopPropagation()}>
+    {open && pos && createPortal(<div className={`fin-salary-popover open${pinned ? ' pinned' : ''}`}
+      style={{ top: pos.top, left: pos.left, transform: pos.above ? 'translateY(-100%)' : undefined }}
+      onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); }} onMouseLeave={leave} onClick={e => e.stopPropagation()}>
       <div className="fin-salary-popover-head"><strong>Зарплата сотрудников</strong><b>{money(group.amount)}</b>
         {pinned && <button className="fin-payout-close" type="button" aria-label="Закрыть" onClick={close}><FinIcon name="close" size={14} /></button>}
       </div>
       <div className="fin-salary-popover-body">{group.salaries.map((person: any) => <div key={person.key}><span>{person.label}</span><b>{money(person.amount)}</b></div>)}</div>
       <div className={'fin-payout-pin-hint' + (pinned ? ' pinned' : '')}>{pinned ? 'Окно закреплено — можно прокручивать' : 'Задержите курсор, чтобы закрепить окно'}</div>
-    </div>}
+    </div>, document.body)}
   </div>;
 }
 
