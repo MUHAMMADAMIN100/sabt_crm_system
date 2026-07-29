@@ -2435,7 +2435,63 @@ export class FinanceService implements OnModuleInit {
       [l, o],
     ).catch(() => []);
     const totalRow = await this.ds.query(`SELECT COUNT(*)::int AS count FROM finance_activity`).catch(() => [{ count: 0 }]);
-    return { rows, total: totalRow?.[0]?.count ?? 0 };
+    // Старые записи журнала уже содержат UUID. Резолвим их при чтении, чтобы
+    // улучшение работало для всей истории без изменения исходного аудита.
+    const [m, subscriptions, assets, plans] = await Promise.all([
+      this.maps(),
+      this.subRepo.find(),
+      this.assetRepo.find(),
+      this.ppRepo.find(),
+    ]);
+    const sub = new Map(subscriptions.map(x => [x.id, x.name]));
+    const asset = new Map(assets.map(x => [x.id, x.name]));
+    const plan = new Map(plans.map(x => [x.id, x]));
+    const account = new Map(m.accounts.map(x => [x.id, x.name]));
+    const category = new Map(m.categories.map(x => [x.id, x.name]));
+    const project = new Map(m.projects.map(x => [x.id, x.name]));
+    const employee = new Map(m.employees.map(x => [x.id, x.name]));
+    const debt = new Map(m.debts.map(x => [x.id, x.name]));
+    const typeLabel: Record<string, string> = {
+      income: 'Доход', expense: 'Расход', transfer: 'Перевод', saving: 'Накопление',
+    };
+    const statusLabel: Record<string, string> = {
+      active: 'Активный', paused: 'На паузе', lead: 'Лид', done: 'Завершён',
+      archived: 'В архиве', expected: 'Ожидается', received: 'Получено', fired: 'Уволен',
+    };
+    const kindLabel: Record<string, string> = {
+      advance: 'Аванс', bonus: 'Бонус', salary: 'Зарплата', rent: 'Аренда', subscription: 'Подписка',
+    };
+    const shortId = (v: any) => typeof v === 'string' && /^[0-9a-f-]{30,}$/i.test(v)
+      ? `…${v.slice(-6)}` : v;
+    const decorated = rows.map((row: any) => {
+      const details = { ...(row.details || {}) };
+      const replace = (key: string, lookup: Map<string, any>) => {
+        if (details[key]) details[key] = lookup.get(details[key]) || shortId(details[key]);
+      };
+      replace('accountId', account);
+      replace('fromAccountId', account);
+      replace('toAccountId', account);
+      replace('categoryId', category);
+      replace('projectId', project);
+      replace('employeeId', employee);
+      replace('debtId', debt);
+      replace('subscriptionId', sub);
+      replace('assetId', asset);
+      if (details.type) details.type = typeLabel[details.type] || details.type;
+      if (details.status) details.status = statusLabel[details.status] || details.status;
+      if (details.kind) details.kind = kindLabel[details.kind] || details.kind;
+      if (details.id) {
+        const p = plan.get(details.id);
+        if (row.route?.includes('/planned-payments') && p) {
+          const owner = p.projectId ? m.proj.get(p.projectId)?.name : p.debtId ? m.debt.get(p.debtId)?.name : null;
+          details.id = `${owner || 'Плановая оплата'} · ${p.ym}`;
+        } else {
+          details.id = shortId(details.id);
+        }
+      }
+      return { ...row, details };
+    });
+    return { rows: decorated, total: totalRow?.[0]?.count ?? 0 };
   }
 
   async setEmployeeBonus(id: string, dto: { ym?: string; amount?: any }) {

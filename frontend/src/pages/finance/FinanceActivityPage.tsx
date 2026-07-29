@@ -5,6 +5,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
 import { FinLoading, FinLoadError } from './FinKit';
 import FinIcon from './FinIcon';
+import { money, formatDate, monthLabel } from './finlib';
 import './finance.css';
 
 const PAGE = 50;
@@ -13,8 +14,21 @@ const PAGE = 50;
 const DETAIL_LABELS: Record<string, string> = {
   amount: 'сумма', date: 'дата', ym: 'месяц', comment: 'комментарий',
   type: 'тип', name: 'название', employeeId: 'сотрудник', projectId: 'проект',
-  accountId: 'счёт', categoryId: 'категория', id: 'id', salary: 'оклад',
+  accountId: 'счёт', fromAccountId: 'со счёта', toAccountId: 'на счёт',
+  categoryId: 'категория', debtId: 'долг', subscriptionId: 'подписка',
+  assetId: 'инвентарь', id: 'объект', salary: 'оклад', salaryYm: 'месяц ЗП',
+  role: 'должность', status: 'статус', kind: 'вид выплаты',
+  tariff: 'тариф', dueDate: 'срок', contractDate: 'дата договора',
+  archived: 'архив', note: 'примечание',
 };
+
+function detailValue(key: string, value: unknown): string {
+  if (key === 'amount' || key === 'salary' || key === 'tariff') return money(Number(value))
+  if (key === 'date' || key === 'dueDate' || key === 'contractDate') return formatDate(String(value))
+  if (key === 'ym' || key === 'salaryYm') return monthLabel(String(value), true)
+  if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
+  return String(value).slice(0, 80)
+}
 
 function fmtWhen(iso: string): string {
   const d = new Date(iso);
@@ -61,11 +75,12 @@ export default function FinanceActivityPage() {
                     <td className="muted nowrap">{fmtWhen(r.createdAt)}</td>
                     <td><b>{r.userName || 'Система'}</b></td>
                     <td>{r.action}</td>
-                    <td className="mini muted" style={{ maxWidth: 420 }}>
+                    <td className="mini muted fin-activity-details">
                       {r.details && Object.keys(r.details).length > 0
-                        ? Object.entries(r.details).slice(0, 6).map(([k, v]) => (
-                          <span key={k} style={{ marginRight: 10, display: 'inline-block' }}>
-                            {DETAIL_LABELS[k] || k}: <b style={{ color: 'var(--text)' }}>{String(v).slice(0, 60)}</b>
+                        ? Object.entries(r.details).slice(0, 8).map(([k, v]) => (
+                          <span key={k} className="fin-activity-detail">
+                            <span>{DETAIL_LABELS[k] || k}</span>
+                            <b>{detailValue(k, v)}</b>
                           </span>
                         ))
                         : <span className="muted">—</span>}

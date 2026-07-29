@@ -433,3 +433,13 @@
   grid-template-columns: 82px 110px 1fr;
   padding: 10px 2px;
 }
+
+/* Детали журнала: вместо технической строки — компактные пары ключ/значение. */
+.fin-activity-details { display: flex; flex-wrap: wrap; gap: 5px 12px; max-width: 720px; }
+.fin-activity-detail { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; }
+.fin-activity-detail > span { color: var(--muted); }
+.fin-activity-detail > span::after { content: ':'; }
+.fin-activity-detail b {
+  color: var(--text); font-weight: 650; max-width: 260px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
