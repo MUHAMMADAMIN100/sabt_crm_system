@@ -18,7 +18,7 @@ const SUBS_LINK = '/finance/expense/rent_subs';
 const SALARY_LINK = '/finance/expense/salary';
 /** Страница направления дохода — для ссылки из напоминания об оплате. */
 function directionLink(direction?: string | null): string {
-  return ['smm', 'development', 'design'].includes(direction || '') ? `/finance/income/${direction}` : SMM_LINK;
+  return ['smm', 'development', 'design', 'maintenance'].includes(direction || '') ? `/finance/income/${direction}` : SMM_LINK;
 }
 /** За сколько дней до срока начинать напоминать. */
 const REMIND_BEFORE_DAYS = 3;
@@ -50,7 +50,7 @@ function fmtMoney(n: number): string {
   return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(n) || 0)} с.`;
 }
 
-/** Напоминания об оплатах проектов: срок второй части (20 дней после первой)
+/** Напоминания об оплатах проектов: срок второй части (15 дней после первой)
  *  и новый платёж цикла в день контракта. Получатели — все пользователи с
  *  доступом к финансам (founder/co_founder или грант finance.manage):
  *  колокольчик + сокет (NotificationsService) и Telegram, если привязан. */

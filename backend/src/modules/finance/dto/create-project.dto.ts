@@ -6,6 +6,7 @@ export enum FinanceProjectDirection {
   SMM = 'smm',
   DEVELOPMENT = 'development',
   DESIGN = 'design',
+  MAINTENANCE = 'maintenance',
 }
 
 export enum FinanceProjectStatus {

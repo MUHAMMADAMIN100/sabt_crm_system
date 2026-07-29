@@ -39,7 +39,7 @@ export class FinancePlannedPayment {
   status: PlannedPaymentStatus;
 
   /** Срок оплаты (для ожидаемых): к этой дате платёж должен быть получен.
-   *  Часть 2 = дата оплаты части 1 + 20 дней; новый цикл = день контракта. */
+   *  Часть 2 = дата оплаты части 1 + 15 дней; новый цикл = день контракта. */
   @Column({ type: 'date', nullable: true })
   dueDate: string | null;
 

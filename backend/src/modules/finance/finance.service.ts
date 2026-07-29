@@ -84,8 +84,8 @@ function addDays(iso: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Срок второй части после оплаты первой — 20 дней (правило компании). */
-const PART2_DUE_DAYS = 20;
+/** Срок второй части после получения первой — 15 дней (правило компании). */
+const PART2_DUE_DAYS = 15;
 
 /** Бонус сотрудника за месяц (jsonb bonuses: { '2026-07': 500 }). */
 function bonusOf(e: { bonuses?: Record<string, number> | null }, ym: string): number {
@@ -151,6 +151,7 @@ const DEFAULT_CATEGORIES: Array<Partial<FinanceCategory>> = [
   { name: 'SMM часть 2', type: 'income', key: 'smm2', builtin: true, icon: 'smm', color: '#22c55e', position: 2 },
   { name: 'Development', type: 'income', key: 'development', builtin: true, icon: 'development', color: '#2563eb', position: 3 },
   { name: 'Design', type: 'income', key: 'design', builtin: true, icon: 'design', color: '#a855f7', position: 4 },
+  { name: 'Обслуживание', type: 'income', key: 'maintenance', builtin: true, icon: 'maintenance', color: '#0f766e', position: 17 },
   { name: 'Возврат долга', type: 'income', key: 'debt_return', builtin: true, icon: 'undo', color: '#14b8a6', position: 5 },
   { name: 'Прочее', type: 'income', key: null, builtin: false, icon: 'box', color: '#64748b', position: 6 },
   // Расходы
@@ -169,7 +170,7 @@ const DEFAULT_CATEGORIES: Array<Partial<FinanceCategory>> = [
 
 /** Направление → системный ключ категории дохода. */
 const DIRECTION_CATEGORY_KEY: Record<string, string> = {
-  smm: 'smm', development: 'development', design: 'design',
+  smm: 'smm', development: 'development', design: 'design', maintenance: 'maintenance',
 };
 
 /** Справочники + индексы по id (кэш на один запрос). */
@@ -415,6 +416,11 @@ export class FinanceService implements OnModuleInit {
       if (await this.catRepo.count() === 0) {
         await this.catRepo.save(DEFAULT_CATEGORIES.map(c => this.catRepo.create(c)));
       } else {
+        const maintenance = await this.catRepo.findOne({ where: { key: 'maintenance' } });
+        if (!maintenance) {
+          const def = DEFAULT_CATEGORIES.find(c => c.key === 'maintenance');
+          if (def) await this.catRepo.save(this.catRepo.create(def));
+        }
         await this.backfillCategoryIcons();
       }
       await this.seedWebRand();
@@ -648,7 +654,7 @@ export class FinanceService implements OnModuleInit {
     if ((await this.projRepo.count()) === 0 && Array.isArray(backup.clients)) {
       const rows = backup.clients.map((c: any, i: number) => this.projRepo.create({
         name: c.name,
-        direction: ['smm', 'development', 'design'].includes(c.group) ? c.group : 'smm',
+        direction: ['smm', 'development', 'design', 'maintenance'].includes(c.group) ? c.group : 'smm',
         tariff: Number(c.tariff) || 0,
         contractDate: c.contractDate || null,
         archived: c.status === 'archived',
@@ -767,7 +773,7 @@ export class FinanceService implements OnModuleInit {
     return tx.categoryId ? (m.cat.get(tx.categoryId)?.key ?? null) : null;
   }
 
-  /** Группа дашборда: доход → smm/development/design; расход → salary/rent_subs/debts. */
+  /** Группа дашборда: направления дохода; расход → salary/rent_subs/debts. */
   private groupOf(tx: FinanceTransaction, m: FinMaps): string | null {
     if (tx.type === FinanceTxType.INCOME) return this.directionOf(tx, m);
     if (tx.type === FinanceTxType.EXPENSE) {
@@ -852,7 +858,7 @@ export class FinanceService implements OnModuleInit {
     const expenseByCategory = this.byCategoryList(monthExpense, m);
 
     // План/факт дохода по направлениям (пауза и лиды — вне денег).
-    const dirs = ['smm', 'development', 'design'];
+    const dirs = ['smm', 'development', 'design', 'maintenance'];
     const pausedIds = new Set(m.projects.filter(p => p.status === 'paused').map(p => p.id));
     const incomePlan = dirs.map(dir => {
       const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
@@ -867,7 +873,7 @@ export class FinanceService implements OnModuleInit {
     // «Получено / получим» на карточке «Доход за месяц»: план месяца направления
     // из таблиц планов (получено деньгами + ещё ожидается; освоенное вне счёта
     // не считаем — его не будет в журнале). План вешаем только на базовую
-    // категорию направления (smm/development/design), чтобы подкатегории
+    // категорию направления, чтобы подкатегории
     // SMM 1/2 не задваивали его; направление без операций получает строку с нулём.
     for (const dir of dirs) {
       const ids = new Set(m.projects
@@ -1017,7 +1023,7 @@ export class FinanceService implements OnModuleInit {
   /** Разбивка карточки на под-типы для мини-окна при наведении.
    *  kind='category' (id=categoryId | 'none' для «Без категории», txType),
    *  kind='group' (id=salary|rent_subs|debts|other — статьи расхода),
-   *  kind='direction' (id=smm|development|design — направления дохода).
+   *  kind='direction' (id=smm|development|design|maintenance — направления дохода).
    *  Считается по РЕАЛЬНЫМ операциям месяца (как карточки), деньги не трогаем. */
   async breakdown(ym: string, kind: string, id: string, txType?: string) {
     const { from, to } = monthRange(ym);
@@ -1092,7 +1098,7 @@ export class FinanceService implements OnModuleInit {
   async incomeDirections(ym: string) {
     const m = await this.maps();
     const planned = await this.ppRepo.find();
-    const dirs = ['smm', 'development', 'design'];
+    const dirs = ['smm', 'development', 'design', 'maintenance'];
     return dirs.map(dir => {
       const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
       const ids = new Set(projs.map(p => p.id));
@@ -1129,7 +1135,7 @@ export class FinanceService implements OnModuleInit {
 
         // Отображаемый цикл. Первый транш платят в день подписания — цикл
         // может начаться в прошлом месяце и перетечь в текущий (остаток
-        // через 20 дней). Если в просматриваемом месяце планов нет,
+        // через 15 дней). Если в просматриваемом месяце планов нет,
         // показываем последний прошлый цикл: пока он не закрыт, либо если
         // он закрыт оплатой уже в этом месяце (якорь попал в этот месяц).
         let cyclePlans = monthPlans;
@@ -1199,10 +1205,37 @@ export class FinanceService implements OnModuleInit {
       };
     }
 
-    if (direction === 'development') {
-      const active = m.projects.filter(p => p.direction === 'development' && !p.archived && p.status !== 'paused');
+    if (direction === 'development' || direction === 'maintenance') {
+      const active = m.projects.filter(p => p.direction === direction && !p.archived && p.status !== 'paused');
       const winStart = start || this.defaultStart(active, planned);
       const months = Array.from({ length: 6 }, (_, i) => shiftYm(winStart, i));
+      // Обслуживание — регулярный месячный доход. Для каждого открытого
+      // месяца автоматически создаём ожидаемую оплату по тарифу проекта;
+      // клик по ней использует обычный сценарий «получить» и создаёт
+      // транзакцию на выбранный счёт.
+      if (direction === 'maintenance') {
+        for (const project of active) {
+          const tariff = r2(Number(project.tariff) || 0);
+          if (tariff <= 0) continue;
+          const firstYm = project.contractDate ? ymOf(project.contractDate) : months[0];
+          const dueDay = contractDay(project.contractDate) ?? 1;
+          for (const month of months) {
+            if (month < firstYm) continue;
+            const existing = planned.find(pp => pp.projectId === project.id && pp.ym === month);
+            if (existing) continue;
+            const created = await this.ppRepo.save(this.ppRepo.create({
+              projectId: project.id,
+              ym: month,
+              partNo: 1,
+              amount: tariff,
+              status: 'expected',
+              dueDate: dueDateForMonth(month, dueDay),
+              auto: false,
+            }));
+            planned.push(created);
+          }
+        }
+      }
       // Даты операций — для «когда получили» на полученных планах ячеек.
       const devIncome = this.active(await this.txRepo.find({ where: { type: FinanceTxType.INCOME } as any }));
       const txDates = new Map(devIncome.map(t => [t.id, t.date]));
@@ -1787,7 +1820,7 @@ export class FinanceService implements OnModuleInit {
 
   /** Автологика цикла оплат SMM. После получения оплаты:
    *  — если тариф цикла покрыт не полностью — создаёт ожидаемую часть 2 на
-   *    остаток со сроком «дата оплаты части 1 + 20 дней»;
+   *    остаток со сроком «дата оплаты части 1 + 15 дней»;
    *  — если цикл оплачен полностью — создаёт ожидаемый платёж следующего
    *    цикла ко дню контракта и уведомляет финансовых пользователей.
    *  Ничего не создаёт, если план на месяц/следующий месяц уже есть. */
@@ -2252,7 +2285,7 @@ export class FinanceService implements OnModuleInit {
   listProjects() { return this.projRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } }); }
   async createProject(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Название обязательно');
-    const direction = ['smm', 'development', 'design'].includes(dto.direction) ? dto.direction : 'smm';
+    const direction = ['smm', 'development', 'design', 'maintenance'].includes(dto.direction) ? dto.direction : 'smm';
     const status = ['lead', 'active', 'paused', 'done', 'archived'].includes(dto.status) ? dto.status : 'active';
     const position = await this.projRepo.count();
     return this.projRepo.save(this.projRepo.create({
@@ -2265,7 +2298,7 @@ export class FinanceService implements OnModuleInit {
     const p = await this.projRepo.findOne({ where: { id } });
     if (!p) throw new NotFoundException('Проект не найден');
     if (dto.name !== undefined) p.name = String(dto.name).trim();
-    if (dto.direction !== undefined && ['smm', 'development', 'design'].includes(dto.direction)) p.direction = dto.direction;
+    if (dto.direction !== undefined && ['smm', 'development', 'design', 'maintenance'].includes(dto.direction)) p.direction = dto.direction;
     if (dto.tariff !== undefined) p.tariff = Number(dto.tariff) || 0;
     if (dto.note !== undefined) p.note = dto.note;
     if (dto.contractDate !== undefined) {

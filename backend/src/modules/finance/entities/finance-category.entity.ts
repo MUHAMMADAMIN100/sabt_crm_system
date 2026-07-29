@@ -18,7 +18,7 @@ export class FinanceCategory {
   type: FinanceCategoryType;
 
   /** Системный ключ для расчётов: salary | rent | subscription | debt |
-   *  debt_return | smm | smm1 | smm2 | development | design. У пользовательских — null. */
+   *  debt_return | smm | smm1 | smm2 | development | design | maintenance. У пользовательских — null. */
   @Column({ type: 'varchar', length: 32, nullable: true })
   key: string | null;
 

@@ -23,13 +23,13 @@ export default function FinanceIncomePage() {
       <div className="page-head">
         <div>
           <h1 className="flex"><FinIcon name="income" size={22} /> Доход</h1>
-          <p>Три направления — нажмите, чтобы открыть проекты</p>
+          <p>Четыре направления — нажмите, чтобы открыть проекты</p>
         </div>
         <MonthNav ym={ym} onChange={setYm} />
       </div>
 
       {isLoading ? <FinLoading /> : isError ? <FinLoadError onRetry={() => refetch()} /> : (
-      <div className="cards grid-3">
+      <div className="cards grid-4">
         {INCOME_GROUPS.map((g) => {
           const d: any = (dirs || []).find((x: any) => x.direction === g.key) || {};
           const cash = d.received ?? 0;

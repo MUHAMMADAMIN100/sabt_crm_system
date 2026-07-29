@@ -26,7 +26,7 @@ export interface FinCategory {
 export interface FinProject {
   id: string;
   name: string;
-  direction: 'smm' | 'development' | 'design' | string;
+  direction: 'smm' | 'development' | 'design' | 'maintenance' | string;
   tariff?: number;
   contractDate?: string | null;
   cycleAnchor?: string | null;

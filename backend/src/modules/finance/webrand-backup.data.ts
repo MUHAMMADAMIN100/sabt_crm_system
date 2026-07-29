@@ -467,7 +467,7 @@ export const WEBRAND_BACKUP: any = {
   "employees": [
     {
       "id": "id-qfwy3mfzddc999",
-      "name": "Navruz Mardanov Shaymardanovich",
+      "name": "Навруз Марданов Шаймарданович",
       "salary": 4000,
       "advance": 0,
       "role": "Руководитель SMM",
@@ -476,7 +476,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-dhiqtdmj462eb7",
-      "name": "Lashkarova Savribegim Eradzhevna",
+      "name": "Лашкарова Саврибегим Эраджевна",
       "salary": 3000,
       "advance": 0,
       "role": "Менеджер продаж (SMM)",
@@ -485,7 +485,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-fv9ye2o7c7f120",
-      "name": "Turazoda Muhammadamin Mahmad",
+      "name": "Туразода Мухаммадамин Махмад",
       "salary": 3500,
       "advance": 0,
       "role": "Разработчик",
@@ -494,7 +494,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-9cd2ia11fe6a29",
-      "name": "Mayunusova Farzona Firdavsovna",
+      "name": "Маюнусова Фарзона Фирдавсовна",
       "salary": 2500,
       "advance": 0,
       "role": "Сторисмейкер",
@@ -503,7 +503,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-9he116r983f294",
-      "name": "Oyembekova Amina Ruslanovna",
+      "name": "Оембекова Амина Руслановна",
       "salary": 1500,
       "advance": 0,
       "role": "Видеограф",
@@ -512,7 +512,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-d038957hdfd0a0",
-      "name": "Rozikova Khusnidabonu",
+      "name": "Розикова Хуснидабону",
       "salary": 3500,
       "advance": 0,
       "role": "Дизайнер",
@@ -521,7 +521,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-wdyailoedebc70",
-      "name": "Sabrina Oblokulova",
+      "name": "Сабрина Облокулова",
       "salary": 3000,
       "advance": 1500,
       "role": "Менеджер продаж (Разработка)",
@@ -530,7 +530,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-pgwc30kpf2880a",
-      "name": "Khakimova Maryam Khurshedovna",
+      "name": "Хакимова Марьям Хуршедовна",
       "salary": 1500,
       "advance": 0,
       "role": "Организатор",
@@ -539,7 +539,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-akh4w7iq947a81",
-      "name": "Rabiev Mahmud",
+      "name": "Рабиев Махмуд",
       "salary": 1500,
       "advance": 500,
       "role": "Видеограф",
@@ -548,7 +548,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-9e6iw4sz21185f",
-      "name": "Boboev Azam",
+      "name": "Бобоев Азам",
       "salary": 2000,
       "advance": 0,
       "role": "Монтажёр",
@@ -557,7 +557,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-0qw23eebc728a4",
-      "name": "Mehriniso Saidova Kosimovna",
+      "name": "Мехринисо Саидова Косимовна",
       "salary": 0,
       "advance": 0,
       "role": "SMM специалист",
@@ -566,7 +566,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-lisi7awf1ea9e6",
-      "name": "Behruz Mirov",
+      "name": "Бехруз Миров",
       "salary": 5000,
       "advance": 1000,
       "role": "Руководитель по видеографии",
@@ -575,7 +575,7 @@ export const WEBRAND_BACKUP: any = {
     },
     {
       "id": "id-02gjwm277cdef5",
-      "name": "Zavkov Samad",
+      "name": "Завков Самад",
       "salary": 1500,
       "advance": 0,
       "role": "Видеограф",

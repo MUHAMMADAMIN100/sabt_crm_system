@@ -14,6 +14,7 @@ const PATHS: Record<string, ReactNode> = {
   smm: <><path d="M3 10v4h4l6 4V6L7 10H3z" /><path d="M17 9a4 4 0 0 1 0 6" /></>,
   development: <><polyline points="8 7 3 12 8 17" /><polyline points="16 7 21 12 16 17" /></>,
   design: <><circle cx="12" cy="12" r="8.5" /><circle cx="9" cy="9" r="1" /><circle cx="15" cy="9" r="1" /><circle cx="9.5" cy="14.5" r="1" /><path d="M12 12c2 0 3 1.2 3 3a3 3 0 0 0 0-6" /></>,
+  maintenance: <><path d="M14.7 6.3a4 4 0 0 0-5-5L12 3.6 9.6 6 7.3 3.7a4 4 0 0 0 5 5L4 17a2.1 2.1 0 0 0 3 3l8.3-8.3a4 4 0 0 0 5-5L18 9l-2.4-2.4 2.3-2.3a4 4 0 0 0-3.2 2z" /></>,
   // части расхода
   salary: <><circle cx="9" cy="8" r="3" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" /><path d="M16 6a3 3 0 0 1 0 6" /><path d="M17 13.5a5.5 5.5 0 0 1 3.5 5.5" /></>,
   building: <><rect x="5" y="3" width="14" height="18" rx="1.5" /><line x1="9" y1="7" x2="9" y2="7" /><line x1="15" y1="7" x2="15" y2="7" /><line x1="9" y1="11" x2="9" y2="11" /><line x1="15" y1="11" x2="15" y2="11" /><path d="M10 21v-4h4v4" /></>,
@@ -58,7 +59,7 @@ const PATHS: Record<string, ReactNode> = {
 /** Иконки, доступные для выбора у категории (в настройках). */
 export const PICKER_ICONS = [
   'banknote', 'currency', 'piggy', 'creditCard', 'wallet', 'percent', 'receipt',
-  'megaphone', 'smm', 'development', 'design', 'target', 'building', 'car', 'printer',
+  'megaphone', 'smm', 'development', 'design', 'maintenance', 'target', 'building', 'car', 'printer',
   'box', 'shield', 'split', 'transactions', 'income', 'expense', 'undo', 'dots',
 ] as const;
 

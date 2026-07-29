@@ -91,7 +91,7 @@ export function formatDate(iso?: string | null): string {
   return `${day} ${month} ${d.getFullYear()}`
 }
 
-// ---------- Таксономия: 3 направления дохода, 3 статьи расхода ----------
+// ---------- Таксономия: 4 направления дохода, 3 статьи расхода ----------
 
 export interface GroupMeta { key: string; label: string; icon: string; color: string }
 
@@ -99,6 +99,7 @@ export const INCOME_GROUPS: GroupMeta[] = [
   { key: 'smm', label: 'SMM', icon: 'smm', color: '#16a34a' },
   { key: 'development', label: 'Development', icon: 'development', color: '#2563eb' },
   { key: 'design', label: 'Design', icon: 'design', color: '#a855f7' },
+  { key: 'maintenance', label: 'Обслуживание', icon: 'maintenance', color: '#0f766e' },
 ]
 
 export const EXPENSE_GROUPS: GroupMeta[] = [
@@ -180,4 +181,3 @@ export function salaryComment(marker: string, note?: string): string {
   const clean = (note || '').trim()
   return clean ? `${marker} — ${clean}` : marker
 }
-

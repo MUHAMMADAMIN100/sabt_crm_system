@@ -48,19 +48,19 @@ export const NOTION_PROJECTS: Array<{
 export const NOTION_EMPLOYEES: Array<{
   name: string; salary: number; advance: number; role: string; hireDate: string;
 }> = [
-  { name: 'Navruz Mardanov Shaymardanovich',  salary: 4000, advance: 700,  role: 'Руководитель SMM',             hireDate: '2026-03-26' },
-  { name: 'Lashkarova Savribegim Eradzhevna', salary: 3000, advance: 0,    role: 'Менеджер продаж (SMM)',        hireDate: '2026-03-26' },
-  { name: 'Turazoda Muhammadamin Mahmad',     salary: 3500, advance: 0,    role: 'Разработчик',                  hireDate: '2026-03-26' },
-  { name: 'Mayunusova Farzona Firdavsovna',   salary: 2500, advance: 0,    role: 'Сторисмейкер',                 hireDate: '2026-03-26' },
-  { name: 'Oyembekova Amina Ruslanovna',      salary: 1500, advance: 500,  role: 'Видеограф',                    hireDate: '2026-04-30' },
-  { name: 'Rozikova Khusnidabonu',            salary: 3500, advance: 500,  role: 'Дизайнер',                     hireDate: '2026-05-06' },
-  { name: 'Sabrina Oblokulova',               salary: 3000, advance: 2000, role: 'Менеджер продаж (Разработка)', hireDate: '2026-05-08' },
-  { name: 'Khakimova Maryam Khurshedovna',    salary: 1500, advance: 0,    role: 'Организатор',                  hireDate: '2026-05-09' },
-  { name: 'Rabiev Mahmud',                    salary: 1500, advance: 500,  role: 'Видеограф',                    hireDate: '2026-05-15' },
-  { name: 'Boboev Azam',                      salary: 2000, advance: 0,    role: 'Монтажёр',                     hireDate: '2026-06-01' },
-  { name: 'Mehriniso Saidova Kosimovna',      salary: 0,    advance: 0,    role: 'SMM специалист',               hireDate: '2026-06-01' },
-  { name: 'Behruz Mirov',                     salary: 5000, advance: 1000, role: 'Руководитель по видеографии',  hireDate: '2026-06-11' },
-  { name: 'Zavkov Samad',                     salary: 1500, advance: 200,  role: 'Видеограф',                    hireDate: '2026-06-12' },
+  { name: 'Навруз Марданов Шаймарданович',    salary: 4000, advance: 700,  role: 'Руководитель SMM',             hireDate: '2026-03-26' },
+  { name: 'Лашкарова Саврибегим Эраджевна',   salary: 3000, advance: 0,    role: 'Менеджер продаж (SMM)',        hireDate: '2026-03-26' },
+  { name: 'Туразода Мухаммадамин Махмад',     salary: 3500, advance: 0,    role: 'Разработчик',                  hireDate: '2026-03-26' },
+  { name: 'Маюнусова Фарзона Фирдавсовна',    salary: 2500, advance: 0,    role: 'Сторисмейкер',                 hireDate: '2026-03-26' },
+  { name: 'Оембекова Амина Руслановна',       salary: 1500, advance: 500,  role: 'Видеограф',                    hireDate: '2026-04-30' },
+  { name: 'Розикова Хуснидабону',             salary: 3500, advance: 500,  role: 'Дизайнер',                     hireDate: '2026-05-06' },
+  { name: 'Сабрина Облокулова',                salary: 3000, advance: 2000, role: 'Менеджер продаж (Разработка)', hireDate: '2026-05-08' },
+  { name: 'Хакимова Марьям Хуршедовна',        salary: 1500, advance: 0,    role: 'Организатор',                  hireDate: '2026-05-09' },
+  { name: 'Рабиев Махмуд',                     salary: 1500, advance: 500,  role: 'Видеограф',                    hireDate: '2026-05-15' },
+  { name: 'Бобоев Азам',                       salary: 2000, advance: 0,    role: 'Монтажёр',                     hireDate: '2026-06-01' },
+  { name: 'Мехринисо Саидова Косимовна',       salary: 0,    advance: 0,    role: 'SMM специалист',               hireDate: '2026-06-01' },
+  { name: 'Бехруз Миров',                      salary: 5000, advance: 1000, role: 'Руководитель по видеографии',  hireDate: '2026-06-11' },
+  { name: 'Завков Самад',                      salary: 1500, advance: 200,  role: 'Видеограф',                    hireDate: '2026-06-12' },
 ];
 
 /** Журнал операций точь-в-точь по Notion (26 июня — 8 июля).

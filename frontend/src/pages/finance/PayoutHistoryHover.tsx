@@ -1,21 +1,51 @@
-// История выплат сотруднику при наведении на его имя в зарплатной ведомости:
-// что выдали (аванс / бонус / зарплата), когда, сколько и с какого счёта.
-// Данные тянутся лениво — только когда курсор задержался на имени.
+// История выплат сотруднику: при наведении — последние 3 месяца,
+// по ненавязчивой ссылке — полная история в модальном окне.
 import { useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
 import { money, formatDate, monthLabel } from './finlib';
+import FinIcon from './FinIcon';
 
-const HOVER_DELAY = 400; // мс — чтобы карточка не мелькала при проходе мышью
+const HOVER_DELAY = 400;
+const CLOSE_DELAY = 120;
 const POP_WIDTH = 380;
 
-/** Цвет метки по типу выплаты. Красный не используем — это не ошибка. */
 const KIND_CLASS: Record<string, string> = {
   advance: 'adv',
   bonus: 'bon',
   salary: 'sal',
 };
+
+function HistoryRows({ rows, isLoading, emptyText }: {
+  rows: any[]; isLoading: boolean; emptyText: string;
+}) {
+  if (isLoading) return <div className="fin-brk-empty">Загрузка…</div>;
+  if (rows.length === 0) return <div className="fin-brk-empty">{emptyText}</div>;
+  return <>
+    {rows.map(r => (
+      <div className="fin-payout-row" key={r.id}>
+        <span className={`kind ${KIND_CLASS[r.kind] || ''}`}>{r.kindLabel}</span>
+        <span className="date">{formatDate(r.date)}</span>
+        <span className="amt">{money(r.amount)}</span>
+        <span className="acc">{r.accountName || '—'}</span>
+        <span className="ym">за {monthLabel(r.salaryYm)}</span>
+        {r.note && <span className="note" title={r.note}>{r.note}</span>}
+      </div>
+    ))}
+  </>;
+}
+
+function Totals({ totals }: { totals?: any }) {
+  if (!totals) return null;
+  return (
+    <div className="fin-payout-totals">
+      <span>Авансы: <b>{money(totals.advance)}</b></span>
+      <span>Бонусы: <b>{money(totals.bonus)}</b></span>
+      <span>Зарплата: <b>{money(totals.salary)}</b></span>
+    </div>
+  );
+}
 
 export default function PayoutHistoryHover({
   employeeId, name, children, className,
@@ -27,17 +57,29 @@ export default function PayoutHistoryHover({
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [open, setOpen] = useState(false);
+  const [fullOpen, setFullOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['fin-payouts', employeeId],
-    queryFn: () => financeApi.employeePayouts(employeeId, 12),
+  const previewQ = useQuery({
+    queryKey: ['fin-payouts', employeeId, 3],
+    queryFn: () => financeApi.employeePayouts(employeeId, 3),
     enabled: open,
     staleTime: 30_000,
   });
+  const fullQ = useQuery({
+    queryKey: ['fin-payouts', employeeId, 'all'],
+    queryFn: () => financeApi.employeePayouts(employeeId, 1200),
+    enabled: fullOpen,
+    staleTime: 30_000,
+  });
 
+  const cancelClose = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  };
   const enter = () => {
+    cancelClose();
     timer.current = setTimeout(() => {
       const r = ref.current?.getBoundingClientRect();
       if (r) {
@@ -50,11 +92,17 @@ export default function PayoutHistoryHover({
   };
   const leave = () => {
     if (timer.current) clearTimeout(timer.current);
+    closeTimer.current = setTimeout(() => setOpen(false), CLOSE_DELAY);
+  };
+  const showFull = () => {
     setOpen(false);
+    setFullOpen(true);
   };
 
-  const rows: any[] = data?.rows ?? [];
-  const totals = data?.totals;
+  const rows: any[] = previewQ.data?.rows ?? [];
+  const totals = previewQ.data?.totals;
+  const fullRows: any[] = fullQ.data?.rows ?? [];
+  const fullTotals = fullQ.data?.totals;
 
   return (
     <span ref={ref} className={className} onMouseEnter={enter} onMouseLeave={leave}>
@@ -62,36 +110,40 @@ export default function PayoutHistoryHover({
       {open && pos && createPortal(
         <div
           className="fin-brk-pop fin-payout-pop"
+          onMouseEnter={cancelClose}
+          onMouseLeave={leave}
           style={{ top: pos.top, left: pos.left, width: POP_WIDTH, transform: pos.above ? 'translateY(-100%)' : undefined }}
         >
           <div className="fin-brk-pop-head">
-            <span className="ttl">{name} — история выплат</span>
+            <span className="ttl">{name} — последние 3 месяца</span>
             {totals && <span className="sum">{money(totals.all)}</span>}
           </div>
-          {totals && (
-            <div className="fin-payout-totals">
-              <span>Авансы: <b>{money(totals.advance)}</b></span>
-              <span>Бонусы: <b>{money(totals.bonus)}</b></span>
-              <span>Зарплата: <b>{money(totals.salary)}</b></span>
-            </div>
-          )}
+          <Totals totals={totals} />
           <div className="fin-brk-pop-body">
-            {isLoading && <div className="fin-brk-empty">Загрузка…</div>}
-            {!isLoading && rows.length === 0 && (
-              <div className="fin-brk-empty">Выплат за последний год не было</div>
-            )}
-            {rows.map(r => (
-              <div className="fin-payout-row" key={r.id}>
-                <span className={`kind ${KIND_CLASS[r.kind] || ''}`}>{r.kindLabel}</span>
-                <span className="date">{formatDate(r.date)}</span>
-                <span className="amt">{money(r.amount)}</span>
-                <span className="acc">{r.accountName || '—'}</span>
-                <span className="ym">за {monthLabel(r.salaryYm)}</span>
-                {r.note && <span className="note" title={r.note}>{r.note}</span>}
-              </div>
-            ))}
+            <HistoryRows rows={rows} isLoading={previewQ.isLoading} emptyText="За последние 3 месяца выплат не было" />
           </div>
-          <div className="fin-payout-foot">За последние 12 месяцев начисления</div>
+          <button className="fin-payout-more" type="button" onClick={showFull}>
+            Показать всю историю
+          </button>
+        </div>,
+        document.body,
+      )}
+      {fullOpen && createPortal(
+        <div className="overlay" onClick={() => setFullOpen(false)}>
+          <div className="modal fin-payout-modal" role="dialog" aria-modal="true" aria-label={`История выплат — ${name}`} onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>История выплат — {name}</h3>
+              <button className="btn ghost sm" aria-label="Закрыть" onClick={() => setFullOpen(false)}>
+                <FinIcon name="close" size={16} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <Totals totals={fullTotals} />
+              <div className="fin-payout-full-list">
+                <HistoryRows rows={fullRows} isLoading={fullQ.isLoading} emptyText="История выплат пока пуста" />
+              </div>
+            </div>
+          </div>
         </div>,
         document.body,
       )}

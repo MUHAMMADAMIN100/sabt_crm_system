@@ -53,7 +53,11 @@ export default function FinanceIncomeGroupPage() {
       <div className="page-head">
         <div>
           <h1 className="flex" style={{ color: g.color }}><FinIcon name={g.icon} size={22} /> <span style={{ color: 'var(--text)' }}>{g.label}</span></h1>
-          <p>{direction === 'smm' ? 'Помесячный учёт оплат по частям' : 'Проекты направления'}</p>
+          <p>{direction === 'smm'
+            ? 'Помесячный учёт оплат по частям'
+            : direction === 'maintenance'
+              ? 'Ежемесячные оплаты за обслуживание сайтов'
+              : 'Проекты направления'}</p>
         </div>
         <div className="flex">
           {direction === 'smm' && <MonthNav ym={ym} onChange={setYm} />}
@@ -464,7 +468,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
       </div>
 
       <p className="mini muted" style={{ marginTop: 12 }}>
-        Частичная оплата: остаток планируется сам со сроком +20 дней. Полная оплата: дата контракта
+        Частичная оплата: остаток планируется сам со сроком +15 дней. Полная оплата: дата контракта
         сдвигается на день оплаты, план следующего месяца создаётся автоматически.
       </p>
 

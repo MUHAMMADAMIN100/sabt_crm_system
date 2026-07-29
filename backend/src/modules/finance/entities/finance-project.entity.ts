@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 
 /** Направление проекта/клиента для финансов. */
-export type FinanceDirection = 'smm' | 'development' | 'design';
+export type FinanceDirection = 'smm' | 'development' | 'design' | 'maintenance';
 
 /** Проект/клиент финансового учёта. Собственная сущность финансов
  *  (не FK на CRM-проекты) — заводится в «Настройки → Проекты/Клиенты». */
