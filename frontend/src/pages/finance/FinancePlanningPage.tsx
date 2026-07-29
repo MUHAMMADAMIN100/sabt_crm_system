@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -7,6 +7,7 @@ import { financeApi } from '@/services/api.service';
 import { apiErr, currentYm, money, monthLabel } from './finlib';
 import { FinLoadError, FinLoading, FinModal } from './FinKit';
 import FinIcon from './FinIcon';
+import { floatingPosition, type FloatingPosition } from './floatingPosition';
 import './finance.css';
 
 const scenarios: Record<string, string> = { conservative: 'Осторожный', base: 'Базовый', optimistic: 'Оптимистичный' };
@@ -105,25 +106,31 @@ function SalaryGroup({ group }: { group: any }) {
   const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
+  const [pos, setPos] = useState<FloatingPosition | null>(null);
   const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updatePosition = useCallback(() => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (rect) setPos(floatingPosition(rect, 410, Math.min(390, window.innerHeight * .7)));
+  }, []);
   useEffect(() => {
     if (!open || pinned) return;
     pinTimer.current = setTimeout(() => setPinned(true), 5_500);
     return () => { if (pinTimer.current) clearTimeout(pinTimer.current); };
   }, [open, pinned]);
+  useEffect(() => {
+    if (!open) return;
+    const main = document.querySelector('main');
+    window.addEventListener('resize', updatePosition);
+    main?.addEventListener('scroll', updatePosition, { passive: true });
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      main?.removeEventListener('scroll', updatePosition);
+    };
+  }, [open, updatePosition]);
   const enter = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
-    const r = anchorRef.current?.getBoundingClientRect();
-    if (r) {
-      const width = Math.min(410, window.innerWidth - 16);
-      const estimatedHeight = Math.min(390, window.innerHeight * .7);
-      const roomBelow = window.innerHeight - r.bottom - 8;
-      const above = roomBelow < estimatedHeight && r.top - 8 >= estimatedHeight;
-      const top = above ? r.top - 8 : roomBelow >= estimatedHeight ? r.bottom + 8 : 8;
-      setPos({ top, left: Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8)), above });
-    }
+    updatePosition();
     setOpen(true);
   };
   const leave = () => {
@@ -134,7 +141,7 @@ function SalaryGroup({ group }: { group: any }) {
   return <div ref={anchorRef} className="fin-plan-source has-popover" onMouseEnter={enter} onMouseLeave={leave}>
     <span>{group.label}<small>{group.kind}</small></span><b>{money(group.amount)}</b>
     {open && pos && createPortal(<div className={`fin-salary-popover open${pinned ? ' pinned' : ''}`}
-      style={{ top: pos.top, left: pos.left, transform: pos.above ? 'translateY(-100%)' : undefined }}
+      style={{ top: pos.top, bottom: pos.bottom, left: pos.left }}
       onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); }} onMouseLeave={leave} onClick={e => e.stopPropagation()}>
       <div className="fin-salary-popover-head"><strong>Зарплата сотрудников</strong><b>{money(group.amount)}</b>
         {pinned && <button className="fin-payout-close" type="button" aria-label="Закрыть" onClick={close}><FinIcon name="close" size={14} /></button>}

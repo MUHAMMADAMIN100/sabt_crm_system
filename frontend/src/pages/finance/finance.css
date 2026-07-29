@@ -165,11 +165,11 @@
 
 /* Modal */
 .fin-root .overlay, .fin-overlay { position: fixed; inset: 0; background: rgba(16,24,40,.35); backdrop-filter: blur(2px); display: grid; place-items: center; z-index: 50; padding: 20px; }
-.fin-root .modal { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-lg); width: 100%; max-width: 560px; max-height: 90vh; overflow: auto; }
-.fin-root .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); z-index: 1; }
-.fin-root .modal-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
-.fin-root .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
-.fin-root .modal-foot { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; position: sticky; bottom: 0; background: var(--surface); }
+.fin-root .modal, .fin-overlay .modal { background: var(--surface,#fff); color: var(--text,#16191d); border-radius: 16px; box-shadow: var(--shadow-lg,0 10px 34px rgba(16,24,40,.13)); width: 100%; max-width: 560px; max-height: 90vh; overflow: auto; }
+.fin-root .modal-head, .fin-overlay .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--border,#e7e9ee); position: sticky; top: 0; background: var(--surface,#fff); z-index: 1; }
+.fin-root .modal-head h3, .fin-overlay .modal-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.fin-root .modal-body, .fin-overlay .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.fin-root .modal-foot, .fin-overlay .modal-foot { padding: 16px 20px; border-top: 1px solid var(--border,#e7e9ee); display: flex; justify-content: flex-end; gap: 10px; position: sticky; bottom: 0; background: var(--surface,#fff); }
 .fin-root .type-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .fin-root .type-tab { padding: 9px 6px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); font-weight: 600; font-size: 13px; text-align: center; color: var(--muted); }
 .fin-root .type-tab.active.t-income { background: var(--green); color: #fff; border-color: transparent; }
@@ -340,10 +340,10 @@
 
   /* Модалка почти во весь экран, кнопки — в столбик, если не влезают. */
   .fin-root .overlay, .fin-overlay { padding: 10px; align-items: end; }
-  .fin-root .modal { max-width: 100%; max-height: 94vh; border-radius: 14px; }
-  .fin-root .modal-head { padding: 14px 16px; }
-  .fin-root .modal-body { padding: 16px; gap: 12px; }
-  .fin-root .modal-foot { padding: 12px 16px; flex-wrap: wrap; }
+  .fin-root .modal, .fin-overlay .modal { max-width: 100%; max-height: 94vh; border-radius: 14px; }
+  .fin-root .modal-head, .fin-overlay .modal-head { padding: 14px 16px; }
+  .fin-root .modal-body, .fin-overlay .modal-body { padding: 16px; gap: 12px; }
+  .fin-root .modal-foot, .fin-overlay .modal-foot { padding: 12px 16px; flex-wrap: wrap; }
   .fin-root .type-tabs { grid-template-columns: repeat(2, 1fr); }
 
   .fin-root .toolbar { gap: 8px; }
@@ -370,7 +370,9 @@
   font-size: 13px; color: #16191d; pointer-events: none;
   animation: finBrkIn .12s ease-out;
 }
-@keyframes finBrkIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+/* Только fade: transform конфликтовал с позиционированием верхних окон и
+   заставлял их «пролетать» от строки на собственную высоту. */
+@keyframes finBrkIn { from { opacity: 0; } to { opacity: 1; } }
 .fin-brk-pop-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid #eef0f4; }
 .fin-brk-pop-head .ttl { font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fin-brk-pop-head .sum { font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -388,7 +390,11 @@
 /* ─── История выплат сотрудника при наведении на имя ─────────────── */
 .fin-payout-name { cursor: help; border-bottom: 1px dashed #c7ccd4; }
 .dark .fin-payout-name { border-bottom-color: #3a4553; }
-.fin-payout-pop { pointer-events: auto; }
+.fin-payout-pop {
+  pointer-events: auto; display: flex; flex-direction: column;
+  max-height: calc(100vh - 16px); overflow: hidden;
+}
+.fin-payout-pop > .fin-brk-pop-body { min-height: 0; overscroll-behavior: contain; }
 
 .fin-payout-totals {
   display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: #55606e;

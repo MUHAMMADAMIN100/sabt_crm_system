@@ -55,13 +55,23 @@ export function FinLoadError({ onRetry, text }: { onRetry: () => void; text?: st
 // финансовые живут внутри main, поэтому без лока main фон продолжал ехать.
 let scrollLocks = 0;
 let mainPrevOverflow = '';
+let mainPrevPaddingRight = '';
 function lockBodyScroll() {
   if (++scrollLocks > 1) return;
   document.body.style.overflow = 'hidden';
   const main = document.querySelector('main');
   if (main) {
-    mainPrevOverflow = (main as HTMLElement).style.overflow;
-    (main as HTMLElement).style.overflow = 'hidden';
+    const el = main as HTMLElement;
+    mainPrevOverflow = el.style.overflow;
+    mainPrevPaddingRight = el.style.paddingRight;
+    // Компенсируем исчезнувший вертикальный scrollbar: иначе при открытии
+    // обычной модалки вся страница смещается на его ширину.
+    const scrollbarWidth = Math.max(0, el.offsetWidth - el.clientWidth);
+    if (scrollbarWidth > 0) {
+      const currentPadding = parseFloat(getComputedStyle(el).paddingRight) || 0;
+      el.style.paddingRight = `${currentPadding + scrollbarWidth}px`;
+    }
+    el.style.overflow = 'hidden';
   }
 }
 function unlockBodyScroll() {
@@ -69,7 +79,11 @@ function unlockBodyScroll() {
   if (scrollLocks > 0) return;
   document.body.style.overflow = '';
   const main = document.querySelector('main');
-  if (main) (main as HTMLElement).style.overflow = mainPrevOverflow;
+  if (main) {
+    const el = main as HTMLElement;
+    el.style.overflow = mainPrevOverflow;
+    el.style.paddingRight = mainPrevPaddingRight;
+  }
 }
 
 /** Escape закрывает модалку; фокус возвращается туда, откуда её открыли;
