@@ -2694,11 +2694,11 @@ export class FinanceService implements OnModuleInit {
     const all = await this.backupRepo.find({ order: { createdAt: 'DESC' } as any, select: ['id', 'kind', 'createdAt'] as any });
     const over = (kinds: string[], keep: number) =>
       all.filter(b => kinds.includes(b.kind)).slice(keep).map(b => b.id);
-    const ids = [...over(['auto'], 30), ...over(['manual', 'pre_restore'], 10)];
+    const ids = [...over(['auto'], 30), ...over(['manual', 'pre_restore', 'pre_import'], 10)];
     if (ids.length) await this.backupRepo.delete(ids);
   }
 
-  async createBackupSnapshot(kind: 'auto' | 'manual' | 'pre_restore' = 'manual') {
+  async createBackupSnapshot(kind: 'auto' | 'manual' | 'pre_restore' | 'pre_import' = 'manual') {
     const data = await this.exportAll();
     const stats = {
       transactions: data.transactions.length, plannedPayments: data.plannedPayments.length,
@@ -2731,24 +2731,79 @@ export class FinanceService implements OnModuleInit {
   async restoreBackup(id: string) {
     const b = await this.getBackup(id);
     await this.createBackupSnapshot('pre_restore');
-    await this.importAll(b.data);
+    await this.importAll(b.data, false);
     return { ok: true };
   }
 
-  async importAll(data: any) {
-    if (!data || typeof data !== 'object') throw new BadRequestException('Неверный формат файла');
-    await this.resetAll(false);
-    const save = async (repo: Repository<any>, rows: any[]) => { if (Array.isArray(rows) && rows.length) await repo.save(rows); };
-    await save(this.accRepo, data.accounts);
-    await save(this.catRepo, data.categories);
-    await save(this.projRepo, data.projects);
-    await save(this.empRepo, data.employees);
-    await save(this.subRepo, data.subscriptions);
-    await save(this.debtRepo, data.debts);
-    await save(this.ppRepo, data.plannedPayments);
-    await save(this.txRepo, data.transactions);
-    await save(this.assetRepo, data.assets);
-    if (!(data.accounts?.length) && !(data.categories?.length)) await this.seedDefaults();
+  /** Полная проверка файла выполняется ДО снимка и удаления данных. */
+  private validateImport(data: any) {
+    if (!data || typeof data !== 'object' || Array.isArray(data))
+      throw new BadRequestException('Неверный формат файла');
+    if (data.version != null && ![1, 2].includes(Number(data.version)))
+      throw new BadRequestException(`Версия резервной копии ${data.version} не поддерживается`);
+    const required = ['accounts', 'categories', 'projects', 'employees', 'subscriptions', 'debts', 'plannedPayments', 'transactions'];
+    for (const key of required) {
+      if (!Array.isArray(data[key])) throw new BadRequestException(`В резервной копии отсутствует раздел «${key}»`);
+    }
+    if (data.accounts.length === 0 || data.categories.length === 0)
+      throw new BadRequestException('Резервная копия должна содержать счета и категории');
+    if (data.assets != null && !Array.isArray(data.assets))
+      throw new BadRequestException('Раздел «assets» должен быть массивом');
+    const ids = (rows: any[], label: string) => {
+      const seen = new Set<string>();
+      for (const row of rows) {
+        if (!row || typeof row !== 'object' || !row.id) throw new BadRequestException(`${label}: запись без id`);
+        if (seen.has(row.id)) throw new BadRequestException(`${label}: повторяющийся id ${row.id}`);
+        seen.add(row.id);
+      }
+      return seen;
+    };
+    ids(data.accounts, 'Счета');
+    ids(data.categories, 'Категории');
+    ids(data.projects, 'Проекты');
+    ids(data.employees, 'Сотрудники');
+    ids(data.debts, 'Долги');
+    ids(data.subscriptions, 'Подписки');
+    ids(data.plannedPayments, 'Плановые оплаты');
+    ids(data.transactions, 'Транзакции');
+    if (data.assets?.length) ids(data.assets, 'Инвентарь');
+    for (const tx of data.transactions) {
+      const amount = Number(tx.amount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException(`Транзакция ${tx.id}: неверная сумма`);
+    }
+  }
+
+  /** Импорт атомарный: при любой ошибке PostgreSQL откатывает очистку и
+   *  все вставки. Перед обычным импортом дополнительно сохраняем pre_import. */
+  async importAll(data: any, safetySnapshot = true) {
+    this.validateImport(data);
+    if (safetySnapshot) await this.createBackupSnapshot('pre_import');
+    await this.ds.transaction(async em => {
+      const txRepo = em.getRepository(FinanceTransaction);
+      const ppRepo = em.getRepository(FinancePlannedPayment);
+      const assetRepo = em.getRepository(FinanceAsset);
+      const debtRepo = em.getRepository(FinanceDebt);
+      const subRepo = em.getRepository(FinanceSubscription);
+      const empRepo = em.getRepository(FinanceEmployee);
+      const projRepo = em.getRepository(FinanceProject);
+      const catRepo = em.getRepository(FinanceCategory);
+      const accRepo = em.getRepository(FinanceAccount);
+      for (const repo of [txRepo, ppRepo, assetRepo, debtRepo, subRepo, empRepo, projRepo, catRepo, accRepo]) {
+        await repo.createQueryBuilder().delete().execute();
+      }
+      const save = async (repo: Repository<any>, rows: any[]) => {
+        if (rows.length) await repo.save(rows, { chunk: 500 });
+      };
+      await save(accRepo, data.accounts);
+      await save(catRepo, data.categories);
+      await save(projRepo, data.projects);
+      await save(empRepo, data.employees);
+      await save(subRepo, data.subscriptions);
+      await save(debtRepo, data.debts);
+      await save(ppRepo, data.plannedPayments);
+      await save(txRepo, data.transactions);
+      await save(assetRepo, data.assets || []);
+    });
     return { ok: true };
   }
 

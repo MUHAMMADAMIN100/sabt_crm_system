@@ -1,6 +1,6 @@
 // История выплат сотруднику: при наведении — последние 3 месяца,
 // по ненавязчивой ссылке — полная история в модальном окне.
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
@@ -9,6 +9,7 @@ import FinIcon from './FinIcon';
 
 const HOVER_DELAY = 400;
 const CLOSE_DELAY = 120;
+const PIN_DELAY = 5_500;
 const POP_WIDTH = 380;
 
 const KIND_CLASS: Record<string, string> = {
@@ -58,7 +59,9 @@ export default function PayoutHistoryHover({
   const ref = useRef<HTMLSpanElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
   const [fullOpen, setFullOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
 
@@ -78,6 +81,14 @@ export default function PayoutHistoryHover({
   const cancelClose = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
   };
+  useEffect(() => {
+    if (!open || pinned) return;
+    pinTimer.current = setTimeout(() => setPinned(true), PIN_DELAY);
+    return () => {
+      if (pinTimer.current) clearTimeout(pinTimer.current);
+    };
+  }, [open, pinned]);
+
   const enter = () => {
     cancelClose();
     timer.current = setTimeout(() => {
@@ -92,10 +103,15 @@ export default function PayoutHistoryHover({
   };
   const leave = () => {
     if (timer.current) clearTimeout(timer.current);
+    if (pinned) return;
     closeTimer.current = setTimeout(() => setOpen(false), CLOSE_DELAY);
   };
-  const showFull = () => {
+  const closePreview = () => {
+    setPinned(false);
     setOpen(false);
+  };
+  const showFull = () => {
+    closePreview();
     setFullOpen(true);
   };
 
@@ -117,6 +133,11 @@ export default function PayoutHistoryHover({
           <div className="fin-brk-pop-head">
             <span className="ttl">{name} — последние 3 месяца</span>
             {totals && <span className="sum">{money(totals.all)}</span>}
+            {pinned && (
+              <button className="fin-payout-close" type="button" aria-label="Закрыть историю" onClick={closePreview}>
+                <FinIcon name="close" size={14} />
+              </button>
+            )}
           </div>
           <Totals totals={totals} />
           <div className="fin-brk-pop-body">
@@ -125,6 +146,9 @@ export default function PayoutHistoryHover({
           <button className="fin-payout-more" type="button" onClick={showFull}>
             Показать всю историю
           </button>
+          <div className={'fin-payout-pin-hint' + (pinned ? ' pinned' : '')}>
+            {pinned ? 'Окно закреплено — можно прокручивать' : 'Задержите курсор, чтобы закрепить окно'}
+          </div>
         </div>,
         document.body,
       )}

@@ -76,7 +76,10 @@ export default function FinanceSettingsPage() {
       toast.error('Некорректный JSON-файл');
       return;
     }
-    if (!(await finConfirm('Импорт полностью заменит все текущие данные. Продолжить?', { danger: true, confirmLabel: 'Импортировать' }))) return;
+    if (!(await finConfirm(
+      'Импорт полностью заменит текущие финансовые данные. Перед заменой система проверит файл и создаст страховочную копию.',
+      { danger: true, confirmLabel: 'Импортировать' },
+    ))) return;
     try {
       await financeApi.importAll(data);
       setMsg('Импортировано ✓');

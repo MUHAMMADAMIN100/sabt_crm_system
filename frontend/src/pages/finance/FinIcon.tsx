@@ -4,21 +4,21 @@ import type { CSSProperties, ReactNode } from 'react'
 
 const PATHS: Record<string, ReactNode> = {
   // навигация
-  overview: <><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /></>,
-  income: <><polyline points="3 17 9 11 13 15 21 7" /><polyline points="15 7 21 7 21 13" /></>,
-  expense: <><polyline points="3 7 9 13 13 9 21 17" /><polyline points="15 17 21 17 21 11" /></>,
-  transactions: <><path d="M17 4l4 4-4 4" /><path d="M21 8H3" /><path d="M7 20l-4-4 4-4" /><path d="M3 16h18" /></>,
-  settings: <><line x1="4" y1="7" x2="20" y2="7" /><circle cx="9" cy="7" r="2" /><line x1="4" y1="17" x2="20" y2="17" /><circle cx="15" cy="17" r="2" /></>,
+  overview: <><rect x="3" y="3" width="7" height="7" rx="2" /><rect x="14" y="3" width="7" height="7" rx="2" /><rect x="3" y="14" width="7" height="7" rx="2" /><rect x="14" y="14" width="7" height="7" rx="2" /></>,
+  income: <><circle cx="8" cy="8" r="4.5" /><path d="M8 5.7v4.6M6.7 7h2a1.1 1.1 0 0 1 0 2.2H7" /><path d="M12 17h8M17 14l3 3-3 3" /></>,
+  expense: <><path d="M4 7h16v12H4z" /><path d="M4 10h16" /><path d="M8 15h3" /><path d="M18 3v5M15.5 5.5 18 8l2.5-2.5" /></>,
+  transactions: <><path d="M4 7h15" /><path d="m16 4 3 3-3 3" /><path d="M20 17H5" /><path d="m8 14-3 3 3 3" /></>,
+  settings: <><path d="M4 6h10" /><path d="M18 6h2" /><circle cx="16" cy="6" r="2" /><path d="M4 12h2" /><path d="M10 12h10" /><circle cx="8" cy="12" r="2" /><path d="M4 18h8" /><path d="M16 18h4" /><circle cx="14" cy="18" r="2" /></>,
   currency: <><ellipse cx="12" cy="7" rx="7" ry="3" /><path d="M5 7v5c0 1.7 3.1 3 7 3s7-1.3 7-3V7" /><path d="M5 12v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5" /></>,
   // направления дохода
-  smm: <><path d="M3 10v4h4l6 4V6L7 10H3z" /><path d="M17 9a4 4 0 0 1 0 6" /></>,
-  development: <><polyline points="8 7 3 12 8 17" /><polyline points="16 7 21 12 16 17" /></>,
-  design: <><circle cx="12" cy="12" r="8.5" /><circle cx="9" cy="9" r="1" /><circle cx="15" cy="9" r="1" /><circle cx="9.5" cy="14.5" r="1" /><path d="M12 12c2 0 3 1.2 3 3a3 3 0 0 0 0-6" /></>,
-  maintenance: <><path d="M14.7 6.3a4 4 0 0 0-5-5L12 3.6 9.6 6 7.3 3.7a4 4 0 0 0 5 5L4 17a2.1 2.1 0 0 0 3 3l8.3-8.3a4 4 0 0 0 5-5L18 9l-2.4-2.4 2.3-2.3a4 4 0 0 0-3.2 2z" /></>,
+  smm: <><path d="M4 11v3h4l7 4V7l-7 4H4z" /><path d="M8 14v4a2 2 0 0 0 3.6 1.2" /><path d="M18 9a4 4 0 0 1 0 7" /><path d="M20.5 6.5a7.5 7.5 0 0 1 0 12" /></>,
+  development: <><path d="m8 8-4 4 4 4" /><path d="m16 8 4 4-4 4" /><path d="m14 5-4 14" /></>,
+  design: <><path d="m4 20 4.5-1 10-10a2.5 2.5 0 0 0-3.5-3.5l-10 10L4 20z" /><path d="m13.5 7 3.5 3.5" /><path d="M4 20h5" /></>,
+  maintenance: <><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /><path d="M15.5 7.5a3 3 0 0 0-3.7 3.7L8 15" /><path d="m14.2 9.8 2.3-2.3" /></>,
   // части расхода
-  salary: <><circle cx="9" cy="8" r="3" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" /><path d="M16 6a3 3 0 0 1 0 6" /><path d="M17 13.5a5.5 5.5 0 0 1 3.5 5.5" /></>,
-  building: <><rect x="5" y="3" width="14" height="18" rx="1.5" /><line x1="9" y1="7" x2="9" y2="7" /><line x1="15" y1="7" x2="15" y2="7" /><line x1="9" y1="11" x2="9" y2="11" /><line x1="15" y1="11" x2="15" y2="11" /><path d="M10 21v-4h4v4" /></>,
-  receipt: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="9" y1="12" x2="15" y2="12" /></>,
+  salary: <><rect x="3" y="6" width="18" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M7 10v4M17 10v4" /></>,
+  building: <><path d="M4 21V5l8-3 8 3v16" /><path d="M9 21v-4h6v4" /><path d="M8 8h1M15 8h1M8 12h1M15 12h1" /></>,
+  receipt: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3z" /><path d="M9 8h6M9 12h6M9 16h3" /></>,
   // действия
   plus: <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>,
   close: <><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></>,

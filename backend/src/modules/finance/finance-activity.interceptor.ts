@@ -8,9 +8,10 @@ import { FinanceActivity } from './entities/finance-activity.entity';
 /** Человекочитаемые названия действий по маршруту. Порядок важен —
  *  берётся первое совпадение. */
 const LABELS: Array<{ re: RegExp; method?: string; label: string }> = [
-  { re: /\/operations\/[^/]+$/, method: 'PATCH', label: 'Изменил операцию' },
-  { re: /\/operations\/[^/]+$/, method: 'DELETE', label: 'Удалил операцию' },
+  { re: /\/transactions\/[^/?]+(?:\?.*)?$/, method: 'PATCH', label: 'Изменил операцию' },
+  { re: /\/transactions\/[^/?]+(?:\?.*)?$/, method: 'DELETE', label: 'Удалил операцию' },
   { re: /\/operations$/, method: 'POST', label: 'Добавил операцию' },
+  { re: /\/operations\/remove-month$/, method: 'POST', label: 'Откатил выплаты месяца' },
   { re: /\/employees\/[^/]+\/bonus$/, label: 'Изменил бонус сотрудника' },
   { re: /\/employees\/[^/]+\/advance$/, label: 'Изменил аванс сотрудника' },
   { re: /\/employees\/[^/]+\/fine$/, label: 'Изменил штраф сотрудника' },
@@ -24,13 +25,19 @@ const LABELS: Array<{ re: RegExp; method?: string; label: string }> = [
   { re: /\/projects\/[^/]+$/, method: 'PATCH', label: 'Изменил проект (финансы)' },
   { re: /\/projects\/[^/]+$/, method: 'DELETE', label: 'Удалил проект (финансы)' },
   { re: /\/projects$/, method: 'POST', label: 'Добавил проект (финансы)' },
+  { re: /\/salary\/close-month$/, label: 'Закрыл зарплатный месяц' },
+  { re: /\/salary\/reopen-month$/, label: 'Переоткрыл зарплатный месяц' },
+  { re: /\/assets\/[^/?]+(?:\?.*)?$/, method: 'PATCH', label: 'Изменил инвентарь' },
+  { re: /\/assets\/[^/?]+(?:\?.*)?$/, method: 'DELETE', label: 'Удалил позицию инвентаря' },
+  { re: /\/assets$/, method: 'POST', label: 'Добавил позицию инвентаря' },
   { re: /\/accounts/, label: 'Изменил счета' },
   { re: /\/categories/, label: 'Изменил категории' },
   { re: /\/subscriptions/, label: 'Изменил подписки/аренду' },
   { re: /\/debts/, label: 'Изменил долги' },
-  { re: /\/remove-month-expenses/, label: 'Откатил выплаты месяца' },
   { re: /\/backups\/[^/]+\/restore/, label: 'Восстановил бэкап' },
   { re: /\/backups/, method: 'POST', label: 'Создал бэкап' },
+  { re: /\/backup\/import$/, method: 'POST', label: 'Импортировал финансовые данные' },
+  { re: /\/reset$/, method: 'POST', label: 'Сбросил финансовые данные' },
   { re: /\/reminders\/run/, label: 'Запустил проверку напоминаний' },
 ];
 
