@@ -338,6 +338,10 @@ export const financeApi = {
   expenseSummary: (ym: string) => api.get('/finance/expense/summary', { params: { ym } }).then(r => r.data),
   expenseDetail: (kind: string, ym: string, start?: string) => api.get(`/finance/expense/detail/${kind}`, { params: { ym, start } }).then(r => r.data),
   accountsBalances: () => api.get('/finance/accounts/balances').then(r => r.data),
+  forecast: (params: { start: string; months: number; scenario: string }) => api.get('/finance/forecast', { params }).then(r => r.data),
+  createForecastAdjustment: (data: any) => api.post('/finance/forecast/adjustments', data).then(r => r.data),
+  updateForecastAdjustment: (id: string, data: any) => api.patch(`/finance/forecast/adjustments/${id}`, data).then(r => r.data),
+  removeForecastAdjustment: (id: string) => api.delete(`/finance/forecast/adjustments/${id}`).then(r => r.data),
   /** Разбивка карточки по под-типам (мини-окно при наведении). */
   breakdown: (params: { ym: string; kind: string; id?: string; txType?: string }) =>
     api.get('/finance/breakdown', { params }).then(r => r.data),

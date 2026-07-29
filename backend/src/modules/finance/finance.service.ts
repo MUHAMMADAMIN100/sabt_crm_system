@@ -16,6 +16,7 @@ import { FinanceDebt } from './entities/finance-debt.entity';
 import { FinancePlannedPayment } from './entities/finance-planned-payment.entity';
 import { FinanceAsset } from './entities/finance-asset.entity';
 import { FinanceBackup } from './entities/finance-backup.entity';
+import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustment.entity';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
 import {
@@ -96,6 +97,13 @@ function bonusOf(e: { bonuses?: Record<string, number> | null }, ym: string): nu
  *  в расчётах больше не участвует (решение владельца: обнулить историю). */
 function advanceOf(e: { advances?: Record<string, number> | null }, ym: string): number {
   return r2(Number((e.advances || {})[ym]) || 0);
+}
+
+/** Оклад, действовавший в конкретном месяце. */
+function salaryForMonth(e: { salary: any; salaryHistory?: Record<string, number> | null }, ym: string): number {
+  const history = e.salaryHistory || {};
+  const effective = Object.keys(history).filter(m => m <= ym).sort().pop();
+  return r2(effective ? Number(history[effective]) || 0 : Number(e.salary) || 0);
 }
 
 /** Классификация зарплатной операции по комментарию: аванс и бонус
@@ -202,6 +210,7 @@ export class FinanceService implements OnModuleInit {
     @InjectRepository(FinancePlannedPayment) private ppRepo: Repository<FinancePlannedPayment>,
     @InjectRepository(FinanceAsset) private assetRepo: Repository<FinanceAsset>,
     @InjectRepository(FinanceBackup) private backupRepo: Repository<FinanceBackup>,
+    @InjectRepository(FinanceForecastAdjustment) private forecastAdjRepo: Repository<FinanceForecastAdjustment>,
     private ds: DataSource,
     private scheduler: FinanceScheduler,
   ) {}
@@ -258,12 +267,22 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "advances" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "fines" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salarySnapshots" jsonb`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salaryHistory" jsonb`);
+    await run(`UPDATE finance_employees SET "salaryHistory" = jsonb_build_object(
+      to_char(COALESCE("hireDate", "createdAt"::date), 'YYYY-MM'), salary)
+      WHERE "salaryHistory" IS NULL OR "salaryHistory" = '{}'::jsonb`);
     // Журнал активности финансов (кто/что/когда) — пишет интерцептор.
     await run(`CREATE TABLE IF NOT EXISTS finance_activity (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       "userId" uuid, action varchar(160) NOT NULL, route varchar(200) NOT NULL,
       details jsonb, "createdAt" timestamptz NOT NULL DEFAULT now())`);
     await run(`CREATE INDEX IF NOT EXISTS idx_fin_activity_created ON finance_activity ("createdAt" DESC)`);
+    await run(`CREATE TABLE IF NOT EXISTS finance_forecast_adjustments (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name varchar(160) NOT NULL,
+      type varchar(12) NOT NULL, amount numeric(15,2) NOT NULL,
+      "startYm" varchar(7) NOT NULL, "endYm" varchar(7), recurrence varchar(12) NOT NULL DEFAULT 'once',
+      scenario varchar(16) NOT NULL DEFAULT 'all', note text,
+      "createdAt" timestamptz NOT NULL DEFAULT now())`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "icon" varchar(40)`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "counterparty" varchar(200)`);
@@ -898,7 +917,7 @@ export class FinanceService implements OnModuleInit {
     // Зарплата: построчно, с учётом снапшотов (замороженный месяц — остаток 0,
     // план = фактически выплаченному). Аванс/бонус — выдачи операциями.
     const activeEmps = m.employees.filter(e => e.status === 'active');
-    const salaryFund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
+    const salaryFund = r2(activeEmps.reduce((s, e) => s + salaryForMonth(e, ym), 0));
     // «Потрачено на ЗП» — движение денег по ДАТЕ (для карточки расхода/сверки
     // со счётом). Обязательство и остаток к выплате — по месяцу НАЧИСЛЕНИЯ.
     const salaryPaid = this.sum(monthExpense.filter(t => this.groupOf(t, m) === 'salary'));
@@ -916,7 +935,7 @@ export class FinanceService implements OnModuleInit {
       const paid = r2(txs.reduce((s, t) => s + Number(t.amount), 0));
       const adv = r2(txs.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
       const bon = r2(txs.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
-      const due = r2(Math.max(0, Number(e.salary) + bon - fineOf(e, ym)));
+      const due = r2(Math.max(0, salaryForMonth(e, ym) + bon - fineOf(e, ym)));
       salaryPlanAcc += due;
       salaryToPayAcc += Math.max(0, due - paid);
       salaryAdvAcc += adv; salaryBonAcc += bon;
@@ -1389,7 +1408,7 @@ export class FinanceService implements OnModuleInit {
     const planned = await this.ppRepo.find();
 
     const activeEmps = m.employees.filter(e => e.status === 'active');
-    const salaryFund = r2(activeEmps.reduce((s, e) => s + Number(e.salary), 0));
+    const salaryFund = r2(activeEmps.reduce((s, e) => s + salaryForMonth(e, ym), 0));
     const salarySpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'salary'));
     // Построчно, с учётом снапшотов (замороженный месяц: остаток 0).
     // Аванс/бонус — фактические выдачи операциями (входят в «выплачено»);
@@ -1411,10 +1430,10 @@ export class FinanceService implements OnModuleInit {
       const adv = r2(txs.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
       const bon = r2(txs.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
       const fine = fineOf(e, ym);
-      const due = r2(Math.max(0, Number(e.salary) + bon - fine));
+      const due = r2(Math.max(0, salaryForMonth(e, ym) + bon - fine));
       const toPay = r2(Math.max(0, due - paid));
       salaryAdvances += adv; salaryBonuses += bon; salaryFines += fine; salaryToPayAgg += toPay;
-      const gross = r2(Number(e.salary) + bon);
+      const gross = r2(salaryForMonth(e, ym) + bon);
       // Полкопейки допуска — сумма float'ов может недотянуть до r2-округлённого due.
       if (gross > 0 && (due <= 0 || paid >= due - 0.005)) salaryPaidCount++;
     }
@@ -1478,6 +1497,7 @@ export class FinanceService implements OnModuleInit {
           return {
             id: e.id, name: e.name, role: e.role, category: e.category ?? null,
             hireDate: e.hireDate,
+            salaryHistory: e.salaryHistory || {},
             salary: r2(Number(snap.salary) || 0), advance: r2(Number(snap.advance) || 0),
             bonus: r2(Number(snap.bonus) || 0), fine: r2(Number(snap.fine) || 0),
             status: e.status, paid: r2(Number(snap.paid) || 0), toPay: 0,
@@ -1490,16 +1510,16 @@ export class FinanceService implements OnModuleInit {
         const fine = fineOf(e, ym);      // удерживается при финальной выплате
         return {
           id: e.id, name: e.name, role: e.role, category: e.category ?? null,
-          hireDate: e.hireDate, salary: Number(e.salary),
+          hireDate: e.hireDate, salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {},
           advance, bonus, fine, status: e.status, paid,
           // Обязательство месяца = оклад + выданные бонусы − штраф; аванс и
           // бонус уже внутри «выплачено», поэтому остаток = оклад − штраф −
           // (финальные выплаты + авансы).
-          toPay: r2(Math.max(0, Number(e.salary) + bonus - fine - paid)),
+          toPay: r2(Math.max(0, salaryForMonth(e, ym) + bonus - fine - paid)),
           frozen: false, paidAt: null,
         };
       });
-      const fund = r2(rows.reduce((s, e) => s + Number(e.salary), 0));
+      const fund = r2(rows.reduce((s, e) => s + salaryForMonth(e, ym), 0));
       const advances = r2(rows.reduce((s, e) => s + Number(e.advance), 0));
       const bonuses = r2(rows.reduce((s, e) => s + Number(e.bonus), 0));
       const fines = r2(rows.reduce((s, e) => s + Number(e.fine || 0), 0));
@@ -1515,7 +1535,7 @@ export class FinanceService implements OnModuleInit {
         // таблицы — усечённая строка затирала category/hireDate.
         fired: emps.filter(e => e.status !== 'active').map(e => ({
           id: e.id, name: e.name, role: e.role, category: e.category ?? null,
-          hireDate: e.hireDate, salary: Number(e.salary), advance: advanceOf(e, ym), status: e.status,
+          hireDate: e.hireDate, salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {}, advance: advanceOf(e, ym), status: e.status,
         })),
       };
     }
@@ -1620,6 +1640,103 @@ export class FinanceService implements OnModuleInit {
     };
   }
 
+  // ─── ФИНАНСОВОЕ ПЛАНИРОВАНИЕ ─────────────────────────────────────
+  async forecast(start = currentYm(), months = 12, scenario = 'base') {
+    if (!/^\d{4}-\d{2}$/.test(start)) start = currentYm();
+    months = Math.min(24, Math.max(3, Number(months) || 12));
+    if (!['base', 'conservative', 'optimistic'].includes(scenario)) scenario = 'base';
+    const yms = Array.from({ length: months }, (_, i) => shiftYm(start, i));
+    const [balances, projects, employees, subscriptions, debts, plans, allTx, adjustments] = await Promise.all([
+      this.accountsBalances(), this.projRepo.find(), this.empRepo.find(), this.subRepo.find(),
+      this.debtRepo.find(), this.ppRepo.find(), this.txRepo.find(), this.forecastAdjRepo.find({ order: { createdAt: 'DESC' } }),
+    ]);
+    const txs = this.active(allTx);
+    const projectMap = new Map(projects.map(p => [p.id, p]));
+    const incomeFactor = scenario === 'conservative' ? .75 : scenario === 'optimistic' ? 1.1 : 1;
+    const expenseFactor = scenario === 'conservative' ? 1.1 : 1;
+    let opening = Number(balances.total.balance);
+    const debtRemaining = new Map(debts.map(d => [d.id, this.debtRemaining(d, txs.filter(t => t.type === FinanceTxType.EXPENSE))]));
+    const rows = yms.map(ym => {
+      const incomeSources: any[] = [], expenseSources: any[] = [];
+      const explicit = new Set<string>();
+      for (const pp of plans.filter(p => p.ym === ym && p.status === 'expected' && p.projectId)) {
+        const project = projectMap.get(pp.projectId!);
+        if (!project || !isEarning(project)) continue;
+        explicit.add(project.id);
+        incomeSources.push({ key: `plan:${pp.id}`, label: project.name, amount: r2(Number(pp.amount) * incomeFactor), kind: 'Плановая оплата' });
+      }
+      for (const project of projects.filter(p => isEarning(p) && ['smm', 'maintenance'].includes(p.direction))) {
+        const received = ym === currentYm() ? this.sum(txs.filter(t => t.type === FinanceTxType.INCOME && t.projectId === project.id && ymOf(t.date) === ym)) : 0;
+        const remaining = Math.max(0, Number(project.tariff) - received);
+        if (!explicit.has(project.id) && remaining > 0)
+          incomeSources.push({ key: `recurring:${project.id}`, label: project.name, amount: r2(remaining * incomeFactor), kind: project.direction === 'maintenance' ? 'Обслуживание' : 'Регулярный доход' });
+      }
+      for (const employee of employees.filter(e => e.status === 'active')) {
+        const alreadyPaid = ym === currentYm() ? this.sum(txs.filter(t => t.type === FinanceTxType.EXPENSE && t.employeeId === employee.id &&
+          (t.salaryYm || salaryPeriodOf(t.date)) === ym)) : 0;
+        const amount = Math.max(0, salaryForMonth(employee, ym) + bonusOf(employee, ym) - fineOf(employee, ym) - alreadyPaid);
+        if (amount) expenseSources.push({ key: `salary:${employee.id}`, label: employee.name, amount: r2(amount * expenseFactor), kind: 'Зарплата' });
+      }
+      for (const sub of subscriptions.filter(s => s.active && Number(s.amount) > 0)) {
+        const paid = ym === currentYm() ? this.sum(txs.filter(t => t.type === FinanceTxType.EXPENSE && t.subscriptionId === sub.id && ymOf(t.date) === ym)) : 0;
+        const amount = Math.max(0, Number(sub.amount) - paid);
+        if (amount) expenseSources.push({ key: `sub:${sub.id}`, label: sub.name, amount: r2(amount * expenseFactor), kind: 'Подписка / аренда' });
+      }
+      for (const debt of debts) {
+        const remaining = debtRemaining.get(debt.id) || 0;
+        if (remaining <= 0) continue;
+        const scheduled = plans.filter(p => p.ym === ym && p.status === 'expected' && p.debtId === debt.id).reduce((s, p) => s + Number(p.amount), 0);
+        const amount = Math.min(remaining, scheduled || Number(debt.monthlyPayment) || 0);
+        if (amount > 0) {
+          expenseSources.push({ key: `debt:${debt.id}`, label: debt.name, amount: r2(amount * expenseFactor), kind: 'Погашение долга' });
+          debtRemaining.set(debt.id, r2(remaining - amount));
+        }
+      }
+      for (const adj of adjustments.filter(a => (a.scenario === 'all' || a.scenario === scenario) &&
+        a.startYm <= ym && (!a.endYm || a.endYm >= ym) && (a.recurrence === 'monthly' || a.startYm === ym))) {
+        (adj.type === 'income' ? incomeSources : expenseSources).push({
+          key: `adjustment:${adj.id}`, label: adj.name, amount: Number(adj.amount), kind: 'Ручная корректировка', adjustmentId: adj.id,
+        });
+      }
+      const income = r2(incomeSources.reduce((s, x) => s + x.amount, 0));
+      const expense = r2(expenseSources.reduce((s, x) => s + x.amount, 0));
+      const actual = txs.filter(t => ymOf(t.date) === ym);
+      const closingBalance = r2(opening + income - expense);
+      const row = { ym, openingBalance: opening, income, expense, net: r2(income - expense), closingBalance,
+        actualIncome: this.sum(actual.filter(t => t.type === FinanceTxType.INCOME)),
+        actualExpense: this.sum(actual.filter(t => t.type === FinanceTxType.EXPENSE)),
+        incomeSources, expenseSources, warning: closingBalance < 0 };
+      opening = closingBalance;
+      return row;
+    });
+    return { start, months, scenario, openingBalance: Number(balances.total.balance), rows, adjustments,
+      summary: { expectedIncome: r2(rows.reduce((s, r) => s + r.income, 0)), expectedExpense: r2(rows.reduce((s, r) => s + r.expense, 0)),
+        result: r2(rows.reduce((s, r) => s + r.net, 0)), endingBalance: rows.at(-1)?.closingBalance ?? opening,
+        minBalance: rows.length ? Math.min(...rows.map(r => r.closingBalance)) : opening,
+        cashGapYm: rows.find(r => r.closingBalance < 0)?.ym ?? null } };
+  }
+
+  listForecastAdjustments() { return this.forecastAdjRepo.find({ order: { createdAt: 'DESC' } }); }
+  async createForecastAdjustment(dto: any) {
+    if (!String(dto.name || '').trim()) throw new BadRequestException('Название обязательно');
+    if (!['income', 'expense'].includes(dto.type)) throw new BadRequestException('Неверный тип');
+    if (!/^\d{4}-\d{2}$/.test(dto.startYm || '')) throw new BadRequestException('Укажите месяц');
+    return this.forecastAdjRepo.save(this.forecastAdjRepo.create({
+      name: String(dto.name).trim(), type: dto.type, amount: Math.max(0, Number(dto.amount) || 0),
+      startYm: dto.startYm, endYm: /^\d{4}-\d{2}$/.test(dto.endYm || '') ? dto.endYm : null,
+      recurrence: dto.recurrence === 'monthly' ? 'monthly' : 'once',
+      scenario: ['base', 'conservative', 'optimistic'].includes(dto.scenario) ? dto.scenario : 'all',
+      note: String(dto.note || '').trim() || null,
+    }));
+  }
+  async updateForecastAdjustment(id: string, dto: any) {
+    const row = await this.forecastAdjRepo.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Корректировка не найдена');
+    Object.assign(row, dto);
+    return this.forecastAdjRepo.save(row);
+  }
+  async removeForecastAdjustment(id: string) { await this.forecastAdjRepo.delete(id); return { ok: true }; }
+
   // ─── ТРАНЗАКЦИИ ──────────────────────────────────────────────────
   private async decorate(txs: FinanceTransaction[], m: FinMaps) {
     return txs.map(t => {
@@ -1716,7 +1833,7 @@ export class FinanceService implements OnModuleInit {
     const bonus = r2(monthExp.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
     const snap = snapOf(e, ym);
     // Параметры месяца: из снапшота (если уже был), иначе живые значения.
-    const salary = snap ? r2(Number(snap.salary) || 0) : r2(Number(e.salary) || 0);
+    const salary = snap ? r2(Number(snap.salary) || 0) : salaryForMonth(e, ym);
     const fine = snap ? r2(Number(snap.fine) || 0) : fineOf(e, ym);
     // Аванс/бонус уже выданы операциями (входят в paid): обязательство =
     // оклад + бонусы − штраф.
@@ -2355,8 +2472,12 @@ export class FinanceService implements OnModuleInit {
   async createEmployee(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Имя обязательно');
     const position = await this.empRepo.count();
+    const salary = Number(dto.salary) || 0;
+    const effectiveYm = /^\d{4}-\d{2}$/.test(dto.salaryEffectiveYm || '')
+      ? dto.salaryEffectiveYm : ymOf(dto.hireDate || todayISO());
     return this.empRepo.save(this.empRepo.create({
-      name: dto.name.trim(), role: dto.role ?? null, salary: Number(dto.salary) || 0,
+      name: dto.name.trim(), role: dto.role ?? null, salary,
+      salaryHistory: { [effectiveYm]: salary },
       advance: Number(dto.advance) || 0, hireDate: dto.hireDate ?? null,
       category: (dto.category ?? '').trim() || null,
       status: this.normStatus(dto.status), position,
@@ -2368,7 +2489,13 @@ export class FinanceService implements OnModuleInit {
     if (dto.name !== undefined) e.name = String(dto.name).trim();
     if (dto.role !== undefined) e.role = dto.role;
     if (dto.category !== undefined) e.category = String(dto.category ?? '').trim() || null;
-    if (dto.salary !== undefined) e.salary = Number(dto.salary) || 0;
+    if (dto.salary !== undefined) {
+      const salary = Number(dto.salary) || 0;
+      const changed = salary !== Number(e.salary);
+      const effectiveYm = /^\d{4}-\d{2}$/.test(dto.salaryEffectiveYm || '') ? dto.salaryEffectiveYm : currentYm();
+      e.salary = salary;
+      if (changed || dto.salaryEffectiveYm) e.salaryHistory = { ...(e.salaryHistory || {}), [effectiveYm]: salary };
+    }
     if (dto.advance !== undefined) e.advance = Number(dto.advance) || 0;
     if (dto.hireDate !== undefined) e.hireDate = dto.hireDate || null;
     if (dto.status !== undefined) e.status = this.normStatus(dto.status);
@@ -2392,7 +2519,7 @@ export class FinanceService implements OnModuleInit {
       const paid = r2(monthExp.filter(t => t.employeeId === e.id).reduce((s, t) => s + Number(t.amount), 0));
       const map = { ...(e.salarySnapshots || {}) };
       map[ym] = {
-        salary: r2(Number(e.salary) || 0), bonus: bonusOf(e, ym),
+        salary: salaryForMonth(e, ym), bonus: bonusOf(e, ym),
         advance: advanceOf(e, ym), fine: fineOf(e, ym),
         paid, paidAt: todayISO(),
       };
@@ -2726,11 +2853,11 @@ export class FinanceService implements OnModuleInit {
 
   // ─── Резервная копия / сброс ─────────────────────────────────────
   async exportAll() {
-    const [accounts, categories, projects, employees, subscriptions, debts, plannedPayments, transactions, assets] = await Promise.all([
+    const [accounts, categories, projects, employees, subscriptions, debts, plannedPayments, transactions, assets, forecastAdjustments] = await Promise.all([
       this.accRepo.find(), this.catRepo.find(), this.projRepo.find(), this.empRepo.find(),
-      this.subRepo.find(), this.debtRepo.find(), this.ppRepo.find(), this.txRepo.find(), this.assetRepo.find(),
+      this.subRepo.find(), this.debtRepo.find(), this.ppRepo.find(), this.txRepo.find(), this.assetRepo.find(), this.forecastAdjRepo.find(),
     ]);
-    return { version: 2, exportedAt: new Date().toISOString(), accounts, categories, projects, employees, subscriptions, debts, plannedPayments, transactions, assets };
+    return { version: 2, exportedAt: new Date().toISOString(), accounts, categories, projects, employees, subscriptions, debts, plannedPayments, transactions, assets, forecastAdjustments };
   }
 
   // ─── Снимки данных (автобэкап) ───────────────────────────────────
@@ -2761,6 +2888,7 @@ export class FinanceService implements OnModuleInit {
       projects: data.projects.length, employees: data.employees.length,
       accounts: data.accounts.length, debts: data.debts.length,
       subscriptions: data.subscriptions.length, assets: data.assets.length,
+      forecastAdjustments: data.forecastAdjustments.length,
     };
     const saved = await this.backupRepo.save(this.backupRepo.create({ kind, stats, data }));
     await this.pruneBackups();
@@ -2805,6 +2933,8 @@ export class FinanceService implements OnModuleInit {
       throw new BadRequestException('Резервная копия должна содержать счета и категории');
     if (data.assets != null && !Array.isArray(data.assets))
       throw new BadRequestException('Раздел «assets» должен быть массивом');
+    if (data.forecastAdjustments != null && !Array.isArray(data.forecastAdjustments))
+      throw new BadRequestException('Раздел «forecastAdjustments» должен быть массивом');
     const ids = (rows: any[], label: string) => {
       const seen = new Set<string>();
       for (const row of rows) {
@@ -2838,13 +2968,14 @@ export class FinanceService implements OnModuleInit {
       const txRepo = em.getRepository(FinanceTransaction);
       const ppRepo = em.getRepository(FinancePlannedPayment);
       const assetRepo = em.getRepository(FinanceAsset);
+      const forecastAdjRepo = em.getRepository(FinanceForecastAdjustment);
       const debtRepo = em.getRepository(FinanceDebt);
       const subRepo = em.getRepository(FinanceSubscription);
       const empRepo = em.getRepository(FinanceEmployee);
       const projRepo = em.getRepository(FinanceProject);
       const catRepo = em.getRepository(FinanceCategory);
       const accRepo = em.getRepository(FinanceAccount);
-      for (const repo of [txRepo, ppRepo, assetRepo, debtRepo, subRepo, empRepo, projRepo, catRepo, accRepo]) {
+      for (const repo of [txRepo, ppRepo, forecastAdjRepo, assetRepo, debtRepo, subRepo, empRepo, projRepo, catRepo, accRepo]) {
         await repo.createQueryBuilder().delete().execute();
       }
       const save = async (repo: Repository<any>, rows: any[]) => {
@@ -2859,6 +2990,7 @@ export class FinanceService implements OnModuleInit {
       await save(ppRepo, data.plannedPayments);
       await save(txRepo, data.transactions);
       await save(assetRepo, data.assets || []);
+      await save(forecastAdjRepo, data.forecastAdjustments || []);
     });
     return { ok: true };
   }
@@ -2868,6 +3000,7 @@ export class FinanceService implements OnModuleInit {
     await this.txRepo.createQueryBuilder().delete().execute();
     await this.ppRepo.createQueryBuilder().delete().execute();
     await this.assetRepo.createQueryBuilder().delete().execute();
+    await this.forecastAdjRepo.createQueryBuilder().delete().execute();
     await this.debtRepo.createQueryBuilder().delete().execute();
     await this.subRepo.createQueryBuilder().delete().execute();
     await this.empRepo.createQueryBuilder().delete().execute();

@@ -42,6 +42,7 @@ export interface FinEmployee {
   role?: string | null;
   category?: string | null;
   salary?: number;
+  salaryHistory?: Record<string, number> | null;
   advance?: number;
   bonuses?: Record<string, number> | null;
   hireDate?: string | null;

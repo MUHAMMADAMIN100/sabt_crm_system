@@ -75,6 +75,7 @@ const FinanceIncomePage       = lazy(() => import('@/pages/finance/FinanceIncome
 const FinanceIncomeGroupPage  = lazy(() => import('@/pages/finance/FinanceIncomeGroupPage'))
 const FinanceExpensePage      = lazy(() => import('@/pages/finance/FinanceExpensePage'))
 const FinanceExpenseGroupPage = lazy(() => import('@/pages/finance/FinanceExpenseGroupPage'))
+const FinancePlanningPage     = lazy(() => import('@/pages/finance/FinancePlanningPage'))
 const FinanceTransactionsPage = lazy(() => import('@/pages/finance/FinanceTransactionsPage'))
 const FinanceInventoryPage    = lazy(() => import('@/pages/finance/FinanceInventoryPage'))
 const FinanceActivityPage     = lazy(() => import('@/pages/finance/FinanceActivityPage'))
@@ -167,6 +168,7 @@ export default function App() {
           <Route path="finance/income/:direction" element={<RoleGuard><FinanceIncomeGroupPage /></RoleGuard>} />
           <Route path="finance/expense" element={<RoleGuard><FinanceExpensePage /></RoleGuard>} />
           <Route path="finance/expense/:kind" element={<RoleGuard><FinanceExpenseGroupPage /></RoleGuard>} />
+          <Route path="finance/planning" element={<RoleGuard><FinancePlanningPage /></RoleGuard>} />
           <Route path="finance/transactions" element={<RoleGuard><FinanceTransactionsPage /></RoleGuard>} />
           <Route path="finance/inventory" element={<RoleGuard><FinanceInventoryPage /></RoleGuard>} />
           <Route path="finance/activity" element={<RoleGuard><FinanceActivityPage /></RoleGuard>} />

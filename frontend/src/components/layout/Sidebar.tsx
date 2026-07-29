@@ -9,7 +9,7 @@ import {
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, UserPlus,
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
   Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal,
-  Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck,
+  Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck, LineChart,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -18,6 +18,7 @@ const FINANCE_SUBNAV = [
   { to: '/finance', label: 'Обзор', icon: LayoutGrid, exact: true },
   { to: '/finance/income', label: 'Доход', icon: TrendingUp },
   { to: '/finance/expense', label: 'Расход', icon: TrendingDown },
+  { to: '/finance/planning', label: 'Планирование', icon: LineChart },
   { to: '/finance/transactions', label: 'Транзакции', icon: ArrowLeftRight },
   { to: '/finance/inventory', label: 'Инвентарь', icon: Package },
   { to: '/finance/activity', label: 'Активность', icon: RotateCcw },

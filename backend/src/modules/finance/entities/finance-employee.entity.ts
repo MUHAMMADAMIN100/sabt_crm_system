@@ -21,6 +21,10 @@ export class FinanceEmployee {
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   salary: number;
 
+  /** История оклада по месяцу вступления: { '2026-07': 3000, '2026-08': 4000 }. */
+  @Column({ type: 'jsonb', nullable: true })
+  salaryHistory: Record<string, number> | null;
+
   /** LEGACY: старый «общий» аванс. Больше не участвует в расчётах —
    *  авансы теперь помесячные (advances). Колонка оставлена ради данных. */
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })

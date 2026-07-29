@@ -79,6 +79,19 @@ export class FinanceController {
   @Get('accounts/balances')
   accountsBalances() { return this.service.accountsBalances(); }
 
+  @Get('forecast')
+  forecast(@Query('start') start?: string, @Query('months') months?: string, @Query('scenario') scenario?: string) {
+    return this.service.forecast(start || currentYm(), Number(months) || 12, scenario || 'base');
+  }
+  @Get('forecast/adjustments')
+  forecastAdjustments() { return this.service.listForecastAdjustments(); }
+  @Post('forecast/adjustments')
+  createForecastAdjustment(@Body() dto: any) { return this.service.createForecastAdjustment(dto); }
+  @Patch('forecast/adjustments/:id')
+  updateForecastAdjustment(@Param('id') id: string, @Body() dto: any) { return this.service.updateForecastAdjustment(id, dto); }
+  @Delete('forecast/adjustments/:id')
+  removeForecastAdjustment(@Param('id') id: string) { return this.service.removeForecastAdjustment(id); }
+
   /** Разбивка карточки по под-типам (мини-окно при наведении на категорию). */
   @Get('breakdown')
   breakdown(

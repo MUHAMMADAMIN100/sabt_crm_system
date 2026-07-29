@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { apiErr, todayISO, INCOME_GROUPS } from './finlib';
+import { apiErr, todayISO, currentYm, monthLabel, money, INCOME_GROUPS } from './finlib';
 import { FinModal, finConfirm, invalidateFinanceAll } from './FinKit';
 import type { FinProject, FinEmployee, FinSubscription, FinDebt } from './types';
 import { financeApi } from '@/services/api.service';
@@ -105,6 +105,7 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
   const [category, setCategory] = useState(employee?.category ?? '');
   const [hireDate, setHireDate] = useState(employee?.hireDate ?? '');
   const [salary, setSalary] = useState(employee != null ? String(employee.salary ?? '') : '');
+  const [salaryEffectiveYm, setSalaryEffectiveYm] = useState(currentYm());
   const [status, setStatus] = useState<string>(employee?.status ?? 'active');
   const [busy, setBusy] = useState(false);
 
@@ -114,10 +115,12 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
     try {
       // Аванс из формы убран: авансы теперь помесячные — правятся прямо в
       // зарплатной ведомости за конкретный месяц.
-      const p = {
+      const salaryChanged = !isEdit || num(salary) !== Number(employee?.salary || 0);
+      const p: any = {
         name: name.trim(), role: role.trim() || null, category: category.trim() || null,
         hireDate: hireDate || null, salary: num(salary), status,
       };
+      if (salaryChanged) p.salaryEffectiveYm = salaryEffectiveYm;
       if (isEdit) await financeApi.updateEmployee(employee.id, p);
       else await financeApi.createEmployee(p);
       invalidateFinanceAll(qc);
@@ -158,8 +161,19 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
       </div>
       <div className="form-grid">
         <div className="field"><label>ЗП / мес</label><input inputMode="decimal" value={salary} onChange={(e) => setSalary(e.target.value)} /></div>
-        <div className="field"><label>Аванс</label><input disabled value="" placeholder="помесячно — в ведомости" title="Авансы теперь указываются за конкретный месяц прямо в зарплатной таблице" /></div>
+        <div className="field"><label>Оклад действует с</label><input type="month" value={salaryEffectiveYm} onChange={(e) => setSalaryEffectiveYm(e.target.value)} /></div>
       </div>
+      {isEdit && Object.keys(employee?.salaryHistory || {}).length > 0 && (
+        <div className="field">
+          <label>История оклада</label>
+          <div className="fin-salary-history">
+            {Object.entries(employee!.salaryHistory || {}).sort(([a], [b]) => b.localeCompare(a)).map(([ym, amount]) => (
+              <div key={ym}><span>{monthLabel(ym, true)}</span><strong>{money(Number(amount))}</strong></div>
+            ))}
+          </div>
+          <span className="mini muted">Прошлые месяцы сохраняют прежний оклад.</span>
+        </div>
+      )}
       <div className="form-grid">
         <div className="field"><label>Дата приёма</label><input type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)} /></div>
         <div className="field"><label>Статус</label>
