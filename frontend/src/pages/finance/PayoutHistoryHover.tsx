@@ -41,9 +41,33 @@ function Totals({ totals }: { totals?: any }) {
   if (!totals) return null;
   return (
     <div className="fin-payout-totals">
+      <span>Оклад: <b>{money(totals.salary)}</b></span>
       <span>Авансы: <b>{money(totals.advance)}</b></span>
       <span>Бонусы: <b>{money(totals.bonus)}</b></span>
-      <span>Зарплата: <b>{money(totals.salary)}</b></span>
+      {(Number(totals.fine) || 0) > 0 && <span>Штрафы: <b>{money(totals.fine)}</b></span>}
+    </div>
+  );
+}
+
+function PayrollPeriods({ periods }: { periods: any[] }) {
+  if (!periods.length) return null;
+  return (
+    <div className="fin-payout-periods">
+      {periods.map(period => (
+        <div className="fin-payout-period" key={period.ym}>
+          <div>
+            <strong>{monthLabel(period.ym, true)}</strong>
+            <span>{period.frozen ? 'месяц закрыт' : 'текущий расчёт'}</span>
+          </div>
+          <b>{money(period.accrued)}</b>
+          <small>
+            оклад {money(period.salary)}
+            {(Number(period.advance) || 0) > 0 ? ` · аванс ${money(period.advance)}` : ''}
+            {(Number(period.bonus) || 0) > 0 ? ` · бонус ${money(period.bonus)}` : ''}
+            {(Number(period.fine) || 0) > 0 ? ` · штраф ${money(period.fine)}` : ''}
+          </small>
+        </div>
+      ))}
     </div>
   );
 }
@@ -116,8 +140,10 @@ export default function PayoutHistoryHover({
   };
 
   const rows: any[] = previewQ.data?.rows ?? [];
+  const periods: any[] = previewQ.data?.periods ?? [];
   const totals = previewQ.data?.totals;
   const fullRows: any[] = fullQ.data?.rows ?? [];
+  const fullPeriods: any[] = fullQ.data?.periods ?? [];
   const fullTotals = fullQ.data?.totals;
 
   return (
@@ -132,7 +158,7 @@ export default function PayoutHistoryHover({
         >
           <div className="fin-brk-pop-head">
             <span className="ttl">{name} — последние 3 месяца</span>
-            {totals && <span className="sum">{money(totals.all)}</span>}
+            {totals && <span className="sum" title="Начислено за показанные месяцы">{money(totals.accrued ?? totals.all)}</span>}
             {pinned && (
               <button className="fin-payout-close" type="button" aria-label="Закрыть историю" onClick={closePreview}>
                 <FinIcon name="close" size={14} />
@@ -140,7 +166,9 @@ export default function PayoutHistoryHover({
             )}
           </div>
           <Totals totals={totals} />
+          <PayrollPeriods periods={periods} />
           <div className="fin-brk-pop-body">
+            {rows.length > 0 && <div className="fin-payout-section-label">Операции по счетам</div>}
             <HistoryRows rows={rows} isLoading={previewQ.isLoading} emptyText="За последние 3 месяца выплат не было" />
           </div>
           <button className="fin-payout-more" type="button" onClick={showFull}>
@@ -163,7 +191,9 @@ export default function PayoutHistoryHover({
             </div>
             <div className="modal-body">
               <Totals totals={fullTotals} />
+              <PayrollPeriods periods={fullPeriods} />
               <div className="fin-payout-full-list">
+                {fullRows.length > 0 && <div className="fin-payout-section-label">Операции по счетам</div>}
                 <HistoryRows rows={fullRows} isLoading={fullQ.isLoading} emptyText="История выплат пока пуста" />
               </div>
             </div>

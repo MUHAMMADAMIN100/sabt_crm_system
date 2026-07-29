@@ -106,6 +106,13 @@ function salaryForMonth(e: { salary: any; salaryHistory?: Record<string, number>
   return r2(effective ? Number(history[effective]) || 0 : Number(e.salary) || 0);
 }
 
+/** Сотрудник относится к ведомости только начиная с месяца приёма.
+ *  Сравнение по YYYY-MM намеренное: ведомость месячная, поэтому принятый
+ *  15 июля виден в июле, но никогда не попадает в июнь и раньше. */
+function wasHiredByMonth(e: { hireDate?: string | null }, ym: string): boolean {
+  return !e.hireDate || ymOf(e.hireDate) <= ym;
+}
+
 /** Классификация зарплатной операции по комментарию: аванс и бонус
  *  ВЫДАЮТСЯ СРАЗУ отдельными операциями (просьба владельца), финальная
  *  выплата — всё остальное. */
@@ -424,6 +431,51 @@ export class FinanceService implements OnModuleInit {
       }
     } catch (e: any) {
       this.logger.warn(`salary reopen migration failed: ${String(e?.message || e).slice(0, 160)}`);
+    }
+
+    // История оклада появилась позже июньской ведомости. Первая версия
+    // заполнила её текущим окладом с даты найма, из-за чего прошлые месяцы
+    // некоторых сотрудников показывали будущую ставку. Замороженные снимки
+    // ведомостей — точный источник суммы конкретного месяца: добавляем точку
+    // изменения только там, где история с ним расходится. Операции и балансы
+    // не меняются. Маркер делает восстановление строго однократным.
+    try {
+      const mark = 'SYSTEM salary-history-from-snapshots-v1';
+      const done = await this.ds.query(
+        `SELECT 1 FROM finance_activity WHERE route = $1 LIMIT 1`, [mark],
+      );
+      if (!done.length) {
+        const emps = await this.empRepo.find();
+        let repaired = 0;
+        for (const employee of emps) {
+          const history = { ...(employee.salaryHistory || {}) };
+          let changed = false;
+          for (const ym of Object.keys(employee.salarySnapshots || {}).sort()) {
+            const snapshotSalary = r2(Number((employee.salarySnapshots || {})[ym]?.salary) || 0);
+            const effective = Object.keys(history).filter(m => m <= ym).sort().pop();
+            const historicalSalary = effective
+              ? r2(Number(history[effective]) || 0)
+              : r2(Number(employee.salary) || 0);
+            if (historicalSalary !== snapshotSalary) {
+              history[ym] = snapshotSalary;
+              changed = true;
+            }
+          }
+          if (changed) {
+            employee.salaryHistory = history;
+            await this.empRepo.save(employee);
+            repaired++;
+          }
+        }
+        await this.ds.query(
+          `INSERT INTO finance_activity (action, route, details)
+           VALUES ('История окладов восстановлена из закрытых ведомостей', $1, $2::jsonb)`,
+          [mark, JSON.stringify({ repaired })],
+        );
+        this.logger.log(`salary history repaired from snapshots: ${repaired}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`salary-history repair failed: ${String(e?.message || e).slice(0, 160)}`);
     }
   }
 
@@ -916,7 +968,7 @@ export class FinanceService implements OnModuleInit {
 
     // Зарплата: построчно, с учётом снапшотов (замороженный месяц — остаток 0,
     // план = фактически выплаченному). Аванс/бонус — выдачи операциями.
-    const activeEmps = m.employees.filter(e => e.status === 'active');
+    const activeEmps = m.employees.filter(e => e.status === 'active' && wasHiredByMonth(e, ym));
     const salaryFund = r2(activeEmps.reduce((s, e) => s + salaryForMonth(e, ym), 0));
     // «Потрачено на ЗП» — движение денег по ДАТЕ (для карточки расхода/сверки
     // со счётом). Обязательство и остаток к выплате — по месяцу НАЧИСЛЕНИЯ.
@@ -1407,7 +1459,7 @@ export class FinanceService implements OnModuleInit {
     const subs = await this.subRepo.find();
     const planned = await this.ppRepo.find();
 
-    const activeEmps = m.employees.filter(e => e.status === 'active');
+    const activeEmps = m.employees.filter(e => e.status === 'active' && wasHiredByMonth(e, ym));
     const salaryFund = r2(activeEmps.reduce((s, e) => s + salaryForMonth(e, ym), 0));
     const salarySpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'salary'));
     // Построчно, с учётом снапшотов (замороженный месяц: остаток 0).
@@ -1488,7 +1540,7 @@ export class FinanceService implements OnModuleInit {
       // показывают фактически выданное за месяц (по комментарию операции).
       const advPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isAdvanceTx(t)).reduce((s, t) => s + Number(t.amount), 0));
       const bonPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
-      const activeEmps = emps.filter(e => e.status === 'active');
+      const activeEmps = emps.filter(e => e.status === 'active' && wasHiredByMonth(e, ym));
       const rows = activeEmps.map(e => {
         // Выплаченный месяц ЗАМОРОЖЕН снапшотом: любые будущие правки оклада/
         // бонусов/штрафов его не меняют — месяцы независимы.
@@ -1519,7 +1571,7 @@ export class FinanceService implements OnModuleInit {
           frozen: false, paidAt: null,
         };
       });
-      const fund = r2(rows.reduce((s, e) => s + salaryForMonth(e, ym), 0));
+      const fund = r2(rows.reduce((s, e) => s + Number(e.salary), 0));
       const advances = r2(rows.reduce((s, e) => s + Number(e.advance), 0));
       const bonuses = r2(rows.reduce((s, e) => s + Number(e.bonus), 0));
       const fines = r2(rows.reduce((s, e) => s + Number(e.fine || 0), 0));
@@ -2579,12 +2631,15 @@ export class FinanceService implements OnModuleInit {
     const monthExp = await this.salaryTxForMonth(ym);
     let closed = 0;
     for (const e of emps) {
-      if (e.status !== 'active' || snapOf(e, ym)) continue;
-      const paid = r2(monthExp.filter(t => t.employeeId === e.id).reduce((s, t) => s + Number(t.amount), 0));
+      if (e.status !== 'active' || !wasHiredByMonth(e, ym) || snapOf(e, ym)) continue;
+      const employeeTx = monthExp.filter(t => t.employeeId === e.id);
+      const paid = r2(employeeTx.reduce((s, t) => s + Number(t.amount), 0));
+      const paidAdvance = r2(employeeTx.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
+      const paidBonus = r2(employeeTx.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
       const map = { ...(e.salarySnapshots || {}) };
       map[ym] = {
-        salary: salaryForMonth(e, ym), bonus: bonusOf(e, ym),
-        advance: advanceOf(e, ym), fine: fineOf(e, ym),
+        salary: salaryForMonth(e, ym), bonus: paidBonus || bonusOf(e, ym),
+        advance: paidAdvance || advanceOf(e, ym), fine: fineOf(e, ym),
         paid, paidAt: todayISO(),
       };
       e.salarySnapshots = map;
@@ -2723,12 +2778,53 @@ export class FinanceService implements OnModuleInit {
       .filter(r => r.salaryYm >= minYm)
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
-    const sum = (k: string) => r2(rows.filter(r => r.kind === k).reduce((s, r) => s + r.amount, 0));
+    // История — это не только банковские операции. В старой июньской
+    // ведомости авансы/бонусы и зафиксированный оклад хранились в снимке,
+    // а в журнал попадала лишь финальная выплата (например 4 000 из оклада
+    // 5 000 после аванса 1 000). Возвращаем начисления отдельно: пользователь
+    // видит правильный оклад, а реальные операции не переписываются и не
+    // задваиваются.
+    const snapshotMap = e.salarySnapshots || {};
+    const periodYms = new Set<string>([
+      ...rows.map(r => r.salaryYm),
+      ...Object.keys(snapshotMap).filter(ym => ym >= minYm),
+    ]);
+    const periods = [...periodYms]
+      .filter(ym => wasHiredByMonth(e, ym))
+      .sort((a, b) => b.localeCompare(a))
+      .map(ym => {
+        const snapshot = snapshotMap[ym];
+        const periodRows = rows.filter(r => r.salaryYm === ym);
+        const txAdvance = r2(periodRows.filter(r => r.kind === 'advance').reduce((s, r) => s + r.amount, 0));
+        const txBonus = r2(periodRows.filter(r => r.kind === 'bonus').reduce((s, r) => s + r.amount, 0));
+        const salary = snapshot ? r2(Number(snapshot.salary) || 0) : salaryForMonth(e, ym);
+        const advance = snapshot ? r2(Number(snapshot.advance) || 0) : txAdvance;
+        const bonus = snapshot ? r2(Number(snapshot.bonus) || 0) : txBonus;
+        const fine = snapshot ? r2(Number(snapshot.fine) || 0) : fineOf(e, ym);
+        return {
+          ym, salary, advance, bonus, fine,
+          accrued: r2(Math.max(0, salary + bonus - fine)),
+          paidByOperations: r2(periodRows.reduce((s, r) => s + r.amount, 0)),
+          frozen: !!snapshot,
+        };
+      });
+
+    const periodSum = (key: 'salary' | 'advance' | 'bonus' | 'fine' | 'accrued') =>
+      r2(periods.reduce((s, period) => s + Number(period[key]), 0));
     return {
       employeeId: id,
       name: e.name,
       rows,
-      totals: { advance: sum('advance'), bonus: sum('bonus'), salary: sum('salary'), all: r2(rows.reduce((s, r) => s + r.amount, 0)) },
+      periods,
+      totals: {
+        advance: periodSum('advance'),
+        bonus: periodSum('bonus'),
+        fine: periodSum('fine'),
+        salary: periodSum('salary'),
+        accrued: periodSum('accrued'),
+        paidByOperations: r2(rows.reduce((s, r) => s + r.amount, 0)),
+        all: periodSum('accrued'),
+      },
     };
   }
 

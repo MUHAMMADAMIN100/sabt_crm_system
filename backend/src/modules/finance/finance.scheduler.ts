@@ -227,7 +227,8 @@ export class FinanceScheduler {
     const day = Number(today.slice(8, 10));
     if (!SALARY_REMIND_DAYS.includes(day)) return { due: 0, notified: 0 };
     const ym = today.slice(0, 7);
-    const emps = (await this.empRepo.find()).filter(e => e.status === 'active');
+    const emps = (await this.empRepo.find()).filter(e =>
+      e.status === 'active' && (!e.hireDate || e.hireDate.slice(0, 7) <= ym));
     if (!emps.length) return { due: 0, notified: 0 };
 
     const [y, m] = ym.split('-').map(Number);
