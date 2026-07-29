@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, Bar, CartesianGrid, ComposedChart, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
 import { apiErr, currentYm, money, monthLabel } from './finlib';
@@ -48,19 +48,24 @@ export default function FinancePlanningPage() {
         <div className="card"><span className="muted mini">Баланс в конце</span><div className={`value ${data.summary.endingBalance < 0 ? 'neg' : ''}`}>{money(data.summary.endingBalance)}</div></div>
       </div>
       <div className="card fin-plan-chart">
+        <div className="fin-plan-chart-head"><div><strong>Денежный поток</strong><span>Столбцы — поступления и выплаты, синяя область — прогноз остатка</span></div><span className="fin-plan-scenario">{scenarios[scenario]}</span></div>
         <ResponsiveContainer width="100%" height={320}><ComposedChart data={data.rows}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="ym" tickFormatter={(v) => monthLabel(v)} />
-          <YAxis tickFormatter={(v) => `${Math.round(v / 1000)}к`} /><Tooltip formatter={(v: number) => money(v)} labelFormatter={(v) => monthLabel(v, true)} />
-          <Legend /><Bar dataKey="income" name="Доход" fill="#16a34a" radius={[5, 5, 0, 0]} /><Bar dataKey="expense" name="Расход" fill="#ef4444" radius={[5, 5, 0, 0]} />
-          <Line type="monotone" dataKey="closingBalance" name="Остаток" stroke="#2563eb" strokeWidth={3} />
+          <defs><linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563eb" stopOpacity={.22}/><stop offset="95%" stopColor="#2563eb" stopOpacity={.015}/></linearGradient></defs>
+          <CartesianGrid strokeDasharray="4 5" vertical={false} stroke="#94a3b833" /><XAxis dataKey="ym" tickFormatter={(v) => monthLabel(v)} axisLine={false} tickLine={false} />
+          <YAxis tickFormatter={(v) => `${Math.round(v / 1000)}к`} axisLine={false} tickLine={false} width={52} />
+          <Tooltip content={<PlanChartTooltip />} /><Legend iconType="circle" />
+          <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1.5} />
+          <Area type="monotone" dataKey="closingBalance" name="Остаток" stroke="#2563eb" fill="url(#balanceFill)" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} activeDot={{ r: 5 }} />
+          <Bar dataKey="income" name="Доход" fill="#22c55e" radius={[6, 6, 0, 0]} maxBarSize={30} />
+          <Bar dataKey="expense" name="Расход" fill="#fb7185" radius={[6, 6, 0, 0]} maxBarSize={30} />
         </ComposedChart></ResponsiveContainer>
       </div>
       <div className="table-wrap"><table><thead><tr><th>Месяц</th><th>Доход</th><th>Расход</th><th>Результат</th><th>Остаток</th></tr></thead><tbody>
         {data.rows.map((r: any) => <><tr key={r.ym} className="clickable" onClick={() => setExpanded(expanded === r.ym ? null : r.ym)}>
           <td><strong>{monthLabel(r.ym, true)}</strong></td><td className="pos">{money(r.income)}</td><td className="neg">{money(r.expense)}</td><td>{money(r.net, true)}</td><td className={r.closingBalance < 0 ? 'neg' : ''}><strong>{money(r.closingBalance)}</strong></td>
         </tr>{expanded === r.ym && <tr key={`${r.ym}-detail`}><td colSpan={5}><div className="fin-plan-detail">
-          <SourceList title="Доходы" rows={r.incomeSources} remove={(id) => remove.mutate(id)} />
-          <SourceList title="Расходы" rows={r.expenseSources} remove={(id) => remove.mutate(id)} />
+          <SourceList title="Доходы" tone="income" rows={r.incomeSources} remove={(id) => remove.mutate(id)} />
+          <SourceList title="Расходы" tone="expense" rows={r.expenseSources} remove={(id) => remove.mutate(id)} />
         </div></td></tr>}</>)}
       </tbody></table></div>
       {adding && <AdjustmentModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); qc.invalidateQueries({ queryKey: ['finance', 'forecast'] }); }} />}
@@ -68,8 +73,27 @@ export default function FinancePlanningPage() {
   );
 }
 
-function SourceList({ title, rows, remove }: { title: string; rows: any[]; remove: (id: string) => void }) {
-  return <div><strong>{title}</strong>{rows.length ? rows.map(x => <div className="fin-plan-source" key={x.key}><span>{x.label}<small>{x.kind}</small></span><b>{money(x.amount)}</b>{x.adjustmentId && <button onClick={() => remove(x.adjustmentId)} title="Удалить">×</button>}</div>) : <p className="muted">Нет ожидаемых операций</p>}</div>;
+function SourceList({ title, tone, rows, remove }: { title: string; tone: 'income' | 'expense'; rows: any[]; remove: (id: string) => void }) {
+  const salaries = rows.filter(x => x.kind === 'Зарплата');
+  const visible = rows.filter(x => x.kind !== 'Зарплата');
+  if (salaries.length) visible.unshift({ key: 'salary-group', label: 'Зарплата', kind: `${salaries.length} сотрудников`, amount: salaries.reduce((s, x) => s + Number(x.amount), 0), salaries });
+  return <div className={`fin-plan-column ${tone}`}>
+    <div className="fin-plan-column-title"><strong>{title}</strong><span>{money(rows.reduce((s, x) => s + Number(x.amount), 0))}</span></div>
+    {visible.length ? visible.map(x => <div className={`fin-plan-source ${x.salaries ? 'has-popover' : ''}`} key={x.key}>
+      <span>{x.label}<small>{x.kind}</small></span><b>{money(x.amount)}</b>{x.adjustmentId && <button onClick={() => remove(x.adjustmentId)} title="Удалить">×</button>}
+      {x.salaries && <div className="fin-salary-popover"><div><strong>Зарплата сотрудников</strong><b>{money(x.amount)}</b></div>{x.salaries.map((person: any) => <div key={person.key}><span>{person.label}</span><b>{money(person.amount)}</b></div>)}</div>}
+    </div>) : <p className="muted">Нет ожидаемых операций</p>}
+  </div>;
+}
+
+function PlanChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const values = Object.fromEntries(payload.map((p: any) => [p.dataKey, Number(p.value)]));
+  return <div className="fin-chart-tooltip"><strong>{monthLabel(label, true)}</strong>
+    <div><span className="income-dot" />Доход <b>{money(values.income)}</b></div>
+    <div><span className="expense-dot" />Расход <b>{money(values.expense)}</b></div>
+    <div><span className="balance-dot" />Остаток <b>{money(values.closingBalance)}</b></div>
+  </div>;
 }
 
 function AdjustmentModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
