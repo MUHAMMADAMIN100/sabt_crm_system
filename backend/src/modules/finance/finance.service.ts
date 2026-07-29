@@ -477,6 +477,41 @@ export class FinanceService implements OnModuleInit {
     } catch (e: any) {
       this.logger.warn(`salary-history repair failed: ${String(e?.message || e).slice(0, 160)}`);
     }
+
+    // После восстановления старого месяца обязательно отделяем от него
+    // текущую ставку. Например: в июне было 1 500, сейчас 2 500 — история
+    // должна содержать обе точки, иначе июньская сумма ошибочно продолжит
+    // действовать и в июле. Если уже заведено будущее повышение, current
+    // salary относится к нему и текущий месяц автоматически не дописываем.
+    try {
+      const mark = 'SYSTEM salary-history-current-rate-v1';
+      const done = await this.ds.query(
+        `SELECT 1 FROM finance_activity WHERE route = $1 LIMIT 1`, [mark],
+      );
+      if (!done.length) {
+        const ym = currentYm();
+        const emps = await this.empRepo.find();
+        let repaired = 0;
+        for (const employee of emps) {
+          if (!wasHiredByMonth(employee, ym)) continue;
+          const history = { ...(employee.salaryHistory || {}) };
+          const hasFutureRate = Object.keys(history).some(month => month > ym);
+          if (hasFutureRate || salaryForMonth(employee, ym) === r2(Number(employee.salary) || 0)) continue;
+          history[ym] = r2(Number(employee.salary) || 0);
+          employee.salaryHistory = history;
+          await this.empRepo.save(employee);
+          repaired++;
+        }
+        await this.ds.query(
+          `INSERT INTO finance_activity (action, route, details)
+           VALUES ('Текущие оклады отделены от исторических ставок', $1, $2::jsonb)`,
+          [mark, JSON.stringify({ ym, repaired })],
+        );
+        this.logger.log(`current salary history points repaired: ${repaired}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`current salary-history repair failed: ${String(e?.message || e).slice(0, 160)}`);
+    }
   }
 
   private async seedDefaults() {
