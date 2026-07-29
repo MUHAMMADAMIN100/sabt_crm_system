@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import toast from 'react-hot-toast';
@@ -79,10 +79,34 @@ function SourceList({ title, tone, rows, remove }: { title: string; tone: 'incom
   if (salaries.length) visible.unshift({ key: 'salary-group', label: 'Зарплата', kind: `${salaries.length} сотрудников`, amount: salaries.reduce((s, x) => s + Number(x.amount), 0), salaries });
   return <div className={`fin-plan-column ${tone}`}>
     <div className="fin-plan-column-title"><strong>{title}</strong><span>{money(rows.reduce((s, x) => s + Number(x.amount), 0))}</span></div>
-    {visible.length ? visible.map(x => <div className={`fin-plan-source ${x.salaries ? 'has-popover' : ''}`} key={x.key}>
-      <span>{x.label}<small>{x.kind}</small></span><b>{money(x.amount)}</b>{x.adjustmentId && <button onClick={() => remove(x.adjustmentId)} title="Удалить">×</button>}
-      {x.salaries && <div className="fin-salary-popover"><div><strong>Зарплата сотрудников</strong><b>{money(x.amount)}</b></div>{x.salaries.map((person: any) => <div key={person.key}><span>{person.label}</span><b>{money(person.amount)}</b></div>)}</div>}
-    </div>) : <p className="muted">Нет ожидаемых операций</p>}
+    {visible.length ? visible.map(x => x.salaries
+      ? <SalaryGroup key={x.key} group={x} />
+      : <div className="fin-plan-source" key={x.key}><span>{x.label}<small>{x.kind}</small></span><b>{money(x.amount)}</b>{x.adjustmentId && <button onClick={() => remove(x.adjustmentId)} title="Удалить">×</button>}</div>
+    ) : <p className="muted">Нет ожидаемых операций</p>}
+  </div>;
+}
+
+function SalaryGroup({ group }: { group: any }) {
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!open || pinned) return;
+    pinTimer.current = setTimeout(() => setPinned(true), 5_500);
+    return () => { if (pinTimer.current) clearTimeout(pinTimer.current); };
+  }, [open, pinned]);
+  const enter = () => setOpen(true);
+  const leave = () => { if (!pinned) setOpen(false); };
+  const close = (e: MouseEvent) => { e.stopPropagation(); setPinned(false); setOpen(false); };
+  return <div className="fin-plan-source has-popover" onMouseEnter={enter} onMouseLeave={leave}>
+    <span>{group.label}<small>{group.kind}</small></span><b>{money(group.amount)}</b>
+    {open && <div className={`fin-salary-popover open${pinned ? ' pinned' : ''}`} onClick={e => e.stopPropagation()}>
+      <div className="fin-salary-popover-head"><strong>Зарплата сотрудников</strong><b>{money(group.amount)}</b>
+        {pinned && <button className="fin-payout-close" type="button" aria-label="Закрыть" onClick={close}><FinIcon name="close" size={14} /></button>}
+      </div>
+      <div className="fin-salary-popover-body">{group.salaries.map((person: any) => <div key={person.key}><span>{person.label}</span><b>{money(person.amount)}</b></div>)}</div>
+      <div className={'fin-payout-pin-hint' + (pinned ? ' pinned' : '')}>{pinned ? 'Окно закреплено — можно прокручивать' : 'Задержите курсор, чтобы закрепить окно'}</div>
+    </div>}
   </div>;
 }
 
