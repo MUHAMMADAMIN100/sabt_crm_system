@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
 import { TYPE_LABEL, money, moneyBare, currentYm, todayISO, apiErr, downloadCsv , useYmParam } from './finlib';
-import FinIcon from './FinIcon';
+import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import TransactionModal from './TransactionModal';
 import { FinLoading, FinLoadError, finConfirm, invalidateFinance } from './FinKit';
@@ -351,11 +351,14 @@ function TxRow({ t, accounts, categories, patch, remove }: {
         {t.type === 'transfer'
           ? <span className="muted mini">—</span>
           : (
-            <select className="cell-input" value={t.categoryId ?? ''}
-              onChange={(e) => patch(t.id, { categoryId: e.target.value || null })}>
-              <option value="">—</option>
-              {cats.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <div className="fin-category-select">
+              {t.categoryId && <CatIcon icon={t.categoryIcon} color={t.categoryColor} size={24} />}
+              <select className="cell-input" value={t.categoryId ?? ''}
+                onChange={(e) => patch(t.id, { categoryId: e.target.value || null })}>
+                <option value="">—</option>
+                {cats.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
           )}
       </td>
       <td>

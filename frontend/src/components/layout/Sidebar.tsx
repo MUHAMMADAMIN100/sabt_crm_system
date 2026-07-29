@@ -49,6 +49,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
   const navItems: { to: string; icon: any; label: string; permission: Permission; exact?: boolean }[] = [
     { to: '/',              icon: LayoutDashboard, label: t('nav.dashboard'),  permission: 'dashboard',         exact: true },
+    { to: '/finance',       icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
     { to: '/projects',      icon: FolderKanban,    label: t('nav.projects'),   permission: 'projects.view' },
     { to: '/workflow-board', icon: Trello,         label: 'Доска проектов',    permission: 'projects.view' },
     { to: '/project-stories', icon: ImageIcon,     label: 'Истории по проектам', permission: 'stories.manage' },
@@ -75,7 +76,6 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/onboarding',    icon: UserPlus,        label: 'Онбординг',         permission: 'clients.view' },
     { to: '/tariffs',       icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/risks',         icon: ShieldAlert,     label: 'Риски',             permission: 'risks.view' },
-    { to: '/finance',       icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
     { to: '/security-log',  icon: Shield,          label: 'Журнал безопасности', permission: 'security-log.view' },
     { to: '/ai',            icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]

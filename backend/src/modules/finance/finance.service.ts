@@ -1652,37 +1652,71 @@ export class FinanceService implements OnModuleInit {
     ]);
     const txs = this.active(allTx);
     const projectMap = new Map(projects.map(p => [p.id, p]));
+    const employeeMap = new Map(employees.map(e => [e.id, e]));
+    const subscriptionMap = new Map(subscriptions.map(s => [s.id, s]));
+    const debtMap = new Map(debts.map(d => [d.id, d]));
     const incomeFactor = scenario === 'conservative' ? .75 : scenario === 'optimistic' ? 1.1 : 1;
     const expenseFactor = scenario === 'conservative' ? 1.1 : 1;
-    let opening = Number(balances.total.balance);
+    // Строка месяца показывает факт + оставшийся прогноз. Поэтому начинаем
+    // не с сегодняшнего остатка, а с баланса на начало выбранного периода:
+    // так уже проведённые деньги видны в месяце и не удваиваются в остатке.
+    const beforeStart = txs.filter(t => ymOf(t.date) < start);
+    let opening = r2(Number(balances.total.startBalance)
+      + this.sum(beforeStart.filter(t => t.type === FinanceTxType.INCOME))
+      - this.sum(beforeStart.filter(t => t.type === FinanceTxType.EXPENSE))
+      + this.sum(beforeStart.filter(t => t.type === FinanceTxType.SAVING)));
     const debtRemaining = new Map(debts.map(d => [d.id, this.debtRemaining(d, txs.filter(t => t.type === FinanceTxType.EXPENSE))]));
     const rows = yms.map(ym => {
       const incomeSources: any[] = [], expenseSources: any[] = [];
+      const actual = txs.filter(t => ymOf(t.date) === ym);
+      const actualIncomeTx = actual.filter(t => t.type === FinanceTxType.INCOME);
+      const actualExpenseTx = actual.filter(t => t.type === FinanceTxType.EXPENSE);
+      const actualSaving = this.sum(actual.filter(t => t.type === FinanceTxType.SAVING));
+      for (const t of actualIncomeTx) {
+        incomeSources.push({
+          key: `actual:${t.id}`,
+          label: (t.projectId ? projectMap.get(t.projectId)?.name : null) || t.comment || 'Проведённый доход',
+          amount: Number(t.amount), kind: 'Уже получено', actual: true,
+        });
+      }
+      for (const t of actualExpenseTx) {
+        expenseSources.push({
+          key: `actual:${t.id}`,
+          label: (t.employeeId ? employeeMap.get(t.employeeId)?.name : null)
+            || (t.subscriptionId ? subscriptionMap.get(t.subscriptionId)?.name : null)
+            || (t.debtId ? debtMap.get(t.debtId)?.name : null)
+            || t.comment || 'Проведённый расход',
+          amount: Number(t.amount), kind: t.employeeId ? 'Зарплата · оплачено' : 'Уже оплачено',
+          actual: true, salary: !!t.employeeId,
+        });
+      }
+      const canProject = ym >= currentYm();
       const explicit = new Set<string>();
-      for (const pp of plans.filter(p => p.ym === ym && p.status === 'expected' && p.projectId)) {
+      for (const pp of plans.filter(p => canProject && p.ym === ym && p.status === 'expected' && p.projectId)) {
         const project = projectMap.get(pp.projectId!);
         if (!project || !isEarning(project)) continue;
         explicit.add(project.id);
         incomeSources.push({ key: `plan:${pp.id}`, label: project.name, amount: r2(Number(pp.amount) * incomeFactor), kind: 'Плановая оплата' });
       }
-      for (const project of projects.filter(p => isEarning(p) && ['smm', 'maintenance'].includes(p.direction))) {
+      for (const project of projects.filter(p => canProject && isEarning(p) && ['smm', 'maintenance'].includes(p.direction))) {
         const received = ym === currentYm() ? this.sum(txs.filter(t => t.type === FinanceTxType.INCOME && t.projectId === project.id && ymOf(t.date) === ym)) : 0;
         const remaining = Math.max(0, Number(project.tariff) - received);
         if (!explicit.has(project.id) && remaining > 0)
           incomeSources.push({ key: `recurring:${project.id}`, label: project.name, amount: r2(remaining * incomeFactor), kind: project.direction === 'maintenance' ? 'Обслуживание' : 'Регулярный доход' });
       }
-      for (const employee of employees.filter(e => e.status === 'active')) {
+      for (const employee of employees.filter(e => canProject && e.status === 'active')) {
         const alreadyPaid = ym === currentYm() ? this.sum(txs.filter(t => t.type === FinanceTxType.EXPENSE && t.employeeId === employee.id &&
           (t.salaryYm || salaryPeriodOf(t.date)) === ym)) : 0;
         const amount = Math.max(0, salaryForMonth(employee, ym) + bonusOf(employee, ym) - fineOf(employee, ym) - alreadyPaid);
-        if (amount) expenseSources.push({ key: `salary:${employee.id}`, label: employee.name, amount: r2(amount * expenseFactor), kind: 'Зарплата' });
+        if (amount) expenseSources.push({ key: `salary:${employee.id}`, label: employee.name, amount: r2(amount * expenseFactor), kind: 'Зарплата · ожидается', salary: true });
       }
-      for (const sub of subscriptions.filter(s => s.active && Number(s.amount) > 0)) {
+      for (const sub of subscriptions.filter(s => canProject && s.active && Number(s.amount) > 0)) {
         const paid = ym === currentYm() ? this.sum(txs.filter(t => t.type === FinanceTxType.EXPENSE && t.subscriptionId === sub.id && ymOf(t.date) === ym)) : 0;
         const amount = Math.max(0, Number(sub.amount) - paid);
         if (amount) expenseSources.push({ key: `sub:${sub.id}`, label: sub.name, amount: r2(amount * expenseFactor), kind: 'Подписка / аренда' });
       }
       for (const debt of debts) {
+        if (!canProject) continue;
         const remaining = debtRemaining.get(debt.id) || 0;
         if (remaining <= 0) continue;
         const scheduled = plans.filter(p => p.ym === ym && p.status === 'expected' && p.debtId === debt.id).reduce((s, p) => s + Number(p.amount), 0);
@@ -1692,7 +1726,7 @@ export class FinanceService implements OnModuleInit {
           debtRemaining.set(debt.id, r2(remaining - amount));
         }
       }
-      for (const adj of adjustments.filter(a => (a.scenario === 'all' || a.scenario === scenario) &&
+      for (const adj of adjustments.filter(a => canProject && (a.scenario === 'all' || a.scenario === scenario) &&
         a.startYm <= ym && (!a.endYm || a.endYm >= ym) && (a.recurrence === 'monthly' || a.startYm === ym))) {
         (adj.type === 'income' ? incomeSources : expenseSources).push({
           key: `adjustment:${adj.id}`, label: adj.name, amount: Number(adj.amount), kind: 'Ручная корректировка', adjustmentId: adj.id,
@@ -1700,11 +1734,9 @@ export class FinanceService implements OnModuleInit {
       }
       const income = r2(incomeSources.reduce((s, x) => s + x.amount, 0));
       const expense = r2(expenseSources.reduce((s, x) => s + x.amount, 0));
-      const actual = txs.filter(t => ymOf(t.date) === ym);
-      const closingBalance = r2(opening + income - expense);
+      const closingBalance = r2(opening + income - expense + actualSaving);
       const row = { ym, openingBalance: opening, income, expense, net: r2(income - expense), closingBalance,
-        actualIncome: this.sum(actual.filter(t => t.type === FinanceTxType.INCOME)),
-        actualExpense: this.sum(actual.filter(t => t.type === FinanceTxType.EXPENSE)),
+        actualIncome: this.sum(actualIncomeTx), actualExpense: this.sum(actualExpenseTx),
         incomeSources, expenseSources, warning: closingBalance < 0 };
       opening = closingBalance;
       return row;

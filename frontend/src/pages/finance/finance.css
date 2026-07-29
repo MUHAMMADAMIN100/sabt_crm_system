@@ -118,6 +118,8 @@
 .fin-root .table-wrap::-webkit-scrollbar-thumb { background: #d3d7de; border-radius: 99px; }
 .fin-root .table-wrap::-webkit-scrollbar-track { background: transparent; }
 .fin-root select.cell-input { cursor: pointer; appearance: none; }
+.fin-root .fin-category-select { display: flex; align-items: center; gap: 7px; min-width: 150px; }
+.fin-root .fin-category-select .cell-input { min-width: 110px; }
 .fin-root .badge-select { font-weight: 600; }
 .fin-root .badge-select.income { color: var(--green); }
 .fin-root .badge-select.expense { color: var(--red); }

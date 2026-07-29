@@ -44,8 +44,8 @@ export default function FinancePlanningPage() {
       {data.summary.cashGapYm && <div className="fin-plan-warning">Внимание: при этом сценарии возможен кассовый разрыв в {monthLabel(data.summary.cashGapYm, true)}.</div>}
       <div className="cards grid-4">
         <div className="card"><span className="muted mini">Текущий баланс</span><div className="value">{money(data.openingBalance)}</div></div>
-        <div className="card"><span className="muted mini">Ожидаемый доход</span><div className="value pos">{money(data.summary.expectedIncome)}</div></div>
-        <div className="card"><span className="muted mini">Ожидаемый расход</span><div className="value neg">{money(data.summary.expectedExpense)}</div></div>
+        <div className="card"><span className="muted mini">Доход за период · факт + план</span><div className="value pos">{money(data.summary.expectedIncome)}</div></div>
+        <div className="card"><span className="muted mini">Расход за период · факт + план</span><div className="value neg">{money(data.summary.expectedExpense)}</div></div>
         <div className="card"><span className="muted mini">Баланс в конце</span><div className={`value ${data.summary.endingBalance < 0 ? 'neg' : ''}`}>{money(data.summary.endingBalance)}</div></div>
       </div>
       <div className="card fin-plan-chart">
@@ -77,8 +77,14 @@ export default function FinancePlanningPage() {
 }
 
 function SourceList({ title, tone, rows, remove }: { title: string; tone: 'income' | 'expense'; rows: any[]; remove: (id: string) => void }) {
-  const salaries = rows.filter(x => x.kind === 'Зарплата');
-  const visible = rows.filter(x => x.kind !== 'Зарплата');
+  const salaryRows = rows.filter(x => x.salary || String(x.kind).startsWith('Зарплата'));
+  const salaryMap = new Map<string, any>();
+  for (const row of salaryRows) {
+    const prev = salaryMap.get(row.label);
+    salaryMap.set(row.label, prev ? { ...prev, amount: Number(prev.amount) + Number(row.amount) } : { ...row });
+  }
+  const salaries = [...salaryMap.values()];
+  const visible = rows.filter(x => !(x.salary || String(x.kind).startsWith('Зарплата')));
   if (salaries.length) visible.unshift({ key: 'salary-group', label: 'Зарплата', kind: `${salaries.length} сотрудников`, amount: salaries.reduce((s, x) => s + Number(x.amount), 0), salaries });
   return <div className={`fin-plan-column ${tone}`}>
     <div className="fin-plan-column-title"><strong>{title}</strong><span>{money(rows.reduce((s, x) => s + Number(x.amount), 0))}</span></div>
