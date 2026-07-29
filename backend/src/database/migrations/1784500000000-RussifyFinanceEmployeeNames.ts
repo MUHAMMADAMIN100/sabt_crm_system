@@ -18,7 +18,7 @@ export class RussifyFinanceEmployeeNames1784500000000 implements MigrationInterf
     ['Zavkov Samad', 'Завков Самад'],
     ['Somoni Farzod', 'Сомони Фарзод'],
     ['Yatimov Sulaymon', 'Ятимов Сулаймон'],
-    ['Boboev Muhamad', 'Бобоев Мухамад'],
+    ['Boboev Muhamad', 'Бобоев Мухаммад'],
     ['Pirov Jovidon', 'Пиров Джовидон'],
   ];
 
