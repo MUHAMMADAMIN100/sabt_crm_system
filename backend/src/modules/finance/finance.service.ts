@@ -20,12 +20,31 @@ import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustmen
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
 import {
+  isEarningFinanceProject as isEarning,
+  isPostedFinanceTransaction,
+  isPostedFinanceTransactionAsOf,
+  remainingFinanceAmount,
+  salaryForFinanceMonth as salaryForMonth,
+  workedInFinanceMonth,
+} from './finance-calculations';
+import {
   NOTION_ACCOUNTS, NOTION_PROJECT_RENAMES, NOTION_PROJECTS,
   NOTION_EMPLOYEES, NOTION_TRANSACTIONS,
 } from './notion-snapshot.data';
 
 // ─── helpers ────────────────────────────────────────────────────────
 const r2 = (n: any) => Math.round((Number(n) || 0) * 100) / 100;
+const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** До перехода накоплений на модель «счёт → счёт» они записывались как
+ * пополнение одного accountId. Такие строки нельзя переосмыслить без знания
+ * исходного счёта, поэтому сохраняем прежнее влияние на баланс. */
+function isLegacySaving(t: Pick<FinanceTransaction, 'type' | 'accountId' | 'fromAccountId' | 'toAccountId'>): boolean {
+  return t.type === FinanceTxType.SAVING
+    && !!t.accountId
+    && !t.fromAccountId
+    && !t.toAccountId;
+}
 
 /** ym = 'YYYY-MM' → диапазон дат месяца [from, to]. */
 function monthRange(ym: string): { from: string; to: string } {
@@ -99,20 +118,6 @@ function advanceOf(e: { advances?: Record<string, number> | null }, ym: string):
   return r2(Number((e.advances || {})[ym]) || 0);
 }
 
-/** Оклад, действовавший в конкретном месяце. */
-function salaryForMonth(e: { salary: any; salaryHistory?: Record<string, number> | null }, ym: string): number {
-  const history = e.salaryHistory || {};
-  const effective = Object.keys(history).filter(m => m <= ym).sort().pop();
-  return r2(effective ? Number(history[effective]) || 0 : Number(e.salary) || 0);
-}
-
-/** Сотрудник относится к ведомости только начиная с месяца приёма.
- *  Сравнение по YYYY-MM намеренное: ведомость месячная, поэтому принятый
- *  15 июля виден в июле, но никогда не попадает в июнь и раньше. */
-function wasHiredByMonth(e: { hireDate?: string | null }, ym: string): boolean {
-  return !e.hireDate || ymOf(e.hireDate) <= ym;
-}
-
 /** Классификация зарплатной операции по комментарию: аванс и бонус
  *  ВЫДАЮТСЯ СРАЗУ отдельными операциями (просьба владельца), финальная
  *  выплата — всё остальное. */
@@ -145,12 +150,6 @@ function snapOf(e: { salarySnapshots?: Record<string, any> | null }, ym: string)
 /** Действующий якорь SMM-цикла: дата последней полной оплаты или дата контракта. */
 function smmAnchor(p: { cycleAnchor?: string | null; contractDate?: string | null }): string | null {
   return p.cycleAnchor || p.contractDate || null;
-}
-
-/** Проект «в деньгах»: участвует в планах/прогнозах. Архив, лиды и
- *  ПАУЗА (клиент приостановил, неизвестно вернётся ли) — не участвуют. */
-function isEarning(p: { archived?: boolean; status?: string | null }): boolean {
-  return !p.archived && p.status !== 'lead' && p.status !== 'paused';
 }
 
 const DEFAULT_ACCOUNTS = [
@@ -268,6 +267,8 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_accounts ADD COLUMN IF NOT EXISTS "kind" varchar(16)`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "advance" numeric(15,2) NOT NULL DEFAULT 0`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "hireDate" date`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "terminationDate" date`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "employmentHistory" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "bonuses" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "category" varchar(80)`);
     // Помесячные авансы/штрафы + снапшоты выплаченных месяцев (месяцы независимы).
@@ -359,6 +360,17 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "salaryYm" varchar(7)`);
     await run(`UPDATE finance_transactions SET "salaryYm" = to_char("date", 'YYYY-MM')
       WHERE "employeeId" IS NOT NULL AND type = 'expense' AND "salaryYm" IS NULL`);
+    await run(`CREATE INDEX IF NOT EXISTS "IDX_fin_tx_posted_date_type"
+      ON finance_transactions (date, type)
+      WHERE COALESCE(status, 'completed') = 'completed'`);
+    await run(`CREATE INDEX IF NOT EXISTS "IDX_fin_tx_employee_salary_ym"
+      ON finance_transactions ("employeeId", "salaryYm")`);
+    await run(`CREATE INDEX IF NOT EXISTS "IDX_fin_tx_project_date"
+      ON finance_transactions ("projectId", date)`);
+    await run(`CREATE INDEX IF NOT EXISTS "IDX_fin_tx_subscription_date"
+      ON finance_transactions ("subscriptionId", date)`);
+    await run(`CREATE INDEX IF NOT EXISTS "IDX_fin_tx_debt_date"
+      ON finance_transactions ("debtId", date)`);
 
     await this.seedDefaults();
 
@@ -493,7 +505,7 @@ export class FinanceService implements OnModuleInit {
         const emps = await this.empRepo.find();
         let repaired = 0;
         for (const employee of emps) {
-          if (!wasHiredByMonth(employee, ym)) continue;
+          if (!workedInFinanceMonth(employee, ym)) continue;
           const history = { ...(employee.salaryHistory || {}) };
           const hasFutureRate = Object.keys(history).some(month => month > ym);
           if (hasFutureRate || salaryForMonth(employee, ym) === r2(Number(employee.salary) || 0)) continue;
@@ -529,10 +541,14 @@ export class FinanceService implements OnModuleInit {
         }
         await this.backfillCategoryIcons();
       }
-      await this.seedWebRand();
-      await this.seedNotionSnapshot();
-      await this.linkNotionSubscriptionPayments();
-      await this.linkNotionSmmParts();
+      // Реальные legacy-снимки нельзя незаметно загружать в новую/очищенную
+      // базу. Они доступны только для явной одноразовой миграции.
+      if (process.env.FINANCE_SEED_LEGACY_DATA === 'true') {
+        await this.seedWebRand();
+        await this.seedNotionSnapshot();
+        await this.linkNotionSubscriptionPayments();
+        await this.linkNotionSmmParts();
+      }
     } catch (e: any) {
       this.logger.warn(`finance seed skipped: ${String(e?.message || e).slice(0, 200)}`);
     }
@@ -891,8 +907,21 @@ export class FinanceService implements OnModuleInit {
     return null;
   }
 
+  /** Фактические операции на текущую дату. Pending, отменённые и будущие
+   * проводки остаются в журнале/прогнозе, но ещё не являются фактом. */
   private active(txs: FinanceTransaction[]) {
-    return txs.filter(t => t.status !== FinanceTxStatus.CANCELLED);
+    return this.postedAsOf(txs);
+  }
+
+  /** Проведённые, включая датированные будущим — для планового денежного
+   * потока. В текущий факт они попадут только в свою дату. */
+  private posted(txs: FinanceTransaction[]) {
+    return txs.filter(isPostedFinanceTransaction);
+  }
+
+  /** Проводки, влияющие на остаток на указанную дату. */
+  private postedAsOf(txs: FinanceTransaction[], asOf = todayISO()) {
+    return txs.filter(t => isPostedFinanceTransactionAsOf(t, asOf));
   }
 
   /** Зарплатные операции МЕСЯЦА НАЧИСЛЕНИЯ ym: salaryYm = ym, а для старых
@@ -903,7 +932,8 @@ export class FinanceService implements OnModuleInit {
     const qb = this.txRepo.createQueryBuilder('t')
       .where('t.type = :type', { type: FinanceTxType.EXPENSE })
       .andWhere('t."employeeId" IS NOT NULL')
-      .andWhere(`COALESCE(t.status,'completed') <> 'cancelled'`)
+      .andWhere(`COALESCE(t.status,'completed') = 'completed'`)
+      .andWhere('t.date <= :asOf', { asOf: todayISO() })
       .andWhere('(t."salaryYm" = :ym OR (t."salaryYm" IS NULL AND t.date BETWEEN :from AND :to))', { ym, from, to });
     if (employeeId) qb.andWhere('t."employeeId" = :eid', { eid: employeeId });
     return qb.getMany();
@@ -915,9 +945,9 @@ export class FinanceService implements OnModuleInit {
     for (const t of txs) {
       const amt = Number(t.amount);
       if (t.type === FinanceTxType.INCOME && t.accountId === a.id) bal += amt;
-      else if (t.type === FinanceTxType.SAVING && t.accountId === a.id) bal += amt;
       else if (t.type === FinanceTxType.EXPENSE && t.accountId === a.id) bal -= amt;
-      else if (t.type === FinanceTxType.TRANSFER) {
+      else if (isLegacySaving(t) && t.accountId === a.id) bal += amt;
+      else if (t.type === FinanceTxType.TRANSFER || t.type === FinanceTxType.SAVING) {
         if (t.fromAccountId === a.id) bal -= amt;
         if (t.toAccountId === a.id) bal += amt;
       }
@@ -938,6 +968,7 @@ export class FinanceService implements OnModuleInit {
     const { from, to } = monthRange(ym);
     const m = await this.maps();
     const allTx = this.active(await this.txRepo.find());
+    const balanceTx = this.postedAsOf(allTx);
     const monthTx = allTx.filter(t => t.date >= from && t.date <= to);
     const planned = await this.ppRepo.find();
     const subs = await this.subRepo.find();
@@ -953,7 +984,7 @@ export class FinanceService implements OnModuleInit {
       .sort((a, b) => a.position - b.position || (a.createdAt < b.createdAt ? -1 : 1))
       .map(a => ({
         accountId: a.id, name: a.name, color: a.color ?? null,
-        kind: a.kind ?? (a.key === 'cash' ? 'cash' : 'bank'), balance: this.lifetimeBalance(a, allTx),
+        kind: a.kind ?? (a.key === 'cash' ? 'cash' : 'bank'), balance: this.lifetimeBalance(a, balanceTx),
       }));
 
     // Разбивка месяца по категориям.
@@ -965,14 +996,12 @@ export class FinanceService implements OnModuleInit {
 
     // План/факт дохода по направлениям (пауза и лиды — вне денег).
     const dirs = ['smm', 'development', 'design', 'maintenance'];
-    const pausedIds = new Set(m.projects.filter(p => p.status === 'paused').map(p => p.id));
+    const earningProjectIds = new Set(m.projects.filter(isEarning).map(p => p.id));
     const incomePlan = dirs.map(dir => {
       const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
-      const ids = new Set(projs.map(p => p.id));
+      const historicalIds = new Set(m.projects.filter(p => p.direction === dir).map(p => p.id));
       const plan = r2(projs.reduce((s, p) => s + Number(p.tariff), 0));
-      const fact = r2(planned
-        .filter(p => p.ym === ym && p.projectId && ids.has(p.projectId) && p.status === 'received')
-        .reduce((s, p) => s + Number(p.amount), 0));
+      const fact = this.sum(monthIncome.filter(t => t.projectId && historicalIds.has(t.projectId)));
       return { direction: dir, plan, fact };
     });
 
@@ -1003,7 +1032,7 @@ export class FinanceService implements OnModuleInit {
 
     // Зарплата: построчно, с учётом снапшотов (замороженный месяц — остаток 0,
     // план = фактически выплаченному). Аванс/бонус — выдачи операциями.
-    const activeEmps = m.employees.filter(e => e.status === 'active' && wasHiredByMonth(e, ym));
+    const activeEmps = m.employees.filter(e => workedInFinanceMonth(e, ym));
     const salaryFund = r2(activeEmps.reduce((s, e) => s + salaryForMonth(e, ym), 0));
     // «Потрачено на ЗП» — движение денег по ДАТЕ (для карточки расхода/сверки
     // со счётом). Обязательство и остаток к выплате — по месяцу НАЧИСЛЕНИЯ.
@@ -1050,20 +1079,22 @@ export class FinanceService implements OnModuleInit {
     ];
 
     const expectedIncome = r2(planned
-      .filter(p => p.status === 'expected' && p.projectId && !pausedIds.has(p.projectId))
+      .filter(p => p.status === 'expected' && p.projectId && earningProjectIds.has(p.projectId))
       .reduce((s, p) => s + Number(p.amount), 0));
 
     // Доход: ожидается ещё в ЭТОМ месяце, прогноз следующего месяца
     // (SMM — тарифы активных проектов: цикл повторяется каждый месяц;
     // Dev/Design — ожидаемые планы матриц на следующий месяц) и за всё время.
     const expectedThisMonth = r2(planned
-      .filter(pp => pp.projectId && pp.status === 'expected' && pp.ym === ym && !pausedIds.has(pp.projectId))
+      .filter(pp => pp.projectId && pp.status === 'expected' && pp.ym === ym && earningProjectIds.has(pp.projectId))
       .reduce((s, pp) => s + Number(pp.amount), 0));
     const nextYm = shiftYm(ym, 1);
     const smmForecast = r2(m.projects
       .filter(p => p.direction === 'smm' && isEarning(p))
       .reduce((s, p) => s + Number(p.tariff), 0));
-    const otherIds = new Set(m.projects.filter(p => p.direction !== 'smm' && !p.archived && p.status !== 'paused').map(p => p.id));
+    const otherIds = new Set(m.projects
+      .filter(p => p.direction !== 'smm' && isEarning(p))
+      .map(p => p.id));
     const otherForecast = r2(planned
       .filter(pp => pp.projectId && otherIds.has(pp.projectId) && pp.status === 'expected' && pp.ym === nextYm)
       .reduce((s, pp) => s + Number(pp.amount), 0));
@@ -1142,12 +1173,15 @@ export class FinanceService implements OnModuleInit {
     // считать ТАК ЖЕ, иначе сумма окна разойдётся с числом карточки (поздняя
     // оплата в другом месяце, доход по проекту на паузе, доход без плана).
     if (kind === 'direction') {
-      const ids = new Set(m.projects.filter(p => p.direction === id && isEarning(p)).map(p => p.id));
-      const planned = await this.ppRepo.find();
+      // Факт исторический: архив/пауза сегодня не должны менять прошлый месяц.
+      const ids = new Set(m.projects.filter(p => p.direction === id).map(p => p.id));
+      const actualIncome = this.active(await this.txRepo.find({
+        where: { date: Between(from, to), type: FinanceTxType.INCOME } as any,
+      }));
       let count = 0;
-      for (const p of planned) {
-        if (p.ym !== ym || p.status !== 'received' || !p.projectId || !ids.has(p.projectId)) continue;
-        add(m.proj.get(p.projectId)?.name || 'Без проекта', Number(p.amount));
+      for (const tx of actualIncome) {
+        if (!tx.projectId || !ids.has(tx.projectId)) continue;
+        add(m.proj.get(tx.projectId)?.name || 'Без проекта', Number(tx.amount));
         count++;
       }
       return this.finalizeBreakdown(agg, count);
@@ -1204,12 +1238,17 @@ export class FinanceService implements OnModuleInit {
   async incomeDirections(ym: string) {
     const m = await this.maps();
     const planned = await this.ppRepo.find();
+    const { from, to } = monthRange(ym);
+    const actualIncome = this.active(await this.txRepo.find({
+      where: { type: FinanceTxType.INCOME, date: Between(from, to) } as any,
+    }));
     const dirs = ['smm', 'development', 'design', 'maintenance'];
     return dirs.map(dir => {
       const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
-      const ids = new Set(projs.map(p => p.id));
-      const forMonth = planned.filter(p => p.ym === ym && p.projectId && ids.has(p.projectId));
-      const received = r2(forMonth.filter(p => p.status === 'received' && p.receivedTxId).reduce((s, p) => s + Number(p.amount), 0));
+      const earningIds = new Set(projs.map(p => p.id));
+      const historicalIds = new Set(m.projects.filter(p => p.direction === dir).map(p => p.id));
+      const forMonth = planned.filter(p => p.ym === ym && p.projectId && earningIds.has(p.projectId));
+      const received = this.sum(actualIncome.filter(t => t.projectId && historicalIds.has(t.projectId)));
       const expected = r2(forMonth.filter(p => p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0));
       const paused = m.projects.filter(p => p.direction === dir && !p.archived && p.status === 'paused');
       return {
@@ -1230,8 +1269,9 @@ export class FinanceService implements OnModuleInit {
     if (direction === 'smm') {
       const projects = m.projects.filter(p => p.direction === 'smm');
       // Пауза — вне рабочей таблицы (фронт показывает их отдельной группой).
-      const active = projects.filter(p => !p.archived && p.status !== 'paused');
-      const archived = projects.filter(p => p.archived);
+      const active = projects.filter(isEarning);
+      const archived = projects.filter(p =>
+        p.archived || ['done', 'archived'].includes(p.status || ''));
       // Планы, попавшие в ячейки строк, — для честных итогов частей в tfoot.
       const displayedPlans: FinancePlannedPayment[] = [];
       const rows = active.map(p => {
@@ -1312,13 +1352,13 @@ export class FinanceService implements OnModuleInit {
     }
 
     if (direction === 'development' || direction === 'maintenance') {
-      const active = m.projects.filter(p => p.direction === direction && !p.archived && p.status !== 'paused');
+      const active = m.projects.filter(p => p.direction === direction && isEarning(p));
       const winStart = start || this.defaultStart(active, planned);
       const months = Array.from({ length: 6 }, (_, i) => shiftYm(winStart, i));
-      // Обслуживание — регулярный месячный доход. Для каждого открытого
-      // месяца автоматически создаём ожидаемую оплату по тарифу проекта;
-      // клик по ней использует обычный сценарий «получить» и создаёт
-      // транзакцию на выбранный счёт.
+      // Обслуживание — регулярный месячный доход. Отсутствующие планы
+      // вычисляются для представления, но GET ничего не пишет в БД. План
+      // материализуется только при явном сохранении/получении пользователем.
+      const viewPlans = [...planned];
       if (direction === 'maintenance') {
         for (const project of active) {
           const tariff = r2(Number(project.tariff) || 0);
@@ -1327,9 +1367,9 @@ export class FinanceService implements OnModuleInit {
           const dueDay = contractDay(project.contractDate) ?? 1;
           for (const month of months) {
             if (month < firstYm) continue;
-            const existing = planned.find(pp => pp.projectId === project.id && pp.ym === month);
+            const existing = viewPlans.find(pp => pp.projectId === project.id && pp.ym === month);
             if (existing) continue;
-            const created = await this.ppRepo.save(this.ppRepo.create({
+            const virtual = this.ppRepo.create({
               projectId: project.id,
               ym: month,
               partNo: 1,
@@ -1337,24 +1377,25 @@ export class FinanceService implements OnModuleInit {
               status: 'expected',
               dueDate: dueDateForMonth(month, dueDay),
               auto: false,
-            }));
-            planned.push(created);
+            });
+            virtual.id = `virtual:${project.id}:${month}`;
+            viewPlans.push(virtual);
           }
         }
       }
       // Даты операций — для «когда получили» на полученных планах ячеек.
       const devIncome = this.active(await this.txRepo.find({ where: { type: FinanceTxType.INCOME } as any }));
       const txDates = new Map(devIncome.map(t => [t.id, t.date]));
-      const { rows, totals } = this.buildMatrix(active, planned, months, txDates);
+      const { rows, totals } = this.buildMatrix(active, viewPlans, months, txDates);
       const ids = new Set(active.map(p => p.id));
       const cm = currentYm();
-      const stExpected = r2(planned.filter(x => x.projectId && ids.has(x.projectId) && x.ym === cm && x.status === 'expected').reduce((s, x) => s + Number(x.amount), 0));
-      const stReceived = r2(planned.filter(x => x.projectId && ids.has(x.projectId) && x.ym === cm && x.status === 'received').reduce((s, x) => s + Number(x.amount), 0));
+      const stExpected = r2(viewPlans.filter(x => x.projectId && ids.has(x.projectId) && x.ym === cm && x.status === 'expected').reduce((s, x) => s + Number(x.amount), 0));
+      const stReceived = r2(viewPlans.filter(x => x.projectId && ids.has(x.projectId) && x.ym === cm && x.status === 'received').reduce((s, x) => s + Number(x.amount), 0));
       return { kind: 'matrix', months, rows, totals, stats: { expected: stExpected, received: stReceived, total: totals.tariff } };
     }
 
     if (direction === 'design') {
-      const designAll = m.projects.filter(p => p.direction === 'design' && !p.archived && p.status !== 'paused');
+      const designAll = m.projects.filter(p => p.direction === 'design' && isEarning(p));
       const simpleClients = designAll.filter(p => !p.multiMonth);
       const matrixClients = designAll.filter(p => p.multiMonth);
       const winStart = start || this.defaultStart(designAll, planned);
@@ -1467,6 +1508,7 @@ export class FinanceService implements OnModuleInit {
           ym: mm,
           plans: cp.map(x => ({
             id: x.id, amount: Number(x.amount), status: x.status, txId: x.receivedTxId, dueDate: x.dueDate ?? null,
+            virtual: String(x.id).startsWith('virtual:'),
             receivedAt: x.receivedTxId ? (txDates?.get(x.receivedTxId) ?? null) : null,
           })),
           received: r2(cp.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0)),
@@ -1494,7 +1536,7 @@ export class FinanceService implements OnModuleInit {
     const subs = await this.subRepo.find();
     const planned = await this.ppRepo.find();
 
-    const activeEmps = m.employees.filter(e => e.status === 'active' && wasHiredByMonth(e, ym));
+    const activeEmps = m.employees.filter(e => workedInFinanceMonth(e, ym));
     const salaryFund = r2(activeEmps.reduce((s, e) => s + salaryForMonth(e, ym), 0));
     const salarySpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'salary'));
     // Построчно, с учётом снапшотов (замороженный месяц: остаток 0).
@@ -1532,18 +1574,20 @@ export class FinanceService implements OnModuleInit {
     const subMonthly = r2(activeSubs.reduce((s, x) => s + Number(x.amount), 0));
     const subsSpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'rent_subs'));
     // Позиции, оплаченные за месяц: операцией журнала или отметкой без операции.
-    const subPaid = (s: FinanceSubscription) =>
-      monthExp.some(t => t.subscriptionId === s.id) || (s.paidMarks || []).some(x => x.ym === ym);
-    const subsPaidCount = activeSubs.filter(subPaid).length;
+    const subRemaining = (s: FinanceSubscription) => {
+      if ((s.paidMarks || []).some(x => x.ym === ym)) return 0;
+      const paid = this.sum(monthExp.filter(t => t.subscriptionId === s.id));
+      return remainingFinanceAmount(Number(s.amount), paid);
+    };
+    const subsPaidCount = activeSubs.filter(s => subRemaining(s) === 0).length;
     // Осталось оплатить за месяц — карточка «Аренда и подписки» уменьшается
     // с каждой оплатой, как у зарплаты.
-    const subsToPay = r2(activeSubs.filter(s => !subPaid(s)).reduce((s, x) => s + Number(x.amount), 0));
+    const subsToPay = r2(activeSubs.reduce((sum, s) => sum + subRemaining(s), 0));
 
     const debtIds = new Set(m.debts.map(d => d.id));
-    const cm = currentYm();
     const debtsSpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'debts'));
     const totalRemaining = r2(m.debts.reduce((s, d) => s + this.debtRemaining(d, allExp), 0));
-    const dueMonth = r2(planned.filter(p => p.debtId && debtIds.has(p.debtId) && p.ym === cm && p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0));
+    const dueMonth = r2(planned.filter(p => p.debtId && debtIds.has(p.debtId) && p.ym === ym && p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0));
     // Месячное обязательство по долгам — как в эталоне (карточка «Долги» на
     // странице Расход и план/факт Обзора): Σ min(платёж/мес, остаток).
     const debtsMonthly = r2(m.debts.reduce((s, d) => s + Math.min(Number(d.monthlyPayment) || 0, this.debtRemaining(d, allExp)), 0));
@@ -1575,7 +1619,7 @@ export class FinanceService implements OnModuleInit {
       // показывают фактически выданное за месяц (по комментарию операции).
       const advPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isAdvanceTx(t)).reduce((s, t) => s + Number(t.amount), 0));
       const bonPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
-      const activeEmps = emps.filter(e => e.status === 'active' && wasHiredByMonth(e, ym));
+      const activeEmps = emps.filter(e => workedInFinanceMonth(e, ym));
       const rows = activeEmps.map(e => {
         // Выплаченный месяц ЗАМОРОЖЕН снапшотом: любые будущие правки оклада/
         // бонусов/штрафов его не меняют — месяцы независимы.
@@ -1583,7 +1627,7 @@ export class FinanceService implements OnModuleInit {
         if (snap) {
           return {
             id: e.id, name: e.name, role: e.role, category: e.category ?? null,
-            hireDate: e.hireDate,
+            hireDate: e.hireDate, terminationDate: e.terminationDate,
             salaryHistory: e.salaryHistory || {},
             salary: r2(Number(snap.salary) || 0), advance: r2(Number(snap.advance) || 0),
             bonus: r2(Number(snap.bonus) || 0), fine: r2(Number(snap.fine) || 0),
@@ -1597,7 +1641,8 @@ export class FinanceService implements OnModuleInit {
         const fine = fineOf(e, ym);      // удерживается при финальной выплате
         return {
           id: e.id, name: e.name, role: e.role, category: e.category ?? null,
-          hireDate: e.hireDate, salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {},
+          hireDate: e.hireDate, terminationDate: e.terminationDate,
+          salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {},
           advance, bonus, fine, status: e.status, paid,
           // Обязательство месяца = оклад + выданные бонусы − штраф; аванс и
           // бонус уже внутри «выплачено», поэтому остаток = оклад − штраф −
@@ -1622,7 +1667,8 @@ export class FinanceService implements OnModuleInit {
         // таблицы — усечённая строка затирала category/hireDate.
         fired: emps.filter(e => e.status !== 'active').map(e => ({
           id: e.id, name: e.name, role: e.role, category: e.category ?? null,
-          hireDate: e.hireDate, salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {}, advance: advanceOf(e, ym), status: e.status,
+          hireDate: e.hireDate, terminationDate: e.terminationDate,
+          salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {}, advance: advanceOf(e, ym), status: e.status,
         })),
       };
     }
@@ -1667,12 +1713,11 @@ export class FinanceService implements OnModuleInit {
         total: r2(debts.reduce((s, d) => s + Number(d.totalAmount), 0)),
         perMonth: months.map(mm => ({ ym: mm, total: r2(planned.filter(p => p.debtId && ids.has(p.debtId) && p.ym === mm).reduce((s, p) => s + Number(p.amount), 0)) })),
       };
-      const cm = currentYm();
       return {
         kind: 'debts', months, rows, totals,
         stats: {
           totalDebt: r2(debts.reduce((s, d) => s + this.debtRemaining(d, allExp), 0)),
-          dueMonth: r2(planned.filter(p => p.debtId && ids.has(p.debtId) && p.ym === cm && p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0)),
+          dueMonth: r2(planned.filter(p => p.debtId && ids.has(p.debtId) && p.ym === ym && p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0)),
           count: debts.filter(d => this.debtRemaining(d, allExp) > 0).length,
         },
       };
@@ -1696,20 +1741,24 @@ export class FinanceService implements OnModuleInit {
   // ─── СЧЕТА и БАЛАНСЫ ─────────────────────────────────────────────
   async accountsBalances() {
     const accounts = await this.accRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
-    const txs = this.active(await this.txRepo.find());
+    const txs = this.postedAsOf(await this.txRepo.find());
     const perAccount = accounts.map(a => {
-      let income = 0, expense = 0, transferIn = 0, transferOut = 0, saving = 0;
+      let income = 0, expense = 0, transferIn = 0, transferOut = 0, saving = 0, legacySaving = 0;
       for (const t of txs) {
         const amt = Number(t.amount);
         if (t.type === FinanceTxType.INCOME && t.accountId === a.id) income += amt;
         else if (t.type === FinanceTxType.EXPENSE && t.accountId === a.id) expense += amt;
-        else if (t.type === FinanceTxType.SAVING && t.accountId === a.id) saving += amt;
-        else if (t.type === FinanceTxType.TRANSFER) {
+        else if (isLegacySaving(t) && t.accountId === a.id) {
+          saving += amt;
+          legacySaving += amt;
+        }
+        else if (t.type === FinanceTxType.TRANSFER || t.type === FinanceTxType.SAVING) {
           if (t.fromAccountId === a.id) transferOut += amt;
           if (t.toAccountId === a.id) transferIn += amt;
+          if (t.type === FinanceTxType.SAVING && t.toAccountId === a.id) saving += amt;
         }
       }
-      const balance = r2(Number(a.startBalance) + income + saving + transferIn - expense - transferOut);
+      const balance = r2(Number(a.startBalance) + income + legacySaving + transferIn - expense - transferOut);
       return {
         id: a.id, key: a.key, name: a.name, startBalance: Number(a.startBalance),
         income: r2(income), expense: r2(expense), saving: r2(saving),
@@ -1729,7 +1778,7 @@ export class FinanceService implements OnModuleInit {
 
   // ─── ФИНАНСОВОЕ ПЛАНИРОВАНИЕ ─────────────────────────────────────
   async forecast(start = currentYm(), months = 12, scenario = 'base') {
-    if (!/^\d{4}-\d{2}$/.test(start)) start = currentYm();
+    if (!YM_RE.test(start)) start = currentYm();
     months = Math.min(24, Math.max(3, Number(months) || 12));
     if (!['base', 'conservative', 'optimistic'].includes(scenario)) scenario = 'base';
     const yms = Array.from({ length: months }, (_, i) => shiftYm(start, i));
@@ -1738,7 +1787,9 @@ export class FinanceService implements OnModuleInit {
       this.debtRepo.find(), this.ppRepo.find(), this.txRepo.find(), this.forecastAdjRepo.find({ order: { createdAt: 'DESC' } }),
       this.catRepo.find(),
     ]);
-    const txs = this.active(allTx);
+    const postedTxs = this.posted(allTx);
+    const txs = this.postedAsOf(postedTxs);
+    const futureTxs = postedTxs.filter(t => t.date > todayISO());
     const projectMap = new Map(projects.map(p => [p.id, p]));
     const employeeMap = new Map(employees.map(e => [e.id, e]));
     const subscriptionMap = new Map(subscriptions.map(s => [s.id, s]));
@@ -1749,18 +1800,22 @@ export class FinanceService implements OnModuleInit {
     // Строка месяца показывает факт + оставшийся прогноз. Поэтому начинаем
     // не с сегодняшнего остатка, а с баланса на начало выбранного периода:
     // так уже проведённые деньги видны в месяце и не удваиваются в остатке.
-    const beforeStart = txs.filter(t => ymOf(t.date) < start);
+    const beforeStart = postedTxs.filter(t => ymOf(t.date) < start);
     let opening = r2(Number(balances.total.startBalance)
       + this.sum(beforeStart.filter(t => t.type === FinanceTxType.INCOME))
       - this.sum(beforeStart.filter(t => t.type === FinanceTxType.EXPENSE))
-      + this.sum(beforeStart.filter(t => t.type === FinanceTxType.SAVING)));
+      + this.sum(beforeStart.filter(isLegacySaving)));
     const debtRemaining = new Map(debts.map(d => [d.id, this.debtRemaining(d, txs.filter(t => t.type === FinanceTxType.EXPENSE))]));
     const rows = yms.map(ym => {
       const incomeSources: any[] = [], expenseSources: any[] = [];
       const actual = txs.filter(t => ymOf(t.date) === ym);
       const actualIncomeTx = actual.filter(t => t.type === FinanceTxType.INCOME);
       const actualExpenseTx = actual.filter(t => t.type === FinanceTxType.EXPENSE);
-      const actualSaving = this.sum(actual.filter(t => t.type === FinanceTxType.SAVING));
+      const scheduled = futureTxs.filter(t => ymOf(t.date) === ym);
+      const scheduledIncomeTx = scheduled.filter(t => t.type === FinanceTxType.INCOME);
+      const scheduledExpenseTx = scheduled.filter(t => t.type === FinanceTxType.EXPENSE);
+      const actualLegacySaving = this.sum(actual.filter(isLegacySaving));
+      const scheduledLegacySaving = this.sum(scheduled.filter(isLegacySaving));
       const categoryKey = (t: FinanceTransaction) => t.categoryId ? categoryMap.get(t.categoryId)?.key ?? null : null;
       // Старые/ручные операции могли быть записаны только в категорию, без
       // ссылки на конкретного сотрудника/подписку/долг. Эти суммы тоже
@@ -1786,6 +1841,25 @@ export class FinanceService implements OnModuleInit {
           actual: true, salary: !!t.employeeId,
         });
       }
+      for (const t of scheduledIncomeTx) {
+        incomeSources.push({
+          key: `scheduled:${t.id}`,
+          label: (t.projectId ? projectMap.get(t.projectId)?.name : null)
+            || t.comment || 'Запланированный доход',
+          amount: Number(t.amount), kind: `Запланировано на ${t.date}`, actual: false,
+        });
+      }
+      for (const t of scheduledExpenseTx) {
+        expenseSources.push({
+          key: `scheduled:${t.id}`,
+          label: (t.employeeId ? employeeMap.get(t.employeeId)?.name : null)
+            || (t.subscriptionId ? subscriptionMap.get(t.subscriptionId)?.name : null)
+            || (t.debtId ? debtMap.get(t.debtId)?.name : null)
+            || t.comment || 'Запланированный расход',
+          amount: Number(t.amount), kind: `Запланировано на ${t.date}`,
+          actual: false, salary: !!t.employeeId,
+        });
+      }
       const canProject = ym >= currentYm();
       const explicit = new Set<string>();
       for (const pp of plans.filter(p => canProject && p.ym === ym && p.status === 'expected' && p.projectId)) {
@@ -1795,18 +1869,21 @@ export class FinanceService implements OnModuleInit {
         incomeSources.push({ key: `plan:${pp.id}`, label: project.name, amount: r2(Number(pp.amount) * incomeFactor), kind: 'Плановая оплата' });
       }
       for (const project of projects.filter(p => canProject && isEarning(p) && ['smm', 'maintenance'].includes(p.direction))) {
-        const received = ym === currentYm() ? this.sum(txs.filter(t => t.type === FinanceTxType.INCOME && t.projectId === project.id && ymOf(t.date) === ym)) : 0;
+        const received = this.sum(postedTxs.filter(t =>
+          t.type === FinanceTxType.INCOME
+          && t.projectId === project.id
+          && ymOf(t.date) === ym));
         const remaining = Math.max(0, Number(project.tariff) - received);
         if (!explicit.has(project.id) && remaining > 0)
           incomeSources.push({ key: `recurring:${project.id}`, label: project.name, amount: r2(remaining * incomeFactor), kind: project.direction === 'maintenance' ? 'Обслуживание' : 'Регулярный доход' });
       }
-      for (const employee of employees.filter(e => canProject && e.status === 'active')) {
+      for (const employee of employees.filter(e => canProject)) {
         // Зарплата — денежный поток следующего месяца: начисление за июль
         // выплачивается в августе. Закрытый снапшотом период уже оплачен.
         const salaryYm = shiftYm(ym, -1);
-        if (employee.hireDate && ymOf(employee.hireDate) > salaryYm) continue;
+        if (!workedInFinanceMonth(employee, salaryYm)) continue;
         if (snapOf(employee, salaryYm)) continue;
-        const exactPaid = this.sum(txs.filter(t => t.type === FinanceTxType.EXPENSE && t.employeeId === employee.id &&
+        const exactPaid = this.sum(postedTxs.filter(t => t.type === FinanceTxType.EXPENSE && t.employeeId === employee.id &&
           (t.salaryYm || salaryPeriodOf(t.date)) === salaryYm));
         const due = Math.max(0, salaryForMonth(employee, salaryYm) + bonusOf(employee, salaryYm) - fineOf(employee, salaryYm));
         let amount = Math.max(0, due - exactPaid);
@@ -1817,7 +1894,7 @@ export class FinanceService implements OnModuleInit {
       }
       for (const sub of subscriptions.filter(s => canProject && s.active && Number(s.amount) > 0)) {
         const markedPaid = (sub.paidMarks || []).some(x => x.ym === ym);
-        const exactPaid = this.sum(actualExpenseTx.filter(t => t.subscriptionId === sub.id));
+        const exactPaid = this.sum([...actualExpenseTx, ...scheduledExpenseTx].filter(t => t.subscriptionId === sub.id));
         let amount = markedPaid ? 0 : Math.max(0, Number(sub.amount) - exactPaid);
         const covered = Math.min(amount, unlinkedSubPaid);
         amount -= covered;
@@ -1829,7 +1906,11 @@ export class FinanceService implements OnModuleInit {
         const remaining = debtRemaining.get(debt.id) || 0;
         if (remaining <= 0) continue;
         const scheduled = plans.filter(p => p.ym === ym && p.debtId === debt.id).reduce((s, p) => s + Number(p.amount), 0);
-        const exactPaid = this.sum(actualExpenseTx.filter(t => t.debtId === debt.id));
+        const exactPaid = this.sum([...actualExpenseTx, ...scheduledExpenseTx].filter(t => t.debtId === debt.id));
+        const scheduledPaid = this.sum(scheduledExpenseTx.filter(t => t.debtId === debt.id));
+        if (scheduledPaid > 0) {
+          debtRemaining.set(debt.id, r2(Math.max(0, remaining - scheduledPaid)));
+        }
         let dueThisMonth = Math.max(0, (scheduled || Number(debt.monthlyPayment) || 0) - exactPaid);
         const covered = Math.min(dueThisMonth, unlinkedDebtPaid);
         dueThisMonth -= covered;
@@ -1852,7 +1933,7 @@ export class FinanceService implements OnModuleInit {
       const actualExpense = this.sum(actualExpenseTx);
       const plannedIncome = r2(Math.max(0, income - actualIncome));
       const plannedExpense = r2(Math.max(0, expense - actualExpense));
-      const closingBalance = r2(opening + income - expense + actualSaving);
+      const closingBalance = r2(opening + income - expense + actualLegacySaving + scheduledLegacySaving);
       const row = { ym, openingBalance: opening, income, expense, net: r2(income - expense), closingBalance,
         balanceNow: ym === currentYm() ? Number(balances.total.balance) : null,
         actualIncome, actualExpense, plannedIncome, plannedExpense,
@@ -1871,10 +1952,10 @@ export class FinanceService implements OnModuleInit {
   async createForecastAdjustment(dto: any) {
     if (!String(dto.name || '').trim()) throw new BadRequestException('Название обязательно');
     if (!['income', 'expense'].includes(dto.type)) throw new BadRequestException('Неверный тип');
-    if (!/^\d{4}-\d{2}$/.test(dto.startYm || '')) throw new BadRequestException('Укажите месяц');
+    if (!YM_RE.test(dto.startYm || '')) throw new BadRequestException('Укажите месяц');
     return this.forecastAdjRepo.save(this.forecastAdjRepo.create({
       name: String(dto.name).trim(), type: dto.type, amount: Math.max(0, Number(dto.amount) || 0),
-      startYm: dto.startYm, endYm: /^\d{4}-\d{2}$/.test(dto.endYm || '') ? dto.endYm : null,
+      startYm: dto.startYm, endYm: YM_RE.test(dto.endYm || '') ? dto.endYm : null,
       recurrence: dto.recurrence === 'monthly' ? 'monthly' : 'once',
       scenario: ['base', 'conservative', 'optimistic'].includes(dto.scenario) ? dto.scenario : 'all',
       note: String(dto.note || '').trim() || null,
@@ -1909,9 +1990,24 @@ export class FinanceService implements OnModuleInit {
     });
   }
 
-  async listTransactions(f: { type?: string; search?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) {
+  async listTransactions(f: {
+    type?: string;
+    search?: string;
+    from?: string;
+    to?: string;
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  } = {}) {
     const m = await this.maps();
-    const qb = this.txRepo.createQueryBuilder('t').where(`COALESCE(t.status,'completed') <> 'cancelled'`);
+    const qb = this.txRepo.createQueryBuilder('t');
+    if (f.status === 'cancelled') {
+      qb.where(`COALESCE(t.status,'completed') = 'cancelled'`);
+    } else if (f.status === 'all') {
+      qb.where('1 = 1');
+    } else {
+      qb.where(`COALESCE(t.status,'completed') <> 'cancelled'`);
+    }
     if (f.type) qb.andWhere('t.type = :type', { type: f.type });
     if (f.from) qb.andWhere('t.date >= :from', { from: f.from });
     if (f.to) qb.andWhere('t.date <= :to', { to: f.to });
@@ -1939,11 +2035,15 @@ export class FinanceService implements OnModuleInit {
       status: FinanceTxStatus.COMPLETED,
     };
 
-    if (type === FinanceTxType.TRANSFER) {
+    if (type === FinanceTxType.TRANSFER || type === FinanceTxType.SAVING) {
       if (!dto.fromAccountId || !dto.toAccountId) throw new BadRequestException('Укажите счёт списания и зачисления');
       if (dto.fromAccountId === dto.toAccountId) throw new BadRequestException('Счета перевода должны отличаться');
       base.fromAccountId = dto.fromAccountId;
       base.toAccountId = dto.toAccountId;
+      if (type === FinanceTxType.SAVING) {
+        base.categoryId = dto.categoryId ?? null;
+        if (dto.categoryId) base.category = (await this.catRepo.findOne({ where: { id: dto.categoryId } }))?.name ?? null;
+      }
     } else {
       if (!dto.accountId) throw new BadRequestException('Укажите счёт');
       base.accountId = dto.accountId;
@@ -1954,10 +2054,14 @@ export class FinanceService implements OnModuleInit {
         base.employeeId = dto.employeeId ?? null;
         base.debtId = dto.debtId ?? null;
         base.subscriptionId = dto.subscriptionId ?? null;
+        const links = [base.employeeId, base.debtId, base.subscriptionId].filter(Boolean);
+        if (links.length > 1) {
+          throw new BadRequestException('Расход можно привязать только к одному обязательству');
+        }
         // Месяц начисления ЗП: явный из формы, иначе — по правилу «10-е → 10-е»
         // (зарплатный период даты), а не по календарному месяцу.
         if (base.employeeId) {
-          base.salaryYm = (typeof dto.salaryYm === 'string' && /^\d{4}-\d{2}$/.test(dto.salaryYm))
+          base.salaryYm = (typeof dto.salaryYm === 'string' && YM_RE.test(dto.salaryYm))
             ? dto.salaryYm : salaryPeriodOf(date);
         }
       }
@@ -2002,6 +2106,9 @@ export class FinanceService implements OnModuleInit {
   async updateTransaction(id: string, dto: any) {
     const t = await this.txRepo.findOne({ where: { id } });
     if (!t) throw new NotFoundException('Операция не найдена');
+    if (t.status === FinanceTxStatus.CANCELLED) {
+      throw new BadRequestException('Отменённую операцию нельзя изменять');
+    }
     if (dto.amount != null) {
       const a = Number(dto.amount);
       if (!Number.isFinite(a) || a <= 0) throw new BadRequestException('Сумма должна быть больше нуля');
@@ -2010,13 +2117,13 @@ export class FinanceService implements OnModuleInit {
     for (const k of ['amount', 'date', 'comment', 'categoryId', 'accountId', 'fromAccountId', 'toAccountId', 'projectId', 'employeeId', 'debtId', 'subscriptionId', 'type', 'salaryYm']) {
       if (dto[k] !== undefined) patch[k] = dto[k];
     }
-    // Смена типа чистит неприменимые поля (§5.11): income/expense/saving не имеют
-    // from/to; transfer не имеет счёта-получателя/категории/привязок. Иначе после
+    // Смена типа чистит неприменимые поля (§5.11): перевод/накопление используют
+    // from/to; income/expense — один accountId. Иначе после
     // transfer→income остаются старые from/to и операция выпадает из балансов.
     if (patch.type !== undefined && patch.type !== t.type) {
-      if (patch.type === FinanceTxType.TRANSFER) {
+      if (patch.type === FinanceTxType.TRANSFER || patch.type === FinanceTxType.SAVING) {
         patch.accountId = patch.accountId ?? null;
-        patch.categoryId = patch.categoryId ?? null;
+        if (patch.type === FinanceTxType.TRANSFER) patch.categoryId = patch.categoryId ?? null;
         patch.projectId = null; patch.employeeId = null; patch.debtId = null; patch.subscriptionId = null; patch.salaryYm = null;
       } else {
         patch.fromAccountId = null; patch.toAccountId = null;
@@ -2032,6 +2139,25 @@ export class FinanceService implements OnModuleInit {
     const effEmp = 'employeeId' in patch ? patch.employeeId : t.employeeId;
     if (effType !== FinanceTxType.EXPENSE || !effEmp) patch.salaryYm = null;
     if (patch.categoryId !== undefined) patch.category = patch.categoryId ? (await this.catRepo.findOne({ where: { id: patch.categoryId } }))?.name ?? null : null;
+    const next: any = { ...t, ...patch };
+    if (next.type === FinanceTxType.TRANSFER || next.type === FinanceTxType.SAVING) {
+      // Старую одиночную запись накопления разрешаем править, не меняя её
+      // финансовый смысл. При выборе двух счетов UI мигрирует её в перевод.
+      const preservedLegacySaving = t.type === FinanceTxType.SAVING
+        && isLegacySaving(t)
+        && next.type === FinanceTxType.SAVING
+        && isLegacySaving(next);
+      if (!preservedLegacySaving) {
+        if (!next.fromAccountId || !next.toAccountId) throw new BadRequestException('Укажите счёт списания и зачисления');
+        if (next.fromAccountId === next.toAccountId) throw new BadRequestException('Счета должны отличаться');
+      }
+    } else if (!next.accountId) {
+      throw new BadRequestException('Укажите счёт');
+    }
+    if (next.type === FinanceTxType.EXPENSE
+      && [next.employeeId, next.debtId, next.subscriptionId].filter(Boolean).length > 1) {
+      throw new BadRequestException('Расход можно привязать только к одному обязательству');
+    }
     await this.txRepo.update(id, patch);
     await this.syncSmmPartLink(id);
     // Правка выплаты ЗП (сумма/дата/сотрудник) — пересчитать снапшоты
@@ -2048,20 +2174,39 @@ export class FinanceService implements OnModuleInit {
   }
 
   async removeTransaction(id: string) {
-    const tx = await this.txRepo.findOne({ where: { id } });
-    // Плановые оплаты, связанные с этой операцией: авто — удалить, ручные — вернуть в «ожидается».
-    const linked = await this.ppRepo.find({ where: { receivedTxId: id } });
-    for (const p of linked) {
-      if (p.auto) await this.ppRepo.delete(p.id);
-      else { p.status = 'expected'; p.receivedTxId = null; await this.ppRepo.save(p); }
-    }
-    await this.txRepo.delete(id);
-    // Удалённая выплата ЗП — снапшот месяца НАЧИСЛЕНИЯ пересчитывается (разморозка).
-    if (tx?.employeeId) await this.refreshSalarySnapshot(tx.employeeId, tx.salaryYm ?? ymOf(tx.date));
-    // Удалённая оплата могла быть той, что двигала якорь SMM-цикла.
-    const projectId = tx?.projectId ?? linked.find(x => x.projectId)?.projectId ?? null;
+    const { tx, projectId } = await this.ds.transaction(async em => {
+      const txRepo = em.getRepository(FinanceTransaction);
+      const ppRepo = em.getRepository(FinancePlannedPayment);
+      const tx = await txRepo.findOne({
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!tx) throw new NotFoundException('Операция не найдена');
+      // Идемпотентно восстанавливаем связанные планы даже после сбоя старой
+      // неатомарной версии отмены.
+      const linked = await ppRepo.find({ where: { receivedTxId: id } });
+      for (const p of linked) {
+        if (p.auto) await ppRepo.delete(p.id);
+        else {
+          p.status = 'expected';
+          p.receivedTxId = null;
+          await ppRepo.save(p);
+        }
+      }
+      if (tx.status !== FinanceTxStatus.CANCELLED) {
+        // Ledger не удаляем: отменённая проводка остаётся доступной для аудита,
+        // но исключается из факта и балансов.
+        tx.status = FinanceTxStatus.CANCELLED;
+        await txRepo.save(tx);
+      }
+      return {
+        tx,
+        projectId: tx.projectId ?? linked.find(x => x.projectId)?.projectId ?? null,
+      };
+    });
+    if (tx.employeeId) await this.refreshSalarySnapshot(tx.employeeId, tx.salaryYm ?? ymOf(tx.date));
     if (projectId) await this.resyncSmmAfterUndo(projectId);
-    return { ok: true };
+    return { ok: true, cancelled: true };
   }
 
   /** Синхронизирует авто-плановую оплату SMM (часть 1/2) с операцией журнала,
@@ -2071,7 +2216,11 @@ export class FinanceService implements OnModuleInit {
     const existing = await this.ppRepo.findOne({ where: { auto: true, receivedTxId: txId } });
     const key = tx?.categoryId ? (await this.catRepo.findOne({ where: { id: tx.categoryId } }))?.key ?? null : null;
     const partNo = key === 'smm2' ? 2 : key === 'smm1' ? 1 : null;
-    const shouldExist = !!(tx && tx.type === FinanceTxType.INCOME && tx.projectId && partNo);
+    const shouldExist = !!(tx
+      && isPostedFinanceTransaction(tx)
+      && tx.type === FinanceTxType.INCOME
+      && tx.projectId
+      && partNo);
 
     if (shouldExist && tx && partNo) {
       const data = {
@@ -2097,7 +2246,7 @@ export class FinanceService implements OnModuleInit {
     try {
       const p = await this.projRepo.findOne({ where: { id: projectId } });
       const tariff = Number(p?.tariff) || 0;
-      if (!p || p.direction !== 'smm' || p.archived || p.status === 'paused' || tariff <= 0) return;
+      if (!p || p.direction !== 'smm' || !isEarning(p) || tariff <= 0) return;
 
       const plans = await this.ppRepo.find({ where: { projectId } });
       const received = plans.filter(x => x.status === 'received');
@@ -2349,7 +2498,9 @@ export class FinanceService implements OnModuleInit {
       const ppRepo = em.getRepository(FinancePlannedPayment);
       const pp = await ppRepo.findOne({ where: { id } });
       if (!pp) throw new NotFoundException('Плановая оплата не найдена');
-      if (pp.receivedTxId) await em.getRepository(FinanceTransaction).delete(pp.receivedTxId);
+      if (pp.receivedTxId) {
+        await em.getRepository(FinanceTransaction).update(pp.receivedTxId, { status: FinanceTxStatus.CANCELLED });
+      }
       pp.status = 'expected';
       pp.receivedTxId = null;
       await ppRepo.save(pp);
@@ -2366,7 +2517,9 @@ export class FinanceService implements OnModuleInit {
       const ppRepo = em.getRepository(FinancePlannedPayment);
       const pp = await ppRepo.findOne({ where: { id } });
       if (!pp) throw new NotFoundException('Плановая оплата не найдена');
-      if (pp.receivedTxId) await em.getRepository(FinanceTransaction).delete(pp.receivedTxId);
+      if (pp.receivedTxId) {
+        await em.getRepository(FinanceTransaction).update(pp.receivedTxId, { status: FinanceTxStatus.CANCELLED });
+      }
       await ppRepo.delete(id);
       return { ok: true, projectId: pp.projectId ?? null };
     }).then(async (res) => {
@@ -2408,15 +2561,20 @@ export class FinanceService implements OnModuleInit {
   }
 
   /** Отменить все оплаты проекта (кнопка «Отменить оплату» у разовых работ):
-   *  планы и связанные с ними операции журнала удаляются одной транзакцией —
-   *  раньше фронт удалял их по одной и обрыв сети оставлял полусостояние. */
+   *  планы удаляются, а связанные проводки помечаются отменёнными в одной
+   *  транзакции — раньше фронт делал это по одной и обрыв сети оставлял
+   *  полусостояние. */
   async cancelProjectPayments(projectId: string) {
     const p = await this.projRepo.findOne({ where: { id: projectId } });
     if (!p) throw new NotFoundException('Проект не найден');
     await this.ds.transaction(async (em) => {
       const pps = await em.getRepository(FinancePlannedPayment).find({ where: { projectId } });
       const txIds = pps.map(x => x.receivedTxId).filter(Boolean) as string[];
-      if (txIds.length) await em.getRepository(FinanceTransaction).delete(txIds);
+      if (txIds.length) {
+        await em.getRepository(FinanceTransaction).createQueryBuilder()
+          .update().set({ status: FinanceTxStatus.CANCELLED })
+          .whereInIds(txIds).execute();
+      }
       if (pps.length) await em.getRepository(FinancePlannedPayment).delete(pps.map(x => x.id));
     });
     await this.resyncSmmAfterUndo(projectId);
@@ -2437,6 +2595,7 @@ export class FinanceService implements OnModuleInit {
         // дату для старых операций без salaryYm.
         txs = await repo.createQueryBuilder('t')
           .where('t.type = :type', { type: FinanceTxType.EXPENSE })
+          .andWhere(`COALESCE(t.status,'completed') = 'completed'`)
           .andWhere('t."employeeId" = :eid', { eid: dto.employeeId })
           .andWhere('(t."salaryYm" = :ym OR (t."salaryYm" IS NULL AND t.date BETWEEN :from AND :to))', { ym: dto.ym, from, to })
           .getMany();
@@ -2445,8 +2604,13 @@ export class FinanceService implements OnModuleInit {
         else if (dto.kind === 'bonus') txs = txs.filter(isBonusTx);
       } else {
         txs = await repo.find({ where: { type: FinanceTxType.EXPENSE, date: Between(from, to), subscriptionId: dto.subscriptionId } as any });
+        txs = txs.filter(isPostedFinanceTransaction);
       }
-      if (txs.length) await repo.delete(txs.map(t => t.id));
+      if (txs.length) {
+        await repo.createQueryBuilder().update()
+          .set({ status: FinanceTxStatus.CANCELLED })
+          .whereInIds(txs.map(t => t.id)).execute();
+      }
       return txs.length;
     });
     // Откат выплат ЗП за месяц — размораживаем снапшот.
@@ -2554,11 +2718,13 @@ export class FinanceService implements OnModuleInit {
   async createProject(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Название обязательно');
     const direction = ['smm', 'development', 'design', 'maintenance'].includes(dto.direction) ? dto.direction : 'smm';
-    const status = ['lead', 'active', 'paused', 'done', 'archived'].includes(dto.status) ? dto.status : 'active';
+    let status = ['lead', 'active', 'paused', 'done', 'archived'].includes(dto.status) ? dto.status : 'active';
+    const archived = !!dto.archived || status === 'archived';
+    if (archived) status = 'archived';
     const position = await this.projRepo.count();
     return this.projRepo.save(this.projRepo.create({
       name: dto.name.trim(), direction, tariff: Number(dto.tariff) || 0, note: dto.note ?? null,
-      contractDate: dto.contractDate ?? null, archived: !!dto.archived, multiMonth: !!dto.multiMonth,
+      contractDate: dto.contractDate ?? null, archived, multiMonth: !!dto.multiMonth,
       status, pausedAt: status === 'paused' ? todayISO() : null, position,
     }));
   }
@@ -2575,17 +2741,31 @@ export class FinanceService implements OnModuleInit {
       p.contractDate = dto.contractDate || null;
       p.cycleAnchor = null;
     }
-    if (dto.archived !== undefined) p.archived = !!dto.archived;
     if (dto.multiMonth !== undefined) p.multiMonth = !!dto.multiMonth;
-    if (dto.status !== undefined && ['lead', 'active', 'paused', 'done', 'archived'].includes(dto.status)) {
-      const prev = p.status;
-      if (dto.status === 'paused' && prev !== 'paused') {
-        p.pausedAt = todayISO();
-      } else if (prev === 'paused' && dto.status !== 'paused') {
-        await this.resumeFromPause(p);
-      }
-      p.status = dto.status;
+    const validStatus = dto.status !== undefined
+      && ['lead', 'active', 'paused', 'done', 'archived'].includes(dto.status);
+    let nextStatus = validStatus ? dto.status : p.status;
+    let nextArchived = dto.archived !== undefined ? !!dto.archived : p.archived;
+    if (nextStatus === 'archived' || dto.archived === true) {
+      nextStatus = 'archived';
+      nextArchived = true;
+    } else if (validStatus) {
+      // Явный перевод архивного проекта в рабочий статус восстанавливает его.
+      nextArchived = false;
+    } else if (dto.archived === false && nextStatus === 'archived') {
+      nextStatus = 'active';
     }
+    if (nextStatus !== p.status) {
+      const prev = p.status;
+      if (nextStatus === 'paused' && prev !== 'paused') {
+        p.pausedAt = todayISO();
+      } else if (prev === 'paused' && nextStatus !== 'paused') {
+        if (nextStatus === 'archived') p.pausedAt = null;
+        else await this.resumeFromPause(p);
+      }
+      p.status = nextStatus;
+    }
+    p.archived = nextArchived;
     return this.projRepo.save(p);
   }
 
@@ -2610,11 +2790,14 @@ export class FinanceService implements OnModuleInit {
     if (p.cycleAnchor) p.cycleAnchor = addDays(p.cycleAnchor, shift);
   }
   async removeProject(id: string) {
-    const incomeTxs = await this.txRepo.find({ where: { projectId: id, type: FinanceTxType.INCOME } as any });
-    for (const t of incomeTxs) await this.removeTransaction(t.id);
-    await this.ppRepo.delete({ projectId: id } as any);
-    await this.projRepo.delete(id);
-    return { ok: true };
+    const p = await this.projRepo.findOne({ where: { id } });
+    if (!p) throw new NotFoundException('Проект не найден');
+    // Финансовая история неизменна: «удаление» только архивирует справочник.
+    p.archived = true;
+    p.status = 'archived';
+    p.pausedAt = null;
+    await this.projRepo.save(p);
+    return { ok: true, archived: true };
   }
 
   // Сотрудники
@@ -2624,64 +2807,129 @@ export class FinanceService implements OnModuleInit {
     if (!dto.name?.trim()) throw new BadRequestException('Имя обязательно');
     const position = await this.empRepo.count();
     const salary = Number(dto.salary) || 0;
-    const effectiveYm = /^\d{4}-\d{2}$/.test(dto.salaryEffectiveYm || '')
+    const status = this.normStatus(dto.status);
+    const hireDate = dto.hireDate ?? null;
+    const terminationDate = dto.terminationDate ?? (status === 'fired' ? todayISO() : null);
+    if (status === 'active' && terminationDate) {
+      throw new BadRequestException('У активного сотрудника не может быть даты увольнения');
+    }
+    if (hireDate && terminationDate && terminationDate < hireDate) {
+      throw new BadRequestException('Дата увольнения не может быть раньше даты приёма');
+    }
+    const effectiveYm = YM_RE.test(dto.salaryEffectiveYm || '')
       ? dto.salaryEffectiveYm : ymOf(dto.hireDate || todayISO());
     return this.empRepo.save(this.empRepo.create({
       name: dto.name.trim(), role: dto.role ?? null, salary,
       salaryHistory: { [effectiveYm]: salary },
-      advance: Number(dto.advance) || 0, hireDate: dto.hireDate ?? null,
+      advance: Number(dto.advance) || 0, hireDate,
+      terminationDate, employmentHistory: null,
       category: (dto.category ?? '').trim() || null,
-      status: this.normStatus(dto.status), position,
+      status, position,
     }));
   }
   async updateEmployee(id: string, dto: any) {
     const e = await this.empRepo.findOne({ where: { id } });
     if (!e) throw new NotFoundException('Сотрудник не найден');
+    const oldStatus = e.status;
+    const oldHireDate = e.hireDate;
+    const oldTerminationDate = e.terminationDate;
     if (dto.name !== undefined) e.name = String(dto.name).trim();
     if (dto.role !== undefined) e.role = dto.role;
     if (dto.category !== undefined) e.category = String(dto.category ?? '').trim() || null;
     if (dto.salary !== undefined) {
       const salary = Number(dto.salary) || 0;
       const changed = salary !== Number(e.salary);
-      const effectiveYm = /^\d{4}-\d{2}$/.test(dto.salaryEffectiveYm || '') ? dto.salaryEffectiveYm : currentYm();
+      const effectiveYm = YM_RE.test(dto.salaryEffectiveYm || '') ? dto.salaryEffectiveYm : currentYm();
       e.salary = salary;
       if (changed || dto.salaryEffectiveYm) e.salaryHistory = { ...(e.salaryHistory || {}), [effectiveYm]: salary };
     }
     if (dto.advance !== undefined) e.advance = Number(dto.advance) || 0;
-    if (dto.hireDate !== undefined) e.hireDate = dto.hireDate || null;
-    if (dto.status !== undefined) e.status = this.normStatus(dto.status);
+    const nextStatus = dto.status !== undefined ? this.normStatus(dto.status) : e.status;
+    const reactivating = oldStatus === 'fired' && nextStatus === 'active';
+    if (reactivating) {
+      // Архивируем значения ДО применения DTO: форма закономерно присылает
+      // terminationDate=null при выборе «Работает».
+      if (oldHireDate && oldTerminationDate) {
+        e.employmentHistory = [
+          ...(e.employmentHistory || []),
+          { hireDate: oldHireDate, terminationDate: oldTerminationDate },
+        ];
+      }
+      const requestedHireDate = dto.hireDate || null;
+      // Старые клиенты формы могли прислать прежнюю дату приёма обратно.
+      // Это не новый период — используем сегодняшнюю дату безопасным default.
+      const rehireDate = !requestedHireDate || requestedHireDate === oldHireDate
+        ? todayISO()
+        : requestedHireDate;
+      if (oldTerminationDate && rehireDate <= oldTerminationDate) {
+        throw new BadRequestException('Дата повторного приёма должна быть позже даты увольнения');
+      }
+      e.hireDate = rehireDate;
+      e.terminationDate = null;
+    } else {
+      if (dto.hireDate !== undefined) e.hireDate = dto.hireDate || null;
+      if (dto.terminationDate !== undefined) e.terminationDate = dto.terminationDate || null;
+    }
+    if (dto.status !== undefined) {
+      if (nextStatus === 'fired' && oldStatus !== 'fired' && dto.terminationDate === undefined) {
+        e.terminationDate = todayISO();
+      }
+      e.status = nextStatus;
+    }
+    if (e.status === 'active' && e.terminationDate) {
+      throw new BadRequestException('У активного сотрудника не может быть даты увольнения');
+    }
+    if (e.hireDate && e.terminationDate && e.terminationDate < e.hireDate) {
+      throw new BadRequestException('Дата увольнения не может быть раньше даты приёма');
+    }
     return this.empRepo.save(e);
   }
-  async removeEmployee(id: string) { await this.empRepo.delete(id); return { ok: true }; }
+  async removeEmployee(id: string) {
+    const e = await this.empRepo.findOne({ where: { id } });
+    if (!e) throw new NotFoundException('Сотрудник не найден');
+    // Сохраняем ведомости и связи журнала; исключаем только будущие начисления.
+    e.status = 'fired';
+    e.terminationDate = e.terminationDate || todayISO();
+    await this.empRepo.save(e);
+    return { ok: true, archived: true };
+  }
 
   /** Задать бонус сотрудника за месяц (0 — убрать). Хранится в jsonb bonuses,
    *  расход создаётся отдельно — при выплате, вместе с окладом. */
-  /** Закрыть зарплатный месяц: зафиксировать ВСЕХ активных сотрудников как
-   *  выплаченных (снапшот), НЕ создавая расходных операций. Для случаев,
-   *  когда деньги фактически выданы (авансы/наличные), а система показывает
-   *  остаток — например, после обнуления старых общих авансов. */
+  /** Закрыть зарплатный месяц можно только по фактически проведённым выплатам.
+   *  Снапшот фиксирует историю, но никогда не погашает обязательство без денег. */
   async closeSalaryMonth(ym: string) {
     const emps = await this.empRepo.find();
     // Выплаченное за месяц — по МЕСЯЦУ НАЧИСЛЕНИЯ (salaryYm), с fallback на дату.
     const monthExp = await this.salaryTxForMonth(ym);
-    let closed = 0;
+    let closed = 0, skipped = 0;
     for (const e of emps) {
-      if (e.status !== 'active' || !wasHiredByMonth(e, ym) || snapOf(e, ym)) continue;
+      if (!workedInFinanceMonth(e, ym) || snapOf(e, ym)) continue;
       const employeeTx = monthExp.filter(t => t.employeeId === e.id);
       const paid = r2(employeeTx.reduce((s, t) => s + Number(t.amount), 0));
       const paidAdvance = r2(employeeTx.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
       const paidBonus = r2(employeeTx.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
+      const salary = salaryForMonth(e, ym);
+      const fine = fineOf(e, ym);
+      const due = r2(Math.max(0, salary + paidBonus - fine));
+      if (paid < due - 0.005) {
+        skipped++;
+        continue;
+      }
       const map = { ...(e.salarySnapshots || {}) };
       map[ym] = {
-        salary: salaryForMonth(e, ym), bonus: paidBonus || bonusOf(e, ym),
-        advance: paidAdvance || advanceOf(e, ym), fine: fineOf(e, ym),
+        salary, bonus: paidBonus || bonusOf(e, ym),
+        advance: paidAdvance || advanceOf(e, ym), fine,
         paid, paidAt: todayISO(),
       };
       e.salarySnapshots = map;
       await this.empRepo.save(e);
       closed++;
     }
-    return { ok: true, closed };
+    if (!closed && skipped) {
+      throw new BadRequestException('Месяц нельзя закрыть: сначала проведите оставшиеся выплаты по счетам');
+    }
+    return { ok: true, closed, skipped };
   }
 
   /** Переоткрыть месяц ЗП: снять заморозку (удалить снапшоты выплаченного
@@ -2825,7 +3073,7 @@ export class FinanceService implements OnModuleInit {
       ...Object.keys(snapshotMap).filter(ym => ym >= minYm),
     ]);
     const periods = [...periodYms]
-      .filter(ym => wasHiredByMonth(e, ym))
+      .filter(ym => workedInFinanceMonth(e, ym))
       .sort((a, b) => b.localeCompare(a))
       .map(ym => {
         const snapshot = snapshotMap[ym];
@@ -3047,12 +3295,98 @@ export class FinanceService implements OnModuleInit {
   async removeAsset(id: string) { await this.assetRepo.delete(id); return { ok: true }; }
 
   // ─── Резервная копия / сброс ─────────────────────────────────────
-  async exportAll() {
+  private async exportAllWithManager(em: EntityManager) {
     const [accounts, categories, projects, employees, subscriptions, debts, plannedPayments, transactions, assets, forecastAdjustments] = await Promise.all([
-      this.accRepo.find(), this.catRepo.find(), this.projRepo.find(), this.empRepo.find(),
-      this.subRepo.find(), this.debtRepo.find(), this.ppRepo.find(), this.txRepo.find(), this.assetRepo.find(), this.forecastAdjRepo.find(),
+      em.getRepository(FinanceAccount).find(),
+      em.getRepository(FinanceCategory).find(),
+      em.getRepository(FinanceProject).find(),
+      em.getRepository(FinanceEmployee).find(),
+      em.getRepository(FinanceSubscription).find(),
+      em.getRepository(FinanceDebt).find(),
+      em.getRepository(FinancePlannedPayment).find(),
+      em.getRepository(FinanceTransaction).find(),
+      em.getRepository(FinanceAsset).find(),
+      em.getRepository(FinanceForecastAdjustment).find(),
     ]);
-    return { version: 2, exportedAt: new Date().toISOString(), accounts, categories, projects, employees, subscriptions, debts, plannedPayments, transactions, assets, forecastAdjustments };
+    return {
+      version: 2, exportedAt: new Date().toISOString(),
+      accounts, categories, projects, employees, subscriptions, debts,
+      plannedPayments, transactions, assets, forecastAdjustments,
+    };
+  }
+
+  async exportAll() {
+    // Все таблицы читаются из одного repeatable-read snapshot: параллельная
+    // оплата не может попасть в экспорт наполовину (план без проводки).
+    return this.ds.transaction('REPEATABLE READ', em => this.exportAllWithManager(em));
+  }
+
+  private backupStats(data: Awaited<ReturnType<FinanceService['exportAllWithManager']>>) {
+    return {
+      transactions: data.transactions.length, plannedPayments: data.plannedPayments.length,
+      projects: data.projects.length, employees: data.employees.length,
+      accounts: data.accounts.length, debts: data.debts.length,
+      subscriptions: data.subscriptions.length, assets: data.assets.length,
+      forecastAdjustments: data.forecastAdjustments.length,
+    };
+  }
+
+  /** Блокирует финансовые таблицы на время destructive-операции. Уже
+   * начавшиеся записи сначала коммитятся и попадут в safety snapshot; новые
+   * ждут завершения импорта/сброса и не могут исчезнуть между снимком и DELETE. */
+  private async lockFinanceTables(em: EntityManager) {
+    await em.query(`
+      LOCK TABLE
+        finance_planned_payments,
+        finance_transactions,
+        finance_forecast_adjustments,
+        finance_assets,
+        finance_debts,
+        finance_subscriptions,
+        finance_employees,
+        finance_projects,
+        finance_categories,
+        finance_accounts
+      IN ACCESS EXCLUSIVE MODE
+    `);
+  }
+
+  private async saveBackupWithManager(
+    em: EntityManager,
+    kind: 'pre_restore' | 'pre_import' | 'pre_reset',
+    data: Awaited<ReturnType<FinanceService['exportAllWithManager']>>,
+  ) {
+    const repo = em.getRepository(FinanceBackup);
+    return repo.save(repo.create({ kind, stats: this.backupStats(data), data }));
+  }
+
+  private async replaceFinanceData(em: EntityManager, data: any) {
+    const txRepo = em.getRepository(FinanceTransaction);
+    const ppRepo = em.getRepository(FinancePlannedPayment);
+    const assetRepo = em.getRepository(FinanceAsset);
+    const forecastAdjRepo = em.getRepository(FinanceForecastAdjustment);
+    const debtRepo = em.getRepository(FinanceDebt);
+    const subRepo = em.getRepository(FinanceSubscription);
+    const empRepo = em.getRepository(FinanceEmployee);
+    const projRepo = em.getRepository(FinanceProject);
+    const catRepo = em.getRepository(FinanceCategory);
+    const accRepo = em.getRepository(FinanceAccount);
+    for (const repo of [txRepo, ppRepo, forecastAdjRepo, assetRepo, debtRepo, subRepo, empRepo, projRepo, catRepo, accRepo]) {
+      await repo.createQueryBuilder().delete().execute();
+    }
+    const save = async (repo: Repository<any>, rows: any[]) => {
+      if (rows.length) await repo.save(rows, { chunk: 500 });
+    };
+    await save(accRepo, data.accounts);
+    await save(catRepo, data.categories);
+    await save(projRepo, data.projects);
+    await save(empRepo, data.employees);
+    await save(subRepo, data.subscriptions);
+    await save(debtRepo, data.debts);
+    await save(ppRepo, data.plannedPayments);
+    await save(txRepo, data.transactions);
+    await save(assetRepo, data.assets || []);
+    await save(forecastAdjRepo, data.forecastAdjustments || []);
   }
 
   // ─── Снимки данных (автобэкап) ───────────────────────────────────
@@ -3072,21 +3406,25 @@ export class FinanceService implements OnModuleInit {
     const all = await this.backupRepo.find({ order: { createdAt: 'DESC' } as any, select: ['id', 'kind', 'createdAt'] as any });
     const over = (kinds: string[], keep: number) =>
       all.filter(b => kinds.includes(b.kind)).slice(keep).map(b => b.id);
-    const ids = [...over(['auto'], 30), ...over(['manual', 'pre_restore', 'pre_import'], 10)];
+    const ids = [...over(['auto'], 30), ...over(['manual', 'pre_restore', 'pre_import', 'pre_reset'], 10)];
     if (ids.length) await this.backupRepo.delete(ids);
   }
 
-  async createBackupSnapshot(kind: 'auto' | 'manual' | 'pre_restore' | 'pre_import' = 'manual') {
+  private async safePruneBackups() {
+    try {
+      await this.pruneBackups();
+    } catch (e: any) {
+      // Основная операция уже могла успешно закоммититься. Ошибка служебной
+      // ротации не должна провоцировать пользователя повторять import/reset.
+      this.logger.warn(`finance backup pruning failed: ${String(e?.message || e).slice(0, 160)}`);
+    }
+  }
+
+  async createBackupSnapshot(kind: 'auto' | 'manual' | 'pre_restore' | 'pre_import' | 'pre_reset' = 'manual') {
     const data = await this.exportAll();
-    const stats = {
-      transactions: data.transactions.length, plannedPayments: data.plannedPayments.length,
-      projects: data.projects.length, employees: data.employees.length,
-      accounts: data.accounts.length, debts: data.debts.length,
-      subscriptions: data.subscriptions.length, assets: data.assets.length,
-      forecastAdjustments: data.forecastAdjustments.length,
-    };
+    const stats = this.backupStats(data);
     const saved = await this.backupRepo.save(this.backupRepo.create({ kind, stats, data }));
-    await this.pruneBackups();
+    await this.safePruneBackups();
     return { id: saved.id, kind: saved.kind, createdAt: saved.createdAt, stats };
   }
 
@@ -3109,9 +3447,7 @@ export class FinanceService implements OnModuleInit {
    *  отдельным снимком pre_restore — восстановление всегда обратимо. */
   async restoreBackup(id: string) {
     const b = await this.getBackup(id);
-    await this.createBackupSnapshot('pre_restore');
-    await this.importAll(b.data, false);
-    return { ok: true };
+    return this.importAll(b.data, 'pre_restore');
   }
 
   /** Полная проверка файла выполняется ДО снимка и удаления данных. */
@@ -3154,55 +3490,97 @@ export class FinanceService implements OnModuleInit {
     }
   }
 
+  /** Приводит старые backup-версии к текущей модели до записи. Иначе v1
+   * с legacy account восстановится «успешно», но деньги появятся на счетах
+   * только после рестарта и runtime-бэкфилла. */
+  private normalizeImportData(data: any) {
+    const normalized = JSON.parse(JSON.stringify(data));
+    const rawVersion = normalized.version == null ? 1 : Number(normalized.version);
+    if (![1, 2].includes(rawVersion)) {
+      throw new BadRequestException(`Версия резервной копии ${normalized.version} не поддерживается`);
+    }
+    const legacyV1 = rawVersion === 1;
+    if (legacyV1 && !Array.isArray(normalized.plannedPayments)) {
+      normalized.plannedPayments = [];
+    }
+    const accountByKey = new Map<string, string>(
+      (Array.isArray(normalized.accounts) ? normalized.accounts : [])
+        .filter((account: any) => account?.key && account?.id)
+        .map((account: any) => [String(account.key), String(account.id)]),
+    );
+    if (Array.isArray(normalized.transactions)) normalized.transactions = normalized.transactions.map((tx: any) => {
+      if (!tx.accountId && tx.account && accountByKey.has(String(tx.account))) {
+        tx.accountId = accountByKey.get(String(tx.account));
+      }
+      return tx;
+    });
+    if (Array.isArray(normalized.projects)) normalized.projects = normalized.projects.map((project: any) => {
+      if (project.archived || project.status === 'archived') {
+        project.archived = true;
+        project.status = 'archived';
+      } else {
+        project.archived = false;
+      }
+      return project;
+    });
+    if (Array.isArray(normalized.employees)) normalized.employees = normalized.employees.map((employee: any) => {
+      if (employee.status === 'inactive') employee.status = 'fired';
+      if (!employee.salaryHistory || !Object.keys(employee.salaryHistory).length) {
+        const effectiveYm = ymOf(employee.hireDate || employee.createdAt || todayISO());
+        employee.salaryHistory = { [effectiveYm]: r2(employee.salary) };
+      }
+      return employee;
+    });
+    normalized.version = 2;
+    normalized.assets ||= [];
+    normalized.forecastAdjustments ||= [];
+    return normalized;
+  }
+
   /** Импорт атомарный: при любой ошибке PostgreSQL откатывает очистку и
    *  все вставки. Перед обычным импортом дополнительно сохраняем pre_import. */
-  async importAll(data: any, safetySnapshot = true) {
-    this.validateImport(data);
-    if (safetySnapshot) await this.createBackupSnapshot('pre_import');
-    await this.ds.transaction(async em => {
-      const txRepo = em.getRepository(FinanceTransaction);
-      const ppRepo = em.getRepository(FinancePlannedPayment);
-      const assetRepo = em.getRepository(FinanceAsset);
-      const forecastAdjRepo = em.getRepository(FinanceForecastAdjustment);
-      const debtRepo = em.getRepository(FinanceDebt);
-      const subRepo = em.getRepository(FinanceSubscription);
-      const empRepo = em.getRepository(FinanceEmployee);
-      const projRepo = em.getRepository(FinanceProject);
-      const catRepo = em.getRepository(FinanceCategory);
-      const accRepo = em.getRepository(FinanceAccount);
-      for (const repo of [txRepo, ppRepo, forecastAdjRepo, assetRepo, debtRepo, subRepo, empRepo, projRepo, catRepo, accRepo]) {
-        await repo.createQueryBuilder().delete().execute();
+  async importAll(
+    data: any,
+    safetyKind: false | 'pre_import' | 'pre_restore' = 'pre_import',
+  ) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new BadRequestException('Неверный формат файла');
+    }
+    const normalized = this.normalizeImportData(data);
+    this.validateImport(normalized);
+    let safetyBackupId: string | null = null;
+    await this.ds.transaction('SERIALIZABLE', async em => {
+      await this.lockFinanceTables(em);
+      if (safetyKind) {
+        const before = await this.exportAllWithManager(em);
+        safetyBackupId = (await this.saveBackupWithManager(em, safetyKind, before)).id;
       }
-      const save = async (repo: Repository<any>, rows: any[]) => {
-        if (rows.length) await repo.save(rows, { chunk: 500 });
-      };
-      await save(accRepo, data.accounts);
-      await save(catRepo, data.categories);
-      await save(projRepo, data.projects);
-      await save(empRepo, data.employees);
-      await save(subRepo, data.subscriptions);
-      await save(debtRepo, data.debts);
-      await save(ppRepo, data.plannedPayments);
-      await save(txRepo, data.transactions);
-      await save(assetRepo, data.assets || []);
-      await save(forecastAdjRepo, data.forecastAdjustments || []);
+      await this.replaceFinanceData(em, normalized);
     });
-    return { ok: true };
+    if (safetyKind) await this.safePruneBackups();
+    return { ok: true, safetyBackupId };
   }
 
   /** Полный сброс финансовых данных. reseed=true → пересоздаёт дефолты. */
   async resetAll(reseed = true) {
-    await this.txRepo.createQueryBuilder().delete().execute();
-    await this.ppRepo.createQueryBuilder().delete().execute();
-    await this.assetRepo.createQueryBuilder().delete().execute();
-    await this.forecastAdjRepo.createQueryBuilder().delete().execute();
-    await this.debtRepo.createQueryBuilder().delete().execute();
-    await this.subRepo.createQueryBuilder().delete().execute();
-    await this.empRepo.createQueryBuilder().delete().execute();
-    await this.projRepo.createQueryBuilder().delete().execute();
-    await this.catRepo.createQueryBuilder().delete().execute();
-    await this.accRepo.createQueryBuilder().delete().execute();
-    if (reseed) await this.seedDefaults();
-    return { ok: true };
+    let safetyBackupId: string | null = null;
+    await this.ds.transaction('SERIALIZABLE', async em => {
+      await this.lockFinanceTables(em);
+      const before = await this.exportAllWithManager(em);
+      safetyBackupId = (await this.saveBackupWithManager(em, 'pre_reset', before)).id;
+      await this.replaceFinanceData(em, {
+        accounts: [], categories: [], projects: [], employees: [],
+        subscriptions: [], debts: [], plannedPayments: [], transactions: [],
+        assets: [], forecastAdjustments: [],
+      });
+      if (reseed) {
+        const accRepo = em.getRepository(FinanceAccount);
+        const catRepo = em.getRepository(FinanceCategory);
+        await accRepo.save(DEFAULT_ACCOUNTS.map(a => accRepo.create({ ...a, startBalance: 0 })));
+        await catRepo.save(DEFAULT_CATEGORIES.map(c => catRepo.create(c)));
+      }
+    });
+    await this.safePruneBackups();
+    return { ok: true, safetyBackupId };
   }
 }

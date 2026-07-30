@@ -99,7 +99,7 @@ export default function FinanceInventoryPage() {
       ) : rows.length === 0 ? (
         <div className="card empty"><div className="big"><FinIcon name="folder" size={30} /></div>Пусто — добавьте оборудование кнопкой «＋»</div>
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap fin-wide-table">
           <table>
             <thead>
               <tr>

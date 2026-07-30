@@ -9,6 +9,7 @@ const PATHS: Record<string, ReactNode> = {
   expense: <><path d="M4 7h16v12H4z" /><path d="M4 10h16" /><path d="M8 15h3" /><path d="M18 3v5M15.5 5.5 18 8l2.5-2.5" /></>,
   transactions: <><path d="M4 7h15" /><path d="m16 4 3 3-3 3" /><path d="M20 17H5" /><path d="m8 14-3 3 3 3" /></>,
   settings: <><path d="M4 6h10" /><path d="M18 6h2" /><circle cx="16" cy="6" r="2" /><path d="M4 12h2" /><path d="M10 12h10" /><circle cx="8" cy="12" r="2" /><path d="M4 18h8" /><path d="M16 18h4" /><circle cx="14" cy="18" r="2" /></>,
+  chart: <><path d="M4 20V10" /><path d="M10 20V4" /><path d="M16 20v-7" /><path d="M22 20H2" /></>,
   currency: <><ellipse cx="12" cy="7" rx="7" ry="3" /><path d="M5 7v5c0 1.7 3.1 3 7 3s7-1.3 7-3V7" /><path d="M5 12v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5" /></>,
   // направления дохода
   smm: <><path d="M4 11v3h4l7 4V7l-7 4H4z" /><path d="M8 14v4a2 2 0 0 0 3.6 1.2" /><path d="M18 9a4 4 0 0 1 0 7" /><path d="M20.5 6.5a7.5 7.5 0 0 1 0 12" /></>,

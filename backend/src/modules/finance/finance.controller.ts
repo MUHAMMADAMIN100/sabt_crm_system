@@ -2,6 +2,7 @@ import {
   Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, UseInterceptors, Request,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { FinanceService } from './finance.service';
 import { FinanceScheduler } from './finance.scheduler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -106,10 +107,11 @@ export class FinanceController {
   transactions(
     @Query('type') type?: string, @Query('search') search?: string,
     @Query('from') from?: string, @Query('to') to?: string,
+    @Query('status') status?: string,
     @Query('page') page?: string, @Query('pageSize') pageSize?: string,
   ) {
     return this.service.listTransactions({
-      type, search, from, to,
+      type, search, from, to, status,
       page: page ? parseInt(page, 10) || 1 : 1,
       pageSize: pageSize ? parseInt(pageSize, 10) || 100 : 100,
     });
@@ -222,13 +224,17 @@ export class FinanceController {
 
   // ─── Резервная копия / сброс ─────────────────────────────────────
   @Get('backup/export') exportAll() { return this.service.exportAll(); }
+  @Throttle({ default: { ttl: 60_000, limit: 2 } })
   @Post('backup/import') importAll(@Body() data: any) { return this.service.importAll(data); }
+  @Throttle({ default: { ttl: 60_000, limit: 1 } })
   @Post('reset') resetAll() { return this.service.resetAll(true); }
 
   // ─── Снимки данных (автобэкап) ───────────────────────────────────
   @Get('backups') listBackups() { return this.service.listBackups(); }
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post('backups') createBackup() { return this.service.createBackupSnapshot('manual'); }
   @Get('backups/:id') getBackup(@Param('id') id: string) { return this.service.getBackup(id); }
+  @Throttle({ default: { ttl: 60_000, limit: 2 } })
   @Post('backups/:id/restore') restoreBackup(@Param('id') id: string) { return this.service.restoreBackup(id); }
 }
 

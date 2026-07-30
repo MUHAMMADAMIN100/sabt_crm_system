@@ -51,6 +51,6 @@ export class CreateOperationDto {
 
   /** Месяц начисления зарплаты ('YYYY-MM') — для зарплатных операций.
    *  Отделяет «за какой месяц» от даты фактической выплаты. */
-  @ApiPropertyOptional() @IsOptional() @Matches(/^\d{4}-\d{2}$/)
+  @ApiPropertyOptional() @IsOptional() @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
   salaryYm?: string;
 }

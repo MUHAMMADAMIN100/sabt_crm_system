@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FinModal } from './FinKit';
 
@@ -29,5 +30,69 @@ describe('FinModal stability', () => {
     unmount();
     expect(document.body.style.overflow).toBe('');
     expect(main.style.paddingRight).toBe('10px');
+  });
+
+  it('traps focus and restores it to the opener', () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return <>
+        <button onClick={() => setOpen(true)}>Открыть</button>
+        {open && (
+          <FinModal title="Форма" onClose={() => setOpen(false)}>
+            <button autoFocus>Первый</button>
+            <button>Последний</button>
+          </FinModal>
+        )}
+      </>;
+    }
+
+    render(<Harness />);
+    const opener = screen.getByRole('button', { name: 'Открыть' });
+    opener.focus();
+    fireEvent.click(opener);
+    const first = screen.getByRole('button', { name: 'Первый' });
+    const last = screen.getByRole('button', { name: 'Последний' });
+    const close = screen.getByRole('button', { name: 'Закрыть' });
+    expect(first).toHaveFocus();
+
+    last.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(last).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Форма' })).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
+  it('Escape closes only the top modal in a stack', () => {
+    const outerClose = vi.fn();
+    const innerClose = vi.fn();
+    function Stack() {
+      const [inner, setInner] = useState(false);
+      return (
+        <FinModal title="Внешняя" onClose={outerClose}>
+          <button onClick={() => setInner(true)}>Открыть подтверждение</button>
+          {inner && (
+            <FinModal title="Внутренняя" onClose={() => {
+              innerClose();
+              setInner(false);
+            }}>
+              Подтверждение
+            </FinModal>
+          )}
+        </FinModal>
+      );
+    }
+
+    render(<Stack />);
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть подтверждение' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(innerClose).toHaveBeenCalledTimes(1);
+    expect(outerClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(outerClose).toHaveBeenCalledTimes(1);
   });
 });

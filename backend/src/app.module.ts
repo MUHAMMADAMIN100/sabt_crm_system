@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { HealthController } from './health.controller';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { CacheModule } from '@nestjs/cache-manager';
 import { join } from 'path';
 import { LoggerModule } from './logger/logger.module';
@@ -46,7 +47,12 @@ import { DbIndexesService } from './common/db-indexes.service';
 
 @Module({
   controllers: [HealthController],
-  providers: [DbIndexesService],
+  providers: [
+    DbIndexesService,
+    // Без APP_GUARD конфигурация ThrottlerModule и endpoint-декораторы
+    // @Throttle остаются неактивными.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     LoggerModule,
@@ -80,7 +86,9 @@ import { DbIndexesService } from './common/db-indexes.service';
     }),
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
+    // Dashboard делает несколько параллельных API-запросов. 300/min защищает
+    // от простого flood, не ограничивая нормальную работу одного пользователя.
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 300 }]),
     CacheModule.register({ isGlobal: true, ttl: 300000 }),
     AuthModule,
     UsersModule,

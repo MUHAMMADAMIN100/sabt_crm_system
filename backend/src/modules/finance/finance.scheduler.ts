@@ -12,6 +12,13 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { hasGrant } from '../auth/permissions';
+import {
+  isEarningFinanceProject,
+  isPostedFinanceTransactionAsOf,
+  remainingFinanceAmount,
+  salaryForFinanceMonth,
+  workedInFinanceMonth,
+} from './finance-calculations';
 
 const SMM_LINK = '/finance/income/smm';
 const SUBS_LINK = '/finance/expense/rent_subs';
@@ -162,11 +169,12 @@ export class FinanceScheduler {
     if (!due.length) return { due: 0, notified: 0 };
 
     const projects = new Map((await this.projRepo.find()).map(p => [p.id, p]));
-    let notified = 0;
+    let eligibleDue = 0, notified = 0;
     for (const pp of due) {
       const project = projects.get(pp.projectId as string);
       // Пауза: платежи заморожены — не напоминаем, пока проект не вернут.
-      if (!project || project.archived || project.status === 'paused') continue;
+      if (!project || !isEarningFinanceProject(project)) continue;
+      eligibleDue++;
       const days = daysUntil(today, pp.dueDate as string);
       const what = pp.partNo === 2 ? 'вторая часть' : 'платёж';
       const when = days > 0
@@ -181,7 +189,7 @@ export class FinanceScheduler {
         link: directionLink(project.direction),
       });
     }
-    return { due: due.length, notified };
+    return { due: eligibleDue, notified };
   }
 
   /** Аренда/подписки с днём оплаты: не оплачено за месяц (ни операцией,
@@ -196,12 +204,23 @@ export class FinanceScheduler {
     const monthTx = await this.txRepo.find({
       where: { type: FinanceTxType.EXPENSE, date: Between(`${ym}-01`, `${ym}-${String(lastDay).padStart(2, '0')}`) } as any,
     });
-    const paidIds = new Set(monthTx.filter(t => t.subscriptionId).map(t => t.subscriptionId));
+    const paidBySubscription = new Map<string, number>();
+    for (const tx of monthTx.filter(t =>
+      t.subscriptionId && isPostedFinanceTransactionAsOf(t, today))) {
+      paidBySubscription.set(
+        tx.subscriptionId as string,
+        (paidBySubscription.get(tx.subscriptionId as string) || 0) + Number(tx.amount),
+      );
+    }
 
     let due = 0, notified = 0;
     for (const s of subs) {
-      if (paidIds.has(s.id)) continue;
       if ((s.paidMarks || []).some(x => x.ym === ym)) continue;
+      const remaining = remainingFinanceAmount(
+        Number(s.amount),
+        paidBySubscription.get(s.id) || 0,
+      );
+      if (remaining === 0) continue;
       const dueDate = `${ym}-${String(Math.min(s.dueDay as number, lastDay)).padStart(2, '0')}`;
       const days = daysUntil(today, dueDate);
       if (days > REMIND_BEFORE_DAYS) continue;
@@ -212,7 +231,7 @@ export class FinanceScheduler {
         : `просрочена на ${-days} дн. (срок был ${formatRu(dueDate)})`;
       notified += await this.notifyFinanceUsers({
         title: days < 0 ? `${kindLabel} не оплачена` : `Приближается срок: ${kindLabel.toLowerCase()}`,
-        message: `${s.name}: ${fmtMoney(Number(s.amount))} — ${when}`,
+        message: `${s.name}: осталось ${fmtMoney(remaining)} из ${fmtMoney(Number(s.amount))} — ${when}`,
         alertKey: `fin-sub-due:${s.id}:${ym}`,
         link: SUBS_LINK,
       });
@@ -227,8 +246,7 @@ export class FinanceScheduler {
     const day = Number(today.slice(8, 10));
     if (!SALARY_REMIND_DAYS.includes(day)) return { due: 0, notified: 0 };
     const ym = today.slice(0, 7);
-    const emps = (await this.empRepo.find()).filter(e =>
-      e.status === 'active' && (!e.hireDate || e.hireDate.slice(0, 7) <= ym));
+    const emps = (await this.empRepo.find()).filter(e => workedInFinanceMonth(e, ym));
     if (!emps.length) return { due: 0, notified: 0 };
 
     const [y, m] = ym.split('-').map(Number);
@@ -238,7 +256,8 @@ export class FinanceScheduler {
     const monthTx = (await this.txRepo.createQueryBuilder('t')
       .where('t.type = :type', { type: FinanceTxType.EXPENSE })
       .andWhere('t."employeeId" IS NOT NULL')
-      .andWhere(`COALESCE(t.status,'completed') <> 'cancelled'`)
+      .andWhere(`COALESCE(t.status,'completed') = 'completed'`)
+      .andWhere('t.date <= :asOf', { asOf: today })
       .andWhere('(t."salaryYm" = :ym OR (t."salaryYm" IS NULL AND t.date BETWEEN :from AND :to))', { ym, from, to })
       .getMany());
     // Остаток к выплате: по каждому сотруднику, закрытые (снапшот) месяцы —
@@ -256,7 +275,7 @@ export class FinanceScheduler {
         .filter(t => (t.comment || '').trim().toLowerCase().startsWith('бонус'))
         .reduce((s, t) => s + Number(t.amount), 0);
       const fine = Number((e.fines || {})[ym]) || 0;
-      const due = Math.max(0, Number(e.salary) + bonus - fine);
+      const due = Math.max(0, salaryForFinanceMonth(e, ym) + bonus - fine);
       toPay += Math.max(0, due - paidE);
     }
     toPay = Math.round(toPay * 100) / 100;

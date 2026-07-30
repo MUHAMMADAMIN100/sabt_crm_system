@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, INCOME_GROUPS, apiErr, downloadCsv , useYmParam } from './finlib';
+import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, INCOME_GROUPS, apiErr, downloadCsv, useYmParam, withYm } from './finlib';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
 import { FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinanceAll } from './FinKit';
@@ -49,7 +49,7 @@ export default function FinanceIncomeGroupPage() {
 
   return (
     <div className="fin-root">
-      <Link to="/finance/income" className="back"><FinIcon name="chevronLeft" size={15} /> Доход</Link>
+      <Link to={withYm('/finance/income', ym)} className="back"><FinIcon name="chevronLeft" size={15} /> Доход</Link>
       <div className="page-head">
         <div>
           <h1 className="flex" style={{ color: g.color }}><FinIcon name={g.icon} size={22} /> <span style={{ color: 'var(--text)' }}>{g.label}</span></h1>
@@ -87,13 +87,12 @@ function Stat({ label, value, cls, sub }: { label: string; value: string; cls?: 
   );
 }
 
-function RowActions({ onEdit, onPause, onArchive, onDelete }: { onEdit: () => void; onPause?: () => void; onArchive: () => void; onDelete: () => void }) {
+function RowActions({ onEdit, onPause, onArchive }: { onEdit: () => void; onPause?: () => void; onArchive: () => void }) {
   return (
     <td className="num nowrap">
       <button className="btn ghost sm" title="Редактировать" onClick={onEdit}><FinIcon name="edit" size={15} /></button>
       {onPause && <button className="btn ghost sm" title="На паузу (клиент приостановил — деньги и напоминания замораживаются)" onClick={onPause}><FinIcon name="pause" size={15} /></button>}
       <button className="btn ghost sm" title="В архив (больше не работаем)" onClick={onArchive}><FinIcon name="archive" size={15} /></button>
-      <button className="btn ghost sm danger" title="Удалить проект" onClick={onDelete}><FinIcon name="trash" size={15} /></button>
     </td>
   );
 }
@@ -175,7 +174,7 @@ function NoteCell({ project }: { project: any }) {
 
 function PlanManageModal({ title, plan, onClose, onDelete }: {
   title: string;
-  plan: { id: string; amount: number; dueDate?: string | null };
+  plan: { id: string; amount: number; dueDate?: string | null; virtual?: boolean; projectId?: string; ym?: string };
   onClose: () => void;
   onDelete?: () => void;
 }) {
@@ -197,19 +196,28 @@ function PlanManageModal({ title, plan, onClose, onDelete }: {
   const planChanged = planAmt !== plan.amount || (planDue || null) !== (plan.dueDate ?? null);
   const payValid = payAmt > 0 && planAmt > 0 && payAmt <= planAmt + 0.005 && !!accountId && !busy;
 
-  async function persistPlanIfChanged() {
-    if (!planChanged || !(planAmt > 0)) return;
+  async function persistPlan(): Promise<string> {
+    if (!(planAmt > 0)) throw new Error('Укажите сумму плана');
+    if (plan.virtual) {
+      const created = await financeApi.createPlanned({
+        projectId: plan.projectId, ym: plan.ym, amount: planAmt,
+        dueDate: planDue || null,
+      });
+      return created.id;
+    }
+    if (!planChanged) return plan.id;
     // Шлём только изменённые поля: у матрицы срок мог не прийти с бэка,
     // и безусловный dueDate стирал бы сохранённое значение.
     const patch: any = {};
     if (planAmt !== plan.amount) patch.amount = planAmt;
     if ((planDue || null) !== (plan.dueDate ?? null)) patch.dueDate = planDue || null;
     await financeApi.updatePlanned(plan.id, patch);
+    return plan.id;
   }
   async function savePlan() {
     if (!(planAmt > 0) || busy) return;
     setBusy(true);
-    try { await persistPlanIfChanged(); inv(); onClose(); }
+    try { await persistPlan(); inv(); onClose(); }
     catch (e) { toast.error(apiErr(e)); inv(); }
     finally { setBusy(false); }
   }
@@ -217,9 +225,17 @@ function PlanManageModal({ title, plan, onClose, onDelete }: {
     if (!payValid) return;
     setBusy(true);
     try {
-      await persistPlanIfChanged();
       const partial = payAmt < planAmt - 0.005;
-      await financeApi.receivePlanned(plan.id, { accountId, date, ...(partial ? { amount: payAmt } : {}) });
+      if (plan.virtual && !partial) {
+        // Полная регулярная оплата создаётся одной серверной командой с
+        // защитой от повторного клика; GET до этого БД не изменял.
+        await financeApi.payNow({
+          projectId: plan.projectId, ym: plan.ym, amount: payAmt, accountId, date,
+        });
+      } else {
+        const planId = await persistPlan();
+        await financeApi.receivePlanned(planId, { accountId, date, ...(partial ? { amount: payAmt } : {}) });
+      }
       inv();
       onClose();
     } catch (e) {
@@ -275,11 +291,6 @@ function ArchivedProjects({ projects }: { projects: any[] }) {
   async function restore(p: any) {
     try { await financeApi.updateProject(p.id, { archived: false }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
-  async function remove(p: any) {
-    if (!(await finConfirm(`Удалить проект «${p.name}» навсегда? Удалятся его плановые оплаты и доходные операции.`, { danger: true, confirmLabel: 'Удалить' }))) return;
-    try { await financeApi.removeProject(p.id); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
-  }
-
   return (
     <>
       <button className="btn ghost sm" style={{ marginTop: 16 }} onClick={() => setOpen((v) => !v)}>
@@ -297,7 +308,6 @@ function ArchivedProjects({ projects }: { projects: any[] }) {
                   <td className="num muted">{money(p.tariff)}</td>
                   <td className="num nowrap">
                     <button className="btn ghost sm" title="Вернуть из архива" onClick={() => restore(p)}><FinIcon name="undo" size={15} /> Вернуть</button>
-                    <button className="btn ghost sm danger" title="Удалить проект" onClick={() => remove(p)}><FinIcon name="trash" size={15} /></button>
                   </td>
                 </tr>
               ))}
@@ -322,10 +332,6 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
   const rows: any[] = data.rows || [];
   const { stats, totals, needPay, needRest } = data;
 
-  async function removeProjectRow(p: any) {
-    if (!(await finConfirm(`Удалить проект «${p.name}»? Удалятся его плановые оплаты и доходные операции.`, { danger: true, confirmLabel: 'Удалить' }))) return;
-    try { await financeApi.removeProject(p.id); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
-  }
   async function archiveProject(p: any) {
     try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
@@ -373,7 +379,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
         <button className="btn sm" onClick={exportCsv}>Экспорт CSV</button>
       </div>
 
-      <div className="table-wrap">
+      <div className="table-wrap fin-wide-table">
         <table>
           <thead>
             <tr>
@@ -447,7 +453,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                   </button>
                 </td>
                 <td><NoteCell project={r.project} /></td>
-                <RowActions onEdit={() => setEditProject(r.project)} onPause={() => pauseProject(r.project)} onArchive={() => archiveProject(r.project)} onDelete={() => removeProjectRow(r.project)} />
+                <RowActions onEdit={() => setEditProject(r.project)} onPause={() => pauseProject(r.project)} onArchive={() => archiveProject(r.project)} />
               </tr>
             ))}
           </tbody>
@@ -614,10 +620,6 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
   const [cellFor, setCellFor] = useState<{ row: any; ym: string; plan?: any } | null>(null);
   const [editProject, setEditProject] = useState<any>(null);
 
-  async function removeProjectRow(p: any) {
-    if (!(await finConfirm(`Удалить проект «${p.name}»? Удалятся его плановые оплаты и доходные операции.`, { danger: true, confirmLabel: 'Удалить' }))) return;
-    try { await financeApi.removeProject(p.id); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
-  }
   async function archiveProject(p: any) {
     try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
@@ -643,7 +645,7 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
         <span className="mini muted">Ячейка — поступление за месяц. «+» добавляет план или сразу оплату.</span>
       </div>
 
-      <div className="table-wrap" style={{ overflowX: 'auto' }}>
+      <div className="table-wrap fin-wide-table">
         <table>
           <thead>
             <tr>
@@ -696,7 +698,7 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
                     );
                   })}
                   <td><NoteCell project={p} /></td>
-                  <RowActions onEdit={() => setEditProject(p)} onPause={() => pauseProject(p)} onArchive={() => archiveProject(p)} onDelete={() => removeProjectRow(p)} />
+                  <RowActions onEdit={() => setEditProject(p)} onPause={() => pauseProject(p)} onArchive={() => archiveProject(p)} />
                 </tr>
               );
             })}
@@ -741,9 +743,13 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
     return (
       <PlanManageModal
         title={`${project.name} · ${monthName}`}
-        plan={{ id: plan.id, amount: Number(plan.amount), dueDate: plan.dueDate ?? null }}
+        plan={{
+          id: plan.id, amount: Number(plan.amount), dueDate: plan.dueDate ?? null,
+          virtual: !!plan.virtual, projectId: project.id, ym,
+        }}
         onClose={onClose}
         onDelete={async () => {
+          if (plan.virtual) { onClose(); return; }
           if (!(await finConfirm('Удалить план?', { danger: true, confirmLabel: 'Удалить' }))) return;
           try { await financeApi.removePlanned(plan.id); inv(); onClose(); } catch (e) { toast.error(apiErr(e)); }
         }}
@@ -872,7 +878,7 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
       {simple.length === 0 ? (
         <div className="card empty" style={{ padding: 28 }}>Нет разовых работ — нажмите «＋ Добавить работу»</div>
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap fin-wide-table">
           <table>
             <thead>
               <tr>
@@ -964,7 +970,7 @@ function WorkModal({ row, onClose }: { row?: any; onClose: () => void }) {
   }
   async function remove() {
     if (!work || busy) return;
-    if (!(await finConfirm('Удалить работу?', { danger: true, confirmLabel: 'Удалить' }))) return;
+    if (!(await finConfirm('Переместить работу в архив? Доходы и история оплат сохранятся.', { confirmLabel: 'В архив' }))) return;
     setBusy(true);
     try { await financeApi.removeProject(work.id); invalidateFinanceAll(qc); onClose(); } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
@@ -988,7 +994,7 @@ function WorkModal({ row, onClose }: { row?: any; onClose: () => void }) {
           )}
         </div>
         <div className="modal-foot">
-          {work && <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy} onClick={remove}>Удалить</button>}
+              {work && <button className="btn ghost" style={{ marginRight: 'auto' }} disabled={busy} onClick={remove}>В архив</button>}
           <button className="btn ghost" onClick={onClose}>Отмена</button>
           <button className="btn primary" disabled={busy || !name.trim()} onClick={save}>{work ? 'Сохранить' : 'Добавить'}</button>
         </div>

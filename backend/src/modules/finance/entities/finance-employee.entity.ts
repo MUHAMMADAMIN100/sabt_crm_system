@@ -51,6 +51,16 @@ export class FinanceEmployee {
   @Column({ type: 'date', nullable: true })
   hireDate: string | null;
 
+  /** Последний день работы. Нужен, чтобы уволенный сотрудник оставался
+   *  в исторических ведомостях, но не попадал в будущие начисления. */
+  @Column({ type: 'date', nullable: true })
+  terminationDate: string | null;
+
+  /** Завершённые периоды работы при повторном найме. Текущий период остаётся
+   * в hireDate/terminationDate, чтобы старые API продолжали работать. */
+  @Column({ type: 'jsonb', nullable: true })
+  employmentHistory: Array<{ hireDate: string; terminationDate: string }> | null;
+
   /** Бонусы по месяцам: { '2026-07': 500 }. Задаются вручную в зарплатной
    *  ведомости; входят в «к выплате», выплата создаёт расход как и оклад. */
   @Column({ type: 'jsonb', nullable: true })

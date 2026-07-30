@@ -19,15 +19,39 @@ const DETAIL_LABELS: Record<string, string> = {
   assetId: 'инвентарь', id: 'объект', salary: 'оклад', salaryYm: 'месяц ЗП',
   role: 'должность', status: 'статус', kind: 'вид выплаты',
   tariff: 'тариф', dueDate: 'срок', contractDate: 'дата договора',
+  hireDate: 'дата приёма', terminationDate: 'дата увольнения',
   archived: 'архив', note: 'примечание',
 };
 
-function detailValue(key: string, value: unknown): string {
+type RefMaps = Record<string, Map<string, string>>;
+
+function detailValue(key: string, value: unknown, route: string, refs: RefMaps): string {
   if (key === 'amount' || key === 'salary' || key === 'tariff') return money(Number(value))
-  if (key === 'date' || key === 'dueDate' || key === 'contractDate') return formatDate(String(value))
+  if (key === 'date' || key === 'dueDate' || key === 'contractDate' || key === 'hireDate' || key === 'terminationDate') return formatDate(String(value))
   if (key === 'ym' || key === 'salaryYm') return monthLabel(String(value), true)
   if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
-  return String(value).slice(0, 80)
+  const id = String(value);
+  const directMap: Record<string, string> = {
+    employeeId: 'employees', projectId: 'projects', accountId: 'accounts',
+    fromAccountId: 'accounts', toAccountId: 'accounts', categoryId: 'categories',
+    debtId: 'debts', subscriptionId: 'subscriptions',
+  };
+  const direct = directMap[key] && refs[directMap[key]]?.get(id);
+  if (direct) return direct;
+  if (key === 'id') {
+    const routeMap: Array<[string, string]> = [
+      ['/employees/', 'employees'], ['/projects/', 'projects'],
+      ['/accounts/', 'accounts'], ['/categories/', 'categories'],
+      ['/debts/', 'debts'], ['/subscriptions/', 'subscriptions'],
+    ];
+    const mapKey = routeMap.find(([part]) => route.includes(part))?.[1];
+    const resolved = mapKey ? refs[mapKey]?.get(id) : null;
+    if (resolved) return resolved;
+  }
+  if (key === 'type') return ({ income: 'Доход', expense: 'Расход', transfer: 'Перевод', saving: 'Накопление' } as Record<string, string>)[id] || id;
+  if (key === 'status') return ({ active: 'Работает', fired: 'Уволен', paused: 'На паузе', archived: 'В архиве', done: 'Завершён', lead: 'Лид' } as Record<string, string>)[id] || id;
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id)) return `${id.slice(0, 8)}…`;
+  return id.slice(0, 80)
 }
 
 function fmtWhen(iso: string): string {
@@ -42,9 +66,25 @@ export default function FinanceActivityPage() {
     queryFn: () => financeApi.activity(limit, 0),
     placeholderData: keepPreviousData,
   });
+  const { data: referenceData } = useQuery({
+    queryKey: ['finance', 'activity', 'references'],
+    queryFn: async () => {
+      const [accounts, categories, projects, employees, debts, subscriptions] = await Promise.all([
+        financeApi.accounts(), financeApi.categories(), financeApi.projects(),
+        financeApi.employees(), financeApi.debts(), financeApi.subscriptions(),
+      ]);
+      return { accounts, categories, projects, employees, debts, subscriptions };
+    },
+  });
 
   const rows: any[] = data?.rows ?? [];
   const total: number = data?.total ?? 0;
+  const refs: RefMaps = Object.fromEntries(
+    Object.entries(referenceData || {}).map(([key, values]) => [
+      key,
+      new Map((values as any[]).map(item => [item.id, item.name])),
+    ]),
+  );
 
   return (
     <div className="fin-root">
@@ -59,7 +99,7 @@ export default function FinanceActivityPage() {
         <div className="card empty">Пока пусто — здесь появятся все изменения раздела «Финансы»</div>
       ) : (
         <>
-          <div className="table-wrap">
+          <div className="table-wrap fin-wide-table">
             <table>
               <thead>
                 <tr>
@@ -80,7 +120,7 @@ export default function FinanceActivityPage() {
                         ? Object.entries(r.details).slice(0, 8).map(([k, v]) => (
                           <span key={k} className="fin-activity-detail">
                             <span>{DETAIL_LABELS[k] || k}</span>
-                            <b>{detailValue(k, v)}</b>
+                            <b>{detailValue(k, v, r.route || '', refs)}</b>
                           </span>
                         ))
                         : <span className="muted">—</span>}

@@ -1,7 +1,7 @@
 // Общие UI-примитивы раздела «Финансы»: состояния загрузки/ошибки,
 // модальная обвязка (Escape, возврат фокуса, aria), промисный finConfirm
 // вместо системного confirm() и хелперы инвалидации react-query.
-import { ReactNode, useEffect, useRef } from 'react';
+import { ReactNode, useEffect, useId, useRef, type RefObject } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { QueryClient } from '@tanstack/react-query';
 
@@ -54,10 +54,27 @@ export function FinLoadError({ onRetry, text }: { onRetry: () => void; text?: st
 // Модалки календаря фиксируют фон, потому что рендерятся порталом в body;
 // финансовые живут внутри main, поэтому без лока main фон продолжал ехать.
 let scrollLocks = 0;
+let bodyPrevOverflow = '';
 let mainPrevOverflow = '';
 let mainPrevPaddingRight = '';
+const modalStack: symbol[] = [];
+
+const FOCUSABLE = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+function focusableInside(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)]
+    .filter((el) => !el.hasAttribute('hidden') && el.getAttribute('aria-hidden') !== 'true');
+}
 function lockBodyScroll() {
   if (++scrollLocks > 1) return;
+  bodyPrevOverflow = document.body.style.overflow;
   document.body.style.overflow = 'hidden';
   const main = document.querySelector('main');
   if (main) {
@@ -77,7 +94,7 @@ function lockBodyScroll() {
 function unlockBodyScroll() {
   scrollLocks = Math.max(0, scrollLocks - 1);
   if (scrollLocks > 0) return;
-  document.body.style.overflow = '';
+  document.body.style.overflow = bodyPrevOverflow;
   const main = document.querySelector('main');
   if (main) {
     const el = main as HTMLElement;
@@ -86,22 +103,70 @@ function unlockBodyScroll() {
   }
 }
 
-/** Escape закрывает модалку; фокус возвращается туда, откуда её открыли;
- *  фон под модалкой не прокручивается. */
-export function useModalKeys(onClose?: () => void) {
+/** Escape закрывает только верхнюю модалку; фокус удерживается внутри неё и
+ *  возвращается туда, откуда окно открыли. Фон под модалкой не прокручивается. */
+export function useModalKeys(onClose?: () => void, dialogRef?: RefObject<HTMLElement | null>) {
   const closeRef = useRef(onClose);
+  const tokenRef = useRef(Symbol('finance-modal'));
+  // React применяет autoFocus во время commit, до useEffect. Сохраняем
+  // источник открытия уже при первом render, иначе запомним кнопку внутри
+  // окна и после закрытия фокус уйдёт в body.
+  const openerRef = useRef<HTMLElement | null>(
+    typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null,
+  );
   closeRef.current = onClose;
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
+    const opener = openerRef.current;
+    const token = tokenRef.current;
+    modalStack.push(token);
     lockBodyScroll();
+
+    const dialog = dialogRef?.current;
+    if (dialog) {
+      const active = document.activeElement as HTMLElement | null;
+      if (!active || !dialog.contains(active)) {
+        const body = dialog.querySelector<HTMLElement>('.modal-body');
+        const preferred = dialog.querySelector<HTMLElement>('[autofocus]')
+          || (body ? focusableInside(body)[0] : undefined)
+          || focusableInside(dialog)[0]
+          || dialog;
+        preferred.focus();
+      }
+    }
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); closeRef.current?.(); }
+      if (modalStack[modalStack.length - 1] !== token) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeRef.current?.();
+        return;
+      }
+      if (e.key !== 'Tab' || !dialogRef?.current) return;
+      const focusable = focusableInside(dialogRef.current);
+      if (focusable.length === 0) {
+        e.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (active === first || !dialogRef.current.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
+      const stackIndex = modalStack.lastIndexOf(token);
+      if (stackIndex >= 0) modalStack.splice(stackIndex, 1);
       unlockBodyScroll();
-      opener?.focus?.();
+      if (opener?.isConnected) opener.focus?.();
     };
   }, []);
 }
@@ -110,13 +175,16 @@ export function useModalKeys(onClose?: () => void) {
 export function FinModal({ title, onClose, children, footer, width }: {
   title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; width?: number;
 }) {
-  useModalKeys(onClose);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useModalKeys(onClose, dialogRef);
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="modal" style={width ? { maxWidth: width } : undefined}
-        role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} className="modal" style={width ? { maxWidth: width } : undefined}
+        role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>{title}</h3>
+          <h3 id={titleId}>{title}</h3>
           <button className="btn ghost sm" aria-label="Закрыть" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">{children}</div>
@@ -152,23 +220,16 @@ function ConfirmDialog({ message, opts, onDone }: {
   onDone: (ok: boolean) => void;
 }) {
   const okRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   useEffect(() => { okRef.current?.focus(); }, []);
-  useEffect(() => {
-    lockBodyScroll();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onDone(false); }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      unlockBodyScroll();
-    };
-  }, [onDone]);
+  useModalKeys(() => onDone(false), dialogRef);
   return (
     <div className="fin-overlay" onClick={() => onDone(false)}>
       <div className="fin-root" style={{ width: '100%', maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
-        <div className="modal" role="alertdialog" aria-modal="true" aria-label={opts?.title || 'Подтверждение'}>
-          <div className="modal-head"><h3>{opts?.title || 'Подтверждение'}</h3></div>
+        <div ref={dialogRef} className="modal" role="alertdialog" aria-modal="true"
+          aria-labelledby={titleId} tabIndex={-1}>
+          <div className="modal-head"><h3 id={titleId}>{opts?.title || 'Подтверждение'}</h3></div>
           <div className="modal-body"><p style={{ margin: 0 }}>{message}</p></div>
           <div className="modal-foot">
             <button className="btn ghost" onClick={() => onDone(false)}>{opts?.cancelLabel || 'Отмена'}</button>

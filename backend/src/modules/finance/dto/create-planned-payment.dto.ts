@@ -10,7 +10,7 @@ export class CreatePlannedPaymentDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID()
   debtId?: string;
 
-  @ApiProperty({ example: '2026-07' }) @IsString() @Matches(/^\d{4}-\d{2}$/)
+  @ApiProperty({ example: '2026-07' }) @IsString() @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
   ym: string;
 
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1)

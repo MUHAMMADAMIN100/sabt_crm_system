@@ -1,12 +1,15 @@
 // История выплат сотруднику: при наведении — последние 3 месяца,
 // по ненавязчивой ссылке — полная история в модальном окне.
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback, useEffect, useId, useRef, useState,
+  type KeyboardEvent, type MouseEvent, type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
 import { money, formatDate, monthLabel } from './finlib';
 import FinIcon from './FinIcon';
-import { floatingPosition, type FloatingPosition } from './floatingPosition';
+import { floatingPosition, scrollableAncestors, type FloatingPosition } from './floatingPosition';
 import { useModalKeys } from './FinKit';
 
 const HOVER_DELAY = 400;
@@ -112,6 +115,7 @@ export default function PayoutHistoryHover({
 }) {
   const qc = useQueryClient();
   const ref = useRef<HTMLSpanElement>(null);
+  const popoverId = useId();
   const hoverSeq = useRef(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -145,12 +149,12 @@ export default function PayoutHistoryHover({
 
   useEffect(() => {
     if (!open) return;
-    const main = document.querySelector('main');
+    const ancestors = scrollableAncestors(ref.current);
     window.addEventListener('resize', updatePosition);
-    main?.addEventListener('scroll', updatePosition, { passive: true });
+    ancestors.forEach((el) => el.addEventListener('scroll', updatePosition, { passive: true }));
     return () => {
       window.removeEventListener('resize', updatePosition);
-      main?.removeEventListener('scroll', updatePosition);
+      ancestors.forEach((el) => el.removeEventListener('scroll', updatePosition));
     };
   }, [open, updatePosition]);
 
@@ -195,6 +199,12 @@ export default function PayoutHistoryHover({
     closePreview();
     setFullOpen(true);
   };
+  const activate = (e: MouseEvent<HTMLSpanElement> | KeyboardEvent<HTMLSpanElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (open) closePreview();
+    else enter();
+  };
 
   const rows: any[] = previewQ.data?.rows ?? [];
   const periods: any[] = previewQ.data?.periods ?? [];
@@ -204,13 +214,35 @@ export default function PayoutHistoryHover({
   const fullTotals = fullQ.data?.totals;
 
   return (
-    <span ref={ref} className={className} onMouseEnter={enter} onMouseLeave={leave}>
+    <span ref={ref} className={className} role="button" tabIndex={0}
+      aria-expanded={open} aria-haspopup="dialog" aria-controls={open ? popoverId : undefined}
+      onFocus={enter} onBlur={leave}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (open) {
+            e.preventDefault();
+            e.stopPropagation();
+            showFull();
+          } else activate(e);
+        }
+        else if (e.key === 'Escape' && open) {
+          e.preventDefault();
+          closePreview();
+        }
+      }}
+      onClick={activate} onMouseEnter={enter} onMouseLeave={leave}>
       {children}
       {open && pos && createPortal(
         <div
+          id={popoverId}
           className="fin-brk-pop fin-payout-pop"
+          role="dialog"
+          aria-label={`История выплат — ${name}`}
           onMouseEnter={cancelClose}
           onMouseLeave={leave}
+          onFocus={cancelClose}
+          onBlur={leave}
+          onClick={(e) => e.stopPropagation()}
           style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: POP_WIDTH }}
         >
           <div className="fin-brk-pop-head">

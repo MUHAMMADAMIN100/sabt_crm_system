@@ -14,9 +14,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Project } from '../projects/project.entity';
 import { Task } from '../tasks/task.entity';
+import { buildTrustedOrigins } from '../../common/trusted-origins';
 
-const ALLOWED_WS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:3001')
-  .split(',').map(o => o.trim()).filter(Boolean);
+const ALLOWED_WS_ORIGINS = [...buildTrustedOrigins()];
 
 /** Роли с полным WS-доступом — могут слушать любую project/task комнату.
  *  Все остальные пользователи могут слушать ТОЛЬКО:

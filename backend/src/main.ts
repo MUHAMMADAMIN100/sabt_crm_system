@@ -11,6 +11,11 @@ import 'winston-daily-rotate-file';
 import * as compression from 'compression';
 import helmet from 'helmet';
 import * as cookieParser from 'cookie-parser';
+import {
+  buildTrustedOrigins,
+  createStateChangingOriginGuard,
+  normalizeHttpOrigin,
+} from './common/trusted-origins';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -30,6 +35,7 @@ const ENV_PLACEHOLDERS: Record<string, string[]> = {
   JWT_SECRET: ['CHANGE_THIS_TO_RANDOM_64_BYTE_HEX'],
   DATABASE_URL: ['postgresql://erp_user:STRONG_PASSWORD@localhost:5432/erp_db'],
   APP_URL: ['https://your-frontend.vercel.app'],
+  FRONTEND_URL: ['https://your-frontend.vercel.app'],
   CORS_ORIGINS: ['https://your-frontend.vercel.app'],
   BREVO_API_KEY: ['your-brevo-api-key'],
   MAIL_FROM: ['noreply@your-domain.com'],
@@ -40,7 +46,7 @@ const ENV_PLACEHOLDERS: Record<string, string[]> = {
 
 /** Валидация критических env-переменных при старте.
  *  Цель: не дать приложению подняться с дефолтными или пустыми секретами.
- *  CRITICAL (refuse boot): JWT_SECRET, DATABASE_URL, CORS_ORIGINS, NODE_ENV.
+ *  CRITICAL (refuse boot): JWT_SECRET, DATABASE_URL.
  *  ADVISORY (log warning): остальные интеграции — без них фича не работает,
  *  но приложение поднимется. */
 function assertSecurityCriticalEnv() {
@@ -62,9 +68,11 @@ function assertSecurityCriticalEnv() {
   if (isProduction) {
     // DATABASE_URL — критично, без БД приложение бесполезно.
     if (!process.env.DATABASE_URL) errors.push('DATABASE_URL is required in production');
-    // CORS_ORIGINS / NODE_ENV — желательно, но если не задано — используем
-    // fallback и предупреждаем. Не валим контейнер из-за этого.
-    if (!process.env.CORS_ORIGINS) warnings.push('CORS_ORIGINS not set — using built-in fallback list (Vercel + localhost)');
+    // FRONTEND_URL / CORS_ORIGINS — если не заданы, остаётся только точный
+    // встроенный production-origin. Localhost в production не добавляется.
+    if (!process.env.FRONTEND_URL && !process.env.CORS_ORIGINS) {
+      warnings.push('FRONTEND_URL and CORS_ORIGINS are not set — only the built-in production frontend is trusted');
+    }
     if (process.env.NODE_ENV !== 'production') warnings.push('NODE_ENV is not "production" — некоторые оптимизации Nest/winston отключены');
   }
 
@@ -79,19 +87,19 @@ function assertSecurityCriticalEnv() {
     }
   }
 
-  // ─── CORS_ORIGINS: дополнительные проверки на localhost / wildcard ─────
-  if (isProduction && process.env.CORS_ORIGINS) {
-    const origins = process.env.CORS_ORIGINS.split(',').map(o => o.trim());
+  // ─── Frontend origins: дополнительные проверки ────────────────────
+  if (isProduction && (process.env.FRONTEND_URL || process.env.CORS_ORIGINS)) {
+    const origins = [
+      process.env.FRONTEND_URL,
+      ...(process.env.CORS_ORIGINS || '').split(','),
+    ].map(o => o?.trim()).filter((origin): origin is string => Boolean(origin));
     const hasLocalhost = origins.some(o => /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(o));
     if (hasLocalhost) {
-      warnings.push(`CORS_ORIGINS includes localhost in production — remove dev origins from prod env`);
+      warnings.push('FRONTEND_URL/CORS_ORIGINS includes localhost in production — it will be ignored');
     }
     const hasWildcard = origins.some(o => o === '*');
     if (hasWildcard) {
-      // Wildcard "*" с credentials:true браузеры всё равно отвергают —
-      // но из-за этого ломаются легитимные cookies. Громко предупреждаем,
-      // не валим контейнер: будут страдать только запросы за wildcard.
-      warnings.push('CORS_ORIGINS contains "*" — браузеры отвергают это с credentials:true. Замени на явные URLs.');
+      warnings.push('FRONTEND_URL/CORS_ORIGINS contains "*" — it will be ignored; list exact origins');
     }
   }
 
@@ -164,6 +172,10 @@ async function bootstrap() {
     logger: bootstrapLogger,
   });
 
+  // Railway/Vercel ставят reverse proxy перед приложением. Один доверенный
+  // proxy-hop нужен для корректного req.ip (throttling) и req.protocol.
+  app.set('trust proxy', 1);
+
   app.use(compression({ level: 6, threshold: 1024 }));
   // Security HTTP-заголовки: X-Frame-Options, X-Content-Type-Options,
   // Referrer-Policy, Strict-Transport-Security (HSTS) и т.д.
@@ -180,30 +192,22 @@ async function bootstrap() {
   // куки — пользователи больше не хранят JWT в localStorage.
   app.use(cookieParser());
 
-  // Разбираем CORS_ORIGINS из ENV
-  const allowedOrigins = process.env.CORS_ORIGINS
-    ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
-    : [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'https://sabt-crm-system-frontend.vercel.app',
-    ];
+  // Единый точный allowlist для CORS и защиты cookie-auth mutations.
+  // Preview-домен нужно явно добавить в CORS_ORIGINS перед тестированием.
+  const trustedOrigins = buildTrustedOrigins();
+  app.use(createStateChangingOriginGuard(trustedOrigins));
 
-  // Настройка CORS: разрешаем явно перечисленные origins + любые preview-
-  // деплои Vercel (*.vercel.app) — у Vercel каждый коммит может получить
-  // отдельный URL вида sabt-crm-system-frontend-abc123.vercel.app, и мы
-  // не хотим ломать их CORS-ом.
-  // Никаких "*"  — иначе SameSite=None cookies сломаются + CSRF.
+  // Никаких wildcard/regex origins: с SameSite=None cookie это открыло бы
+  // credentialed API любому чужому deployment на той же hosting-платформе.
   // Для unknown origin отдаём (null, false) — браузер просто не получит
   // Access-Control-Allow-Origin и заблокирует ответ сам. Никаких 500-ок
   // и шумных error-логов от нелегитимных origin'ов.
-  const VERCEL_PREVIEW_RE = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i;
   app.enableCors({
     origin: (origin, cb) => {
       // origin === undefined → не браузерный запрос (curl, server-to-server)
       if (!origin) return cb(null, true);
-      if (allowedOrigins.includes(origin)) return cb(null, true);
-      if (VERCEL_PREVIEW_RE.test(origin)) return cb(null, true);
+      const normalized = normalizeHttpOrigin(origin);
+      if (normalized && trustedOrigins.has(normalized)) return cb(null, true);
       return cb(null, false);
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

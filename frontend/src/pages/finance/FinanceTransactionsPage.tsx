@@ -20,6 +20,7 @@ export default function FinanceTransactionsPage() {
   const [q, setQ] = useState('');
   const [dq, setDq] = useState(''); // дебаунс поиска — не дёргаем сервер на каждый символ
   const [typeFilter, setTypeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [addType, setAddType] = useState<string | null>(null);
   // Вид: журнал-таблица или календарь месяца (карточки операций по дням).
@@ -32,20 +33,31 @@ export default function FinanceTransactionsPage() {
     const t = setTimeout(() => setDq(q.trim()), 350);
     return () => clearTimeout(t);
   }, [q]);
-  useEffect(() => { setPage(1); }, [dq, typeFilter]);
+  useEffect(() => { setPage(1); }, [dq, typeFilter, statusFilter]);
 
   const txQ = useQuery({
-    queryKey: ['finance', 'transactions', { page, dq, typeFilter }],
-    queryFn: () => financeApi.transactions({ page, pageSize: PAGE_SIZE, search: dq || undefined, type: typeFilter || undefined }),
+    queryKey: ['finance', 'transactions', { page, dq, typeFilter, statusFilter }],
+    queryFn: () => financeApi.transactions({
+      page,
+      pageSize: PAGE_SIZE,
+      search: dq || undefined,
+      type: typeFilter || undefined,
+      status: statusFilter || undefined,
+    }),
     placeholderData: (prev: any) => prev, // при листании не мигаем пустотой
   });
   // Календарь берёт СВОЙ месяц целиком — в постраничном журнале месяца может не быть.
   const { data: calData } = useQuery({
-    queryKey: ['finance', 'transactions', 'month', calYm],
+    queryKey: ['finance', 'transactions', 'month', calYm, statusFilter],
     queryFn: () => {
       const [y, m] = calYm.split('-').map(Number);
       const last = new Date(y, m, 0).getDate();
-      return financeApi.transactions({ from: `${calYm}-01`, to: `${calYm}-${String(last).padStart(2, '0')}`, pageSize: 1000 });
+      return financeApi.transactions({
+        from: `${calYm}-01`,
+        to: `${calYm}-${String(last).padStart(2, '0')}`,
+        pageSize: 1000,
+        status: statusFilter || undefined,
+      });
     },
     enabled: view === 'calendar',
   });
@@ -58,6 +70,8 @@ export default function FinanceTransactionsPage() {
 
   const matches = (t: any) => {
     if (typeFilter && t.type !== typeFilter) return false;
+    if (statusFilter === 'cancelled' && t.status !== 'cancelled') return false;
+    if (!statusFilter && t.status === 'cancelled') return false;
     if (dq) {
       const hay = [t.comment, t.categoryName].filter(Boolean).join(' ').toLowerCase();
       if (!hay.includes(dq.toLowerCase())) return false;
@@ -87,13 +101,20 @@ export default function FinanceTransactionsPage() {
   /** Выгрузка CSV по текущему фильтру — сервер отдаёт все страницы разом. */
   async function exportCsv() {
     try {
-      const res = await financeApi.transactions({ pageSize: 100000, search: dq || undefined, type: typeFilter || undefined });
+      const res = await financeApi.transactions({
+        pageSize: 100000,
+        search: dq || undefined,
+        type: typeFilter || undefined,
+        status: statusFilter || undefined,
+      });
       const rows: Array<Array<string | number | null>> = [
-        ['Дата', 'Тип', 'Категория', 'Описание', 'Сумма', 'Со счёта', 'На счёт', 'Проект', 'Сотрудник', 'Месяц ЗП', 'Долг'],
+        ['Дата', 'Статус', 'Тип', 'Категория', 'Описание', 'Сумма', 'Со счёта', 'На счёт', 'Проект', 'Сотрудник', 'Месяц ЗП', 'Долг'],
         ...((res?.items ?? []) as any[]).map((t: any) => [
-          String(t.date || '').slice(0, 10), TYPE_LABEL[t.type] ?? t.type, t.categoryName, t.comment,
-          t.amount, t.type === 'transfer' ? t.fromAccountName : (t.type === 'expense' ? t.accountName : null),
-          t.type === 'transfer' ? t.toAccountName : (t.type !== 'expense' ? t.accountName : null),
+          String(t.date || '').slice(0, 10),
+          t.status === 'cancelled' ? 'Отменено' : String(t.date || '').slice(0, 10) > todayISO() ? 'Запланировано' : 'Проведено',
+          TYPE_LABEL[t.type] ?? t.type, t.categoryName, t.comment,
+          t.amount, ['transfer', 'saving'].includes(t.type) ? t.fromAccountName : (t.type === 'expense' ? t.accountName : null),
+          ['transfer', 'saving'].includes(t.type) ? t.toAccountName : (t.type !== 'expense' ? t.accountName : null),
           t.projectName, t.employeeName, t.employeeId ? (t.salaryYm ?? String(t.date || '').slice(0, 7)) : null, t.debtName,
         ]),
       ];
@@ -116,15 +137,22 @@ export default function FinanceTransactionsPage() {
       {addType && <TransactionModal initialType={addType} onClose={() => setAddType(null)} />}
 
       <div className="toolbar">
-        <div className="view-toggle">
-          <button className={view === 'table' ? 'active' : ''} onClick={() => setView('table')}><FinIcon name="transactions" size={13} /> Таблица</button>
-          <button className={view === 'calendar' ? 'active' : ''} onClick={() => setView('calendar')}><FinIcon name="overview" size={13} /> Календарь</button>
+        <div className="view-toggle" role="group" aria-label="Вид журнала">
+          <button className={view === 'table' ? 'active' : ''} aria-pressed={view === 'table'}
+            onClick={() => setView('table')}><FinIcon name="transactions" size={13} /> Таблица</button>
+          <button className={view === 'calendar' ? 'active' : ''} aria-pressed={view === 'calendar'}
+            onClick={() => setView('calendar')}><FinIcon name="overview" size={13} /> Календарь</button>
         </div>
         {view === 'calendar' && <MonthNav ym={calYm} onChange={setCalYm} />}
         <input className="grow" style={{ maxWidth: 300 }} placeholder="Поиск…" value={q} onChange={(e) => setQ(e.target.value)} />
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={{ width: 150 }}>
           <option value="">Все типы</option>
           {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: 160 }}>
+          <option value="">Действующие</option>
+          <option value="cancelled">Отменённые</option>
+          <option value="all">Все статусы</option>
         </select>
         {view === 'table' && (
           <>
@@ -141,10 +169,10 @@ export default function FinanceTransactionsPage() {
       ) : txQ.isError ? (
         <FinLoadError onRetry={() => txQ.refetch()} />
       ) : txns.length === 0 ? (
-        <div className="card empty"><div className="big"><FinIcon name="wallet" size={30} /></div>{dq || typeFilter ? 'Ничего не найдено по фильтру' : 'Нет операций — добавьте кнопками сверху'}</div>
+        <div className="card empty"><div className="big"><FinIcon name="wallet" size={30} /></div>{dq || typeFilter || statusFilter ? 'Ничего не найдено по фильтру' : 'Нет операций — добавьте кнопками сверху'}</div>
       ) : (
         <>
-          <div className="table-wrap" style={{ overflowX: 'auto' }}>
+          <div className="table-wrap fin-wide-table">
             <table>
               <thead>
                 <tr>
@@ -213,17 +241,24 @@ function TxCalendar({ ym, txns, onEdit, onAdd }: {
   // Итоги дня/месяца — только реальные деньги (доход/расход, без переводов).
   const totals = useMemo(() => {
     const day = new Map<string, { inc: number; exp: number }>();
-    let inc = 0, exp = 0, count = 0;
+    let inc = 0, exp = 0, plannedInc = 0, plannedExp = 0, count = 0;
     for (const [k, list] of byDay) {
       const t = { inc: 0, exp: 0 };
       for (const x of list) {
-        if (x.type === 'income') t.inc += Number(x.amount) || 0;
-        else if (x.type === 'expense') t.exp += Number(x.amount) || 0;
+        if (x.status === 'cancelled') continue;
+        const future = String(x.date || '').slice(0, 10) > todayISO();
+        if (x.type === 'income') {
+          if (future) plannedInc += Number(x.amount) || 0;
+          else t.inc += Number(x.amount) || 0;
+        } else if (x.type === 'expense') {
+          if (future) plannedExp += Number(x.amount) || 0;
+          else t.exp += Number(x.amount) || 0;
+        }
       }
       day.set(k, t);
       inc += t.inc; exp += t.exp; count += list.length;
     }
-    return { day, inc, exp, count };
+    return { day, inc, exp, plannedInc, plannedExp, count };
   }, [byDay]);
 
   const today = todayISO();
@@ -237,6 +272,11 @@ function TxCalendar({ ym, txns, onEdit, onAdd }: {
             <span className="pos">+{money(totals.inc)}</span>
             <span className="neg">−{money(totals.exp)}</span>
             <span className={'net ' + (net >= 0 ? 'pos' : 'neg')}>{money(net, true)}</span>
+            {(totals.plannedInc > 0 || totals.plannedExp > 0) && (
+              <span className="muted mini">
+                план: +{moneyBare(totals.plannedInc)} / −{moneyBare(totals.plannedExp)}
+              </span>
+            )}
           </div>
           <span className="mini muted">{totals.count} операций за месяц</span>
         </div>
@@ -267,7 +307,7 @@ function TxCalendar({ ym, txns, onEdit, onAdd }: {
                     )}
                     {visible.map((t) => (
                       <button key={t.id} type="button" className={'tx-row ' + t.type}
-                        title={`${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}`}
+                        title={`${String(t.date || '').slice(0, 10) > today ? 'Запланировано · ' : ''}${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}`}
                         onClick={() => onEdit(t)}>
                         <i className="d" />
                         <span className="t">{t.comment || t.categoryName || TYPE_LABEL[t.type]}</span>
@@ -293,11 +333,16 @@ function TxCalendar({ ym, txns, onEdit, onAdd }: {
   );
 }
 
-function AccountSelect({ value, accounts, onChange }: { value?: string; accounts: any[]; onChange: (v: string | null) => void }) {
+function AccountSelect({ value, accounts, onChange, disabled = false }: {
+  value?: string;
+  accounts: any[];
+  onChange: (v: string | null) => void;
+  disabled?: boolean;
+}) {
   // Архивные счета не предлагаем, но если операция уже на таком — показываем его.
   const opts = accounts.filter((a: any) => !a.archived || a.id === value);
   return (
-    <select className="cell-input" value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
+    <select className="cell-input" value={value ?? ''} disabled={disabled} onChange={(e) => onChange(e.target.value || null)}>
       <option value="">—</option>
       {opts.map((a: any) => <option key={a.id} value={a.id}>{a.name}{a.archived ? ' (архив)' : ''}</option>)}
     </select>
@@ -308,17 +353,26 @@ function TxRow({ t, accounts, categories, patch, remove }: {
   t: any; accounts: any[]; categories: any[];
   patch: (id: string, data: any) => void; remove: (id: string) => void;
 }) {
+  const cancelled = t.status === 'cancelled';
   const cats = categories.filter((c: any) => c.type === t.type);
-  const fromActive = t.type === 'expense' || t.type === 'transfer';
+  const fromActive = t.type === 'expense' || t.type === 'transfer' || t.type === 'saving';
   const toActive = t.type === 'income' || t.type === 'transfer' || t.type === 'saving';
-  // decorated tx: у перевода счета в fromAccountId/toAccountId, у остальных — в accountId
-  const fromValue = t.type === 'transfer' ? t.fromAccountId : t.type === 'expense' ? t.accountId : undefined;
-  const toValue = t.type === 'transfer' ? t.toAccountId : toActive ? t.accountId : undefined;
+  // decorated tx: у перевода/накопления счета в fromAccountId/toAccountId.
+  const paired = t.type === 'transfer' || t.type === 'saving';
+  const fromValue = paired ? t.fromAccountId : t.type === 'expense' ? t.accountId : undefined;
+  const toValue = paired
+    ? (t.toAccountId ?? (t.type === 'saving' ? t.accountId : undefined))
+    : toActive ? t.accountId : undefined;
 
   function changeType(nt: string) {
+    if (cancelled) return;
+    if ((nt === 'transfer' || nt === 'saving') && !paired) {
+      toast.error('Для перевода или накопления создайте отдельную операцию и сразу выберите оба счёта');
+      return;
+    }
     // Смена типа очищает категорию и неприменимые счета (применимые переносим).
     const data: any = { type: nt, categoryId: null };
-    if (nt === 'transfer') {
+    if (nt === 'transfer' || nt === 'saving') {
       data.accountId = null;
       data.fromAccountId = fromValue ?? null;
       data.toAccountId = toValue ?? null;
@@ -327,7 +381,7 @@ function TxRow({ t, accounts, categories, patch, remove }: {
       data.fromAccountId = null;
       data.toAccountId = null;
     } else {
-      // income | saving
+      // income
       data.accountId = toValue ?? null;
       data.fromAccountId = null;
       data.toAccountId = null;
@@ -336,14 +390,17 @@ function TxRow({ t, accounts, categories, patch, remove }: {
   }
 
   async function confirmRemove() {
-    if (await finConfirm('Удалить операцию? Балансы счетов пересчитаются.', { danger: true, confirmLabel: 'Удалить' })) remove(t.id);
+    if (await finConfirm(
+      'Отменить операцию? Она останется в журнале аудита, а балансы счетов пересчитаются.',
+      { danger: true, confirmLabel: 'Отменить операцию' },
+    )) remove(t.id);
   }
 
   return (
-    <tr>
-      <td><input type="date" className="cell-input" value={String(t.date || '').slice(0, 10)} onChange={(e) => patch(t.id, { date: e.target.value })} /></td>
+    <tr className={cancelled ? 'fin-tx-cancelled' : undefined}>
+      <td><input type="date" className="cell-input" disabled={cancelled} value={String(t.date || '').slice(0, 10)} onChange={(e) => patch(t.id, { date: e.target.value })} /></td>
       <td>
-        <select className={'cell-input badge-select ' + t.type} value={t.type} onChange={(e) => changeType(e.target.value)}>
+        <select className={'cell-input badge-select ' + t.type} disabled={cancelled} value={t.type} onChange={(e) => changeType(e.target.value)}>
           {TYPES.map((x) => <option key={x} value={x}>{TYPE_LABEL[x]}</option>)}
         </select>
       </td>
@@ -353,7 +410,7 @@ function TxRow({ t, accounts, categories, patch, remove }: {
           : (
             <div className="fin-category-select">
               {t.categoryId && <CatIcon icon={t.categoryIcon} color={t.categoryColor} size={24} />}
-              <select className="cell-input" value={t.categoryId ?? ''}
+              <select className="cell-input" disabled={cancelled} value={t.categoryId ?? ''}
                 onChange={(e) => patch(t.id, { categoryId: e.target.value || null })}>
                 <option value="">—</option>
                 {cats.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -362,26 +419,52 @@ function TxRow({ t, accounts, categories, patch, remove }: {
           )}
       </td>
       <td>
-        <input className="cell-input" defaultValue={t.comment ?? ''} placeholder="описание"
+        <input className="cell-input" disabled={cancelled} defaultValue={t.comment ?? ''} placeholder="описание"
           onBlur={(e) => { const v = e.target.value.trim(); if (v !== (t.comment ?? '')) patch(t.id, { comment: v || null }); }} />
       </td>
       <td className="num">
-        <input className="cell-input" inputMode="decimal" defaultValue={t.amount || ''} placeholder="0" style={{ textAlign: 'right' }}
+        <input className="cell-input" disabled={cancelled} inputMode="decimal" defaultValue={t.amount || ''} placeholder="0" style={{ textAlign: 'right' }}
           onBlur={(e) => { const v = parseFloat(e.target.value.replace(',', '.')) || 0; if (v !== t.amount) patch(t.id, { amount: v }); }} />
       </td>
       <td>{fromActive
-        ? <AccountSelect value={fromValue} accounts={accounts} onChange={(v) => patch(t.id, t.type === 'transfer' ? { fromAccountId: v } : { accountId: v })} />
+        ? <AccountSelect
+            value={fromValue}
+            accounts={accounts}
+            disabled={cancelled}
+            onChange={(v) => patch(t.id, paired
+              ? { fromAccountId: v, toAccountId: toValue ?? null, accountId: null }
+              : { accountId: v })}
+          />
         : <span className="muted mini">—</span>}</td>
       <td>{toActive
-        ? <AccountSelect value={toValue} accounts={accounts} onChange={(v) => patch(t.id, t.type === 'transfer' ? { toAccountId: v } : { accountId: v })} />
+        ? <AccountSelect
+            value={toValue}
+            accounts={accounts}
+            disabled={cancelled}
+            onChange={(v) => patch(t.id, paired
+              ? { fromAccountId: fromValue ?? null, toAccountId: v, accountId: null }
+              : { accountId: v })}
+          />
         : <span className="muted mini">—</span>}</td>
       <td>{t.employeeId
         ? <input type="month" className="cell-input" value={t.salaryYm ?? String(t.date || '').slice(0, 7)}
+            disabled={cancelled}
             title="Месяц начисления — за какой месяц эта выплата попадёт в таблицу ЗП"
             onChange={(e) => e.target.value && patch(t.id, { salaryYm: e.target.value })} />
         : <span className="muted mini">—</span>}</td>
       <td className="num">
-        <button className="btn ghost sm row-actions" title="Удалить" onClick={confirmRemove}><FinIcon name="trash" size={14} /></button>
+        {cancelled
+          ? <span className="badge wait">отменено</span>
+          : (
+            <button
+              className="btn ghost sm row-actions"
+              title="Отменить операцию"
+              aria-label="Отменить операцию"
+              onClick={confirmRemove}
+            >
+              <FinIcon name="undo" size={14} />
+            </button>
+          )}
       </td>
     </tr>
   );

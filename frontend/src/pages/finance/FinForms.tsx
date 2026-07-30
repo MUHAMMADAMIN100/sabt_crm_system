@@ -104,10 +104,12 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
   const [role, setRole] = useState(employee?.role ?? '');
   const [category, setCategory] = useState(employee?.category ?? '');
   const [hireDate, setHireDate] = useState(employee?.hireDate ?? '');
+  const [terminationDate, setTerminationDate] = useState(employee?.terminationDate ?? '');
   const [salary, setSalary] = useState(employee != null ? String(employee.salary ?? '') : '');
   const [salaryEffectiveYm, setSalaryEffectiveYm] = useState(currentYm());
   const [status, setStatus] = useState<string>(employee?.status ?? 'active');
   const [busy, setBusy] = useState(false);
+  const invalidEmploymentDates = !!terminationDate && !!hireDate && terminationDate < hireDate;
 
   async function save() {
     if (!name.trim() || busy) return;
@@ -118,7 +120,9 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
       const salaryChanged = !isEdit || num(salary) !== Number(employee?.salary || 0);
       const p: any = {
         name: name.trim(), role: role.trim() || null, category: category.trim() || null,
-        hireDate: hireDate || null, salary: num(salary), status,
+        hireDate: hireDate || null,
+        terminationDate: status === 'fired' ? terminationDate || null : null,
+        salary: num(salary), status,
       };
       if (salaryChanged) p.salaryEffectiveYm = salaryEffectiveYm;
       if (isEdit) await financeApi.updateEmployee(employee.id, p);
@@ -147,9 +151,11 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
   return (
     <FinModal title={isEdit ? 'Сотрудник' : 'Новый сотрудник'} onClose={onClose} width={460}
       footer={<>
-        {isEdit && <DeleteButton confirmText={`Удалить сотрудника «${employee!.name}»? Его зарплатные операции останутся в журнале.`} busy={busy} onDelete={remove} />}
+        {isEdit && employee?.status !== 'fired' && (
+          <DeleteButton label="Уволить" confirmText={`Уволить сотрудника «${employee!.name}»? История зарплаты и операций сохранится.`} busy={busy} onDelete={remove} />
+        )}
         <button className="btn ghost" onClick={onClose}>Отмена</button>
-        <button className="btn primary" disabled={!name.trim() || busy} onClick={save}>{busy ? 'Сохраняю…' : isEdit ? 'Сохранить' : 'Добавить'}</button>
+        <button className="btn primary" disabled={!name.trim() || invalidEmploymentDates || busy} onClick={save}>{busy ? 'Сохраняю…' : isEdit ? 'Сохранить' : 'Добавить'}</button>
       </>}>
       <div className="field"><label>ФИО</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
       <div className="form-grid">
@@ -177,11 +183,26 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
       <div className="form-grid">
         <div className="field"><label>Дата приёма</label><input type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)} /></div>
         <div className="field"><label>Статус</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select value={status} onChange={(e) => {
+            const next = e.target.value;
+            setStatus(next);
+            if (next === 'fired' && !terminationDate) setTerminationDate(todayISO());
+            if (next === 'active') {
+              setTerminationDate('');
+              if (employee?.status === 'fired') setHireDate(todayISO());
+            }
+          }}>
             <option value="active">Работает</option><option value="fired">Уволен</option>
           </select>
         </div>
       </div>
+      {status === 'fired' && (
+        <div className="field"><label>Последний день работы</label>
+          <input type="date" value={terminationDate} onChange={(e) => setTerminationDate(e.target.value)} />
+          {invalidEmploymentDates && <span className="mini neg">Дата увольнения не может быть раньше даты приёма.</span>}
+          <span className="mini muted">Сотрудник останется в ведомостях за месяцы, когда он работал.</span>
+        </div>
+      )}
     </FinModal>
   );
 }

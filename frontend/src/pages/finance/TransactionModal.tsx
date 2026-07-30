@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { TYPE_LABEL, todayISO, apiErr } from './finlib';
+import { TYPE_LABEL, todayISO, currentYm, apiErr } from './finlib';
 import FinIcon from './FinIcon';
 import { useModalKeys, invalidateFinance, invalidateFinanceAll } from './FinKit';
 import { financeApi } from '@/services/api.service';
@@ -31,25 +31,46 @@ export default function TransactionModal({ initial, initialType, initialDate, on
   const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
   const [categoryId, setCategoryId] = useState<string>(initial?.categoryId ?? '');
   const [accountFrom, setAccountFrom] = useState<string>(
-    initial ? ((initial.type === 'transfer' ? initial.fromAccountId : initial.type === 'expense' ? initial.accountId : '') ?? '') : ''
+    initial ? ((['transfer', 'saving'].includes(initial.type) ? initial.fromAccountId : initial.type === 'expense' ? initial.accountId : '') ?? '') : ''
   );
   const [accountTo, setAccountTo] = useState<string>(
-    initial ? ((initial.type === 'transfer' ? initial.toAccountId : initial.type !== 'expense' ? initial.accountId : '') ?? '') : ''
+    initial ? ((['transfer', 'saving'].includes(initial.type) ? (initial.toAccountId ?? initial.accountId) : initial.type !== 'expense' ? initial.accountId : '') ?? '') : ''
   );
   const [projectId, setProjectId] = useState<string>(initial?.projectId ?? '');
   const [employeeId, setEmployeeId] = useState<string>(initial?.employeeId ?? '');
   const [debtId, setDebtId] = useState<string>(initial?.debtId ?? '');
+  const [salaryYm, setSalaryYm] = useState<string>(
+    initial?.salaryYm || String(initial?.date ?? '').slice(0, 7) || currentYm(),
+  );
   const [comment, setComment] = useState<string>(initial?.comment ?? '');
   const [busy, setBusy] = useState(false);
 
-  const needFrom = type === 'expense' || type === 'transfer';
+  const needFrom = type === 'expense' || type === 'transfer' || type === 'saving';
   const needTo = type === 'income' || type === 'transfer' || type === 'saving';
   const needCategory = type !== 'transfer';
   const cats = categories.filter((c: any) => c.type === type);
+  const selectedCategory = categories.find((c: any) => c.id === categoryId) as any;
+  const salaryExpense = type === 'expense'
+    && (selectedCategory?.key === 'salary' || (!selectedCategory && !!initial?.employeeId));
+  const debtExpense = type === 'expense'
+    && (selectedCategory?.key === 'debt' || (!selectedCategory && !!initial?.debtId));
 
   const amt = parseFloat(amount.replace(',', '.'));
   const valid = amt > 0 && (!needFrom || accountFrom) && (!needTo || accountTo) &&
-    (type !== 'transfer' || accountFrom !== accountTo);
+    (!['transfer', 'saving'].includes(type) || accountFrom !== accountTo) &&
+    (!salaryExpense || (!!employeeId && /^\d{4}-(0[1-9]|1[0-2])$/.test(salaryYm))) &&
+    (!debtExpense || !!debtId);
+
+  function selectCategory(nextId: string) {
+    if (nextId === '__new__') {
+      setAddingCat(true);
+      return;
+    }
+    setCategoryId(nextId);
+    const next = categories.find((c: any) => c.id === nextId) as any;
+    if (next?.key !== 'salary') setEmployeeId('');
+    if (next?.key !== 'debt') setDebtId('');
+  }
 
   async function createCategory() {
     const name = newCatName.trim();
@@ -77,10 +98,11 @@ export default function TransactionModal({ initial, initialType, initialDate, on
       comment: comment.trim() || empty,
       categoryId: needCategory ? categoryId || empty : empty,
       projectId: type === 'income' ? projectId || empty : empty,
-      employeeId: type === 'expense' ? employeeId || empty : empty,
-      debtId: type === 'expense' ? debtId || empty : empty,
+      employeeId: salaryExpense ? employeeId : empty,
+      salaryYm: salaryExpense ? salaryYm : empty,
+      debtId: debtExpense ? debtId : empty,
     };
-    if (type === 'transfer') {
+    if (type === 'transfer' || type === 'saving') {
       payload.fromAccountId = accountFrom;
       payload.toAccountId = accountTo;
       if (initial) payload.accountId = null;
@@ -106,12 +128,13 @@ export default function TransactionModal({ initial, initialType, initialDate, on
       <div className="modal" role="dialog" aria-modal="true" aria-label={initial ? 'Изменить операцию' : 'Новая операция'} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{initial ? 'Изменить операцию' : 'Новая операция'}</h3>
-          <button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button>
+          <button className="btn ghost sm" aria-label="Закрыть окно" onClick={onClose}><FinIcon name="close" size={16} /></button>
         </div>
         <div className="modal-body">
-          <div className="type-tabs">
+          <div className="type-tabs" role="group" aria-label="Тип операции">
             {TYPES.map((t) => (
               <button key={t} className={`type-tab t-${t}` + (type === t ? ' active' : '')}
+                aria-pressed={type === t}
                 onClick={() => { setType(t); setCategoryId(''); }}>
                 {TYPE_LABEL[t]}
               </button>
@@ -127,7 +150,7 @@ export default function TransactionModal({ initial, initialType, initialDate, on
 
           {needCategory && (
             <div className="field"><label>Категория</label>
-              <select value={categoryId} onChange={(e) => { if (e.target.value === '__new__') setAddingCat(true); else setCategoryId(e.target.value); }}>
+              <select value={categoryId} onChange={(e) => selectCategory(e.target.value)}>
                 <option value="">— выбрать —</option>
                 {cats.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 <option value="__new__">＋ Новая категория…</option>
@@ -171,20 +194,25 @@ export default function TransactionModal({ initial, initialType, initialDate, on
               </select>
             </div>
           )}
-          {type === 'expense' && (
+          {salaryExpense && (
             <div className="form-grid">
               <div className="field"><label>Сотрудник</label>
                 <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-                  <option value="">— не привязан —</option>
+                  <option value="">— выбрать сотрудника —</option>
                   {employees.map((em: any) => <option key={em.id} value={em.id}>{em.name}</option>)}
                 </select>
               </div>
-              <div className="field"><label>Долг</label>
+              <div className="field"><label>За какой месяц начисление</label>
+                <input type="month" value={salaryYm} onChange={(e) => setSalaryYm(e.target.value)} />
+              </div>
+            </div>
+          )}
+          {debtExpense && (
+            <div className="field"><label>Долг</label>
                 <select value={debtId} onChange={(e) => setDebtId(e.target.value)}>
-                  <option value="">— не привязан —</option>
+                  <option value="">— выбрать долг —</option>
                   {debts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
-              </div>
             </div>
           )}
 

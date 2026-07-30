@@ -16,10 +16,13 @@ export default function TxTable({ txns, onEdit, onDelete }: {
   }
 
   const sign = (t: any) =>
-    t.type === 'income' || t.type === 'saving' ? { s: '+', cls: 'pos' } : t.type === 'expense' ? { s: '−', cls: 'neg' } : { s: '', cls: 'muted' };
+    t.type === 'income' ? { s: '+', cls: 'pos' } : t.type === 'expense' ? { s: '−', cls: 'neg' } : { s: '', cls: 'muted' };
 
   const accountCell = (t: any) => {
-    if (t.type === 'transfer') return `${t.fromAccountName ?? '—'} → ${t.toAccountName ?? '—'}`;
+    if (t.type === 'saving' && !t.fromAccountId && !t.toAccountId && t.accountId) {
+      return `Историческое пополнение → ${t.accountName ?? '—'}`;
+    }
+    if (t.type === 'transfer' || t.type === 'saving') return `${t.fromAccountName ?? '—'} → ${t.toAccountName ?? '—'}`;
     return t.accountName ?? t.fromAccountName ?? t.toAccountName ?? '—';
   };
 
@@ -46,8 +49,8 @@ export default function TxTable({ txns, onEdit, onDelete }: {
                 <td><span className={'badge ' + t.type}>{TYPE_LABEL[t.type]}</span></td>
                 <td>
                   <div className="flex">
-                    {t.type === 'transfer'
-                      ? <CatIcon icon="transactions" color="var(--accent)" size={26} />
+                    {t.type === 'transfer' || t.type === 'saving'
+                      ? <CatIcon icon={t.type === 'saving' ? 'piggy' : 'transactions'} color={t.type === 'saving' ? 'var(--violet)' : 'var(--accent)'} size={26} />
                       : <CatIcon icon={t.categoryIcon} color={t.categoryColor} size={26} />}
                     <div>
                       <div>{t.categoryName ?? (t.type === 'transfer' ? 'Перевод' : '—')}</div>
@@ -62,7 +65,21 @@ export default function TxTable({ txns, onEdit, onDelete }: {
                   <td className="num">
                     <span className="row-actions">
                       {onEdit && <button className="btn ghost sm" onClick={() => onEdit(t)}><FinIcon name="edit" size={15} /></button>}
-                      {onDelete && <button className="btn ghost sm danger" onClick={async () => (await finConfirm('Удалить операцию? Балансы счетов пересчитаются.', { danger: true, confirmLabel: 'Удалить' })) && onDelete(t.id)}><FinIcon name="trash" size={15} /></button>}
+                      {onDelete && (
+                        <button
+                          className="btn ghost sm danger"
+                          aria-label="Отменить операцию"
+                          title="Отменить операцию"
+                          onClick={async () => (
+                            await finConfirm(
+                              'Отменить операцию? Она останется в журнале аудита, а балансы счетов пересчитаются.',
+                              { danger: true, confirmLabel: 'Отменить операцию' },
+                            )
+                          ) && onDelete(t.id)}
+                        >
+                          <FinIcon name="undo" size={15} />
+                        </button>
+                      )}
                     </span>
                   </td>
                 )}

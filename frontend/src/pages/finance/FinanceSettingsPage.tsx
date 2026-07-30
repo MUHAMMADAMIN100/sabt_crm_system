@@ -15,16 +15,24 @@ export default function FinanceSettingsPage() {
 
   const accountsQ = useQuery<any[]>({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
   const accounts = accountsQ.data ?? [];
-  const { data: balances } = useQuery<any>({ queryKey: ['finance', 'accounts-balances'], queryFn: () => financeApi.accountsBalances() });
-  const { data: categories = [] } = useQuery<any[]>({ queryKey: ['finref', 'categories'], queryFn: () => financeApi.categories() });
-  const { data: projects = [] } = useQuery<any[]>({ queryKey: ['finref', 'projects'], queryFn: () => financeApi.projects() });
-  const { data: employees = [] } = useQuery<any[]>({ queryKey: ['finref', 'employees'], queryFn: () => financeApi.employees() });
-  const { data: subs = [] } = useQuery<any[]>({ queryKey: ['finref', 'subscriptions'], queryFn: () => financeApi.subscriptions() });
-  const { data: debts = [] } = useQuery<any[]>({ queryKey: ['finance', 'debts'], queryFn: () => financeApi.debts() });
+  const balancesQ = useQuery<any>({ queryKey: ['finance', 'accounts-balances'], queryFn: () => financeApi.accountsBalances() });
+  const categoriesQ = useQuery<any[]>({ queryKey: ['finref', 'categories'], queryFn: () => financeApi.categories() });
+  const projectsQ = useQuery<any[]>({ queryKey: ['finref', 'projects'], queryFn: () => financeApi.projects() });
+  const employeesQ = useQuery<any[]>({ queryKey: ['finref', 'employees'], queryFn: () => financeApi.employees() });
+  const subsQ = useQuery<any[]>({ queryKey: ['finref', 'subscriptions'], queryFn: () => financeApi.subscriptions() });
+  const debtsQ = useQuery<any[]>({ queryKey: ['finance', 'debts'], queryFn: () => financeApi.debts() });
+  const balances = balancesQ.data;
+  const categories = categoriesQ.data ?? [];
+  const projects = projectsQ.data ?? [];
+  const employees = employeesQ.data ?? [];
+  const subs = subsQ.data ?? [];
+  const debts = debtsQ.data ?? [];
+  const referenceQueries = [accountsQ, balancesQ, categoriesQ, projectsQ, employeesQ, subsQ, debtsQ];
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState('');
   const [modal, setModal] = useState<ReactNode>(null);
+  const [maintenanceBusy, setMaintenanceBusy] = useState(false);
 
   const invalidate = () => invalidateFinanceAll(qc);
   const empCategories = [...new Set(employees.map((e: any) => e.category).filter(Boolean))] as string[];
@@ -32,17 +40,6 @@ export default function FinanceSettingsPage() {
   function currentBalance(accountId: string): number {
     const row = balances?.perAccount?.find((p: any) => p.id === accountId);
     return row ? row.balance : 0;
-  }
-
-  async function saveStartBalance(a: any, raw: string) {
-    const startBalance = parseFloat(raw) || 0;
-    if (startBalance === Number(a.startBalance)) return;
-    try {
-      await financeApi.updateAccount(a.id, { startBalance });
-      invalidate();
-    } catch (e: any) {
-      toast.error(apiErr(e));
-    }
   }
 
   async function toggleArchived(a: any) {
@@ -59,16 +56,21 @@ export default function FinanceSettingsPage() {
   }
 
   async function exportData() {
+    if (maintenanceBusy) return;
+    setMaintenanceBusy(true);
     try {
       const dump = await financeApi.exportAll();
       downloadJson(dump, `fin-system-${todayISO()}.json`);
       setMsg('Файл выгружен ✓');
     } catch (e: any) {
       toast.error(apiErr(e));
+    } finally {
+      setMaintenanceBusy(false);
     }
   }
 
   async function importData(file: File) {
+    if (maintenanceBusy) return;
     let data: any;
     try {
       data = JSON.parse(await file.text());
@@ -80,22 +82,30 @@ export default function FinanceSettingsPage() {
       'Импорт полностью заменит текущие финансовые данные. Перед заменой система проверит файл и создаст страховочную копию.',
       { danger: true, confirmLabel: 'Импортировать' },
     ))) return;
+    setMaintenanceBusy(true);
     try {
       await financeApi.importAll(data);
       setMsg('Импортировано ✓');
       invalidate();
     } catch (e: any) {
       toast.error(apiErr(e));
+    } finally {
+      setMaintenanceBusy(false);
     }
   }
 
   async function resetAll() {
-    if (!(await finConfirm('Удалить ВСЕ данные и пересоздать справочники? Действие необратимо (последний автоснимок останется).', { danger: true, confirmLabel: 'Сбросить всё' }))) return;
+    if (maintenanceBusy) return;
+    if (!(await finConfirm('Очистить ВСЕ финансовые данные? Перед очисткой система создаст отдельный страховочный снимок, операции можно будет восстановить.', { danger: true, confirmLabel: 'Создать снимок и очистить' }))) return;
+    setMaintenanceBusy(true);
     try {
       await financeApi.resetAll();
       invalidate();
+      toast.success('Финансы очищены, страховочный снимок сохранён');
     } catch (e: any) {
       toast.error(apiErr(e));
+    } finally {
+      setMaintenanceBusy(false);
     }
   }
 
@@ -116,11 +126,11 @@ export default function FinanceSettingsPage() {
       </div>
     );
   }
-  if (accountsQ.isError) {
+  if (referenceQueries.some((q) => q.isError)) {
     return (
       <div className="fin-root">
         <div className="page-head"><div><h1>Настройки</h1><p>Счета, справочники, резервные копии</p></div></div>
-        <FinLoadError onRetry={() => accountsQ.refetch()} />
+        <FinLoadError onRetry={() => Promise.all(referenceQueries.map((q) => q.refetch()))} />
       </div>
     );
   }
@@ -144,15 +154,13 @@ export default function FinanceSettingsPage() {
                   {a.archived && <span className="mini muted" style={{ marginLeft: 8 }}>архивный</span>}
                 </td>
                 <td className="num">
-                  <input key={`${a.id}-${a.startBalance}`} className="cell-input" style={{ width: 140, textAlign: 'right' }}
-                    type="number" inputMode="decimal" defaultValue={a.startBalance}
-                    onBlur={(e) => saveStartBalance(a, e.target.value)} />
+                  <StartBalanceEditor account={a} onSaved={invalidate} />
                 </td>
                 <td className="num"><b>{money(currentBalance(a.id))}</b></td>
                 <td className="num"><span className="row-actions">
                   <button className="btn ghost sm" title="Редактировать" onClick={() => setModal(<AccountModal account={a} onClose={() => setModal(null)} />)}><FinIcon name="edit" size={15} /></button>
                   <button className="btn ghost sm" title={a.archived ? 'Вернуть из архива' : 'В архив'} onClick={() => toggleArchived(a)}>
-                    <FinIcon name={a.archived ? 'undo' : 'download'} size={15} />
+                    <FinIcon name={a.archived ? 'undo' : 'archive'} size={15} />
                   </button>
                 </span></td>
               </tr>
@@ -176,14 +184,15 @@ export default function FinanceSettingsPage() {
         cols={(p: any) => [p.name, INCOME_GROUPS.find((g) => g.key === p.direction)?.label ?? p.direction, money(p.tariff)]}
         onAdd={() => setModal(<ProjectFormModal onClose={() => setModal(null)} />)}
         onEdit={(p: any) => setModal(<ProjectFormModal project={p} onClose={() => setModal(null)} />)}
-        onDel={async (p: any) => (await finConfirm(`Удалить проект «${p.name}»? Удалятся его плановые оплаты и доходные операции.`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeProject(p.id))} />
+        onDel={async (p: any) => (await finConfirm(`Переместить проект «${p.name}» в архив? Все операции и история оплат сохранятся.`, { confirmLabel: 'В архив' })) && del(() => financeApi.removeProject(p.id))} />
 
       <Directory title="Сотрудники" items={employees}
         head={['Имя', 'Роль', 'Оклад', 'Статус']}
         cols={(e: any) => [e.name, e.role || '—', money(e.salary), e.status === 'active' ? 'активный' : 'уволен']}
         onAdd={() => setModal(<EmployeeFormModal categories={empCategories} onClose={() => setModal(null)} />)}
         onEdit={(e: any) => setModal(<EmployeeFormModal employee={e} categories={empCategories} onClose={() => setModal(null)} />)}
-        onDel={async (e: any) => (await finConfirm(`Удалить сотрудника «${e.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeEmployee(e.id))} />
+        canDelete={(e: any) => e.status === 'active'}
+        onDel={async (e: any) => (await finConfirm(`Уволить сотрудника «${e.name}» сегодняшним числом? История зарплаты и операций сохранится.`, { confirmLabel: 'Уволить' })) && del(() => financeApi.removeEmployee(e.id))} />
 
       <Directory title="Аренда и подписки" items={subs}
         head={['Название', 'Тип', 'Сумма/мес', 'День оплаты']}
@@ -203,15 +212,15 @@ export default function FinanceSettingsPage() {
 
       <div className="section-title">Резервная копия (файл)</div>
       <div className="card flex" style={{ gap: 12, flexWrap: 'wrap' }}>
-        <button className="btn" onClick={exportData}><FinIcon name="download" size={16} /> Экспорт JSON</button>
-        <button className="btn" onClick={() => fileRef.current?.click()}><FinIcon name="upload" size={16} /> Импорт JSON</button>
+        <button className="btn" disabled={maintenanceBusy} onClick={exportData}><FinIcon name="download" size={16} /> Экспорт JSON</button>
+        <button className="btn" disabled={maintenanceBusy} onClick={() => fileRef.current?.click()}><FinIcon name="upload" size={16} /> Импорт JSON</button>
         <input ref={fileRef} type="file" accept="application/json" style={{ display: 'none' }}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) importData(f); e.target.value = ''; }} />
         {msg && <span className="pos mini">{msg}</span>}
       </div>
 
       <div className="section-title">Опасная зона</div>
-      <div className="card"><button className="btn danger" onClick={resetAll}>Сбросить все данные</button></div>
+      <div className="card"><button className="btn danger" disabled={maintenanceBusy} onClick={resetAll}>{maintenanceBusy ? 'Выполняется…' : 'Сбросить все данные'}</button></div>
 
       {modal}
     </div>
@@ -227,6 +236,55 @@ function downloadJson(data: any, filename: string) {
   URL.revokeObjectURL(a.href);
 }
 
+function StartBalanceEditor({ account, onSaved }: { account: any; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(account.startBalance ?? 0));
+  const [busy, setBusy] = useState(false);
+  const parsed = Number(value.replace(',', '.'));
+  const changed = Number.isFinite(parsed) && parsed !== Number(account.startBalance);
+
+  function cancel() {
+    setValue(String(account.startBalance ?? 0));
+    setEditing(false);
+  }
+
+  async function save() {
+    if (!changed || busy) return;
+    if (!(await finConfirm(
+      `Изменить стартовый баланс счёта «${account.name}» с ${money(account.startBalance)} на ${money(parsed)}? Это пересчитает исторические остатки.`,
+      { confirmLabel: 'Изменить баланс' },
+    ))) return;
+    setBusy(true);
+    try {
+      await financeApi.updateAccount(account.id, { startBalance: parsed });
+      onSaved();
+      setEditing(false);
+      toast.success('Стартовый баланс обновлён');
+    } catch (e: any) {
+      toast.error(apiErr(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button className="btn ghost sm fin-balance-edit" title="Изменить стартовый баланс" onClick={() => setEditing(true)}>
+        {money(account.startBalance)} <FinIcon name="edit" size={13} />
+      </button>
+    );
+  }
+  return (
+    <span className="fin-balance-editor">
+      <input className="cell-input" style={{ width: 110, textAlign: 'right' }}
+        autoFocus inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Escape') cancel(); if (e.key === 'Enter') save(); }} />
+      <button className="btn ghost sm" aria-label="Сохранить стартовый баланс" disabled={!changed || busy} onClick={save}><FinIcon name="check" size={14} /></button>
+      <button className="btn ghost sm" aria-label="Отменить изменение" disabled={busy} onClick={cancel}><FinIcon name="close" size={14} /></button>
+    </span>
+  );
+}
+
 /** Снимки данных: ежедневный автобэкап 02:00 + ручные; восстановление обратимо
  *  (перед ним система сохраняет снимок pre_restore). */
 function BackupsSection() {
@@ -234,7 +292,13 @@ function BackupsSection() {
   const { data: backups = [], isLoading } = useQuery<any[]>({ queryKey: ['finance', 'backups'], queryFn: () => financeApi.backups() });
   const [busy, setBusy] = useState(false);
 
-  const KIND_LABEL: Record<string, string> = { auto: 'авто', manual: 'ручной', pre_restore: 'перед восстановлением' };
+  const KIND_LABEL: Record<string, string> = {
+    auto: 'авто',
+    manual: 'ручной',
+    pre_restore: 'перед восстановлением',
+    pre_import: 'перед импортом',
+    pre_reset: 'перед очисткой',
+  };
 
   async function createSnapshot() {
     if (busy) return;

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -7,7 +7,7 @@ import { financeApi } from '@/services/api.service';
 import { apiErr, currentYm, money, monthLabel } from './finlib';
 import { FinLoadError, FinLoading, FinModal } from './FinKit';
 import FinIcon from './FinIcon';
-import { floatingPosition, type FloatingPosition } from './floatingPosition';
+import { floatingPosition, scrollableAncestors, type FloatingPosition } from './floatingPosition';
 import './finance.css';
 
 const scenarios: Record<string, string> = { conservative: 'Осторожный', base: 'Базовый', optimistic: 'Оптимистичный' };
@@ -40,7 +40,12 @@ export default function FinancePlanningPage() {
       <div className="fin-plan-controls">
         <div className="field"><label>Начать с</label><input type="month" value={start} onChange={e => setStart(e.target.value)} /></div>
         <div className="field"><label>Горизонт</label><select value={months} onChange={e => setMonths(Number(e.target.value))}><option value={6}>6 месяцев</option><option value={12}>12 месяцев</option><option value={24}>24 месяца</option></select></div>
-        <div className="fin-segments">{Object.entries(scenarios).map(([key, label]) => <button key={key} className={scenario === key ? 'active' : ''} onClick={() => setScenario(key)}>{label}</button>)}</div>
+        <div className="fin-segments" role="group" aria-label="Сценарий прогноза">
+          {Object.entries(scenarios).map(([key, label]) => (
+            <button key={key} className={scenario === key ? 'active' : ''}
+              aria-pressed={scenario === key} onClick={() => setScenario(key)}>{label}</button>
+          ))}
+        </div>
       </div>
       {data.summary.cashGapYm && <div className="fin-plan-warning">Внимание: при этом сценарии возможен кассовый разрыв в {monthLabel(data.summary.cashGapYm, true)}.</div>}
       <div className="cards grid-4">
@@ -67,7 +72,16 @@ export default function FinancePlanningPage() {
         </div></div>
       </div>
       <div className="table-wrap"><table><thead><tr><th>Месяц</th><th>Доход · факт / осталось</th><th>Расход · факт / осталось</th><th>Результат</th><th>Баланс сейчас / после плана</th></tr></thead><tbody>
-        {data.rows.map((r: any) => <Fragment key={r.ym}><tr className="clickable" aria-expanded={expanded === r.ym} onClick={() => setExpanded(expanded === r.ym ? null : r.ym)}>
+        {data.rows.map((r: any) => {
+          const toggle = () => setExpanded(expanded === r.ym ? null : r.ym);
+          return <Fragment key={r.ym}><tr className="clickable" aria-expanded={expanded === r.ym}
+            tabIndex={0} onClick={toggle}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggle();
+              }
+            }}>
           <td><strong>{monthLabel(r.ym, true)}</strong></td>
           <td><FlowCell tone="income" actual={r.actualIncome} planned={r.plannedIncome} total={r.income} /></td>
           <td><FlowCell tone="expense" actual={r.actualExpense} planned={r.plannedExpense} total={r.expense} /></td>
@@ -76,7 +90,8 @@ export default function FinancePlanningPage() {
         </tr>{expanded === r.ym && <tr className="fin-plan-detail-row"><td colSpan={5}><div className="fin-plan-detail">
           <SourceList title="Доходы" tone="income" rows={r.incomeSources} remove={(id) => remove.mutate(id)} />
           <SourceList title="Расходы" tone="expense" rows={r.expenseSources} remove={(id) => remove.mutate(id)} />
-        </div></td></tr>}</Fragment>)}
+        </div></td></tr>}</Fragment>;
+        })}
       </tbody></table></div>
       {adding && <AdjustmentModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); qc.invalidateQueries({ queryKey: ['finance', 'forecast'] }); }} />}
     </div>
@@ -97,13 +112,14 @@ function SourceList({ title, tone, rows, remove }: { title: string; tone: 'incom
     <div className="fin-plan-column-title"><strong>{title}</strong><span>{money(rows.reduce((s, x) => s + Number(x.amount), 0))}</span></div>
     {visible.length ? visible.map(x => x.salaries
       ? <SalaryGroup key={x.key} group={x} />
-      : <div className="fin-plan-source" key={x.key}><span>{x.label}<small>{x.kind}</small></span><b>{money(x.amount)}</b>{x.adjustmentId && <button onClick={() => remove(x.adjustmentId)} title="Удалить">×</button>}</div>
+      : <div className="fin-plan-source" key={x.key}><span>{x.label}<small>{x.kind}</small></span><b>{money(x.amount)}</b>{x.adjustmentId && <button onClick={() => remove(x.adjustmentId)} title="Удалить" aria-label={`Удалить корректировку «${x.label}»`}>×</button>}</div>
     ) : <p className="muted">Нет ожидаемых операций</p>}
   </div>;
 }
 
 function SalaryGroup({ group }: { group: any }) {
   const anchorRef = useRef<HTMLDivElement>(null);
+  const popoverId = useId();
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [pos, setPos] = useState<FloatingPosition | null>(null);
@@ -118,14 +134,18 @@ function SalaryGroup({ group }: { group: any }) {
     pinTimer.current = setTimeout(() => setPinned(true), 5_500);
     return () => { if (pinTimer.current) clearTimeout(pinTimer.current); };
   }, [open, pinned]);
+  useEffect(() => () => {
+    if (pinTimer.current) clearTimeout(pinTimer.current);
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
   useEffect(() => {
     if (!open) return;
-    const main = document.querySelector('main');
+    const ancestors = scrollableAncestors(anchorRef.current);
     window.addEventListener('resize', updatePosition);
-    main?.addEventListener('scroll', updatePosition, { passive: true });
+    ancestors.forEach((el) => el.addEventListener('scroll', updatePosition, { passive: true }));
     return () => {
       window.removeEventListener('resize', updatePosition);
-      main?.removeEventListener('scroll', updatePosition);
+      ancestors.forEach((el) => el.removeEventListener('scroll', updatePosition));
     };
   }, [open, updatePosition]);
   const enter = () => {
@@ -138,11 +158,36 @@ function SalaryGroup({ group }: { group: any }) {
     closeTimer.current = setTimeout(() => setOpen(false), 120);
   };
   const close = (e: MouseEvent) => { e.stopPropagation(); setPinned(false); setOpen(false); };
-  return <div ref={anchorRef} className="fin-plan-source has-popover" onMouseEnter={enter} onMouseLeave={leave}>
+  const togglePinned = () => {
+    updatePosition();
+    setOpen((wasOpen) => {
+      const nextOpen = !wasOpen || !pinned;
+      setPinned(nextOpen);
+      return nextOpen;
+    });
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      togglePinned();
+    } else if (e.key === 'Escape' && open) {
+      e.preventDefault();
+      setPinned(false);
+      setOpen(false);
+    }
+  };
+  return <div ref={anchorRef} className="fin-plan-source has-popover"
+    role="button" tabIndex={0} aria-expanded={open} aria-controls={open ? popoverId : undefined}
+    aria-label={`Показать зарплаты ${group.kind}`}
+    onMouseEnter={enter} onMouseLeave={leave} onFocus={enter} onBlur={leave}
+    onClick={togglePinned} onKeyDown={onKeyDown}>
     <span>{group.label}<small>{group.kind}</small></span><b>{money(group.amount)}</b>
-    {open && pos && createPortal(<div className={`fin-salary-popover open${pinned ? ' pinned' : ''}`}
+    {open && pos && createPortal(<div id={popoverId} className={`fin-salary-popover open${pinned ? ' pinned' : ''}`}
+      role="dialog" aria-label="Зарплата сотрудников" tabIndex={-1}
       style={{ top: pos.top, bottom: pos.bottom, left: pos.left }}
-      onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); }} onMouseLeave={leave} onClick={e => e.stopPropagation()}>
+      onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); }} onMouseLeave={leave}
+      onFocus={() => { if (closeTimer.current) clearTimeout(closeTimer.current); }} onBlur={leave}
+      onClick={e => e.stopPropagation()}>
       <div className="fin-salary-popover-head"><strong>Зарплата сотрудников</strong><b>{money(group.amount)}</b>
         {pinned && <button className="fin-payout-close" type="button" aria-label="Закрыть" onClick={close}><FinIcon name="close" size={14} /></button>}
       </div>

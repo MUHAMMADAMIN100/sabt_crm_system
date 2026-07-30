@@ -45,16 +45,16 @@ export class FinanceTransaction {
   date: string;
 
   // ─── Счета (новая динамическая модель) ───────────────────────────
-  /** Счёт для income/expense/saving. */
+  /** Счёт для income/expense. Накопление, как и перевод, использует пару счетов. */
   @Index()
   @Column({ type: 'uuid', nullable: true })
   accountId: string | null;
 
-  /** Перевод: списание со счёта. */
+  /** Перевод/накопление: списание со счёта. */
   @Column({ type: 'uuid', nullable: true })
   fromAccountId: string | null;
 
-  /** Перевод: зачисление на счёт. */
+  /** Перевод/накопление: зачисление на счёт. */
   @Column({ type: 'uuid', nullable: true })
   toAccountId: string | null;
 

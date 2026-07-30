@@ -5,6 +5,22 @@ export type FloatingPosition = {
   above: boolean;
 };
 
+/** Все прокручиваемые контейнеры якоря. Hover-окна живут порталом в body,
+ * поэтому должны обновляться не только при scroll у main, но и при
+ * горизонтальном scroll таблицы. */
+export function scrollableAncestors(element: HTMLElement | null): HTMLElement[] {
+  const result: HTMLElement[] = [];
+  let parent = element?.parentElement ?? null;
+  while (parent) {
+    const style = getComputedStyle(parent);
+    if (/(auto|scroll|overlay)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) {
+      result.push(parent);
+    }
+    parent = parent.parentElement;
+  }
+  return result;
+}
+
 /** Позиция hover-окна относительно viewport.
  *
  * Для окна сверху используем `bottom`, а не `top + translateY(-100%)`.

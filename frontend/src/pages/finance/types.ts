@@ -46,6 +46,7 @@ export interface FinEmployee {
   advance?: number;
   bonuses?: Record<string, number> | null;
   hireDate?: string | null;
+  terminationDate?: string | null;
   status?: 'active' | 'fired' | string;
 }
 

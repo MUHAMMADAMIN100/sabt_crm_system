@@ -180,11 +180,17 @@ DATABASE_URL=postgresql://erp_user:erp_password@localhost:5432/erp_db
 JWT_SECRET=change-this-in-production
 JWT_EXPIRES_IN=7d
 PORT=3000
+FRONTEND_URL=http://localhost:5173
+CORS_ORIGINS=http://localhost:5173
 MAIL_HOST=smtp.gmail.com
 MAIL_PORT=587
 MAIL_USER=your@email.com
 MAIL_PASS=app-password
 ```
+
+В production указывайте только точные frontend origins; wildcard-домены не
+поддерживаются. Настройка секретов и ежедневного резервного копирования:
+[docs/SECURITY_AND_BACKUP.md](docs/SECURITY_AND_BACKUP.md).
 
 ### Frontend (.env)
 ```env

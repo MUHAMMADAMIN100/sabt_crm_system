@@ -1,4 +1,4 @@
-import { IsEnum, IsISO8601, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsEnum, IsISO8601, IsNumber, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -21,11 +21,22 @@ export class CreateEmployeeDto {
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
   salary?: number;
 
+  /** Месяц, с которого действует новый оклад. Поле также наследуется
+   * UpdateEmployeeDto через PartialType. */
+  @ApiPropertyOptional({ example: '2026-07' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  salaryEffectiveYm?: string;
+
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
   advance?: number;
 
   @ApiPropertyOptional() @IsOptional() @IsISO8601()
   hireDate?: string;
+
+  @ApiPropertyOptional({ description: 'Последний день работы' }) @IsOptional() @IsISO8601()
+  terminationDate?: string;
 
   @ApiPropertyOptional({ enum: FinanceEmployeeStatus }) @IsOptional() @IsEnum(FinanceEmployeeStatus)
   status?: FinanceEmployeeStatus;

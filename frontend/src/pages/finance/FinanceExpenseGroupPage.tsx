@@ -5,8 +5,8 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { money, currentYm, currentSalaryYm, todayISO, formatDate, monthLabel, shiftYm, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP , useYmParam, salaryComment } from './finlib';
-import { FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinance } from './FinKit';
+import { money, currentYm, currentSalaryYm, todayISO, formatDate, monthLabel, shiftYm, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP, useYmParam, salaryComment, withYm } from './finlib';
+import { FinLoading, FinLoadError, FinModal, useModalKeys, finConfirm, invalidateFinance } from './FinKit';
 import { EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
@@ -23,7 +23,7 @@ export default function FinanceExpenseGroupPage() {
   if (kind === 'other') {
     return (
       <div className="fin-root">
-        <Link to="/finance/expense" className="back"><FinIcon name="chevronLeft" size={15} /> Расход</Link>
+        <Link to={withYm('/finance/expense', ym)} className="back"><FinIcon name="chevronLeft" size={15} /> Расход</Link>
         <div className="page-head">
           <div><h1 className="flex" style={{ color: OTHER_GROUP.color }}><FinIcon name={OTHER_GROUP.icon} size={22} /> <span style={{ color: 'var(--text)' }}>Прочие расходы</span></h1><p>Реклама, транспорт, налоги и другие категории</p></div>
           <MonthNav ym={ym} onChange={setYm} />
@@ -38,7 +38,7 @@ export default function FinanceExpenseGroupPage() {
 
   return (
     <div className="fin-root">
-      <Link to="/finance/expense" className="back"><FinIcon name="chevronLeft" size={15} /> Расход</Link>
+      <Link to={withYm('/finance/expense', ym)} className="back"><FinIcon name="chevronLeft" size={15} /> Расход</Link>
       <div className="page-head">
         <div><h1 className="flex" style={{ color: g.color }}><FinIcon name={g.icon} size={22} /> <span style={{ color: 'var(--text)' }}>{g.label}</span></h1><p>Детализация и быстрая оплата</p></div>
         <MonthNav ym={ym} onChange={setYm} />
@@ -193,18 +193,6 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
       <div className="toolbar">
         <span className="chip"><FinIcon name="receipt" size={14} /> Выплата ЗП — каждое 10-е число месяца</span>
         <div className="grow" />
-        {/* Всё выдано фактически (авансы/наличные), а система показывает
-            остаток — фиксируем месяц выплаченным без создания операций. */}
-        {!data?.allPaid && rows.length > 0 && (
-          <button className="btn sm" onClick={async () => {
-            if (!(await finConfirm('Отметить месяц полностью выплаченным? Все сотрудники будут зафиксированы как «выплачено», суммы месяца заморозятся. Расходные операции НЕ создаются.', { confirmLabel: 'Закрыть месяц' }))) return;
-            try {
-              await financeApi.closeSalaryMonth(ym);
-              invalidateFinance(qc);
-              toast.success('Месяц закрыт — все сотрудники отмечены выплаченными');
-            } catch (err) { toast.error(apiErr(err)); }
-          }}><FinIcon name="check" size={14} /> Закрыть месяц</button>
-        )}
         {/* Месяц закрыт (заморожен) — можно переоткрыть, чтобы поправить
             авансы/бонусы/штрафы. Выплаты не удаляются, счета не трогаются. */}
         {rows.some((e: any) => e.frozen) && (
@@ -228,7 +216,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
             {!(groups.length === 1 && cat === 'Без категории') && (
               <div className="section-title" style={{ margin: '18px 0 10px' }}>{cat} · {list.length} чел.</div>
             )}
-            <div className="table-wrap">
+            <div className="table-wrap fin-wide-table">
               <table>
                 <thead>
                   <tr>
@@ -548,10 +536,8 @@ function SubsList({ ym }: { ym: string }) {
     queryFn: () => financeApi.expenseDetail('subscriptions', ym),
   });
   const accounts = useFinAccounts();
-  const categories = useFinCategories();
   const [editFor, setEditFor] = useState<any | 'new' | null>(null);
-  // Оплата — прямые кнопки без модалки: держим id позиции «в работе»,
-  // чтобы даблклик не создал два расхода.
+  const [payFor, setPayFor] = useState<any | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   if (isLoading) return <FinLoading />;
@@ -559,22 +545,6 @@ function SubsList({ ym }: { ym: string }) {
 
   const rows: any[] = data?.rows ?? [];
   const monthly: number = data?.monthly ?? 0;
-
-  async function pay(s: any) {
-    if (busyId) return;
-    const accountId = accounts[0]?.id;
-    if (!accountId) { toast.error('Нет счетов'); return; }
-    const cat = categories.find((c: any) => c.key === (s.kind === 'rent' ? 'rent' : 'subscription'));
-    setBusyId(s.id);
-    try {
-      await financeApi.createOperation({
-        type: 'expense', amount: s.amount, date: todayISO(), accountId,
-        categoryId: cat?.id, subscriptionId: s.id, comment: s.name,
-      });
-      invalidateFinance(qc);
-    } catch (e) { toast.error(apiErr(e)); }
-    finally { setBusyId(null); }
-  }
 
   /** Отметить оплаченным без операции: денег по счетам не двигает. */
   async function markPaid(s: any) {
@@ -608,13 +578,16 @@ function SubsList({ ym }: { ym: string }) {
         <button className="btn primary" onClick={() => setEditFor('new')}><FinIcon name="plus" size={16} /> Добавить расход</button>
       </div>
 
-      <div className="table-wrap">
+      <div className="table-wrap fin-wide-table">
         <table>
           {/* Колонка действий держит до трёх кнопок («оплатить» — с подписью). */}
           <thead><tr><th style={{ minWidth: 170 }}>Позиция</th><th>Тип</th><th className="num" style={{ width: 110 }}>Сумма/мес</th><th style={{ width: 110 }}>День оплаты</th><th style={{ minWidth: 200 }}>Статус месяца</th><th style={{ width: 190 }} /></tr></thead>
           <tbody>
             {rows.map((s) => {
-              const isPaid = !!s.paidMonth || !!s.paidMark;
+              const paidAmount = Number(s.paidMonth) || 0;
+              const remaining = Math.max(0, (Number(s.amount) || 0) - paidAmount);
+              const isPaid = !!s.paidMark || remaining <= 0.005;
+              const isPartial = !isPaid && paidAmount > 0.005;
               const paidDate = s.lastPaidDate ?? s.paidMark;
               return (
                 <tr key={s.id} style={{ opacity: s.active ? 1 : 0.5 }} onDoubleClick={() => setEditFor(s)}>
@@ -629,6 +602,11 @@ function SubsList({ ym }: { ym: string }) {
                         {paidDate && <span className="mini muted">{formatDate(paidDate)}</span>}
                         {!s.paidMonth && <span className="mini muted">· без списания</span>}
                       </span>
+                    ) : isPartial ? (
+                      <span className="flex">
+                        <span className="badge wait">частично · {money(paidAmount)}</span>
+                        <span className="mini muted">осталось {money(remaining)}</span>
+                      </span>
                     ) : <span className="badge wait">не оплачено</span>}
                   </td>
                   <td className="num">
@@ -636,7 +614,10 @@ function SubsList({ ym }: { ym: string }) {
                       {isPaid
                         ? <button className="btn ghost sm" disabled={busyId === s.id} title="Отменить оплату" onClick={() => cancelMonth(s)}><FinIcon name="undo" size={15} /></button>
                         : <>
-                            <button className="btn ghost sm" disabled={busyId === s.id} title="Оплатить — создаст расход со счёта" onClick={() => pay(s)}><FinIcon name="check" size={14} /> оплатить</button>
+                            <button className="btn ghost sm" disabled={busyId === s.id || !accounts.length}
+                              title="Выбрать сумму, дату и счёт" onClick={() => setPayFor(s)}>
+                              <FinIcon name="check" size={14} /> {isPartial ? 'доплатить' : 'оплатить'}
+                            </button>
                             <button className="btn ghost sm" disabled={busyId === s.id} title="Отметить оплаченным без списания со счёта" onClick={() => markPaid(s)}><FinIcon name="checkCircle" size={15} /></button>
                           </>}
                       <button className="btn ghost sm row-actions" title="Редактировать" onClick={() => setEditFor(s)}><FinIcon name="edit" size={15} /></button>
@@ -658,7 +639,81 @@ function SubsList({ ym }: { ym: string }) {
       </div>
 
       {editFor && <SubFormModal sub={editFor === 'new' ? undefined : editFor} onClose={() => setEditFor(null)} />}
+      {payFor && <SubscriptionPaymentModal sub={payFor} ym={ym} onClose={() => setPayFor(null)} />}
     </>
+  );
+}
+
+/** Оплата подписки/аренды всегда подтверждает сумму, дату и счёт.
+ *  Это исключает случайное списание с первого счёта и поддерживает доплату. */
+function SubscriptionPaymentModal({ sub, ym, onClose }: { sub: any; ym: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const accounts = useFinAccounts();
+  const categories = useFinCategories();
+  const paid = Number(sub.paidMonth) || 0;
+  const remaining = Math.max(0, (Number(sub.amount) || 0) - paid);
+  const [amount, setAmount] = useState(String(remaining || sub.amount || ''));
+  const [date, setDate] = useState(todayISO());
+  const [accountId, setAccountId] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
+
+  const amt = parseFloat(amount.replace(',', '.'));
+  const valid = amt > 0 && amt <= remaining + 0.005 && !!accountId;
+
+  async function save() {
+    if (!valid || busy) return;
+    setBusy(true);
+    const category = categories.find((c: any) => c.key === (sub.kind === 'rent' ? 'rent' : 'subscription'));
+    try {
+      await financeApi.createOperation({
+        type: 'expense', amount: amt, date, accountId,
+        categoryId: category?.id, subscriptionId: sub.id,
+        comment: note.trim() ? `${sub.name} — ${note.trim()}` : sub.name,
+      });
+      invalidateFinance(qc);
+      toast.success(`${sub.name}: оплачено ${money(amt)}`);
+      onClose();
+    } catch (e) {
+      toast.error(apiErr(e));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <FinModal title={`${paid > 0 ? 'Доплата' : 'Оплата'} · ${sub.name}`} onClose={onClose} width={460}
+      footer={<>
+        <button className="btn ghost" disabled={busy} onClick={onClose}>Отмена</button>
+        <button className="btn primary" disabled={!valid || busy} onClick={save}>
+          {busy ? 'Провожу…' : `Оплатить ${valid ? money(amt) : ''}`}
+        </button>
+      </>}>
+      <div className="fin-payment-summary">
+        <span>Начислено за {monthLabel(ym, true)}</span><strong>{money(sub.amount)}</strong>
+        {paid > 0 && <><span>Уже оплачено</span><strong>{money(paid)}</strong></>}
+        <span>Осталось</span><strong>{money(remaining)}</strong>
+      </div>
+      <div className="form-grid">
+        <div className="field"><label>Сумма, сомони</label>
+          <input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        </div>
+        <div className="field"><label>Дата списания</label>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+      </div>
+      <div className="field"><label>Со счёта</label>
+        <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+          <option value="">— выбрать счёт —</option>
+          {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </div>
+      <div className="field"><label>Комментарий</label>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="необязательно" />
+      </div>
+      {amt > remaining + 0.005 && <p className="mini neg" style={{ margin: 0 }}>Сумма больше остатка {money(remaining)}.</p>}
+      <p className="mini muted" style={{ margin: 0 }}>Дата списания определяет месяц фактического расхода и влияет на баланс выбранного счёта.</p>
+    </FinModal>
   );
 }
 
@@ -688,7 +743,7 @@ function DebtsList({ ym }: { ym: string }) {
       <div className="cards grid-3" style={{ marginBottom: 16 }}>
         <div className="card stat"><div className="label">Всего должны</div><div className="value neg">{money(stats.totalDebt)}</div><div className="sub">из {money(totals.total)}</div></div>
         {/* Бэк считает dueMonth по текущему календарному месяцу — подпись синхронизируем с ним. */}
-        <div className="card stat"><div className="label">Должны за месяц</div><div className="value">{money(stats.dueMonth)}</div><div className="sub" style={{ textTransform: 'capitalize' }}>{monthLabel(currentYm(), true)}</div></div>
+        <div className="card stat"><div className="label">Должны за месяц</div><div className="value">{money(stats.dueMonth)}</div><div className="sub" style={{ textTransform: 'capitalize' }}>{monthLabel(ym, true)}</div></div>
         <div className="card stat"><div className="label">Долгов</div><div className="value">{stats.count}</div></div>
       </div>
 
@@ -705,7 +760,7 @@ function DebtsList({ ym }: { ym: string }) {
       {rows.length === 0 ? (
         <div className="card empty"><div className="big"><FinIcon name="checkCircle" size={30} /></div>Долгов нет — нажмите «＋ Долг»</div>
       ) : (
-        <div className="table-wrap" style={{ overflowX: 'auto' }}>
+        <div className="table-wrap fin-wide-table">
           <table>
             <thead>
               <tr>

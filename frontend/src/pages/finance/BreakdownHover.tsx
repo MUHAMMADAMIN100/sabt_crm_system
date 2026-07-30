@@ -1,13 +1,16 @@
 // Мини-окно при наведении на категорию/статью/направление: через короткую
 // задержку показывает разбивку по под-типам (для ЗП — аванс/бонус/зарплата,
 // для остальных — по описанию). Данные тянутся лениво (только при наведении).
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback, useEffect, useId, useRef, useState,
+  type KeyboardEvent, type MouseEvent, type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
 import { money } from './finlib';
 import { CatIcon } from './FinIcon';
-import { floatingPosition, type FloatingPosition } from './floatingPosition';
+import { floatingPosition, scrollableAncestors, type FloatingPosition } from './floatingPosition';
 
 const HOVER_DELAY = 450; // мс — «через несколько секунд», но не раздражающе долго
 const DATA_WAIT_LIMIT = 900;
@@ -29,6 +32,8 @@ export default function BreakdownHover({
   const qc = useQueryClient();
   const ref = useRef<HTMLDivElement>(null);
   const hoverSeq = useRef(0);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tooltipId = useId();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<FloatingPosition | null>(null);
   const queryKey = ['fin-breakdown', ym, kind, id ?? 'none', txType ?? ''] as const;
@@ -48,16 +53,29 @@ export default function BreakdownHover({
 
   useEffect(() => {
     if (!open) return;
-    const main = document.querySelector('main');
+    const ancestors = scrollableAncestors(ref.current);
     window.addEventListener('resize', updatePosition);
-    main?.addEventListener('scroll', updatePosition, { passive: true });
+    ancestors.forEach((el) => el.addEventListener('scroll', updatePosition, { passive: true }));
     return () => {
       window.removeEventListener('resize', updatePosition);
-      main?.removeEventListener('scroll', updatePosition);
+      ancestors.forEach((el) => el.removeEventListener('scroll', updatePosition));
     };
   }, [open, updatePosition]);
 
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const closeNow = () => {
+    cancelClose();
+    hoverSeq.current++;
+    setOpen(false);
+  };
   const enter = () => {
+    cancelClose();
+    if (open) return;
     const seq = ++hoverSeq.current;
     // Начинаем запрос сразу, но показываем окно только после короткой задержки
     // и готовности данных (либо лимита ожидания). Высота не меняется рывком
@@ -75,20 +93,56 @@ export default function BreakdownHover({
     });
   };
   const leave = () => {
-    hoverSeq.current++;
-    setOpen(false);
+    if (!open) {
+      hoverSeq.current++;
+      return;
+    }
+    closeTimer.current = setTimeout(closeNow, 140);
+  };
+  useEffect(() => () => cancelClose(), []);
+
+  const activate = (e: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (onClick) {
+      closeNow();
+      onClick();
+    } else if (open) {
+      closeNow();
+    } else {
+      enter();
+    }
+  };
+  const click = (e: MouseEvent<HTMLDivElement>) => {
+    const touchLike = typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches;
+    if (onClick || touchLike) activate(e);
+  };
+  const keyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape' && open) {
+      e.preventDefault();
+      closeNow();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      activate(e);
+    }
   };
 
   const items: Array<{ label: string; amount: number }> = data?.items ?? [];
 
   return (
-    <div ref={ref} className={className} onMouseEnter={enter} onMouseLeave={leave}
-      onClick={() => { leave(); onClick?.(); }}>
+    <div ref={ref} className={className} role={onClick ? 'link' : 'button'} tabIndex={0}
+      aria-expanded={open} aria-describedby={open ? tooltipId : undefined}
+      onFocus={enter} onBlur={leave} onKeyDown={keyDown}
+      onMouseEnter={enter} onMouseLeave={leave} onClick={click}>
       {children}
       {open && pos && createPortal(
         <div
+          id={tooltipId}
           className="fin-brk-pop"
           style={{ top: pos.top, bottom: pos.bottom, left: pos.left }}
+          role="tooltip"
+          onMouseEnter={cancelClose}
+          onMouseLeave={leave}
+          onClick={(e) => e.stopPropagation()}
         >
           <div className="fin-brk-pop-head">
             <CatIcon icon={icon} color={color} size={20} />

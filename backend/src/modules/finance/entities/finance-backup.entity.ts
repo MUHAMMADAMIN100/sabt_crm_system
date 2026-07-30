@@ -7,7 +7,7 @@ export class FinanceBackup {
   id: string;
 
   @Column({ type: 'varchar', length: 16, default: 'auto' })
-  kind: 'auto' | 'manual' | 'pre_restore' | 'pre_import';
+  kind: 'auto' | 'manual' | 'pre_restore' | 'pre_import' | 'pre_reset';
 
   /** Краткая сводка снимка для списка — без загрузки самого data. */
   @Column({ type: 'jsonb', nullable: true })
