@@ -3027,13 +3027,8 @@ export class FinanceService implements OnModuleInit {
     return this.setEmployeeMonthField(id, 'bonuses', dto, 'Бонус');
   }
 
-  /** Аванс за месяц (помесячно, как бонус). */
-  /** История выплат сотруднику: аванс/бонус/зарплата — что, когда, сколько
-   *  и с какого счёта. Отдельной таблицы не нужно: каждая выплата и так
-   *  создаёт операцию расхода с employeeId — читаем их.
-   *
-   *  months — за сколько последних месяцев начисления смотреть (по умолчанию
-   *  12): история нужна «за последнее время», а не за всю жизнь компании. */
+  /** История оклада и выплат сотруднику: аванс/бонус/зарплата — что, когда,
+   *  сколько и с какого счёта. months=0 означает всю доступную историю. */
   async employeePayoutHistory(id: string, months = 12) {
     const e = await this.empRepo.findOne({ where: { id } });
     if (!e) throw new NotFoundException('Сотрудник не найден');
@@ -3042,10 +3037,20 @@ export class FinanceService implements OnModuleInit {
       where: { employeeId: id, type: FinanceTxType.EXPENSE } as any,
       order: { date: 'DESC' },
     }));
-    const minYm = shiftYm(currentYm(), -(months - 1));
+    const monthLimit = Number.isFinite(Number(months)) && Number(months) > 0
+      ? Math.min(1200, Math.max(1, Math.trunc(Number(months))))
+      : null;
+    const minYm = monthLimit ? shiftYm(currentYm(), -(monthLimit - 1)) : null;
     const rows = txs
       .map(t => {
         const kind = isAdvanceTx(t) ? 'advance' : isBonusTx(t) ? 'bonus' : 'salary';
+        const splitNames = (t.splits || []).map(split => {
+          const account = m.accounts.find(a => a.key === split.account);
+          return account?.name || split.account;
+        }).filter(Boolean);
+        const legacyAccount = t.account
+          ? m.accounts.find(a => a.key === t.account)?.name || t.account
+          : null;
         return {
           id: t.id,
           kind,
@@ -3053,13 +3058,52 @@ export class FinanceService implements OnModuleInit {
           amount: r2(Number(t.amount)),
           date: t.date,
           salaryYm: t.salaryYm || ymOf(t.date),
-          accountName: (t.accountId && m.acc.get(t.accountId)?.name) || null,
+          accountName: (t.accountId && m.acc.get(t.accountId)?.name)
+            || legacyAccount
+            || (splitNames.length ? splitNames.join(' + ') : null),
           // Заметка без служебного маркера — то, что ввёл пользователь.
           note: salaryNoteOf(t.comment),
         };
       })
-      .filter(r => r.salaryYm >= minYm)
+      .filter(r => !minYm || r.salaryYm >= minYm)
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+    // История ставки хранится по месяцу вступления изменения в силу.
+    // Последовательные одинаковые точки не выдаём как «изменение».
+    let previousSalary: number | null = null;
+    const allSalaryChanges: Array<{
+      effectiveYm: string;
+      salary: number;
+      previousSalary: number | null;
+      delta: number | null;
+    }> = [];
+    for (const [effectiveYm, rawSalary] of Object.entries(e.salaryHistory || {})
+      .filter(([month]) => YM_RE.test(month))
+      .sort(([a], [b]) => a.localeCompare(b))) {
+      const salary = r2(Number(rawSalary) || 0);
+      if (previousSalary != null && Math.abs(salary - previousSalary) < 0.005) continue;
+      allSalaryChanges.push({
+        effectiveYm,
+        salary,
+        previousSalary,
+        delta: previousSalary == null ? null : r2(salary - previousSalary),
+      });
+      previousSalary = salary;
+    }
+    const asOfYm = currentYm();
+    const currentChangeYm = allSalaryChanges
+      .filter(change => change.effectiveYm <= asOfYm)
+      .map(change => change.effectiveYm)
+      .sort()
+      .pop() || null;
+    const salaryChanges = allSalaryChanges
+      .filter(change => !minYm || change.effectiveYm >= minYm)
+      .map(change => ({
+        ...change,
+        isCurrent: change.effectiveYm === currentChangeYm,
+        isFuture: change.effectiveYm > asOfYm,
+      }))
+      .reverse();
 
     // История — это не только банковские операции. В старой июньской
     // ведомости авансы/бонусы и зафиксированный оклад хранились в снимке,
@@ -3070,7 +3114,11 @@ export class FinanceService implements OnModuleInit {
     const snapshotMap = e.salarySnapshots || {};
     const periodYms = new Set<string>([
       ...rows.map(r => r.salaryYm),
-      ...Object.keys(snapshotMap).filter(ym => ym >= minYm),
+      ...Object.keys(snapshotMap).filter(ym => ym <= asOfYm && (!minYm || ym >= minYm)),
+      ...Object.keys(e.salaryHistory || {}).filter(ym => YM_RE.test(ym) && ym <= asOfYm && (!minYm || ym >= minYm)),
+      ...Object.keys(e.advances || {}).filter(ym => YM_RE.test(ym) && ym <= asOfYm && (!minYm || ym >= minYm)),
+      ...Object.keys(e.bonuses || {}).filter(ym => YM_RE.test(ym) && ym <= asOfYm && (!minYm || ym >= minYm)),
+      ...Object.keys(e.fines || {}).filter(ym => YM_RE.test(ym) && ym <= asOfYm && (!minYm || ym >= minYm)),
     ]);
     const periods = [...periodYms]
       .filter(ym => workedInFinanceMonth(e, ym))
@@ -3081,8 +3129,12 @@ export class FinanceService implements OnModuleInit {
         const txAdvance = r2(periodRows.filter(r => r.kind === 'advance').reduce((s, r) => s + r.amount, 0));
         const txBonus = r2(periodRows.filter(r => r.kind === 'bonus').reduce((s, r) => s + r.amount, 0));
         const salary = snapshot ? r2(Number(snapshot.salary) || 0) : salaryForMonth(e, ym);
-        const advance = snapshot ? r2(Number(snapshot.advance) || 0) : txAdvance;
-        const bonus = snapshot ? r2(Number(snapshot.bonus) || 0) : txBonus;
+        const advance = snapshot
+          ? r2(Number(snapshot.advance) || 0)
+          : txAdvance > 0 ? txAdvance : advanceOf(e, ym);
+        const bonus = snapshot
+          ? r2(Number(snapshot.bonus) || 0)
+          : txBonus > 0 ? txBonus : bonusOf(e, ym);
         const fine = snapshot ? r2(Number(snapshot.fine) || 0) : fineOf(e, ym);
         return {
           ym, salary, advance, bonus, fine,
@@ -3097,6 +3149,8 @@ export class FinanceService implements OnModuleInit {
     return {
       employeeId: id,
       name: e.name,
+      currentSalary: salaryForMonth(e, currentYm()),
+      salaryChanges,
       rows,
       periods,
       totals: {
@@ -3111,6 +3165,7 @@ export class FinanceService implements OnModuleInit {
     };
   }
 
+  /** Аванс за месяц (помесячно, как бонус). */
   async setEmployeeAdvance(id: string, dto: { ym?: string; amount?: any }) {
     return this.setEmployeeMonthField(id, 'advances', dto, 'Аванс');
   }

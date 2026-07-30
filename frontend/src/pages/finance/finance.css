@@ -504,58 +504,163 @@
 .dark .fin-brk-pop-row .l { color: #9aa6b4; }
 .dark .fin-brk-empty { color: #6b7684; }
 
-/* ─── История выплат сотрудника при наведении на имя ─────────────── */
-.fin-payout-name { cursor: help; border-bottom: 1px dashed #c7ccd4; }
-.dark .fin-payout-name { border-bottom-color: #3a4553; }
-.fin-payout-pop {
-  pointer-events: auto; display: flex; flex-direction: column;
-  max-height: calc(100vh - 16px); overflow: hidden;
+/* ─── Inline-история сотрудника в зарплатной таблице ─────────────── */
+.fin-payout-name {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  border: 0; padding: 3px 4px 3px 0; background: transparent; color: inherit;
+  text-align: left; cursor: pointer;
 }
-.fin-payout-pop > .fin-brk-pop-body { min-height: 0; overscroll-behavior: contain; }
+.fin-payout-name b {
+  min-width: 0; overflow-wrap: anywhere;
+  border-bottom: 1px dashed #c7ccd4;
+}
+.fin-payout-name svg { color: var(--muted); transition: transform .16s ease, color .16s ease; }
+.fin-payout-name.open svg { transform: rotate(90deg); color: var(--accent); }
+.fin-payout-name:hover b, .fin-payout-name.open b { color: var(--accent); border-bottom-color: var(--accent); }
+.dark .fin-payout-name b { border-bottom-color: #3a4553; }
 
-.fin-payout-totals {
-  display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: #55606e;
-  padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid #eef0f4;
+.fin-root .fin-salary-employee-row.expanded > td {
+  background: color-mix(in srgb, var(--accent-soft) 56%, var(--surface));
+  border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--border));
 }
-.fin-payout-totals b { font-variant-numeric: tabular-nums; color: #16191d; }
-.dark .fin-payout-totals { color: #9aa6b4; border-bottom-color: #2b3440; }
-.dark .fin-payout-totals b { color: #e7ecf3; }
+.fin-root .fin-wide-table .fin-salary-employee-row.expanded > td:first-child {
+  background: color-mix(in srgb, var(--accent-soft) 56%, var(--surface));
+}
+.fin-root .fin-employee-history-row > td,
+.fin-root .fin-wide-table .fin-employee-history-row > td:first-child {
+  position: static !important; left: auto !important; z-index: auto !important;
+  padding: 0 !important; background: var(--surface-2) !important;
+  box-shadow: inset 0 -1px 0 var(--border) !important;
+}
+.fin-employee-history {
+  display: grid; gap: 14px; min-width: 720px; padding: 18px 20px 22px;
+  border-top: 2px solid var(--accent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 48%, var(--surface)) 0, var(--surface-2) 120px);
+  animation: finHistoryIn .16s ease-out;
+}
+@keyframes finHistoryIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fin-employee-history.loading,
+.fin-employee-history.error {
+  display: flex; align-items: center; justify-content: center; min-height: 110px;
+  color: var(--muted);
+}
+.fin-employee-history.error { gap: 12px; color: var(--red); }
+.fin-history-loader {
+  width: 18px; height: 18px; margin-right: 9px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: finHistorySpin .7s linear infinite;
+}
+@keyframes finHistorySpin { to { transform: rotate(360deg); } }
 
-.fin-payout-row {
-  display: grid; grid-template-columns: auto auto 1fr auto; gap: 4px 8px;
-  align-items: center; padding: 5px 0; border-bottom: 1px dashed #f0f2f5;
+.fin-employee-history-head {
+  display: grid; grid-template-columns: minmax(220px, 1fr) auto auto;
+  align-items: center; gap: 16px;
 }
-.fin-payout-row:last-child { border-bottom: 0; }
-.dark .fin-payout-row { border-bottom-color: #262e38; }
-.fin-payout-row .kind {
-  font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
-  background: #eef1f5; color: #55606e; white-space: nowrap;
+.fin-employee-history-head h3 { margin: 0; font-size: 17px; }
+.fin-employee-history-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.fin-employee-history-kpis { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.fin-employee-history-kpis > span {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 9px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--muted); font-size: 11px;
 }
-/* Аванс — синий, бонус — зелёный (это поощрение), зарплата — нейтральная. */
-.fin-payout-row .kind.adv { background: #e8f0fe; color: #1a56db; }
-.fin-payout-row .kind.bon { background: #e7f7ed; color: #157347; }
-.dark .fin-payout-row .kind { background: #262e38; color: #9aa6b4; }
-.dark .fin-payout-row .kind.adv { background: #16273f; color: #7aa7f0; }
-.dark .fin-payout-row .kind.bon { background: #16301f; color: #63c68c; }
-.fin-payout-row .date { color: #55606e; white-space: nowrap; }
-.dark .fin-payout-row .date { color: #9aa6b4; }
-.fin-payout-row .amt { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.fin-payout-row .acc { grid-column: 1 / -1; font-size: 11px; color: #7c8797; }
-.fin-payout-row .ym { grid-column: 1 / -1; font-size: 11px; color: #667085; margin-top: -3px; }
-.fin-payout-row .note {
-  grid-column: 1 / -1; font-size: 11px; color: #55606e; font-style: italic;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.fin-employee-history-kpis b { color: var(--text); font-variant-numeric: tabular-nums; }
+.fin-employee-history-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 14px; }
+.fin-employee-history-card {
+  min-width: 0; padding: 14px 16px; border: 1px solid var(--border);
+  border-radius: 13px; background: var(--surface); box-shadow: var(--shadow);
 }
-.dark .fin-payout-row .acc,
-.dark .fin-payout-row .ym { color: #6b7684; }
-.dark .fin-payout-row .note { color: #9aa6b4; }
-.fin-payout-foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid #eef0f4; font-size: 11px; color: #667085; }
-.dark .fin-payout-foot { border-top-color: #2b3440; color: #6b7684; }
-.fin-payout-more {
-  display: block; margin: 7px auto 0; border: 0; background: transparent;
-  color: #667085; font-size: 11px; cursor: pointer;
+.fin-employee-history-card.salary-rates { border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); }
+.fin-employee-history-card.advances { border-color: #bfdbfe; }
+.fin-employee-history-title {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-bottom: 10px; margin-bottom: 2px; border-bottom: 1px solid var(--border);
 }
-.fin-payout-more:hover { color: var(--accent); text-decoration: underline; }
+.fin-employee-history-title > span { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; }
+.fin-employee-history-title > small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.fin-employee-history-empty { padding: 18px 2px 8px; color: var(--muted); text-align: center; }
+
+.fin-salary-rate-list { display: grid; }
+.fin-salary-rate {
+  display: grid; grid-template-columns: 12px minmax(130px, 1fr) auto;
+  align-items: center; gap: 9px; padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.fin-salary-rate:last-child { border-bottom: 0; }
+.fin-salary-rate-dot {
+  width: 9px; height: 9px; border: 2px solid var(--accent); border-radius: 50%;
+  background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.fin-salary-rate.down .fin-salary-rate-dot { border-color: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
+.fin-salary-rate.future .fin-salary-rate-dot { border-color: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+.fin-salary-rate > div:nth-child(2) strong { display: block; text-transform: capitalize; }
+.fin-salary-rate > div:nth-child(2) small { display: block; margin-top: 2px; color: var(--muted); }
+.fin-salary-rate-values { display: grid; grid-template-columns: auto auto; align-items: baseline; justify-content: end; gap: 2px 4px; text-align: right; }
+.fin-salary-rate-values > span { color: var(--muted); }
+.fin-salary-rate-values > b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fin-salary-rate-values > small { grid-column: 1 / -1; }
+.fin-salary-rate-values > em {
+  grid-column: 1 / -1; justify-self: end; padding: 1px 6px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent); font-size: 10px; font-style: normal;
+}
+.fin-salary-rate-values > em.future { background: var(--amber-soft); color: var(--amber); }
+
+.fin-advance-history { display: grid; }
+.fin-advance-event {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.fin-advance-event:last-child { border-bottom: 0; }
+.fin-advance-event > div strong { display: block; }
+.fin-advance-event > div small,
+.fin-advance-event > div em { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.fin-advance-event > div em { white-space: normal; font-style: normal; color: var(--amber); }
+.fin-advance-event > b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fin-advance-event.legacy { opacity: .82; }
+.fin-advance-event .kind,
+.fin-inline-payout-row .kind {
+  display: inline-flex; padding: 2px 7px; border-radius: 999px;
+  background: #eef1f5; color: #55606e; font-size: 11px; font-style: normal; font-weight: 650; white-space: nowrap;
+}
+.fin-advance-event .kind.adv { background: #e8f0fe; color: #1a56db; }
+.fin-inline-payout-row .kind.bon { background: var(--green-soft); color: #157347; }
+
+.fin-inline-payroll-periods {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 9px; padding-top: 10px;
+}
+.fin-inline-payroll-period {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px;
+  padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2);
+}
+.fin-inline-payroll-period .head strong { display: block; text-transform: capitalize; }
+.fin-inline-payroll-period .head span { display: block; margin-top: 2px; color: var(--muted); font-size: 10.5px; }
+.fin-inline-payroll-period .head span.frozen { color: var(--green); }
+.fin-inline-payroll-period > b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fin-inline-payroll-period > small { grid-column: 1 / -1; color: var(--muted); overflow-wrap: anywhere; }
+
+.fin-inline-payout-table { padding-top: 6px; }
+.fin-inline-payout-head,
+.fin-inline-payout-row {
+  display: grid; grid-template-columns: 90px 105px 125px minmax(180px, 1fr) 105px;
+  align-items: center; gap: 12px;
+}
+.fin-inline-payout-head {
+  padding: 7px 4px; color: var(--muted); font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+}
+.fin-inline-payout-row { padding: 10px 4px; border-top: 1px solid var(--border); }
+.fin-inline-payout-row > span:nth-child(4) b { display: block; font-weight: 600; }
+.fin-inline-payout-row > span:nth-child(4) small { display: block; margin-top: 2px; color: var(--muted); }
+.fin-inline-payout-row > strong { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 900px) {
+  .fin-employee-history-head { grid-template-columns: 1fr auto; }
+  .fin-employee-history-kpis { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; }
+  .fin-employee-history-grid { grid-template-columns: 1fr; }
+}
+
+/* Кнопка закрытия всё ещё используется в подсказке зарплат планирования. */
 .fin-payout-close {
   display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
   border: 0; border-radius: 7px; background: #f2f4f7; color: #667085; cursor: pointer;
@@ -568,12 +673,6 @@
 }
 .fin-payout-pin-hint.pinned { color: #16835b; }
 .dark .fin-payout-pin-hint.pinned { color: #5fd0a1; }
-.fin-payout-modal { max-width: 620px; }
-.fin-payout-full-list { max-height: none; overflow: visible; margin-top: 8px; }
-.fin-payout-full-list .fin-payout-row {
-  grid-template-columns: 82px 110px 1fr;
-  padding: 10px 2px;
-}
 
 /* Детали журнала: вместо технической строки — компактные пары ключ/значение. */
 .fin-activity-details { max-width: 720px; line-height: 1.7; }
@@ -589,13 +688,3 @@
 .fin-plan-chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 8px 20px}.fin-plan-chart-head>div{min-width:0}.fin-plan-chart-head strong{font-size:17px}.fin-plan-chart-head span{display:block;color:var(--muted);font-size:12px;margin-top:4px}.fin-plan-chart-head .fin-plan-scenario{padding:6px 10px;margin:0;border-radius:999px;background:#eff6ff;color:#2563eb;font-weight:650;white-space:nowrap}.fin-plan-column{padding:16px 18px;border:1px solid;border-radius:14px;min-width:0}.fin-plan-column.income{background:linear-gradient(145deg,#f0fdf4,#fff);border-color:#bbf7d0}.fin-plan-column.expense{background:linear-gradient(145deg,#fff1f2,#fff);border-color:#fecdd3}.fin-plan-column-title{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:9px;border-bottom:1px solid var(--border)}.fin-plan-column-title span{white-space:nowrap;font-variant-numeric:tabular-nums}.fin-plan-column.income .fin-plan-column-title{color:#15803d}.fin-plan-column.expense .fin-plan-column-title{color:#e11d48}.fin-plan-source.has-popover{position:relative;cursor:help}.fin-plan-source.has-popover>span:first-child{text-decoration:underline dotted;text-underline-offset:4px}.fin-salary-popover{box-sizing:border-box;position:fixed;z-index:300;width:min(410px,calc(100vw - 16px));padding:12px 14px 9px;background:#fff;border:1px solid #e2e8f0;border-radius:13px;box-shadow:0 18px 50px #0f172a2e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;color:#16191d}.fin-salary-popover.pinned{cursor:default;box-shadow:0 20px 55px #0f172a3d;border-color:#fda4af}.fin-salary-popover-head{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:3px 0 10px;color:#e11d48;border-bottom:1px solid #eef2f7}.fin-salary-popover-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fin-salary-popover-head b{white-space:nowrap}.fin-salary-popover-body{max-height:min(300px,52vh);overflow-y:auto;overscroll-behavior:contain;padding-right:3px;scrollbar-width:thin}.fin-salary-popover-body>div{display:flex;justify-content:space-between;align-items:baseline;gap:20px;padding:8px 0;border-bottom:1px solid #eef2f7}.fin-salary-popover-body>div span{min-width:0;overflow-wrap:anywhere}.fin-salary-popover-body>div b{white-space:nowrap}.fin-salary-popover-body>div:last-child{border-bottom:0}.fin-chart-tooltip{box-sizing:border-box;min-width:210px;padding:12px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 35px #0f172a24}.fin-chart-tooltip>strong{display:block;margin-bottom:8px}.fin-chart-tooltip>div{display:grid;grid-template-columns:10px 1fr auto;align-items:center;gap:7px;padding:3px 0}.fin-chart-tooltip i,.fin-chart-tooltip span{width:8px;height:8px;border-radius:50%}.income-dot{background:#22c55e}.expense-dot{background:#fb7185}.balance-dot{background:#2563eb}.dark .fin-plan-column.income{background:linear-gradient(145deg,#123122,#171b22);border-color:#235c3c}.dark .fin-plan-column.expense{background:linear-gradient(145deg,#3a1820,#171b22);border-color:#63303b}.dark .fin-salary-popover,.dark .fin-chart-tooltip{background:#202630;border-color:#364152;color:#e8ebf1}@media(max-width:760px){.fin-plan-chart-head span:not(.fin-plan-scenario){display:none}.fin-plan-column{padding:13px}.fin-salary-popover-body{max-height:52vh}}
 
 .fin-plan-flow-cell{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:150px;font-variant-numeric:tabular-nums}.fin-plan-flow-cell strong{white-space:nowrap}.fin-plan-flow-cell small{font-size:10.5px;color:var(--muted);white-space:nowrap}.income-dot{background:#16a34a}.income-plan-dot{background:#86efac}.expense-dot{background:#e11d48}.expense-plan-dot{background:#fda4af}
-
-/* История зарплаты: начисление месяца отдельно от операций по счетам.
-   Старые авансы могли храниться только в ведомости, поэтому такое разделение
-   не смешивает оклад 5 000 с финальной транзакцией 4 000. */
-.fin-payout-periods{display:grid;gap:7px;padding:8px 0;border-bottom:1px solid var(--border)}
-.fin-payout-period{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:8px 10px;background:var(--surface-2,#f8fafc);border:1px solid var(--border);border-radius:9px}
-.fin-payout-period>div{min-width:0}.fin-payout-period>div strong{display:block;text-transform:capitalize}.fin-payout-period>div span{display:block;margin-top:2px;color:var(--muted);font-size:11px}
-.fin-payout-period>b{white-space:nowrap;font-variant-numeric:tabular-nums}.fin-payout-period>small{grid-column:1/-1;color:var(--muted);overflow-wrap:anywhere}
-.fin-payout-section-label{padding:9px 0 4px!important;border:0!important;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
-.dark .fin-payout-period{background:#171d25}

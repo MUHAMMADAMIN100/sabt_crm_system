@@ -60,6 +60,7 @@ describe('FinanceService correctness', () => {
   let service: FinanceService;
   let txRepo: ReturnType<typeof repository>;
   let accountRepo: ReturnType<typeof repository>;
+  let employeeRepo: ReturnType<typeof repository>;
   let subscriptionRepo: ReturnType<typeof repository>;
   let plannedPaymentRepo: ReturnType<typeof repository>;
 
@@ -68,7 +69,7 @@ describe('FinanceService correctness', () => {
     accountRepo = repository();
     const categoryRepo = repository();
     const projectRepo = repository();
-    const employeeRepo = repository();
+    employeeRepo = repository();
     subscriptionRepo = repository();
     const debtRepo = repository();
     plannedPaymentRepo = repository();
@@ -260,6 +261,94 @@ describe('FinanceService correctness', () => {
       status: FinanceTxStatus.CANCELLED,
     }));
     expect(txRepo.delete).not.toHaveBeenCalled();
+  });
+
+  it('returns all-time salary changes and keeps legacy advance history', async () => {
+    employeeRepo.findOne.mockResolvedValue({
+      id: 'employee-1',
+      name: 'Сотрудник',
+      salary: 5_000,
+      hireDate: '2026-01-10',
+      terminationDate: null,
+      status: 'active',
+      employmentHistory: null,
+      salaryHistory: {
+        '2026-01': 3_000,
+        '2026-04': 4_000,
+        '2026-05': 4_000,
+        '2026-07': 5_000,
+      },
+      salarySnapshots: null,
+      advances: { '2026-02': 500 },
+      bonuses: null,
+      fines: { '2026-03': 100 },
+    });
+    jest.spyOn(service as any, 'maps').mockResolvedValue({
+      ...emptyMaps,
+      accounts: [{ id: 'account-1', key: 'cash', name: 'Наличные' }],
+      acc: new Map([['account-1', { id: 'account-1', key: 'cash', name: 'Наличные' }]]),
+    });
+    txRepo.find.mockResolvedValue([
+      transaction({
+        id: 'salary-old',
+        employeeId: 'employee-1',
+        amount: 3_000,
+        date: '2026-02-10',
+        salaryYm: '2026-01',
+        comment: 'Зарплата',
+        account: 'cash',
+      }),
+      transaction({
+        id: 'advance-old',
+        employeeId: 'employee-1',
+        amount: 300,
+        date: '2026-03-20',
+        salaryYm: '2026-03',
+        comment: 'Аванс — на дорогу',
+        accountId: 'account-1',
+      }),
+      transaction({
+        id: 'cancelled',
+        employeeId: 'employee-1',
+        amount: 999,
+        date: '2026-04-01',
+        salaryYm: '2026-04',
+        comment: 'Аванс',
+        status: FinanceTxStatus.CANCELLED,
+      }),
+      transaction({
+        id: 'future',
+        employeeId: 'employee-1',
+        amount: 999,
+        date: '2999-08-01',
+        salaryYm: '2999-08',
+        comment: 'Аванс',
+      }),
+    ]);
+
+    const result = await service.employeePayoutHistory('employee-1', 0);
+
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'salary-old',
+        accountName: 'Наличные',
+        salaryYm: '2026-01',
+      }),
+      expect.objectContaining({
+        id: 'advance-old',
+        kind: 'advance',
+        note: 'на дорогу',
+      }),
+    ]));
+    expect(result.salaryChanges).toEqual([
+      { effectiveYm: '2026-07', salary: 5_000, previousSalary: 4_000, delta: 1_000, isCurrent: true, isFuture: false },
+      { effectiveYm: '2026-04', salary: 4_000, previousSalary: 3_000, delta: 1_000, isCurrent: false, isFuture: false },
+      { effectiveYm: '2026-01', salary: 3_000, previousSalary: null, delta: null, isCurrent: false, isFuture: false },
+    ]);
+    expect(result.periods.find(period => period.ym === '2026-02')).toMatchObject({
+      advance: 500,
+    });
   });
 
   it('normalizes legacy backup account keys before restore', () => {

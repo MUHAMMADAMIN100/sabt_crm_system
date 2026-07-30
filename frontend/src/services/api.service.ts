@@ -381,9 +381,11 @@ export const financeApi = {
   updateEmployee: (id: string, data: any) => api.patch(`/finance/employees/${id}`, data).then(r => r.data),
   removeEmployee: (id: string) => api.delete(`/finance/employees/${id}`).then(r => r.data),
   setEmployeeBonus: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/bonus`, data).then(r => r.data),
-  // Помесячные аванс и штраф (как бонус; 0 — снять).
-  employeePayouts: (id: string, months?: number) =>
-    api.get(`/finance/employees/${id}/payouts`, { params: months ? { months } : undefined }).then(r => r.data),
+  // История оклада и выплат. scope='all' — вся доступная история.
+  employeePayouts: (id: string, scope?: number | 'all') =>
+    api.get(`/finance/employees/${id}/payouts`, {
+      params: scope === 'all' ? { scope: 'all' } : scope ? { months: scope } : undefined,
+    }).then(r => r.data),
   setEmployeeAdvance: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/advance`, data).then(r => r.data),
   setEmployeeFine: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/fine`, data).then(r => r.data),
   // Закрыть месяц: все сотрудники — «выплачено» (снапшот, без операций).

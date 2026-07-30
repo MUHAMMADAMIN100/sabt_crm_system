@@ -182,14 +182,23 @@ export class FinanceController {
   @Delete('employees/:id') removeEmployee(@Param('id') id: string) { return this.service.removeEmployee(id); }
   /** Бонус сотрудника за месяц (входит в «к выплате»; 0 — снять). */
   @Post('employees/:id/bonus') setEmployeeBonus(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeBonus(id, dto); }
-  /** Аванс за месяц (помесячно, как бонус; 0 — снять). */
-  /** История выплат сотруднику (аванс/бонус/зарплата) — для карточки при
-   *  наведении в зарплатной ведомости. */
+  /** История оклада и выплат сотруднику. scope=all возвращает всю доступную
+   *  историю; иначе months ограничивается безопасным диапазоном 1..1200. */
   @Get('employees/:id/payouts')
-  employeePayouts(@Param('id') id: string, @Query('months') months?: string) {
-    return this.service.employeePayoutHistory(id, months ? Number(months) : undefined);
+  employeePayouts(
+    @Param('id') id: string,
+    @Query('months') months?: string,
+    @Query('scope') scope?: string,
+  ) {
+    if (scope === 'all') return this.service.employeePayoutHistory(id, 0);
+    const parsed = Number(months);
+    const bounded = months && Number.isFinite(parsed)
+      ? Math.min(1200, Math.max(1, Math.trunc(parsed)))
+      : undefined;
+    return this.service.employeePayoutHistory(id, bounded);
   }
 
+  /** Аванс за месяц (помесячно, как бонус; 0 — снять). */
   @Post('employees/:id/advance') setEmployeeAdvance(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeAdvance(id, dto); }
   /** Штраф за месяц (вычитается из «к выплате»; 0 — снять). */
   @Post('employees/:id/fine') setEmployeeFine(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeFine(id, dto); }

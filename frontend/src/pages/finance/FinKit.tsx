@@ -12,11 +12,13 @@ import type { QueryClient } from '@tanstack/react-query';
 /** После денежной операции: журнал, обзоры, детализации. */
 export function invalidateFinance(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['finance'] });
+  qc.invalidateQueries({ queryKey: ['fin-payouts'] });
 }
 /** После правки справочника: и справочники, и зависящие от них расчёты. */
 export function invalidateFinanceAll(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['finance'] });
   qc.invalidateQueries({ queryKey: ['finref'] });
+  qc.invalidateQueries({ queryKey: ['fin-payouts'] });
 }
 
 /** Скелетон: карточки-заглушки на время первой загрузки страницы. */

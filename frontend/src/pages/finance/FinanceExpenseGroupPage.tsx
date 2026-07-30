@@ -1,6 +1,6 @@
 // Статья расхода /finance/expense/:kind (salary | rent_subs | debts | other) —
 // порт fin-webrand/src/pages/ExpenseGroup.tsx (ТЗ 4.2–4.5).
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -10,7 +10,7 @@ import { FinLoading, FinLoadError, FinModal, useModalKeys, finConfirm, invalidat
 import { EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
-import PayoutHistoryHover from './PayoutHistoryHover';
+import EmployeeSalaryHistory from './EmployeeSalaryHistory';
 import './finance.css';
 
 export default function FinanceExpenseGroupPage() {
@@ -119,10 +119,27 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   const [payoutFor, setPayoutFor] = useState<{ row: any; kind: 'advance' | 'bonus' } | null>(null);
   const [empFor, setEmpFor] = useState<any | 'new' | null>(null);
   const [showFired, setShowFired] = useState(false);
+  const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
+  const historyYm = useRef(ym);
+  const historyFocusTarget = useRef<string | null>(null);
 
   const cards = data?.cards ?? { fund: 0, advances: 0, bonuses: 0, fines: 0, paid: 0, toPay: 0 };
   const rows: any[] = data?.rows ?? [];
-  const fired: any[] = data?.fired ?? [];
+  // В историческом месяце уже уволенный сотрудник остаётся в основной
+  // ведомости. Не дублируем его второй раз в раскрываемом списке уволенных.
+  const visibleIds = new Set(rows.map(employee => employee.id));
+  const fired: any[] = (data?.fired ?? []).filter((employee: any) => !visibleIds.has(employee.id));
+
+  useEffect(() => {
+    if (historyYm.current === ym) return;
+    historyYm.current = ym;
+    setExpandedEmployeeId(null);
+  }, [ym]);
+  useEffect(() => {
+    if (expandedEmployeeId !== null || !historyFocusTarget.current) return;
+    document.getElementById(`employee-history-trigger-${historyFocusTarget.current}`)?.focus();
+    historyFocusTarget.current = null;
+  }, [expandedEmployeeId]);
 
   // Все выплачены → автоматически показываем следующий месяц с чистыми
   // бонусами/авансами/штрафами. Один раз на месяц за сессию, и только
@@ -161,6 +178,13 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   const openEmp = (row: any) => {
     const full = (fullEmployees ?? []).find((x: any) => x.id === row.id);
     setEmpFor(full ?? row);
+  };
+  const toggleEmployeeHistory = (id: string) => {
+    setExpandedEmployeeId(current => current === id ? null : id);
+  };
+  const closeEmployeeHistory = (id: string) => {
+    historyFocusTarget.current = id;
+    setExpandedEmployeeId(null);
   };
 
   async function cancelSalaryMonth(e: any) {
@@ -239,14 +263,20 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                     // дважды (в paid и вычетом из остатка) — одна выдача
                     // аванса ошибочно помечала сотрудника «выплачено».
                     const isPaid = e.frozen || (gross > 0 && Number(e.toPay) <= 0.005);
+                    const historyOpen = expandedEmployeeId === e.id;
                     return (
-                      <tr key={e.id} onDoubleClick={() => openEmp(e)}>
+                      <Fragment key={e.id}>
+                      <tr className={historyOpen ? 'fin-salary-employee-row expanded' : 'fin-salary-employee-row'}>
                         <td>
-                          {/* Наведение на имя показывает историю выплат: что,
-                              когда, сколько и с какого счёта. */}
-                          <PayoutHistoryHover employeeId={e.id} name={e.name} className="fin-payout-name">
+                          <button type="button"
+                            id={`employee-history-trigger-${e.id}`}
+                            className={`fin-payout-name${historyOpen ? ' open' : ''}`}
+                            aria-expanded={historyOpen}
+                            aria-controls={historyOpen ? `employee-history-${e.id}` : undefined}
+                            onClick={() => toggleEmployeeHistory(e.id)}>
+                            <FinIcon name="chevronRight" size={15} />
                             <b>{e.name}</b>
-                          </PayoutHistoryHover>
+                          </button>
                         </td>
                         <td className="muted">{e.role ?? '—'}</td>
                         <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
@@ -261,6 +291,15 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                         </td>
                         <td className="num"><button className="btn ghost sm" title="Редактировать" onClick={() => openEmp(e)}><FinIcon name="edit" size={15} /></button></td>
                       </tr>
+                      {historyOpen && (
+                        <tr className="fin-employee-history-row">
+                          <td colSpan={9}>
+                            <EmployeeSalaryHistory employeeId={e.id} name={e.name}
+                              onClose={() => closeEmployeeHistory(e.id)} />
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -304,19 +343,37 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
               <table>
                 <thead><tr><th>ФИО</th><th>Должность</th><th>Дата приёма</th><th className="num">ЗП</th><th /></tr></thead>
                 <tbody>
-                  {fired.map((e) => (
-                    <tr key={e.id} style={{ opacity: 0.7 }} onDoubleClick={() => openEmp(e)}>
+                  {fired.map((e) => {
+                    const historyOpen = expandedEmployeeId === e.id;
+                    return <Fragment key={e.id}>
+                    <tr className={historyOpen ? 'fin-salary-employee-row expanded' : 'fin-salary-employee-row'}
+                      style={{ opacity: historyOpen ? 1 : 0.7 }}>
                       <td>
-                        <PayoutHistoryHover employeeId={e.id} name={e.name} className="fin-payout-name">
+                        <button type="button"
+                          id={`employee-history-trigger-${e.id}`}
+                          className={`fin-payout-name${historyOpen ? ' open' : ''}`}
+                          aria-expanded={historyOpen}
+                          aria-controls={historyOpen ? `employee-history-${e.id}` : undefined}
+                          onClick={() => toggleEmployeeHistory(e.id)}>
+                          <FinIcon name="chevronRight" size={15} />
                           <b>{e.name}</b>
-                        </PayoutHistoryHover>
+                        </button>
                       </td>
                       <td className="muted">{e.role ?? '—'}</td>
                       <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
                       <td className="num muted">{money(e.salary)}</td>
                       <td className="num"><button className="btn ghost sm" title="Редактировать" onClick={() => openEmp(e)}><FinIcon name="edit" size={15} /></button></td>
                     </tr>
-                  ))}
+                    {historyOpen && (
+                      <tr className="fin-employee-history-row">
+                        <td colSpan={5}>
+                          <EmployeeSalaryHistory employeeId={e.id} name={e.name}
+                            onClose={() => closeEmployeeHistory(e.id)} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>;
+                  })}
                 </tbody>
               </table>
             </div>
