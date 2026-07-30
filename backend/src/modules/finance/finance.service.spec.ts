@@ -8,6 +8,10 @@ import {
   salaryForFinanceMonth,
   workedInFinanceMonth,
 } from './finance-calculations';
+import {
+  NOTION_CONFIRMED_SALARY_HISTORY,
+  NOTION_PAYROLL_HISTORY,
+} from './notion-snapshot.data';
 
 const emptyMaps = {
   accounts: [],
@@ -351,6 +355,206 @@ describe('FinanceService correctness', () => {
     });
   });
 
+  it('keeps a fixed salary when an advance is followed by the final payment', async () => {
+    employeeRepo.findOne.mockResolvedValue({
+      id: 'employee-1',
+      name: 'Сотрудник',
+      salary: 5_000,
+      hireDate: '2026-03-10',
+      terminationDate: null,
+      status: 'active',
+      employmentHistory: null,
+      salaryHistory: { '2026-03': 5_000 },
+      salarySnapshots: {
+        '2026-06': {
+          salary: 5_000,
+          advance: 1_000,
+          bonus: 0,
+          fine: 0,
+          // Legacy-снимок хранил здесь только финальную выплату.
+          paid: 4_000,
+          paidAt: '2026-07-10',
+        },
+      },
+      advances: { '2026-06': 1_000 },
+      bonuses: null,
+      fines: null,
+    });
+    jest.spyOn(service as any, 'maps').mockResolvedValue(emptyMaps);
+    txRepo.find.mockResolvedValue([
+      transaction({
+        id: 'salary-final',
+        employeeId: 'employee-1',
+        amount: 4_000,
+        date: '2026-07-10',
+        salaryYm: '2026-06',
+        comment: 'Зарплата',
+      }),
+    ]);
+
+    const result = await service.employeePayoutHistory('employee-1', 0);
+
+    expect(result.salaryChanges).toEqual([
+      expect.objectContaining({ effectiveYm: '2026-03', salary: 5_000, previousSalary: null }),
+    ]);
+    expect(result.periods.find(period => period.ym === '2026-06')).toMatchObject({
+      salary: 5_000,
+      advance: 1_000,
+      recordedPaid: 5_000,
+    });
+  });
+
+  it('does not add an advance twice when it already exists in the operation journal', async () => {
+    employeeRepo.findOne.mockResolvedValue({
+      id: 'employee-1',
+      name: 'Сотрудник',
+      salary: 4_000,
+      hireDate: '2026-03-10',
+      terminationDate: null,
+      status: 'active',
+      employmentHistory: null,
+      salaryHistory: { '2026-03': 4_000 },
+      salarySnapshots: {
+        '2026-06': {
+          salary: 4_000,
+          advance: 1_000,
+          bonus: 0,
+          fine: 0,
+          paid: 4_000,
+          paidAt: '2026-07-10',
+        },
+      },
+      advances: null,
+      bonuses: null,
+      fines: null,
+    });
+    jest.spyOn(service as any, 'maps').mockResolvedValue(emptyMaps);
+    txRepo.find.mockResolvedValue([
+      transaction({
+        id: 'advance',
+        employeeId: 'employee-1',
+        amount: 1_000,
+        date: '2026-07-01',
+        salaryYm: '2026-06',
+        comment: 'Аванс',
+      }),
+      transaction({
+        id: 'salary-final',
+        employeeId: 'employee-1',
+        amount: 3_000,
+        date: '2026-07-10',
+        salaryYm: '2026-06',
+        comment: 'Зарплата',
+      }),
+    ]);
+
+    const result = await service.employeePayoutHistory('employee-1', 0);
+
+    expect(result.periods.find(period => period.ym === '2026-06')).toMatchObject({
+      salary: 4_000,
+      advance: 1_000,
+      paidByOperations: 4_000,
+      recordedPaid: 4_000,
+    });
+  });
+
+  it('keeps the closed snapshot total when only part of the old journal survived', async () => {
+    employeeRepo.findOne.mockResolvedValue({
+      id: 'employee-1',
+      name: 'Сотрудник',
+      salary: 5_000,
+      hireDate: '2026-03-10',
+      terminationDate: null,
+      status: 'active',
+      employmentHistory: null,
+      salaryHistory: { '2026-03': 5_000 },
+      salarySnapshots: {
+        '2026-06': {
+          salary: 5_000,
+          advance: 1_000,
+          bonus: 0,
+          fine: 0,
+          // Legacy: paid — финальная часть, отдельная операция не сохранилась.
+          paid: 4_000,
+          paidAt: '2026-07-10',
+        },
+      },
+      advances: null,
+      bonuses: null,
+      fines: null,
+    });
+    jest.spyOn(service as any, 'maps').mockResolvedValue(emptyMaps);
+    txRepo.find.mockResolvedValue([
+      transaction({
+        id: 'advance-only',
+        employeeId: 'employee-1',
+        amount: 1_000,
+        date: '2026-07-01',
+        salaryYm: '2026-06',
+        comment: 'Аванс',
+      }),
+    ]);
+
+    const result = await service.employeePayoutHistory('employee-1', 0);
+
+    expect(result.periods.find(period => period.ym === '2026-06')).toMatchObject({
+      salary: 5_000,
+      advance: 1_000,
+      paidByOperations: 1_000,
+      recordedPaid: 5_000,
+    });
+  });
+
+  it('returns a Notion payroll total as a separate historical fact, not a salary rate', async () => {
+    employeeRepo.findOne.mockResolvedValue({
+      id: 'employee-1',
+      name: 'Сотрудник',
+      salary: 5_000,
+      hireDate: '2026-03-10',
+      terminationDate: null,
+      status: 'active',
+      employmentHistory: null,
+      salaryHistory: { '2026-06': 4_000, '2026-07': 5_000 },
+      salarySnapshots: null,
+      legacyPayrollHistory: {
+        '2026-05': { paid: 2_350, source: 'notion' },
+      },
+      advances: null,
+      bonuses: null,
+      fines: null,
+    });
+    jest.spyOn(service as any, 'maps').mockResolvedValue(emptyMaps);
+    txRepo.find.mockResolvedValue([
+      transaction({
+        id: 'later-advance',
+        employeeId: 'employee-1',
+        amount: 500,
+        date: '2026-05-20',
+        salaryYm: '2026-05',
+        comment: 'Аванс',
+      }),
+    ]);
+
+    const result = await service.employeePayoutHistory('employee-1', 0);
+
+    expect(result.periods).toEqual([
+      expect.objectContaining({
+        ym: '2026-05',
+        salary: null,
+        accrued: null,
+        recordedPaid: 2_350,
+        paidByOperations: 500,
+        legacyCrmPaid: 500,
+        legacySource: 'notion',
+        frozen: false,
+      }),
+    ]);
+    expect(result.salaryChanges).toEqual([
+      expect.objectContaining({ effectiveYm: '2026-07', salary: 5_000 }),
+      expect.objectContaining({ effectiveYm: '2026-06', salary: 4_000 }),
+    ]);
+  });
+
   it('normalizes legacy backup account keys before restore', () => {
     const normalized = (service as any).normalizeImportData({
       version: 1,
@@ -453,5 +657,25 @@ describe('salaryForFinanceMonth', () => {
     };
     expect(salaryForFinanceMonth(employee, '2026-06')).toBe(5_000);
     expect(salaryForFinanceMonth(employee, '2026-07')).toBe(7_000);
+  });
+});
+
+describe('legacy Notion payroll facts', () => {
+  it('contains only pre-June months and preserves the source totals', () => {
+    const totals: Record<string, number> = {};
+    for (const employee of NOTION_PAYROLL_HISTORY) {
+      for (const [ym, amount] of Object.entries(employee.paidByYm)) {
+        expect(ym < '2026-06').toBe(true);
+        totals[ym] = (totals[ym] || 0) + amount;
+      }
+    }
+    expect(totals).toEqual({
+      '2026-03': 6_800,
+      '2026-04': 12_900,
+      '2026-05': 22_350,
+    });
+    expect(NOTION_CONFIRMED_SALARY_HISTORY).toEqual([
+      { name: 'Навруз Марданов Шаймарданович', effectiveYm: '2026-03', salary: 4_000 },
+    ]);
   });
 });

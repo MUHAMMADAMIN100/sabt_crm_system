@@ -1,6 +1,7 @@
 // Статья расхода /finance/expense/:kind (salary | rent_subs | debts | other) —
 // порт fin-webrand/src/pages/ExpenseGroup.tsx (ТЗ 4.2–4.5).
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -12,6 +13,22 @@ import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import EmployeeSalaryHistory from './EmployeeSalaryHistory';
 import './finance.css';
+
+const SALARY_ROW_CONTROL_SELECTOR = [
+  'button',
+  'a',
+  'input',
+  'select',
+  'textarea',
+  'label',
+  '[role="button"]',
+  '[contenteditable="true"]',
+  '[data-history-toggle-ignore]',
+].join(',');
+
+function isSalaryRowControl(target: EventTarget | null) {
+  return target instanceof Element && target.closest(SALARY_ROW_CONTROL_SELECTOR) !== null;
+}
 
 export default function FinanceExpenseGroupPage() {
   const { kind } = useParams<{ kind: string }>();
@@ -137,7 +154,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   }, [ym]);
   useEffect(() => {
     if (expandedEmployeeId !== null || !historyFocusTarget.current) return;
-    document.getElementById(`employee-history-trigger-${historyFocusTarget.current}`)?.focus();
+    document.getElementById(`employee-history-row-${historyFocusTarget.current}`)?.focus();
     historyFocusTarget.current = null;
   }, [expandedEmployeeId]);
 
@@ -185,6 +202,23 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   const closeEmployeeHistory = (id: string) => {
     historyFocusTarget.current = id;
     setExpandedEmployeeId(null);
+  };
+  const toggleEmployeeHistoryFromRow = (
+    event: ReactMouseEvent<HTMLTableRowElement>,
+    id: string,
+  ) => {
+    if (isSalaryRowControl(event.target)) return;
+    toggleEmployeeHistory(id);
+  };
+  const toggleEmployeeHistoryFromKeyboard = (
+    event: ReactKeyboardEvent<HTMLTableRowElement>,
+    id: string,
+  ) => {
+    // Enter/Space внутри кнопки или поля принадлежат самому контролу.
+    if (event.target !== event.currentTarget) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    toggleEmployeeHistory(id);
   };
 
   async function cancelSalaryMonth(e: any) {
@@ -266,17 +300,18 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                     const historyOpen = expandedEmployeeId === e.id;
                     return (
                       <Fragment key={e.id}>
-                      <tr className={historyOpen ? 'fin-salary-employee-row expanded' : 'fin-salary-employee-row'}>
+                      <tr
+                        id={`employee-history-row-${e.id}`}
+                        className={historyOpen ? 'fin-salary-employee-row expanded' : 'fin-salary-employee-row'}
+                        tabIndex={0}
+                        aria-label={`${historyOpen ? 'Свернуть' : 'Открыть'} историю зарплаты — ${e.name}`}
+                        aria-expanded={historyOpen}
+                        aria-controls={historyOpen ? `employee-history-${e.id}` : undefined}
+                        onClick={(event) => toggleEmployeeHistoryFromRow(event, e.id)}
+                        onKeyDown={(event) => toggleEmployeeHistoryFromKeyboard(event, e.id)}
+                      >
                         <td>
-                          <button type="button"
-                            id={`employee-history-trigger-${e.id}`}
-                            className={`fin-payout-name${historyOpen ? ' open' : ''}`}
-                            aria-expanded={historyOpen}
-                            aria-controls={historyOpen ? `employee-history-${e.id}` : undefined}
-                            onClick={() => toggleEmployeeHistory(e.id)}>
-                            <FinIcon name="chevronRight" size={15} />
-                            <b>{e.name}</b>
-                          </button>
+                          <b className="fin-employee-name">{e.name}</b>
                         </td>
                         <td className="muted">{e.role ?? '—'}</td>
                         <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
@@ -346,18 +381,19 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                   {fired.map((e) => {
                     const historyOpen = expandedEmployeeId === e.id;
                     return <Fragment key={e.id}>
-                    <tr className={historyOpen ? 'fin-salary-employee-row expanded' : 'fin-salary-employee-row'}
-                      style={{ opacity: historyOpen ? 1 : 0.7 }}>
+                    <tr
+                      id={`employee-history-row-${e.id}`}
+                      className={historyOpen ? 'fin-salary-employee-row expanded' : 'fin-salary-employee-row'}
+                      style={{ opacity: historyOpen ? 1 : 0.7 }}
+                      tabIndex={0}
+                      aria-label={`${historyOpen ? 'Свернуть' : 'Открыть'} историю зарплаты — ${e.name}`}
+                      aria-expanded={historyOpen}
+                      aria-controls={historyOpen ? `employee-history-${e.id}` : undefined}
+                      onClick={(event) => toggleEmployeeHistoryFromRow(event, e.id)}
+                      onKeyDown={(event) => toggleEmployeeHistoryFromKeyboard(event, e.id)}
+                    >
                       <td>
-                        <button type="button"
-                          id={`employee-history-trigger-${e.id}`}
-                          className={`fin-payout-name${historyOpen ? ' open' : ''}`}
-                          aria-expanded={historyOpen}
-                          aria-controls={historyOpen ? `employee-history-${e.id}` : undefined}
-                          onClick={() => toggleEmployeeHistory(e.id)}>
-                          <FinIcon name="chevronRight" size={15} />
-                          <b>{e.name}</b>
-                        </button>
+                        <b className="fin-employee-name">{e.name}</b>
                       </td>
                       <td className="muted">{e.role ?? '—'}</td>
                       <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>

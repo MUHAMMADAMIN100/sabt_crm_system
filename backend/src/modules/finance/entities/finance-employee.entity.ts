@@ -45,6 +45,16 @@ export class FinanceEmployee {
   salarySnapshots: Record<string, {
     salary: number; bonus: number; advance: number; fine: number;
     paid: number; paidAt: string;
+    /** v2: paid уже включает авансы и остальные операции месяца. */
+    paidIncludesAdvance?: boolean;
+  }> | null;
+
+  /** Суммы из старой помесячной таблицы без точной даты, счёта и разбивки.
+   *  Это отдельные исторические факты, а не ставка и не банковская проводка. */
+  @Column({ type: 'jsonb', nullable: true })
+  legacyPayrollHistory: Record<string, {
+    paid: number;
+    source: 'notion';
   }> | null;
 
   /** Дата приёма на работу (ISO). */

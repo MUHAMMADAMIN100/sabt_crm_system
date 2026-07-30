@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   expenseDetail: vi.fn(),
   employees: vi.fn(),
   employeePayouts: vi.fn(),
+  accounts: vi.fn(),
+  categories: vi.fn(),
 }));
 
 vi.mock('@/services/api.service', () => ({
@@ -16,6 +18,8 @@ vi.mock('@/services/api.service', () => ({
     expenseDetail: mocks.expenseDetail,
     employees: mocks.employees,
     employeePayouts: mocks.employeePayouts,
+    accounts: mocks.accounts,
+    categories: mocks.categories,
   },
 }));
 
@@ -24,6 +28,10 @@ describe('salary employee inline expansion', () => {
     mocks.expenseDetail.mockReset();
     mocks.employees.mockReset();
     mocks.employeePayouts.mockReset();
+    mocks.accounts.mockReset();
+    mocks.categories.mockReset();
+    mocks.accounts.mockResolvedValue([{ id: 'cash', name: 'Cash', archived: false }]);
+    mocks.categories.mockResolvedValue([{ id: 'salary', key: 'salary', name: 'Зарплата' }]);
     const employee = {
       id: 'emp-1',
       name: 'Бехруз Миров',
@@ -58,7 +66,7 @@ describe('salary employee inline expansion', () => {
     });
   });
 
-  it('opens and closes history under the employee row without a dialog', async () => {
+  it('toggles history by clicking the free row area without an arrow or name button', async () => {
     const user = userEvent.setup();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -71,18 +79,79 @@ describe('salary employee inline expansion', () => {
       </QueryClientProvider>,
     );
 
-    const trigger = await screen.findByRole('button', { name: 'Бехруз Миров' });
-    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    const name = await screen.findByText('Бехруз Миров');
+    const row = name.closest('tr');
+    expect(row).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Бехруз Миров' })).not.toBeInTheDocument();
+    expect(name.closest('td')?.querySelector('svg')).toBeNull();
+    expect(row).toHaveAttribute('aria-expanded', 'false');
 
-    await act(async () => { await user.click(trigger); });
-    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await act(async () => { await user.click(row!); });
+    expect(row).toHaveAttribute('aria-expanded', 'true');
     expect(await screen.findByText('Повышение оклада')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'История зарплаты — Бехруз Миров' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-    await act(async () => { await user.click(screen.getByRole('button', { name: 'Свернуть' })); });
-    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await act(async () => { await user.click(row!); });
+    expect(row).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('region', { name: 'История зарплаты — Бехруз Миров' })).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
+  });
+
+  it('does not toggle history from nested inputs and action buttons', async () => {
+    const user = userEvent.setup();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/finance/expense/salary?ym=2026-07']}>
+          <Routes>
+            <Route path="/finance/expense/:kind" element={<FinanceExpenseGroupPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const name = await screen.findByText('Бехруз Миров');
+    const row = name.closest('tr')!;
+    const fineInput = row.querySelector('input')!;
+
+    await act(async () => { await user.click(fineInput); });
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+
+    await act(async () => {
+      await user.click(within(row).getByRole('button', { name: 'Выплатить' }));
+    });
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('Выплата ЗП · Бехруз Миров')).toBeInTheDocument();
+  });
+
+  it('supports Enter/Space and restores focus to the row after collapsing', async () => {
+    const user = userEvent.setup();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/finance/expense/salary?ym=2026-07']}>
+          <Routes>
+            <Route path="/finance/expense/:kind" element={<FinanceExpenseGroupPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const name = await screen.findByText('Бехруз Миров');
+    const row = name.closest('tr')!;
+    row.focus();
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+    expect(await screen.findByRole('region', { name: 'История зарплаты — Бехруз Миров' })).toBeInTheDocument();
+    await screen.findByText('Повышение оклада');
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Свернуть' }));
+    });
+    await waitFor(() => expect(row).toHaveFocus());
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.keyDown(row, { key: ' ' });
+    expect(row).toHaveAttribute('aria-expanded', 'true');
   });
 });

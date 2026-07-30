@@ -29,7 +29,7 @@ import {
 } from './finance-calculations';
 import {
   NOTION_ACCOUNTS, NOTION_PROJECT_RENAMES, NOTION_PROJECTS,
-  NOTION_EMPLOYEES, NOTION_TRANSACTIONS,
+  NOTION_CONFIRMED_SALARY_HISTORY, NOTION_EMPLOYEES, NOTION_PAYROLL_HISTORY, NOTION_TRANSACTIONS,
 } from './notion-snapshot.data';
 
 // ─── helpers ────────────────────────────────────────────────────────
@@ -145,6 +145,38 @@ function fineOf(e: { fines?: Record<string, number> | null }, ym: string): numbe
 /** Снапшот выплаченного месяца (месяц заморожен, правки его не меняют). */
 function snapOf(e: { salarySnapshots?: Record<string, any> | null }, ym: string) {
   return (e.salarySnapshots || {})[ym] || null;
+}
+
+/** Сколько сотрудник получил за закрытый месяц.
+ *
+ * В старой схеме paid мог быть только финальной выплатой, а аванс хранился
+ * отдельно. В новой paid уже включает все операции. Если журнал доступен,
+ * различаем эти случаи по реальным операциям; флаг нужен для новых снимков,
+ * у которых журнал позже мог быть архивирован. */
+function recordedSalarySnapshotPaid(
+  snapshot: any,
+  operationPaid?: number,
+  operationAdvance?: number,
+): number {
+  if (!snapshot) return 0;
+  const paid = r2(Number(snapshot.paid) || 0);
+  const advance = r2(Number(snapshot.advance) || 0);
+  if (Number.isFinite(operationPaid) && Number(operationPaid) > 0) {
+    const operationTotal = r2(Number(operationPaid));
+    const advanceInJournal = r2(Number(operationAdvance) || 0);
+    const missingLegacyAdvance = Math.max(0, advance - advanceInJournal);
+    const journalCandidate = r2(operationTotal + missingLegacyAdvance);
+    // Для старых снимков без version-флага определяем семантику по журналу:
+    // если в нём есть аванс и сумма совпадает с snapshot.paid, paid уже был
+    // общим итогом; неполный журнал не должен занижать сохранённый snapshot.
+    const snapshotIncludesAdvance = snapshot.paidIncludesAdvance === true
+      || (snapshot.paidIncludesAdvance == null
+        && advanceInJournal > 0
+        && operationTotal >= paid - 0.005);
+    const snapshotCandidate = r2(snapshotIncludesAdvance ? paid : paid + advance);
+    return r2(Math.max(snapshotCandidate, journalCandidate));
+  }
+  return r2(snapshot.paidIncludesAdvance ? paid : paid + advance);
 }
 
 /** Действующий якорь SMM-цикла: дата последней полной оплаты или дата контракта. */
@@ -276,9 +308,7 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "fines" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salarySnapshots" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salaryHistory" jsonb`);
-    await run(`UPDATE finance_employees SET "salaryHistory" = jsonb_build_object(
-      to_char(COALESCE("hireDate", "createdAt"::date), 'YYYY-MM'), salary)
-      WHERE "salaryHistory" IS NULL OR "salaryHistory" = '{}'::jsonb`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "legacyPayrollHistory" jsonb`);
     // Журнал активности финансов (кто/что/когда) — пишет интерцептор.
     await run(`CREATE TABLE IF NOT EXISTS finance_activity (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -445,84 +475,68 @@ export class FinanceService implements OnModuleInit {
       this.logger.warn(`salary reopen migration failed: ${String(e?.message || e).slice(0, 160)}`);
     }
 
-    // История оклада появилась позже июньской ведомости. Первая версия
-    // заполнила её текущим окладом с даты найма, из-за чего прошлые месяцы
-    // некоторых сотрудников показывали будущую ставку. Замороженные снимки
-    // ведомостей — точный источник суммы конкретного месяца: добавляем точку
-    // изменения только там, где история с ним расходится. Операции и балансы
-    // не меняются. Маркер делает восстановление строго однократным.
+    // Для Навруза ранняя фиксированная ставка 4 000 с марта подтверждена
+    // владельцем и записывается явно — аванс/финальная выплата её не меняют.
+    // Для остальных сотрудников ставки из сумм выплат не угадываем. Июнь/
+    // июль, операции, авансы и балансы не изменяем.
+    //
+    // Март–май переносим в отдельное поле как ИСТОРИЧЕСКИЕ ФАКТЫ. Это не
+    // salaryHistory, не закрытый снапшот и не банковская проводка: в старой
+    // таблице нет точной даты, счёта и разбивки суммы.
     try {
-      const mark = 'SYSTEM salary-history-from-snapshots-v1';
+      const mark = 'SYSTEM notion-payroll-history-pre-june-v3';
       const done = await this.ds.query(
         `SELECT 1 FROM finance_activity WHERE route = $1 LIMIT 1`, [mark],
       );
       if (!done.length) {
-        const emps = await this.empRepo.find();
-        let repaired = 0;
-        for (const employee of emps) {
-          const history = { ...(employee.salaryHistory || {}) };
+        const employees = await this.empRepo.find();
+        const paymentsByName = new Map(NOTION_PAYROLL_HISTORY.map(row => [row.name, row.paidByYm]));
+        const confirmedRatesByName = new Map(NOTION_CONFIRMED_SALARY_HISTORY.map(row => [row.name, row]));
+        let repairedHistories = 0;
+        let importedMonths = 0;
+        for (const employee of employees) {
+          const paidByYm = paymentsByName.get(employee.name);
+          const confirmedRate = confirmedRatesByName.get(employee.name);
+          if (!confirmedRate && !paidByYm) continue;
+
           let changed = false;
-          for (const ym of Object.keys(employee.salarySnapshots || {}).sort()) {
-            const snapshotSalary = r2(Number((employee.salarySnapshots || {})[ym]?.salary) || 0);
-            const effective = Object.keys(history).filter(m => m <= ym).sort().pop();
-            const historicalSalary = effective
-              ? r2(Number(history[effective]) || 0)
-              : r2(Number(employee.salary) || 0);
-            if (historicalSalary !== snapshotSalary) {
-              history[ym] = snapshotSalary;
+          if (confirmedRate) {
+            const history = { ...(employee.salaryHistory || {}) };
+            if (Number(history[confirmedRate.effectiveYm]) !== confirmedRate.salary) {
+              history[confirmedRate.effectiveYm] = confirmedRate.salary;
+              employee.salaryHistory = history;
+              repairedHistories++;
               changed = true;
             }
           }
+
+          if (paidByYm) {
+            const history = { ...(employee.legacyPayrollHistory || {}) };
+            for (const [ym, paid] of Object.entries(paidByYm)) {
+              if (ym >= '2026-06' || history[ym]) continue;
+              history[ym] = {
+                paid: r2(paid),
+                source: 'notion',
+              };
+              importedMonths++;
+              changed = true;
+            }
+            employee.legacyPayrollHistory = history;
+          }
+
           if (changed) {
-            employee.salaryHistory = history;
             await this.empRepo.save(employee);
-            repaired++;
           }
         }
         await this.ds.query(
           `INSERT INTO finance_activity (action, route, details)
-           VALUES ('История окладов восстановлена из закрытых ведомостей', $1, $2::jsonb)`,
-          [mark, JSON.stringify({ repaired })],
+           VALUES ('История зарплат Notion (март–май) добавлена', $1, $2::jsonb)`,
+          [mark, JSON.stringify({ repairedHistories, importedMonths, untouchedFromYm: '2026-06' })],
         );
-        this.logger.log(`salary history repaired from snapshots: ${repaired}`);
+        this.logger.log(`notion payroll history: ${repairedHistories} histories, ${importedMonths} months`);
       }
     } catch (e: any) {
-      this.logger.warn(`salary-history repair failed: ${String(e?.message || e).slice(0, 160)}`);
-    }
-
-    // После восстановления старого месяца обязательно отделяем от него
-    // текущую ставку. Например: в июне было 1 500, сейчас 2 500 — история
-    // должна содержать обе точки, иначе июньская сумма ошибочно продолжит
-    // действовать и в июле. Если уже заведено будущее повышение, current
-    // salary относится к нему и текущий месяц автоматически не дописываем.
-    try {
-      const mark = 'SYSTEM salary-history-current-rate-v1';
-      const done = await this.ds.query(
-        `SELECT 1 FROM finance_activity WHERE route = $1 LIMIT 1`, [mark],
-      );
-      if (!done.length) {
-        const ym = currentYm();
-        const emps = await this.empRepo.find();
-        let repaired = 0;
-        for (const employee of emps) {
-          if (!workedInFinanceMonth(employee, ym)) continue;
-          const history = { ...(employee.salaryHistory || {}) };
-          const hasFutureRate = Object.keys(history).some(month => month > ym);
-          if (hasFutureRate || salaryForMonth(employee, ym) === r2(Number(employee.salary) || 0)) continue;
-          history[ym] = r2(Number(employee.salary) || 0);
-          employee.salaryHistory = history;
-          await this.empRepo.save(employee);
-          repaired++;
-        }
-        await this.ds.query(
-          `INSERT INTO finance_activity (action, route, details)
-           VALUES ('Текущие оклады отделены от исторических ставок', $1, $2::jsonb)`,
-          [mark, JSON.stringify({ ym, repaired })],
-        );
-        this.logger.log(`current salary history points repaired: ${repaired}`);
-      }
-    } catch (e: any) {
-      this.logger.warn(`current salary-history repair failed: ${String(e?.message || e).slice(0, 160)}`);
+      this.logger.warn(`notion payroll-history migration failed: ${String(e?.message || e).slice(0, 160)}`);
     }
   }
 
@@ -692,6 +706,9 @@ export class FinanceService implements OnModuleInit {
       const e = empByName.get(ne.name)
         ?? this.empRepo.create({ name: ne.name, role: ne.role, hireDate: ne.hireDate, status: 'active', position: empByName.size });
       e.salary = ne.salary;
+      if (!e.salaryHistory || !Object.keys(e.salaryHistory).length) {
+        e.salaryHistory = { [ymOf(ne.hireDate)]: ne.salary };
+      }
       e.advance = ne.advance;
       await this.empRepo.save(e);
     }
@@ -1040,17 +1057,17 @@ export class FinanceService implements OnModuleInit {
     const salaryAccrualTx = await this.salaryTxForMonth(ym);
     let salaryToPayAcc = 0, salaryPlanAcc = 0, salaryAdvAcc = 0, salaryBonAcc = 0;
     for (const e of activeEmps) {
-      const snap = snapOf(e, ym);
-      if (snap) {
-        salaryPlanAcc += r2(Number(snap.paid) || 0);
-        salaryAdvAcc += r2(Number(snap.advance) || 0);
-        salaryBonAcc += r2(Number(snap.bonus) || 0);
-        continue;
-      }
       const txs = salaryAccrualTx.filter(t => t.employeeId === e.id);
       const paid = r2(txs.reduce((s, t) => s + Number(t.amount), 0));
       const adv = r2(txs.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
       const bon = r2(txs.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
+      const snap = snapOf(e, ym);
+      if (snap) {
+        salaryPlanAcc += recordedSalarySnapshotPaid(snap, paid, adv);
+        salaryAdvAcc += r2(Number(snap.advance) || 0);
+        salaryBonAcc += r2(Number(snap.bonus) || 0);
+        continue;
+      }
       const due = r2(Math.max(0, salaryForMonth(e, ym) + bon - fineOf(e, ym)));
       salaryPlanAcc += due;
       salaryToPayAcc += Math.max(0, due - paid);
@@ -1625,13 +1642,16 @@ export class FinanceService implements OnModuleInit {
         // бонусов/штрафов его не меняют — месяцы независимы.
         const snap = snapOf(e, ym);
         if (snap) {
+          const operationPaid = paidOf(e.id);
+          const operationAdvance = advPaidOf(e.id);
+          const paid = recordedSalarySnapshotPaid(snap, operationPaid, operationAdvance);
           return {
             id: e.id, name: e.name, role: e.role, category: e.category ?? null,
             hireDate: e.hireDate, terminationDate: e.terminationDate,
             salaryHistory: e.salaryHistory || {},
             salary: r2(Number(snap.salary) || 0), advance: r2(Number(snap.advance) || 0),
             bonus: r2(Number(snap.bonus) || 0), fine: r2(Number(snap.fine) || 0),
-            status: e.status, paid: r2(Number(snap.paid) || 0), toPay: 0,
+            status: e.status, paid, toPay: 0,
             frozen: true, paidAt: snap.paidAt ?? null,
           };
         }
@@ -2095,7 +2115,11 @@ export class FinanceService implements OnModuleInit {
     const due = r2(Math.max(0, salary + bonus - fine));
     const map = { ...(e.salarySnapshots || {}) };
     if (due > 0 && paid >= due - 0.005) {
-      map[ym] = { salary, bonus, advance, fine, paid, paidAt: snap?.paidAt || todayISO() };
+      map[ym] = {
+        salary, bonus, advance, fine, paid,
+        paidAt: snap?.paidAt || todayISO(),
+        paidIncludesAdvance: true,
+      };
     } else {
       delete map[ym];
     }
@@ -2920,7 +2944,7 @@ export class FinanceService implements OnModuleInit {
       map[ym] = {
         salary, bonus: paidBonus || bonusOf(e, ym),
         advance: paidAdvance || advanceOf(e, ym), fine,
-        paid, paidAt: todayISO(),
+        paid, paidAt: todayISO(), paidIncludesAdvance: true,
       };
       e.salarySnapshots = map;
       await this.empRepo.save(e);
@@ -3112,10 +3136,11 @@ export class FinanceService implements OnModuleInit {
     // видит правильный оклад, а реальные операции не переписываются и не
     // задваиваются.
     const snapshotMap = e.salarySnapshots || {};
+    const legacyPayrollMap = e.legacyPayrollHistory || {};
     const periodYms = new Set<string>([
       ...rows.map(r => r.salaryYm),
       ...Object.keys(snapshotMap).filter(ym => ym <= asOfYm && (!minYm || ym >= minYm)),
-      ...Object.keys(e.salaryHistory || {}).filter(ym => YM_RE.test(ym) && ym <= asOfYm && (!minYm || ym >= minYm)),
+      ...Object.keys(legacyPayrollMap).filter(ym => YM_RE.test(ym) && ym <= asOfYm && (!minYm || ym >= minYm)),
       ...Object.keys(e.advances || {}).filter(ym => YM_RE.test(ym) && ym <= asOfYm && (!minYm || ym >= minYm)),
       ...Object.keys(e.bonuses || {}).filter(ym => YM_RE.test(ym) && ym <= asOfYm && (!minYm || ym >= minYm)),
       ...Object.keys(e.fines || {}).filter(ym => YM_RE.test(ym) && ym <= asOfYm && (!minYm || ym >= minYm)),
@@ -3125,9 +3150,30 @@ export class FinanceService implements OnModuleInit {
       .sort((a, b) => b.localeCompare(a))
       .map(ym => {
         const snapshot = snapshotMap[ym];
+        const legacyPayroll = legacyPayrollMap[ym];
         const periodRows = rows.filter(r => r.salaryYm === ym);
         const txAdvance = r2(periodRows.filter(r => r.kind === 'advance').reduce((s, r) => s + r.amount, 0));
         const txBonus = r2(periodRows.filter(r => r.kind === 'bonus').reduce((s, r) => s + r.amount, 0));
+        const paidByOperations = r2(periodRows.reduce((s, r) => s + r.amount, 0));
+        // Историческая таблица Notion сохранила только общую сумму месяца.
+        // Не превращаем её в ставку, начисление, снапшот или банковскую
+        // операцию. Если позже появилась операция CRM, показываем обе записи
+        // для сверки, но не заменяем и не суммируем их молча.
+        if (legacyPayroll && !snapshot) {
+          return {
+            ym,
+            salary: null,
+            advance: txAdvance,
+            bonus: txBonus,
+            fine: fineOf(e, ym),
+            accrued: null,
+            paidByOperations,
+            recordedPaid: r2(Number(legacyPayroll.paid) || 0),
+            legacyCrmPaid: paidByOperations,
+            legacySource: legacyPayroll.source,
+            frozen: false,
+          };
+        }
         const salary = snapshot ? r2(Number(snapshot.salary) || 0) : salaryForMonth(e, ym);
         const advance = snapshot
           ? r2(Number(snapshot.advance) || 0)
@@ -3136,10 +3182,19 @@ export class FinanceService implements OnModuleInit {
           ? r2(Number(snapshot.bonus) || 0)
           : txBonus > 0 ? txBonus : bonusOf(e, ym);
         const fine = snapshot ? r2(Number(snapshot.fine) || 0) : fineOf(e, ym);
+        const accrued = r2(Math.max(0, salary + bonus - fine));
+        // В старых снимках paid мог означать финальную выплату БЕЗ ранее
+        // выданного аванса; в новых — уже всю сумму. Журнал и version-флаг
+        // различают обе формы, не удваивая аванс и не скрывая переплату.
+        const recordedPaid = snapshot
+          ? recordedSalarySnapshotPaid(snapshot, paidByOperations, txAdvance)
+          : paidByOperations;
         return {
           ym, salary, advance, bonus, fine,
-          accrued: r2(Math.max(0, salary + bonus - fine)),
-          paidByOperations: r2(periodRows.reduce((s, r) => s + r.amount, 0)),
+          accrued,
+          paidByOperations,
+          recordedPaid,
+          legacySource: null,
           frozen: !!snapshot,
         };
       });
@@ -3580,6 +3635,9 @@ export class FinanceService implements OnModuleInit {
     });
     if (Array.isArray(normalized.employees)) normalized.employees = normalized.employees.map((employee: any) => {
       if (employee.status === 'inactive') employee.status = 'fired';
+      // Для legacy backup текущая ставка — единственный доступный baseline.
+      // Закрепляем её при импорте, чтобы последующее повышение не переписало
+      // задним числом все старые месяцы через fallback employee.salary.
       if (!employee.salaryHistory || !Object.keys(employee.salaryHistory).length) {
         const effectiveYm = ymOf(employee.hireDate || employee.createdAt || todayISO());
         employee.salaryHistory = { [effectiveYm]: r2(employee.salary) };

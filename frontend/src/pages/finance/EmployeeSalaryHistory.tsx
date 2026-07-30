@@ -25,16 +25,22 @@ type PayoutRow = {
 
 type PayrollPeriod = {
   ym: string;
-  salary: number;
+  salary: number | null;
   advance: number;
   bonus: number;
   fine: number;
-  accrued: number;
+  accrued: number | null;
   paidByOperations: number;
   frozen: boolean;
+  // Точная полученная сумма: из операций или исторического снимка.
+  recordedPaid?: number | null;
+  legacySource?: 'notion' | null;
+  legacyCrmPaid?: number | null;
 };
 
-const KIND_CLASS: Record<string, string> = {
+type MonthEvent = PayoutRow & { legacy?: boolean };
+
+const KIND_CLASS: Record<PayoutRow['kind'], string> = {
   advance: 'adv',
   bonus: 'bon',
   salary: 'sal',
@@ -45,7 +51,7 @@ function EmptyHistory({ children }: { children: string }) {
 }
 
 function SalaryChanges({ rows }: { rows: SalaryChange[] }) {
-  if (!rows.length) return <EmptyHistory>Изменения оклада пока не зафиксированы</EmptyHistory>;
+  if (!rows.length) return <EmptyHistory>Изменения ставки пока не зафиксированы</EmptyHistory>;
   return (
     <div className="fin-salary-rate-list">
       {rows.map((row) => {
@@ -60,7 +66,7 @@ function SalaryChanges({ rows }: { rows: SalaryChange[] }) {
               <small>
                 {row.isFuture
                   ? 'Запланированное изменение'
-                  : initial ? 'Первоначальный оклад' : delta > 0 ? 'Повышение оклада' : 'Снижение оклада'}
+                  : initial ? 'Первая сохранённая ставка' : delta > 0 ? 'Повышение оклада' : 'Снижение оклада'}
               </small>
             </div>
             <div className="fin-salary-rate-values">
@@ -72,8 +78,8 @@ function SalaryChanges({ rows }: { rows: SalaryChange[] }) {
                   {delta > 0 ? '+' : '−'}{money(Math.abs(delta))}
                 </small>
               )}
-              {row.isCurrent && <em>текущий</em>}
-              {row.isFuture && <em className="future">запланирован</em>}
+              {row.isCurrent && <em>текущая</em>}
+              {row.isFuture && <em className="future">запланирована</em>}
             </div>
           </div>
         );
@@ -82,107 +88,145 @@ function SalaryChanges({ rows }: { rows: SalaryChange[] }) {
   );
 }
 
-type AdvanceEvent = PayoutRow & { legacy?: boolean };
+function eventsForPeriod(period: PayrollPeriod, rows: PayoutRow[]) {
+  const actual = rows
+    .filter(row => row.salaryYm === period.ym)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const actualAdvance = actual
+    .filter(row => row.kind === 'advance')
+    .reduce((sum, row) => sum + Number(row.amount), 0);
+  const legacyAdvance = Math.max(0, Number(period.advance) - actualAdvance);
+  const events: MonthEvent[] = [...actual];
 
-function AdvanceHistory({ rows, periods }: { rows: PayoutRow[]; periods: PayrollPeriod[] }) {
-  const actual = rows.filter(row => row.kind === 'advance');
-  const actualByMonth = new Map<string, number>();
-  for (const row of actual) {
-    actualByMonth.set(row.salaryYm, (actualByMonth.get(row.salaryYm) || 0) + Number(row.amount));
-  }
-  // В старых закрытых ведомостях сумма аванса могла сохраниться только в
-  // снимке месяца. Не выдумываем дату/счёт, но и не скрываем известную сумму.
-  const legacy: AdvanceEvent[] = periods
-    .map(period => ({
-      period,
-      missing: Math.max(0, Number(period.advance) - (actualByMonth.get(period.ym) || 0)),
-    }))
-    .filter(({ missing }) => missing > 0.005)
-    .map(({ period, missing }) => ({
+  // В старой ведомости могла сохраниться только сумма аванса. Не подставляем
+  // вымышленную дату или счёт, но показываем известную часть выплаты.
+  if (legacyAdvance > 0.005) {
+    events.push({
       id: `legacy-advance:${period.ym}`,
       kind: 'advance',
       kindLabel: 'Аванс',
-      amount: missing,
+      amount: legacyAdvance,
       date: '',
       salaryYm: period.ym,
-      accountName: null,
-      note: 'Детали старой выдачи не сохранились',
+      note: 'Дата и счёт старой выдачи не сохранились',
       legacy: true,
-    }));
-  const events: AdvanceEvent[] = [...actual, ...legacy].sort((a, b) =>
-    (b.date || `${b.salaryYm}-01`).localeCompare(a.date || `${a.salaryYm}-01`));
+    });
+  }
 
-  if (!events.length) return <EmptyHistory>Авансы ещё не выдавались</EmptyHistory>;
-  return (
-    <div className="fin-advance-history">
-      {events.map(row => (
-        <div className={`fin-advance-event${row.legacy ? ' legacy' : ''}`} key={row.id}>
-          <span className="kind adv">Аванс</span>
-          <div>
-            <strong>{row.date ? formatDate(row.date) : monthLabel(row.salaryYm, true)}</strong>
-            <small>
-              за {monthLabel(row.salaryYm, true)}
-              {row.accountName ? ` · ${row.accountName}` : ''}
-            </small>
-            {row.note && <em>{row.note}</em>}
-          </div>
-          <b>{money(row.amount)}</b>
-        </div>
-      ))}
-    </div>
-  );
+  return { events, legacyAdvance };
 }
 
-function PayrollPeriods({ rows }: { rows: PayrollPeriod[] }) {
-  if (!rows.length) return <EmptyHistory>Начисления пока не зафиксированы</EmptyHistory>;
-  return (
-    <div className="fin-inline-payroll-periods">
-      {rows.map(period => (
-        <div className="fin-inline-payroll-period" key={period.ym}>
-          <div className="head">
-            <strong>{monthLabel(period.ym, true)}</strong>
-            <span className={period.frozen ? 'frozen' : ''}>
-              {period.frozen ? 'месяц закрыт' : 'расчёт'}
-            </span>
-          </div>
-          <b>{money(period.accrued)}</b>
-          <small>
-            оклад {money(period.salary)}
-            {Number(period.advance) > 0 ? ` · аванс ${money(period.advance)}` : ''}
-            {Number(period.bonus) > 0 ? ` · бонус ${money(period.bonus)}` : ''}
-            {Number(period.fine) > 0 ? ` · штраф ${money(period.fine)}` : ''}
-          </small>
-          <small>по счетам выплачено {money(period.paidByOperations)}</small>
-        </div>
-      ))}
-    </div>
-  );
-}
+function MonthPaymentHistory({ periods, rows }: { periods: PayrollPeriod[]; rows: PayoutRow[] }) {
+  if (!periods.length) return <EmptyHistory>Начисления пока не зафиксированы</EmptyHistory>;
 
-function OtherPayouts({ rows }: { rows: PayoutRow[] }) {
-  const otherRows = rows.filter(row => row.kind !== 'advance');
-  if (!otherRows.length) return <EmptyHistory>Выплат зарплаты и бонусов пока нет</EmptyHistory>;
   return (
-    <div className="fin-inline-payout-table" role="table" aria-label="Выплаты зарплаты и бонусов">
-      <div className="fin-inline-payout-head" role="row">
-        <span role="columnheader">Тип</span>
-        <span role="columnheader">Дата</span>
-        <span role="columnheader">Месяц</span>
-        <span role="columnheader">Счёт / комментарий</span>
-        <span role="columnheader">Сумма</span>
-      </div>
-      {otherRows.map(row => (
-        <div className="fin-inline-payout-row" role="row" key={row.id}>
-          <span role="cell"><i className={`kind ${KIND_CLASS[row.kind] || ''}`}>{row.kindLabel}</i></span>
-          <span role="cell" className="nowrap">{formatDate(row.date)}</span>
-          <span role="cell">{monthLabel(row.salaryYm, true)}</span>
-          <span role="cell">
-            <b>{row.accountName || 'Счёт не указан'}</b>
-            {row.note && <small>{row.note}</small>}
-          </span>
-          <strong role="cell">{money(row.amount)}</strong>
-        </div>
-      ))}
+    <div className="fin-month-payment-history">
+      {periods.map((period) => {
+        if (period.legacySource === 'notion') {
+          const crmEvents = rows
+            .filter(row => row.salaryYm === period.ym)
+            .sort((a, b) => b.date.localeCompare(a.date));
+          return (
+            <article className="fin-payment-month legacy-notion" key={period.ym}>
+              <div className="fin-payment-month-head">
+                <div>
+                  <strong>{monthLabel(period.ym, true)}</strong>
+                  <small>история Notion</small>
+                </div>
+              </div>
+              <div className="fin-legacy-payment-fact">
+                <span>
+                  <small>Сумма в старой таблице</small>
+                  <b>{money(Number(period.recordedPaid) || 0)}</b>
+                </span>
+                <p>Дата, счёт и разбивка на аванс и зарплату не сохранились.</p>
+              </div>
+              {crmEvents.length > 0 && (
+                <>
+                  <p className="fin-legacy-payment-warning">
+                    В CRM отдельно записано {money(Number(period.legacyCrmPaid) || 0)}.
+                    Эти операции не прибавлены к архивной сумме автоматически.
+                  </p>
+                  <div className="fin-payment-events">
+                    {crmEvents.map(row => (
+                      <div className="fin-payment-event" key={row.id}>
+                        <i className={`kind ${KIND_CLASS[row.kind]}`}>{row.kindLabel}</i>
+                        <div>
+                          <strong>{formatDate(row.date)}</strong>
+                          <small>{row.accountName || 'Счёт не указан'}</small>
+                          {row.note && <em>{row.note}</em>}
+                        </div>
+                        <b>{money(row.amount)}</b>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </article>
+          );
+        }
+
+        const { events, legacyAdvance } = eventsForPeriod(period, rows);
+        const hasRecordedPaid = period.recordedPaid != null && Number.isFinite(Number(period.recordedPaid));
+        const recordedFromHistory = period.frozen;
+        const received = hasRecordedPaid
+          ? Number(period.recordedPaid)
+          : Number(period.paidByOperations) + legacyAdvance;
+        const accrued = Number(period.accrued ?? period.salary ?? 0);
+        const balance = accrued - received;
+        const settled = Math.abs(balance) < 0.005;
+        const overpaid = balance < -0.005;
+
+        return (
+          <article className="fin-payment-month" key={period.ym}>
+            <div className="fin-payment-month-head">
+              <div>
+                <strong>{monthLabel(period.ym, true)}</strong>
+                <small className={period.frozen ? 'frozen' : ''}>
+                  {period.frozen ? 'месяц закрыт' : 'текущий расчёт'}
+                </small>
+              </div>
+              {settled && <span className="fin-payment-settled">выплачено</span>}
+            </div>
+
+            <div className="fin-payment-month-summary">
+              <span><small>Фиксированная ставка</small><b>{money(Number(period.salary) || 0)}</b></span>
+              <span>
+                <small>{recordedFromHistory || legacyAdvance > 0 ? 'Зафиксировано получено' : 'Фактически получено'}</small>
+                <b>{money(received)}</b>
+              </span>
+              <span className={overpaid ? 'overpaid' : settled ? 'settled' : 'remaining'}>
+                <small>{overpaid ? 'Переплата' : 'Остаток'}</small>
+                <b>{money(Math.abs(balance))}</b>
+              </span>
+            </div>
+
+            {(Number(period.bonus) > 0 || Number(period.fine) > 0) && (
+              <p className="fin-payment-adjustments">
+                Начислено {money(accrued)}
+                {Number(period.bonus) > 0 ? ` · бонус ${money(period.bonus)}` : ''}
+                {Number(period.fine) > 0 ? ` · штраф ${money(period.fine)}` : ''}
+              </p>
+            )}
+
+            <div className="fin-payment-events">
+              {events.length ? events.map(row => (
+                <div className={`fin-payment-event${row.legacy ? ' legacy' : ''}`} key={row.id}>
+                  <i className={`kind ${KIND_CLASS[row.kind]}`}>{row.kindLabel}</i>
+                  <div>
+                    <strong>{row.date ? formatDate(row.date) : 'Старая запись'}</strong>
+                    <small>{row.accountName || (row.legacy ? 'Счёт не сохранился' : 'Счёт не указан')}</small>
+                    {row.note && <em>{row.note}</em>}
+                  </div>
+                  <b>{money(row.amount)}</b>
+                </div>
+              )) : (
+                <div className="fin-payment-events-empty">Операции по счетам не зафиксированы</div>
+              )}
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -226,7 +270,6 @@ export default function EmployeeSalaryHistory({
   const rows: PayoutRow[] = data.rows ?? [];
   const periods: PayrollPeriod[] = data.periods ?? [];
   const salaryChanges: SalaryChange[] = data.salaryChanges ?? [];
-  const totals = data.totals ?? {};
 
   return (
     <section id={`employee-history-${employeeId}`} className="fin-employee-history"
@@ -234,12 +277,7 @@ export default function EmployeeSalaryHistory({
       <header className="fin-employee-history-head">
         <div>
           <h3>{name}</h3>
-          <p>Полная история оклада, начислений и фактических выплат</p>
-        </div>
-        <div className="fin-employee-history-kpis">
-          <span>Последняя ставка <b>{money(data.currentSalary ?? salaryChanges[0]?.salary ?? 0)}</b></span>
-          <span>Выплачено по счетам <b>{money(totals.paidByOperations ?? 0)}</b></span>
-          <span>Всего авансов <b>{money(totals.advance ?? 0)}</b></span>
+          <p>Ставка и выплаты по месяцам</p>
         </div>
         <button className="btn ghost sm" type="button" onClick={onClose}>
           <FinIcon name="chevronLeft" size={14} /> Свернуть
@@ -249,35 +287,20 @@ export default function EmployeeSalaryHistory({
       <div className="fin-employee-history-grid">
         <section className="fin-employee-history-card salary-rates">
           <div className="fin-employee-history-title">
-            <span><FinIcon name="banknote" size={17} /> Изменения оклада</span>
+            <span><FinIcon name="banknote" size={17} /> Изменения фиксированной ставки</span>
             <small>за всё время</small>
           </div>
           <SalaryChanges rows={salaryChanges} />
         </section>
-        <section className="fin-employee-history-card advances">
+
+        <section className="fin-employee-history-card monthly-payments">
           <div className="fin-employee-history-title">
-            <span><FinIcon name="wallet" size={17} /> История выдачи авансов</span>
-            <small>{money(totals.advance ?? 0)}</small>
+            <span><FinIcon name="receipt" size={17} /> Выплаты по месяцам</span>
+            <small>{periods.length} мес.</small>
           </div>
-          <AdvanceHistory rows={rows} periods={periods} />
+          <MonthPaymentHistory periods={periods} rows={rows} />
         </section>
       </div>
-
-      <section className="fin-employee-history-card">
-        <div className="fin-employee-history-title">
-          <span><FinIcon name="receipt" size={17} /> Начисления по месяцам</span>
-          <small>{periods.length} мес.</small>
-        </div>
-        <PayrollPeriods rows={periods} />
-      </section>
-
-      <section className="fin-employee-history-card">
-        <div className="fin-employee-history-title">
-          <span><FinIcon name="transactions" size={17} /> Зарплата и бонусы по счетам</span>
-          <small>{rows.filter(row => row.kind !== 'advance').length} операций</small>
-        </div>
-        <OtherPayouts rows={rows} />
-      </section>
     </section>
   );
 }
