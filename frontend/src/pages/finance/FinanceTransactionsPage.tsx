@@ -5,15 +5,31 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { TYPE_LABEL, money, moneyBare, currentYm, todayISO, apiErr, downloadCsv , useYmParam } from './finlib';
+import { TYPE_LABEL, money, moneyBare, currentYm, todayISO, formatDate, monthLabel, apiErr, downloadCsv , useYmParam } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import TransactionModal from './TransactionModal';
+import ImportedArchiveBadge, { IMPORTED_ARCHIVE_HINT, isImportedArchive } from './ImportedArchiveBadge';
 import { FinLoading, FinLoadError, finConfirm, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
 
 const TYPES = ['income', 'expense', 'transfer', 'saving'];
 const PAGE_SIZE = 100;
+
+export function buildFinanceTransactionCsv(items: any[]): Array<Array<string | number | null>> {
+  return [
+    ['Дата', 'Статус', 'Тип', 'Категория', 'Описание', 'Сумма', 'Со счёта', 'На счёт', 'Проект', 'Сотрудник', 'Месяц ЗП', 'Долг', 'Источник'],
+    ...items.map((t: any) => [
+      String(t.date || '').slice(0, 10),
+      t.status === 'cancelled' ? 'Отменено' : String(t.date || '').slice(0, 10) > todayISO() ? 'Запланировано' : 'Проведено',
+      TYPE_LABEL[t.type] ?? t.type, t.categoryName, t.comment,
+      t.amount, ['transfer', 'saving'].includes(t.type) ? t.fromAccountName : (t.type === 'expense' ? t.accountName : null),
+      ['transfer', 'saving'].includes(t.type) ? t.toAccountName : (t.type !== 'expense' ? t.accountName : null),
+      t.projectName, t.employeeName, t.employeeId ? (t.salaryYm ?? String(t.date || '').slice(0, 7)) : null, t.debtName,
+      isImportedArchive(t) ? 'Notion · архив' : null,
+    ]),
+  ];
+}
 
 export default function FinanceTransactionsPage() {
   const qc = useQueryClient();
@@ -107,17 +123,7 @@ export default function FinanceTransactionsPage() {
         type: typeFilter || undefined,
         status: statusFilter || undefined,
       });
-      const rows: Array<Array<string | number | null>> = [
-        ['Дата', 'Статус', 'Тип', 'Категория', 'Описание', 'Сумма', 'Со счёта', 'На счёт', 'Проект', 'Сотрудник', 'Месяц ЗП', 'Долг'],
-        ...((res?.items ?? []) as any[]).map((t: any) => [
-          String(t.date || '').slice(0, 10),
-          t.status === 'cancelled' ? 'Отменено' : String(t.date || '').slice(0, 10) > todayISO() ? 'Запланировано' : 'Проведено',
-          TYPE_LABEL[t.type] ?? t.type, t.categoryName, t.comment,
-          t.amount, ['transfer', 'saving'].includes(t.type) ? t.fromAccountName : (t.type === 'expense' ? t.accountName : null),
-          ['transfer', 'saving'].includes(t.type) ? t.toAccountName : (t.type !== 'expense' ? t.accountName : null),
-          t.projectName, t.employeeName, t.employeeId ? (t.salaryYm ?? String(t.date || '').slice(0, 7)) : null, t.debtName,
-        ]),
-      ];
+      const rows = buildFinanceTransactionCsv((res?.items ?? []) as any[]);
       downloadCsv(`transactions-${todayISO()}.csv`, rows);
     } catch (e: any) {
       toast.error(apiErr(e));
@@ -305,17 +311,31 @@ function TxCalendar({ ym, txns, onEdit, onAdd }: {
                         {dt.exp > 0 && <span className="neg">−{moneyBare(dt.exp)}</span>}
                       </div>
                     )}
-                    {visible.map((t) => (
-                      <button key={t.id} type="button" className={'tx-row ' + t.type}
-                        title={`${String(t.date || '').slice(0, 10) > today ? 'Запланировано · ' : ''}${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}`}
-                        onClick={() => onEdit(t)}>
+                    {visible.map((t) => {
+                      const content = <>
                         <i className="d" />
                         <span className="t">{t.comment || t.categoryName || TYPE_LABEL[t.type]}</span>
+                        {isImportedArchive(t) && <ImportedArchiveBadge compact />}
                         <span className={'a ' + (t.type === 'income' ? 'pos' : t.type === 'expense' ? 'neg' : 'muted')}>
                           {t.type === 'expense' ? '−' : t.type === 'income' ? '+' : ''}{moneyBare(t.amount)}
                         </span>
-                      </button>
-                    ))}
+                      </>;
+                      if (isImportedArchive(t)) {
+                        return (
+                          <div key={t.id} className={'tx-row imported ' + t.type}
+                            title={`${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)} · ${IMPORTED_ARCHIVE_HINT}`}>
+                            {content}
+                          </div>
+                        );
+                      }
+                      return (
+                        <button key={t.id} type="button" className={'tx-row ' + t.type}
+                          title={`${String(t.date || '').slice(0, 10) > today ? 'Запланировано · ' : ''}${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}`}
+                          onClick={() => onEdit(t)}>
+                          {content}
+                        </button>
+                      );
+                    })}
                     {collapsible && (
                       <button className="tx-cal-more" onClick={() => toggleDay(iso)}>
                         {open ? 'свернуть' : `ещё ${list.length - CAL_DAY_LIMIT}`}
@@ -353,6 +373,8 @@ function TxRow({ t, accounts, categories, patch, remove }: {
   t: any; accounts: any[]; categories: any[];
   patch: (id: string, data: any) => void; remove: (id: string) => void;
 }) {
+  if (isImportedArchive(t)) return <ImportedTxRow t={t} />;
+
   const cancelled = t.status === 'cancelled';
   const cats = categories.filter((c: any) => c.type === t.type);
   const fromActive = t.type === 'expense' || t.type === 'transfer' || t.type === 'saving';
@@ -466,6 +488,43 @@ function TxRow({ t, accounts, categories, patch, remove }: {
             </button>
           )}
       </td>
+    </tr>
+  );
+}
+
+/** Архив Notion — только для чтения. Это не банковская проводка CRM:
+ *  сохраняем строку в журнале/CSV, но исключаем любые способы её изменить. */
+function ImportedTxRow({ t }: { t: any }) {
+  const paired = t.type === 'transfer' || t.type === 'saving';
+  const fromName = paired ? t.fromAccountName : t.type === 'expense' ? t.accountName : null;
+  const toName = paired ? t.toAccountName : t.type === 'income' ? t.accountName : null;
+  return (
+    <tr className="fin-tx-imported" title={IMPORTED_ARCHIVE_HINT}>
+      <td><span className="nowrap">{formatDate(t.date)}</span></td>
+      <td><span className={`badge ${t.type}`}>{TYPE_LABEL[t.type] ?? t.type}</span></td>
+      <td>
+        {t.type === 'transfer'
+          ? <span className="muted mini">—</span>
+          : (
+            <span className="flex fin-tx-static-category">
+              {(t.categoryIcon || t.categoryColor) && <CatIcon icon={t.categoryIcon} color={t.categoryColor} size={24} />}
+              <span>{t.categoryName || t.category || '—'}</span>
+            </span>
+          )}
+      </td>
+      <td>
+        <div className="fin-tx-imported-description">
+          <span>{t.comment || t.description || 'Архивная операция'}</span>
+          <ImportedArchiveBadge />
+        </div>
+      </td>
+      <td className="num"><b>{money(t.amount)}</b></td>
+      <td>{fromName || <span className="muted mini">—</span>}</td>
+      <td>{toName || <span className="muted mini">—</span>}</td>
+      <td>{t.employeeId && t.salaryYm
+        ? <span className="nowrap">{monthLabel(t.salaryYm, true)}</span>
+        : <span className="muted mini">—</span>}</td>
+      <td />
     </tr>
   );
 }

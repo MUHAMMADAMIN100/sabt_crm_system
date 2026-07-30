@@ -17,6 +17,7 @@ import { FinancePlannedPayment } from './entities/finance-planned-payment.entity
 import { FinanceAsset } from './entities/finance-asset.entity';
 import { FinanceBackup } from './entities/finance-backup.entity';
 import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustment.entity';
+import { FinanceActivity } from './entities/finance-activity.entity';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
 import {
@@ -31,10 +32,21 @@ import {
   NOTION_ACCOUNTS, NOTION_PROJECT_RENAMES, NOTION_PROJECTS,
   NOTION_CONFIRMED_SALARY_HISTORY, NOTION_EMPLOYEES, NOTION_PAYROLL_HISTORY, NOTION_TRANSACTIONS,
 } from './notion-snapshot.data';
+import {
+  NOTION_HISTORY_METADATA,
+  NOTION_HISTORY_TOTALS,
+  NOTION_HISTORY_TRANSACTIONS,
+  NotionHistoryTransaction,
+} from './notion-history.data';
 
 // ─── helpers ────────────────────────────────────────────────────────
 const r2 = (n: any) => Math.round((Number(n) || 0) * 100) / 100;
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const NOTION_HISTORY_CUTOVER_YM = '2026-06';
+const NOTION_HISTORY_CUTOFF_DATE = '2026-06-01';
+// PostgreSQL advisory locks use signed int32 for this overload. Стабильный
+// ключ сериализует startup-import между несколькими инстансами Railway.
+const NOTION_HISTORY_ADVISORY_LOCK_KEY = 20_260_201;
 
 /** До перехода накоплений на модель «счёт → счёт» они записывались как
  * пополнение одного accountId. Такие строки нельзя переосмыслить без знания
@@ -388,6 +400,12 @@ export class FinanceService implements OnModuleInit {
     // Месяц начисления ЗП: колонка + бэкфилл (месяц из даты) для старых
     // зарплатных операций — картина не меняется, значение становится явным.
     await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "salaryYm" varchar(7)`);
+    await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS source varchar(32)`);
+    await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "externalId" varchar(100)`);
+    await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "affectsBalance" boolean NOT NULL DEFAULT true`);
+    await run(`CREATE UNIQUE INDEX IF NOT EXISTS "UQ_fin_tx_source_external"
+      ON finance_transactions (source, "externalId")
+      WHERE source IS NOT NULL AND "externalId" IS NOT NULL`);
     await run(`UPDATE finance_transactions SET "salaryYm" = to_char("date", 'YYYY-MM')
       WHERE "employeeId" IS NOT NULL AND type = 'expense' AND "salaryYm" IS NULL`);
     await run(`CREATE INDEX IF NOT EXISTS "IDX_fin_tx_posted_date_type"
@@ -538,6 +556,282 @@ export class FinanceService implements OnModuleInit {
     } catch (e: any) {
       this.logger.warn(`notion payroll-history migration failed: ${String(e?.message || e).slice(0, 160)}`);
     }
+
+    // Полный денежный архив Notion (февраль–май) нужен для P&L и просмотра
+    // прошлых месяцев. Он намеренно НЕ меняет текущие остатки счетов: в июне
+    // CRM начала вести баланс со своего startBalance.
+    try {
+      const summary = await this.importNotionHistoricalTransactions();
+      if (summary.imported > 0) {
+        this.logger.log(`notion transaction history: ${summary.imported} rows imported`);
+      }
+    } catch (e: any) {
+      // Импорт атомарный и повторится при следующем запуске. Остальная CRM
+      // должна подняться даже при временной проблеме справочников/БД.
+      this.logger.warn(`notion transaction-history migration failed: ${String(e?.message || e).slice(0, 200)}`);
+    }
+  }
+
+  /** Точные итоги набора исторических проводок — одновременно аудит импорта
+   *  и защита от случайной порчи сгенерированного файла. */
+  private notionHistoryTotals(rows: readonly NotionHistoryTransaction[]) {
+    const byMonth: Record<string, { count: number; income: number; expense: number; transfer: number }> = {};
+    let income = 0, expense = 0, transfer = 0;
+    for (const row of rows) {
+      const ym = ymOf(row.date);
+      byMonth[ym] ||= { count: 0, income: 0, expense: 0, transfer: 0 };
+      byMonth[ym].count++;
+      byMonth[ym][row.type] = r2(byMonth[ym][row.type] + Number(row.amount));
+      if (row.type === 'income') income += Number(row.amount);
+      else if (row.type === 'expense') expense += Number(row.amount);
+      else transfer += Number(row.amount);
+    }
+    return {
+      byMonth,
+      all: {
+        count: rows.length,
+        income: r2(income),
+        expense: r2(expense),
+        transfer: r2(transfer),
+        net: r2(income - expense),
+      },
+    };
+  }
+
+  /** Идемпотентный импорт денежной истории Notion до cutover CRM.
+   *
+   * Одна SERIALIZABLE-транзакция содержит safety snapshot, все новые строки
+   * и запись аудита. При любой ошибке не сохраняется ничего. Уникальная пара
+   * source/externalId дополнительно защищает от двух параллельных запусков.
+   */
+  private async importNotionHistoricalTransactions(
+    rows: readonly NotionHistoryTransaction[] = NOTION_HISTORY_TRANSACTIONS,
+  ) {
+    const allowedTypes = new Set(['income', 'expense', 'transfer']);
+    const allowedAccountKeys = new Set(['alif', 'cash', 'dushanbe_city']);
+    const externalIds = new Set<string>();
+    const eligible: NotionHistoryTransaction[] = [];
+    let cutoffRejected = 0;
+
+    for (const row of rows) {
+      const externalId = String(row.externalId || '').trim();
+      if (!externalId || externalId.length > 100) {
+        throw new BadRequestException('Архив Notion: некорректный externalId');
+      }
+      if (externalIds.has(externalId)) {
+        throw new BadRequestException(`Архив Notion: повторяющийся externalId ${externalId}`);
+      }
+      externalIds.add(externalId);
+
+      const isoDate = /^\d{4}-\d{2}-\d{2}$/.test(row.date)
+        && !Number.isNaN(Date.parse(`${row.date}T00:00:00Z`))
+        && new Date(`${row.date}T00:00:00Z`).toISOString().slice(0, 10) === row.date;
+      if (!isoDate) throw new BadRequestException(`Архив Notion: неверная дата ${row.date}`);
+      if (!allowedTypes.has(row.type)) {
+        throw new BadRequestException(`Архив Notion: неверный тип ${row.type}`);
+      }
+      if (!Number.isFinite(Number(row.amount)) || Number(row.amount) <= 0) {
+        throw new BadRequestException(`Архив Notion ${externalId}: неверная сумма`);
+      }
+      for (const key of [row.accountKey, row.fromKey, row.toKey].filter(Boolean) as string[]) {
+        if (!allowedAccountKeys.has(key)) {
+          throw new BadRequestException(`Архив Notion ${externalId}: неизвестный счёт ${key}`);
+        }
+      }
+      if (row.date >= NOTION_HISTORY_CUTOFF_DATE) {
+        cutoffRejected++;
+        continue;
+      }
+      if (row.type === 'transfer') {
+        if (!row.fromKey || !row.toKey || row.fromKey === row.toKey) {
+          throw new BadRequestException(`Архив Notion ${externalId}: неверные счета перевода`);
+        }
+      } else if (!row.accountKey) {
+        throw new BadRequestException(`Архив Notion ${externalId}: не указан счёт`);
+      }
+      eligible.push(row);
+    }
+
+    // Сгенерированный production-набор должен совпадать с проверенными
+    // контрольными суммами до начала любых записей в БД.
+    if (rows === NOTION_HISTORY_TRANSACTIONS) {
+      const actual = this.notionHistoryTotals(eligible);
+      const expected = NOTION_HISTORY_TOTALS;
+      if (JSON.stringify(actual.byMonth) !== JSON.stringify(expected.byMonth)
+        || actual.all.count !== expected.all.count
+        || actual.all.income !== expected.all.income
+        || actual.all.expense !== expected.all.expense
+        || actual.all.transfer !== expected.all.transfer) {
+        throw new BadRequestException('Архив Notion: контрольные суммы не совпадают');
+      }
+    }
+
+    return this.ds.transaction('SERIALIZABLE', async em => {
+      await em.query('SELECT pg_advisory_xact_lock($1)', [NOTION_HISTORY_ADVISORY_LOCK_KEY]);
+      const txRepo = em.getRepository(FinanceTransaction);
+      const accountRepo = em.getRepository(FinanceAccount);
+      const categoryRepo = em.getRepository(FinanceCategory);
+      const activityRepo = em.getRepository(FinanceActivity);
+      const [existing, accounts, categories] = await Promise.all([
+        txRepo.find({ where: { source: 'notion' } as any }),
+        accountRepo.find(),
+        categoryRepo.find(),
+      ]);
+      const accountByKey = new Map(accounts
+        .filter(account => account.key)
+        .map(account => [account.key as string, account]));
+      const categoryAliases: Record<string, { name: string; type: 'income' | 'expense' }> = {
+        other_income: { name: 'Прочее', type: 'income' },
+        other_expense: { name: 'Прочее', type: 'expense' },
+        transport: { name: 'Транспорт', type: 'expense' },
+        print: { name: 'Печать', type: 'expense' },
+        ads: { name: 'Реклама (ADS)', type: 'expense' },
+      };
+      const categoryFor = (row: NotionHistoryTransaction) => {
+        if (!row.categoryKey) return null;
+        const type = row.type === 'income' ? 'income' : row.type === 'expense' ? 'expense' : 'transfer';
+        const alias = categoryAliases[row.categoryKey];
+        const category = alias
+          ? categories.find(item => item.name === alias.name && item.type === alias.type)
+          : categories.find(item => item.key === row.categoryKey && item.type === type);
+        if (!category) {
+          throw new BadRequestException(
+            `Архив Notion ${row.externalId}: категория ${row.categoryKey} (${type}) не найдена`,
+          );
+        }
+        return category;
+      };
+      const accountFor = (key: string | null, row: NotionHistoryTransaction) => {
+        if (!key) return null;
+        const account = accountByKey.get(key);
+        if (!account) {
+          throw new BadRequestException(`Архив Notion ${row.externalId}: счёт ${key} не найден`);
+        }
+        return account;
+      };
+
+      // externalId означает «эта точная строка уже импортирована», а не просто
+      // совпадение ключа. Если запись была вручную/ошибочно искажена, падение
+      // безопаснее молчаливого пропуска или автопочинки финансовой истории.
+      const existingByExternalId = new Map<string, FinanceTransaction>();
+      for (const tx of existing) {
+        if (!tx.externalId) {
+          throw new BadRequestException(`Архив Notion: существующая операция ${tx.id} без externalId`);
+        }
+        if (existingByExternalId.has(tx.externalId)) {
+          throw new BadRequestException(`Архив Notion: в БД повторяется externalId ${tx.externalId}`);
+        }
+        existingByExternalId.set(tx.externalId, tx);
+      }
+      const presentIds = new Set<string>();
+      for (const row of eligible) {
+        const tx = existingByExternalId.get(row.externalId);
+        if (!tx) continue;
+        const account = accountFor(row.accountKey, row);
+        const from = accountFor(row.fromKey, row);
+        const to = accountFor(row.toKey, row);
+        const category = categoryFor(row);
+        const mismatches: string[] = [];
+        if (tx.type !== row.type) mismatches.push('тип');
+        if (r2(tx.amount) !== r2(row.amount)) mismatches.push('сумма');
+        if (tx.date !== row.date) mismatches.push('дата');
+        if ((tx.accountId ?? null) !== (account?.id ?? null)) mismatches.push('счёт');
+        if ((tx.fromAccountId ?? null) !== (from?.id ?? null)) mismatches.push('счёт списания');
+        if ((tx.toAccountId ?? null) !== (to?.id ?? null)) mismatches.push('счёт зачисления');
+        if ((tx.categoryId ?? null) !== (category?.id ?? null)) mismatches.push('категория');
+        if (tx.status !== FinanceTxStatus.COMPLETED) mismatches.push('статус');
+        if (tx.affectsBalance !== false) mismatches.push('влияние на баланс');
+        if (mismatches.length) {
+          throw new BadRequestException(
+            `Архив Notion ${row.externalId}: существующая операция не совпадает с источником (${mismatches.join(', ')})`,
+          );
+        }
+        presentIds.add(row.externalId);
+      }
+      const missing = eligible.filter(row => !presentIds.has(row.externalId));
+      const datasetTotals = this.notionHistoryTotals(eligible);
+      if (!missing.length) {
+        return {
+          imported: 0,
+          alreadyPresent: presentIds.size,
+          cutoffRejected,
+          totals: datasetTotals,
+          safetyBackupId: null,
+        };
+      }
+
+      const entities = missing.map(row => {
+        const account = accountFor(row.accountKey, row);
+        const from = accountFor(row.fromKey, row);
+        const to = accountFor(row.toKey, row);
+        const category = categoryFor(row);
+        const title = String(row.name || '').trim() || 'Операция Notion';
+        const note = String(row.comment || '').trim();
+        const comment = note && note !== title ? `${title} — ${note}` : title;
+        return txRepo.create({
+          type: row.type as FinanceTxType,
+          amount: r2(row.amount),
+          date: row.date,
+          status: FinanceTxStatus.COMPLETED,
+          accountId: account?.id ?? null,
+          fromAccountId: from?.id ?? null,
+          toAccountId: to?.id ?? null,
+          categoryId: category?.id ?? null,
+          projectId: null,
+          employeeId: null,
+          debtId: null,
+          subscriptionId: null,
+          salaryYm: null,
+          comment,
+          account: row.accountKey ?? null,
+          splits: null,
+          category: category?.name ?? null,
+          description: note || title,
+          counterparty: title,
+          project: null,
+          paymentMethod: null,
+          source: 'notion',
+          externalId: row.externalId,
+          affectsBalance: false,
+          createdById: null,
+        });
+      });
+
+      // Точка возврата создаётся только если действительно появились новые
+      // строки, непосредственно перед их вставкой и в той же транзакции.
+      const before = await this.exportAllWithManager(em);
+      const safetyBackup = await this.saveBackupWithManager(em, 'pre_import', before);
+      await txRepo.save(entities, { chunk: 500 });
+      const importedTotals = this.notionHistoryTotals(missing);
+      const details = {
+        source: NOTION_HISTORY_METADATA.source,
+        range: {
+          from: NOTION_HISTORY_METADATA.dateFromInclusive,
+          toExclusive: NOTION_HISTORY_CUTOFF_DATE,
+        },
+        affectsBalance: false,
+        imported: missing.length,
+        alreadyPresent: presentIds.size,
+        cutoffRejected,
+        safetyBackupId: safetyBackup.id,
+        importedTotals,
+        datasetTotals,
+      };
+      await activityRepo.save(activityRepo.create({
+        userId: null,
+        action: 'Исторические операции Notion импортированы',
+        route: 'SYSTEM notion-historical-transactions-v1',
+        details,
+      }));
+      return {
+        imported: missing.length,
+        alreadyPresent: presentIds.size,
+        cutoffRejected,
+        totals: datasetTotals,
+        importedTotals,
+        safetyBackupId: safetyBackup.id,
+      };
+    });
   }
 
   private async seedDefaults() {
@@ -960,6 +1254,7 @@ export class FinanceService implements OnModuleInit {
   private lifetimeBalance(a: FinanceAccount, txs: FinanceTransaction[]): number {
     let bal = Number(a.startBalance);
     for (const t of txs) {
+      if (t.affectsBalance === false) continue;
       const amt = Number(t.amount);
       if (t.type === FinanceTxType.INCOME && t.accountId === a.id) bal += amt;
       else if (t.type === FinanceTxType.EXPENSE && t.accountId === a.id) bal -= amt;
@@ -1016,9 +1311,8 @@ export class FinanceService implements OnModuleInit {
     const earningProjectIds = new Set(m.projects.filter(isEarning).map(p => p.id));
     const incomePlan = dirs.map(dir => {
       const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
-      const historicalIds = new Set(m.projects.filter(p => p.direction === dir).map(p => p.id));
       const plan = r2(projs.reduce((s, p) => s + Number(p.tariff), 0));
-      const fact = this.sum(monthIncome.filter(t => t.projectId && historicalIds.has(t.projectId)));
+      const fact = this.sum(monthIncome.filter(t => this.directionOf(t, m) === dir));
       return { direction: dir, plan, fact };
     });
 
@@ -1190,15 +1484,18 @@ export class FinanceService implements OnModuleInit {
     // считать ТАК ЖЕ, иначе сумма окна разойдётся с числом карточки (поздняя
     // оплата в другом месяце, доход по проекту на паузе, доход без плана).
     if (kind === 'direction') {
-      // Факт исторический: архив/пауза сегодня не должны менять прошлый месяц.
-      const ids = new Set(m.projects.filter(p => p.direction === id).map(p => p.id));
       const actualIncome = this.active(await this.txRepo.find({
         where: { date: Between(from, to), type: FinanceTxType.INCOME } as any,
       }));
       let count = 0;
       for (const tx of actualIncome) {
-        if (!tx.projectId || !ids.has(tx.projectId)) continue;
-        add(m.proj.get(tx.projectId)?.name || 'Без проекта', Number(tx.amount));
+        // Историческая строка Notion не привязывается к живому проекту:
+        // направление берём из category key, а подпись — из исходного title.
+        if (this.directionOf(tx, m) !== id) continue;
+        add((tx.projectId && m.proj.get(tx.projectId)?.name)
+          || tx.counterparty || tx.comment
+          || (tx.categoryId && m.cat.get(tx.categoryId)?.name)
+          || 'Без проекта', Number(tx.amount));
         count++;
       }
       return this.finalizeBreakdown(agg, count);
@@ -1263,9 +1560,8 @@ export class FinanceService implements OnModuleInit {
     return dirs.map(dir => {
       const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
       const earningIds = new Set(projs.map(p => p.id));
-      const historicalIds = new Set(m.projects.filter(p => p.direction === dir).map(p => p.id));
       const forMonth = planned.filter(p => p.ym === ym && p.projectId && earningIds.has(p.projectId));
-      const received = this.sum(actualIncome.filter(t => t.projectId && historicalIds.has(t.projectId)));
+      const received = this.sum(actualIncome.filter(t => this.directionOf(t, m) === dir));
       const expected = r2(forMonth.filter(p => p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0));
       const paused = m.projects.filter(p => p.direction === dir && !p.archived && p.status === 'paused');
       return {
@@ -1761,7 +2057,7 @@ export class FinanceService implements OnModuleInit {
   // ─── СЧЕТА и БАЛАНСЫ ─────────────────────────────────────────────
   async accountsBalances() {
     const accounts = await this.accRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
-    const txs = this.postedAsOf(await this.txRepo.find());
+    const txs = this.postedAsOf(await this.txRepo.find()).filter(t => t.affectsBalance !== false);
     const perAccount = accounts.map(a => {
       let income = 0, expense = 0, transferIn = 0, transferOut = 0, saving = 0, legacySaving = 0;
       for (const t of txs) {
@@ -1808,6 +2104,12 @@ export class FinanceService implements OnModuleInit {
       this.catRepo.find(),
     ]);
     const postedTxs = this.posted(allTx);
+    const availableFrom = postedTxs.length
+      ? postedTxs.reduce(
+        (earliest, tx) => tx.date < earliest ? tx.date : earliest,
+        postedTxs[0].date,
+      ).slice(0, 7)
+      : null;
     const txs = this.postedAsOf(postedTxs);
     const futureTxs = postedTxs.filter(t => t.date > todayISO());
     const projectMap = new Map(projects.map(p => [p.id, p]));
@@ -1815,18 +2117,37 @@ export class FinanceService implements OnModuleInit {
     const subscriptionMap = new Map(subscriptions.map(s => [s.id, s]));
     const debtMap = new Map(debts.map(d => [d.id, d]));
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+    const accountMap = new Map(balances.perAccount.map(account => [account.id, account]));
     const incomeFactor = scenario === 'conservative' ? .75 : scenario === 'optimistic' ? 1.1 : 1;
     const expenseFactor = scenario === 'conservative' ? 1.1 : 1;
-    // Строка месяца показывает факт + оставшийся прогноз. Поэтому начинаем
-    // не с сегодняшнего остатка, а с баланса на начало выбранного периода:
-    // так уже проведённые деньги видны в месяце и не удваиваются в остатке.
-    const beforeStart = postedTxs.filter(t => ymOf(t.date) < start);
-    let opening = r2(Number(balances.total.startBalance)
-      + this.sum(beforeStart.filter(t => t.type === FinanceTxType.INCOME))
-      - this.sum(beforeStart.filter(t => t.type === FinanceTxType.EXPENSE))
-      + this.sum(beforeStart.filter(isLegacySaving)));
+    // До июня источник истины — архив Notion с начальным остатком 0. В июне
+    // CRM уже стартовала со своим startBalance, поэтому на границе делаем
+    // явный reset базы. Так не выдумываем старый остаток из сегодняшнего
+    // baseline и не позволяем cutover-истории менять текущие счета.
+    const cashNet = (items: FinanceTransaction[]) => r2(
+      this.sum(items.filter(t => t.type === FinanceTxType.INCOME))
+      - this.sum(items.filter(t => t.type === FinanceTxType.EXPENSE))
+      + this.sum(items.filter(isLegacySaving)),
+    );
+    const historical = postedTxs.filter(t => t.affectsBalance === false);
+    const balanceTxs = postedTxs.filter(t => t.affectsBalance !== false);
+    const historicalOpeningAt = (ym: string) =>
+      cashNet(historical.filter(t => ymOf(t.date) < ym));
+    const crmOpeningAt = (ym: string) => r2(
+      Number(balances.total.startBalance)
+      + cashNet(balanceTxs.filter(t => ymOf(t.date) < ym)),
+    );
+    let usingCrmBasis = start >= NOTION_HISTORY_CUTOVER_YM;
+    let opening = usingCrmBasis ? crmOpeningAt(start) : historicalOpeningAt(start);
     const debtRemaining = new Map(debts.map(d => [d.id, this.debtRemaining(d, txs.filter(t => t.type === FinanceTxType.EXPENSE))]));
     const rows = yms.map(ym => {
+      let balanceReset = false;
+      if (!usingCrmBasis && ym >= NOTION_HISTORY_CUTOVER_YM) {
+        opening = crmOpeningAt(ym);
+        usingCrmBasis = true;
+        balanceReset = true;
+      }
+      const balanceBasis = usingCrmBasis ? 'crm_cutover' : 'notion_history';
       const incomeSources: any[] = [], expenseSources: any[] = [];
       const actual = txs.filter(t => ymOf(t.date) === ym);
       const actualIncomeTx = actual.filter(t => t.type === FinanceTxType.INCOME);
@@ -1844,21 +2165,31 @@ export class FinanceService implements OnModuleInit {
       let unlinkedSubPaid = this.sum(actualExpenseTx.filter(t => !t.subscriptionId && ['rent', 'subscription'].includes(categoryKey(t) || '')));
       let unlinkedDebtPaid = this.sum(actualExpenseTx.filter(t => !t.debtId && categoryKey(t) === 'debt'));
       for (const t of actualIncomeTx) {
+        const imported = t.source === 'notion';
         incomeSources.push({
           key: `actual:${t.id}`,
           label: (t.projectId ? projectMap.get(t.projectId)?.name : null) || t.comment || 'Проведённый доход',
-          amount: Number(t.amount), kind: 'Уже получено', actual: true,
+          amount: Number(t.amount), kind: imported ? 'Архив Notion · получено' : 'Уже получено', actual: true,
+          imported, source: t.source ?? null, date: t.date,
+          categoryName: t.categoryId ? categoryMap.get(t.categoryId)?.name ?? t.category ?? null : t.category ?? null,
+          accountName: t.accountId ? accountMap.get(t.accountId)?.name ?? null : null,
         });
       }
       for (const t of actualExpenseTx) {
+        const imported = t.source === 'notion';
         expenseSources.push({
           key: `actual:${t.id}`,
           label: (t.employeeId ? employeeMap.get(t.employeeId)?.name : null)
             || (t.subscriptionId ? subscriptionMap.get(t.subscriptionId)?.name : null)
             || (t.debtId ? debtMap.get(t.debtId)?.name : null)
             || t.comment || 'Проведённый расход',
-          amount: Number(t.amount), kind: t.employeeId ? 'Зарплата · оплачено' : 'Уже оплачено',
-          actual: true, salary: !!t.employeeId,
+          amount: Number(t.amount), kind: imported
+            ? 'Архив Notion · оплачено'
+            : t.employeeId ? 'Зарплата · оплачено' : 'Уже оплачено',
+          actual: true, salary: !!t.employeeId || categoryKey(t) === 'salary',
+          imported, source: t.source ?? null, date: t.date,
+          categoryName: t.categoryId ? categoryMap.get(t.categoryId)?.name ?? t.category ?? null : t.category ?? null,
+          accountName: t.accountId ? accountMap.get(t.accountId)?.name ?? null : null,
         });
       }
       for (const t of scheduledIncomeTx) {
@@ -1957,11 +2288,12 @@ export class FinanceService implements OnModuleInit {
       const row = { ym, openingBalance: opening, income, expense, net: r2(income - expense), closingBalance,
         balanceNow: ym === currentYm() ? Number(balances.total.balance) : null,
         actualIncome, actualExpense, plannedIncome, plannedExpense,
-        incomeSources, expenseSources, warning: closingBalance < 0 };
+        incomeSources, expenseSources, warning: closingBalance < 0,
+        balanceBasis, balanceReset };
       opening = closingBalance;
       return row;
     });
-    return { start, months, scenario, openingBalance: Number(balances.total.balance), rows, adjustments,
+    return { start, months, scenario, availableFrom, openingBalance: Number(balances.total.balance), rows, adjustments,
       summary: { expectedIncome: r2(rows.reduce((s, r) => s + r.income, 0)), expectedExpense: r2(rows.reduce((s, r) => s + r.expense, 0)),
         result: r2(rows.reduce((s, r) => s + r.net, 0)), endingBalance: rows.at(-1)?.closingBalance ?? opening,
         minBalance: rows.length ? Math.min(...rows.map(r => r.closingBalance)) : opening,
@@ -1995,6 +2327,9 @@ export class FinanceService implements OnModuleInit {
       const cat = t.categoryId ? m.cat.get(t.categoryId) : null;
       return {
         id: t.id, date: t.date, type: t.type, amount: Number(t.amount), status: t.status, comment: t.comment,
+        source: t.source ?? null, externalId: t.externalId ?? null,
+        imported: t.source === 'notion',
+        affectsBalance: t.affectsBalance !== false,
         salaryYm: t.salaryYm ?? null,
         categoryId: t.categoryId, categoryName: cat?.name ?? (t.category ?? null),
         categoryIcon: cat?.icon ?? null, categoryColor: cat?.color ?? null,
@@ -2053,6 +2388,7 @@ export class FinanceService implements OnModuleInit {
     const base: Partial<FinanceTransaction> = {
       type, amount, date, comment: dto.comment ?? null, createdById,
       status: FinanceTxStatus.COMPLETED,
+      source: null, externalId: null, affectsBalance: true,
     };
 
     if (type === FinanceTxType.TRANSFER || type === FinanceTxType.SAVING) {
@@ -2130,6 +2466,9 @@ export class FinanceService implements OnModuleInit {
   async updateTransaction(id: string, dto: any) {
     const t = await this.txRepo.findOne({ where: { id } });
     if (!t) throw new NotFoundException('Операция не найдена');
+    if (t.source || t.externalId || t.affectsBalance === false) {
+      throw new BadRequestException('Историческую импортированную операцию нельзя изменить вручную');
+    }
     if (t.status === FinanceTxStatus.CANCELLED) {
       throw new BadRequestException('Отменённую операцию нельзя изменять');
     }
@@ -2206,6 +2545,9 @@ export class FinanceService implements OnModuleInit {
         lock: { mode: 'pessimistic_write' },
       });
       if (!tx) throw new NotFoundException('Операция не найдена');
+      if (tx.source || tx.externalId || tx.affectsBalance === false) {
+        throw new BadRequestException('Историческую импортированную операцию нельзя отменить вручную');
+      }
       // Идемпотентно восстанавливаем связанные планы даже после сбоя старой
       // неатомарной версии отмены.
       const linked = await ppRepo.find({ where: { receivedTxId: id } });
@@ -3594,9 +3936,27 @@ export class FinanceService implements OnModuleInit {
     ids(data.plannedPayments, 'Плановые оплаты');
     ids(data.transactions, 'Транзакции');
     if (data.assets?.length) ids(data.assets, 'Инвентарь');
+    const externalPairs = new Set<string>();
     for (const tx of data.transactions) {
       const amount = Number(tx.amount);
       if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException(`Транзакция ${tx.id}: неверная сумма`);
+      if (tx.source === 'notion') {
+        if (!String(tx.externalId || '').trim()) {
+          throw new BadRequestException(`Транзакция ${tx.id}: архив Notion требует externalId`);
+        }
+        if (tx.affectsBalance !== false) {
+          throw new BadRequestException(`Транзакция ${tx.id}: архив Notion должен иметь affectsBalance=false`);
+        }
+      }
+      if (tx.source != null && tx.externalId != null) {
+        const pair = `${String(tx.source)}\u0000${String(tx.externalId)}`;
+        if (externalPairs.has(pair)) {
+          throw new BadRequestException(
+            `Транзакции: повторяющаяся пара source/externalId ${tx.source}/${tx.externalId}`,
+          );
+        }
+        externalPairs.add(pair);
+      }
     }
   }
 
@@ -3622,6 +3982,11 @@ export class FinanceService implements OnModuleInit {
       if (!tx.accountId && tx.account && accountByKey.has(String(tx.account))) {
         tx.accountId = accountByKey.get(String(tx.account));
       }
+      tx.source ??= null;
+      tx.externalId ??= null;
+      // Архив до cutover никогда не должен влиять на стартовый баланс CRM,
+      // даже если старый backup был создан до появления этого флага.
+      tx.affectsBalance = tx.source === 'notion' ? false : tx.affectsBalance !== false;
       return tx;
     });
     if (Array.isArray(normalized.projects)) normalized.projects = normalized.projects.map((project: any) => {

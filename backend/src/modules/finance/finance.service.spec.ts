@@ -12,6 +12,21 @@ import {
   NOTION_CONFIRMED_SALARY_HISTORY,
   NOTION_PAYROLL_HISTORY,
 } from './notion-snapshot.data';
+import {
+  NOTION_HISTORY_TOTALS,
+  NOTION_HISTORY_TRANSACTIONS,
+} from './notion-history.data';
+import { FinanceAccount } from './entities/finance-account.entity';
+import { FinanceCategory } from './entities/finance-category.entity';
+import { FinanceProject } from './entities/finance-project.entity';
+import { FinanceEmployee } from './entities/finance-employee.entity';
+import { FinanceSubscription } from './entities/finance-subscription.entity';
+import { FinanceDebt } from './entities/finance-debt.entity';
+import { FinancePlannedPayment } from './entities/finance-planned-payment.entity';
+import { FinanceAsset } from './entities/finance-asset.entity';
+import { FinanceBackup } from './entities/finance-backup.entity';
+import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustment.entity';
+import { FinanceActivity } from './entities/finance-activity.entity';
 
 const emptyMaps = {
   accounts: [],
@@ -56,6 +71,9 @@ function transaction(
     subscriptionId: null,
     salaryYm: null,
     comment: null,
+    source: null,
+    externalId: null,
+    affectsBalance: true,
     ...overrides,
   } as FinanceTransaction;
 }
@@ -64,28 +82,55 @@ describe('FinanceService correctness', () => {
   let service: FinanceService;
   let txRepo: ReturnType<typeof repository>;
   let accountRepo: ReturnType<typeof repository>;
+  let categoryRepo: ReturnType<typeof repository>;
+  let projectRepo: ReturnType<typeof repository>;
   let employeeRepo: ReturnType<typeof repository>;
   let subscriptionRepo: ReturnType<typeof repository>;
+  let debtRepo: ReturnType<typeof repository>;
   let plannedPaymentRepo: ReturnType<typeof repository>;
+  let assetRepo: ReturnType<typeof repository>;
+  let backupRepo: ReturnType<typeof repository>;
+  let forecastAdjustmentRepo: ReturnType<typeof repository>;
+  let activityRepo: ReturnType<typeof repository>;
+  let dataSource: { transaction: jest.Mock };
+  let managerQuery: jest.Mock;
 
   beforeEach(() => {
     txRepo = repository();
     accountRepo = repository();
-    const categoryRepo = repository();
-    const projectRepo = repository();
+    categoryRepo = repository();
+    projectRepo = repository();
     employeeRepo = repository();
     subscriptionRepo = repository();
-    const debtRepo = repository();
+    debtRepo = repository();
     plannedPaymentRepo = repository();
-    const assetRepo = repository();
-    const backupRepo = repository();
-    const forecastAdjustmentRepo = repository();
-    const dataSource = {
+    assetRepo = repository();
+    backupRepo = repository();
+    forecastAdjustmentRepo = repository();
+    activityRepo = repository();
+    managerQuery = jest.fn().mockResolvedValue([]);
+    dataSource = {
       transaction: jest.fn(async (...args: any[]) => {
         const callback = args[args.length - 1];
         return callback({
-          getRepository: (entity: any) =>
-            entity?.name === 'FinanceTransaction' ? txRepo : plannedPaymentRepo,
+          query: managerQuery,
+          getRepository: (entity: any) => {
+            const repos = new Map<any, any>([
+              [FinanceTransaction, txRepo],
+              [FinanceAccount, accountRepo],
+              [FinanceCategory, categoryRepo],
+              [FinanceProject, projectRepo],
+              [FinanceEmployee, employeeRepo],
+              [FinanceSubscription, subscriptionRepo],
+              [FinanceDebt, debtRepo],
+              [FinancePlannedPayment, plannedPaymentRepo],
+              [FinanceAsset, assetRepo],
+              [FinanceBackup, backupRepo],
+              [FinanceForecastAdjustment, forecastAdjustmentRepo],
+              [FinanceActivity, activityRepo],
+            ]);
+            return repos.get(entity);
+          },
         });
       }),
     };
@@ -179,6 +224,24 @@ describe('FinanceService correctness', () => {
       transaction({ type: FinanceTxType.INCOME, amount: 500, accountId: 'account-1', date: '2000-01-04', status: FinanceTxStatus.PENDING }),
       transaction({ type: FinanceTxType.INCOME, amount: 500, accountId: 'account-1', date: '2000-01-05', status: FinanceTxStatus.CANCELLED }),
       transaction({ type: FinanceTxType.INCOME, amount: 1000, accountId: 'account-1', date: '2999-01-01' }),
+      transaction({
+        type: FinanceTxType.INCOME,
+        amount: 9_000,
+        accountId: 'account-1',
+        date: '1999-01-01',
+        source: 'notion',
+        externalId: 'historical-income',
+        affectsBalance: false,
+      }),
+      transaction({
+        type: FinanceTxType.EXPENSE,
+        amount: 8_000,
+        accountId: 'account-1',
+        date: '1999-01-02',
+        source: 'notion',
+        externalId: 'historical-expense',
+        affectsBalance: false,
+      }),
     ]);
 
     const result = await service.accountsBalances();
@@ -253,6 +316,296 @@ describe('FinanceService correctness', () => {
     expect(result.total.balance).toBe(35);
   });
 
+  it('imports only missing pre-cutover Notion rows and creates one safety snapshot', async () => {
+    const rows = [
+      {
+        externalId: 'already-there',
+        date: '2026-05-01',
+        type: 'income',
+        amount: 100,
+        accountKey: 'cash',
+        fromKey: null,
+        toKey: null,
+        categoryKey: 'smm',
+        name: 'Существующая строка',
+        comment: '',
+      },
+      {
+        externalId: 'new-row',
+        date: '2026-05-02',
+        type: 'expense',
+        amount: 25,
+        accountKey: 'cash',
+        fromKey: null,
+        toKey: null,
+        categoryKey: 'other_expense',
+        name: 'Покупка',
+        comment: 'для офиса',
+      },
+      {
+        externalId: 'after-cutover',
+        date: '2026-06-01',
+        type: 'expense',
+        amount: 999,
+        accountKey: 'cash',
+        fromKey: null,
+        toKey: null,
+        categoryKey: 'other_expense',
+        name: 'Не импортировать',
+        comment: '',
+      },
+    ] as any;
+    const existing = transaction({
+      id: 'existing-id',
+      type: FinanceTxType.INCOME,
+      amount: 100,
+      date: '2026-05-01',
+      accountId: 'cash-id',
+      categoryId: 'smm-id',
+      source: 'notion',
+      externalId: 'already-there',
+      affectsBalance: false,
+    });
+    txRepo.find
+      .mockResolvedValueOnce([existing])
+      .mockResolvedValueOnce([
+        existing,
+        transaction({
+          id: 'new-id',
+          type: FinanceTxType.EXPENSE,
+          amount: 25,
+          date: '2026-05-02',
+          accountId: 'cash-id',
+          categoryId: 'other-expense-id',
+          source: 'notion',
+          externalId: 'new-row',
+          affectsBalance: false,
+        }),
+      ]);
+    accountRepo.find.mockResolvedValue([{ id: 'cash-id', key: 'cash', name: 'Cash' }]);
+    categoryRepo.find.mockResolvedValue([
+      { id: 'smm-id', key: 'smm', name: 'SMM', type: 'income' },
+      { id: 'other-expense-id', key: null, name: 'Прочее', type: 'expense' },
+    ]);
+    txRepo.save.mockResolvedValue([]);
+    activityRepo.save.mockImplementation(async value => value);
+    jest.spyOn(service as any, 'exportAllWithManager').mockResolvedValue({ version: 2 });
+    const backupSpy = jest.spyOn(service as any, 'saveBackupWithManager')
+      .mockResolvedValue({ id: 'backup-1' });
+
+    const first = await (service as any).importNotionHistoricalTransactions(rows);
+    const second = await (service as any).importNotionHistoricalTransactions(rows);
+
+    expect(first).toMatchObject({
+      imported: 1,
+      alreadyPresent: 1,
+      cutoffRejected: 1,
+      safetyBackupId: 'backup-1',
+    });
+    expect(second).toMatchObject({
+      imported: 0,
+      alreadyPresent: 2,
+      cutoffRejected: 1,
+      safetyBackupId: null,
+    });
+    expect(backupSpy).toHaveBeenCalledTimes(1);
+    expect(managerQuery).toHaveBeenCalledTimes(2);
+    expect(managerQuery).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock($1)',
+      [20_260_201],
+    );
+    expect(txRepo.save).toHaveBeenCalledTimes(1);
+    const importedRows = txRepo.save.mock.calls[0][0];
+    expect(importedRows).toEqual([
+      expect.objectContaining({
+        externalId: 'new-row',
+        source: 'notion',
+        affectsBalance: false,
+        accountId: 'cash-id',
+        categoryId: 'other-expense-id',
+        counterparty: 'Покупка',
+        comment: 'Покупка — для офиса',
+        status: FinanceTxStatus.COMPLETED,
+      }),
+    ]);
+    expect(importedRows).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ externalId: 'after-cutover' }),
+    ]));
+    expect(backupSpy.mock.invocationCallOrder[0]).toBeLessThan(txRepo.save.mock.invocationCallOrder[0]);
+    expect(activityRepo.save).toHaveBeenCalledTimes(1);
+    expect(activityRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      route: 'SYSTEM notion-historical-transactions-v1',
+      details: expect.objectContaining({
+        imported: 1,
+        safetyBackupId: 'backup-1',
+        affectsBalance: false,
+      }),
+    }));
+  });
+
+  it('fails atomically when an existing Notion row differs from the canonical dataset', async () => {
+    const rows = [{
+      externalId: 'canonical-row',
+      date: '2026-05-03',
+      type: 'income',
+      amount: 100,
+      accountKey: 'cash',
+      fromKey: null,
+      toKey: null,
+      categoryKey: 'smm',
+      name: 'Каноническая строка',
+      comment: '',
+    }] as any;
+    txRepo.find.mockResolvedValue([
+      transaction({
+        id: 'damaged-row',
+        type: FinanceTxType.INCOME,
+        amount: 99,
+        date: '2026-05-03',
+        accountId: 'cash-id',
+        categoryId: 'smm-id',
+        source: 'notion',
+        externalId: 'canonical-row',
+        affectsBalance: false,
+      }),
+    ]);
+    accountRepo.find.mockResolvedValue([{ id: 'cash-id', key: 'cash', name: 'Cash' }]);
+    categoryRepo.find.mockResolvedValue([
+      { id: 'smm-id', key: 'smm', name: 'SMM', type: 'income' },
+    ]);
+    const backupSpy = jest.spyOn(service as any, 'saveBackupWithManager');
+
+    await expect((service as any).importNotionHistoricalTransactions(rows))
+      .rejects.toThrow(
+        'Архив Notion canonical-row: существующая операция не совпадает с источником (сумма)',
+      );
+
+    expect(managerQuery).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock($1)',
+      [20_260_201],
+    );
+    expect(backupSpy).not.toHaveBeenCalled();
+    expect(txRepo.save).not.toHaveBeenCalled();
+    expect(activityRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('uses the Notion archive from zero, then resets to the CRM balance in June', async () => {
+    expect((service as any).notionHistoryTotals(NOTION_HISTORY_TRANSACTIONS))
+      .toMatchObject(NOTION_HISTORY_TOTALS);
+    const historical = NOTION_HISTORY_TRANSACTIONS.map(row => transaction({
+      id: row.externalId,
+      type: row.type as FinanceTxType,
+      amount: row.amount,
+      date: row.date,
+      accountId: row.accountKey ? 'cash-id' : null,
+      fromAccountId: row.fromKey ? 'cash-id' : null,
+      toAccountId: row.toKey ? 'cash-id-2' : null,
+      categoryId: row.categoryKey ? `category-${row.categoryKey}` : null,
+      category: row.categoryKey,
+      comment: row.name,
+      source: 'notion',
+      externalId: row.externalId,
+      affectsBalance: false,
+    }));
+    const crmRows = [
+      transaction({
+        id: 'crm-income',
+        type: FinanceTxType.INCOME,
+        amount: 50,
+        date: '2026-06-10',
+        accountId: 'cash-id',
+      }),
+      transaction({
+        id: 'crm-expense',
+        type: FinanceTxType.EXPENSE,
+        amount: 10,
+        date: '2026-06-11',
+        accountId: 'cash-id',
+      }),
+    ];
+    jest.spyOn(service, 'accountsBalances').mockResolvedValue({
+      perAccount: [{
+        id: 'cash-id',
+        key: 'cash',
+        name: 'Cash',
+        startBalance: 1_000,
+        income: 50,
+        expense: 10,
+        saving: 0,
+        transferIn: 0,
+        transferOut: 0,
+        balance: 1_040,
+      }],
+      total: { startBalance: 1_000, income: 50, expense: 10, balance: 1_040 },
+    });
+    projectRepo.find.mockResolvedValue([]);
+    employeeRepo.find.mockResolvedValue([]);
+    subscriptionRepo.find.mockResolvedValue([]);
+    debtRepo.find.mockResolvedValue([]);
+    plannedPaymentRepo.find.mockResolvedValue([]);
+    forecastAdjustmentRepo.find.mockResolvedValue([]);
+    categoryRepo.find.mockResolvedValue([
+      { id: 'category-salary', key: 'salary', name: 'Зарплата', type: 'expense' },
+    ]);
+    txRepo.find.mockResolvedValue([...historical, ...crmRows]);
+
+    const archive = await service.forecast('2026-02', 5, 'base');
+    const current = await service.forecast('2026-06', 3, 'base');
+
+    expect(archive.availableFrom).toBe('2026-02');
+    expect(archive.rows.map(row => ({
+      ym: row.ym,
+      income: row.income,
+      expense: row.expense,
+    }))).toEqual([
+      { ym: '2026-02', income: 8_550, expense: 1_313.02 },
+      { ym: '2026-03', income: 12_900, expense: 15_461 },
+      { ym: '2026-04', income: 38_214, expense: 33_034.79 },
+      { ym: '2026-05', income: 38_230, expense: 45_120.81 },
+      { ym: '2026-06', income: 50, expense: 10 },
+    ]);
+    expect(archive.rows.map(row => row.closingBalance)).toEqual([
+      7_236.98,
+      4_675.98,
+      9_855.19,
+      2_964.38,
+      1_040,
+    ]);
+    expect(archive.rows[0]).toMatchObject({
+      openingBalance: 0,
+      balanceBasis: 'notion_history',
+      balanceReset: false,
+    });
+    expect(archive.rows[4]).toMatchObject({
+      openingBalance: 1_000,
+      closingBalance: 1_040,
+      balanceBasis: 'crm_cutover',
+      balanceReset: true,
+    });
+    expect(archive.rows[0].incomeSources[0]).toMatchObject({
+      imported: true,
+      source: 'notion',
+      date: '2026-02-19',
+      accountName: 'Cash',
+      kind: 'Архив Notion · получено',
+    });
+    expect(archive.rows.flatMap(row => row.expenseSources)
+      .find(source => source.categoryName === 'Зарплата')).toMatchObject({
+      imported: true,
+      salary: true,
+      kind: 'Архив Notion · оплачено',
+    });
+    expect(current.rows[0]).toMatchObject({
+      ym: '2026-06',
+      openingBalance: 1_000,
+      income: 50,
+      expense: 10,
+      closingBalance: 1_040,
+      balanceBasis: 'crm_cutover',
+      balanceReset: false,
+    });
+  });
+
   it('cancels a ledger transaction instead of deleting it', async () => {
     const row = transaction({ id: 'tx-1', amount: 25 });
     txRepo.findOne.mockResolvedValue(row);
@@ -265,6 +618,23 @@ describe('FinanceService correctness', () => {
       status: FinanceTxStatus.CANCELLED,
     }));
     expect(txRepo.delete).not.toHaveBeenCalled();
+  });
+
+  it('does not allow imported historical transactions to be edited or cancelled', async () => {
+    const imported = transaction({
+      id: 'notion-row',
+      source: 'notion',
+      externalId: 'notion-page',
+      affectsBalance: false,
+    });
+    txRepo.findOne.mockResolvedValue(imported);
+
+    await expect(service.updateTransaction(imported.id, { amount: 50 }))
+      .rejects.toThrow('Историческую импортированную операцию нельзя изменить вручную');
+    await expect(service.removeTransaction(imported.id))
+      .rejects.toThrow('Историческую импортированную операцию нельзя отменить вручную');
+    expect(txRepo.update).not.toHaveBeenCalled();
+    expect(txRepo.save).not.toHaveBeenCalled();
   });
 
   it('returns all-time salary changes and keeps legacy advance history', async () => {
@@ -582,6 +952,72 @@ describe('FinanceService correctness', () => {
       assets: [],
       forecastAdjustments: [],
     });
+  });
+
+  it('forces restored Notion history to remain balance-neutral', () => {
+    const backup = {
+      version: 2,
+      accounts: [{ id: 'account-1', key: 'cash' }],
+      categories: [{ id: 'category-1', key: 'smm' }],
+      projects: [],
+      employees: [],
+      subscriptions: [],
+      debts: [],
+      plannedPayments: [],
+      transactions: [{
+        id: 'tx-1',
+        source: 'notion',
+        externalId: 'page-1',
+        affectsBalance: true,
+        amount: 100,
+        accountId: 'account-1',
+      }],
+    };
+
+    const normalized = (service as any).normalizeImportData(backup);
+
+    expect(normalized.transactions[0]).toMatchObject({
+      source: 'notion',
+      externalId: 'page-1',
+      affectsBalance: false,
+    });
+    expect(() => (service as any).validateImport(normalized)).not.toThrow();
+  });
+
+  it('validates Notion metadata and unique source/externalId pairs in backups', () => {
+    const valid = {
+      version: 2,
+      accounts: [{ id: 'account-1', key: 'cash' }],
+      categories: [{ id: 'category-1', key: 'smm' }],
+      projects: [],
+      employees: [],
+      subscriptions: [],
+      debts: [],
+      plannedPayments: [],
+      transactions: [{
+        id: 'tx-1',
+        source: 'notion',
+        externalId: 'page-1',
+        affectsBalance: false,
+        amount: 100,
+      }],
+    };
+    const copy = () => JSON.parse(JSON.stringify(valid));
+
+    const missingExternalId = copy();
+    missingExternalId.transactions[0].externalId = null;
+    expect(() => (service as any).validateImport(missingExternalId))
+      .toThrow('архив Notion требует externalId');
+
+    const balanceChanging = copy();
+    balanceChanging.transactions[0].affectsBalance = true;
+    expect(() => (service as any).validateImport(balanceChanging))
+      .toThrow('архив Notion должен иметь affectsBalance=false');
+
+    const duplicated = copy();
+    duplicated.transactions.push({ ...duplicated.transactions[0], id: 'tx-2' });
+    expect(() => (service as any).validateImport(duplicated))
+      .toThrow('повторяющаяся пара source/externalId notion/page-1');
   });
 
   it('rejects an unsupported backup version before restore', () => {

@@ -115,6 +115,20 @@ export class FinanceTransaction {
   @Column({ type: 'varchar', length: 16, nullable: true })
   paymentMethod: string | null;
 
+  /** Источник импортированной операции. NULL — обычная запись CRM. */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  source: string | null;
+
+  /** Стабильный id строки во внешнем источнике. Пара source/externalId
+   *  уникальна и делает повторный импорт идемпотентным. */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  externalId: string | null;
+
+  /** false — исторический денежный факт до запуска CRM: участвует в
+   *  доходах/расходах и планировании, но не меняет текущий остаток счёта. */
+  @Column({ type: 'boolean', default: true })
+  affectsBalance: boolean;
+
   @Index()
   @Column({ type: 'varchar', length: 16, default: FinanceTxStatus.COMPLETED })
   status: FinanceTxStatus;

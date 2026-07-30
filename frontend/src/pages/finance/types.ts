@@ -92,6 +92,12 @@ export interface FinAsset {
 /** Decorated-транзакция (listTransactions/overview): имена справочников уже внутри. */
 export interface FinTx {
   id: string;
+  /** Архивные строки из внешнего учёта доступны для просмотра, но не
+   *  редактируются и не участвуют в текущем остатке счетов. */
+  source?: string | null;
+  externalId?: string | null;
+  imported?: boolean;
+  affectsBalance?: boolean;
   date: string;
   type: 'income' | 'expense' | 'transfer' | 'saving' | string;
   amount: number;

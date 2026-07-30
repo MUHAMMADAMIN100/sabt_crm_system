@@ -4,9 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { apiErr, currentYm, money, monthLabel } from './finlib';
+import { apiErr, currentYm, formatDate, money, monthLabel } from './finlib';
 import { FinLoadError, FinLoading, FinModal } from './FinKit';
 import FinIcon from './FinIcon';
+import ImportedArchiveBadge, { isImportedArchive } from './ImportedArchiveBadge';
 import { floatingPosition, scrollableAncestors, type FloatingPosition } from './floatingPosition';
 import './finance.css';
 
@@ -38,7 +39,16 @@ export default function FinancePlanningPage() {
         <button className="btn primary" onClick={() => setAdding(true)}>+ Корректировка</button>
       </div>
       <div className="fin-plan-controls">
-        <div className="field"><label>Начать с</label><input type="month" value={start} onChange={e => setStart(e.target.value)} /></div>
+        <div className="field fin-plan-start-field">
+          <label>Начать с</label>
+          <input type="month" value={start} onChange={e => setStart(e.target.value)} />
+          {data.availableFrom && data.availableFrom < start && (
+            <button type="button" className="fin-plan-history-link"
+              onClick={() => setStart(data.availableFrom)}>
+              Вся история · с {monthLabel(data.availableFrom, true)}
+            </button>
+          )}
+        </div>
         <div className="field"><label>Горизонт</label><select value={months} onChange={e => setMonths(Number(e.target.value))}><option value={6}>6 месяцев</option><option value={12}>12 месяцев</option><option value={24}>24 месяца</option></select></div>
         <div className="fin-segments" role="group" aria-label="Сценарий прогноза">
           {Object.entries(scenarios).map(([key, label]) => (
@@ -82,7 +92,15 @@ export default function FinancePlanningPage() {
                 toggle();
               }
             }}>
-          <td><strong>{monthLabel(r.ym, true)}</strong></td>
+          <td>
+            <strong>{monthLabel(r.ym, true)}</strong>
+            {r.balanceReset && (
+              <small className="fin-plan-balance-reset"
+                title="С этого месяца остаток считается по счетам CRM, а не по архиву Notion">
+                переход на остатки CRM
+              </small>
+            )}
+          </td>
           <td><FlowCell tone="income" actual={r.actualIncome} planned={r.plannedIncome} total={r.income} /></td>
           <td><FlowCell tone="expense" actual={r.actualExpense} planned={r.plannedExpense} total={r.expense} /></td>
           <td><FlowCell actual={r.actualIncome - r.actualExpense} planned={r.plannedIncome - r.plannedExpense} total={r.net} signed /></td>
@@ -103,18 +121,60 @@ function SourceList({ title, tone, rows, remove }: { title: string; tone: 'incom
   const salaryMap = new Map<string, any>();
   for (const row of salaryRows) {
     const prev = salaryMap.get(row.label);
-    salaryMap.set(row.label, prev ? { ...prev, amount: Number(prev.amount) + Number(row.amount) } : { ...row });
+    salaryMap.set(row.label, prev
+      ? {
+          ...prev,
+          amount: Number(prev.amount) + Number(row.amount),
+          imported: isImportedArchive(prev) || isImportedArchive(row),
+        }
+      : { ...row });
   }
   const salaries = [...salaryMap.values()];
   const visible = rows.filter(x => !(x.salary || String(x.kind).startsWith('Зарплата')));
-  if (salaries.length) visible.unshift({ key: 'salary-group', label: 'Зарплата', kind: `${salaries.length} сотрудников`, amount: salaries.reduce((s, x) => s + Number(x.amount), 0), salaries });
+  if (salaries.length) visible.unshift({
+    key: 'salary-group',
+    label: 'Зарплата',
+    kind: `${salaries.length} сотрудников`,
+    amount: salaries.reduce((s, x) => s + Number(x.amount), 0),
+    salaries,
+    imported: salaries.some(isImportedArchive),
+  });
   return <div className={`fin-plan-column ${tone}`}>
     <div className="fin-plan-column-title"><strong>{title}</strong><span>{money(rows.reduce((s, x) => s + Number(x.amount), 0))}</span></div>
     {visible.length ? visible.map(x => x.salaries
       ? <SalaryGroup key={x.key} group={x} />
-      : <div className="fin-plan-source" key={x.key}><span>{x.label}<small>{x.kind}</small></span><b>{money(x.amount)}</b>{x.adjustmentId && <button onClick={() => remove(x.adjustmentId)} title="Удалить" aria-label={`Удалить корректировку «${x.label}»`}>×</button>}</div>
+      : <PlanSource key={x.key} source={x} remove={remove} />
     ) : <p className="muted">Нет ожидаемых операций</p>}
   </div>;
+}
+
+function sourceMeta(source: any): string[] {
+  return [
+    source.date ? (String(source.date).length >= 10 ? formatDate(source.date) : String(source.date)) : null,
+    source.categoryName ? `категория: ${source.categoryName}` : null,
+    source.accountName ? `счёт: ${source.accountName}` : null,
+  ].filter(Boolean) as string[];
+}
+
+function PlanSource({ source, remove }: { source: any; remove: (id: string) => void }) {
+  const meta = sourceMeta(source);
+  return (
+    <div className={`fin-plan-source${isImportedArchive(source) ? ' imported' : ''}`}>
+      <span>
+        <span className="fin-plan-source-label">
+          {source.label}
+          {isImportedArchive(source) && <ImportedArchiveBadge />}
+        </span>
+        <small>{source.kind}</small>
+        {meta.length > 0 && <small className="fin-plan-source-meta">{meta.join(' · ')}</small>}
+      </span>
+      <b>{money(source.amount)}</b>
+      {source.adjustmentId && (
+        <button onClick={() => remove(source.adjustmentId)} title="Удалить"
+          aria-label={`Удалить корректировку «${source.label}»`}>×</button>
+      )}
+    </div>
+  );
 }
 
 function SalaryGroup({ group }: { group: any }) {
@@ -181,7 +241,14 @@ function SalaryGroup({ group }: { group: any }) {
     aria-label={`Показать зарплаты ${group.kind}`}
     onMouseEnter={enter} onMouseLeave={leave} onFocus={enter} onBlur={leave}
     onClick={togglePinned} onKeyDown={onKeyDown}>
-    <span>{group.label}<small>{group.kind}</small></span><b>{money(group.amount)}</b>
+    <span>
+      <span className="fin-plan-source-label">
+        {group.label}
+        {isImportedArchive(group) && <ImportedArchiveBadge />}
+      </span>
+      <small>{group.kind}</small>
+    </span>
+    <b>{money(group.amount)}</b>
     {open && pos && createPortal(<div id={popoverId} className={`fin-salary-popover open${pinned ? ' pinned' : ''}`}
       role="dialog" aria-label="Зарплата сотрудников" tabIndex={-1}
       style={{ top: pos.top, bottom: pos.bottom, left: pos.left }}
@@ -191,7 +258,16 @@ function SalaryGroup({ group }: { group: any }) {
       <div className="fin-salary-popover-head"><strong>Зарплата сотрудников</strong><b>{money(group.amount)}</b>
         {pinned && <button className="fin-payout-close" type="button" aria-label="Закрыть" onClick={close}><FinIcon name="close" size={14} /></button>}
       </div>
-      <div className="fin-salary-popover-body">{group.salaries.map((person: any) => <div key={person.key}><span>{person.label}</span><b>{money(person.amount)}</b></div>)}</div>
+      <div className="fin-salary-popover-body">{group.salaries.map((person: any) => {
+        const meta = sourceMeta(person);
+        return <div key={person.key}>
+          <span>
+            {person.label}
+            {meta.length > 0 && <small className="fin-salary-person-meta">{meta.join(' · ')}</small>}
+          </span>
+          <b>{money(person.amount)}</b>
+        </div>;
+      })}</div>
       <div className={'fin-payout-pin-hint' + (pinned ? ' pinned' : '')}>{pinned ? 'Окно закреплено — можно прокручивать' : 'Задержите курсор, чтобы закрепить окно'}</div>
     </div>, document.body)}
   </div>;
