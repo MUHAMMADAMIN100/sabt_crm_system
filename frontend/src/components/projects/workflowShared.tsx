@@ -9,6 +9,7 @@ import { Trash2, Megaphone, History, Clapperboard, Users } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { tariffLimitsOf } from '@/lib/tariffLimits'
 
 /** Колонки доски — порядок = порядок на экране (ТЗ маршрут). */
 export const STAGES: { key: string; label: string }[] = [
@@ -1059,16 +1060,20 @@ export function ContentPlanModal({ projects, card, fixedProjectId, onClose, onSa
 
   const project = projects.find((p: any) => p.id === projectId)
   const tariff = (tariffs || []).find((t: any) => t.id === project?.tariffId)
+  // У ИНДИВИДУАЛЬНОГО тарифа цифры лежат в самом проекте: в справочнике он
+  // один на всех и хранит нули — иначе доска строила бы 0 рилсов и 0 макетов.
+  const limits = tariffLimitsOf(tariff, project?.customTariff)
   // Макет = Post → количество макетов берём из postsPerMonth.
-  const tariffLabel = tariff ? `${tariff.reelsPerMonth} рилс · ${tariff.postsPerMonth} макет` : (projectId ? 'без тарифа' : '')
+  const tariffLabel = tariff ? `${limits.reelsPerMonth} рилс · ${limits.postsPerMonth} макет` : (projectId ? 'без тарифа' : '')
 
   // Префилл по тарифу при создании (не при редактировании существующего КП).
   useEffect(() => {
     if (editing) return
     if (!tariff) { setReels([]); setMacros([]); return }
-    setReels(Array.from({ length: Number(tariff.reelsPerMonth) || 0 }, () => ({ title: '', publishDate: '', description: '' })))
-    setMacros(Array.from({ length: Number(tariff.postsPerMonth) || 0 }, () => ({ title: '', publishDate: '', description: '' })))
-  }, [tariff?.id, editing])
+    setReels(Array.from({ length: limits.reelsPerMonth }, () => ({ title: '', publishDate: '', description: '' })))
+    setMacros(Array.from({ length: limits.postsPerMonth }, () => ({ title: '', publishDate: '', description: '' })))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tariff?.id, limits.reelsPerMonth, limits.postsPerMonth, editing])
 
   const setItem = (list: any[], setList: any, idx: number, patch: any) =>
     setList(list.map((it: any, i: number) => i === idx ? { ...it, ...patch } : it))

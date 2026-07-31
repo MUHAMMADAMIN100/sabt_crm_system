@@ -21,6 +21,18 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { MailService } from '../mail/mail.service';
 import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES, projectTypeLabel } from '../../common/sales-segment';
+import { effectiveLimits, sanitizeCustomTariff, TariffLimits } from './tariff-limits';
+
+/** Кто видит и задаёт цену индивидуального тарифа. Один список и на чтение
+ *  (stripFinance), и на запись (normalizeCustomTariff): иначе роль правила бы
+ *  то, чего не видит, и её правка молча откатывалась.
+ *  Руководитель SMM здесь потому, что цену индивидуального проекта
+ *  согласовывает он — в справочнике тарифов её нет. Цены ОБЫЧНЫХ тарифов ему
+ *  по-прежнему не видны. Admin в списке нет: ему, как и по остальным
+ *  финансовым полям, деньги проекта не показываются. */
+const CUSTOM_PRICE_ROLES = [
+  'founder', 'co_founder', 'smm_director', 'sales_manager_smm',
+];
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
@@ -52,6 +64,10 @@ export class ProjectsService implements OnModuleInit {
       );
       await this.repo.manager.query(
         `ALTER TABLE projects ADD COLUMN IF NOT EXISTS "storiesArchived" boolean NOT NULL DEFAULT false`,
+      );
+      // Лимиты и цена индивидуального тарифа — на конкретный проект.
+      await this.repo.manager.query(
+        `ALTER TABLE projects ADD COLUMN IF NOT EXISTS "customTariff" jsonb`,
       );
       // Личный архив: менеджер продаж убирает проект из СВОЕГО списка, у
       // остальной команды проект остаётся активным. Общий архив (isArchived)
@@ -99,15 +115,23 @@ export class ProjectsService implements OnModuleInit {
   private async applyTariffSnapshot(
     target: Partial<Project>,
     tariffId: string,
+    customTariff?: Record<string, any> | null,
   ): Promise<void> {
     const tariff = await this.tariffRepo.findOne({ where: { id: tariffId } });
     if (!tariff) throw new NotFoundException('Tariff not found');
     target.tariffId = tariff.id;
     target.tariffNameSnapshot = tariff.name;
-    // Для custom тарифа клиент сам передал monthlyFee — используем его как
-    // snapshot цены. Для обычных тарифов берём цену с тарифа.
-    if ((tariff as any).isCustom && target.monthlyFee != null) {
-      target.tariffPriceSnapshot = target.monthlyFee as any;
+    // Для custom тарифа цена живёт в самом проекте: сначала явный monthlyFee
+    // (финансовый таб), иначе цена, введённая в форме проекта. В справочнике
+    // у индивидуального тарифа ноль — брать его нельзя, иначе «Ежемесячная
+    // плата» и выручка по проекту остались бы нулевыми.
+    if ((tariff as any).isCustom) {
+      const own = effectiveLimits(tariff as any, customTariff).monthlyPrice;
+      const price = target.monthlyFee != null
+        ? Number(target.monthlyFee)
+        : (own > 0 ? own : tariff.monthlyPrice);
+      target.tariffPriceSnapshot = price as any;
+      if (target.monthlyFee == null) target.monthlyFee = price as any;
     } else {
       target.tariffPriceSnapshot = tariff.monthlyPrice;
       if (target.monthlyFee == null) target.monthlyFee = tariff.monthlyPrice;
@@ -233,7 +257,7 @@ export class ProjectsService implements OnModuleInit {
       details: { brief: true },
     }).catch(() => {});
     this.gateway.broadcast('projects:changed', { projectId });
-    return this.findOne(projectId);
+    return this.findOne(projectId, user.role);
   }
 
   /** Генерирует (или возвращает существующий) публичный токен для брифа.
@@ -383,7 +407,7 @@ export class ProjectsService implements OnModuleInit {
       details: { briefCleared: true },
     }).catch(() => {});
     this.gateway.broadcast('projects:changed', { projectId });
-    return this.findOne(projectId);
+    return this.findOne(projectId, user.role);
   }
 
   // ─── Wave 13: автопересчёт финансовых полей ─────────────────────────
@@ -446,13 +470,14 @@ export class ProjectsService implements OnModuleInit {
       if (tariffId && projectType === 'SMM' && projectId) {
         const tariff = await this.tariffRepo.findOne({ where: { id: tariffId } });
         if (tariff) {
+          // У индивидуального тарифа лимиты и цена лежат в самом проекте —
+          // в справочнике там нули, и перерасход не считался вовсе.
+          const lim = effectiveLimits(tariff, (target.customTariff ?? existing.customTariff) as any);
           const totalPlanned =
-            (tariff.storiesPerMonth || 0) +
-            (tariff.reelsPerMonth || 0) +
-            (tariff.postsPerMonth || 0) +
-            (tariff.designsPerMonth || 0);
+            lim.storiesPerMonth + lim.reelsPerMonth + lim.postsPerMonth +
+            (tariff.isCustom ? 0 : (tariff.designsPerMonth || 0));
           if (totalPlanned > 0) {
-            const unitPrice = Number(tariff.monthlyPrice || 0) / totalPlanned;
+            const unitPrice = lim.monthlyPrice / totalPlanned;
             const overuseRows: Array<{ overuse: string }> = await this.repo.manager.query(
               `SELECT GREATEST(0,
                  SUM(CASE WHEN c.status = 'published' THEN 1 ELSE 0 END)
@@ -467,10 +492,10 @@ export class ProjectsService implements OnModuleInit {
             // но т.к. лимиты разные, делаем точнее ниже:
             let totalOveruseUnits = 0;
             const types: Array<[string, number]> = [
-              ['story', tariff.storiesPerMonth || 0],
-              ['reel', tariff.reelsPerMonth || 0],
-              ['post', tariff.postsPerMonth || 0],
-              ['design', tariff.designsPerMonth || 0],
+              ['story', lim.storiesPerMonth],
+              ['reel', lim.reelsPerMonth],
+              ['post', lim.postsPerMonth],
+              ['design', tariff.isCustom ? 0 : (tariff.designsPerMonth || 0)],
             ];
             for (const [type, limit] of types) {
               if (limit <= 0) continue;
@@ -482,7 +507,10 @@ export class ProjectsService implements OnModuleInit {
               const published = Number(r?.[0]?.cnt || 0);
               totalOveruseUnits += Math.max(0, published - limit);
             }
-            target.tariffLimitOveruseCost = Math.round(totalOveruseUnits * unitPrice * 100) / 100;
+            // Страховка: NaN/Infinity в decimal(15,2) Postgres проглотит, а
+            // потом любой SUM() по колонке вернёт NaN и сломает финотчёты.
+            const cost = Math.round(totalOveruseUnits * unitPrice * 100) / 100;
+            target.tariffLimitOveruseCost = Number.isFinite(cost) ? cost : 0;
             void overuseRows; // подавляем unused
           }
         }
@@ -501,11 +529,16 @@ export class ProjectsService implements OnModuleInit {
     const tariff = await this.tariffRepo.findOne({ where: { id: project.tariffId } });
     if (!tariff) return;
 
+    // У индивидуального тарифа в справочнике нули — цифры лежат в проекте.
+    // Без effectiveLimits контент-план такому проекту не генерировался вовсе.
+    const lim = effectiveLimits(tariff as any, project.customTariff as any);
     const buckets: Array<{ type: ContentItemType; count: number; label: string }> = [
-      { type: ContentItemType.STORY,  count: tariff.storiesPerMonth || 0, label: 'История' },
-      { type: ContentItemType.REEL,   count: tariff.reelsPerMonth || 0,   label: 'Reels' },
-      { type: ContentItemType.POST,   count: tariff.postsPerMonth || 0,   label: 'Пост' },
-      { type: ContentItemType.DESIGN, count: tariff.designsPerMonth || 0, label: 'Дизайн' },
+      { type: ContentItemType.STORY,  count: lim.storiesPerMonth, label: 'История' },
+      { type: ContentItemType.REEL,   count: lim.reelsPerMonth,   label: 'Reels' },
+      { type: ContentItemType.POST,   count: lim.postsPerMonth,   label: 'Пост' },
+      // Макет у индивидуального тарифа — это Post (см. форму проекта),
+      // отдельного счётчика дизайнов у него нет.
+      { type: ContentItemType.DESIGN, count: tariff.isCustom ? 0 : (tariff.designsPerMonth || 0), label: 'Дизайн' },
     ];
 
     const totalUnits = buckets.reduce((s, b) => s + b.count, 0);
@@ -537,7 +570,7 @@ export class ProjectsService implements OnModuleInit {
     try {
       await this.contentPlanService.createMany(items);
       // Стартовые задачи запуска SMM-проекта (TZ п.2)
-      await this.generateStarterTasksFromTariff(project, tariff);
+      await this.generateStarterTasksFromTariff(project, tariff, lim);
       await this.repo.update(project.id, { isAutoGeneratedFromTariff: true });
     } catch (e: any) {
       // Авто-генерация не должна блокировать создание проекта.
@@ -552,6 +585,7 @@ export class ProjectsService implements OnModuleInit {
   private async generateStarterTasksFromTariff(
     project: Project,
     tariff: SmmTariff,
+    lim: TariffLimits,
   ): Promise<void> {
     const start = project.startBillingDate
       ? new Date(project.startBillingDate)
@@ -579,7 +613,7 @@ export class ProjectsService implements OnModuleInit {
       },
       {
         title: 'Подготовить контент-стратегию на месяц',
-        description: `Тариф "${tariff.name}": ${tariff.storiesPerMonth} stories, ${tariff.reelsPerMonth} reels, ${tariff.postsPerMonth} posts, ${tariff.designsPerMonth} дизайнов в месяц.`,
+        description: `Тариф "${tariff.name}": ${lim.storiesPerMonth} историй, ${lim.reelsPerMonth} рилсов, ${lim.postsPerMonth} макетов${tariff.isCustom ? '' : `, ${tariff.designsPerMonth} дизайнов`} в месяц.`,
         priority: TaskPriority.HIGH,
         deadline: day(5),
         estimatedHours: 4,
@@ -603,10 +637,10 @@ export class ProjectsService implements OnModuleInit {
       });
     }
 
-    if ((tariff.reportsPerMonth || 0) > 0) {
+    if (lim.reportsPerMonth > 0) {
       templates.push({
         title: 'Подготовить шаблон ежемесячного отчёта',
-        description: `Клиент ожидает ${tariff.reportsPerMonth} отчётов в месяц.`,
+        description: `Клиент ожидает ${lim.reportsPerMonth} отчётов в месяц.`,
         priority: TaskPriority.LOW,
         deadline: day(14),
         estimatedHours: 1,
@@ -665,6 +699,14 @@ export class ProjectsService implements OnModuleInit {
       // прочим скрываем
       if (!isSales && !isProjectManager) {
         delete p.budget;
+      }
+      // customTariff держит и лимиты, и цену индивидуального тарифа. Лимиты
+      // нужны всем (по ним рисуется доска), а цену — только тем, кто её и
+      // задаёт. Остальным отдаём объект без цены.
+      if (p.customTariff && typeof p.customTariff === 'object'
+          && !CUSTOM_PRICE_ROLES.includes(role as string)) {
+        const { monthlyPrice: _hidden, ...rest } = p.customTariff as Record<string, any>;
+        p.customTariff = rest;
       }
       return p;
     };
@@ -976,6 +1018,34 @@ export class ProjectsService implements OnModuleInit {
     }
   }
 
+  /** Индивидуальные лимиты имеют смысл только на тарифе с пометкой
+   *  isCustom. На обычном тарифе цифры берутся из справочника, поэтому
+   *  присланный объект отбрасываем — иначе в проекте копились бы значения,
+   *  которые нигде не участвуют и вводят в заблуждение. */
+  private async normalizeCustomTariff(
+    dto: { customTariff?: any; tariffId?: string },
+    currentTariffId?: string | null,
+    userRole?: string,
+    currentCustom?: Record<string, any> | null,
+  ): Promise<Record<string, any> | null | undefined> {
+    if (!('customTariff' in dto)) return undefined;
+    const tariffId = dto.tariffId ?? currentTariffId;
+    if (!tariffId) return null;
+    const tariff = await this.tariffRepo.findOne({ where: { id: tariffId } }).catch(() => null);
+    if (!tariff?.isCustom) return null;
+    const clean = sanitizeCustomTariff(dto.customTariff);
+    // Цену задаёт тот же круг, что её и видит (см. stripFinance). Прочим
+    // ролям с правом на редактирование проекта лимиты менять можно, а цену —
+    // нет: оставляем прежнюю, чтобы правка лимитов её не обнуляла.
+    if (!CUSTOM_PRICE_ROLES.includes(userRole as string)) {
+      const prev = Number(currentCustom?.monthlyPrice || 0);
+      if (!clean) return prev > 0 ? { monthlyPrice: prev } : null;
+      if (prev > 0) clean.monthlyPrice = prev;
+      else delete clean.monthlyPrice;
+    }
+    return clean;
+  }
+
   async create(dto: CreateProjectDto, userId: string, userRole?: string) {
     // smm_director может создавать только SMM-проекты
     if (userRole === UserRole.SMM_DIRECTOR && dto.projectType !== 'SMM') {
@@ -1004,8 +1074,10 @@ export class ProjectsService implements OnModuleInit {
     // он же продал, у него же напоминание об оплате через 2 недели.
     const resolvedSalesManagerId = dto.salesManagerId
       || (createSegment ? userId : undefined);
+    const custom = await this.normalizeCustomTariff(dto, null, userRole, null);
     const project = this.repo.create({
       ...dto,
+      ...(custom !== undefined ? { customTariff: custom as any } : {}),
       managerId: resolvedManagerId,
       salesManagerId: resolvedSalesManagerId,
       members: Array.from(memberIds).map(id => ({ id })) as unknown as User[],
@@ -1013,7 +1085,7 @@ export class ProjectsService implements OnModuleInit {
     // If a tariff was selected → snapshot its name+price into the project so
     // future tariff renames/deletions don't rewrite history.
     if (dto.tariffId) {
-      await this.applyTariffSnapshot(project, dto.tariffId);
+      await this.applyTariffSnapshot(project, dto.tariffId, custom);
     }
 
     // Team — snapshot имени, чтобы переименование/удаление команды
@@ -1232,11 +1304,20 @@ export class ProjectsService implements OnModuleInit {
     const oldManagerId = project.managerId;
     const managerChanged = dto.managerId !== undefined && dto.managerId !== oldManagerId;
 
+    // Индивидуальные лимиты считаем до смены тарифа: от них зависит и
+    // snapshot цены, и пересчёт перерасхода ниже.
+    const customOnUpdate = await this.normalizeCustomTariff(
+      dto, project.tariffId, user.role, project.customTariff as any,
+    );
+    const nextCustom = customOnUpdate !== undefined
+      ? customOnUpdate
+      : (project.customTariff as any);
+
     // Tariff change handling: re-snapshot when tariffId changes,
     // wipe snapshot when tariff is detached.
     if ('tariffId' in dto && dto.tariffId !== project.tariffId) {
       if (dto.tariffId) {
-        await this.applyTariffSnapshot(dto as unknown as Partial<Project>, dto.tariffId);
+        await this.applyTariffSnapshot(dto as unknown as Partial<Project>, dto.tariffId, nextCustom);
       } else {
         (dto as any).tariffNameSnapshot = null;
         (dto as any).tariffPriceSnapshot = null;
@@ -1287,7 +1368,18 @@ export class ProjectsService implements OnModuleInit {
     for (const f of this.FINANCE_FIELDS) {
       if (f in dto) explicitOnUpdate.add(f)
     }
-    if ('paidAmount' in dto || 'totalContractValue' in dto || 'internalCostEstimate' in dto || 'tariffId' in dto || 'discount' in dto || 'discountType' in dto) {
+    // Object.assign выше положил сырой customTariff из запроса — заменяем
+    // очищенным. Цена индивидуального тарифа = «Ежемесячная плата» проекта:
+    // это одна и та же цифра, иначе финансовый таб и выручка показывали бы 0.
+    if (customOnUpdate !== undefined) {
+      project.customTariff = customOnUpdate as any;
+      const price = Number(customOnUpdate?.monthlyPrice || 0);
+      if (price > 0 && !explicitOnUpdate.has('monthlyFee')) {
+        project.monthlyFee = price as any;
+        project.tariffPriceSnapshot = price as any;
+      }
+    }
+    if ('paidAmount' in dto || 'totalContractValue' in dto || 'internalCostEstimate' in dto || 'tariffId' in dto || 'discount' in dto || 'discountType' in dto || 'customTariff' in dto) {
       await this.recomputeFinancials(project, project, explicitOnUpdate)
     }
 
@@ -1536,7 +1628,7 @@ export class ProjectsService implements OnModuleInit {
 
     this.gateway.broadcast('projects:changed', {});
     // Return fresh project with relations loaded
-    return this.findOne(id);
+    return this.findOne(id, user.role);
   }
 
   /** Этап разработки на доске «Разработка»: только dev-проекты, 1..6.
@@ -1618,7 +1710,7 @@ export class ProjectsService implements OnModuleInit {
         details: { personal: true, note: 'Скрыт из личного списка (проект остался активным)' },
       });
       this.gateway.broadcast('projects:changed', {});
-      return this.findOne(id);
+      return this.findOne(id, user?.role);
     }
     await this.repo.update(id, { isArchived: true, status: ProjectStatus.ARCHIVED });
     await this.activityLog.log({
@@ -1628,7 +1720,7 @@ export class ProjectsService implements OnModuleInit {
       entityName: project.name,
     });
     this.gateway.broadcast('projects:changed', {});
-    return this.findOne(id);
+    return this.findOne(id, user?.role);
   }
 
   async restore(id: string, user?: { id: string; role: string; name?: string }) {
@@ -1660,7 +1752,7 @@ export class ProjectsService implements OnModuleInit {
         details: { personal: true, note: 'Возвращён в личный список' },
       });
       this.gateway.broadcast('projects:changed', {});
-      return this.findOne(id);
+      return this.findOne(id, user?.role);
     }
     // При восстановлении НЕ форсируем COMPLETED — возвращаем в IN_PROGRESS
     // как safe default. Если был completed до архива — пользователь может
@@ -1674,7 +1766,7 @@ export class ProjectsService implements OnModuleInit {
       entityName: project.name,
     });
     this.gateway.broadcast('projects:changed', {});
-    return this.findOne(id);
+    return this.findOne(id, user?.role);
   }
 
   async remove(id: string, user?: { id: string; role: string; name?: string }) {

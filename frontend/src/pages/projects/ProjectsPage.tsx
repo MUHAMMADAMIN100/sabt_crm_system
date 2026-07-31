@@ -583,12 +583,22 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   // Финансовые поля и цены тарифа видят только основатель/сооснователь.
   // smm_director, video_director и admin — управляют проектом, но цены/деньги не видят.
   const canSeeFinance = ['founder', 'co_founder'].includes(formUser?.role || '')
+  // Цену ИНДИВИДУАЛЬНОГО тарифа задаёт тот, кто её и видит: руководитель SMM
+  // (он её согласовывает), продажи и финансы. Список совпадает с бэкендом
+  // (projects.service.ts, CUSTOM_PRICE_ROLES) — иначе роль правила бы то,
+  // чего не видит, и её правка молча откатывалась.
+  const canSetCustomPrice = ['founder', 'co_founder', 'smm_director', 'sales_manager_smm']
+    .includes(formUser?.role || '')
   // Платежи (транши) — может управлять любой кто имеет доступ к форме проекта:
   // Admin, Founder, Co-founder, SMM Director, Head SMM, Project Manager.
   // Они вносят оплаты от клиента — финансовая информация по проекту, не зарплаты.
   const canManagePayments = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director']
     .includes(formUser?.role || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
+  // Лимиты и цена ИНДИВИДУАЛЬНОГО тарифа — задаются для этого проекта.
+  // В справочнике «Индивидуальный» один на всех и хранит нули, поэтому цифры
+  // живут в самом проекте (project.customTariff).
+  const [customTariff, setCustomTariff] = useState<Record<string, any>>({})
   const [showSmmForm, setShowSmmForm] = useState(false)
   // Бриф клиента (заполнение прямо в форме создания SMM-проекта).
   // Если не пуст — отправляется вторым запросом после успешного create.
@@ -710,6 +720,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           discountType: (initial as any).discountType ?? 'fixed',
         })
         if (initial.smmData) setSmmAnswers(initial.smmData)
+        setCustomTariff((initial as any).customTariff || {})
         setSelectedMembers(initial.members?.map((m: any) => m.id) || [])
       } else {
         reset({
@@ -722,6 +733,7 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
           discountType: 'fixed',
         })
         setSmmAnswers({})
+        setCustomTariff({})
         setShowSmmForm(false)
         setBriefDraft({ tariff: '', clientSignature: '', managerSignature: '', clientPhone: '', answers: {} })
         setBriefOpen(false)
@@ -781,6 +793,26 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
     } else if (initial && data.projectType === 'SMM') {
       // Allows explicit detach via empty select option
       formattedData.tariffId = data.tariffId || null
+    }
+    // Индивидуальный тариф: лимиты и цена этого проекта. Шлём, только если
+    // выбран тариф с пометкой «настраиваемый» — на обычном они бы всё равно
+    // отбросились сервером, но лишний мусор в запросе ни к чему.
+    const chosenTariff = (tariffs || []).find((tt: any) => tt.id === data.tariffId)
+    if (data.projectType === 'SMM' && chosenTariff?.isCustom) {
+      formattedData.customTariff = {
+        storiesPerMonth: Number(customTariff.storiesPerMonth) || 0,
+        reelsPerMonth: Number(customTariff.reelsPerMonth) || 0,
+        postsPerMonth: Number(customTariff.postsPerMonth) || 0,
+        reportsPerMonth: Number(customTariff.reportsPerMonth) || 0,
+        revisionLimit: Number(customTariff.revisionLimit) || 0,
+        adsIncluded: !!customTariff.adsIncluded,
+        // Кто цену не видит — тот её и не отправляет: сервер в этом случае
+        // сохраняет прежнюю, но пустое поле не должно выглядеть как «0».
+        ...(canSetCustomPrice ? { monthlyPrice: Number(customTariff.monthlyPrice) || 0 } : {}),
+      }
+    } else if (initial) {
+      // Сменили индивидуальный тариф на обычный — старые цифры убираем.
+      formattedData.customTariff = null
     }
     // Team — пустая строка означает "отвязать"
     // Скидка — отправляем только если поле непустое (на стороне finance role)
@@ -953,24 +985,57 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                   )
                 })}
               </select>
-              {/* Подсказка по «Индивидуальному» тарифу — менеджер сам
-                  задаёт стоимость через поле «Бюджет/месяц» ниже. */}
+              {/* «Индивидуальный» тариф: лимиты и цена задаются прямо здесь и
+                  сохраняются в проект — в справочнике у него нули. */}
               {tariffId && (() => {
                 const selectedTariff = (tariffs || []).find((tt: any) => tt.id === tariffId)
                 if (!selectedTariff?.isCustom) return null
+                const numField = (key: string, label: string) => (
+                  <div key={key}>
+                    <label className="label text-xs">{label}</label>
+                    <input
+                      type="number" min={0}
+                      value={customTariff[key] ?? ''}
+                      onChange={e => setCustomTariff(prev => ({ ...prev, [key]: e.target.value }))}
+                      className="input" placeholder="0"
+                    />
+                  </div>
+                )
                 return (
-                  <div className="mt-3 rounded-xl border border-surface-200 dark:border-surface-800 bg-surface-50/50 dark:bg-surface-900/10 p-3 text-xs text-surface-700 dark:text-surface-300 space-y-1">
-                    <p>
-                      ⚙️ <b>Индивидуальный тариф.</b> Лимиты и стоимость задаются вручную для этого
-                      конкретного проекта.
+                  <div className="mt-3 rounded-xl border border-surface-200 dark:border-surface-800 bg-surface-50/50 dark:bg-surface-900/10 p-3 space-y-3">
+                    <p className="text-xs text-surface-700 dark:text-surface-300">
+                      ⚙️ <b>Индивидуальный тариф.</b> Лимиты и стоимость задаются для этого
+                      конкретного проекта — по ним доска строит контент-план и считается перерасход.
                     </p>
-                    {canSeeFinance && (
-                      <p>
-                        Укажите стоимость в поле <b>«Бюджет / Месячная плата»</b>. Лимиты по контенту
-                        (stories / reels / posts) добавите вручную через вкладку «Контент-план» в
-                        карточке проекта.
-                      </p>
-                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {numField('storiesPerMonth', 'Историй в месяц')}
+                      {numField('reelsPerMonth', 'Рилсов в месяц')}
+                      {numField('postsPerMonth', 'Макетов в месяц')}
+                      {numField('reportsPerMonth', 'Отчётов в месяц')}
+                      {numField('revisionLimit', 'Лимит правок')}
+                      {/* Цену индивидуального тарифа задаёт и руководитель SMM:
+                          в справочнике её нет, а без неё не посчитать перерасход.
+                          Цены ОБЫЧНЫХ тарифов ему по-прежнему не видны. */}
+                      {canSetCustomPrice && (
+                        <div>
+                          <label className="label text-xs">Стоимость, сомони/мес</label>
+                          <input
+                            type="number" min={0} step="0.01"
+                            value={customTariff.monthlyPrice ?? ''}
+                            onChange={e => setCustomTariff(prev => ({ ...prev, monthlyPrice: e.target.value }))}
+                            className="input" placeholder="0"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-surface-700 dark:text-surface-300 cursor-pointer">
+                      <input
+                        type="checkbox" className="w-4 h-4"
+                        checked={!!customTariff.adsIncluded}
+                        onChange={e => setCustomTariff(prev => ({ ...prev, adsIncluded: e.target.checked }))}
+                      />
+                      Реклама включена
+                    </label>
                   </div>
                 )
               })()}

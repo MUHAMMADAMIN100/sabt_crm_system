@@ -193,6 +193,22 @@ export class Project {
   @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
   tariffLimitOveruseCost: number;
 
+  /** Лимиты и стоимость ИНДИВИДУАЛЬНОГО тарифа — для этого конкретного
+   *  проекта. «Индивидуальный» в справочнике тарифов один на всех и хранит
+   *  нули, поэтому у проекта на нём не было ни лимитов, ни цены: доска
+   *  генерировала 0 рилсов и 0 макетов, а перерасход не считался.
+   *  Заполняется только когда выбранный тариф помечен isCustom. */
+  @Column({ type: 'jsonb', nullable: true })
+  customTariff: {
+    storiesPerMonth?: number;
+    reelsPerMonth?: number;
+    postsPerMonth?: number;
+    reportsPerMonth?: number;
+    revisionLimit?: number;
+    adsIncluded?: boolean;
+    monthlyPrice?: number;
+  } | null;
+
   /** Значение скидки. Если discountType=fixed — это сумма в TJS;
    *  если percent — это процент (0..100). 0 — нет скидки. */
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })

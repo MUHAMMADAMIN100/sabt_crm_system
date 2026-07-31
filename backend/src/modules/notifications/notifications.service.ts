@@ -31,6 +31,12 @@ export class NotificationsService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    // Тип уведомления — enum в Postgres, новые значения надо добавлять в БД
+    // явно (на проде synchronize off). Идемпотентно, при каждом старте.
+    this.repo.manager
+      .query(`ALTER TYPE "public"."notifications_type_enum" ADD VALUE IF NOT EXISTS 'birthday'`)
+      .catch((e: any) => this.logger.warn(`add notification type "birthday" failed: ${e?.message || e}`));
+
     try {
       if (admin.apps.length > 0) { this.fcmEnabled = true; return; }
       const envJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;

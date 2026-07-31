@@ -6,11 +6,13 @@ import { User } from '../users/user.entity';
 import { EmployeesService } from './employees.service';
 import { EmployeesController } from './employees.controller';
 import { GatewayModule } from '../gateway/gateway.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { BirthdayScheduler } from './birthday.scheduler';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Employee, User, SalaryHistory]), GatewayModule],
+  imports: [TypeOrmModule.forFeature([Employee, User, SalaryHistory]), GatewayModule, NotificationsModule],
   controllers: [EmployeesController],
-  providers: [EmployeesService],
+  providers: [EmployeesService, BirthdayScheduler],
   exports: [EmployeesService],
 })
 export class EmployeesModule {}

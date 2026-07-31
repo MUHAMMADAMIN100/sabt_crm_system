@@ -32,6 +32,8 @@ export enum NotificationType {
   PAYMENT_OVERDUE_SOON    = 'payment_overdue_soon',
   WEEK_NO_CONTENT         = 'week_no_content',
   TOO_MANY_PM_REVIEWS     = 'too_many_pm_reviews',
+  /** Напоминание о дне рождения сотрудника. */
+  BIRTHDAY                = 'birthday',
 }
 
 @Entity('notifications')

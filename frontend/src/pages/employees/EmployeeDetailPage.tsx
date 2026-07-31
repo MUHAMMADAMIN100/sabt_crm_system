@@ -8,7 +8,7 @@ const StoryCalendar = lazy(() => import('@/components/stories/StoryCalendar'))
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, Avatar, ProgressBar, CollapsibleSection } from '@/components/ui'
-import { ArrowLeft, Mail, Phone, Calendar, CheckSquare, Send, AtSign, ShieldCheck, Briefcase, Building2, Clock, AlertTriangle, TrendingUp, Camera, BookOpen, BarChart2, Edit2, Check, X, Trash2, Plus, Minus } from 'lucide-react'
+import { ArrowLeft, Mail, Phone, Calendar, CheckSquare, Send, AtSign, ShieldCheck, Briefcase, Building2, Clock, AlertTriangle, TrendingUp, Camera, BookOpen, BarChart2, Edit2, Check, X, Trash2, Plus, Minus, Cake } from 'lucide-react'
 import clsx from 'clsx'
 import {
   EmployeeWorkloadTab, EmployeeQualityTab, EmployeeRiskTab, EmployeeActivityTab,
@@ -279,6 +279,13 @@ export default function EmployeeDetailPage() {
                   <a href={`https://instagram.com/${emp.instagram.replace('@', '')}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-surface-600 dark:text-surface-400 hover:underline">{emp.instagram}</a>
                 </div>
               </div>
+            )}
+            {emp.birthDate && (
+              <InfoRow
+                icon={<Cake size={14} />}
+                label="День рождения"
+                value={format(new Date(emp.birthDate), 'd MMMM', { locale: ru })}
+              />
             )}
             <InfoRow icon={<Calendar size={14} />} label={t('employees.hireDate')} value={format(new Date(emp.hireDate), 'dd.MM.yyyy')} />
             <InfoRow icon={<Briefcase size={14} />} label={t('employees.position')} value={emp.position} />

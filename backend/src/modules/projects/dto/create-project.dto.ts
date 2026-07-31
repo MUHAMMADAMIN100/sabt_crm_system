@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsArray, IsNumber, IsUUID, IsBoolean, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsDateString, IsArray, IsNumber, IsUUID, IsBoolean, IsObject, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { ProjectStatus, ProjectBillingType, ProjectPaymentStatus, ProjectDiscountType } from '../project.entity';
 import { PartialType } from '@nestjs/mapped-types';
@@ -36,6 +36,14 @@ export class CreateProjectDto {
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() tariffLimitOveruseCost?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() discount?: number;
   @ApiProperty({ enum: ProjectDiscountType, required: false }) @IsOptional() @IsEnum(ProjectDiscountType) discountType?: ProjectDiscountType;
+
+  /** Лимиты и цена ИНДИВИДУАЛЬНОГО тарифа для этого проекта. Санитайзится
+   *  в сервисе (нормализация чисел, отсечение мусора), поэтому здесь только
+   *  проверка «это объект». */
+  @ApiProperty({ required: false, type: 'object' })
+  @IsOptional()
+  @IsObject()
+  customTariff?: Record<string, any> | null;
 
   // ─── Team (разделение по командам) ──────────────────────────────────
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() teamId?: string;
