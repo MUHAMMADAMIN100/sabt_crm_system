@@ -2,7 +2,7 @@
 // порт fin-webrand/src/pages/ExpenseGroup.tsx (ТЗ 4.2–4.5).
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
@@ -32,10 +32,22 @@ function isSalaryRowControl(target: EventTarget | null) {
 
 export default function FinanceExpenseGroupPage() {
   const { kind } = useParams<{ kind: string }>();
+  const location = useLocation();
   // Зарплатная ведомость живёт циклами «10-е → 10-е» — по умолчанию
   // открываем текущий зарплатный период (для остальных статей — календарный).
   // Месяц приходит из адреса (?ym=…) — тот же, что был выбран в «Расходах».
   const [ym, setYm] = useYmParam(kind === 'salary' ? currentSalaryYm() : currentYm());
+  const openedWithoutMonth = useRef(!new URLSearchParams(location.search).has('ym'));
+  const { data: payrollDefault } = useQuery({
+    queryKey: ['finance', 'salaryPeriod', 'current'],
+    queryFn: () => financeApi.salaryPeriod(),
+    enabled: kind === 'salary' && openedWithoutMonth.current,
+  });
+  useEffect(() => {
+    if (kind !== 'salary' || !openedWithoutMonth.current || !payrollDefault?.latestOpenYm) return;
+    openedWithoutMonth.current = false;
+    setYm(payrollDefault.latestOpenYm);
+  }, [kind, payrollDefault?.latestOpenYm, setYm]);
 
   if (kind === 'other') {
     return (
@@ -158,20 +170,6 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
     historyFocusTarget.current = null;
   }, [expandedEmployeeId]);
 
-  // Все выплачены → автоматически показываем следующий месяц с чистыми
-  // бонусами/авансами/штрафами. Один раз на месяц за сессию, и только
-  // начиная с текущего месяца (листание назад по истории не трогаем).
-  const jumpedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!data?.allPaid || !onYmChange) return;
-    // Зарплатный период «10-е → 10-е»: не автопрыгаем с прошлых периодов.
-    if (ym < currentSalaryYm()) return;
-    if (jumpedFor.current === ym) return;
-    jumpedFor.current = ym;
-    onYmChange(shiftYm(ym, 1));
-    toast.success('Зарплата за месяц выплачена полностью — открыт следующий месяц');
-  }, [data?.allPaid, ym, onYmChange]);
-
   // Группировка по категориям: именованные по алфавиту, «Без категории» последней.
   const groups = useMemo(() => {
     const map = new Map<string, any[]>();
@@ -191,6 +189,8 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
 
   if (isLoading) return <FinLoading cards={4} />;
   if (isError) return <FinLoadError onRetry={refetch} />;
+  const period = data?.period ?? { ym, status: 'open', latestOpenYm: ym };
+  const periodClosed = period.status === 'closed';
 
   const openEmp = (row: any) => {
     const full = (fullEmployees ?? []).find((x: any) => x.id === row.id);
@@ -250,10 +250,11 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
 
       <div className="toolbar">
         <span className="chip"><FinIcon name="receipt" size={14} /> Выплата ЗП — каждое 10-е число месяца</span>
+        <span className={`badge ${periodClosed ? 'ok' : 'warn'}`}>
+          {periodClosed ? 'период закрыт' : 'период открыт'}
+        </span>
         <div className="grow" />
-        {/* Месяц закрыт (заморожен) — можно переоткрыть, чтобы поправить
-            авансы/бонусы/штрафы. Выплаты не удаляются, счета не трогаются. */}
-        {rows.some((e: any) => e.frozen) && (
+        {periodClosed ? (
           <button className="btn sm" onClick={async () => {
             if (!(await finConfirm('Переоткрыть месяц? Заморозка снимется, можно будет править авансы/бонусы/штрафы. Выплаты НЕ удаляются, деньги со счетов НЕ трогаются.', { confirmLabel: 'Переоткрыть' }))) return;
             try {
@@ -262,6 +263,16 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
               toast.success('Месяц переоткрыт — можно вносить правки');
             } catch (err) { toast.error(apiErr(err)); }
           }}><FinIcon name="undo" size={14} /> Переоткрыть месяц</button>
+        ) : (
+          <button className="btn sm" disabled={!data?.allPaid} title={data?.allPaid ? 'Зафиксировать выплаченный период' : 'Сначала проведите все выплаты'} onClick={async () => {
+            if (!(await finConfirm('Закрыть зарплатный период? После закрытия операции, авансы, бонусы и штрафы этого месяца нельзя будет менять до переоткрытия.', { confirmLabel: 'Закрыть период' }))) return;
+            try {
+              const result = await financeApi.closeSalaryMonth(ym);
+              invalidateFinance(qc);
+              toast.success('Зарплатный период закрыт');
+              if (onYmChange && result?.latestOpenYm) onYmChange(result.latestOpenYm);
+            } catch (err) { toast.error(apiErr(err)); }
+          }}><FinIcon name="check" size={14} /> Закрыть период</button>
         )}
         <button className="btn sm" onClick={exportCsv}>Экспорт CSV</button>
         <button className="btn primary" onClick={() => setEmpFor('new')}><FinIcon name="plus" size={16} /> Сотрудник</button>

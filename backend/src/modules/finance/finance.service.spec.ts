@@ -27,6 +27,7 @@ import { FinanceAsset } from './entities/finance-asset.entity';
 import { FinanceBackup } from './entities/finance-backup.entity';
 import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustment.entity';
 import { FinanceActivity } from './entities/finance-activity.entity';
+import { FinancePayrollPeriod } from './entities/finance-payroll-period.entity';
 
 const emptyMaps = {
   accounts: [],
@@ -92,6 +93,7 @@ describe('FinanceService correctness', () => {
   let backupRepo: ReturnType<typeof repository>;
   let forecastAdjustmentRepo: ReturnType<typeof repository>;
   let activityRepo: ReturnType<typeof repository>;
+  let payrollPeriodRepo: ReturnType<typeof repository>;
   let dataSource: { transaction: jest.Mock };
   let managerQuery: jest.Mock;
 
@@ -108,6 +110,16 @@ describe('FinanceService correctness', () => {
     backupRepo = repository();
     forecastAdjustmentRepo = repository();
     activityRepo = repository();
+    payrollPeriodRepo = repository();
+    payrollPeriodRepo.findOne.mockImplementation(async (options: any) => {
+      const ym = options?.where?.ym;
+      const status = options?.where?.status;
+      if (status === 'open') return null;
+      return ym ? {
+        ym, status: 'open', closedAt: null, closedById: null, reopenedAt: null,
+      } : null;
+    });
+    payrollPeriodRepo.save.mockImplementation(async (value: any) => value);
     managerQuery = jest.fn().mockResolvedValue([]);
     dataSource = {
       transaction: jest.fn(async (...args: any[]) => {
@@ -128,6 +140,7 @@ describe('FinanceService correctness', () => {
               [FinanceBackup, backupRepo],
               [FinanceForecastAdjustment, forecastAdjustmentRepo],
               [FinanceActivity, activityRepo],
+              [FinancePayrollPeriod, payrollPeriodRepo],
             ]);
             return repos.get(entity);
           },
@@ -147,6 +160,7 @@ describe('FinanceService correctness', () => {
       assetRepo as any,
       backupRepo as any,
       forecastAdjustmentRepo as any,
+      payrollPeriodRepo as any,
       dataSource as any,
       {} as any,
     );
@@ -252,6 +266,73 @@ describe('FinanceService correctness', () => {
       balance: 160,
     });
     expect(result.total.balance).toBe(160);
+  });
+
+  it('rejects a new salary payment in a globally closed payroll period', async () => {
+    payrollPeriodRepo.findOne.mockResolvedValue({
+      ym: '2026-07', status: 'closed', closedAt: new Date(), closedById: 'owner',
+      reopenedAt: null,
+    });
+
+    await expect(service.createOperation({
+      type: FinanceTxType.EXPENSE,
+      amount: 500,
+      date: '2026-08-10',
+      salaryYm: '2026-07',
+      accountId: 'account-1',
+      employeeId: 'employee-1',
+    })).rejects.toThrow('Зарплатный период 2026-07 закрыт');
+
+    expect(txRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects payroll field edits in a globally closed period', async () => {
+    payrollPeriodRepo.findOne.mockResolvedValue({
+      ym: '2026-07', status: 'closed', closedAt: new Date(), closedById: 'owner',
+      reopenedAt: null,
+    });
+    employeeRepo.findOne.mockResolvedValue({ id: 'employee-1', salarySnapshots: null });
+
+    await expect(service.setEmployeeFine('employee-1', {
+      ym: '2026-07', amount: 100,
+    })).rejects.toThrow('Зарплатный период 2026-07 закрыт');
+  });
+
+  it('rejects editing and cancelling a salary transaction in a closed period', async () => {
+    payrollPeriodRepo.findOne.mockResolvedValue({
+      ym: '2026-07', status: 'closed', closedAt: new Date(), closedById: 'owner',
+      reopenedAt: null,
+    });
+    const salaryTx = transaction({
+      id: 'salary-closed', employeeId: 'employee-1', salaryYm: '2026-07',
+      accountId: 'account-1', amount: 500,
+    });
+    txRepo.findOne.mockResolvedValue(salaryTx);
+
+    await expect(service.updateTransaction(salaryTx.id, { amount: 600 }))
+      .rejects.toThrow('Зарплатный период 2026-07 закрыт');
+    await expect(service.removeTransaction(salaryTx.id))
+      .rejects.toThrow('Зарплатный период 2026-07 закрыт');
+
+    expect(txRepo.update).not.toHaveBeenCalled();
+    expect(txRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('returns the latest open payroll period independently of the selected closed month', async () => {
+    payrollPeriodRepo.findOne.mockImplementation(async (options: any) => {
+      if (options?.where?.ym === '2026-07') return {
+        ym: '2026-07', status: 'closed', closedAt: new Date('2026-08-10'),
+        closedById: 'owner', reopenedAt: null,
+      };
+      if (options?.where?.status === 'open') return {
+        ym: '2026-08', status: 'open', closedAt: null, closedById: null, reopenedAt: null,
+      };
+      return null;
+    });
+
+    await expect(service.salaryPeriodState('2026-07')).resolves.toMatchObject({
+      ym: '2026-07', status: 'closed', latestOpenYm: '2026-08',
+    });
   });
 
   it('moves savings between accounts without changing the total balance', async () => {

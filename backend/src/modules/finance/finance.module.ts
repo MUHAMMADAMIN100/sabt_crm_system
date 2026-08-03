@@ -19,12 +19,14 @@ import { FinanceController } from './finance.controller';
 import { FinanceActivity } from './entities/finance-activity.entity';
 import { FinanceActivityInterceptor } from './finance-activity.interceptor';
 import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustment.entity';
+import { FinancePayrollPeriod } from './entities/finance-payroll-period.entity';
 
 @Module({
   imports: [TypeOrmModule.forFeature([
     FinanceTransaction, FinanceAccount, FinanceCategory,
     FinanceProject, FinanceEmployee, FinanceSubscription, FinanceDebt,
-    FinancePlannedPayment, FinanceAsset, FinanceBackup, FinanceActivity, FinanceForecastAdjustment, User,
+    FinancePlannedPayment, FinanceAsset, FinanceBackup, FinanceActivity,
+    FinanceForecastAdjustment, FinancePayrollPeriod, User,
   ]), NotificationsModule, TelegramModule],
   controllers: [FinanceController],
   providers: [FinanceService, FinanceScheduler, FinanceActivityInterceptor],

@@ -4,6 +4,18 @@ import { FinanceTransaction, FinanceTxStatus } from './finance-transaction.entit
  * допуск при сравнении уже округлённых сумм. */
 export const FINANCE_AMOUNT_TOLERANCE = 0.005;
 
+/** Зарплатный период для даты выплаты: до и включая 10-е число закрывается
+ * предыдущий месяц, с 11-го начинается начисление текущего месяца. */
+export function salaryPeriodForDate(iso: string): string {
+  const [year, month, day] = (iso || '').slice(0, 10).split('-').map(Number);
+  if (!year || !month || !day) return (iso || '').slice(0, 7);
+  if (day <= 10) {
+    const previous = new Date(year, month - 2, 1);
+    return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
 /** Фактической проводкой считается completed. NULL оставлен как completed
  * только для совместимости со старыми строками до появления default-статуса. */
 export function isPostedFinanceTransaction(

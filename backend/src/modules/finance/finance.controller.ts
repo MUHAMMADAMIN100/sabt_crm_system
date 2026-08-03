@@ -202,9 +202,18 @@ export class FinanceController {
   @Post('employees/:id/advance') setEmployeeAdvance(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeAdvance(id, dto); }
   /** Штраф за месяц (вычитается из «к выплате»; 0 — снять). */
   @Post('employees/:id/fine') setEmployeeFine(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeFine(id, dto); }
-  /** Закрыть месяц: все активные сотрудники фиксируются выплаченными
-   *  (снапшот) без создания операций — деньги уже выданы фактически. */
-  @Post('salary/close-month') closeSalaryMonth(@Body() dto: SetEmployeeBonusDto) { return this.service.closeSalaryMonth(dto.ym || currentYm()); }
+  /** Текущий workflow-период и последний открытый период ведомости. */
+  @Get('salary/period') salaryPeriod(@Query('ym') ym?: string) {
+    return this.service.salaryPeriodState(ym);
+  }
+
+  /** Закрыть период можно только после фактических выплат всем сотрудникам. */
+  @Post('salary/close-month') closeSalaryMonth(
+    @Body() dto: SetEmployeeBonusDto,
+    @Request() req,
+  ) {
+    return this.service.closeSalaryMonth(dto.ym || currentYm(), req.user?.id);
+  }
   /** Переоткрыть месяц: снять заморозку (не удаляя выплаты, без движения
    *  денег) — чтобы поправить авансы/бонусы/штрафы за закрытый месяц. */
   @Post('salary/reopen-month') reopenSalaryMonth(@Body() dto: SetEmployeeBonusDto) { return this.service.reopenSalaryMonth(dto.ym || currentYm()); }

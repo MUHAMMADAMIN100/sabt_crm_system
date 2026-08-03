@@ -388,7 +388,8 @@ export const financeApi = {
     }).then(r => r.data),
   setEmployeeAdvance: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/advance`, data).then(r => r.data),
   setEmployeeFine: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/fine`, data).then(r => r.data),
-  // Закрыть месяц: все сотрудники — «выплачено» (снапшот, без операций).
+  salaryPeriod: (ym?: string) => api.get('/finance/salary/period', { params: ym ? { ym } : undefined }).then(r => r.data),
+  // Закрытие разрешено только после реальных выплат по всем сотрудникам.
   closeSalaryMonth: (ym: string) => api.post('/finance/salary/close-month', { ym }).then(r => r.data),
   reopenSalaryMonth: (ym: string) => api.post('/finance/salary/reopen-month', { ym }).then(r => r.data),
   // Журнал активности финансов (кто/что/когда).

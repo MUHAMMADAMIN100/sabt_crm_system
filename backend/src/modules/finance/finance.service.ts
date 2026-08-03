@@ -18,6 +18,7 @@ import { FinanceAsset } from './entities/finance-asset.entity';
 import { FinanceBackup } from './entities/finance-backup.entity';
 import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustment.entity';
 import { FinanceActivity } from './entities/finance-activity.entity';
+import { FinancePayrollPeriod } from './entities/finance-payroll-period.entity';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
 import {
@@ -25,6 +26,7 @@ import {
   isPostedFinanceTransaction,
   isPostedFinanceTransactionAsOf,
   remainingFinanceAmount,
+  salaryPeriodForDate,
   salaryForFinanceMonth as salaryForMonth,
   workedInFinanceMonth,
 } from './finance-calculations';
@@ -66,18 +68,6 @@ function monthRange(ym: string): { from: string; to: string } {
 }
 
 const ymOf = (iso: string): string => (iso || '').slice(0, 7);
-
-/** Период зарплатной ведомости для даты — цикл «10-е → 10-е»: дата на/до
- *  10-го числа относится к ПРЕДЫДУЩЕМУ месяцу (цикл закрывается 10-го),
- *  после 10-го — к текущему. Используется как дефолт месяца начисления ЗП,
- *  когда явный salaryYm не задан. Только для зарплаты. */
-function salaryPeriodOf(iso: string): string {
-  const s = (iso || '').slice(0, 10);
-  const [y, m, d] = s.split('-').map(Number);
-  if (!y || !m || !d) return ymOf(iso);
-  if (d <= 10) { const dt = new Date(y, m - 2, 1); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; }
-  return `${y}-${String(m).padStart(2, '0')}`;
-}
 
 /** Сегодня по Душанбе — сервер (Railway) живёт в UTC: операции с 00:00 до
  *  05:00 местного получали бы вчерашнюю дату, а на стыке месяцев уезжали бы
@@ -261,6 +251,7 @@ export class FinanceService implements OnModuleInit {
     @InjectRepository(FinanceAsset) private assetRepo: Repository<FinanceAsset>,
     @InjectRepository(FinanceBackup) private backupRepo: Repository<FinanceBackup>,
     @InjectRepository(FinanceForecastAdjustment) private forecastAdjRepo: Repository<FinanceForecastAdjustment>,
+    @InjectRepository(FinancePayrollPeriod) private payrollPeriodRepo: Repository<FinancePayrollPeriod>,
     private ds: DataSource,
     private scheduler: FinanceScheduler,
   ) {}
@@ -333,6 +324,15 @@ export class FinanceService implements OnModuleInit {
       "startYm" varchar(7) NOT NULL, "endYm" varchar(7), recurrence varchar(12) NOT NULL DEFAULT 'once',
       scenario varchar(16) NOT NULL DEFAULT 'all', note text,
       "createdAt" timestamptz NOT NULL DEFAULT now())`);
+    // Workflow зарплатных периодов. Таблица не переносит и не переписывает
+    // старые операции: у legacy salaryYm остаётся nullable + fallback по date.
+    await run(`CREATE TABLE IF NOT EXISTS finance_payroll_periods (
+      ym varchar(7) PRIMARY KEY, status varchar(16) NOT NULL DEFAULT 'open',
+      "closedAt" timestamptz, "closedById" uuid, "reopenedAt" timestamptz,
+      "createdAt" timestamptz NOT NULL DEFAULT now(),
+      "updatedAt" timestamptz NOT NULL DEFAULT now())`);
+    await run(`CREATE INDEX IF NOT EXISTS "IDX_fin_payroll_period_status_ym"
+      ON finance_payroll_periods (status, ym DESC)`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "icon" varchar(40)`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "counterparty" varchar(200)`);
@@ -397,8 +397,8 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_transactions ALTER COLUMN status TYPE varchar(16) USING status::text`);
     await run(`ALTER TABLE finance_transactions ALTER COLUMN status SET DEFAULT 'completed'`);
     await run(`ALTER TABLE finance_transactions ALTER COLUMN "paymentMethod" TYPE varchar(16) USING "paymentMethod"::text`);
-    // Месяц начисления ЗП: колонка + бэкфилл (месяц из даты) для старых
-    // зарплатных операций — картина не меняется, значение становится явным.
+    // Месяц начисления ЗП. Старые строки намеренно не переписываем: все
+    // зарплатные выборки поддерживают fallback на месяц фактической даты.
     await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "salaryYm" varchar(7)`);
     await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS source varchar(32)`);
     await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "externalId" varchar(100)`);
@@ -406,8 +406,6 @@ export class FinanceService implements OnModuleInit {
     await run(`CREATE UNIQUE INDEX IF NOT EXISTS "UQ_fin_tx_source_external"
       ON finance_transactions (source, "externalId")
       WHERE source IS NOT NULL AND "externalId" IS NOT NULL`);
-    await run(`UPDATE finance_transactions SET "salaryYm" = to_char("date", 'YYYY-MM')
-      WHERE "employeeId" IS NOT NULL AND type = 'expense' AND "salaryYm" IS NULL`);
     await run(`CREATE INDEX IF NOT EXISTS "IDX_fin_tx_posted_date_type"
       ON finance_transactions (date, type)
       WHERE COALESCE(status, 'completed') = 'completed'`);
@@ -1235,12 +1233,70 @@ export class FinanceService implements OnModuleInit {
     return txs.filter(t => isPostedFinanceTransactionAsOf(t, asOf));
   }
 
+  private periodRepo(manager?: EntityManager): Repository<FinancePayrollPeriod> {
+    return manager ? manager.getRepository(FinancePayrollPeriod) : this.payrollPeriodRepo;
+  }
+
+  private async payrollPeriod(ym: string, manager?: EntityManager): Promise<FinancePayrollPeriod> {
+    if (!YM_RE.test(ym)) throw new BadRequestException('Некорректный зарплатный период');
+    const repo = this.periodRepo(manager);
+    const existing = await repo.findOne({ where: { ym } });
+    if (existing) return existing;
+    try {
+      return await repo.save(repo.create({
+        ym, status: 'open', closedAt: null, closedById: null, reopenedAt: null,
+      }));
+    } catch (error) {
+      // Два параллельных GET при первом открытии месяца могут одновременно
+      // создать строку. PRIMARY KEY делает это безопасным; проигравший читает
+      // уже созданное состояние вместо ответа 500.
+      const concurrent = await repo.findOne({ where: { ym } });
+      if (concurrent) return concurrent;
+      throw error;
+    }
+  }
+
+  private async assertPayrollPeriodOpen(ym: string, manager?: EntityManager): Promise<FinancePayrollPeriod> {
+    const period = await this.payrollPeriod(ym, manager);
+    if (period.status === 'closed') {
+      throw new BadRequestException(
+        `Зарплатный период ${ym} закрыт. Сначала переоткройте его в ведомости`,
+      );
+    }
+    return period;
+  }
+
+  /** Состояние выбранного периода и последний доступный открытый период. */
+  async salaryPeriodState(ym?: string) {
+    const requestedYm = ym && YM_RE.test(ym) ? ym : salaryPeriodForDate(todayISO());
+    const selected = await this.payrollPeriod(requestedYm);
+    let latestOpen = await this.payrollPeriodRepo.findOne({
+      where: { status: 'open' },
+      order: { ym: 'DESC' },
+    });
+    if (!latestOpen) {
+      latestOpen = await this.payrollPeriod(shiftYm(requestedYm, 1));
+    }
+    return {
+      ym: selected.ym,
+      status: selected.status,
+      closedAt: selected.closedAt ?? null,
+      closedById: selected.closedById ?? null,
+      reopenedAt: selected.reopenedAt ?? null,
+      latestOpenYm: latestOpen.ym,
+    };
+  }
+
   /** Зарплатные операции МЕСЯЦА НАЧИСЛЕНИЯ ym: salaryYm = ym, а для старых
    *  операций без salaryYm — по дате (fallback). Деньги/баланс/журнал живут
    *  по date; здесь — только атрибуция «за какой месяц». Отменённые исключены. */
-  private async salaryTxForMonth(ym: string, employeeId?: string): Promise<FinanceTransaction[]> {
+  private async salaryTxForMonth(
+    ym: string,
+    employeeId?: string,
+    manager?: EntityManager,
+  ): Promise<FinanceTransaction[]> {
     const { from, to } = monthRange(ym);
-    const qb = this.txRepo.createQueryBuilder('t')
+    const qb = (manager ? manager.getRepository(FinanceTransaction) : this.txRepo).createQueryBuilder('t')
       .where('t.type = :type', { type: FinanceTxType.EXPENSE })
       .andWhere('t."employeeId" IS NOT NULL')
       .andWhere(`COALESCE(t.status,'completed') = 'completed'`)
@@ -1923,6 +1979,7 @@ export class FinanceService implements OnModuleInit {
     const monthExp = this.active(await this.txRepo.find({ where: { date: Between(from, to), type: FinanceTxType.EXPENSE } as any }));
 
     if (kind === 'salary') {
+      const period = await this.salaryPeriodState(ym);
       const emps = await this.empRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
       // Зарплатная таблица собирается по МЕСЯЦУ НАЧИСЛЕНИЯ (salaryYm), а не по
       // дате: выплата за июнь 10 июля попадает в июньскую таблицу.
@@ -1976,6 +2033,7 @@ export class FinanceService implements OnModuleInit {
       const allPaid = rows.length > 0 && rows.every(r => r.frozen || r.toPay <= 0);
       return {
         kind: 'salary',
+        period,
         cards: { fund, advances, bonuses, fines, paid, toPay: r2(rows.reduce((s, e) => s + Number(e.toPay), 0)) },
         rows,
         allPaid,
@@ -2235,7 +2293,7 @@ export class FinanceService implements OnModuleInit {
         if (!workedInFinanceMonth(employee, salaryYm)) continue;
         if (snapOf(employee, salaryYm)) continue;
         const exactPaid = this.sum(postedTxs.filter(t => t.type === FinanceTxType.EXPENSE && t.employeeId === employee.id &&
-          (t.salaryYm || salaryPeriodOf(t.date)) === salaryYm));
+          (t.salaryYm || salaryPeriodForDate(t.date)) === salaryYm));
         const due = Math.max(0, salaryForMonth(employee, salaryYm) + bonusOf(employee, salaryYm) - fineOf(employee, salaryYm));
         let amount = Math.max(0, due - exactPaid);
         const covered = Math.min(amount, unlinkedSalaryPaid);
@@ -2418,7 +2476,14 @@ export class FinanceService implements OnModuleInit {
         // (зарплатный период даты), а не по календарному месяцу.
         if (base.employeeId) {
           base.salaryYm = (typeof dto.salaryYm === 'string' && YM_RE.test(dto.salaryYm))
-            ? dto.salaryYm : salaryPeriodOf(date);
+            ? dto.salaryYm : salaryPeriodForDate(date);
+          await this.assertPayrollPeriodOpen(base.salaryYm);
+          const employee = await this.empRepo.findOne({ where: { id: base.employeeId } });
+          if (employee && snapOf(employee, base.salaryYm)) {
+            throw new BadRequestException(
+              `Зарплата сотрудника за ${base.salaryYm} уже выплачена и зафиксирована`,
+            );
+          }
         }
       }
     }
@@ -2521,6 +2586,12 @@ export class FinanceService implements OnModuleInit {
       && [next.employeeId, next.debtId, next.subscriptionId].filter(Boolean).length > 1) {
       throw new BadRequestException('Расход можно привязать только к одному обязательству');
     }
+    // Нельзя обойти блокировку закрытого периода через журнал: защищаем как
+    // исходный зарплатный период, так и новый при переносе операции.
+    const salaryPeriods = new Set<string>();
+    if (t.employeeId) salaryPeriods.add(t.salaryYm ?? ymOf(t.date));
+    if (next.employeeId) salaryPeriods.add(next.salaryYm ?? salaryPeriodForDate(next.date));
+    for (const ym of salaryPeriods) await this.assertPayrollPeriodOpen(ym);
     await this.txRepo.update(id, patch);
     await this.syncSmmPartLink(id);
     // Правка выплаты ЗП (сумма/дата/сотрудник) — пересчитать снапшоты
@@ -2547,6 +2618,9 @@ export class FinanceService implements OnModuleInit {
       if (!tx) throw new NotFoundException('Операция не найдена');
       if (tx.source || tx.externalId || tx.affectsBalance === false) {
         throw new BadRequestException('Историческую импортированную операцию нельзя отменить вручную');
+      }
+      if (tx.employeeId) {
+        await this.assertPayrollPeriodOpen(tx.salaryYm ?? ymOf(tx.date), em);
       }
       // Идемпотентно восстанавливаем связанные планы даже после сбоя старой
       // неатомарной версии отмены.
@@ -2952,6 +3026,7 @@ export class FinanceService implements OnModuleInit {
   async removeMonthExpenses(dto: { ym: string; employeeId?: string; subscriptionId?: string; kind?: 'advance' | 'bonus' }) {
     if (!dto.employeeId && !dto.subscriptionId) throw new BadRequestException('Укажите сотрудника или подписку');
     if (dto.employeeId && dto.subscriptionId) throw new BadRequestException('Либо сотрудник, либо подписка');
+    if (dto.employeeId) await this.assertPayrollPeriodOpen(dto.ym);
     const { from, to } = monthRange(dto.ym);
     const removed = await this.ds.transaction(async (em) => {
       const repo = em.getRepository(FinanceTransaction);
@@ -3184,6 +3259,7 @@ export class FinanceService implements OnModuleInit {
     }
     const effectiveYm = YM_RE.test(dto.salaryEffectiveYm || '')
       ? dto.salaryEffectiveYm : ymOf(dto.hireDate || todayISO());
+    await this.assertPayrollPeriodOpen(effectiveYm);
     return this.empRepo.save(this.empRepo.create({
       name: dto.name.trim(), role: dto.role ?? null, salary,
       salaryHistory: { [effectiveYm]: salary },
@@ -3206,11 +3282,19 @@ export class FinanceService implements OnModuleInit {
       const salary = Number(dto.salary) || 0;
       const changed = salary !== Number(e.salary);
       const effectiveYm = YM_RE.test(dto.salaryEffectiveYm || '') ? dto.salaryEffectiveYm : currentYm();
+      if (changed || dto.salaryEffectiveYm) await this.assertPayrollPeriodOpen(effectiveYm);
       e.salary = salary;
       if (changed || dto.salaryEffectiveYm) e.salaryHistory = { ...(e.salaryHistory || {}), [effectiveYm]: salary };
     }
     if (dto.advance !== undefined) e.advance = Number(dto.advance) || 0;
     const nextStatus = dto.status !== undefined ? this.normStatus(dto.status) : e.status;
+    const employmentMonths = new Set<string>();
+    if (dto.hireDate) employmentMonths.add(ymOf(dto.hireDate));
+    if (dto.terminationDate) employmentMonths.add(ymOf(dto.terminationDate));
+    if (dto.status !== undefined && nextStatus !== oldStatus) {
+      employmentMonths.add(ymOf(dto.terminationDate || dto.hireDate || todayISO()));
+    }
+    for (const month of employmentMonths) await this.assertPayrollPeriodOpen(month);
     const reactivating = oldStatus === 'fired' && nextStatus === 'active';
     if (reactivating) {
       // Архивируем значения ДО применения DTO: форма закономерно присылает
@@ -3253,6 +3337,7 @@ export class FinanceService implements OnModuleInit {
   async removeEmployee(id: string) {
     const e = await this.empRepo.findOne({ where: { id } });
     if (!e) throw new NotFoundException('Сотрудник не найден');
+    await this.assertPayrollPeriodOpen(currentYm());
     // Сохраняем ведомости и связи журнала; исключаем только будущие начисления.
     e.status = 'fired';
     e.terminationDate = e.terminationDate || todayISO();
@@ -3264,11 +3349,17 @@ export class FinanceService implements OnModuleInit {
    *  расход создаётся отдельно — при выплате, вместе с окладом. */
   /** Закрыть зарплатный месяц можно только по фактически проведённым выплатам.
    *  Снапшот фиксирует историю, но никогда не погашает обязательство без денег. */
-  async closeSalaryMonth(ym: string) {
+  async closeSalaryMonth(ym: string, closedById?: string) {
+    const period = await this.payrollPeriod(ym);
+    if (period.status === 'closed') {
+      const state = await this.salaryPeriodState(ym);
+      return { ok: true, closed: 0, skipped: 0, alreadyClosed: true, ...state };
+    }
     const emps = await this.empRepo.find();
     // Выплаченное за месяц — по МЕСЯЦУ НАЧИСЛЕНИЯ (salaryYm), с fallback на дату.
     const monthExp = await this.salaryTxForMonth(ym);
-    let closed = 0, skipped = 0;
+    const toClose: FinanceEmployee[] = [];
+    let skipped = 0;
     for (const e of emps) {
       if (!workedInFinanceMonth(e, ym) || snapOf(e, ym)) continue;
       const employeeTx = monthExp.filter(t => t.employeeId === e.id);
@@ -3289,13 +3380,26 @@ export class FinanceService implements OnModuleInit {
         paid, paidAt: todayISO(), paidIncludesAdvance: true,
       };
       e.salarySnapshots = map;
-      await this.empRepo.save(e);
-      closed++;
+      toClose.push(e);
     }
-    if (!closed && skipped) {
+    // Никаких частичных изменений: сначала убеждаемся, что оплачены все,
+    // и только затем сохраняем снапшоты и глобально закрываем период.
+    if (skipped) {
       throw new BadRequestException('Месяц нельзя закрыть: сначала проведите оставшиеся выплаты по счетам');
     }
-    return { ok: true, closed, skipped };
+    if (toClose.length) await this.empRepo.save(toClose);
+    const closed = toClose.length;
+    period.status = 'closed';
+    period.closedAt = new Date();
+    period.closedById = closedById || null;
+    period.reopenedAt = null;
+    await this.payrollPeriodRepo.save(period);
+    const next = await this.payrollPeriod(shiftYm(ym, 1));
+    return {
+      ok: true, closed, skipped, alreadyClosed: false,
+      ym, status: period.status, closedAt: period.closedAt,
+      latestOpenYm: next.status === 'open' ? next.ym : (await this.salaryPeriodState(ym)).latestOpenYm,
+    };
   }
 
   /** Переоткрыть месяц ЗП: снять заморозку (удалить снапшоты выплаченного
@@ -3303,6 +3407,7 @@ export class FinanceService implements OnModuleInit {
    *  Нужно, чтобы поправить/дозаполнить авансы/бонусы/штрафы за уже
    *  закрытый месяц (во frozen-месяц их не впишешь). Балансы не меняются. */
   async reopenSalaryMonth(ym: string) {
+    const period = await this.payrollPeriod(ym);
     const emps = await this.empRepo.find();
     let reopened = 0;
     for (const e of emps) {
@@ -3313,7 +3418,12 @@ export class FinanceService implements OnModuleInit {
       await this.empRepo.save(e);
       reopened++;
     }
-    return { ok: true, reopened };
+    period.status = 'open';
+    period.closedAt = null;
+    period.closedById = null;
+    period.reopenedAt = new Date();
+    await this.payrollPeriodRepo.save(period);
+    return { ok: true, reopened, ym, status: period.status, latestOpenYm: ym };
   }
 
   /** Журнал активности финансов: кто/что/когда (пишет интерцептор). */
@@ -3579,6 +3689,7 @@ export class FinanceService implements OnModuleInit {
     const e = await this.empRepo.findOne({ where: { id } });
     if (!e) throw new NotFoundException('Сотрудник не найден');
     const ym = dto.ym || currentYm();
+    await this.assertPayrollPeriodOpen(ym);
     // Выплаченный месяц заморожен — менять его суммы нельзя (месяцы независимы).
     if (snapOf(e, ym)) throw new BadRequestException('Месяц уже выплачен и зафиксирован — правки недоступны');
     const amount = r2(Number(dto.amount) || 0);
