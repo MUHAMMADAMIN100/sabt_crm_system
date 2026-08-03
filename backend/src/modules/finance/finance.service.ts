@@ -1266,24 +1266,34 @@ export class FinanceService implements OnModuleInit {
     return period;
   }
 
-  /** Состояние выбранного периода и последний доступный открытый период. */
+  /** Основная зарплатная ведомость: предыдущий календарный месяц остаётся
+   *  выбранным, пока его явно не закрыли после всех выплат. Затем открываем
+   *  текущий месяц; дата самой выплаты при этом по-прежнему живёт отдельно. */
+  private async defaultPayrollPeriod(): Promise<FinancePayrollPeriod> {
+    const current = currentYm();
+    const previous = await this.payrollPeriod(shiftYm(current, -1));
+    if (previous.status === 'open') return previous;
+
+    const currentPeriod = await this.payrollPeriod(current);
+    if (currentPeriod.status === 'open') return currentPeriod;
+
+    return this.payrollPeriod(shiftYm(current, 1));
+  }
+
+  /** Состояние выбранного периода и основной доступный открытый период. */
   async salaryPeriodState(ym?: string) {
-    const requestedYm = ym && YM_RE.test(ym) ? ym : salaryPeriodForDate(todayISO());
-    const selected = await this.payrollPeriod(requestedYm);
-    let latestOpen = await this.payrollPeriodRepo.findOne({
-      where: { status: 'open' },
-      order: { ym: 'DESC' },
-    });
-    if (!latestOpen) {
-      latestOpen = await this.payrollPeriod(shiftYm(requestedYm, 1));
-    }
+    const primary = await this.defaultPayrollPeriod();
+    const requestedYm = ym && YM_RE.test(ym) ? ym : primary.ym;
+    const selected = requestedYm === primary.ym
+      ? primary
+      : await this.payrollPeriod(requestedYm);
     return {
       ym: selected.ym,
       status: selected.status,
       closedAt: selected.closedAt ?? null,
       closedById: selected.closedById ?? null,
       reopenedAt: selected.reopenedAt ?? null,
-      latestOpenYm: latestOpen.ym,
+      latestOpenYm: primary.ym,
     };
   }
 

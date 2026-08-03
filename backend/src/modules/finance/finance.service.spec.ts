@@ -318,21 +318,49 @@ describe('FinanceService correctness', () => {
     expect(txRepo.save).not.toHaveBeenCalled();
   });
 
-  it('returns the latest open payroll period independently of the selected closed month', async () => {
-    payrollPeriodRepo.findOne.mockImplementation(async (options: any) => {
-      if (options?.where?.ym === '2026-07') return {
-        ym: '2026-07', status: 'closed', closedAt: new Date('2026-08-10'),
-        closedById: 'owner', reopenedAt: null,
-      };
-      if (options?.where?.status === 'open') return {
-        ym: '2026-08', status: 'open', closedAt: null, closedById: null, reopenedAt: null,
-      };
-      return null;
-    });
+  it('keeps the previous month primary after the 10th until it is closed', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-12T07:00:00Z'));
+    try {
+      payrollPeriodRepo.findOne.mockImplementation(async (options: any) => {
+        if (options?.where?.ym === '2026-07') return {
+          ym: '2026-07', status: 'open', closedAt: null,
+          closedById: null, reopenedAt: null,
+        };
+        if (options?.where?.ym === '2026-08') return {
+          ym: '2026-08', status: 'open', closedAt: null,
+          closedById: null, reopenedAt: null,
+        };
+        return null;
+      });
 
-    await expect(service.salaryPeriodState('2026-07')).resolves.toMatchObject({
-      ym: '2026-07', status: 'closed', latestOpenYm: '2026-08',
-    });
+      await expect(service.salaryPeriodState()).resolves.toMatchObject({
+        ym: '2026-07', status: 'open', latestOpenYm: '2026-07',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('makes the current month primary after the previous month is closed', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-12T07:00:00Z'));
+    try {
+      payrollPeriodRepo.findOne.mockImplementation(async (options: any) => {
+        if (options?.where?.ym === '2026-07') return {
+          ym: '2026-07', status: 'closed', closedAt: new Date('2026-08-10'),
+          closedById: 'owner', reopenedAt: null,
+        };
+        if (options?.where?.ym === '2026-08') return {
+          ym: '2026-08', status: 'open', closedAt: null, closedById: null, reopenedAt: null,
+        };
+        return null;
+      });
+
+      await expect(service.salaryPeriodState('2026-07')).resolves.toMatchObject({
+        ym: '2026-07', status: 'closed', latestOpenYm: '2026-08',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('moves savings between accounts without changing the total balance', async () => {

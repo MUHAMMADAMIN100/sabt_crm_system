@@ -6,7 +6,7 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { money, currentYm, currentSalaryYm, todayISO, formatDate, monthLabel, shiftYm, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP, useYmParam, salaryComment, withYm } from './finlib';
+import { money, currentYm, todayISO, formatDate, monthLabel, shiftYm, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP, useYmParam, salaryComment, withYm } from './finlib';
 import { FinLoading, FinLoadError, FinModal, useModalKeys, finConfirm, invalidateFinance } from './FinKit';
 import { EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
 import FinIcon, { CatIcon } from './FinIcon';
@@ -33,10 +33,11 @@ function isSalaryRowControl(target: EventTarget | null) {
 export default function FinanceExpenseGroupPage() {
   const { kind } = useParams<{ kind: string }>();
   const location = useLocation();
-  // Зарплатная ведомость живёт циклами «10-е → 10-е» — по умолчанию
-  // открываем текущий зарплатный период (для остальных статей — календарный).
+  // Зарплатная ведомость по умолчанию показывает предыдущий календарный месяц
+  // и остаётся на нём до явного закрытия после выплаты. Сервер переключит её
+  // на текущий месяц, когда предыдущий будет закрыт.
   // Месяц приходит из адреса (?ym=…) — тот же, что был выбран в «Расходах».
-  const [ym, setYm] = useYmParam(kind === 'salary' ? currentSalaryYm() : currentYm());
+  const [ym, setYm] = useYmParam(kind === 'salary' ? shiftYm(currentYm(), -1) : currentYm());
   const openedWithoutMonth = useRef(!new URLSearchParams(location.search).has('ym'));
   const { data: payrollDefault } = useQuery({
     queryKey: ['finance', 'salaryPeriod', 'current'],
