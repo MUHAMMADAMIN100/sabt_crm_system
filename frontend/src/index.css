@@ -904,3 +904,75 @@ aside {
   .page-title { @apply text-xl; }
 }
 
+
+/* ─── «Печать успеха»: награда за выполненную задачу ──────────────────
+   Чистый CSS вместо Lottie: печать рисуется вектором и остаётся чёткой на
+   любом экране, а вес анимации — ноль. Все движения на transform/opacity,
+   поэтому браузер считает их на композиторе и интерфейс не подтормаживает
+   даже на доске с сотнями карточек. */
+
+.stamp-scene-in  { animation: stamp-scene-in 180ms ease-out both; }
+.stamp-scene-out { animation: stamp-scene-out 320ms ease-in both; }
+
+@keyframes stamp-scene-in  { from { opacity: 0 } to { opacity: 1 } }
+@keyframes stamp-scene-out { from { opacity: 1 } to { opacity: 0 } }
+
+/* Лист выплывает снизу с лёгкой инерцией. */
+.stamp-paper { animation: stamp-paper-in 340ms cubic-bezier(0.18, 0.89, 0.32, 1.18) both; }
+
+@keyframes stamp-paper-in {
+  from { opacity: 0; transform: translateY(28px) scale(0.9) }
+  to   { opacity: 1; transform: translateY(0)    scale(1) }
+}
+
+/* Печать падает сверху: почти всё расстояние проходит за последние кадры —
+   отсюда ощущение удара, а не плавного приземления. Дальше короткий отскок.
+
+   Падение и отскок — ОДНА анимация, не две. Две анимации на одном элементе
+   спорят за transform: побеждает последняя, а fill-mode: both применяет её
+   стартовый кадр ещё до начала задержки — падение просто не проигрывалось,
+   печать возникала на месте. Удар приходится на 60 % от 400 мс + задержка
+   260 мс = 500 мс, ровно под встряску и звук в StampCelebration. */
+.stamp-mark { animation: stamp-drop 400ms 260ms both; }
+
+@keyframes stamp-drop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(-220px) scale(2.4) rotate(-24deg);
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+  45% { opacity: 1 }
+  /* Удар */
+  60% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(0) scale(1) rotate(-8deg);
+    animation-timing-function: cubic-bezier(0.2, 0, 0.35, 1);
+  }
+  /* Отскок */
+  80% {
+    transform: translate(-50%, -50%) translateY(-14px) scale(1.06) rotate(-8deg);
+    animation-timing-function: ease-in;
+  }
+  100% { transform: translate(-50%, -50%) translateY(0) scale(1) rotate(-8deg) }
+}
+
+/* Встряска всего интерфейса в момент удара. Класс вешается на .app-shell
+   на 340 мс и снимается — сам по себе лейаут не трогается. */
+.stamp-shake { animation: stamp-shake 320ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+
+@keyframes stamp-shake {
+  10%, 90% { transform: translate3d(-2px, 1px, 0) }
+  20%, 80% { transform: translate3d(4px, -2px, 0) }
+  30%, 50%, 70% { transform: translate3d(-6px, 2px, 0) }
+  40%, 60% { transform: translate3d(6px, -1px, 0) }
+  100% { transform: translate3d(0, 0, 0) }
+}
+
+/* Уважаем системную настройку «меньше движения»: показываем ту же сцену,
+   но без падения, тряски и отскока. */
+@media (prefers-reduced-motion: reduce) {
+  .stamp-paper { animation: stamp-scene-in 180ms ease-out both }
+  .stamp-mark  { animation: stamp-scene-in 180ms ease-out 200ms both;
+                 transform: translate(-50%, -50%) rotate(-8deg) }
+  .stamp-shake { animation: none }
+}

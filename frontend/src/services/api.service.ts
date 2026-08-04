@@ -1,4 +1,5 @@
 import api from '@/lib/api'
+import { celebrateTask } from '@/lib/taskCelebration'
 
 // ─── Auth ────────────────────────────────────────────────
 export const authApi = {
@@ -111,7 +112,12 @@ export const tasksApi = {
   list: (params?: any) => api.get('/tasks', { params }).then(r => r.data),
   get: (id: string) => api.get(`/tasks/${id}`).then(r => r.data),
   create: (data: any) => api.post('/tasks', data).then(r => r.data),
-  update: (id: string, data: any) => api.patch(`/tasks/${id}`, data).then(r => r.data),
+  // Статус задачи меняется из шести экранов, поэтому «Печать успеха»
+  // запускается отсюда — из единственной точки, через которую проходят все.
+  update: (id: string, data: any) => api.patch(`/tasks/${id}`, data).then(r => {
+    if (data?.status === 'done') celebrateTask(id)
+    return r.data
+  }),
   remove: (id: string, reason?: string) =>
     api.delete(`/tasks/${id}`, { params: reason ? { reason } : undefined }).then(r => r.data),
   my: () => api.get('/tasks/my').then(r => r.data),
@@ -124,11 +130,25 @@ export const tasksApi = {
   approve: (id: string) => api.post(`/tasks/${id}/approve`).then(r => r.data),
   returnTask: (id: string, reason: string) => api.post(`/tasks/${id}/return`, { reason }).then(r => r.data),
   bulk: (ids: string[], action: 'status' | 'delete' | 'assign', value?: string) =>
-    api.post('/tasks/bulk', { ids, action, value }).then(r => r.data),
+    api.post('/tasks/bulk', { ids, action, value }).then(r => {
+      // Закрыли пачку — печать одна: двадцать подряд превратят награду
+      // в раздражитель. Ключом берём первую задачу.
+      if (action === 'status' && value === 'done' && ids.length) celebrateTask(ids[0])
+      return r.data
+    }),
   // Multi-assignee: получить состав исполнителей и пометить свою часть готовой
   assignees: (id: string) => api.get(`/tasks/${id}/assignees`).then(r => r.data),
+  // Свою задачу человек чаще всего закрывает именно этой кнопкой, а идёт она
+  // мимо update. Печать ставим только когда задача закрыта ЦЕЛИКОМ: если
+  // остались другие исполнители, работа ещё не закончена.
   markMyPartDone: (id: string, note?: string) =>
-    api.post(`/tasks/${id}/my-part-done`, { note }).then(r => r.data),
+    api.post(`/tasks/${id}/my-part-done`, { note }).then(r => {
+      // allDone говорит только о том, что все исполнители отметились. У
+      // отменённой задачи бэкенд намеренно не ставит done — поздравлять там
+      // не с чем, поэтому смотрим на реальный статус.
+      if (r.data?.allDone && r.data?.task?.status === 'done') celebrateTask(id)
+      return r.data
+    }),
 }
 
 // ─── Task Checklists ──────────────────────────────────────

@@ -6,6 +6,7 @@ import { PageLoader } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
 import { useSocket } from '@/hooks/useSocket'
 import KpiCelebrationWatcher from '@/hooks/useKpiCelebrationWatcher'
+import StampCelebration from '@/components/tasks/StampCelebration'
 import { authApi } from '@/services/api.service'
 import clsx from 'clsx'
 
@@ -134,6 +135,9 @@ export default function Layout() {
       {/* Глобальный watcher KPI продаж — поздравительный модал поверх
           любой страницы, активен только для sales_manager_smm/dev. */}
       <KpiCelebrationWatcher />
+      {/* «Печать успеха» за выполненную задачу — глобально, чтобы срабатывала
+          на любом экране; сама решает, показываться ли роли. */}
+      <StampCelebration />
     </div>
   )
 }

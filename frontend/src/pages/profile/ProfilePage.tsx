@@ -13,6 +13,7 @@ import toast from 'react-hot-toast'
 import TwoFactorSection from '@/components/profile/TwoFactorSection'
 import ThemeEditorSection from '@/components/profile/ThemeEditorSection'
 import WallpaperSection from '@/components/profile/WallpaperSection'
+import TaskCelebrationSection from '@/components/profile/TaskCelebrationSection'
 
 export default function ProfilePage() {
   const user = useAuthStore(s => s.user)
@@ -240,6 +241,9 @@ export default function ProfilePage() {
 
       {/* Персональные обои — сама секция решает, показываться ли роли */}
       <WallpaperSection />
+
+      {/* «Печать успеха» за выполненную задачу — тоже с ролевой проверкой внутри */}
+      <TaskCelebrationSection />
 
       {/* 2FA — двухфакторная аутентификация */}
       <TwoFactorSection />
