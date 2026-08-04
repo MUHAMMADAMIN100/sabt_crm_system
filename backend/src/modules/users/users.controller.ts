@@ -204,17 +204,28 @@ export class UsersController {
   setMyBackground(
     @Request() req,
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: { dim?: string },
+    @Body() body: { dim?: string; scale?: string; ratio?: string },
   ) {
     if (!file) throw new BadRequestException('Файл не загружен');
-    return this.usersService.setBackground(req.user.id, file, body?.dim);
+    return this.usersService.setBackground(
+      req.user.id, file, body?.dim, body?.scale, body?.ratio,
+    );
   }
 
-  /** Затемнение отдельно — двигается ползунком, картинку заново не гоняем. */
+  /** Затемнение и масштаб — двигаются ползунками, картинку заново не гоняем. */
+  @Patch('me/background/view')
+  @Roles(...BACKGROUND_ROLES)
+  setMyBackgroundView(@Request() req, @Body() body: { dim?: number; scale?: number }) {
+    return this.usersService.setBackgroundView(req.user.id, body?.dim, body?.scale);
+  }
+
+  /** Старый путь только для затемнения. Оставлен, чтобы вкладка, открытая до
+   *  деплоя фронта, не получала 404, пока Vercel и Railway обновляются
+   *  независимо друг от друга. */
   @Patch('me/background/dim')
   @Roles(...BACKGROUND_ROLES)
   setMyBackgroundDim(@Request() req, @Body() body: { dim?: number }) {
-    return this.usersService.setBackgroundDim(req.user.id, body?.dim);
+    return this.usersService.setBackgroundView(req.user.id, body?.dim, undefined);
   }
 
   @Delete('me/background')

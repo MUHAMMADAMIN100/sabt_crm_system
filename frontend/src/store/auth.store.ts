@@ -179,7 +179,7 @@ export const useAuthStore = create<AuthState>()(
                   // За время запроса могли выйти или войти другим
                   // сотрудником — чужие обои применять нельзя.
                   if (get().user?.id !== forUserId) return
-                  syncWallpaperFromServer(r.data?.image, r.data?.dim)
+                  syncWallpaperFromServer(r.data?.image, r.data)
                 })
                 .catch(() => { /* фон не критичен, работаем без него */ })
             }

@@ -130,6 +130,18 @@ export class User {
   @Column({ type: 'int', default: 40 })
   backgroundDim: number;
 
+  /** Масштаб обоев, 30..200 % от «заполнить экран». 100 — картинка растянута
+   *  на весь экран (как было раньше), меньше — уменьшена и вокруг виден фон
+   *  темы: так логотип не обрезается по краям. */
+  @Column({ type: 'int', default: 100 })
+  backgroundScale: number;
+
+  /** Соотношение сторон картинки (ширина/высота), считает браузер при
+   *  загрузке. Нужно, чтобы выразить масштаб относительно «заполнить экран»:
+   *  cover зависит и от пропорций картинки, и от размера окна. */
+  @Column({ type: 'numeric', precision: 6, scale: 3, nullable: true })
+  backgroundRatio: string | null;
+
   @Column({ default: true })
   isActive: boolean;
 

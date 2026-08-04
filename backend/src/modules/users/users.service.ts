@@ -403,18 +403,48 @@ export class UsersService {
     return Math.min(90, Math.max(0, Math.round(n)));
   }
 
-  async getBackground(userId: string): Promise<{ image: string | null; dim: number }> {
+  /** Масштаб обоев. Ниже 30 % картинка превращается в точку, выше 200 % —
+   *  видно один пиксель, поэтому границы жёсткие. */
+  private clampScale(value: unknown, fallback = 100): number {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(200, Math.max(30, Math.round(n)));
+  }
+
+  /** Соотношение сторон картинки. Приходит из браузера, поэтому проверяем:
+   *  значение уходит в CSS-выражение размера фона. */
+  private clampRatio(value: unknown): number | null {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    // 0.1..10 покрывает и панорамы, и вертикальные экраны телефона.
+    return Math.min(10, Math.max(0.1, Math.round(n * 1000) / 1000));
+  }
+
+  async getBackground(userId: string): Promise<{
+    image: string | null; dim: number; scale: number; ratio: number | null;
+  }> {
     // backgroundImage помечена select:false — читаем явно.
     const row = await this.repo
       .createQueryBuilder('u')
-      .select(['u.id', 'u.backgroundDim'])
+      .select(['u.id', 'u.backgroundDim', 'u.backgroundScale', 'u.backgroundRatio'])
       .addSelect('u.backgroundImage')
       .where('u.id = :id', { id: userId })
       .getOne();
-    return { image: row?.backgroundImage ?? null, dim: this.clampDim(row?.backgroundDim) };
+    return {
+      image: row?.backgroundImage ?? null,
+      dim: this.clampDim(row?.backgroundDim),
+      scale: this.clampScale(row?.backgroundScale),
+      ratio: this.clampRatio(row?.backgroundRatio),
+    };
   }
 
-  async setBackground(userId: string, file: Express.Multer.File, dim?: unknown) {
+  async setBackground(
+    userId: string,
+    file: Express.Multer.File,
+    dim?: unknown,
+    scale?: unknown,
+    ratio?: unknown,
+  ) {
     if (!file?.buffer?.length) throw new BadRequestException('Файл пустой');
     // Размер считаем ДО кодирования: base64 раздувает данные на треть, и
     // гонять эту строку в памяти только чтобы её отвергнуть — незачем.
@@ -431,20 +461,34 @@ export class UsersService {
     const mime = UsersService.BACKGROUND_MIME.has(file.mimetype) ? file.mimetype : 'image/jpeg';
     const dataUri = `data:${mime};base64,${file.buffer.toString('base64')}`;
     const nextDim = dim === undefined ? undefined : this.clampDim(dim);
+    const nextScale = scale === undefined ? undefined : this.clampScale(scale);
+    // Пропорции новой картинки — всегда: иначе масштаб считался бы от
+    // размеров предыдущей.
+    const nextRatio = this.clampRatio(ratio);
     await this.repo.update(userId, {
       backgroundImage: dataUri,
+      backgroundRatio: nextRatio === null ? null : (String(nextRatio) as any),
       ...(nextDim === undefined ? {} : { backgroundDim: nextDim }),
+      ...(nextScale === undefined ? {} : { backgroundScale: nextScale }),
     });
     return this.getBackground(userId);
   }
 
-  async setBackgroundDim(userId: string, dim: unknown) {
-    await this.repo.update(userId, { backgroundDim: this.clampDim(dim) });
+  /** Затемнение и масштаб — двигаются ползунками, картинку заново не гоняем. */
+  async setBackgroundView(userId: string, dim?: unknown, scale?: unknown) {
+    const patch: Record<string, number> = {};
+    if (dim !== undefined) patch.backgroundDim = this.clampDim(dim);
+    if (scale !== undefined) patch.backgroundScale = this.clampScale(scale);
+    if (Object.keys(patch).length) await this.repo.update(userId, patch);
     return this.getBackground(userId);
   }
 
   async clearBackground(userId: string) {
-    await this.repo.update(userId, { backgroundImage: null });
+    // Пропорции — свойство картинки, а не настройка сотрудника: без неё они
+    // становятся мусором и исказили бы масштаб следующей загрузки, если та
+    // почему-то придёт без ratio. Затемнение и масштаб оставляем — это
+    // предпочтения, к ним человек вернётся со следующими обоями.
+    await this.repo.update(userId, { backgroundImage: null, backgroundRatio: null });
     return this.getBackground(userId);
   }
 

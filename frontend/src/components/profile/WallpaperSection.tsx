@@ -3,7 +3,7 @@ import { Image as ImageIcon, Upload, Trash2, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { useWallpaperStore, syncWallpaperFromServer, canUseWallpaper } from '@/lib/wallpaper'
+import { useWallpaperStore, syncWallpaperFromServer, canUseWallpaper, veilOf } from '@/lib/wallpaper'
 
 /** До какого размера ужимаем картинку перед отправкой. 1920 хватает на
  *  любой монитор, а вес держим в пределах, которые примет сервер (700 КБ
@@ -44,12 +44,14 @@ async function loadImage(file: File): Promise<{ image: unknown; width: number; h
 }
 
 /** Сжимаем на клиенте: sharp на бэкенде нет, а гнать 12-мегапиксельное фото
- *  с телефона в базу нельзя. Возвращает JPEG-blob нужного веса. */
-async function compress(file: File): Promise<Blob> {
+ *  с телефона в базу нельзя. Возвращает JPEG-blob нужного веса и пропорции
+ *  картинки — по ним считается масштаб («Размер»). */
+async function compress(file: File): Promise<{ blob: Blob; ratio: number }> {
   const src = await loadImage(file)
-  const scale = Math.min(1, MAX_SIDE / Math.max(src.width, src.height))
-  const w = Math.max(1, Math.round(src.width * scale))
-  const h = Math.max(1, Math.round(src.height * scale))
+  const fit = Math.min(1, MAX_SIDE / Math.max(src.width, src.height))
+  const w = Math.max(1, Math.round(src.width * fit))
+  const h = Math.max(1, Math.round(src.height * fit))
+  const ratio = Math.round((w / h) * 1000) / 1000
 
   const canvas = document.createElement('canvas')
   canvas.width = w
@@ -64,8 +66,8 @@ async function compress(file: File): Promise<Blob> {
   // фото с детализацией и на 0.8 бывает под мегабайт.
   for (const q of [0.82, 0.7, 0.58, 0.45, 0.35]) {
     const blob = await toBlob(q)
-    if (blob && blob.size <= TARGET_BYTES) return blob
-    if (q === 0.35 && blob) return blob
+    if (blob && blob.size <= TARGET_BYTES) return { blob, ratio }
+    if (q === 0.35 && blob) return { blob, ratio }
   }
   throw new Error('Не удалось сжать картинку')
 }
@@ -73,12 +75,15 @@ async function compress(file: File): Promise<Blob> {
 export default function WallpaperSection() {
   const user = useAuthStore(s => s.user)
   const image = useWallpaperStore(s => s.image)
-  const dim = useWallpaperStore(s => s.dim)
-  const previewDim = useWallpaperStore(s => s.previewDim)
-  const commitDim = useWallpaperStore(s => s.commitDim)
+  const view = useWallpaperStore(s => s.view)
+  const preview = useWallpaperStore(s => s.preview)
+  const commit = useWallpaperStore(s => s.commit)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-  const dimTimer = useRef<number | null>(null)
+  const saveTimer = useRef<number | null>(null)
+  const pending = useRef<{ dim?: number; scale?: number }>({})
+  const boxRef = useRef<HTMLDivElement>(null)
+  const [box, setBox] = useState({ w: 16, h: 9 })
 
   const allowed = canUseWallpaper(user)
 
@@ -87,11 +92,25 @@ export default function WallpaperSection() {
   useEffect(() => {
     if (!allowed) return
     usersApi.getMyBackground()
-      .then(r => syncWallpaperFromServer(r?.image, r?.dim))
+      .then(r => syncWallpaperFromServer(r?.image, r))
       .catch(() => { /* не критично: работаем с тем, что есть */ })
   }, [allowed])
 
+  // Превью должно показывать масштаб честно, а «заполнить экран» зависит от
+  // пропорций окна — поэтому меряем саму карточку превью, а не гадаем.
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setBox({ w: el.offsetWidth || 16, h: el.offsetHeight || 9 }))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [image])
+
   if (!allowed) return null
+
+  const veilAlpha = (view.dim / 100).toFixed(2)
+  // Ширина картинки при «заполнить» — в процентах от ширины превью.
+  const previewCoverPercent = Math.max(100, (box.h / box.w) * (view.ratio || 1) * 100)
 
   const pick = async (file?: File | null) => {
     // Сбрасываем input всегда: иначе повторный выбор ТОГО ЖЕ файла после
@@ -105,9 +124,9 @@ export default function WallpaperSection() {
     }
     setBusy(true)
     try {
-      const blob = await compress(file)
-      const res = await usersApi.uploadMyBackground(blob, dim)
-      syncWallpaperFromServer(res?.image, res?.dim)
+      const { blob, ratio } = await compress(file)
+      const res = await usersApi.uploadMyBackground(blob, { dim: view.dim, scale: view.scale, ratio })
+      syncWallpaperFromServer(res?.image, res)
       toast.success('Фон установлен')
     } catch (e: any) {
       toast.error(e?.response?.data?.message || e?.message || 'Не удалось загрузить фон')
@@ -117,16 +136,24 @@ export default function WallpaperSection() {
     }
   }
 
-  /** Ползунок: показываем сразу, а сохраняем через паузу после последнего
+  /** Ползунки: показываем сразу, а сохраняем через паузу после последнего
    *  движения. Ловить mouseup нельзя — если кнопку отпустили за пределами
-   *  ползунка, событие до него не дойдёт и настройка молча не сохранится. */
-  const onDim = (value: number) => {
-    previewDim(value)
-    if (dimTimer.current) window.clearTimeout(dimTimer.current)
-    dimTimer.current = window.setTimeout(() => {
-      commitDim(value)
-      usersApi.setMyBackgroundDim(value)
-        .catch(() => toast.error('Затемнение не сохранилось — действует до перезахода'))
+   *  ползунка, событие до него не дойдёт и настройка молча не сохранится.
+   *
+   *  Правки НАКАПЛИВАЕМ: таймер у двух ползунков общий, и если подвинуть
+   *  затемнение, а следом за те же 400 мс — размер, то без накопления на
+   *  сервер ушёл бы только размер, а затемнение осталось бы лишь на экране
+   *  до перезахода. */
+  const onSlide = (patch: { dim?: number; scale?: number }) => {
+    preview(patch)
+    pending.current = { ...pending.current, ...patch }
+    if (saveTimer.current) window.clearTimeout(saveTimer.current)
+    saveTimer.current = window.setTimeout(() => {
+      const merged = pending.current
+      pending.current = {}
+      commit(merged)
+      usersApi.setMyBackgroundView(merged)
+        .catch(() => toast.error('Настройка не сохранилась — действует до перезахода'))
     }, 400)
   }
 
@@ -168,9 +195,19 @@ export default function WallpaperSection() {
 
       {image ? (
         <div
-          className="h-32 rounded-xl border border-surface-200 dark:border-surface-700 mb-3 bg-center bg-cover"
+          ref={boxRef}
+          className="h-32 rounded-xl border border-surface-200 dark:border-surface-700 mb-3 bg-surface-100 dark:bg-surface-900"
           style={{
-            backgroundImage: `linear-gradient(rgb(var(--surf-100) / ${(dim / 100).toFixed(2)}), rgb(var(--surf-100) / ${(dim / 100).toFixed(2)})), url("${image}")`,
+            // Плёнка — тем же токеном, что и на экране: иначе в тёмной теме
+            // превью осветляло бы картинку, пока экран её затемняет.
+            backgroundImage: `${veilOf(veilAlpha)}, url("${image}")`,
+            // Превью показывает и масштаб: иначе ползунок «Размер» пришлось бы
+            // проверять, глядя мимо карточки на весь экран.
+            backgroundSize: `100% 100%, ${view.scale === 100 || !view.ratio
+              ? 'cover'
+              : `${Math.round(previewCoverPercent * view.scale / 100)}% auto`}`,
+            backgroundPosition: 'center center',
+            backgroundRepeat: 'no-repeat',
           }}
         />
       ) : (
@@ -197,24 +234,51 @@ export default function WallpaperSection() {
       </button>
 
       {image && (
-        <div className="mt-4">
-          <div className="flex items-center justify-between mb-1">
-            <label className="label text-xs mb-0">Затемнение</label>
-            <span className="text-xs text-surface-500 dark:text-surface-400">{dim}%</span>
+        <>
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-1">
+              <label className="label text-xs mb-0">Затемнение</label>
+              <span className="text-xs text-surface-500 dark:text-surface-400">{view.dim}%</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={90}
+              step={5}
+              value={view.dim}
+              onChange={e => onSlide({ dim: Number(e.target.value) })}
+              className="w-full accent-primary-600"
+            />
+            <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-1">
+              Чем больше затемнение, тем спокойнее фон и тем лучше читаются таблицы.
+            </p>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={90}
-            step={5}
-            value={dim}
-            onChange={e => onDim(Number(e.target.value))}
-            className="w-full accent-primary-600"
-          />
-          <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-1">
-            Чем больше затемнение, тем спокойнее фон и тем лучше читаются таблицы.
-          </p>
-        </div>
+
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-1">
+              <label className="label text-xs mb-0">Размер</label>
+              <span className="text-xs text-surface-500 dark:text-surface-400">{view.scale}%</span>
+            </div>
+            <input
+              type="range"
+              min={30}
+              max={200}
+              step={5}
+              value={view.scale}
+              onChange={e => onSlide({ scale: Number(e.target.value) })}
+              className="w-full accent-primary-600"
+            />
+            <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-1">
+              100% — картинка заполняет экран. Меньше — уменьшается и вокруг остаётся фон темы
+              (логотип не обрежется). Больше — приближается.
+            </p>
+            {view.scale !== 100 && !view.ratio && (
+              <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-1">
+                Для этой картинки размер не применится — загрузите её заново.
+              </p>
+            )}
+          </div>
+        </>
       )}
     </div>
   )
