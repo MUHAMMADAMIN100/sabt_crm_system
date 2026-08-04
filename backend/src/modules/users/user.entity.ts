@@ -114,6 +114,22 @@ export class User {
   @Column({ type: 'varchar', length: 128, nullable: true })
   themeColor: string | null;
 
+  /** Персональные обои интерфейса — data URI (base64 JPEG/PNG/WEBP).
+   *  Лежат в БАЗЕ, а не на диске: диск на Railway эфемерный и чистится при
+   *  редеплое (так пропадают аватары), а фон должен переживать обновления.
+   *
+   *  select: false — колонка тяжёлая (сотни килобайт), а User джойнится
+   *  почти в каждый ответ (исполнители задач, участники проектов, авторы
+   *  комментариев). Без этого один список задач тащил бы обои всех
+   *  участников. Читаем явным addSelect только там, где картинка нужна. */
+  @Column({ type: 'text', nullable: true, select: false })
+  backgroundImage: string | null;
+
+  /** Затемнение поверх обоев, 0..90 %. На светлом фото без него не читаются
+   *  ни текст, ни таблицы, поэтому настройка обязательная, а не украшение. */
+  @Column({ type: 'int', default: 40 })
+  backgroundDim: number;
+
   @Column({ default: true })
   isActive: boolean;
 

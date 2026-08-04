@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Request, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { diskStorage } from 'multer';
+import { diskStorage, memoryStorage } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { UsersService } from './users.service';
@@ -35,6 +35,27 @@ const AVATAR_MULTER_CONFIG = {
     }
     if (!AVATAR_ALLOWED_MIME.has(file.mimetype)) {
       return cb(new BadRequestException(`Аватар: тип ${file.mimetype} запрещён.`), false);
+    }
+    cb(null, true);
+  },
+};
+
+/** Кому доступны персональные обои интерфейса. По требованию владельца —
+ *  проект-менеджер разработки; основатель и сооснователь добавлены, чтобы
+ *  настройку можно было увидеть и проверить у себя. */
+const BACKGROUND_ROLES = [UserRole.PM_DEV, UserRole.FOUNDER, UserRole.CO_FOUNDER] as const;
+
+/** Обои: файл идёт В ПАМЯТЬ и уезжает в БД. На диск класть нельзя — он на
+ *  Railway эфемерный, фон слетал бы при каждом редеплое. 4 МБ на входе:
+ *  фронт сжимает картинку до ~300 КБ, запас на несжатый PNG со смартфона. */
+const BACKGROUND_MULTER_CONFIG = {
+  storage: memoryStorage(),
+  limits: { fileSize: 4 * 1024 * 1024, files: 1 },
+  fileFilter: (_req: any, file: Express.Multer.File, cb: any) => {
+    // SVG запрещён намеренно: это XML, внутри может быть <script> — а мы
+    // отдаём картинку обратно как data URI.
+    if (!AVATAR_ALLOWED_MIME.has(file.mimetype)) {
+      return cb(new BadRequestException(`Фон: тип ${file.mimetype} запрещён. Только JPG/PNG/WEBP.`), false);
     }
     cb(null, true);
   },
@@ -159,6 +180,45 @@ export class UsersController {
     if (!file) throw new BadRequestException('Файл не загружен');
     // Self-edit — actor.id совпадает с целевым id, assertCanManage skip'нется.
     return this.usersService.updateAvatar(req.user.id, file.filename, { id: req.user.id, role: req.user.role });
+  }
+
+  // ─── Персональные обои интерфейса ────────────────────────────────────
+  // Настройка своя у каждого и никого больше не касается, поэтому все три
+  // ручки работают только со «своим» пользователем (req.user.id) — чужой
+  // фон не прочитать и не переписать даже основателю.
+
+  /** Свои обои. Отдаём отдельной ручкой, а не в /auth/me: картинка весит
+   *  сотни килобайт, а /auth/me дёргается при каждом F5 и в интерцепторах. */
+  @Get('me/background')
+  getMyBackground(@Request() req) {
+    return this.usersService.getBackground(req.user.id);
+  }
+
+  /** Загрузка обоев. Файл идёт в память и сохраняется в БД как data URI —
+   *  на диск класть нельзя, он на Railway эфемерный. */
+  @Patch('me/background')
+  @Roles(...BACKGROUND_ROLES)
+  @UseInterceptors(FileInterceptor('background', BACKGROUND_MULTER_CONFIG))
+  setMyBackground(
+    @Request() req,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { dim?: string },
+  ) {
+    if (!file) throw new BadRequestException('Файл не загружен');
+    return this.usersService.setBackground(req.user.id, file, body?.dim);
+  }
+
+  /** Затемнение отдельно — двигается ползунком, картинку заново не гоняем. */
+  @Patch('me/background/dim')
+  @Roles(...BACKGROUND_ROLES)
+  setMyBackgroundDim(@Request() req, @Body() body: { dim?: number }) {
+    return this.usersService.setBackgroundDim(req.user.id, body?.dim);
+  }
+
+  @Delete('me/background')
+  @Roles(...BACKGROUND_ROLES)
+  clearMyBackground(@Request() req) {
+    return this.usersService.clearBackground(req.user.id);
   }
 
   /** Админ/основатель/сооснователь меняет аватар любого сотрудника.

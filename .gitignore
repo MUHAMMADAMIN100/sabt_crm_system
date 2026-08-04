@@ -25,3 +25,9 @@ coverage/
 # Firebase service account (секретный ключ FCM-пушей) — НИКОГДА не коммитить.
 firebase-service-account.json
 *service-account*.json
+
+# Одноразовые скрипты отладки и сидинга в корне backend (_repro_*, _seed_*
+# и т.п.). В них регулярно оказываются строки подключения и тестовые пароли
+# открытым текстом — правило не даёт закоммитить их случайным `git add .`.
+/backend/_*.js
+/backend/_*.ts

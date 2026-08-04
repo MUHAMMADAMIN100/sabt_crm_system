@@ -12,6 +12,7 @@ import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import TwoFactorSection from '@/components/profile/TwoFactorSection'
 import ThemeEditorSection from '@/components/profile/ThemeEditorSection'
+import WallpaperSection from '@/components/profile/WallpaperSection'
 
 export default function ProfilePage() {
   const user = useAuthStore(s => s.user)
@@ -236,6 +237,9 @@ export default function ProfilePage() {
 
       {/* Персональная тема интерфейса (5-цветный редактор) */}
       <ThemeEditorSection />
+
+      {/* Персональные обои — сама секция решает, показываться ли роли */}
+      <WallpaperSection />
 
       {/* 2FA — двухфакторная аутентификация */}
       <TwoFactorSection />

@@ -90,7 +90,10 @@ export default function Layout() {
   }, [])
 
   return (
-    <div className="flex h-screen bg-surface-100 dark:bg-surface-900 overflow-hidden">
+    // app-shell — якорь для персональных обоев (lib/wallpaper.ts). Картинка
+    // ложится на этот же слой поверх цвета фона, поэтому шапка, сайдбар и
+    // карточки рисуются над ней без возни с z-index.
+    <div className="app-shell flex h-screen bg-surface-100 dark:bg-surface-900 overflow-hidden">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div

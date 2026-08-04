@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { User, UserRole } from './user.entity';
@@ -379,6 +379,73 @@ export class UsersService {
     await this.repo.update(userId, { fcmTokens: tokens.length ? tokens : null });
     this.fcmLogger.warn(`FCM: токен устройства удалён (user ${userId}, осталось: ${tokens.length})`);
     return { success: true };
+  }
+
+  // ─── Персональные обои интерфейса ────────────────────────────────────
+  // Картинка живёт в БД, а не на диске: диск на Railway эфемерный, при
+  // редеплое файлы стираются. Все методы работают строго со «своим»
+  // пользователем — чужие обои недоступны никому, включая основателя.
+
+  /** 700 КБ на data URI. Фронт сжимает картинку до ~300 КБ, потолок нужен на
+   *  случай запроса в обход интерфейса: колонка тянется на каждый вход. */
+  private static readonly MAX_BACKGROUND_BYTES = 700 * 1024;
+
+  /** Белый список типов картинки-фона. Дублирует fileFilter контроллера
+   *  намеренно: значение уходит в CSS, одного барьера мало. */
+  private static readonly BACKGROUND_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+  /** Затемнение держим в разумных рамках: 100 % — сплошная заливка, при
+   *  которой картинки просто не видно, а отрицательное значение сломало бы
+   *  CSS-градиент. */
+  private clampDim(value: unknown, fallback = 40): number {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(90, Math.max(0, Math.round(n)));
+  }
+
+  async getBackground(userId: string): Promise<{ image: string | null; dim: number }> {
+    // backgroundImage помечена select:false — читаем явно.
+    const row = await this.repo
+      .createQueryBuilder('u')
+      .select(['u.id', 'u.backgroundDim'])
+      .addSelect('u.backgroundImage')
+      .where('u.id = :id', { id: userId })
+      .getOne();
+    return { image: row?.backgroundImage ?? null, dim: this.clampDim(row?.backgroundDim) };
+  }
+
+  async setBackground(userId: string, file: Express.Multer.File, dim?: unknown) {
+    if (!file?.buffer?.length) throw new BadRequestException('Файл пустой');
+    // Размер считаем ДО кодирования: base64 раздувает данные на треть, и
+    // гонять эту строку в памяти только чтобы её отвергнуть — незачем.
+    const encodedSize = Math.ceil(file.buffer.length / 3) * 4;
+    if (encodedSize > UsersService.MAX_BACKGROUND_BYTES) {
+      const kb = Math.round(encodedSize / 1024);
+      throw new BadRequestException(
+        `Картинка слишком большая (${kb} КБ после кодирования). Максимум 700 КБ — выберите изображение поменьше.`,
+      );
+    }
+    // Тип берём из белого списка, а не из присланного заголовка: значение
+    // подставляется в CSS внутрь url("…"), и произвольная строка оттуда
+    // означала бы инъекцию стилей.
+    const mime = UsersService.BACKGROUND_MIME.has(file.mimetype) ? file.mimetype : 'image/jpeg';
+    const dataUri = `data:${mime};base64,${file.buffer.toString('base64')}`;
+    const nextDim = dim === undefined ? undefined : this.clampDim(dim);
+    await this.repo.update(userId, {
+      backgroundImage: dataUri,
+      ...(nextDim === undefined ? {} : { backgroundDim: nextDim }),
+    });
+    return this.getBackground(userId);
+  }
+
+  async setBackgroundDim(userId: string, dim: unknown) {
+    await this.repo.update(userId, { backgroundDim: this.clampDim(dim) });
+    return this.getBackground(userId);
+  }
+
+  async clearBackground(userId: string) {
+    await this.repo.update(userId, { backgroundImage: null });
+    return this.getBackground(userId);
   }
 
   async updateAvatar(id: string, avatar: string, actor?: { id: string; role?: string }) {

@@ -170,6 +170,10 @@ api.interceptors.response.use(
       }
       try { localStorage.removeItem('token') } catch {}
       try { localStorage.removeItem('auth-storage') } catch {}
+      // Кэш персональных обоев — тоже локальные данные конкретного
+      // сотрудника: на общем компьютере следующий не должен увидеть чужую
+      // картинку после того, как сессия протухла.
+      try { localStorage.removeItem('wallpaper') } catch {}
       tokenStore.clear()
       window.location.href = '/auth'
     }
