@@ -15,7 +15,7 @@ import { create } from 'zustand'
 /** Кому доступны обои. Должен совпадать с BACKGROUND_ROLES на бэкенде
  *  (users.controller.ts): разъедутся — сотрудник увидит настройку, которую
  *  сервер ему сохранить не даст. */
-export const WALLPAPER_ROLES = ['pm_dev', 'founder', 'co_founder']
+export const WALLPAPER_ROLES = ['pm_dev', 'sales_manager_dev', 'founder', 'co_founder']
 
 /** RolesGuard на бэкенде пускает и по второй роли сотрудника, поэтому здесь
  *  проверяем обе — иначе у совместителя настройка была бы не видна, хотя
