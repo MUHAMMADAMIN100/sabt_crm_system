@@ -568,6 +568,17 @@ export class FinanceService implements OnModuleInit {
       // должна подняться даже при временной проблеме справочников/БД.
       this.logger.warn(`notion transaction-history migration failed: ${String(e?.message || e).slice(0, 200)}`);
     }
+
+    // Идемпотентная сверка SMM-циклов восстанавливает пропущенные остатки у
+    // уже проведённых частичных оплат. Это важно после обновления логики:
+    // денежную транзакцию не переписываем, добавляем только недостающий план.
+    try {
+      const smmProjects = (await this.projRepo.find())
+        .filter(project => project.direction === 'smm' && isEarning(project));
+      for (const project of smmProjects) await this.ensureSmmFollowUps(project.id);
+    } catch (e: any) {
+      this.logger.warn(`smm startup reconciliation failed: ${String(e?.message || e).slice(0, 200)}`);
+    }
   }
 
   /** Точные итоги набора исторических проводок — одновременно аудит импорта
@@ -2707,21 +2718,52 @@ export class FinanceService implements OnModuleInit {
       // Текущий цикл = месяц последней полученной оплаты.
       const yms = received.map(x => x.ym).sort();
       const lastYm = yms[yms.length - 1];
-      const cycleReceived = r2(received.filter(x => x.ym === lastYm).reduce((s, x) => s + Number(x.amount), 0));
+      const cycleParts = received.filter(x => x.ym === lastYm);
+      const cycleReceived = r2(cycleParts.reduce((s, x) => s + Number(x.amount), 0));
       const monthPlans = plans.filter(x => x.ym === lastYm);
 
       if (cycleReceived < tariff - 0.005) {
-        // Остаток не покрыт: нужна ожидаемая часть 2 (не дублируем ручные планы).
-        if (monthPlans.some(x => x.partNo === 2 || x.status === 'expected')) return;
-        const lastPart = received.filter(x => x.ym === lastYm).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)).pop();
-        const lastTx = lastPart?.receivedTxId
-          ? await this.txRepo.findOne({ where: { id: lastPart.receivedTxId } })
-          : null;
-        const baseDate = lastTx?.date || todayISO();
-        await this.ppRepo.save(this.ppRepo.create({
-          projectId, ym: lastYm, partNo: 2, amount: r2(tariff - cycleReceived),
-          status: 'expected', dueDate: addDays(baseDate, PART2_DUE_DAYS), auto: true,
-        }));
+        // Срок остатка отсчитывается именно от ПЕРВОЙ фактической оплаты
+        // цикла, а не от последующей доплаты или даты запуска сервера.
+        const datedParts: Array<{ part: FinancePlannedPayment; date: string }> = [];
+        for (const part of cycleParts) {
+          const tx = part.receivedTxId
+            ? await this.txRepo.findOne({ where: { id: part.receivedTxId } })
+            : null;
+          if (tx?.date) datedParts.push({ part, date: tx.date });
+        }
+        const preferred = datedParts.some(x => x.part.partNo === 1)
+          ? datedParts.filter(x => x.part.partNo === 1)
+          : datedParts;
+        preferred.sort((a, b) => a.date.localeCompare(b.date)
+          || ((a.part.createdAt?.getTime?.() ?? 0) - (b.part.createdAt?.getTime?.() ?? 0)));
+        const baseDate = preferred[0]?.date
+          || dueDateForMonth(lastYm, contractDay(p.contractDate) ?? 1);
+        const dueDate = addDays(baseDate, PART2_DUE_DAYS);
+        const remainder = r2(tariff - cycleReceived);
+
+        // Если до частичной оплаты уже был план полной первой части, он не
+        // должен блокировать остаток: превращаем его в часть 2 и уменьшаем.
+        // Существующий авто-остаток также актуализируем после правки операции.
+        const expected = monthPlans
+          .filter(x => x.status === 'expected')
+          .sort((a, b) => (a.partNo === b.partNo ? 0 : a.partNo === 2 ? -1 : 1))[0];
+        if (expected) {
+          expected.partNo = 2;
+          expected.amount = remainder;
+          // Ручной срок сохраняем как договорённость; системный план всегда
+          // следует правилу «первая оплата + 15 дней».
+          if (expected.auto || !expected.dueDate) expected.dueDate = dueDate;
+          await this.ppRepo.save(expected);
+        } else {
+          // Наличие уже полученной части 2 больше не блокирует следующий
+          // остаток: UI показывает полученную сумму в ячейке, а остаток — в
+          // блоке полной оплаты.
+          await this.ppRepo.save(this.ppRepo.create({
+            projectId, ym: lastYm, partNo: 2, amount: remainder,
+            status: 'expected', dueDate, auto: true,
+          }));
+        }
       } else {
         // Цикл покрыт. Якорь = дата платежа, закрывшего последний цикл:
         // просрочка сдвигает следующий срок, отмена оплаты откатывает якорь

@@ -363,6 +363,77 @@ describe('FinanceService correctness', () => {
     }
   });
 
+  it('creates an SMM remainder due 15 days after the first partial payment', async () => {
+    const project = {
+      id: 'american-marketplace', name: 'Американский Маркетплей',
+      direction: 'smm', tariff: 3_500, contractDate: '2026-08-01',
+      cycleAnchor: null, archived: false, status: 'active',
+    };
+    const firstPart = {
+      id: 'part-1', projectId: project.id, ym: '2026-08', partNo: 1,
+      amount: 2_000, status: 'received', receivedTxId: 'income-1', auto: true,
+      dueDate: null, createdAt: new Date('2026-08-05T08:00:00Z'),
+    };
+    projectRepo.findOne.mockResolvedValue(project);
+    plannedPaymentRepo.find.mockResolvedValue([firstPart]);
+    txRepo.findOne.mockResolvedValue(transaction({
+      id: 'income-1', type: FinanceTxType.INCOME, amount: 2_000,
+      date: '2026-08-05', projectId: project.id,
+    }));
+
+    await (service as any).ensureSmmFollowUps(project.id);
+
+    expect(plannedPaymentRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: project.id,
+      ym: '2026-08',
+      partNo: 2,
+      amount: 1_500,
+      status: 'expected',
+      dueDate: '2026-08-20',
+      auto: true,
+    }));
+  });
+
+  it('keeps the SMM remainder deadline anchored to part 1 after another partial payment', async () => {
+    const project = {
+      id: 'american-marketplace', name: 'Американский Маркетплей',
+      direction: 'smm', tariff: 3_500, contractDate: '2026-08-01',
+      cycleAnchor: null, archived: false, status: 'active',
+    };
+    const firstPart = {
+      id: 'part-1', projectId: project.id, ym: '2026-08', partNo: 1,
+      amount: 2_000, status: 'received', receivedTxId: 'income-1', auto: true,
+      dueDate: null, createdAt: new Date('2026-08-05T08:00:00Z'),
+    };
+    const secondPartial = {
+      id: 'part-2-partial', projectId: project.id, ym: '2026-08', partNo: 2,
+      amount: 500, status: 'received', receivedTxId: 'income-2', auto: false,
+      dueDate: null, createdAt: new Date('2026-08-12T08:00:00Z'),
+    };
+    projectRepo.findOne.mockResolvedValue(project);
+    plannedPaymentRepo.find.mockResolvedValue([firstPart, secondPartial]);
+    txRepo.findOne.mockImplementation(async (options: any) => {
+      const id = options?.where?.id;
+      return transaction({
+        id,
+        type: FinanceTxType.INCOME,
+        amount: id === 'income-1' ? 2_000 : 500,
+        date: id === 'income-1' ? '2026-08-05' : '2026-08-12',
+        projectId: project.id,
+      });
+    });
+
+    await (service as any).ensureSmmFollowUps(project.id);
+
+    expect(plannedPaymentRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: project.id,
+      partNo: 2,
+      amount: 1_000,
+      status: 'expected',
+      dueDate: '2026-08-20',
+    }));
+  });
+
   it('moves savings between accounts without changing the total balance', async () => {
     accountRepo.find.mockResolvedValue([
       {

@@ -239,8 +239,8 @@ export default function FinanceOverviewPage() {
           <div className="sub">план оплат по проектам</div>
         </div>
         <div className="card stat clickable" role="link" tabIndex={0}
-          onKeyDown={(e) => activateOnKey(e, () => navigate(withYm('/finance/expense/salary', ym)))}
-          onClick={() => navigate(withYm('/finance/expense/salary', ym))}>
+          onKeyDown={(e) => activateOnKey(e, () => navigate(ym === currentYm() ? '/finance/expense/salary' : withYm('/finance/expense/salary', ym)))}
+          onClick={() => navigate(ym === currentYm() ? '/finance/expense/salary' : withYm('/finance/expense/salary', ym))}>
           <div className="label"><FinIcon name="salary" size={15} /> К выплате ЗП за месяц</div>
           <div className="value">{money(stats.salaryToPay || 0)}</div>
           <div className="sub">фонд {money(stats.salaryFund || 0)}{(stats.salaryBonuses || 0) > 0 ? ` + бонусы ${money(stats.salaryBonuses)}` : ''} − авансы − выплачено</div>
