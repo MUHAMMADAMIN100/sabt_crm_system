@@ -638,7 +638,7 @@
   color: var(--green); font-size: 10px; font-weight: 700;
 }
 .fin-payment-month-summary {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 8px; margin-bottom: 9px;
 }
 .fin-payment-month-summary > span {
@@ -674,6 +674,12 @@
 .fin-payment-adjustments {
   margin: -1px 0 8px; color: var(--muted); font-size: 10.5px;
 }
+.fin-payment-rate-change {
+  margin: -1px 0 8px; padding: 6px 8px; border-radius: 8px;
+  background: var(--green-soft); color: var(--green); font-size: 10.5px;
+}
+.fin-payment-rate-change.down { background: var(--red-soft); color: var(--red); }
+.fin-payment-rate-change b { white-space: nowrap; }
 .fin-payment-events {
   padding: 0 9px; border: 1px solid var(--border); border-radius: 9px;
   background: color-mix(in srgb, var(--surface-2) 72%, var(--surface));

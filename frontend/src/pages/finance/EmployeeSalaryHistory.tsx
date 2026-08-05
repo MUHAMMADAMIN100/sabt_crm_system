@@ -31,6 +31,13 @@ type PayrollPeriod = {
   fine: number;
   accrued: number | null;
   paidByOperations: number;
+  finalPayment?: number;
+  bonusPaid?: number;
+  totalPaid?: number;
+  remaining?: number | null;
+  previousSalary?: number | null;
+  salaryDelta?: number | null;
+  unclassifiedPayment?: number;
   frozen: boolean;
   // Точная полученная сумма: из операций или исторического снимка.
   recordedPaid?: number | null;
@@ -169,13 +176,20 @@ function MonthPaymentHistory({ periods, rows }: { periods: PayrollPeriod[]; rows
         const { events, legacyAdvance } = eventsForPeriod(period, rows);
         const hasRecordedPaid = period.recordedPaid != null && Number.isFinite(Number(period.recordedPaid));
         const recordedFromHistory = period.frozen;
-        const received = hasRecordedPaid
+        const fallbackReceived = hasRecordedPaid
           ? Number(period.recordedPaid)
           : Number(period.paidByOperations) + legacyAdvance;
+        const received = Number.isFinite(Number(period.totalPaid))
+          ? Number(period.totalPaid)
+          : fallbackReceived;
+        const finalPayment = Number.isFinite(Number(period.finalPayment))
+          ? Number(period.finalPayment)
+          : events.filter(row => row.kind === 'salary').reduce((sum, row) => sum + Number(row.amount), 0);
         const accrued = Number(period.accrued ?? period.salary ?? 0);
-        const balance = accrued - received;
+        const balance = period.remaining == null ? accrued - received : Number(period.remaining);
         const settled = Math.abs(balance) < 0.005;
         const overpaid = balance < -0.005;
+        const salaryDelta = period.salaryDelta == null ? null : Number(period.salaryDelta);
 
         return (
           <article className="fin-payment-month" key={period.ym}>
@@ -190,22 +204,32 @@ function MonthPaymentHistory({ periods, rows }: { periods: PayrollPeriod[]; rows
             </div>
 
             <div className="fin-payment-month-summary">
-              <span><small>Фиксированная ставка</small><b>{money(Number(period.salary) || 0)}</b></span>
+              <span><small>Установленный оклад</small><b>{money(Number(period.salary) || 0)}</b></span>
+              <span><small>Аванс</small><b>{money(Number(period.advance) || 0)}</b></span>
+              <span><small>Окончательная выплата</small><b>{money(finalPayment)}</b></span>
               <span>
-                <small>{recordedFromHistory || legacyAdvance > 0 ? 'Зафиксировано получено' : 'Фактически получено'}</small>
+                <small>{recordedFromHistory || legacyAdvance > 0 ? 'Всего выплат зафиксировано' : 'Всего выплат'}</small>
                 <b>{money(received)}</b>
               </span>
               <span className={overpaid ? 'overpaid' : settled ? 'settled' : 'remaining'}>
-                <small>{overpaid ? 'Переплата' : 'Остаток'}</small>
+                <small>{overpaid ? 'Переплата' : balance > 0.005 ? 'Остаток к выплате' : 'Задолженности нет'}</small>
                 <b>{money(Math.abs(balance))}</b>
               </span>
             </div>
 
-            {(Number(period.bonus) > 0 || Number(period.fine) > 0) && (
+            {salaryDelta != null && Math.abs(salaryDelta) >= 0.005 && (
+              <p className={`fin-payment-rate-change ${salaryDelta > 0 ? 'up' : 'down'}`}>
+                Оклад изменён: {money(Number(period.previousSalary) || 0)} → {money(Number(period.salary) || 0)}{' '}
+                <b>{salaryDelta > 0 ? '+' : '−'}{money(Math.abs(salaryDelta))}</b>
+              </p>
+            )}
+
+            {(Number(period.bonus) > 0 || Number(period.fine) > 0 || Number(period.unclassifiedPayment) > 0) && (
               <p className="fin-payment-adjustments">
                 Начислено {money(accrued)}
                 {Number(period.bonus) > 0 ? ` · бонус ${money(period.bonus)}` : ''}
                 {Number(period.fine) > 0 ? ` · штраф ${money(period.fine)}` : ''}
+                {Number(period.unclassifiedPayment) > 0 ? ` · старая выплата без разбивки ${money(period.unclassifiedPayment!)}` : ''}
               </p>
             )}
 

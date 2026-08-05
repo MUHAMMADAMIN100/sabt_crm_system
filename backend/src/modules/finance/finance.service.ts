@@ -131,12 +131,12 @@ function isAdvanceTx(t: { comment?: string | null }): boolean {
  *  по нему операция и относится к своей колонке ведомости. */
 function salaryNoteOf(comment?: string | null): string | null {
   const raw = (comment || '').trim();
-  const m = raw.match(/^(зарплата|аванс|бонус)[ \t]*[—–-][ \t]*(.+)$/i);
+  const m = raw.match(/^(зарплата|аванс|бонус|премия)[ \t]*[—–-][ \t]*(.+)$/i);
   return m ? m[2].trim() || null : null;
 }
 
 function isBonusTx(t: { comment?: string | null }): boolean {
-  return (t.comment || '').trim().toLowerCase().startsWith('бонус');
+  return /^(бонус|премия)(?:$|\s|[—–-])/i.test((t.comment || '').trim());
 }
 
 /** Штраф сотрудника за месяц — вычитается из «к выплате». */
@@ -3572,6 +3572,7 @@ export class FinanceService implements OnModuleInit {
     const rows = txs
       .map(t => {
         const kind = isAdvanceTx(t) ? 'advance' : isBonusTx(t) ? 'bonus' : 'salary';
+        const premium = /^(премия)(?:$|\s|[—–-])/i.test((t.comment || '').trim());
         const splitNames = (t.splits || []).map(split => {
           const account = m.accounts.find(a => a.key === split.account);
           return account?.name || split.account;
@@ -3582,7 +3583,7 @@ export class FinanceService implements OnModuleInit {
         return {
           id: t.id,
           kind,
-          kindLabel: kind === 'advance' ? 'Аванс' : kind === 'bonus' ? 'Бонус' : 'Зарплата',
+          kindLabel: kind === 'advance' ? 'Аванс' : kind === 'bonus' ? (premium ? 'Премия' : 'Бонус') : 'Зарплата',
           amount: r2(Number(t.amount)),
           date: t.date,
           salaryYm: t.salaryYm || ymOf(t.date),
@@ -3658,6 +3659,7 @@ export class FinanceService implements OnModuleInit {
         const periodRows = rows.filter(r => r.salaryYm === ym);
         const txAdvance = r2(periodRows.filter(r => r.kind === 'advance').reduce((s, r) => s + r.amount, 0));
         const txBonus = r2(periodRows.filter(r => r.kind === 'bonus').reduce((s, r) => s + r.amount, 0));
+        const txSalary = r2(periodRows.filter(r => r.kind === 'salary').reduce((s, r) => s + r.amount, 0));
         const paidByOperations = r2(periodRows.reduce((s, r) => s + r.amount, 0));
         // Историческая таблица Notion сохранила только общую сумму месяца.
         // Не превращаем её в ставку, начисление, снапшот или банковскую
@@ -3672,13 +3674,23 @@ export class FinanceService implements OnModuleInit {
             fine: fineOf(e, ym),
             accrued: null,
             paidByOperations,
+            finalPayment: txSalary,
+            bonusPaid: txBonus,
+            totalPaid: r2(Number(legacyPayroll.paid) || 0),
+            remaining: null,
+            previousSalary: null,
+            salaryDelta: null,
+            unclassifiedPayment: r2(Number(legacyPayroll.paid) || 0),
             recordedPaid: r2(Number(legacyPayroll.paid) || 0),
             legacyCrmPaid: paidByOperations,
             legacySource: legacyPayroll.source,
             frozen: false,
           };
         }
-        const salary = snapshot ? r2(Number(snapshot.salary) || 0) : salaryForMonth(e, ym);
+        // Единственный источник ставки — salaryHistory/current salary. Суммы
+        // снапшота и операций описывают выплаты, но не могут создавать
+        // повышение/понижение или подменять установленный оклад месяца.
+        const salary = salaryForMonth(e, ym);
         const advance = snapshot
           ? r2(Number(snapshot.advance) || 0)
           : txAdvance > 0 ? txAdvance : advanceOf(e, ym);
@@ -3693,10 +3705,33 @@ export class FinanceService implements OnModuleInit {
         const recordedPaid = snapshot
           ? recordedSalarySnapshotPaid(snapshot, paidByOperations, txAdvance)
           : paidByOperations;
+        // Legacy-аванс мог сохраниться только в помесячном поле без операции.
+        // Он всё равно является частью выплаты этого расчётного месяца.
+        const legacyAdvance = Math.max(0, advance - txAdvance);
+        const totalPaid = snapshot ? recordedPaid : r2(paidByOperations + legacyAdvance);
+        const remaining = r2(accrued - totalPaid);
+        const previousYm = shiftYm(ym, -1);
+        const previousSalary = workedInFinanceMonth(e, previousYm)
+          ? salaryForMonth(e, previousYm)
+          : null;
+        const salaryDelta = previousSalary == null ? null : r2(salary - previousSalary);
+        // Для старых снимков часть общей выплаты может не иметь отдельной
+        // банковской строки. Показываем её отдельно, не называя зарплатой.
+        const unclassifiedPayment = r2(Math.max(
+          0,
+          totalPaid - advance - txSalary - txBonus,
+        ));
         return {
           ym, salary, advance, bonus, fine,
           accrued,
           paidByOperations,
+          finalPayment: txSalary,
+          bonusPaid: txBonus,
+          totalPaid,
+          remaining,
+          previousSalary,
+          salaryDelta,
+          unclassifiedPayment,
           recordedPaid,
           legacySource: null,
           frozen: !!snapshot,

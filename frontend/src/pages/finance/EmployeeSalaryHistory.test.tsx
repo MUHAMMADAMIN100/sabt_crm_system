@@ -81,8 +81,44 @@ describe('EmployeeSalaryHistory', () => {
     const juneLabel = within(monthHistory).getByText(/июнь 2026/i);
     expect(within(monthHistory).getAllByText(/июнь 2026/i)).toHaveLength(1);
     const june = juneLabel.closest('article')!;
-    expect(within(june).getByText('Зафиксировано получено')).toBeInTheDocument();
+    expect(within(june).getByText('Всего выплат зафиксировано')).toBeInTheDocument();
     expect(within(june).getAllByText('4 000 с.')).toHaveLength(2);
+  });
+
+  it('shows advance and final payment as parts of one month without a false raise', async () => {
+    mocks.employeePayouts.mockResolvedValueOnce({
+      currentSalary: 5_000,
+      salaryChanges: [
+        { effectiveYm: '2026-03', salary: 5_000, previousSalary: null, delta: null, isCurrent: true },
+      ],
+      rows: [{
+        id: 'advance', kind: 'advance', kindLabel: 'Аванс', amount: 1_500,
+        date: '2026-07-25', salaryYm: '2026-07', accountName: 'Наличные', note: null,
+      }, {
+        id: 'final', kind: 'salary', kindLabel: 'Зарплата', amount: 3_500,
+        date: '2026-08-05', salaryYm: '2026-07', accountName: 'Alif', note: null,
+      }],
+      periods: [{
+        ym: '2026-07', salary: 5_000, previousSalary: 5_000, salaryDelta: 0,
+        advance: 1_500, finalPayment: 3_500, bonus: 0, bonusPaid: 0, fine: 0,
+        accrued: 5_000, paidByOperations: 5_000, totalPaid: 5_000,
+        remaining: 0, recordedPaid: 5_000, frozen: true,
+      }],
+    });
+
+    renderHistory();
+
+    const july = (await screen.findByText('июль 2026', { selector: 'strong' })).closest('article')!;
+    expect(within(july).getByText('Установленный оклад')).toBeInTheDocument();
+    expect(within(july).getByText('Аванс', { selector: 'small' })).toBeInTheDocument();
+    expect(within(july).getByText('Окончательная выплата')).toBeInTheDocument();
+    expect(within(july).getByText('Всего выплат зафиксировано')).toBeInTheDocument();
+    expect(within(july).getByText('Задолженности нет')).toBeInTheDocument();
+    expect(within(july).getAllByText('5 000 с.')).toHaveLength(2);
+    expect(within(july).getAllByText('1 500 с.')).toHaveLength(2);
+    expect(within(july).getAllByText('3 500 с.')).toHaveLength(2);
+    expect(screen.queryByText('Повышение оклада')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Оклад изменён/)).not.toBeInTheDocument();
   });
 
   it('keeps a future fixed-rate change visible but does not call it current', async () => {

@@ -166,6 +166,23 @@ describe('FinanceService correctness', () => {
     );
   });
 
+  async function payoutHistory(
+    employee: Record<string, any>,
+    transactions: FinanceTransaction[],
+  ) {
+    employeeRepo.findOne.mockResolvedValue({
+      id: 'employee-1', name: 'Сотрудник', salary: 5_000,
+      hireDate: '2026-03-01', terminationDate: null, status: 'active',
+      employmentHistory: null, salaryHistory: { '2026-03': 5_000 },
+      salarySnapshots: null, legacyPayrollHistory: null,
+      advances: null, bonuses: null, fines: null,
+      ...employee,
+    });
+    jest.spyOn(service as any, 'maps').mockResolvedValue(emptyMaps);
+    txRepo.find.mockResolvedValue(transactions);
+    return service.employeePayoutHistory('employee-1', 0);
+  }
+
   it('subtracts only posted partial subscription payments from the monthly obligation', async () => {
     jest.spyOn(service as any, 'maps').mockResolvedValue(emptyMaps);
     jest.spyOn(service as any, 'salaryTxForMonth').mockResolvedValue([]);
@@ -902,6 +919,175 @@ describe('FinanceService correctness', () => {
     ]);
     expect(result.periods.find(period => period.ym === '2026-02')).toMatchObject({
       advance: 500,
+    });
+  });
+
+  it('does not treat an advance as a salary-rate change', async () => {
+    const result = await payoutHistory({}, [transaction({
+      id: 'advance', employeeId: 'employee-1', amount: 1_500,
+      date: '2026-07-20', salaryYm: '2026-07', comment: 'Аванс',
+    })]);
+
+    expect(result.salaryChanges).toEqual([
+      expect.objectContaining({ salary: 5_000, previousSalary: null, delta: null }),
+    ]);
+    expect(result.periods[0]).toMatchObject({
+      ym: '2026-07', salary: 5_000, previousSalary: 5_000, salaryDelta: 0,
+      advance: 1_500, finalPayment: 0, totalPaid: 1_500, remaining: 3_500,
+    });
+  });
+
+  it('ignores a legacy snapshot amount when the installed monthly rate is unchanged', async () => {
+    const result = await payoutHistory({
+      salarySnapshots: {
+        '2026-07': {
+          // Старая ошибочная запись: аванс попал в поле salary снимка.
+          salary: 1_500,
+          advance: 1_500,
+          bonus: 0,
+          fine: 0,
+          paid: 5_000,
+          paidAt: '2026-08-05',
+          paidIncludesAdvance: true,
+        },
+      },
+    }, [
+      transaction({
+        id: 'advance', employeeId: 'employee-1', amount: 1_500,
+        date: '2026-07-25', salaryYm: '2026-07', comment: 'Аванс',
+      }),
+      transaction({
+        id: 'final', employeeId: 'employee-1', amount: 3_500,
+        date: '2026-08-05', salaryYm: '2026-07', comment: 'Зарплата',
+      }),
+    ]);
+
+    expect(result.salaryChanges).toHaveLength(1);
+    expect(result.periods[0]).toMatchObject({
+      salary: 5_000,
+      previousSalary: 5_000,
+      salaryDelta: 0,
+      advance: 1_500,
+      finalPayment: 3_500,
+      totalPaid: 5_000,
+      remaining: 0,
+    });
+  });
+
+  it('reports a real salary increase from the installed monthly rates', async () => {
+    const result = await payoutHistory({
+      salaryHistory: { '2026-03': 4_000, '2026-07': 5_000 },
+    }, [transaction({
+      id: 'salary', employeeId: 'employee-1', amount: 5_000,
+      date: '2026-08-05', salaryYm: '2026-07', comment: 'Зарплата',
+    })]);
+
+    expect(result.salaryChanges[0]).toMatchObject({
+      effectiveYm: '2026-07', previousSalary: 4_000, salary: 5_000, delta: 1_000,
+    });
+    expect(result.periods[0]).toMatchObject({
+      previousSalary: 4_000, salary: 5_000, salaryDelta: 1_000,
+    });
+  });
+
+  it('reports a real salary decrease from the installed monthly rates', async () => {
+    const result = await payoutHistory({
+      salary: 4_000,
+      salaryHistory: { '2026-03': 5_000, '2026-07': 4_000 },
+    }, [transaction({
+      id: 'salary', employeeId: 'employee-1', amount: 4_000,
+      date: '2026-08-05', salaryYm: '2026-07', comment: 'Зарплата',
+    })]);
+
+    expect(result.salaryChanges[0]).toMatchObject({
+      effectiveYm: '2026-07', previousSalary: 5_000, salary: 4_000, delta: -1_000,
+    });
+    expect(result.periods[0]).toMatchObject({
+      previousSalary: 5_000, salary: 4_000, salaryDelta: -1_000,
+    });
+  });
+
+  it('combines advance and final salary paid on different dates', async () => {
+    const result = await payoutHistory({}, [
+      transaction({
+        id: 'advance', employeeId: 'employee-1', amount: 1_500,
+        date: '2026-07-25', salaryYm: '2026-07', comment: 'Аванс',
+      }),
+      transaction({
+        id: 'final', employeeId: 'employee-1', amount: 3_500,
+        date: '2026-08-05', salaryYm: '2026-07', comment: 'Зарплата',
+      }),
+    ]);
+
+    expect(result.periods).toHaveLength(1);
+    expect(result.periods[0]).toMatchObject({
+      ym: '2026-07', advance: 1_500, finalPayment: 3_500,
+      totalPaid: 5_000, remaining: 0, salaryDelta: 0,
+    });
+  });
+
+  it('attributes a current-calendar-month payment to its earlier salary period', async () => {
+    const result = await payoutHistory({}, [transaction({
+      id: 'july-paid-in-august', employeeId: 'employee-1', amount: 3_500,
+      date: '2026-08-05', salaryYm: '2026-07', comment: 'Зарплата',
+    })]);
+
+    expect(result.rows[0]).toMatchObject({ date: '2026-08-05', salaryYm: '2026-07' });
+    expect(result.periods[0]).toMatchObject({
+      ym: '2026-07', finalPayment: 3_500, totalPaid: 3_500, remaining: 1_500,
+    });
+  });
+
+  it('shows the remaining debt after only part of salary is paid', async () => {
+    const result = await payoutHistory({}, [transaction({
+      id: 'partial', employeeId: 'employee-1', amount: 2_000,
+      date: '2026-08-05', salaryYm: '2026-07', comment: 'Зарплата',
+    })]);
+
+    expect(result.periods[0]).toMatchObject({
+      salary: 5_000, finalPayment: 2_000, totalPaid: 2_000, remaining: 3_000,
+    });
+  });
+
+  it('keeps premium and fine separate from salary-rate changes', async () => {
+    const result = await payoutHistory({
+      fines: { '2026-07': 200 },
+    }, [
+      transaction({
+        id: 'premium', employeeId: 'employee-1', amount: 500,
+        date: '2026-08-05', salaryYm: '2026-07', comment: 'Премия — за результат',
+      }),
+      transaction({
+        id: 'salary', employeeId: 'employee-1', amount: 4_800,
+        date: '2026-08-05', salaryYm: '2026-07', comment: 'Зарплата',
+      }),
+    ]);
+
+    expect(result.salaryChanges).toHaveLength(1);
+    expect(result.rows.find(row => row.id === 'premium')).toMatchObject({
+      kind: 'bonus', kindLabel: 'Премия', note: 'за результат',
+    });
+    expect(result.periods[0]).toMatchObject({
+      salary: 5_000, bonus: 500, bonusPaid: 500, fine: 200,
+      accrued: 5_300, totalPaid: 5_300, remaining: 0, salaryDelta: 0,
+    });
+  });
+
+  it('sums several final payments inside one salary period', async () => {
+    const result = await payoutHistory({}, [
+      transaction({
+        id: 'part-1', employeeId: 'employee-1', amount: 1_000,
+        date: '2026-08-03', salaryYm: '2026-07', comment: 'Зарплата — часть 1',
+      }),
+      transaction({
+        id: 'part-2', employeeId: 'employee-1', amount: 2_500,
+        date: '2026-08-05', salaryYm: '2026-07', comment: 'Зарплата — часть 2',
+      }),
+    ]);
+
+    expect(result.periods).toHaveLength(1);
+    expect(result.periods[0]).toMatchObject({
+      finalPayment: 3_500, totalPaid: 3_500, remaining: 1_500,
     });
   });
 
