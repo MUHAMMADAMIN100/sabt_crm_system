@@ -5,6 +5,7 @@ import {
   FinanceTxType,
 } from './finance-transaction.entity';
 import {
+  repairFinanceSalaryHistory,
   salaryForFinanceMonth,
   workedInFinanceMonth,
 } from './finance-calculations';
@@ -356,6 +357,38 @@ describe('FinanceService correctness', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('uses salaryHistory instead of a legacy snapshot amount in a closed payroll row', async () => {
+    employeeRepo.find.mockResolvedValue([{
+      id: 'employee-1', name: 'Сотрудник', salary: 5_000,
+      hireDate: '2026-03-01', terminationDate: null, status: 'active',
+      employmentHistory: null,
+      salaryHistory: { '2026-03': 5_000 },
+      salarySnapshots: {
+        '2026-06': {
+          salary: 1_500,
+          advance: 1_500,
+          bonus: 0,
+          fine: 0,
+          paid: 3_500,
+          paidAt: '2026-07-10',
+        },
+      },
+    }]);
+    jest.spyOn(service as any, 'maps').mockResolvedValue(emptyMaps);
+    jest.spyOn(service as any, 'salaryTxForMonth').mockResolvedValue([]);
+    txRepo.find.mockResolvedValue([]);
+
+    const result = await service.expenseDetail('salary', '2026-06');
+
+    expect(result.rows[0]).toMatchObject({
+      salary: 5_000,
+      advance: 1_500,
+      paid: 5_000,
+      frozen: true,
+    });
+    expect(result.cards.fund).toBe(5_000);
   });
 
   it('makes the current month primary after the previous month is closed', async () => {
@@ -1459,6 +1492,61 @@ describe('salaryForFinanceMonth', () => {
     };
     expect(salaryForFinanceMonth(employee, '2026-06')).toBe(5_000);
     expect(salaryForFinanceMonth(employee, '2026-07')).toBe(7_000);
+  });
+});
+
+describe('repairFinanceSalaryHistory', () => {
+  it('removes an advance/final-payment snapshot that was saved as a rate', () => {
+    expect(repairFinanceSalaryHistory({
+      salary: 1_500,
+      hireDate: '2026-04-30',
+      salaryHistory: {
+        '2026-04': 1_500,
+        '2026-06': 2_000,
+        '2026-07': 1_500,
+      },
+      salarySnapshots: {
+        '2026-06': { salary: 2_000 },
+      },
+    }, {
+      asOfYm: '2026-08',
+      baselineSalary: 1_500,
+    })).toEqual({ '2026-04': 1_500 });
+  });
+
+  it('repairs the old snapshot decrease but keeps the real current raise', () => {
+    expect(repairFinanceSalaryHistory({
+      salary: 5_000,
+      hireDate: '2026-03-26',
+      salaryHistory: {
+        '2026-03': 5_000,
+        '2026-06': 3_500,
+        '2026-07': 5_000,
+      },
+      salarySnapshots: {
+        '2026-06': { salary: 3_500 },
+      },
+    }, {
+      asOfYm: '2026-08',
+      baselineSalary: 4_000,
+      confirmedRates: { '2026-03': 4_000 },
+    })).toEqual({
+      '2026-03': 4_000,
+      '2026-07': 5_000,
+    });
+  });
+
+  it('preserves an explicitly entered rate even when a snapshot has the same amount', () => {
+    expect(repairFinanceSalaryHistory({
+      salary: 5_000,
+      hireDate: '2026-03-01',
+      salaryHistory: { '2026-03': 4_000, '2026-07': 5_000 },
+      salarySnapshots: { '2026-07': { salary: 5_000 } },
+    }, {
+      asOfYm: '2026-08',
+      baselineSalary: 4_000,
+      explicitRates: { '2026-07': 5_000 },
+    })).toEqual({ '2026-03': 4_000, '2026-07': 5_000 });
   });
 });
 

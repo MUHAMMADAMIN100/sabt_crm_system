@@ -15,8 +15,10 @@ const scenarios: Record<string, string> = { conservative: 'Осторожный'
 
 export default function FinancePlanningPage() {
   const qc = useQueryClient();
-  const [start, setStart] = useState(currentYm());
-  const [months, setMonths] = useState(12);
+  const currentYear = Number(currentYm().slice(0, 4));
+  const [year, setYear] = useState(currentYear);
+  const start = `${year}-01`;
+  const months = 12;
   const [scenario, setScenario] = useState('base');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -32,6 +34,12 @@ export default function FinancePlanningPage() {
   if (query.isLoading) return <div className="fin-root"><FinLoading cards={4} /></div>;
   if (query.isError) return <div className="fin-root"><FinLoadError onRetry={() => query.refetch()} /></div>;
   const data = query.data;
+  const availableYear = Number(String(data.availableFrom || start).slice(0, 4)) || year;
+  const firstYear = Math.min(availableYear, currentYear);
+  const lastYear = Math.max(currentYear + 5, year);
+  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index);
+  const visibleRows = data.rows.filter((row: any) => !data.availableFrom || row.ym >= data.availableFrom);
+  const periodStart = data.availableFrom?.startsWith(`${year}-`) ? data.availableFrom : `${year}-01`;
   return (
     <div className="fin-root">
       <div className="page-head">
@@ -39,17 +47,10 @@ export default function FinancePlanningPage() {
         <button className="btn primary" onClick={() => setAdding(true)}>+ Корректировка</button>
       </div>
       <div className="fin-plan-controls">
-        <div className="field fin-plan-start-field">
-          <label>Начать с</label>
-          <input type="month" value={start} onChange={e => setStart(e.target.value)} />
-          {data.availableFrom && data.availableFrom < start && (
-            <button type="button" className="fin-plan-history-link"
-              onClick={() => setStart(data.availableFrom)}>
-              Вся история · с {monthLabel(data.availableFrom, true)}
-            </button>
-          )}
+        <div className="field fin-plan-period-field">
+          <label>Период планирования</label>
+          <strong>{monthLabel(periodStart, true)} — {monthLabel(`${year}-12`, true)}</strong>
         </div>
-        <div className="field"><label>Горизонт</label><select value={months} onChange={e => setMonths(Number(e.target.value))}><option value={6}>6 месяцев</option><option value={12}>12 месяцев</option><option value={24}>24 месяца</option></select></div>
         <div className="fin-segments" role="group" aria-label="Сценарий прогноза">
           {Object.entries(scenarios).map(([key, label]) => (
             <button key={key} className={scenario === key ? 'active' : ''}
@@ -66,8 +67,8 @@ export default function FinancePlanningPage() {
       </div>
       <div className="card fin-plan-chart">
         <div className="fin-plan-chart-head"><div><strong>Денежный поток</strong><span>Столбцы — поступления и выплаты, синяя область — прогноз остатка</span></div><span className="fin-plan-scenario">{scenarios[scenario]}</span></div>
-        <div className="fin-plan-chart-scroll"><div className="fin-plan-chart-canvas" style={{ minWidth: Math.max(680, data.rows.length * 76) }}>
-        <ResponsiveContainer width="100%" height={320}><ComposedChart data={data.rows} margin={{ top: 8, right: 12, bottom: 4, left: 0 }}>
+        <div className="fin-plan-chart-scroll"><div className="fin-plan-chart-canvas" style={{ minWidth: Math.max(680, visibleRows.length * 76) }}>
+        <ResponsiveContainer width="100%" height={320}><ComposedChart data={visibleRows} margin={{ top: 8, right: 12, bottom: 4, left: 0 }}>
           <defs><linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563eb" stopOpacity={.22}/><stop offset="95%" stopColor="#2563eb" stopOpacity={.015}/></linearGradient></defs>
           <CartesianGrid strokeDasharray="4 5" vertical={false} stroke="#94a3b833" /><XAxis dataKey="ym" tickFormatter={(v) => monthLabel(v)} axisLine={false} tickLine={false} />
           <YAxis tickFormatter={(v) => `${Math.round(v / 1000)}к`} axisLine={false} tickLine={false} width={52} />
@@ -82,7 +83,7 @@ export default function FinancePlanningPage() {
         </div></div>
       </div>
       <div className="table-wrap"><table><thead><tr><th>Месяц</th><th>Доход · факт / осталось</th><th>Расход · факт / осталось</th><th>Результат</th><th>Баланс сейчас / после плана</th></tr></thead><tbody>
-        {data.rows.map((r: any) => {
+        {visibleRows.map((r: any) => {
           const toggle = () => setExpanded(expanded === r.ym ? null : r.ym);
           return <Fragment key={r.ym}><tr className="clickable" aria-expanded={expanded === r.ym}
             tabIndex={0} onClick={toggle}
@@ -111,6 +112,16 @@ export default function FinancePlanningPage() {
         </div></td></tr>}</Fragment>;
         })}
       </tbody></table></div>
+      <div className="fin-plan-year-nav" role="group" aria-label="Выбор года планирования">
+        <button type="button" className="btn ghost" disabled={year <= firstYear} onClick={() => setYear(year - 1)}>‹</button>
+        <label>
+          <span>Другой год</span>
+          <select aria-label="Другой год" value={year} onChange={event => setYear(Number(event.target.value))}>
+            {years.map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </label>
+        <button type="button" className="btn ghost" onClick={() => setYear(year + 1)}>›</button>
+      </div>
       {adding && <AdjustmentModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); qc.invalidateQueries({ queryKey: ['finance', 'forecast'] }); }} />}
     </div>
   );

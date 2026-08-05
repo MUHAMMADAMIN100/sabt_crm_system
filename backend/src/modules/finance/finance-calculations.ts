@@ -65,6 +65,85 @@ export function salaryForFinanceMonth(
   return Math.round((Number.isFinite(amount) ? amount : 0) * 100) / 100;
 }
 
+type SalaryHistoryRepairEmployee = {
+  salary?: number | string | null;
+  hireDate?: string | null;
+  createdAt?: string | Date | null;
+  salaryHistory?: Record<string, number> | null;
+  salarySnapshots?: Record<string, { salary?: number | string | null } | null> | null;
+};
+
+type SalaryHistoryRepairOptions = {
+  asOfYm: string;
+  baselineSalary?: number | null;
+  confirmedRates?: Record<string, number>;
+  explicitRates?: Record<string, number>;
+};
+
+const VALID_YM = /^\d{4}-(0[1-9]|1[0-2])$/;
+const roundedAmount = (value: unknown) =>
+  Math.round((Number.isFinite(Number(value)) ? Number(value) : 0) * 100) / 100;
+
+/** Удаляет только артефакты старой миграции, которая ошибочно считала
+ * snapshot.salary установленным окладом. Ставки, явно сохранённые человеком,
+ * подтверждённые исходными данными и текущий оклад остаются источником истины. */
+export function repairFinanceSalaryHistory(
+  employee: SalaryHistoryRepairEmployee,
+  options: SalaryHistoryRepairOptions,
+): Record<string, number> {
+  const explicitRates = Object.fromEntries(Object.entries(options.explicitRates || {})
+    .filter(([ym]) => VALID_YM.test(ym))
+    .map(([ym, amount]) => [ym, roundedAmount(amount)]));
+  const confirmedRates = Object.fromEntries(Object.entries(options.confirmedRates || {})
+    .filter(([ym]) => VALID_YM.test(ym))
+    .map(([ym, amount]) => [ym, roundedAmount(amount)]));
+  const snapshots = employee.salarySnapshots || {};
+  const repaired: Record<string, number> = {};
+
+  for (const [ym, rawAmount] of Object.entries(employee.salaryHistory || {})) {
+    if (!VALID_YM.test(ym)) continue;
+    const amount = roundedAmount(rawAmount);
+    const snapshot = snapshots[ym];
+    const copiedFromSnapshot = snapshot != null
+      && Math.abs(amount - roundedAmount(snapshot.salary)) < FINANCE_AMOUNT_TOLERANCE;
+    const explicitlyConfirmed = (explicitRates[ym] != null
+      && Math.abs(explicitRates[ym] - amount) < FINANCE_AMOUNT_TOLERANCE)
+      || (confirmedRates[ym] != null
+        && Math.abs(confirmedRates[ym] - amount) < FINANCE_AMOUNT_TOLERANCE);
+    if (!copiedFromSnapshot || explicitlyConfirmed) repaired[ym] = amount;
+  }
+
+  const rawBaselineYm = String(employee.hireDate || employee.createdAt || options.asOfYm).slice(0, 7);
+  const baselineYm = VALID_YM.test(rawBaselineYm) ? rawBaselineYm : options.asOfYm;
+  if (options.baselineSalary != null) {
+    repaired[baselineYm] = roundedAmount(options.baselineSalary);
+  } else if (!Object.keys(repaired).some(ym => ym <= baselineYm)) {
+    repaired[baselineYm] = roundedAmount(employee.salary);
+  }
+
+  Object.assign(repaired, confirmedRates, explicitRates);
+
+  const hasFutureRate = Object.keys(repaired).some(ym => ym > options.asOfYm);
+  const currentSalary = roundedAmount(employee.salary);
+  if (!hasFutureRate
+    && Math.abs(salaryForFinanceMonth({ salary: currentSalary, salaryHistory: repaired }, options.asOfYm)
+      - currentSalary) >= FINANCE_AMOUNT_TOLERANCE) {
+    repaired[options.asOfYm] = currentSalary;
+  }
+
+  // После удаления ложной промежуточной точки одинаковые соседние ставки
+  // больше не являются изменением и не должны засорять историю.
+  const compact: Record<string, number> = {};
+  let previous: number | null = null;
+  for (const ym of Object.keys(repaired).sort()) {
+    const amount = repaired[ym];
+    if (previous != null && Math.abs(previous - amount) < FINANCE_AMOUNT_TOLERANCE) continue;
+    compact[ym] = amount;
+    previous = amount;
+  }
+  return compact;
+}
+
 /** Состав зарплатной ведомости на конкретный месяц. Для legacy-сотрудника
  * без даты увольнения закрытый снимок остаётся единственным надёжным фактом
  * его присутствия в старой ведомости. */

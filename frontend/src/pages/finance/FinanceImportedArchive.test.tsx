@@ -153,14 +153,13 @@ describe('imported Notion finance history', () => {
     });
 
     wrap(<FinancePlanningPage />);
-    const allHistory = await screen.findByRole('button', { name: 'Вся история · с март 2026' });
-    await act(async () => { await user.click(allHistory); });
     await waitFor(() => expect(mocks.forecast).toHaveBeenLastCalledWith({
-      start: '2026-03',
+      start: `${currentYm().slice(0, 4)}-01`,
       months: 12,
       scenario: 'base',
     }));
-    expect(screen.queryByRole('button', { name: 'Вся история · с март 2026' })).not.toBeInTheDocument();
+    expect(await screen.findByText(/март 2026 — декабрь 2026/i)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Другой год' })).toHaveValue('2026');
 
     const month = await screen.findByText('март 2026');
     expect(screen.getByText('переход на остатки CRM')).toHaveAttribute(
@@ -172,5 +171,14 @@ describe('imported Notion finance history', () => {
     expect(await screen.findByText('Оплата старого проекта')).toBeInTheDocument();
     expect(screen.getByLabelText('Notion · архив')).toHaveAttribute('title', IMPORTED_ARCHIVE_HINT);
     expect(screen.getByText(/12 март 2026.*категория: SMM.*счёт: Cash/)).toBeInTheDocument();
+
+    await act(async () => {
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Другой год' }), '2027');
+    });
+    await waitFor(() => expect(mocks.forecast).toHaveBeenLastCalledWith({
+      start: '2027-01',
+      months: 12,
+      scenario: 'base',
+    }));
   });
 });
