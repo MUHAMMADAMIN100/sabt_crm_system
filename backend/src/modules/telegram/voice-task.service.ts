@@ -44,8 +44,13 @@ export class VoiceTaskService {
   private readonly gemini: GoogleGenerativeAI | null;
   private readonly pending = new Map<string, Pending>();
 
-  /** Кому доступна голосовая постановка. По требованию владельца — основатель. */
-  private static readonly VOICE_ROLES: string[] = [UserRole.FOUNDER];
+  /** Кому доступна голосовая постановка. По требованию владельца — основатель
+   *  и менеджер продаж по разработке. Задача всегда личная и достаётся тому,
+   *  кто её наговорил, поэтому расширение списка ничего чужого не открывает. */
+  private static readonly VOICE_ROLES: string[] = [
+    UserRole.FOUNDER,
+    UserRole.SALES_MANAGER_DEV,
+  ];
 
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
