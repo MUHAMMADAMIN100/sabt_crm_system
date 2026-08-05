@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Area, Bar, CartesianGrid, ComposedChart, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, Bar, CartesianGrid, Cell, ComposedChart, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
 import { apiErr, currentYm, formatDate, money, monthLabel } from './finlib';
@@ -75,10 +75,14 @@ export default function FinancePlanningPage() {
           <Tooltip content={<PlanChartTooltip />} /><Legend iconType="circle" />
           <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1.5} />
           <Area type="monotone" dataKey="closingBalance" name="Остаток" stroke="#2563eb" fill="url(#balanceFill)" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} activeDot={{ r: 5 }} />
-          <Bar dataKey="actualIncome" name="Доход · факт" stackId="income" fill="#16a34a" maxBarSize={30} />
-          <Bar dataKey="plannedIncome" name="Доход · осталось получить" stackId="income" fill="#86efac" radius={[6, 6, 0, 0]} maxBarSize={30} />
-          <Bar dataKey="actualExpense" name="Расход · факт" stackId="expense" fill="#e11d48" maxBarSize={30} />
-          <Bar dataKey="plannedExpense" name="Расход · осталось оплатить" stackId="expense" fill="#fda4af" radius={[6, 6, 0, 0]} maxBarSize={30} />
+          <Bar dataKey="actualIncome" name="Доход · факт" stackId="income" fill="#16a34a" maxBarSize={30}>
+            {visibleRows.map((row: any) => <Cell key={row.ym} radius={(row.plannedIncome > 0 ? 0 : [8, 8, 0, 0]) as any} />)}
+          </Bar>
+          <Bar dataKey="plannedIncome" name="Доход · осталось получить" stackId="income" fill="#86efac" radius={[8, 8, 0, 0]} maxBarSize={30} />
+          <Bar dataKey="actualExpense" name="Расход · факт" stackId="expense" fill="#e11d48" maxBarSize={30}>
+            {visibleRows.map((row: any) => <Cell key={row.ym} radius={(row.plannedExpense > 0 ? 0 : [8, 8, 0, 0]) as any} />)}
+          </Bar>
+          <Bar dataKey="plannedExpense" name="Расход · осталось оплатить" stackId="expense" fill="#fda4af" radius={[8, 8, 0, 0]} maxBarSize={30} />
         </ComposedChart></ResponsiveContainer>
         </div></div>
       </div>
