@@ -154,11 +154,11 @@ export class VoiceTaskService {
 
   /** Аудио → смысл.
    *
-   *  Два пути, потому что формат голосовых у Telegram — OGG/Opus, а у Gemini
-   *  в списке поддерживаемых значится OGG/Vorbis. Если ключ Groq есть, речь
-   *  распознаёт Whisper (Opus для него родной), а Gemini разбирает уже текст.
-   *  Если ключа нет — отдаём аудио прямо в Gemini: обычно он его понимает.
-   *  Так фича не падает целиком из-за одного поставщика. */
+   *  Основной путь — отдать аудио прямо в Gemini: проверено на настоящем
+   *  OGG/Opus (формат голосовых Telegram), принимает и распознаёт русскую
+   *  речь. В документации у него значится OGG/Vorbis, поэтому оставлен и
+   *  второй путь: если появится ключ Groq, речь возьмёт Whisper, а Gemini
+   *  разберёт уже текст. Так фича не завязана на одного поставщика. */
   private async understand(audio: Buffer): Promise<VoiceIntent> {
     const viaWhisper = await this.transcribeWithGroq(audio);
     return viaWhisper !== null
@@ -242,7 +242,24 @@ ${transcript === null
     const parts: any[] = transcript === null && audio
       ? [{ inlineData: { mimeType: 'audio/ogg', data: audio.toString('base64') } }, { text: prompt }]
       : [{ text: prompt }];
-    const res = await model.generateContent(parts);
+
+    // Gemini регулярно отвечает 503 «model is overloaded» — это временно и
+    // проходит за секунды. Без повтора человек получал бы «не удалось
+    // разобрать» на совершенно исправном голосовом.
+    let res: any = null;
+    let lastErr: any = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        res = await model.generateContent(parts);
+        break;
+      } catch (e: any) {
+        lastErr = e;
+        if (!/503|overload|unavailable/i.test(e?.message || '')) throw e;
+        this.logger.warn(`Gemini перегружен, повтор ${attempt + 1}/3`);
+        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+      }
+    }
+    if (!res) throw lastErr;
 
     const raw = res.response.text().trim().replace(/^```(?:json)?|```$/g, '').trim();
     const parsed = JSON.parse(raw);
