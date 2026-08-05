@@ -27,26 +27,26 @@ export interface ThemeColors {
   accent: string
 }
 
-/** Дефолт = текущий ч/б монохром. */
+/** Дефолт — деловой графит: холодный нейтральный фон и сине-стальной
+ *  акцент. Совпадает с базовыми токенами в index.css. */
 export const DEFAULT_THEME: ThemeColors = {
-  text: '#18181b',
-  background: '#fafafa',
-  primary: '#18181b',
-  secondary: '#71717a',
-  accent: '#3f3f46',
+  text: '#161e28',
+  background: '#fcfdfe',
+  primary: '#1e4263',
+  secondary: '#6c798a',
+  accent: '#345a7c',
 }
 
-/** Быстрые пресеты-старты (можно потом докрутить пикером). */
+/** Деловые наборы. Свободная пипетка убрана намеренно: она позволяла
+ *  покрасить рабочую систему в розовый или лайм — ровно то, из-за чего
+ *  интерфейс переставал выглядеть серьёзно. Здесь четыре выверенных
+ *  варианта, каждый читаемый и сдержанный. */
 export const THEME_PRESETS: { name: string; colors: ThemeColors }[] = [
-  { name: 'Монохром',   colors: DEFAULT_THEME },
-  { name: 'Фиолетовый', colors: { text: '#1e1b2e', background: '#faf9ff', primary: '#6d4fcf', secondary: '#8b7fb8', accent: '#a855f7' } },
-  { name: 'Синий',      colors: { text: '#0f172a', background: '#f8fafc', primary: '#2563eb', secondary: '#64748b', accent: '#0ea5e9' } },
-  { name: 'Зелёный',    colors: { text: '#0f1f17', background: '#f6fdf9', primary: '#059669', secondary: '#5f897a', accent: '#10b981' } },
-  { name: 'Красный',    colors: { text: '#1f1414', background: '#fef7f7', primary: '#dc2626', secondary: '#9b6b6b', accent: '#f97316' } },
-  { name: 'Оранжевый',  colors: { text: '#1f1710', background: '#fffbf5', primary: '#ea580c', secondary: '#9c7a5c', accent: '#f59e0b' } },
-  { name: 'Бирюзовый',  colors: { text: '#0d1f1d', background: '#f3fdfb', primary: '#0d9488', secondary: '#5f8a85', accent: '#06b6d4' } },
-  { name: 'Розовый',    colors: { text: '#23131c', background: '#fff7fb', primary: '#db2777', secondary: '#a06b86', accent: '#ec4899' } },
-  { name: 'Тёмный',     colors: { text: '#e7e7ea', background: '#18181b', primary: '#818cf8', secondary: '#9ca3af', accent: '#34d399' } },
+  { name: 'Графит', colors: DEFAULT_THEME },
+  { name: 'Сталь',  colors: { text: '#16202b', background: '#fcfdfe', primary: '#1e4263', secondary: '#5c718a', accent: '#345a7c' } },
+  { name: 'Индиго', colors: { text: '#141a2e', background: '#fbfcff', primary: '#2b3a67', secondary: '#5f6b8c', accent: '#3f5288' } },
+  { name: 'Хаки',   colors: { text: '#1a1f16', background: '#fcfdfa', primary: '#3d4a2b', secondary: '#6b7558', accent: '#54663a' } },
+  { name: 'Тёмная', colors: { text: '#e8ecf1', background: '#161e28', primary: '#6a93bd', secondary: '#8fa2b8', accent: '#5c85b0' } },
 ]
 
 // ─── Цветовая математика ──────────────────────────────────────────────

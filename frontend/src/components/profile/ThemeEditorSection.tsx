@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { HexColorPicker } from 'react-colorful'
-import { Palette, Pipette, RotateCcw, Check, Sun, Moon } from 'lucide-react'
+import { Palette, RotateCcw, Sun, Moon } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { authApi } from '@/services/api.service'
@@ -31,7 +30,6 @@ export default function ThemeEditorSection() {
   const isCustom = useThemeStore(s => s.isCustom)
   const updateMode = useThemeStore(s => s.updateMode)
   const reset = useThemeStore(s => s.reset)
-  const [openRole, setOpenRole] = useState<keyof ThemeColors | null>(null)
 
   // Текущий режим интерфейса (light/dark) — он же определяет, какой набор
   // цветов мы сейчас редактируем. Переключение режима даёт живой предпросмотр.
@@ -53,26 +51,15 @@ export default function ThemeEditorSection() {
   }
 
   // Мгновенно применяем выбранному режиму; на сервер пишем по commit.
-  const changeColor = (key: keyof ThemeColors, hex: string) =>
-    updateMode(mode, { ...(useThemeStore.getState()[mode] as ThemeColors), [key]: hex })
+  const applyPreset = (colors: ThemeColors) => { updateMode(mode, colors); commit() }
 
-  const applyPreset = (colors: ThemeColors) => { updateMode(mode, colors); commit(); setOpenRole(null) }
+  const onReset = () => { reset(); saveServer(null) }
 
-  const onReset = () => { reset(); saveServer(null); setOpenRole(null) }
-
-  const pickEyedropper = async (key: keyof ThemeColors) => {
-    const Eye = (window as any).EyeDropper
-    if (!Eye) { toast('Пипетка не поддерживается этим браузером', { icon: 'ℹ️' }); return }
-    try {
-      const res = await new Eye().open()
-      if (res?.sRGBHex) { changeColor(key, res.sRGBHex); commit() }
-    } catch { /* отменили — игнор */ }
-  }
 
   const modeBtn = (m: 'light' | 'dark', Icon: any, label: string) => (
     <button
       type="button"
-      onClick={() => { if (openRole) commit(); setColorMode(m); setOpenRole(null) }}
+      onClick={() => { setColorMode(m) }}
       className={clsx(
         'flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
         mode === m
@@ -131,60 +118,13 @@ export default function ThemeEditorSection() {
         ))}
       </div>
 
-      {/* 5 ролей цвета активного режима */}
-      <div className="space-y-2">
-        {ROLES.map(role => {
-          const value = active[role.key]
-          const isOpen = openRole === role.key
-          return (
-            <div key={role.key} className="rounded-xl border border-surface-200 dark:border-surface-700 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => { if (isOpen) commit(); setOpenRole(isOpen ? null : role.key) }}
-                className="w-full flex items-center gap-3 p-2.5 hover:bg-surface-50 dark:hover:bg-surface-800/60 transition-colors"
-              >
-                <span
-                  className="w-9 h-9 rounded-lg shrink-0 ring-1 ring-inset ring-black/10"
-                  style={{ backgroundColor: value }}
-                />
-                <span className="flex-1 min-w-0 text-left">
-                  <span className="block text-sm font-medium text-surface-800 dark:text-surface-100">{role.label}</span>
-                  <span className="block text-[11px] text-surface-400 dark:text-surface-500 truncate">{role.hint}</span>
-                </span>
-                <span className="text-xs font-mono uppercase text-surface-500 dark:text-surface-400">{value}</span>
-              </button>
-
-              {isOpen && (
-                <div className="p-3 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40">
-                  <HexColorPicker
-                    color={value}
-                    onChange={(hex) => changeColor(role.key, hex)}
-                    style={{ width: '100%', height: 160 }}
-                  />
-                  <div className="flex items-center gap-2 mt-3">
-                    <span className="text-sm text-surface-400">#</span>
-                    <input
-                      value={value.replace('#', '')}
-                      onChange={(e) => {
-                        const v = e.target.value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6)
-                        changeColor(role.key, `#${v.padEnd(6, '0')}`)
-                      }}
-                      onBlur={commit}
-                      className="input flex-1 font-mono uppercase"
-                      maxLength={6}
-                      placeholder="000000"
-                    />
-                    <button type="button" onClick={() => pickEyedropper(role.key)} title="Пипетка"
-                      className="btn-secondary px-2.5 shrink-0"><Pipette size={15} /></button>
-                    <button type="button" onClick={() => { commit(); setOpenRole(null) }} title="Готово"
-                      className="btn-primary px-2.5 shrink-0"><Check size={15} /></button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      {/* Свободный подбор цвета убран: он позволял покрасить рабочую
+          систему в розовый или лайм. Остались выверенные деловые наборы
+          выше — этого достаточно, чтобы настроить под себя, но нельзя
+          сделать интерфейс несерьёзным. */}
+      <p className="text-[11px] text-surface-500 dark:text-surface-400">
+        Наборы подобраны так, чтобы текст и цифры оставались читаемыми при долгой работе.
+      </p>
     </div>
   )
 }
