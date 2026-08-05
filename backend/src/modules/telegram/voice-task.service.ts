@@ -278,7 +278,7 @@ ${transcript === null
     const day = intent.date || todayInDushanbe();
     // Время не прозвучало — ставим на конец дня, чтобы задача не выглядела
     // просроченной с самого утра.
-    const deadline = new Date(`${day}T${intent.time || '23:59'}:00`);
+    const deadline = dushanbeInstant(day, intent.time || '23:59');
 
     const task = this.taskRepo.create({
       title: intent.title,
@@ -321,6 +321,14 @@ const esc = (s: string) => String(s ?? '')
  *  вечерние «завтра» уезжали бы на день назад. */
 function todayInDushanbe(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
+}
+
+/** Названное вслух время — душанбинское. Пояс указываем ЯВНО: без него
+ *  строка читается в поясе сервера, а на Railway это UTC, и задача уезжала
+ *  на пять часов (а «на весь день» — вообще на следующие сутки).
+ *  У Таджикистана нет перевода часов, поэтому смещение всегда +05:00. */
+function dushanbeInstant(day: string, time: string): Date {
+  return new Date(`${day}T${time}:00+05:00`);
 }
 
 /** Модель может вернуть мусор или прошедшую дату — проверяем сами. */
