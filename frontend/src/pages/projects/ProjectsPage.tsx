@@ -344,6 +344,10 @@ export default function ProjectsPage() {
               key={p.id}
               onClick={() => navigate(`/projects/${p.id}`)}
               className="card card-hoverable group cursor-pointer relative h-full flex flex-col"
+              /* Цвет проекта — узкая полоса по краю, а не залитая плитка:
+                 в рабочей системе цвет должен помечать запись, а не
+                 украшать её. */
+              style={p.color ? { borderLeft: `3px solid ${p.color}` } : undefined}
             >
               {/* Ad status dot — SMM projects only */}
               {p.projectType === 'SMM' && (
@@ -362,8 +366,8 @@ export default function ProjectsPage() {
                   иначе бейджи «0/4 рилс» наезжали на статус «Планируется». */}
               <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1.5 mb-3">
                 <div className="flex items-center gap-2 min-w-[11rem] flex-1">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: p.color || '#f4f4f5' }}>
-                    <FolderKanban size={18} style={{ color: p.color ? '#fff' : '#18181b' }} />
+                  <div className="w-8 h-8 rounded-sm border border-surface-300 dark:border-surface-600 bg-surface-100 dark:bg-surface-700 flex items-center justify-center shrink-0">
+                    <FolderKanban size={16} className="text-surface-600 dark:text-surface-300" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="font-semibold text-surface-900 dark:text-surface-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 text-sm truncate" title={p.name}>{p.name}</h3>

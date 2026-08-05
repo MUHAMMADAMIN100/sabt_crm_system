@@ -47,14 +47,42 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Inter var', 'Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'monospace'],
       },
-      borderRadius: { xl: '0.75rem', '2xl': '1rem', '3xl': '1.5rem' },
+      /* Радиус переопределён ЦЕЛИКОМ, а не расширен. В интерфейсе больше
+         шестисот мест с rounded-*; менять их поштучно — недели работы и
+         гарантированные пропуски. Здесь одна правка задаёт форму всей
+         системы: строгие 2–4 px вместо шаблонных 12–16.
+         full не трогаем — это аватары, точки статусов и переключатели,
+         они должны оставаться круглыми. */
+      borderRadius: {
+        none: '0',
+        sm: '2px',
+        DEFAULT: '2px',
+        md: '2px',
+        lg: '3px',
+        xl: '3px',
+        '2xl': '4px',
+        '3xl': '4px',
+        full: '9999px',
+      },
+      /* Тени убраны у плоских элементов: в деловом софте глубину даёт
+         граница, а не размытое пятно. Оставлены только для слоёв, которые
+         физически висят над страницей, — иначе выпадающие списки и модалки
+         сольются с фоном. */
       boxShadow: {
-        card: '0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04)',
-        modal: '0 20px 60px rgba(0,0,0,.15)',
-        'card-hover': '0 8px 24px rgba(0,0,0,.10), 0 2px 8px rgba(0,0,0,.06)',
+        none: 'none',
+        sm: 'none',
+        DEFAULT: 'none',
+        md: 'none',
+        card: 'none',
+        'card-hover': 'none',
+        lg: '0 4px 16px rgba(15, 15, 18, .10)',
+        xl: '0 8px 24px rgba(15, 15, 18, .12)',
+        '2xl': '0 12px 32px rgba(15, 15, 18, .14)',
+        modal: '0 12px 40px rgba(15, 15, 18, .18)',
+        inner: 'inset 0 1px 2px rgba(15, 15, 18, .06)',
       },
       keyframes: {
         fadeIn: {
