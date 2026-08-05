@@ -84,6 +84,66 @@ export class TelegramService {
     return employee?.userId || null;
   }
 
+  /** Скачивает файл, присланный в бот (голосовое сообщение).
+   *  Telegram отдаёт файл в два шага: сначала getFile за путём, потом сам
+   *  файл с другого хоста. Больше 20 МБ Bot API скачивать не умеет — для
+   *  голосовых это не ограничение, минута речи весит около 100 КБ. */
+  async downloadFile(fileId: string): Promise<Buffer> {
+    const info: any = await this.callApiJson('getFile', { file_id: fileId });
+    const path = info?.result?.file_path;
+    if (!path) throw new Error('Telegram не отдал путь к файлу');
+    return this.fetchBinary(`/file/bot${this.token}/${path}`);
+  }
+
+  private fetchBinary(path: string): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const req = https.request(
+        { hostname: 'api.telegram.org', path, method: 'GET', timeout: 20000 },
+        (res) => {
+          if (res.statusCode !== 200) {
+            res.resume();
+            reject(new Error(`Telegram file ${res.statusCode}`));
+            return;
+          }
+          const chunks: Buffer[] = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => resolve(Buffer.concat(chunks)));
+        },
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+      req.end();
+    });
+  }
+
+  /** Как callApi, но с разбором ответа: нужен там, где Telegram что-то
+   *  возвращает (getFile), а не просто подтверждает доставку. */
+  private callApiJson(method: string, payload: any): Promise<any> {
+    const body = JSON.stringify(payload);
+    return new Promise((resolve, reject) => {
+      const req = https.request(
+        {
+          hostname: 'api.telegram.org',
+          path: `/bot${this.token}/${method}`,
+          method: 'POST',
+          timeout: 15000,
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        },
+        (res) => {
+          let resp = '';
+          res.on('data', (c) => (resp += c));
+          res.on('end', () => {
+            try { resolve(JSON.parse(resp)) } catch { reject(new Error(`Telegram ${res.statusCode}: ${resp}`)) }
+          });
+        },
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+      req.write(body);
+      req.end();
+    });
+  }
+
   /** Низкоуровневый вызов Bot API. */
   private callApi(method: string, payload: any): Promise<void> {
     const body = JSON.stringify(payload);

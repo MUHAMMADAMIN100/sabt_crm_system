@@ -2,6 +2,7 @@ import { Controller, Post, Body, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TelegramService } from './telegram.service';
+import { VoiceTaskService } from './voice-task.service';
 import { Employee } from '../employees/employee.entity';
 import { WorkflowService } from '../workflow/workflow.service';
 import { TasksService } from '../tasks/tasks.service';
@@ -10,6 +11,8 @@ interface TelegramUpdate {
   message?: {
     from?: { id: number; username?: string; first_name?: string };
     text?: string;
+    /** Голосовое сообщение: из него основатель ставит себе задачу. */
+    voice?: { file_id: string; duration?: number };
   };
   callback_query?: {
     id: string;
@@ -23,6 +26,7 @@ interface TelegramUpdate {
 export class TelegramController {
   constructor(
     private telegramService: TelegramService,
+    private voiceTaskService: VoiceTaskService,
     @Inject(forwardRef(() => WorkflowService)) private workflowService: WorkflowService,
     @Inject(forwardRef(() => TasksService)) private tasksService: TasksService,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
@@ -35,6 +39,20 @@ export class TelegramController {
     if (cq) {
       const chatId = cq.from?.id;
       const data = cq.data || '';
+      // Подтверждение голосовой задачи (vt:ok|no:<ключ>) — отдельная ветка,
+      // до разбора кнопок доски и задач.
+      if (data.startsWith('vt:') && chatId) {
+        const text = await this.voiceTaskService.handleCallback(data, chatId);
+        if (text) {
+          await this.telegramService.answerCallbackQuery(cq.id, text);
+          if (cq.message?.chat?.id && cq.message?.message_id) {
+            const base = cq.message.text ? `${cq.message.text}\n\n` : '';
+            await this.telegramService.editMessageText(
+              cq.message.chat.id, cq.message.message_id, `${base}${text}`);
+          }
+          return { ok: true };
+        }
+      }
       // Карточки доски: wf:done|skip:<cardId>. Обычные задачи: t:done|progress:<taskId>.
       const wfMatch = data.match(/^wf:(done|skip):(.+)$/);
       const taskMatch = data.match(/^t:(done|progress):(.+)$/);
@@ -76,6 +94,16 @@ export class TelegramController {
     const rawUsername = msg.from?.username;
     const firstName = msg.from?.first_name || 'пользователь';
     const text = msg.text?.trim() || '';
+
+    // ── Голосовая постановка задачи ───────────────────────────────────────
+    // Сервис сам решает, доступна ли она этому человеку; если нет — молчим,
+    // как и раньше на любое сообщение кроме /start.
+    if (chatId && msg.voice?.file_id) {
+      await this.voiceTaskService
+        .handleVoice(chatId, msg.voice.file_id, msg.voice.duration || 0)
+        .catch(() => { /* бот не должен падать из-за голосового */ });
+      return { ok: true };
+    }
 
     if (!chatId || !text.startsWith('/start')) return { ok: true };
 
