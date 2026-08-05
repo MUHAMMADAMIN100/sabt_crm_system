@@ -98,8 +98,14 @@ export class NotificationsService implements OnModuleInit {
   async create(dto: CreateNotificationDto) {
     const notif = this.repo.create(dto);
     const saved = await this.repo.save(notif);
-    // Push real-time notification to connected client
-    this.gateway.notifyUser(dto.userId, 'notification', saved);
+    // Живая доставка в открытую вкладку — дело десятое: если сокет не поднят
+    // или отвалился, уведомление всё равно должно остаться в базе и уйти в
+    // Telegram. Раньше сбой здесь ронял всю отправку.
+    try {
+      this.gateway.notifyUser(dto.userId, 'notification', saved);
+    } catch (e: any) {
+      this.logger.warn(`websocket-доставка не удалась: ${e?.message || e}`);
+    }
     // Нативный пуш на телефон (мобильное приложение) — fire-and-forget,
     // основной поток уведомлений не блокируем и не роняем.
     this.sendPush(dto.userId, dto.title, dto.message, dto.link)

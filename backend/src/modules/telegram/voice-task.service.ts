@@ -1,9 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import * as https from 'https';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Task, TaskScope, TaskStatus, TaskPriority } from '../tasks/task.entity';
+import { Employee } from '../employees/employee.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification.entity';
 import { User, UserRole } from '../users/user.entity';
 import { TelegramService } from './telegram.service';
 
@@ -20,6 +24,8 @@ import { TelegramService } from './telegram.service';
 interface VoiceIntent {
   isTask: boolean;
   title: string;
+  /** Имя исполнителя, как оно прозвучало. null — задача себе. */
+  assignee: string | null;
   /** YYYY-MM-DD или null, если дата не прозвучала. */
   date: string | null;
   /** HH:MM или null — тогда задача на весь день. */
@@ -33,7 +39,21 @@ interface VoiceIntent {
 /** Ожидающие подтверждения. В памяти намеренно: подтверждение живёт секунды,
  *  а ради него заводить таблицу и миграцию — лишнее. Перезапуск сервиса
  *  просто попросит наговорить заново. */
-interface Pending extends VoiceIntent { userId: string; chatId: number; at: number }
+interface Pending extends VoiceIntent {
+  userId: string;
+  chatId: number;
+  at: number;
+  /** Кому ставим. Пусто — себе. */
+  assigneeId?: string;
+  assigneeLabel?: string;
+}
+
+/** Чат ждёт исправленный текст после нажатия «Изменить». */
+interface AwaitingEdit { userId: string; at: number }
+
+/** Метка в описании: по ней проверка просрочки отличает голосовые задачи
+ *  от всех остальных и не лезет в чужую логику. */
+const VOICE_MARK = 'Создано голосом в Telegram.';
 
 const PENDING_TTL_MS = 10 * 60 * 1000;
 const PENDING_MAX = 200;
@@ -43,18 +63,25 @@ export class VoiceTaskService {
   private readonly logger = new Logger(VoiceTaskService.name);
   private readonly gemini: GoogleGenerativeAI | null;
   private readonly pending = new Map<string, Pending>();
+  /** Чаты, ждущие исправленный текст. Ключ — chatId. */
+  private readonly awaitingEdit = new Map<number, AwaitingEdit>();
 
-  /** Кому доступна голосовая постановка. По требованию владельца — основатель
-   *  и менеджер продаж по разработке. Задача всегда личная и достаётся тому,
-   *  кто её наговорил, поэтому расширение списка ничего чужого не открывает. */
+  /** Кому доступна голосовая постановка задач СЕБЕ. */
   private static readonly VOICE_ROLES: string[] = [
     UserRole.FOUNDER,
     UserRole.SALES_MANAGER_DEV,
   ];
 
+  /** Кто может голосом ставить задачи ДРУГИМ. Только основатель: иначе
+   *  роль получила бы право раздавать поручения по всей компании, а речь
+   *  шла не об этом. */
+  private static readonly ASSIGN_ROLES: string[] = [UserRole.FOUNDER];
+
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(Employee) private empRepo: Repository<Employee>,
+    private notifications: NotificationsService,
     private telegram: TelegramService,
   ) {
     const key = process.env.GEMINI_API_KEY;
@@ -67,7 +94,7 @@ export class VoiceTaskService {
   /** Главный вход: пришло голосовое. Возвращает true, если сообщение
    *  обработано и дальше его вести не надо. */
   async handleVoice(chatId: number, fileId: string, durationSec: number): Promise<boolean> {
-    const user = await this.resolveFounder(chatId);
+    const user = await this.resolveVoiceUser(chatId);
     if (!user) return false; // не основатель — ведём себя как раньше
 
     if (!this.gemini) {
@@ -95,26 +122,7 @@ export class VoiceTaskService {
         return true;
       }
 
-      // Дата чёткая — создаём молча. Размытая или её нет — переспрашиваем.
-      if (intent.date && intent.dateExact) {
-        const task = await this.createTask(user.id, intent);
-        await this.telegram.sendMessage(chatId, this.doneText(task, intent));
-        return true;
-      }
-
-      const key = this.remember({ ...intent, userId: user.id, chatId, at: Date.now() });
-      await this.telegram.sendMessage(
-        chatId,
-        '🎤 Понял так:\n\n' +
-        `<b>${esc(intent.title)}</b>\n` +
-        `📅 ${intent.date ? fmtRu(intent.date) : 'дата не прозвучала — поставлю на сегодня'}` +
-        `${intent.time ? ` в ${intent.time}` : ''}\n\n` +
-        `<i>«${esc(intent.transcript)}»</i>`,
-        [[
-          { text: '✓ Создать', callback_data: `vt:ok:${key}` },
-          { text: '✕ Отмена', callback_data: `vt:no:${key}` },
-        ]],
-      );
+      await this.proposeTask(chatId, user, intent);
       return true;
     } catch (e: any) {
       this.logger.warn(`voice task failed: ${e?.message || e}`);
@@ -123,21 +131,106 @@ export class VoiceTaskService {
     }
   }
 
-  /** Нажали кнопку под переспросом. Возвращает текст для всплывашки. */
+  /** Показывает разбор и ждёт подтверждения. Подтверждение спрашиваем
+   *  ВСЕГДА: распознавание ошибается в именах и датах, а поручение чужому
+   *  человеку — не то, что стоит создавать молча. */
+  private async proposeTask(chatId: number, user: User, intent: VoiceIntent): Promise<void> {
+    let assigneeId: string | undefined;
+    let assigneeLabel: string | undefined;
+
+    if (intent.assignee) {
+      if (!VoiceTaskService.ASSIGN_ROLES.includes(user.role)
+          && !VoiceTaskService.ASSIGN_ROLES.includes(user.secondaryRole || '')) {
+        await this.telegram.sendMessage(
+          chatId, '⚠️ Ставить задачи другим сотрудникам может только основатель.');
+        return;
+      }
+      const found = await this.findEmployees(intent.assignee);
+      if (found.length === 1) {
+        assigneeId = found[0].userId;
+        assigneeLabel = found[0].name;
+      } else {
+        // Не нашли или несколько тёзок — пусть выберет кнопкой.
+        const key = this.remember({ ...intent, userId: user.id, chatId, at: Date.now() });
+        const list = found.length ? found : await this.findEmployees('');
+        if (!list.length) {
+          await this.telegram.sendMessage(chatId, '⚠️ В системе нет сотрудников с привязанным аккаунтом.');
+          return;
+        }
+        await this.telegram.sendMessage(
+          chatId,
+          (found.length
+            ? `🎤 Кого именно вы имели в виду под «${esc(intent.assignee)}»?`
+            : `🎤 Не нашёл сотрудника «${esc(intent.assignee)}». Выберите из списка:`) +
+          `\n\n<b>${esc(intent.title)}</b>` +
+          `\n📅 ${intent.date ? fmtRu(intent.date) : 'сегодня'}${intent.time ? ` в ${intent.time}` : ''}`,
+          list.slice(0, 12).map(e => [{ text: e.name, callback_data: `vt:who:${key}:${e.userId}` }]),
+        );
+        return;
+      }
+    }
+
+    const key = this.remember({
+      ...intent, userId: user.id, chatId, at: Date.now(), assigneeId, assigneeLabel,
+    });
+    await this.telegram.sendMessage(chatId, this.proposalText(intent, assigneeLabel), [[
+      { text: '✓ Подтвердить', callback_data: `vt:ok:${key}` },
+      { text: '✎ Изменить', callback_data: `vt:edit:${key}` },
+    ]]);
+  }
+
+  private proposalText(intent: VoiceIntent, assigneeLabel?: string): string {
+    return '🎤 Понял так:\n\n' +
+      (assigneeLabel ? `👤 Исполнитель: <b>${esc(assigneeLabel)}</b>\n` : '👤 Исполнитель: вы\n') +
+      `📋 Задача: <b>${esc(intent.title)}</b>\n` +
+      `📅 Срок: ${intent.date ? fmtRu(intent.date) : 'сегодня'}${intent.time ? ` в ${intent.time}` : ''}\n\n` +
+      `<i>«${esc(intent.transcript)}»</i>`;
+  }
+
+  /** Нажали кнопку. Возвращает текст для всплывашки. */
   async handleCallback(data: string, chatId: number): Promise<string | null> {
-    const m = /^vt:(ok|no):(.+)$/.exec(data);
+    // Выбор исполнителя из списка тёзок.
+    const who = /^vt:who:([^:]+):(.+)$/.exec(data);
+    if (who) {
+      const item = this.pending.get(who[1]);
+      if (!item || item.chatId !== chatId) return 'Запрос устарел — наговорите заново';
+      const emp = (await this.findEmployees('')).find(e => e.userId === who[2]);
+      if (!emp) return 'Сотрудник не найден';
+      this.pending.delete(who[1]);
+      const key = this.remember({ ...item, at: Date.now(), assigneeId: emp.userId, assigneeLabel: emp.name });
+      await this.telegram.sendMessage(chatId, this.proposalText(item, emp.name), [[
+        { text: '✓ Подтвердить', callback_data: `vt:ok:${key}` },
+        { text: '✎ Изменить', callback_data: `vt:edit:${key}` },
+      ]]);
+      return emp.name;
+    }
+
+    const m = /^vt:(ok|no|edit):(.+)$/.exec(data);
     if (!m) return null;
     const [, action, key] = m;
     const item = this.pending.get(key);
-    this.pending.delete(key);
 
     if (!item) return 'Запрос устарел — наговорите заново';
     if (item.chatId !== chatId) return 'Запрос не найден';
+
+    if (action === 'edit') {
+      this.pending.delete(key);
+      this.awaitingEdit.set(chatId, { userId: item.userId, at: Date.now() });
+      await this.telegram.sendMessage(
+        chatId,
+        '✎ Напишите, как правильно — текстом или новым голосовым.\n\n' +
+        'Например: «Фирузу макет для Архидеи до 15 августа».',
+      );
+      return 'Жду исправление';
+    }
+
+    this.pending.delete(key);
     if (action === 'no') return 'Отменено';
 
     try {
-      const task = await this.createTask(item.userId, item);
-      await this.telegram.sendMessage(chatId, this.doneText(task, item));
+      const task = await this.createTask(item.userId, item, item.assigneeId);
+      await this.telegram.sendMessage(chatId, this.doneText(task, item, item.assigneeLabel));
+      if (item.assigneeId && item.assigneeId !== item.userId) await this.notifyAssignee(task, item);
       return 'Задача создана';
     } catch (e: any) {
       this.logger.warn(`voice task create failed: ${e?.message || e}`);
@@ -145,9 +238,63 @@ export class VoiceTaskService {
     }
   }
 
+  /** Пришёл текст, когда ждём исправление. true — сообщение обработано. */
+  async handleEditText(chatId: number, text: string): Promise<boolean> {
+    const wait = this.awaitingEdit.get(chatId);
+    if (!wait) return false;
+    // Правка живёт столько же, сколько подтверждение.
+    if (Date.now() - wait.at > PENDING_TTL_MS) { this.awaitingEdit.delete(chatId); return false; }
+    this.awaitingEdit.delete(chatId);
+
+    const user = await this.resolveVoiceUser(chatId);
+    if (!user) return false;
+    try {
+      const intent = await this.parse(text);
+      if (!intent.isTask || !intent.title) {
+        await this.telegram.sendMessage(chatId, '🤔 Не понял задачу. Наговорите или напишите ещё раз.');
+        return true;
+      }
+      await this.proposeTask(chatId, user, intent);
+    } catch (e: any) {
+      this.logger.warn(`voice edit failed: ${e?.message || e}`);
+      await this.telegram.sendMessage(chatId, '⚠️ Не удалось разобрать. Попробуйте ещё раз.');
+    }
+    return true;
+  }
+
+  /** Сотрудники с привязанным аккаунтом. Пустой запрос — все. */
+  private async findEmployees(query: string): Promise<{ userId: string; name: string }[]> {
+    const qb = this.empRepo.createQueryBuilder('e')
+      .where('e."userId" IS NOT NULL')
+      .andWhere(`COALESCE(e.status, 'active') = 'active'`);
+    const q = query.trim().toLowerCase();
+    if (q) {
+      // Ищем по любому слову имени: сказали «Лашкарова» — найдём
+      // «Лашкарова Саврибегим Эраджевна».
+      qb.andWhere('LOWER(e."fullName") LIKE :q', { q: `%${q}%` });
+    }
+    const rows = await qb.orderBy('e."fullName"', 'ASC').take(60).getMany();
+    return rows.map(e => ({ userId: e.userId as string, name: e.fullName }));
+  }
+
+  private async notifyAssignee(task: Task, item: Pending): Promise<void> {
+    const when = item.date ? fmtRu(item.date) : 'сегодня';
+    await this.notifications.create({
+      userId: item.assigneeId as string,
+      type: NotificationType.NEW_TASK,
+      title: '📋 Новая задача от основателя',
+      message: `${task.title} — до ${when}${item.time ? ` ${item.time}` : ''}`,
+      link: `/tasks/${task.id}`,
+    }).catch(() => { /* не критично */ });
+    this.telegram.sendToUser(
+      item.assigneeId as string,
+      `<b>📋 Новая задача от основателя</b>\n${esc(task.title)}\n📅 до ${when}${item.time ? ` ${item.time}` : ''}`,
+    ).catch(() => { /* не критично */ });
+  }
+
   // ─── Внутреннее ───────────────────────────────────────────────────────
 
-  private async resolveFounder(chatId: number): Promise<User | null> {
+  private async resolveVoiceUser(chatId: number): Promise<User | null> {
     const userId = await this.telegram.resolveUserIdByChat(chatId);
     if (!userId) return null;
     const user = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null);
@@ -231,12 +378,18 @@ ${transcript === null
 Ответь ТОЛЬКО JSON без пояснений и без markdown:
 {
   "isTask": true если человек просит создать задачу/напоминание/встречу, иначе false,
-  "title": "короткая суть задачи, 2-6 слов, с большой буквы, без слов «добавь задачу»",
+  "title": "короткая суть задачи, 2-6 слов, с большой буквы, без слов «добавь задачу» и без имени исполнителя",
+  "assignee": "имя сотрудника, которому поручают, как прозвучало (например «Фируз», «Лашкаровой»), или null если человек ставит задачу СЕБЕ",
   "date": "YYYY-MM-DD или null если дата не прозвучала",
   "time": "HH:MM или null если время не прозвучало",
   "dateExact": true если дата названа однозначно (число, «завтра», «в понедельник»), false если размыто («на следующей неделе», «скоро») или её нет,
   "transcript": "полный текст сказанного дословно"
 }
+
+Правила по исполнителю:
+- «поставь Фирузу», «дай задачу Лашкаровой», «пусть Фарзона сделает» — assignee = названное имя.
+- «добавь мне», «напомни мне», без имени вовсе — assignee = null.
+- Имя приводи к именительному падежу: «Фирузу» → «Фируз», «Лашкаровой» → «Лашкарова».
 
 Правила по дате:
 - «10 августа» без года — ближайшее будущее 10 августа относительно сегодня.
@@ -272,6 +425,7 @@ ${transcript === null
     return {
       isTask: !!parsed.isTask,
       title: String(parsed.title || '').slice(0, 200).trim(),
+      assignee: parsed.assignee ? String(parsed.assignee).slice(0, 80).trim() : null,
       date: normalizeDate(parsed.date, today),
       time: /^\d{2}:\d{2}$/.test(parsed.time || '') ? parsed.time : null,
       transcript: String(parsed.transcript || '').slice(0, 2000).trim(),
@@ -279,31 +433,119 @@ ${transcript === null
     };
   }
 
-  private async createTask(userId: string, intent: VoiceIntent): Promise<Task> {
+  private async createTask(userId: string, intent: VoiceIntent, assigneeId?: string): Promise<Task> {
     const day = intent.date || todayInDushanbe();
     // Время не прозвучало — ставим на конец дня, чтобы задача не выглядела
     // просроченной с самого утра.
     const deadline = dushanbeInstant(day, intent.time || '23:59');
 
+    const forOther = !!assigneeId && assigneeId !== userId;
     const task = this.taskRepo.create({
       title: intent.title,
       // Расшифровка в описании: если бот расслышал не так, видно исходное.
-      description: `Создано голосом в Telegram.\n\nСказано: «${intent.transcript}»`,
+      description: `${VOICE_MARK}\n\nСказано: «${intent.transcript}»`,
       status: TaskStatus.NEW,
       priority: TaskPriority.MEDIUM,
-      scope: TaskScope.PERSONAL,
+      // Поручение сотруднику — рабочая задача, а не личная заметка:
+      // личные видит только автор, и исполнитель бы её не нашёл.
+      scope: forOther ? TaskScope.BUSINESS : TaskScope.PERSONAL,
       deadline,
       createdById: userId,
-      assigneeId: userId,
+      assigneeId: assigneeId || userId,
     });
     return this.taskRepo.save(task);
   }
 
-  private doneText(task: Task, intent: VoiceIntent): string {
+  private doneText(task: Task, intent: VoiceIntent, assigneeLabel?: string): string {
     const when = intent.date ? fmtRu(intent.date) : 'сегодня';
-    return '✅ Задача в календаре\n\n' +
+    return (assigneeLabel ? '✅ Задача поставлена\n\n' : '✅ Задача в календаре\n\n') +
+      (assigneeLabel ? `👤 ${esc(assigneeLabel)}\n` : '') +
       `<b>${esc(task.title)}</b>\n` +
       `📅 ${when}${intent.time ? ` в ${intent.time}` : ''}`;
+  }
+
+  /**
+   * Просрочка по задачам, выданным голосом. Раз в час: срок прошёл, задача
+   * не закрыта — сообщение основателю и исполнителю. Ровно одно на задачу:
+   * дедуп держит createIfNotRecent по ключу, поэтому лишняя колонка в базе
+   * не нужна.
+   *
+   * Штатный планировщик задач просрочки не шлёт — там @Cron снят, просрочки
+   * считаются по Доске проектов. Эта проверка смотрит ТОЛЬКО голосовые
+   * задачи и существующую логику доски не трогает.
+   */
+  @Cron('0 * * * *', { timeZone: 'Asia/Dushanbe' })
+  async notifyOverdueVoiceTasks(): Promise<{ count: number }> {
+    try {
+      const rows = await this.taskRepo.createQueryBuilder('t')
+        .where('t.deadline < NOW()')
+        .andWhere('t.status NOT IN (:...done)', { done: [TaskStatus.DONE, TaskStatus.CANCELLED] })
+        .andWhere('t.description LIKE :mark', { mark: `${VOICE_MARK}%` })
+        // Смотрим только свежие: старые задачи разбирать поздно, а спам
+        // при первом запуске после деплоя никому не нужен.
+        .andWhere(`t.deadline > NOW() - INTERVAL '14 days'`)
+        .take(100)
+        .getMany();
+
+      let count = 0;
+      for (const t of rows) {
+        const when = new Intl.DateTimeFormat('ru-RU', {
+          timeZone: 'Asia/Dushanbe', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+        }).format(new Date(t.deadline as any));
+
+        const assignee = t.assigneeId
+          ? await this.userRepo.findOne({ where: { id: t.assigneeId } }).catch(() => null)
+          : null;
+        const who = assignee?.name || 'Исполнитель';
+        const alertKey = `voice-overdue:${t.id}`;
+
+        // Автору — кто сорвал срок.
+        if (t.createdById) {
+          const fresh = await this.notifications.createIfNotRecent({
+            userId: t.createdById,
+            type: NotificationType.TASK_OVERDUE,
+            title: '⚠️ Срок прошёл, задача не сдана',
+            message: t.assigneeId && t.assigneeId !== t.createdById
+              ? `${who} не выполнил задачу «${t.title}». Срок был ${when}.`
+              : `Задача «${t.title}» не выполнена. Срок был ${when}.`,
+            link: `/tasks/${t.id}`,
+            data: { alertKey },
+          }, 24 * 30).catch(() => false);
+          if (fresh) {
+            count++;
+            this.telegram.sendToUser(
+              t.createdById,
+              `<b>⚠️ Срок прошёл, задача не сдана</b>\n` +
+              (t.assigneeId && t.assigneeId !== t.createdById ? `👤 ${esc(who)}\n` : '') +
+              `${esc(t.title)}\n📅 срок был ${when}`,
+            ).catch(() => { /* не критично */ });
+          }
+        }
+
+        // Исполнителю — напоминание. Часто задача просто забыта.
+        if (t.assigneeId && t.assigneeId !== t.createdById) {
+          const fresh = await this.notifications.createIfNotRecent({
+            userId: t.assigneeId,
+            type: NotificationType.TASK_OVERDUE,
+            title: '⚠️ Срок по задаче прошёл',
+            message: `«${t.title}» — срок был ${when}. Закройте задачу или сообщите руководителю.`,
+            link: `/tasks/${t.id}`,
+            data: { alertKey },
+          }, 24 * 30).catch(() => false);
+          if (fresh) {
+            this.telegram.sendToUser(
+              t.assigneeId,
+              `<b>⚠️ Срок по задаче прошёл</b>\n${esc(t.title)}\n📅 срок был ${when}`,
+            ).catch(() => { /* не критично */ });
+          }
+        }
+      }
+      if (count) this.logger.log(`voice overdue: уведомлений ${count}`);
+      return { count };
+    } catch (e: any) {
+      this.logger.warn(`voice overdue failed: ${e?.message || e}`);
+      return { count: 0 };
+    }
   }
 
   private remember(item: Pending): string {

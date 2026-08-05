@@ -105,6 +105,13 @@ export class TelegramController {
       return { ok: true };
     }
 
+    // Ждём исправление после кнопки «Изменить» — обычный текст в этот
+    // момент означает правку, а не команду.
+    if (chatId && text && !text.startsWith('/')) {
+      const handled = await this.voiceTaskService.handleEditText(chatId, text).catch(() => false);
+      if (handled) return { ok: true };
+    }
+
     if (!chatId || !text.startsWith('/start')) return { ok: true };
 
     if (!rawUsername) {
