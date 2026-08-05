@@ -219,7 +219,8 @@ export class VoiceTaskService {
       await this.telegram.sendMessage(
         chatId,
         '✎ Напишите, как правильно — текстом или новым голосовым.\n\n' +
-        'Например: «Фирузу макет для Архидеи до 15 августа».',
+        'Например: «Фирузу макет для Архидеи до 15 августа».\n\n' +
+        'Я разберу заново и снова покажу на подтверждение.',
       );
       return 'Жду исправление';
     }
@@ -238,20 +239,37 @@ export class VoiceTaskService {
     }
   }
 
-  /** Пришёл текст, когда ждём исправление. true — сообщение обработано. */
+  /**
+   * Пришёл текст от того, кому доступна голосовая постановка.
+   *
+   * Режим «жду исправление» НЕ проверяем намеренно. Раньше он держался в
+   * памяти процесса, а Railway перезапускает приложение при каждом деплое —
+   * состояние терялось, и присланное исправление молча проваливалось: бот
+   * не отвечал вообще ничего, и было непонятно, дошло сообщение или нет.
+   *
+   * Теперь любой текст разбирается как задача. Это заодно и удобнее: можно
+   * просто написать поручение, не наговаривая его голосом.
+   *
+   * true — сообщение обработано, дальше вести его не надо.
+   */
   async handleEditText(chatId: number, text: string): Promise<boolean> {
-    const wait = this.awaitingEdit.get(chatId);
-    if (!wait) return false;
-    // Правка живёт столько же, сколько подтверждение.
-    if (Date.now() - wait.at > PENDING_TTL_MS) { this.awaitingEdit.delete(chatId); return false; }
+    const user = await this.resolveVoiceUser(chatId);
+    if (!user) return false; // не наш человек — молчим, как и раньше
     this.awaitingEdit.delete(chatId);
 
-    const user = await this.resolveVoiceUser(chatId);
-    if (!user) return false;
+    if (!this.gemini) {
+      await this.telegram.sendMessage(chatId, '🎤 Распознавание не настроено. Нужен GEMINI_API_KEY.');
+      return true;
+    }
     try {
       const intent = await this.parse(text);
       if (!intent.isTask || !intent.title) {
-        await this.telegram.sendMessage(chatId, '🤔 Не понял задачу. Наговорите или напишите ещё раз.');
+        await this.telegram.sendMessage(
+          chatId,
+          '🤔 Не понял, какую задачу создать.\n\n' +
+          'Напишите или наговорите примерно так:\n' +
+          '«поставь Фирузу макет для Архидеи до 15 августа».',
+        );
         return true;
       }
       await this.proposeTask(chatId, user, intent);
