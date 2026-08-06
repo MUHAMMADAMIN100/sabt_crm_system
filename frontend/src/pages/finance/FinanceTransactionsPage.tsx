@@ -151,7 +151,7 @@ export default function FinanceTransactionsPage() {
   return (
     <div className="fin-root">
       <div className="page-head">
-        <div><h1>Транзакции</h1><p>Журнал операций — добавляйте через кнопки или правьте прямо в таблице</p></div>
+        <div><h1 className="flex"><FinIcon name="transactions" size={22} /> Транзакции</h1><p>Журнал операций — добавляйте через кнопки или правьте прямо в таблице</p></div>
         <div className="flex">
           <button className="btn" style={{ color: 'var(--green)' }} onClick={() => setAddType('income')}><FinIcon name="plus" size={15} /> Доход</button>
           <button className="btn" style={{ color: 'var(--red)' }} onClick={() => setAddType('expense')}><FinIcon name="plus" size={15} /> Расход</button>

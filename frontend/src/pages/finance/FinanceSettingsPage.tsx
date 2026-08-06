@@ -121,7 +121,7 @@ export default function FinanceSettingsPage() {
   if (referenceQueries.some((q) => q.isLoading)) {
     return (
       <div className="fin-root">
-        <div className="page-head"><div><h1>Настройки</h1><p>Счета, справочники, резервные копии</p></div></div>
+        <div className="page-head"><div><h1 className="flex"><FinIcon name="settings" size={22} /> Настройки</h1><p>Счета, справочники, резервные копии</p></div></div>
         <FinLoading />
       </div>
     );
@@ -129,7 +129,7 @@ export default function FinanceSettingsPage() {
   if (referenceQueries.some((q) => q.isError)) {
     return (
       <div className="fin-root">
-        <div className="page-head"><div><h1>Настройки</h1><p>Счета, справочники, резервные копии</p></div></div>
+        <div className="page-head"><div><h1 className="flex"><FinIcon name="settings" size={22} /> Настройки</h1><p>Счета, справочники, резервные копии</p></div></div>
         <FinLoadError onRetry={() => Promise.all(referenceQueries.map((q) => q.refetch()))} />
       </div>
     );
@@ -137,7 +137,7 @@ export default function FinanceSettingsPage() {
 
   return (
     <div className="fin-root">
-      <div className="page-head"><div><h1>Настройки</h1><p>Счета, справочники, снимки данных</p></div></div>
+      <div className="page-head"><div><h1 className="flex"><FinIcon name="settings" size={22} /> Настройки</h1><p>Счета, справочники, снимки данных</p></div></div>
 
       <div className="section-title">Счета и стартовые балансы</div>
       <div className="card">
@@ -501,8 +501,8 @@ function IconPicker({ icon, setIcon, color }: { icon: string; setIcon: (v: strin
       <div className="flex" style={{ flexWrap: 'wrap', gap: 8 }}>
         {PICKER_ICONS.map((n) => (
           <button key={n} type="button" onClick={() => setIcon(n)}
-            title={n}
-            style={{ padding: 0, border: icon === n ? '2px solid var(--text)' : '2px solid transparent', borderRadius: 9, background: 'transparent', cursor: 'pointer' }}>
+            title={n} aria-pressed={icon === n}
+            className={`fin-icon-choice${icon === n ? ' active' : ''}`}>
             <CatIcon icon={n} color={color} size={30} />
           </button>
         ))}

@@ -39,6 +39,24 @@ Present every finance route as one calm analytical workspace: a white rounded ca
 - Reuse: existing React pages, `MonthNav`, `TxTable`, `FinKit`, `FinIcon`, Recharts components, sidebar finance navigation.
 - Create: route-scoped workspace classes and a finance-only visual token layer.
 
+## Data-visualization grammar
+
+- Movement is encoded by bars; income is above zero and forecast expenses are below zero.
+- The lavender-to-aqua signature line is reserved for the resulting profit or closing balance, not another competing money flow.
+- Fact uses a solid fill; plan uses a diagonal pattern and outline, so the distinction survives grayscale and low-contrast displays.
+- Income and expense comparisons share one scale. They must not be shown as parts of a donut because they are independent flows.
+- Planning uses separate left and right axes for monthly flow and accumulated balance. Compact axis values are explicitly labelled as somoni.
+- Every chart has a concise legend, grouped tooltip, zero/selected/cash-gap reference markers, an empty state, and structured tabular detail for assistive technology.
+- Chart animation is disabled to keep the finance workspace immediate and respect reduced-motion users.
+
+## Icon grammar
+
+- Finance uses one rounded 24px line-icon family with a consistent 1.65px stroke; no emoji, filled clip-art, or mixed icon libraries inside the workspace.
+- Page identities sit in compact outlined pastel tiles. Category icons use their semantic colour as a line over a 12% tint instead of white glyphs on saturated blocks.
+- Income and expense retain green and coral meaning; navigation, planning, settings, and neutral actions use lavender or muted ink.
+- Action icons stay bare inside labelled buttons. Icon-only actions receive a compact square hit area and a semantic hover tint.
+- Empty-state icons are larger but remain quiet, using the same border, radius, and pastel material as the rest of finance.
+
 ## Interaction and states
 
 - Hover is a subtle surface/border change; active press does not jump.

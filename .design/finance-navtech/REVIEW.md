@@ -39,3 +39,22 @@ The implemented direction is a quiet financial cockpit: one white analytical can
 ## Remaining rendered review
 
 Capture `/finance`, `/finance/transactions` with an expanded row, `/finance/expense/salary`, `/finance/planning`, and `/finance/settings` at 375×812, 768×1024, and 1280×800 in light mode, plus representative dark-mode screens. Verify no page-level horizontal overflow, chart label fit, sticky-column backgrounds, and the density of long real-world names/amounts. This is the only review step still pending because the browser surface was unavailable.
+# Finance design review
+
+## 2026-08-06 · chart pass
+
+- Product clarity: income, payouts, result, and closing balance now have distinct visual forms and plain-language labels.
+- Hierarchy: the selected month result is summarized before the 12-month trend; planning keeps scenario and cash-gap context near the chart.
+- Visual system: quiet surfaces, compact type, low-contrast grid, restrained lavender gradient, semantic green/coral, and patterned plan bars match the supplied direction.
+- Accessibility: figure names, keyboard-reachable series toggles/scroll region, non-colour encodings, reduced motion, explicit units, empty states, and tabular fallbacks are present.
+- Responsive: summaries collapse without truncating values; the dense yearly planning view uses an announced horizontal region and a visible mobile hint.
+
+Production build and finance tests pass. Automated rendered screenshots could not be captured because no browser runtime is connected in this workspace; final 375 × 812, 768 × 1024, and 1280 × 800 light/dark comparison remains the only open evidence item.
+
+## 2026-08-06 · icon pass
+
+- Replaced saturated category tiles with pastel semantic tiles and coloured line glyphs.
+- Added consistent identity tiles to every finance page heading, including loading and error states.
+- Normalized action-only buttons, overview labels, employee-history titles, and empty states without changing non-finance components.
+- Refined the finance sidebar branch with the same rounded line-icon rhythm.
+- Source review confirms finance-only scoping, responsive touch sizing, dark-mode tokens, and accessible decorative SVG handling.

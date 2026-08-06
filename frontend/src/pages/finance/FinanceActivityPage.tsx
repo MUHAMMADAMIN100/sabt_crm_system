@@ -90,7 +90,7 @@ export default function FinanceActivityPage() {
     <div className="fin-root">
       <div className="page-head">
         <div>
-          <h1 className="flex"><FinIcon name="transactions" size={22} /> Активность</h1>
+          <h1 className="flex"><FinIcon name="activity" size={22} /> Активность</h1>
           <p>Журнал изменений финансов — кто, что и когда изменил</p>
         </div>
       </div>

@@ -166,7 +166,12 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                     )}
                     title={!open ? item.label : undefined}
                   >
-                    <item.icon size={18} className="shrink-0" />
+                    <span className={clsx(
+                      'grid h-7 w-7 shrink-0 place-items-center rounded-[9px] border transition-colors',
+                      financeActive ? 'border-white/15 bg-white/[.12]' : 'border-white/[.07] bg-white/[.04]',
+                    )}>
+                      <item.icon size={15} strokeWidth={1.8} />
+                    </span>
                     <span className={clsx(
                       'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
                       open ? 'max-w-[200px] opacity-100' : 'max-w-0 opacity-0',
@@ -187,15 +192,24 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                             onClick={handleNavClick}
                             className={({ isActive }) =>
                               clsx(
-                                'flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors',
+                                'group/finance flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors',
                                 isActive
                                   ? 'bg-[#8385ff]/90 text-white'
                                   : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
                               )
                             }
                           >
-                            <sub.icon size={15} className="shrink-0" />
-                            <span className="truncate">{sub.label}</span>
+                            {({ isActive }) => <>
+                              <span className={clsx(
+                                'grid h-7 w-7 shrink-0 place-items-center rounded-[9px] border transition-colors',
+                                isActive
+                                  ? 'border-white/15 bg-white/[.15]'
+                                  : 'border-white/[.06] bg-white/[.035] group-hover/finance:border-white/10 group-hover/finance:bg-white/[.07]',
+                              )}>
+                                <sub.icon size={14} strokeWidth={1.75} />
+                              </span>
+                              <span className="truncate">{sub.label}</span>
+                            </>}
                           </NavLink>
                         </li>
                       ))}

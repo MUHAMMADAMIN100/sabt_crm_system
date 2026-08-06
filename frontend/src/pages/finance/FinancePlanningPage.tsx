@@ -1,7 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Area, Bar, CartesianGrid, Cell, ComposedChart, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
 import { apiErr, currentYm, formatDate, money, monthLabel } from './finlib';
@@ -10,6 +9,7 @@ import FinIcon from './FinIcon';
 import ImportedArchiveBadge, { isImportedArchive } from './ImportedArchiveBadge';
 import { floatingPosition, scrollableAncestors, type FloatingPosition } from './floatingPosition';
 import './finance.css';
+import { PlanningCashFlowChart } from './FinanceCharts';
 
 const scenarios: Record<string, string> = { conservative: 'Осторожный', base: 'Базовый', optimistic: 'Оптимистичный' };
 
@@ -65,28 +65,8 @@ export default function FinancePlanningPage() {
         <div className="card"><span className="muted mini">Расход за период · факт + план</span><div className="value neg">{money(data.summary.expectedExpense)}</div></div>
         <div className="card"><span className="muted mini">Баланс в конце</span><div className={`value ${data.summary.endingBalance < 0 ? 'neg' : ''}`}>{money(data.summary.endingBalance)}</div></div>
       </div>
-      <div className="card fin-plan-chart">
-        <div className="fin-plan-chart-head"><div><strong>Денежный поток</strong><span>Столбцы — поступления и выплаты, синяя область — прогноз остатка</span></div><span className="fin-plan-scenario">{scenarios[scenario]}</span></div>
-        <div className="fin-plan-chart-scroll"><div className="fin-plan-chart-canvas" style={{ minWidth: Math.max(680, visibleRows.length * 76) }}>
-        <ResponsiveContainer width="100%" height={320}><ComposedChart data={visibleRows} margin={{ top: 8, right: 12, bottom: 4, left: 0 }}>
-          <defs><linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--accent)" stopOpacity={.16}/><stop offset="95%" stopColor="var(--accent)" stopOpacity={0}/></linearGradient></defs>
-          <CartesianGrid strokeDasharray="2 4" vertical={false} stroke="var(--border)" /><XAxis dataKey="ym" tickFormatter={(v) => monthLabel(v)} axisLine={false} tickLine={false} />
-          <YAxis tickFormatter={(v) => `${Math.round(v / 1000)}к`} axisLine={false} tickLine={false} width={52} />
-          <Tooltip content={<PlanChartTooltip />} /><Legend iconType="circle" />
-          <ReferenceLine y={0} stroke="var(--red)" strokeDasharray="4 4" strokeWidth={1} />
-          <Area type="monotone" dataKey="closingBalance" name="Остаток" stroke="var(--accent)" fill="url(#balanceFill)" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
-          <Bar dataKey="actualIncome" name="Доход · факт" stackId="income" fill="var(--green)" maxBarSize={24}>
-            {visibleRows.map((row: any) => <Cell key={row.ym} radius={(row.plannedIncome > 0 ? 0 : [8, 8, 0, 0]) as any} />)}
-          </Bar>
-          <Bar dataKey="plannedIncome" name="Доход · осталось получить" stackId="income" fill="var(--green-plan)" radius={[6, 6, 0, 0]} maxBarSize={24} />
-          <Bar dataKey="actualExpense" name="Расход · факт" stackId="expense" fill="var(--red)" maxBarSize={24}>
-            {visibleRows.map((row: any) => <Cell key={row.ym} radius={(row.plannedExpense > 0 ? 0 : [8, 8, 0, 0]) as any} />)}
-          </Bar>
-          <Bar dataKey="plannedExpense" name="Расход · осталось оплатить" stackId="expense" fill="var(--red-plan)" radius={[6, 6, 0, 0]} maxBarSize={24} />
-        </ComposedChart></ResponsiveContainer>
-        </div></div>
-      </div>
-      <div className="table-wrap"><table><thead><tr><th>Месяц</th><th>Доход · факт / осталось</th><th>Расход · факт / осталось</th><th>Результат</th><th>Баланс сейчас / после плана</th></tr></thead><tbody>
+      <PlanningCashFlowChart rows={visibleRows} scenarioLabel={scenarios[scenario]} cashGapYm={data.summary.cashGapYm} dataTableId="fin-planning-data" />
+      <div className="table-wrap"><table id="fin-planning-data"><caption className="sr-only">Подробные значения прогноза движения денег по месяцам</caption><thead><tr><th>Месяц</th><th>Доход · факт / осталось</th><th>Расход · факт / осталось</th><th>Результат</th><th>Баланс сейчас / после плана</th></tr></thead><tbody>
         {visibleRows.map((r: any) => {
           const toggle = () => setExpanded(expanded === r.ym ? null : r.ym);
           return <Fragment key={r.ym}><tr className="clickable" aria-expanded={expanded === r.ym}
@@ -285,18 +265,6 @@ function SalaryGroup({ group }: { group: any }) {
       })}</div>
       <div className={'fin-payout-pin-hint' + (pinned ? ' pinned' : '')}>{pinned ? 'Окно закреплено — можно прокручивать' : 'Задержите курсор, чтобы закрепить окно'}</div>
     </div>, document.body)}
-  </div>;
-}
-
-function PlanChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  const values = Object.fromEntries(payload.map((p: any) => [p.dataKey, Number(p.value)]));
-  return <div className="fin-chart-tooltip"><strong>{monthLabel(label, true)}</strong>
-    <div><span className="income-dot" />Доход · факт <b>{money(values.actualIncome)}</b></div>
-    <div><span className="income-plan-dot" />Осталось получить <b>{money(values.plannedIncome)}</b></div>
-    <div><span className="expense-dot" />Расход · факт <b>{money(values.actualExpense)}</b></div>
-    <div><span className="expense-plan-dot" />Осталось оплатить <b>{money(values.plannedExpense)}</b></div>
-    <div><span className="balance-dot" />Остаток <b>{money(values.closingBalance)}</b></div>
   </div>;
 }
 

@@ -4,9 +4,8 @@ import { useMemo, useState, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import './finance.css';
-import { money, currentYm, monthLabel, apiErr, INCOME_GROUPS, EXPENSE_GROUPS , useYmParam, withYm } from './finlib';
+import { money, currentYm, apiErr, INCOME_GROUPS, EXPENSE_GROUPS , useYmParam, withYm } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
@@ -14,6 +13,7 @@ import TxTable from './TxTable';
 import TransactionModal from './TransactionModal';
 import { FinLoading, FinLoadError, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
+import { MonthlyFlowComparison, OverviewCashFlowChart } from './FinanceCharts';
 
 function activateOnKey(e: KeyboardEvent, action: () => void) {
   if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -56,11 +56,6 @@ export default function FinanceOverviewPage() {
   }), [ov.expensePlan]);
   const expensePlanTotal = expenseRows.reduce((s, r) => s + r.plan, 0);
 
-  const pie = [
-    { name: 'Доход', value: income, color: 'var(--green)' },
-    { name: 'Расход', value: expense, color: 'var(--red)' },
-  ].filter((p) => p.value > 0);
-
   const handleDelete = async (t: any) => {
     const id = typeof t === 'string' || typeof t === 'number' ? t : t?.id;
     try {
@@ -75,7 +70,7 @@ export default function FinanceOverviewPage() {
     return (
       <div className="fin-root">
         <div className="page-head">
-          <div><h1>Обзор</h1><p>Доход, расход и баланс за выбранный месяц</p></div>
+          <div><h1 className="flex"><FinIcon name="overview" size={22} /> Обзор</h1><p>Доход, расход и баланс за выбранный месяц</p></div>
           <MonthNav ym={ym} onChange={setYm} />
         </div>
         {isError ? <FinLoadError onRetry={() => refetch()} /> : <FinLoading />}
@@ -87,7 +82,7 @@ export default function FinanceOverviewPage() {
     <div className="fin-root">
       <div className="page-head">
         <div>
-          <h1>Обзор</h1>
+          <h1 className="flex"><FinIcon name="overview" size={22} /> Обзор</h1>
           <p>Доход, расход и баланс за выбранный месяц</p>
         </div>
         <div className="flex">
@@ -127,58 +122,11 @@ export default function FinanceOverviewPage() {
             { label: 'Расход за всё время', value: money(stats.expenseAllTime || 0), cls: 'neg' },
           ]}
         />
-        <div className="card">
-          <div className="summary-head"><span className="t">Доходы и расходы</span></div>
-          {pie.length === 0 ? (
-            <div className="empty" style={{ padding: 24 }}>Нет данных</div>
-          ) : (
-            <div style={{ height: 150 }}>
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie data={pie} dataKey="value" nameKey="name" innerRadius={42} outerRadius={66} paddingAngle={2}>
-                    {pie.map((p) => <Cell key={p.name} fill={p.color} />)}
-                  </Pie>
-                  <Tooltip formatter={(v) => money(Number(v))} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-          <div className="between" style={{ marginTop: 6 }}>
-            <span className="mini muted">Прибыль</span>
-            <b className={profit >= 0 ? 'pos' : 'neg'}>{money(profit, true)}</b>
-          </div>
-          {(stats.amortMonthly || 0) > 0 && (
-            <div className="between" style={{ marginTop: 4 }} title="Линейная амортизация инвентаря за месяц">
-              <span className="mini muted">С учётом амортизации ({money(stats.amortMonthly)})</span>
-              <b className={profit - stats.amortMonthly >= 0 ? 'pos' : 'neg'}>{money(profit - stats.amortMonthly, true)}</b>
-            </div>
-          )}
-        </div>
+        <MonthlyFlowComparison income={income} expense={expense} profit={profit} amortization={stats.amortMonthly || 0} />
       </div>
 
       {/* Тренд: месяц виден в контексте года, а не изолированно. */}
-      {(ov.monthlySeries?.length ?? 0) > 0 && (
-        <div className="card" style={{ marginBottom: 22 }}>
-          <div className="summary-head" style={{ marginBottom: 6 }}>
-            <span className="t"><FinIcon name="overview" size={18} /> Динамика 12 месяцев</span>
-          </div>
-          <div style={{ height: 240 }}>
-            <ResponsiveContainer>
-              <LineChart data={ov.monthlySeries} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="ym" tickFormatter={(v) => monthLabel(v)} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={70}
-                  tickFormatter={(v) => new Intl.NumberFormat('ru-RU', { notation: 'compact' }).format(Number(v))} />
-                <Tooltip formatter={(v: any, name: any) => [money(Number(v)), name]} labelFormatter={(l) => monthLabel(String(l), true)} />
-                <Legend formatter={(v) => <span style={{ fontSize: 12 }}>{v}</span>} />
-                <Line type="monotone" dataKey="income" name="Доход" stroke="var(--green)" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="expense" name="Расход" stroke="var(--red)" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="profit" name="Прибыль" stroke="var(--accent)" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
+      <OverviewCashFlowChart rows={ov.monthlySeries || []} selectedYm={ym} />
 
       <div className="cards grid-2" style={{ marginBottom: 22 }}>
         <div className="card clickable" role="link" tabIndex={0}

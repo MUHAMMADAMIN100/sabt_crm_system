@@ -8,6 +8,7 @@ const PATHS: Record<string, ReactNode> = {
   income: <><circle cx="8" cy="8" r="4.5" /><path d="M8 5.7v4.6M6.7 7h2a1.1 1.1 0 0 1 0 2.2H7" /><path d="M12 17h8M17 14l3 3-3 3" /></>,
   expense: <><path d="M4 7h16v12H4z" /><path d="M4 10h16" /><path d="M8 15h3" /><path d="M18 3v5M15.5 5.5 18 8l2.5-2.5" /></>,
   transactions: <><path d="M4 7h15" /><path d="m16 4 3 3-3 3" /><path d="M20 17H5" /><path d="m8 14-3 3 3 3" /></>,
+  activity: <><path d="M4.9 7.7A8 8 0 1 1 4 12" /><path d="M4 5v4h4" /><path d="M12 7.5V12l3 2" /></>,
   settings: <><path d="M4 6h10" /><path d="M18 6h2" /><circle cx="16" cy="6" r="2" /><path d="M4 12h2" /><path d="M10 12h10" /><circle cx="8" cy="12" r="2" /><path d="M4 18h8" /><path d="M16 18h4" /><circle cx="14" cy="18" r="2" /></>,
   chart: <><path d="M4 20V10" /><path d="M10 20V4" /><path d="M16 20v-7" /><path d="M22 20H2" /></>,
   currency: <><ellipse cx="12" cy="7" rx="7" ry="3" /><path d="M5 7v5c0 1.7 3.1 3 7 3s7-1.3 7-3V7" /><path d="M5 12v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5" /></>,
@@ -73,8 +74,9 @@ export default function FinIcon({ name, size = 18, className, style }: {
   return (
     <svg
       width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"
-      className={className} style={{ flexShrink: 0, ...style }} aria-hidden
+      stroke="currentColor" strokeWidth={1.65} strokeLinecap="round" strokeLinejoin="round"
+      className={`fin-icon${className ? ` ${className}` : ''}`} data-fin-icon={name}
+      style={{ flexShrink: 0, ...style }} aria-hidden="true" focusable="false"
     >
       {d}
     </svg>
@@ -86,12 +88,19 @@ export default function FinIcon({ name, size = 18, className, style }: {
 export function CatIcon({ icon, color, size = 26 }: {
   icon?: string | null; color?: string | null; size?: number;
 }) {
+  const categoryColor = color || '#7c8494';
   return (
     <span
       className="cat-ico"
-      style={{ width: size, height: size, minWidth: size, background: color || '#94a3b8' }}
+      data-category-icon={icon || 'dots'}
+      style={{
+        width: size,
+        height: size,
+        minWidth: size,
+        '--cat-color': categoryColor,
+      } as CSSProperties}
     >
-      <FinIcon name={icon || 'dots'} size={Math.round(size * 0.58)} />
+      <FinIcon name={icon || 'dots'} size={Math.round(size * 0.56)} />
     </span>
   );
 }
