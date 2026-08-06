@@ -105,6 +105,8 @@
 .fin-root td { padding: 11px 12px; border-bottom: 1px solid var(--border); font-size: 13.5px; color: var(--text); vertical-align: middle; }
 .fin-root tr:last-child td { border-bottom: none; }
 .fin-root tbody tr:hover { background: var(--surface-2); }
+.fin-root tbody tr.fin-tx-openable { cursor: pointer; }
+.fin-root .fin-tx-row-buttons { display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px; }
 /* Суммы не переносятся: колонка сужается — «3 500 с.» рвалось пополам. */
 .fin-root td.num, .fin-root th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Ряд кнопок-действий: компактнее и с ровным зазором, иначе распирал колонку. */
@@ -376,8 +378,8 @@
 .fin-root .tx-row { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; border: none; background: none;
   padding: 3px 5px; border-radius: 7px; cursor: pointer; text-align: left; }
 .fin-root .tx-row:hover { background: var(--surface-2); }
-.fin-root .tx-row.imported { cursor: default; opacity: .86; }
-.fin-root .tx-row.imported:hover { background: transparent; }
+.fin-root .tx-row.imported { cursor: pointer; opacity: .86; }
+.fin-root .tx-row.imported:hover { background: var(--surface-2); }
 .fin-root .tx-cal-cell.today .tx-row:hover { background: rgba(255, 255, 255, .75); }
 .fin-root .tx-cal-cell.today .tx-row.imported:hover { background: transparent; }
 .fin-root .tx-row .d { width: 7px; height: 7px; border-radius: 50%; flex: none; }
@@ -388,6 +390,35 @@
 .fin-root .tx-row .t { flex: 1; min-width: 0; font-size: 11.5px; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fin-root .tx-row .a { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
+
+/* Просмотр операции: финансовый факт сверху, контекст и аудит — ниже. */
+.fin-root .fin-tx-detail-hero { display: flex; align-items: center; gap: 13px; padding: 2px 0 6px; }
+.fin-root .fin-tx-detail-heading { flex: 1; min-width: 0; }
+.fin-root .fin-tx-detail-kicker { color: var(--muted); font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .45px; }
+.fin-root .fin-tx-detail-amount { margin-top: 2px; font-size: 28px; line-height: 1.15; font-weight: 750; letter-spacing: -.6px; font-variant-numeric: tabular-nums; }
+.fin-root .fin-tx-detail-caption { margin-top: 4px; color: var(--muted); overflow-wrap: anywhere; }
+.fin-root .fin-tx-status { align-self: flex-start; padding: 5px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.fin-root .fin-tx-status.completed { background: var(--green-soft); color: var(--green); }
+.fin-root .fin-tx-status.planned { background: var(--amber-soft); color: var(--amber); }
+.fin-root .fin-tx-status.cancelled { background: var(--red-soft); color: var(--red); }
+.fin-root .fin-tx-detail-focus { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 3px 14px; padding: 14px 16px; border-left: 3px solid var(--amber); background: var(--amber-soft); border-radius: 0 10px 10px 0; }
+.fin-root .fin-tx-detail-focus-label { grid-row: span 2; color: var(--amber); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .35px; }
+.fin-root .fin-tx-detail-focus strong { font-size: 17px; }
+.fin-root .fin-tx-detail-focus small { color: var(--muted); }
+.fin-root .fin-tx-detail-section { border-top: 1px solid var(--border); padding-top: 14px; }
+.fin-root .fin-tx-detail-section h4 { margin: 0 0 10px; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .55px; }
+.fin-root .fin-tx-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 24px; }
+.fin-root .fin-tx-detail { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fin-root .fin-tx-detail > span { color: var(--muted); font-size: 11.5px; }
+.fin-root .fin-tx-detail > b { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.fin-root .fin-tx-detail > b.strong { font-size: 14.5px; }
+.fin-root .fin-tx-detail code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 500; }
+.fin-root .fin-tx-detail-section.quiet { opacity: .88; }
+.fin-root .fin-tx-account-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 14px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); }
+.fin-root .fin-tx-account-flow > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fin-root .fin-tx-account-flow > div:last-child { text-align: right; }
+.fin-root .fin-tx-account-flow span { color: var(--muted); font-size: 11.5px; }
+.fin-root .fin-tx-account-flow b { overflow-wrap: anywhere; }
 /* «ещё N» / «свернуть» в длинных днях. */
 .fin-root .tx-cal-more { border: none; background: none; color: var(--accent); font-size: 11px; font-weight: 600;
   padding: 2px 5px; border-radius: 6px; text-align: left; cursor: pointer; align-self: flex-start; }
@@ -470,6 +501,12 @@
 
   /* На тач-устройствах hover нет — кнопки строк видны всегда. */
   .fin-root .row-actions { opacity: 1; }
+  .fin-root .fin-tx-detail-hero { align-items: flex-start; flex-wrap: wrap; }
+  .fin-root .fin-tx-detail-heading { flex-basis: calc(100% - 60px); }
+  .fin-root .fin-tx-status { margin-left: 55px; }
+  .fin-root .fin-tx-detail-grid { grid-template-columns: 1fr; gap: 11px; }
+  .fin-root .fin-tx-detail-focus { grid-template-columns: 1fr; gap: 4px; }
+  .fin-root .fin-tx-detail-focus-label { grid-row: auto; }
 
   /* Модалка почти во весь экран, кнопки — в столбик, если не влезают. */
   .fin-root .overlay, .fin-overlay {

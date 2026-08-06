@@ -103,6 +103,10 @@ export interface FinTx {
   amount: number;
   status?: string;
   comment?: string | null;
+  legacyDescription?: string | null;
+  counterparty?: string | null;
+  legacyProject?: string | null;
+  paymentMethod?: string | null;
   categoryId?: string | null;
   categoryName?: string | null;
   categoryIcon?: string | null;
@@ -110,17 +114,29 @@ export interface FinTx {
   group?: string | null;
   projectId?: string | null;
   projectName?: string | null;
+  projectDirection?: string | null;
+  projectTariff?: number | null;
   employeeId?: string | null;
   employeeName?: string | null;
+  employeeRole?: string | null;
+  employeeCategory?: string | null;
+  salaryYm?: string | null;
   debtId?: string | null;
   debtName?: string | null;
+  debtCounterparty?: string | null;
   subscriptionId?: string | null;
+  subscriptionName?: string | null;
+  subscriptionKind?: string | null;
   accountId?: string | null;
   accountName?: string | null;
   fromAccountId?: string | null;
   fromAccountName?: string | null;
   toAccountId?: string | null;
   toAccountName?: string | null;
+  createdById?: string | null;
+  createdByName?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface FinBackupMeta {

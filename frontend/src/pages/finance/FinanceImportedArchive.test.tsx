@@ -82,17 +82,20 @@ describe('imported Notion finance history', () => {
     expect(row).not.toBeNull();
     expect(within(row!).queryByRole('textbox')).not.toBeInTheDocument();
     expect(within(row!).queryByRole('combobox')).not.toBeInTheDocument();
-    expect(within(row!).queryByRole('button')).not.toBeInTheDocument();
-    expect(row).toHaveAttribute('title', IMPORTED_ARCHIVE_HINT);
+    expect(within(row!).getByRole('button', { name: 'Подробнее об операции' })).toBeInTheDocument();
+    await act(async () => { await user.click(within(row!).getByRole('button', { name: 'Подробнее об операции' })); });
+    expect(screen.getByRole('dialog', { name: 'Подробности операции' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Изменить/ })).not.toBeInTheDocument();
+    await act(async () => { await user.click(screen.getAllByRole('button', { name: 'Закрыть' }).at(-1)!); });
 
     await act(async () => {
       await user.click(screen.getByRole('button', { name: 'Календарь' }));
     });
     const calendarBadge = await screen.findByLabelText('Notion · архив');
     const calendarRow = calendarBadge.closest('.tx-row');
-    expect(calendarRow?.tagName).toBe('DIV');
+    expect(calendarRow?.tagName).toBe('BUTTON');
     await act(async () => { await user.click(calendarRow!); });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Подробности операции' })).toBeInTheDocument();
   });
 
   it('keeps the archive source in the CSV contract', () => {

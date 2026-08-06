@@ -228,11 +228,13 @@ interface FinMaps {
   categories: FinanceCategory[];
   projects: FinanceProject[];
   employees: FinanceEmployee[];
+  subscriptions: FinanceSubscription[];
   debts: FinanceDebt[];
   acc: Map<string, FinanceAccount>;
   cat: Map<string, FinanceCategory>;
   proj: Map<string, FinanceProject>;
   emp: Map<string, FinanceEmployee>;
+  sub: Map<string, FinanceSubscription>;
   debt: Map<string, FinanceDebt>;
 }
 
@@ -1248,16 +1250,17 @@ export class FinanceService implements OnModuleInit {
 
   // ─── справочники: helpers ────────────────────────────────────────
   private async maps(): Promise<FinMaps> {
-    const [accounts, categories, projects, employees, debts] = await Promise.all([
+    const [accounts, categories, projects, employees, subscriptions, debts] = await Promise.all([
       this.accRepo.find(), this.catRepo.find(), this.projRepo.find(),
-      this.empRepo.find(), this.debtRepo.find(),
+      this.empRepo.find(), this.subRepo.find(), this.debtRepo.find(),
     ]);
     return {
-      accounts, categories, projects, employees, debts,
+      accounts, categories, projects, employees, subscriptions, debts,
       acc: new Map(accounts.map(a => [a.id, a])),
       cat: new Map(categories.map(c => [c.id, c])),
       proj: new Map(projects.map(p => [p.id, p])),
       emp: new Map(employees.map(e => [e.id, e])),
+      sub: new Map(subscriptions.map(s => [s.id, s])),
       debt: new Map(debts.map(d => [d.id, d])),
     };
   }
@@ -2466,19 +2469,31 @@ export class FinanceService implements OnModuleInit {
   private async decorate(txs: FinanceTransaction[], m: FinMaps) {
     return txs.map(t => {
       const cat = t.categoryId ? m.cat.get(t.categoryId) : null;
+      const project = t.projectId ? m.proj.get(t.projectId) : null;
+      const employee = t.employeeId ? m.emp.get(t.employeeId) : null;
+      const debt = t.debtId ? m.debt.get(t.debtId) : null;
+      const subscription = t.subscriptionId ? m.sub.get(t.subscriptionId) : null;
       return {
         id: t.id, date: t.date, type: t.type, amount: Number(t.amount), status: t.status, comment: t.comment,
+        createdAt: t.createdAt, updatedAt: t.updatedAt,
+        createdById: t.createdById ?? null, createdByName: t.createdBy?.name ?? null,
         source: t.source ?? null, externalId: t.externalId ?? null,
         imported: t.source === 'notion',
         affectsBalance: t.affectsBalance !== false,
+        legacyDescription: t.description ?? null, counterparty: t.counterparty ?? null,
+        legacyProject: t.project ?? null, paymentMethod: t.paymentMethod ?? null,
         salaryYm: t.salaryYm ?? null,
         categoryId: t.categoryId, categoryName: cat?.name ?? (t.category ?? null),
         categoryIcon: cat?.icon ?? null, categoryColor: cat?.color ?? null,
         group: this.groupOf(t, m),
-        projectId: t.projectId, projectName: t.projectId ? m.proj.get(t.projectId)?.name ?? null : null,
-        employeeId: t.employeeId, employeeName: t.employeeId ? m.emp.get(t.employeeId)?.name ?? null : null,
-        debtId: t.debtId, debtName: t.debtId ? m.debt.get(t.debtId)?.name ?? null : null,
-        subscriptionId: t.subscriptionId,
+        projectId: t.projectId, projectName: project?.name ?? null,
+        projectDirection: project?.direction ?? null, projectTariff: project ? Number(project.tariff) : null,
+        employeeId: t.employeeId, employeeName: employee?.name ?? null,
+        employeeRole: employee?.role ?? null, employeeCategory: employee?.category ?? null,
+        debtId: t.debtId, debtName: debt?.name ?? null,
+        debtCounterparty: debt?.counterparty ?? null,
+        subscriptionId: t.subscriptionId, subscriptionName: subscription?.name ?? null,
+        subscriptionKind: subscription?.kind ?? null,
         accountId: t.accountId, accountName: t.accountId ? m.acc.get(t.accountId)?.name ?? null : null,
         fromAccountId: t.fromAccountId, fromAccountName: t.fromAccountId ? m.acc.get(t.fromAccountId)?.name ?? null : null,
         toAccountId: t.toAccountId, toAccountName: t.toAccountId ? m.acc.get(t.toAccountId)?.name ?? null : null,
@@ -2496,7 +2511,8 @@ export class FinanceService implements OnModuleInit {
     pageSize?: number;
   } = {}) {
     const m = await this.maps();
-    const qb = this.txRepo.createQueryBuilder('t');
+    const qb = this.txRepo.createQueryBuilder('t')
+      .leftJoinAndSelect('t.createdBy', 'createdBy');
     if (f.status === 'cancelled') {
       qb.where(`COALESCE(t.status,'completed') = 'cancelled'`);
     } else if (f.status === 'all') {

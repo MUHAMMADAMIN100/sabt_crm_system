@@ -9,6 +9,7 @@ import { TYPE_LABEL, money, moneyBare, currentYm, todayISO, formatDate, monthLab
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import TransactionModal from './TransactionModal';
+import TransactionDetailsModal from './TransactionDetailsModal';
 import ImportedArchiveBadge, { IMPORTED_ARCHIVE_HINT, isImportedArchive } from './ImportedArchiveBadge';
 import { FinLoading, FinLoadError, finConfirm, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
@@ -43,6 +44,7 @@ export default function FinanceTransactionsPage() {
   const [view, setView] = useState<'table' | 'calendar'>('table');
   const [calYm, setCalYm] = useYmParam();
   const [editTx, setEditTx] = useState<any>(null);
+  const [detailTx, setDetailTx] = useState<any>(null);
   const [addDate, setAddDate] = useState<string | null>(null);
 
   useEffect(() => {
@@ -169,7 +171,7 @@ export default function FinanceTransactionsPage() {
       </div>
 
       {view === 'calendar' ? (
-        <TxCalendar ym={calYm} txns={calTxns} onEdit={setEditTx} onAdd={setAddDate} />
+        <TxCalendar ym={calYm} txns={calTxns} onOpen={setDetailTx} onAdd={setAddDate} />
       ) : txQ.isLoading ? (
         <FinLoading />
       ) : txQ.isError ? (
@@ -190,12 +192,12 @@ export default function FinanceTransactionsPage() {
                   <th style={{ width: 130 }}>Со счёта</th>
                   <th style={{ width: 130 }}>На счёт</th>
                   <th style={{ width: 120 }} title="Месяц начисления зарплаты — за какой месяц выплата">Месяц ЗП</th>
-                  <th style={{ width: 56 }} />
+                  <th style={{ width: 88 }} />
                 </tr>
               </thead>
               <tbody>
                 {txns.map((t: any) => (
-                  <TxRow key={t.id} t={t} accounts={accounts} categories={categories} patch={patch} remove={remove} />
+                  <TxRow key={t.id} t={t} accounts={accounts} categories={categories} patch={patch} remove={remove} onOpen={setDetailTx} />
                 ))}
               </tbody>
             </table>
@@ -211,17 +213,19 @@ export default function FinanceTransactionsPage() {
       )}
 
       {editTx && <TransactionModal initial={editTx} onClose={() => setEditTx(null)} />}
+      {detailTx && <TransactionDetailsModal transaction={detailTx} onClose={() => setDetailTx(null)}
+        onEdit={(t) => { setDetailTx(null); setEditTx(t); }} />}
       {addDate && <TransactionModal initialDate={addDate} onClose={() => setAddDate(null)} />}
     </div>
   );
 }
 
 /** Календарь месяца: операции строками по дням, итоги дня и месяца.
- *  Клик по строке — редактирование, «+» в дне — новая операция этой датой,
+ *  Клик по строке — подробности, «+» в дне — новая операция этой датой,
  *  длинные дни сворачиваются до 5 строк («ещё N»). */
 const CAL_DAY_LIMIT = 5;
-function TxCalendar({ ym, txns, onEdit, onAdd }: {
-  ym: string; txns: any[]; onEdit: (t: any) => void; onAdd: (iso: string) => void;
+function TxCalendar({ ym, txns, onOpen, onAdd }: {
+  ym: string; txns: any[]; onOpen: (t: any) => void; onAdd: (iso: string) => void;
 }) {
   const [y, m] = ym.split('-').map(Number);
   const firstIdx = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Пн = 0
@@ -320,18 +324,12 @@ function TxCalendar({ ym, txns, onEdit, onAdd }: {
                           {t.type === 'expense' ? '−' : t.type === 'income' ? '+' : ''}{moneyBare(t.amount)}
                         </span>
                       </>;
-                      if (isImportedArchive(t)) {
-                        return (
-                          <div key={t.id} className={'tx-row imported ' + t.type}
-                            title={`${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)} · ${IMPORTED_ARCHIVE_HINT}`}>
-                            {content}
-                          </div>
-                        );
-                      }
                       return (
-                        <button key={t.id} type="button" className={'tx-row ' + t.type}
-                          title={`${String(t.date || '').slice(0, 10) > today ? 'Запланировано · ' : ''}${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}`}
-                          onClick={() => onEdit(t)}>
+                        <button key={t.id} type="button" className={'tx-row ' + t.type + (isImportedArchive(t) ? ' imported' : '')}
+                          title={isImportedArchive(t)
+                            ? `${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)} · ${IMPORTED_ARCHIVE_HINT}`
+                            : `${String(t.date || '').slice(0, 10) > today ? 'Запланировано · ' : ''}${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}`}
+                          onClick={() => onOpen(t)}>
                           {content}
                         </button>
                       );
@@ -369,11 +367,11 @@ function AccountSelect({ value, accounts, onChange, disabled = false }: {
   );
 }
 
-function TxRow({ t, accounts, categories, patch, remove }: {
+function TxRow({ t, accounts, categories, patch, remove, onOpen }: {
   t: any; accounts: any[]; categories: any[];
-  patch: (id: string, data: any) => void; remove: (id: string) => void;
+  patch: (id: string, data: any) => void; remove: (id: string) => void; onOpen: (t: any) => void;
 }) {
-  if (isImportedArchive(t)) return <ImportedTxRow t={t} />;
+  if (isImportedArchive(t)) return <ImportedTxRow t={t} onOpen={onOpen} />;
 
   const cancelled = t.status === 'cancelled';
   const cats = categories.filter((c: any) => c.type === t.type);
@@ -419,7 +417,8 @@ function TxRow({ t, accounts, categories, patch, remove }: {
   }
 
   return (
-    <tr className={cancelled ? 'fin-tx-cancelled' : undefined}>
+    <tr className={'fin-tx-openable' + (cancelled ? ' fin-tx-cancelled' : '')}
+      onClick={(e) => { if (!(e.target as HTMLElement).closest('input, select, button')) onOpen(t); }}>
       <td><input type="date" className="cell-input" disabled={cancelled} value={String(t.date || '').slice(0, 10)} onChange={(e) => patch(t.id, { date: e.target.value })} /></td>
       <td>
         <select className={'cell-input badge-select ' + t.type} disabled={cancelled} value={t.type} onChange={(e) => changeType(e.target.value)}>
@@ -475,18 +474,23 @@ function TxRow({ t, accounts, categories, patch, remove }: {
             onChange={(e) => e.target.value && patch(t.id, { salaryYm: e.target.value })} />
         : <span className="muted mini">—</span>}</td>
       <td className="num">
-        {cancelled
+        <span className="row-actions fin-tx-row-buttons">
+          <button className="btn ghost sm" title="Подробнее" aria-label="Подробнее об операции" onClick={() => onOpen(t)}>
+            <FinIcon name="info" size={14} />
+          </button>
+          {cancelled
           ? <span className="badge wait">отменено</span>
-          : (
+          :
             <button
-              className="btn ghost sm row-actions"
+              className="btn ghost sm"
               title="Отменить операцию"
               aria-label="Отменить операцию"
               onClick={confirmRemove}
             >
               <FinIcon name="undo" size={14} />
             </button>
-          )}
+          }
+        </span>
       </td>
     </tr>
   );
@@ -494,12 +498,13 @@ function TxRow({ t, accounts, categories, patch, remove }: {
 
 /** Архив Notion — только для чтения. Это не банковская проводка CRM:
  *  сохраняем строку в журнале/CSV, но исключаем любые способы её изменить. */
-function ImportedTxRow({ t }: { t: any }) {
+function ImportedTxRow({ t, onOpen }: { t: any; onOpen: (t: any) => void }) {
   const paired = t.type === 'transfer' || t.type === 'saving';
   const fromName = paired ? t.fromAccountName : t.type === 'expense' ? t.accountName : null;
   const toName = paired ? t.toAccountName : t.type === 'income' ? t.accountName : null;
   return (
-    <tr className="fin-tx-imported" title={IMPORTED_ARCHIVE_HINT}>
+    <tr className="fin-tx-imported fin-tx-openable" title={`${IMPORTED_ARCHIVE_HINT} · нажмите, чтобы посмотреть подробности`}
+      onClick={() => onOpen(t)}>
       <td><span className="nowrap">{formatDate(t.date)}</span></td>
       <td><span className={`badge ${t.type}`}>{TYPE_LABEL[t.type] ?? t.type}</span></td>
       <td>
@@ -524,7 +529,8 @@ function ImportedTxRow({ t }: { t: any }) {
       <td>{t.employeeId && t.salaryYm
         ? <span className="nowrap">{monthLabel(t.salaryYm, true)}</span>
         : <span className="muted mini">—</span>}</td>
-      <td />
+      <td className="num"><button className="btn ghost sm" title="Подробнее" aria-label="Подробнее об операции"
+        onClick={() => onOpen(t)}><FinIcon name="info" size={14} /></button></td>
     </tr>
   );
 }
