@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
 import { formatDate, money, monthLabel } from './finlib';
 import FinIcon from './FinIcon';
+import { AccountLabel } from './AccountIdentity';
 
 type SalaryChange = {
   effectiveYm: string;
@@ -160,7 +161,7 @@ function MonthPaymentHistory({ periods, rows }: { periods: PayrollPeriod[]; rows
                         <i className={`kind ${KIND_CLASS[row.kind]}`}>{row.kindLabel}</i>
                         <div>
                           <strong>{formatDate(row.date)}</strong>
-                          <small>{row.accountName || 'Счёт не указан'}</small>
+                          <small>{row.accountName ? <AccountLabel name={row.accountName} compact /> : 'Счёт не указан'}</small>
                           {row.note && <em>{row.note}</em>}
                         </div>
                         <b>{money(row.amount)}</b>
@@ -239,7 +240,7 @@ function MonthPaymentHistory({ periods, rows }: { periods: PayrollPeriod[]; rows
                   <i className={`kind ${KIND_CLASS[row.kind]}`}>{row.kindLabel}</i>
                   <div>
                     <strong>{row.date ? formatDate(row.date) : 'Старая запись'}</strong>
-                    <small>{row.accountName || (row.legacy ? 'Счёт не сохранился' : 'Счёт не указан')}</small>
+                    <small>{row.accountName ? <AccountLabel name={row.accountName} compact /> : (row.legacy ? 'Счёт не сохранился' : 'Счёт не указан')}</small>
                     {row.note && <em>{row.note}</em>}
                   </div>
                   <b>{money(row.amount)}</b>

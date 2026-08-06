@@ -53,9 +53,10 @@
 
 .fin-root .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .fin-root .page-head > * { min-width: 0; }
+.fin-root .page-head > div:first-child { min-width: 0; }
 .fin-root .page-head > .flex { justify-content: flex-end; flex-wrap: wrap; }
-.fin-root .page-head h1 { font-size: 22px; margin: 0; letter-spacing: -.4px; font-weight: 700; color: var(--text); }
-.fin-root .page-head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.fin-root .page-head h1 { min-height: 32px; font-size: 22px; line-height: 1.25; margin: 0; letter-spacing: -.4px; font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+.fin-root .page-head p { max-width: 72ch; margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 
 /* Month switcher */
 .fin-root .month-nav { display: inline-flex; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--border);
@@ -91,16 +92,16 @@
 
 .fin-root .stat .label { color: var(--muted); font-size: 12.5px; display: flex; align-items: center; gap: 7px; }
 .fin-root .stat .value { font-size: 25px; font-weight: 650; letter-spacing: -.6px; margin-top: 8px; }
-.fin-root .card > .value { line-height: 1.2; overflow-wrap: anywhere; }
+.fin-root .card > .value { margin-top: 7px; font-size: clamp(21px, 2vw, 27px); font-weight: 700; line-height: 1.18; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .fin-root .stat .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .fin-root .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .fin-root .pos { color: var(--green); } .fin-root .neg { color: var(--red); } .fin-root .muted { color: var(--muted); }
 
 /* Summary container (Доход / Расход) */
-.fin-root .summary-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.fin-root .summary-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 14px; }
 .fin-root .summary-head { gap: 12px; }
 .fin-root .summary-head > * { min-width: 0; }
-.fin-root .summary-head .t { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.fin-root .summary-head .t { font-size: 15px; font-weight: 700; line-height: 1.35; display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
 .fin-root .summary-head .total { font-size: 22px; font-weight: 700; letter-spacing: -.5px; white-space: nowrap; }
 .fin-root .brk-legend { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--muted); padding: 2px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
 .fin-root .brk { display: flex; flex-direction: column; gap: 2px; }
@@ -114,10 +115,10 @@
 .fin-root .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; overflow-x: auto; }
 .fin-root table { width: 100%; border-collapse: collapse; }
 .fin-root .fin-table-embedded { box-shadow: none; border-radius: 10px; }
-.fin-root th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
+.fin-root th { text-align: left; font-size: 11.5px; line-height: 1.3; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
   font-weight: 600; padding: 11px 12px; border-bottom: 1px solid var(--border); background: transparent;
   white-space: nowrap; vertical-align: bottom; }
-.fin-root td { padding: 11px 12px; border-bottom: 1px solid var(--border); font-size: 13.5px; color: var(--text); vertical-align: middle; }
+.fin-root td { padding: 11px 12px; border-bottom: 1px solid var(--border); font-size: 13.5px; line-height: 1.38; color: var(--text); vertical-align: middle; }
 .fin-root tr:last-child td { border-bottom: none; }
 .fin-root tbody tr:hover { background: var(--surface-2); }
 .fin-root tbody tr.fin-tx-openable { cursor: pointer; }
@@ -335,7 +336,7 @@
 .fin-root .flex { display: flex; align-items: center; gap: 10px; }
 .fin-root .between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .fin-root .between > * { min-width: 0; }
-.fin-root .mini { font-size: 12px; }
+.fin-root .mini { font-size: 12px; line-height: 1.4; }
 .fin-root .right { text-align: right; }
 .fin-root .nowrap { white-space: nowrap; }
 .fin-root .back { color: var(--muted); font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px; background: none; border: none; padding: 0; }
@@ -832,6 +833,14 @@
   margin-top: 3px; color: color-mix(in srgb, var(--muted) 84%, var(--text));
   font-size: 10.5px; line-height: 1.35;
 }
+.fin-plan-source .fin-plan-source-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 3px;
+}
+.fin-plan-source .fin-plan-source-meta-row .fin-plan-source-meta { min-width: 0; margin-top: 0; }
 .fin-plan-balance-reset {
   display: block;
   width: fit-content;
@@ -888,17 +897,6 @@
   border-radius: 24px;
   box-shadow: 0 24px 70px rgba(63, 67, 117, .08);
 }
-.fin-root::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  inset: 0 28px auto;
-  height: 2px;
-  border-radius: 0 0 999px 999px;
-  background: var(--gradient-brand);
-  opacity: .52;
-}
-
 /* Typography and hierarchy */
 .fin-root .page-head {
   align-items: center;
@@ -1276,7 +1274,6 @@
     border-radius: 0;
     box-shadow: none;
   }
-  .fin-root::before { inset-inline: 16px; }
   .fin-root .page-head { gap: 12px; margin-bottom: 18px; padding-bottom: 14px; }
   .fin-root .page-head h1 { font-size: 21px; }
   .fin-root .page-head > .flex { justify-content: flex-start; }
@@ -1686,6 +1683,114 @@
 .fin-root .badge > .fin-icon { stroke-width: 1.9; }
 .fin-root .back > .fin-icon,
 .fin-root .fin-tx-compact-audit .fin-icon { color: var(--muted); }
+
+/* Account identity: supplied bank marks are reserved for account context.
+   Cash and unknown accounts stay in the same thin line-icon language. */
+.fin-root .fin-account-label,
+.fin-overlay .fin-account-label,
+.fin-salary-popover .fin-account-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text, #1b1c20);
+  font-weight: 600;
+  line-height: 1.25;
+  vertical-align: middle;
+}
+.fin-root .fin-account-name,
+.fin-overlay .fin-account-name,
+.fin-salary-popover .fin-account-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fin-root .fin-account-mark,
+.fin-overlay .fin-account-mark,
+.fin-salary-popover .fin-account-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--account-color) 24%, var(--border, #e7e8ed));
+  border-radius: 9px;
+  color: color-mix(in srgb, var(--account-color) 76%, var(--text, #1b1c20));
+  background: color-mix(in srgb, var(--account-color) 9%, var(--surface, #fff));
+}
+.fin-root .fin-account-mark img,
+.fin-overlay .fin-account-mark img,
+.fin-salary-popover .fin-account-mark img {
+  display: block;
+  width: auto;
+  height: 18px;
+  max-width: 82%;
+  object-fit: contain;
+}
+.fin-root .fin-account-mark.alif,
+.fin-overlay .fin-account-mark.alif,
+.fin-salary-popover .fin-account-mark.alif {
+  border-color: color-mix(in srgb, #00af66 24%, var(--border, #e7e8ed));
+  background: color-mix(in srgb, #00af66 8%, var(--surface, #fff));
+}
+.fin-root .fin-account-mark.dushanbe-city,
+.fin-overlay .fin-account-mark.dushanbe-city,
+.fin-salary-popover .fin-account-mark.dushanbe-city {
+  width: 39px;
+  border-color: color-mix(in srgb, #0456a2 20%, var(--border, #e7e8ed));
+  background: color-mix(in srgb, #0456a2 7%, var(--surface, #fff));
+}
+.fin-root .fin-account-mark.dushanbe-city img,
+.fin-overlay .fin-account-mark.dushanbe-city img,
+.fin-salary-popover .fin-account-mark.dushanbe-city img { width: 31px; height: auto; max-width: none; }
+.fin-root .fin-account-mark.cash,
+.fin-overlay .fin-account-mark.cash,
+.fin-salary-popover .fin-account-mark.cash {
+  color: #65748b;
+  border-color: color-mix(in srgb, #94a3b8 30%, var(--border, #e7e8ed));
+  background: color-mix(in srgb, #94a3b8 10%, var(--surface, #fff));
+}
+.fin-root .fin-account-label.compact,
+.fin-overlay .fin-account-label.compact,
+.fin-salary-popover .fin-account-label.compact { gap: 6px; font-size: 12px; }
+.fin-root .fin-account-mark.compact,
+.fin-overlay .fin-account-mark.compact,
+.fin-salary-popover .fin-account-mark.compact { width: 23px; height: 23px; border-radius: 7px; }
+.fin-root .fin-account-mark.dushanbe-city.compact,
+.fin-overlay .fin-account-mark.dushanbe-city.compact,
+.fin-salary-popover .fin-account-mark.dushanbe-city.compact { width: 31px; }
+.fin-root .fin-account-mark.compact img,
+.fin-overlay .fin-account-mark.compact img,
+.fin-salary-popover .fin-account-mark.compact img { height: 14px; }
+.fin-root .fin-account-mark.dushanbe-city.compact img,
+.fin-overlay .fin-account-mark.dushanbe-city.compact img,
+.fin-salary-popover .fin-account-mark.dushanbe-city.compact img { width: 25px; height: auto; }
+.fin-root .fin-account-flow {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: 100%;
+}
+.fin-root .fin-account-flow > .fin-icon { color: var(--muted); }
+.fin-root .fin-account-select {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 138px;
+}
+.fin-root .fin-account-select > .cell-input { min-width: 0; }
+.fin-root .fin-account-select.form-control { width: 100%; min-width: 0; }
+.fin-root .fin-account-select.form-control > select { min-width: 0; }
+.fin-root .cards.grid-balances .stat .label { color: var(--text); }
+.fin-root .cards.grid-balances .stat .value { padding-left: 37px; }
+.fin-root .cards.grid-balances .stat:has(.dushanbe-city) .value { padding-left: 47px; }
+
 .fin-root .fin-icon-choice {
   display: grid;
   place-items: center;
@@ -1711,4 +1816,7 @@
     height: 36px;
     min-height: 36px;
   }
+  .fin-root .page-head > .flex { width: 100%; justify-content: flex-start; }
+  .fin-root .cards.grid-balances .stat .value,
+  .fin-root .cards.grid-balances .stat:has(.dushanbe-city) .value { padding-left: 0; }
 }

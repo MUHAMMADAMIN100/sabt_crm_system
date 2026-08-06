@@ -3,6 +3,7 @@ import FinIcon, { CatIcon } from './FinIcon';
 import { formatDate, INCOME_GROUPS, money, monthLabel, todayISO, TYPE_LABEL } from './finlib';
 import ImportedArchiveBadge, { isImportedArchive } from './ImportedArchiveBadge';
 import type { FinTx } from './types';
+import { AccountLabel } from './AccountIdentity';
 
 const DIRECTION_LABEL = Object.fromEntries(INCOME_GROUPS.map((g) => [g.key, g.label]));
 
@@ -49,11 +50,13 @@ export default function TransactionDetailsPanel({ transaction: t, id, onClose, o
   const from = paired ? t.fromAccountName : t.type === 'expense' ? t.accountName : null;
   const to = paired ? (t.toAccountName || (t.type === 'saving' ? t.accountName : null)) : t.type === 'income' ? t.accountName : null;
   const flowFromLabel = paired ? 'Со счёта' : t.type === 'income' ? 'Плательщик / проект' : 'Списано со счёта';
-  const flowFromValue = t.type === 'income' ? (t.projectName || t.counterparty || t.legacyProject) : from;
+  const flowFromValue = t.type === 'income'
+    ? (t.projectName || t.counterparty || t.legacyProject)
+    : from ? <AccountLabel name={from} compact /> : null;
   const flowToLabel = paired ? 'На счёт' : t.type === 'income' ? 'Зачислено на счёт' : 'Получатель';
   const flowToValue = t.type === 'expense'
     ? (t.employeeId ? (t.employeeName || 'Сотрудник не найден') : t.debtCounterparty || t.debtName || t.subscriptionName || t.counterparty)
-    : to;
+    : to ? <AccountLabel name={to} compact /> : null;
   const canEdit = !!onEdit && !isImportedArchive(t) && t.status !== 'cancelled';
   const role = [t.employeeRole, t.employeeCategory].filter(Boolean).join(' · ');
   const direction = t.projectDirection ? (DIRECTION_LABEL[t.projectDirection] || t.projectDirection) : null;

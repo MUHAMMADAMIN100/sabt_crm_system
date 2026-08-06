@@ -14,6 +14,7 @@ import TransactionModal from './TransactionModal';
 import { FinLoading, FinLoadError, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
 import { MonthlyFlowComparison, OverviewCashFlowChart } from './FinanceCharts';
+import { AccountLabel } from './AccountIdentity';
 
 function activateOnKey(e: KeyboardEvent, action: () => void) {
   if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -94,7 +95,7 @@ export default function FinanceOverviewPage() {
       <div className="cards grid-balances" style={{ marginBottom: 14 }}>
         {balances.map((a) => (
           <div className="card stat" key={a.accountId}>
-            <div className="label"><span className="dot" style={{ background: a.color }} /> {a.name}</div>
+            <div className="label"><AccountLabel name={a.name} color={a.color} /></div>
             <div className="value">{money(a.balance)}</div>
           </div>
         ))}

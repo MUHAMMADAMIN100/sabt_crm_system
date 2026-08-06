@@ -9,6 +9,7 @@ import FinIcon, { CatIcon, PICKER_ICONS } from './FinIcon';
 import { FinModal, FinLoading, FinLoadError, finConfirm, invalidateFinanceAll } from './FinKit';
 import { ProjectFormModal, EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
 import { financeApi } from '@/services/api.service';
+import { AccountLabel } from './AccountIdentity';
 
 export default function FinanceSettingsPage() {
   const qc = useQueryClient();
@@ -150,7 +151,7 @@ export default function FinanceSettingsPage() {
             {accounts.map((a: any) => (
               <tr key={a.id} style={a.archived ? { opacity: .55 } : undefined}>
                 <td>
-                  <span className="dot" style={{ background: a.color }} /> <b style={{ marginLeft: 8 }}>{a.name}</b>
+                  <AccountLabel name={a.name} color={a.color} compact />
                   {a.archived && <span className="mini muted" style={{ marginLeft: 8 }}>архивный</span>}
                 </td>
                 <td className="num">

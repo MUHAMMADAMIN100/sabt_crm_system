@@ -9,6 +9,7 @@ import { TYPE_LABEL, todayISO, currentYm, apiErr } from './finlib';
 import FinIcon from './FinIcon';
 import { useModalKeys, invalidateFinance, invalidateFinanceAll } from './FinKit';
 import { financeApi } from '@/services/api.service';
+import { AccountMark } from './AccountIdentity';
 
 const TYPES = ['income', 'expense', 'transfer', 'saving'];
 
@@ -49,6 +50,8 @@ export default function TransactionModal({ initial, initialType, initialDate, on
   const needTo = type === 'income' || type === 'transfer' || type === 'saving';
   const needCategory = type !== 'transfer';
   const cats = categories.filter((c: any) => c.type === type);
+  const fromAccount = accounts.find((a: any) => a.id === accountFrom);
+  const toAccount = accounts.find((a: any) => a.id === accountTo);
   const selectedCategory = categories.find((c: any) => c.id === categoryId) as any;
   const salaryExpense = type === 'expense'
     && (selectedCategory?.key === 'salary' || (!selectedCategory && !!initial?.employeeId));
@@ -170,18 +173,24 @@ export default function TransactionModal({ initial, initialType, initialDate, on
           <div className="form-grid">
             {needFrom && (
               <div className="field"><label>{type === 'transfer' ? 'Со счёта' : 'Списать со счёта'}</label>
-                <select value={accountFrom} onChange={(e) => setAccountFrom(e.target.value)}>
-                  <option value="">— выбрать —</option>
-                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
+                <div className="fin-account-select form-control">
+                  <AccountMark name={fromAccount?.name} color={fromAccount?.color} compact />
+                  <select value={accountFrom} onChange={(e) => setAccountFrom(e.target.value)}>
+                    <option value="">— выбрать —</option>
+                    {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
               </div>
             )}
             {needTo && (
               <div className="field"><label>{type === 'transfer' ? 'На счёт' : 'Зачислить на счёт'}</label>
-                <select value={accountTo} onChange={(e) => setAccountTo(e.target.value)}>
-                  <option value="">— выбрать —</option>
-                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
+                <div className="fin-account-select form-control">
+                  <AccountMark name={toAccount?.name} color={toAccount?.color} compact />
+                  <select value={accountTo} onChange={(e) => setAccountTo(e.target.value)}>
+                    <option value="">— выбрать —</option>
+                    {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
               </div>
             )}
           </div>

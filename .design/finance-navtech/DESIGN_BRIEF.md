@@ -56,6 +56,8 @@ Present every finance route as one calm analytical workspace: a white rounded ca
 - Income and expense retain green and coral meaning; navigation, planning, settings, and neutral actions use lavender or muted ink.
 - Action icons stay bare inside labelled buttons. Icon-only actions receive a compact square hit area and a semantic hover tint.
 - Empty-state icons are larger but remain quiet, using the same border, radius, and pastel material as the rest of finance.
+- Financial accounts use a separate identity layer: supplied Alif and Dushanbe City marks appear only beside account names; Cash uses the same thin banknote glyph as the finance icon family; custom accounts fall back to a color-aware wallet tile.
+- Account marks remain decorative next to an explicit text name, so recognition improves without replacing readable labels or introducing icon-only ambiguity.
 
 ## Interaction and states
 

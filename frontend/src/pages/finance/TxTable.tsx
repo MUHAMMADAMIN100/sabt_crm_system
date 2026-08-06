@@ -5,6 +5,7 @@ import { money, formatDate, TYPE_LABEL } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import { finConfirm } from './FinKit';
 import type { FinTx } from './types';
+import { AccountLabel } from './AccountIdentity';
 
 export default function TxTable({ txns, onEdit, onDelete }: {
   txns: FinTx[];
@@ -20,10 +21,10 @@ export default function TxTable({ txns, onEdit, onDelete }: {
 
   const accountCell = (t: any) => {
     if (t.type === 'saving' && !t.fromAccountId && !t.toAccountId && t.accountId) {
-      return `Историческое пополнение → ${t.accountName ?? '—'}`;
+      return <span className="fin-account-flow"><span>Историческое пополнение</span><FinIcon name="arrowRight" size={13} /><AccountLabel name={t.accountName} compact /></span>;
     }
-    if (t.type === 'transfer' || t.type === 'saving') return `${t.fromAccountName ?? '—'} → ${t.toAccountName ?? '—'}`;
-    return t.accountName ?? t.fromAccountName ?? t.toAccountName ?? '—';
+    if (t.type === 'transfer' || t.type === 'saving') return <span className="fin-account-flow"><AccountLabel name={t.fromAccountName} compact /><FinIcon name="arrowRight" size={13} /><AccountLabel name={t.toAccountName} compact /></span>;
+    return <AccountLabel name={t.accountName ?? t.fromAccountName ?? t.toAccountName} compact />;
   };
 
   return (

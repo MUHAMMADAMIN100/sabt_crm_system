@@ -10,6 +10,7 @@ import ImportedArchiveBadge, { isImportedArchive } from './ImportedArchiveBadge'
 import { floatingPosition, scrollableAncestors, type FloatingPosition } from './floatingPosition';
 import './finance.css';
 import { PlanningCashFlowChart } from './FinanceCharts';
+import { AccountMark } from './AccountIdentity';
 
 const scenarios: Record<string, string> = { conservative: 'Осторожный', base: 'Базовый', optimistic: 'Оптимистичный' };
 
@@ -161,7 +162,10 @@ function PlanSource({ source, remove }: { source: any; remove: (id: string) => v
           {isImportedArchive(source) && <ImportedArchiveBadge />}
         </span>
         <small>{source.kind}</small>
-        {meta.length > 0 && <small className="fin-plan-source-meta">{meta.join(' · ')}</small>}
+        {meta.length > 0 && <span className="fin-plan-source-meta-row">
+          {source.accountName && <AccountMark name={source.accountName} compact />}
+          <small className="fin-plan-source-meta">{meta.join(' · ')}</small>
+        </span>}
       </span>
       <b>{money(source.amount)}</b>
       {source.adjustmentId && (

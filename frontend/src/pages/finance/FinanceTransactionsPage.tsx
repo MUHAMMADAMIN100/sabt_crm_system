@@ -13,6 +13,7 @@ import TransactionDetailsPanel from './TransactionDetailsModal';
 import ImportedArchiveBadge, { IMPORTED_ARCHIVE_HINT, isImportedArchive } from './ImportedArchiveBadge';
 import { FinLoading, FinLoadError, finConfirm, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
+import { AccountLabel, AccountMark } from './AccountIdentity';
 
 const TYPES = ['income', 'expense', 'transfer', 'saving'];
 const PAGE_SIZE = 100;
@@ -385,11 +386,15 @@ function AccountSelect({ value, accounts, onChange, disabled = false }: {
 }) {
   // Архивные счета не предлагаем, но если операция уже на таком — показываем его.
   const opts = accounts.filter((a: any) => !a.archived || a.id === value);
+  const selected = opts.find((a: any) => a.id === value);
   return (
-    <select className="cell-input" value={value ?? ''} disabled={disabled} onChange={(e) => onChange(e.target.value || null)}>
-      <option value="">—</option>
-      {opts.map((a: any) => <option key={a.id} value={a.id}>{a.name}{a.archived ? ' (архив)' : ''}</option>)}
-    </select>
+    <div className="fin-account-select">
+      <AccountMark name={selected?.name} color={selected?.color} compact />
+      <select className="cell-input" value={value ?? ''} disabled={disabled} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">—</option>
+        {opts.map((a: any) => <option key={a.id} value={a.id}>{a.name}{a.archived ? ' (архив)' : ''}</option>)}
+      </select>
+    </div>
   );
 }
 
@@ -564,8 +569,8 @@ function ImportedTxRow({ t, expanded, onToggle, onClose }: {
         </div>
       </td>
       <td className="num"><b>{money(t.amount)}</b></td>
-      <td>{fromName || <span className="muted mini">—</span>}</td>
-      <td>{toName || <span className="muted mini">—</span>}</td>
+      <td>{fromName ? <AccountLabel name={fromName} compact /> : <span className="muted mini">—</span>}</td>
+      <td>{toName ? <AccountLabel name={toName} compact /> : <span className="muted mini">—</span>}</td>
       <td>{t.employeeId && t.salaryYm
         ? <span className="nowrap">{monthLabel(t.salaryYm, true)}</span>
         : <span className="muted mini">—</span>}</td>

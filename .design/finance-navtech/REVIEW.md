@@ -58,3 +58,12 @@ Production build and finance tests pass. Automated rendered screenshots could no
 - Normalized action-only buttons, overview labels, employee-history titles, and empty states without changing non-finance components.
 - Refined the finance sidebar branch with the same rounded line-icon rhythm.
 - Source review confirms finance-only scoping, responsive touch sizing, dark-mode tokens, and accessible decorative SVG handling.
+
+## 2026-08-06 · finance QA and account identity pass
+
+- Removed the decorative gradient rule from the top of every finance canvas while retaining the functional page-header separator.
+- Hardened headings, captions, KPI values, compact copy, and table cells with explicit line height, wrapping, and minimum sizing to prevent text-on-text collisions with long Russian labels and amounts.
+- Added the supplied Alif and Dushanbe City assets plus a finance-native banknote mark for Cash; unknown accounts use a quiet color-aware wallet fallback.
+- Reused account identity in overview balances, account settings, transaction table/editing, inline transaction detail, salary payout history, planning sources, and the operation form.
+- Finance tests: 41/41 passed. Production TypeScript/Vite build passed.
+- Browser discovery was retried and returned no available browser, so new rendered screenshots still cannot be captured in this environment; the source/build/test review is complete, but visual evidence remains pending.
