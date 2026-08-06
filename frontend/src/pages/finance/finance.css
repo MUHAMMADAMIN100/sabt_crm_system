@@ -67,6 +67,7 @@
 .fin-root [role="link"]:focus-visible,
 .fin-root .brk-row:focus-visible,
 .fin-root .fin-salary-employee-row:focus-visible,
+.fin-root .fin-tx-openable:focus-visible,
 .fin-root .fin-plan-source.has-popover:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -106,6 +107,8 @@
 .fin-root tr:last-child td { border-bottom: none; }
 .fin-root tbody tr:hover { background: var(--surface-2); }
 .fin-root tbody tr.fin-tx-openable { cursor: pointer; }
+.fin-root tbody tr.fin-tx-openable.expanded > td { background: color-mix(in srgb, var(--accent-soft) 56%, var(--surface)); border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--border)); }
+.fin-root .fin-wide-table tbody tr.fin-tx-openable.expanded > td:first-child { background: color-mix(in srgb, var(--accent-soft) 56%, var(--surface)); }
 .fin-root .fin-tx-row-buttons { display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px; }
 /* Суммы не переносятся: колонка сужается — «3 500 с.» рвалось пополам. */
 .fin-root td.num, .fin-root th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -392,6 +395,20 @@
 .fin-root .tx-row .a { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
 
 /* Просмотр операции: финансовый факт сверху, контекст и аудит — ниже. */
+.fin-root .fin-tx-details-row > td,
+.fin-root .fin-wide-table .fin-tx-details-row > td:first-child {
+  position: static !important; left: auto !important; z-index: auto !important;
+  padding: 0 !important; background: var(--surface-2) !important;
+  box-shadow: inset 0 -1px 0 var(--border) !important;
+}
+.fin-root .fin-tx-details-panel { display: grid; gap: 14px; padding: 18px 20px 22px; border-top: 2px solid var(--accent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 48%, var(--surface)) 0, var(--surface-2) 150px);
+  animation: finHistoryIn .16s ease-out; }
+.fin-root .fin-tx-details-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.fin-root .fin-tx-details-panel-head > div:first-child { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fin-root .fin-tx-details-panel-head strong { font-size: 16px; }
+.fin-root .fin-tx-details-panel-head span { color: var(--muted); font-size: 12px; }
+.fin-root .fin-tx-calendar-details { margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
 .fin-root .fin-tx-detail-hero { display: flex; align-items: center; gap: 13px; padding: 2px 0 6px; }
 .fin-root .fin-tx-detail-heading { flex: 1; min-width: 0; }
 .fin-root .fin-tx-detail-kicker { color: var(--muted); font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .45px; }
@@ -507,6 +524,9 @@
   .fin-root .fin-tx-detail-grid { grid-template-columns: 1fr; gap: 11px; }
   .fin-root .fin-tx-detail-focus { grid-template-columns: 1fr; gap: 4px; }
   .fin-root .fin-tx-detail-focus-label { grid-row: auto; }
+  .fin-root .fin-tx-details-panel { padding: 15px 14px 18px; }
+  .fin-root .fin-tx-details-panel-head { align-items: flex-start; }
+  .fin-root .fin-tx-details-panel-head > div:first-child span { display: none; }
 
   /* Модалка почти во весь экран, кнопки — в столбик, если не влезают. */
   .fin-root .overlay, .fin-overlay {
@@ -601,6 +621,9 @@
 @keyframes finHistoryIn {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fin-root .fin-tx-details-panel { animation: none; }
 }
 .fin-employee-history.loading,
 .fin-employee-history.error {

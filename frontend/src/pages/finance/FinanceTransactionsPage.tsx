@@ -1,7 +1,7 @@
 // Транзакции /finance/transactions — журнал с Notion-инлайн-редактированием
 // (порт fin-webrand/src/pages/Transactions.tsx, ТЗ «Этап 5»).
 // Таблица — серверная пагинация/поиск/фильтр; календарь грузит свой месяц.
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
@@ -9,7 +9,7 @@ import { TYPE_LABEL, money, moneyBare, currentYm, todayISO, formatDate, monthLab
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import TransactionModal from './TransactionModal';
-import TransactionDetailsModal from './TransactionDetailsModal';
+import TransactionDetailsPanel from './TransactionDetailsModal';
 import ImportedArchiveBadge, { IMPORTED_ARCHIVE_HINT, isImportedArchive } from './ImportedArchiveBadge';
 import { FinLoading, FinLoadError, finConfirm, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
@@ -44,7 +44,7 @@ export default function FinanceTransactionsPage() {
   const [view, setView] = useState<'table' | 'calendar'>('table');
   const [calYm, setCalYm] = useYmParam();
   const [editTx, setEditTx] = useState<any>(null);
-  const [detailTx, setDetailTx] = useState<any>(null);
+  const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
   const [addDate, setAddDate] = useState<string | null>(null);
 
   useEffect(() => {
@@ -97,6 +97,21 @@ export default function FinanceTransactionsPage() {
     return true;
   };
   const calTxns = ((calData?.items ?? []) as any[]).filter(matches);
+  const expandedTx = [...txns, ...calTxns].find((t: any) => t.id === expandedTxId) ?? null;
+
+  function toggleDetails(t: any) {
+    setExpandedTxId((current) => current === t.id ? null : t.id);
+  }
+
+  function closeDetails(id: string) {
+    setExpandedTxId(null);
+    requestAnimationFrame(() => document.getElementById(`finance-tx-row-${id}`)?.focus());
+  }
+
+  function editFromDetails(t: any) {
+    setExpandedTxId(null);
+    setEditTx(t);
+  }
 
   async function patch(id: string, data: any) {
     try {
@@ -147,9 +162,9 @@ export default function FinanceTransactionsPage() {
       <div className="toolbar">
         <div className="view-toggle" role="group" aria-label="Вид журнала">
           <button className={view === 'table' ? 'active' : ''} aria-pressed={view === 'table'}
-            onClick={() => setView('table')}><FinIcon name="transactions" size={13} /> Таблица</button>
+            onClick={() => { setView('table'); setExpandedTxId(null); }}><FinIcon name="transactions" size={13} /> Таблица</button>
           <button className={view === 'calendar' ? 'active' : ''} aria-pressed={view === 'calendar'}
-            onClick={() => setView('calendar')}><FinIcon name="overview" size={13} /> Календарь</button>
+            onClick={() => { setView('calendar'); setExpandedTxId(null); }}><FinIcon name="overview" size={13} /> Календарь</button>
         </div>
         {view === 'calendar' && <MonthNav ym={calYm} onChange={setCalYm} />}
         <input className="grow" style={{ maxWidth: 300 }} placeholder="Поиск…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -171,7 +186,12 @@ export default function FinanceTransactionsPage() {
       </div>
 
       {view === 'calendar' ? (
-        <TxCalendar ym={calYm} txns={calTxns} onOpen={setDetailTx} onAdd={setAddDate} />
+        <>
+          <TxCalendar ym={calYm} txns={calTxns} expandedTxId={expandedTxId} onToggle={toggleDetails} onAdd={setAddDate} />
+          {expandedTx && <div className="fin-tx-calendar-details"><TransactionDetailsPanel
+            id={`finance-tx-details-${expandedTx.id}`} transaction={expandedTx}
+            onClose={() => closeDetails(expandedTx.id)} onEdit={editFromDetails} /></div>}
+        </>
       ) : txQ.isLoading ? (
         <FinLoading />
       ) : txQ.isError ? (
@@ -197,7 +217,8 @@ export default function FinanceTransactionsPage() {
               </thead>
               <tbody>
                 {txns.map((t: any) => (
-                  <TxRow key={t.id} t={t} accounts={accounts} categories={categories} patch={patch} remove={remove} onOpen={setDetailTx} />
+                  <TxRow key={t.id} t={t} accounts={accounts} categories={categories} patch={patch} remove={remove}
+                    expanded={expandedTxId === t.id} onToggle={toggleDetails} onClose={closeDetails} onEdit={editFromDetails} />
                 ))}
               </tbody>
             </table>
@@ -213,8 +234,6 @@ export default function FinanceTransactionsPage() {
       )}
 
       {editTx && <TransactionModal initial={editTx} onClose={() => setEditTx(null)} />}
-      {detailTx && <TransactionDetailsModal transaction={detailTx} onClose={() => setDetailTx(null)}
-        onEdit={(t) => { setDetailTx(null); setEditTx(t); }} />}
       {addDate && <TransactionModal initialDate={addDate} onClose={() => setAddDate(null)} />}
     </div>
   );
@@ -224,8 +243,8 @@ export default function FinanceTransactionsPage() {
  *  Клик по строке — подробности, «+» в дне — новая операция этой датой,
  *  длинные дни сворачиваются до 5 строк («ещё N»). */
 const CAL_DAY_LIMIT = 5;
-function TxCalendar({ ym, txns, onOpen, onAdd }: {
-  ym: string; txns: any[]; onOpen: (t: any) => void; onAdd: (iso: string) => void;
+function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd }: {
+  ym: string; txns: any[]; expandedTxId: string | null; onToggle: (t: any) => void; onAdd: (iso: string) => void;
 }) {
   const [y, m] = ym.split('-').map(Number);
   const firstIdx = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Пн = 0
@@ -326,10 +345,12 @@ function TxCalendar({ ym, txns, onOpen, onAdd }: {
                       </>;
                       return (
                         <button key={t.id} type="button" className={'tx-row ' + t.type + (isImportedArchive(t) ? ' imported' : '')}
+                          id={`finance-tx-row-${t.id}`} aria-expanded={expandedTxId === t.id}
+                          aria-controls={expandedTxId === t.id ? `finance-tx-details-${t.id}` : undefined}
                           title={isImportedArchive(t)
                             ? `${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)} · ${IMPORTED_ARCHIVE_HINT}`
                             : `${String(t.date || '').slice(0, 10) > today ? 'Запланировано · ' : ''}${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}`}
-                          onClick={() => onOpen(t)}>
+                          onClick={() => onToggle(t)}>
                           {content}
                         </button>
                       );
@@ -367,11 +388,12 @@ function AccountSelect({ value, accounts, onChange, disabled = false }: {
   );
 }
 
-function TxRow({ t, accounts, categories, patch, remove, onOpen }: {
+function TxRow({ t, accounts, categories, patch, remove, expanded, onToggle, onClose, onEdit }: {
   t: any; accounts: any[]; categories: any[];
-  patch: (id: string, data: any) => void; remove: (id: string) => void; onOpen: (t: any) => void;
+  patch: (id: string, data: any) => void; remove: (id: string) => void;
+  expanded: boolean; onToggle: (t: any) => void; onClose: (id: string) => void; onEdit: (t: any) => void;
 }) {
-  if (isImportedArchive(t)) return <ImportedTxRow t={t} onOpen={onOpen} />;
+  if (isImportedArchive(t)) return <ImportedTxRow t={t} expanded={expanded} onToggle={onToggle} onClose={onClose} />;
 
   const cancelled = t.status === 'cancelled';
   const cats = categories.filter((c: any) => c.type === t.type);
@@ -417,8 +439,13 @@ function TxRow({ t, accounts, categories, patch, remove, onOpen }: {
   }
 
   return (
-    <tr className={'fin-tx-openable' + (cancelled ? ' fin-tx-cancelled' : '')}
-      onClick={(e) => { if (!(e.target as HTMLElement).closest('input, select, button')) onOpen(t); }}>
+    <Fragment>
+    <tr id={`finance-tx-row-${t.id}`} tabIndex={0} aria-expanded={expanded}
+      aria-controls={expanded ? `finance-tx-details-${t.id}` : undefined}
+      aria-label={`${expanded ? 'Свернуть' : 'Открыть'} подробности операции — ${t.comment || t.categoryName || TYPE_LABEL[t.type]}`}
+      className={'fin-tx-openable' + (expanded ? ' expanded' : '') + (cancelled ? ' fin-tx-cancelled' : '')}
+      onClick={(e) => { if (!(e.target as HTMLElement).closest('input, select, button, a')) onToggle(t); }}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onToggle(t); } }}>
       <td><input type="date" className="cell-input" disabled={cancelled} value={String(t.date || '').slice(0, 10)} onChange={(e) => patch(t.id, { date: e.target.value })} /></td>
       <td>
         <select className={'cell-input badge-select ' + t.type} disabled={cancelled} value={t.type} onChange={(e) => changeType(e.target.value)}>
@@ -475,7 +502,7 @@ function TxRow({ t, accounts, categories, patch, remove, onOpen }: {
         : <span className="muted mini">—</span>}</td>
       <td className="num">
         <span className="row-actions fin-tx-row-buttons">
-          <button className="btn ghost sm" title="Подробнее" aria-label="Подробнее об операции" onClick={() => onOpen(t)}>
+          <button className="btn ghost sm" title={expanded ? 'Свернуть' : 'Подробнее'} aria-label={expanded ? 'Свернуть подробности операции' : 'Подробнее об операции'} onClick={() => onToggle(t)}>
             <FinIcon name="info" size={14} />
           </button>
           {cancelled
@@ -493,18 +520,26 @@ function TxRow({ t, accounts, categories, patch, remove, onOpen }: {
         </span>
       </td>
     </tr>
+    {expanded && <tr className="fin-tx-details-row"><td colSpan={9}><TransactionDetailsPanel
+      id={`finance-tx-details-${t.id}`} transaction={t} onClose={() => onClose(t.id)} onEdit={onEdit} /></td></tr>}
+    </Fragment>
   );
 }
 
 /** Архив Notion — только для чтения. Это не банковская проводка CRM:
  *  сохраняем строку в журнале/CSV, но исключаем любые способы её изменить. */
-function ImportedTxRow({ t, onOpen }: { t: any; onOpen: (t: any) => void }) {
+function ImportedTxRow({ t, expanded, onToggle, onClose }: {
+  t: any; expanded: boolean; onToggle: (t: any) => void; onClose: (id: string) => void;
+}) {
   const paired = t.type === 'transfer' || t.type === 'saving';
   const fromName = paired ? t.fromAccountName : t.type === 'expense' ? t.accountName : null;
   const toName = paired ? t.toAccountName : t.type === 'income' ? t.accountName : null;
-  return (
-    <tr className="fin-tx-imported fin-tx-openable" title={`${IMPORTED_ARCHIVE_HINT} · нажмите, чтобы посмотреть подробности`}
-      onClick={() => onOpen(t)}>
+  return <Fragment>
+    <tr id={`finance-tx-row-${t.id}`} className={'fin-tx-imported fin-tx-openable' + (expanded ? ' expanded' : '')}
+      title={`${IMPORTED_ARCHIVE_HINT} · нажмите, чтобы посмотреть подробности`} tabIndex={0}
+      aria-expanded={expanded} aria-controls={expanded ? `finance-tx-details-${t.id}` : undefined}
+      onClick={() => onToggle(t)}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onToggle(t); } }}>
       <td><span className="nowrap">{formatDate(t.date)}</span></td>
       <td><span className={`badge ${t.type}`}>{TYPE_LABEL[t.type] ?? t.type}</span></td>
       <td>
@@ -529,8 +564,11 @@ function ImportedTxRow({ t, onOpen }: { t: any; onOpen: (t: any) => void }) {
       <td>{t.employeeId && t.salaryYm
         ? <span className="nowrap">{monthLabel(t.salaryYm, true)}</span>
         : <span className="muted mini">—</span>}</td>
-      <td className="num"><button className="btn ghost sm" title="Подробнее" aria-label="Подробнее об операции"
-        onClick={() => onOpen(t)}><FinIcon name="info" size={14} /></button></td>
+      <td className="num"><button className="btn ghost sm" title={expanded ? 'Свернуть' : 'Подробнее'}
+        aria-label={expanded ? 'Свернуть подробности операции' : 'Подробнее об операции'}
+        onClick={(e) => { e.stopPropagation(); onToggle(t); }}><FinIcon name="info" size={14} /></button></td>
     </tr>
-  );
+    {expanded && <tr className="fin-tx-details-row"><td colSpan={9}><TransactionDetailsPanel
+      id={`finance-tx-details-${t.id}`} transaction={t} onClose={() => onClose(t.id)} /></td></tr>}
+  </Fragment>;
 }

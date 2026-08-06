@@ -1,5 +1,4 @@
 import './finance.css';
-import { FinModal } from './FinKit';
 import FinIcon, { CatIcon } from './FinIcon';
 import { formatDate, INCOME_GROUPS, money, monthLabel, todayISO, TYPE_LABEL } from './finlib';
 import ImportedArchiveBadge, { isImportedArchive } from './ImportedArchiveBadge';
@@ -34,8 +33,9 @@ function Detail({ label, value, strong = false }: { label: string; value?: React
   return <div className="fin-tx-detail"><span>{label}</span><b className={strong ? 'strong' : undefined}>{value}</b></div>;
 }
 
-export default function TransactionDetailsModal({ transaction: t, onClose, onEdit }: {
+export default function TransactionDetailsPanel({ transaction: t, id, onClose, onEdit }: {
   transaction: FinTx;
+  id: string;
   onClose: () => void;
   onEdit?: (t: FinTx) => void;
 }) {
@@ -54,15 +54,15 @@ export default function TransactionDetailsModal({ transaction: t, onClose, onEdi
   const canEdit = !!onEdit && !isImportedArchive(t) && t.status !== 'cancelled';
 
   return (
-    <FinModal
-      title="Подробности операции"
-      onClose={onClose}
-      width={680}
-      footer={<>
-        <button className="btn ghost" onClick={onClose}>Закрыть</button>
-        {canEdit && <button className="btn primary" onClick={() => onEdit?.(t)}><FinIcon name="edit" size={15} /> Изменить</button>}
-      </>}
-    >
+    <section id={id} className="fin-tx-details-panel" role="region"
+      aria-label={`Подробности операции — ${t.comment || t.categoryName || TYPE_LABEL[t.type] || t.id}`}>
+      <div className="fin-tx-details-panel-head">
+        <div><strong>Подробности операции</strong><span>Все данные без перехода со страницы</span></div>
+        <div className="flex">
+          {canEdit && <button className="btn primary sm" onClick={() => onEdit?.(t)}><FinIcon name="edit" size={14} /> Изменить</button>}
+          <button className="btn ghost sm" onClick={onClose}><FinIcon name="chevronLeft" size={14} /> Свернуть</button>
+        </div>
+      </div>
       <div className={`fin-tx-detail-hero ${t.type}`}>
         <CatIcon
           icon={paired ? (t.type === 'saving' ? 'piggy' : 'transactions') : t.categoryIcon}
@@ -136,6 +136,6 @@ export default function TransactionDetailsModal({ transaction: t, onClose, onEdi
           <Detail label="ID операции" value={<code>{t.id}</code>} />
         </div>
       </section>
-    </FinModal>
+    </section>
   );
 }
