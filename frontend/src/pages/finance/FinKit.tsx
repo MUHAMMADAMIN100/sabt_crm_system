@@ -3,6 +3,7 @@
 // вместо системного confirm() и хелперы инвалидации react-query.
 import { ReactNode, useEffect, useId, useRef, type RefObject } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import type { QueryClient } from '@tanstack/react-query';
 
 // Ключи запросов: ['finance', …] — журнал и расчёты (зависят от денег),
@@ -180,19 +181,22 @@ export function FinModal({ title, onClose, children, footer, width }: {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useModalKeys(onClose, dialogRef);
-  return (
-    <div className="overlay" onClick={onClose}>
-      <div ref={dialogRef} className="modal" style={width ? { maxWidth: width } : undefined}
-        role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3 id={titleId}>{title}</h3>
-          <button className="btn ghost sm" aria-label="Закрыть" onClick={onClose}>✕</button>
+  return createPortal(
+    <div className="fin-overlay" onClick={onClose}>
+      <div className="fin-root fin-modal-scope" style={width ? { maxWidth: width } : undefined}>
+        <div ref={dialogRef} className="modal"
+          role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
+          onClick={(e) => e.stopPropagation()}>
+          <div className="modal-head">
+            <h3 id={titleId}>{title}</h3>
+            <button className="btn ghost sm" aria-label="Закрыть" onClick={onClose}>✕</button>
+          </div>
+          <div className="modal-body">{children}</div>
+          {footer && <div className="modal-foot">{footer}</div>}
         </div>
-        <div className="modal-body">{children}</div>
-        {footer && <div className="modal-foot">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -228,7 +232,7 @@ function ConfirmDialog({ message, opts, onDone }: {
   useModalKeys(() => onDone(false), dialogRef);
   return (
     <div className="fin-overlay" onClick={() => onDone(false)}>
-      <div className="fin-root" style={{ width: '100%', maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+      <div className="fin-root fin-modal-scope" style={{ width: '100%', maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div ref={dialogRef} className="modal" role="alertdialog" aria-modal="true"
           aria-labelledby={titleId} tabIndex={-1}>
           <div className="modal-head"><h3 id={titleId}>{opts?.title || 'Подтверждение'}</h3></div>

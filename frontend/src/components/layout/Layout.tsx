@@ -121,11 +121,11 @@ export default function Layout() {
         )}
       >
         <Header onMenuClick={() => setSidebarOpen(o => !o)} />
-        <main className={clsx('flex-1 overflow-y-auto p-4 lg:p-6', financeRoute && 'finance-workspace')}>
+        <main className={clsx('flex-1 overflow-y-auto p-4 lg:p-6', financeRoute && 'finance-workspace min-w-0 overflow-x-hidden')}>
           {/* key on pathname so each navigation re-triggers the animation */}
           <div
             key={location.pathname}
-            className={clsx('max-w-screen-2xl mx-auto animate-page-in', financeRoute && 'finance-workspace-inner')}
+            className={clsx('max-w-screen-2xl mx-auto animate-page-in', financeRoute && 'finance-workspace-inner w-full min-w-0')}
           >
             {/* Внутренний Suspense ловит lazy-чанки страниц, не давая
                 верхнему Suspense вышибить весь Layout (sidebar+header) до

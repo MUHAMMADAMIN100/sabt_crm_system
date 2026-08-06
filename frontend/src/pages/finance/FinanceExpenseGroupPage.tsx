@@ -37,7 +37,7 @@ export default function FinanceExpenseGroupPage() {
   // и остаётся на нём до явного закрытия после выплаты. Сервер переключит её
   // на текущий месяц, когда предыдущий будет закрыт.
   // Месяц приходит из адреса (?ym=…) — тот же, что был выбран в «Расходах».
-  const [ym, setYm] = useYmParam(kind === 'salary' ? shiftYm(currentYm(), -1) : currentYm());
+  const [ym, setYm] = useYmParam(currentYm());
   const openedWithoutMonth = useRef(!new URLSearchParams(location.search).has('ym'));
   const { data: payrollDefault } = useQuery({
     queryKey: ['finance', 'salaryPeriod', 'current'],

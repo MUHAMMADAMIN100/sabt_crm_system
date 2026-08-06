@@ -30,7 +30,7 @@ export default function BreakdownHover({
   children: ReactNode;
 }) {
   const qc = useQueryClient();
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLButtonElement>(null);
   const hoverSeq = useRef(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tooltipId = useId();
@@ -101,7 +101,7 @@ export default function BreakdownHover({
   };
   useEffect(() => () => cancelClose(), []);
 
-  const activate = (e: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) => {
+  const activate = (e: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     if (onClick) {
       closeNow();
@@ -112,11 +112,11 @@ export default function BreakdownHover({
       enter();
     }
   };
-  const click = (e: MouseEvent<HTMLDivElement>) => {
+  const click = (e: MouseEvent<HTMLButtonElement>) => {
     const touchLike = typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches;
     if (onClick || touchLike) activate(e);
   };
-  const keyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+  const keyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (e.key === 'Escape' && open) {
       e.preventDefault();
       closeNow();
@@ -129,7 +129,8 @@ export default function BreakdownHover({
   const items: Array<{ label: string; amount: number }> = data?.items ?? [];
 
   return (
-    <div ref={ref} className={className} role={onClick ? 'link' : 'button'} tabIndex={0}
+    <button ref={ref} type="button" className={`fin-breakdown-trigger ${className || ''}`}
+      aria-label={onClick ? `Открыть «${title}»` : `Показать разбивку «${title}»`}
       aria-expanded={open} aria-describedby={open ? tooltipId : undefined}
       onFocus={enter} onBlur={leave} onKeyDown={keyDown}
       onMouseEnter={enter} onMouseLeave={leave} onClick={click}>
@@ -162,6 +163,6 @@ export default function BreakdownHover({
         </div>,
         document.body,
       )}
-    </div>
+    </button>
   );
 }

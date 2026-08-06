@@ -1,6 +1,7 @@
 // Настройки Fin System: счета, справочники, снимки данных, резервные копии.
 // Порт fin-webrand/src/pages/Settings.tsx (Dexie → financeApi + react-query).
 import { useRef, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
@@ -11,8 +12,22 @@ import { ProjectFormModal, EmployeeFormModal, SubFormModal, DebtFormModal } from
 import { financeApi } from '@/services/api.service';
 import { AccountLabel } from './AccountIdentity';
 
+const SETTINGS_TABS = [
+  ['accounts', 'Счета'], ['categories', 'Категории'], ['projects', 'Проекты'],
+  ['employees', 'Сотрудники'], ['regular', 'Регулярные расходы'],
+  ['debts', 'Долги'], ['backups', 'Резервные копии'],
+] as const;
+
 export default function FinanceSettingsPage() {
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const activeTab = SETTINGS_TABS.some(([key]) => key === requestedTab) ? requestedTab! : 'accounts';
+  const selectTab = (tab: string) => setSearchParams(prev => {
+    const next = new URLSearchParams(prev);
+    tab === 'accounts' ? next.delete('tab') : next.set('tab', tab);
+    return next;
+  }, { replace: true });
 
   const accountsQ = useQuery<any[]>({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
   const accounts = accountsQ.data ?? [];
@@ -140,6 +155,14 @@ export default function FinanceSettingsPage() {
     <div className="fin-root">
       <div className="page-head"><div><h1 className="flex"><FinIcon name="settings" size={22} /> Настройки</h1><p>Счета, справочники, снимки данных</p></div></div>
 
+      <nav className="fin-settings-tabs" role="tablist" aria-label="Разделы настроек финансов">
+        {SETTINGS_TABS.map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={activeTab === key}
+            className={activeTab === key ? 'active' : ''} onClick={() => selectTab(key)}>{label}</button>
+        ))}
+      </nav>
+
+      {activeTab === 'accounts' && <>
       <div className="section-title">Счета и стартовые балансы</div>
       <div className="card">
         <p className="mini muted" style={{ marginTop: 0 }}>Стартовый баланс = сколько было на счёте на момент запуска. Текущий = старт + операции. Архивные счета скрыты из карточек и селектов.</p>
@@ -159,8 +182,8 @@ export default function FinanceSettingsPage() {
                 </td>
                 <td className="num"><b>{money(currentBalance(a.id))}</b></td>
                 <td className="num"><span className="row-actions">
-                  <button className="btn ghost sm" title="Редактировать" onClick={() => setModal(<AccountModal account={a} onClose={() => setModal(null)} />)}><FinIcon name="edit" size={15} /></button>
-                  <button className="btn ghost sm" title={a.archived ? 'Вернуть из архива' : 'В архив'} onClick={() => toggleArchived(a)}>
+                  <button className="btn ghost sm" aria-label={`Редактировать счёт «${a.name}»`} title={`Редактировать счёт «${a.name}»`} onClick={() => setModal(<AccountModal account={a} onClose={() => setModal(null)} />)}><FinIcon name="edit" size={15} /></button>
+                  <button className="btn ghost sm" aria-label={`${a.archived ? 'Вернуть из архива' : 'Архивировать'} счёт «${a.name}»`} title={a.archived ? 'Вернуть из архива' : 'В архив'} onClick={() => toggleArchived(a)}>
                     <FinIcon name={a.archived ? 'undo' : 'archive'} size={15} />
                   </button>
                 </span></td>
@@ -171,44 +194,56 @@ export default function FinanceSettingsPage() {
         </div>
         <button className="btn sm" style={{ marginTop: 12 }} onClick={() => setModal(<AccountModal onClose={() => setModal(null)} />)}><FinIcon name="plus" size={14} /> Счёт</button>
       </div>
+      </>}
 
+      {activeTab === 'categories' &&
       <Directory title="Категории" items={categories}
         head={['Название', 'Тип']}
         cols={(c: any) => [<span className="flex" key="n"><CatIcon icon={c.icon} color={c.color} size={24} /> {c.name}</span>, TYPE_LABEL[c.type] ?? c.type]}
         onAdd={() => setModal(<CategoryModal onClose={() => setModal(null)} />)}
         onEdit={(c: any) => setModal(<CategoryModal category={c} onClose={() => setModal(null)} />)}
         canDelete={(c: any) => !c.builtin}
-        onDel={async (c: any) => (await finConfirm(`Удалить категорию «${c.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeCategory(c.id))} />
+        addLabel="Добавить категорию"
+        onDel={async (c: any) => (await finConfirm(`Удалить категорию «${c.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeCategory(c.id))} />}
 
+      {activeTab === 'projects' &&
       <Directory title="Проекты / клиенты" items={projects}
-        head={['Название', 'Направление', 'Тариф']}
-        cols={(p: any) => [p.name, INCOME_GROUPS.find((g) => g.key === p.direction)?.label ?? p.direction, money(p.tariff)]}
+        head={['Название', 'Направление', 'Тариф', 'Статус']}
+        cols={(p: any) => [p.name, INCOME_GROUPS.find((g) => g.key === p.direction)?.label ?? p.direction, money(p.tariff), p.archived ? 'В архиве' : p.status === 'paused' ? 'На паузе' : 'Активный']}
         onAdd={() => setModal(<ProjectFormModal onClose={() => setModal(null)} />)}
         onEdit={(p: any) => setModal(<ProjectFormModal project={p} onClose={() => setModal(null)} />)}
-        onDel={async (p: any) => (await finConfirm(`Переместить проект «${p.name}» в архив? Все операции и история оплат сохранятся.`, { confirmLabel: 'В архив' })) && del(() => financeApi.removeProject(p.id))} />
+        addLabel="Добавить проект"
+        onDel={async (p: any) => (await finConfirm(`Переместить проект «${p.name}» в архив? Все операции и история оплат сохранятся.`, { confirmLabel: 'В архив' })) && del(() => financeApi.removeProject(p.id))} />}
 
+      {activeTab === 'employees' &&
       <Directory title="Сотрудники" items={employees}
         head={['Имя', 'Роль', 'Оклад', 'Статус']}
         cols={(e: any) => [e.name, e.role || '—', money(e.salary), e.status === 'active' ? 'активный' : 'уволен']}
         onAdd={() => setModal(<EmployeeFormModal categories={empCategories} onClose={() => setModal(null)} />)}
         onEdit={(e: any) => setModal(<EmployeeFormModal employee={e} categories={empCategories} onClose={() => setModal(null)} />)}
         canDelete={(e: any) => e.status === 'active'}
-        onDel={async (e: any) => (await finConfirm(`Уволить сотрудника «${e.name}» сегодняшним числом? История зарплаты и операций сохранится.`, { confirmLabel: 'Уволить' })) && del(() => financeApi.removeEmployee(e.id))} />
+        addLabel="Добавить сотрудника"
+        onDel={async (e: any) => (await finConfirm(`Уволить сотрудника «${e.name}» сегодняшним числом? История зарплаты и операций сохранится.`, { confirmLabel: 'Уволить' })) && del(() => financeApi.removeEmployee(e.id))} />}
 
+      {activeTab === 'regular' &&
       <Directory title="Аренда и подписки" items={subs}
         head={['Название', 'Тип', 'Сумма/мес', 'День оплаты']}
         cols={(s: any) => [s.name, s.kind === 'rent' ? 'Аренда' : 'Подписка', money(s.amount), s.dueDay ? `до ${s.dueDay}-го` : '—']}
         onAdd={() => setModal(<SubFormModal onClose={() => setModal(null)} />)}
         onEdit={(s: any) => setModal(<SubFormModal sub={s} onClose={() => setModal(null)} />)}
-        onDel={async (s: any) => (await finConfirm(`Удалить «${s.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeSubscription(s.id))} />
+        addLabel="Добавить регулярный расход"
+        onDel={async (s: any) => (await finConfirm(`Удалить «${s.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeSubscription(s.id))} />}
 
+      {activeTab === 'debts' &&
       <Directory title="Долги" items={debts}
         head={['Название', 'Сумма', 'Платёж/мес']}
         cols={(d: any) => [d.name, money(d.totalAmount), d.monthlyPayment ? money(d.monthlyPayment) : '—']}
         onAdd={() => setModal(<DebtFormModal onClose={() => setModal(null)} />)}
         onEdit={(d: any) => setModal(<DebtFormModal debt={d} onClose={() => setModal(null)} />)}
-        onDel={async (d: any) => (await finConfirm(`Удалить долг «${d.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeDebt(d.id))} />
+        addLabel="Добавить долг"
+        onDel={async (d: any) => (await finConfirm(`Удалить долг «${d.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeDebt(d.id))} />}
 
+      {activeTab === 'backups' && <>
       <BackupsSection />
 
       <div className="section-title">Резервная копия (файл)</div>
@@ -221,7 +256,11 @@ export default function FinanceSettingsPage() {
       </div>
 
       <div className="section-title">Опасная зона</div>
-      <div className="card"><button className="btn danger" disabled={maintenanceBusy} onClick={resetAll}>{maintenanceBusy ? 'Выполняется…' : 'Сбросить все данные'}</button></div>
+      <div className="card fin-danger-zone">
+        <div><b>Полная очистка финансов</b><p className="mini muted">Удалит текущие данные после создания страховочного снимка. Используйте только для полного перезапуска.</p></div>
+        <button className="btn danger" disabled={maintenanceBusy} onClick={resetAll}>{maintenanceBusy ? 'Выполняется…' : 'Сбросить все данные'}</button>
+      </div>
+      </>}
 
       {modal}
     </div>
@@ -360,8 +399,8 @@ function BackupsSection() {
                     <td>{KIND_LABEL[b.kind] ?? b.kind}</td>
                     <td className="num">{b.stats?.transactions ?? '—'}</td>
                     <td className="num"><span className="row-actions">
-                      <button className="btn ghost sm" title="Скачать JSON" onClick={() => download(b)}><FinIcon name="download" size={15} /></button>
-                      <button className="btn ghost sm" title="Восстановить из снимка" disabled={busy} onClick={() => restore(b)}><FinIcon name="undo" size={15} /></button>
+                      <button className="btn ghost sm" aria-label={`Скачать снимок от ${formatDate(String(b.createdAt).slice(0, 10))}`} title="Скачать JSON" onClick={() => download(b)}><FinIcon name="download" size={15} /></button>
+                      <button className="btn ghost sm" aria-label={`Восстановить снимок от ${formatDate(String(b.createdAt).slice(0, 10))}`} title="Восстановить из снимка" disabled={busy} onClick={() => restore(b)}><FinIcon name="undo" size={15} /></button>
                     </span></td>
                   </tr>
                 ))}
@@ -375,25 +414,30 @@ function BackupsSection() {
   );
 }
 
-function Directory({ title, items, head, cols, onAdd, onEdit, onDel, canDelete }: {
+function Directory({ title, items, head, cols, onAdd, onEdit, onDel, canDelete, addLabel }: {
   title: string; items: any[]; head: string[]; cols: (x: any) => ReactNode[];
-  onAdd: () => void; onEdit: (x: any) => void; onDel: (x: any) => void; canDelete?: (x: any) => boolean;
+  onAdd: () => void; onEdit: (x: any) => void; onDel: (x: any) => void; canDelete?: (x: any) => boolean; addLabel: string;
 }) {
+  const [query, setQuery] = useState('');
+  const visible = items.filter(item => Object.values(item).some(value => String(value ?? '').toLowerCase().includes(query.trim().toLowerCase())));
   return (
     <>
-      <div className="section-title">{title}</div>
-      <div className="table-wrap">
+      <div className="fin-directory-head">
+        <div><div className="section-title">{title}</div><span className="mini muted">{visible.length} из {items.length}</span></div>
+        <div className="flex"><input aria-label={`Поиск: ${title}`} placeholder="Поиск…" value={query} onChange={event => setQuery(event.target.value)} /><button className="btn primary sm" onClick={onAdd}><FinIcon name="plus" size={14} /> {addLabel}</button></div>
+      </div>
+      <div className="table-wrap fin-mobile-cards fin-settings-table">
         <table>
           <thead><tr>{head.map((h, i) => <th key={i} className={i > 0 ? 'num' : ''}>{h}</th>)}<th /></tr></thead>
           <tbody>
-            {items.length === 0 && <tr><td colSpan={head.length + 1} className="empty">Пусто</td></tr>}
-            {items.map((it: any) => (
+            {visible.length === 0 && <tr><td colSpan={head.length + 1} className="empty">{items.length ? 'Ничего не найдено' : 'Пусто'}</td></tr>}
+            {visible.map((it: any) => (
               <tr key={it.id} onDoubleClick={() => onEdit(it)}>
-                {cols(it).map((c, i) => <td key={i} className={i > 0 ? 'num' : ''}>{i === 0 ? <b>{c}</b> : c}</td>)}
-                <td className="num"><span className="row-actions">
-                  <button className="btn ghost sm" onClick={() => onEdit(it)}><FinIcon name="edit" size={15} /></button>
+                {cols(it).map((c, i) => <td data-label={head[i]} key={i} className={i > 0 ? 'num' : ''}>{i === 0 ? <b>{c}</b> : c}</td>)}
+                <td data-label="Действия" className="num"><span className="row-actions">
+                  <button className="btn ghost sm" aria-label={`Редактировать «${it.name}»`} title={`Редактировать «${it.name}»`} onClick={() => onEdit(it)}><FinIcon name="edit" size={15} /></button>
                   {(!canDelete || canDelete(it)) && (
-                    <button className="btn ghost sm danger" onClick={() => onDel(it)}><FinIcon name="trash" size={15} /></button>
+                    <button className="btn ghost sm danger" aria-label={`Удалить или архивировать «${it.name}»`} title={`Удалить или архивировать «${it.name}»`} onClick={() => onDel(it)}><FinIcon name="trash" size={15} /></button>
                   )}
                 </span></td>
               </tr>
@@ -401,17 +445,17 @@ function Directory({ title, items, head, cols, onAdd, onEdit, onDel, canDelete }
           </tbody>
         </table>
       </div>
-      <button className="btn sm" style={{ marginTop: 12, marginBottom: 4 }} onClick={onAdd}><FinIcon name="plus" size={14} /> Добавить</button>
     </>
   );
 }
 
 function Palette({ color, setColor }: { color: string; setColor: (c: string) => void }) {
+  const colorNames = ['Синий', 'Фиолетовый', 'Зелёный', 'Бирюзовый', 'Жёлтый', 'Оранжевый', 'Красный', 'Розовый', 'Серый'];
   return (
     <div className="field"><label>Цвет</label>
-      <div className="flex" style={{ flexWrap: 'wrap' }}>
-        {COLOR_PALETTE.map((c) => (
-          <button key={c} type="button" onClick={() => setColor(c)}
+      <div className="flex" role="radiogroup" aria-label="Цвет счёта" style={{ flexWrap: 'wrap' }}>
+        {COLOR_PALETTE.map((c, index) => (
+          <button key={c} type="button" role="radio" aria-checked={color === c} aria-label={colorNames[index] || `Цвет ${index + 1}`} title={colorNames[index] || c} onClick={() => setColor(c)}
             style={{ width: 26, height: 26, borderRadius: 7, background: c, cursor: 'pointer', border: color === c ? '2px solid var(--text)' : '2px solid transparent' }} />
         ))}
       </div>

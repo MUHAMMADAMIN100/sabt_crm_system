@@ -2,7 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
-import { money, currentYm, EXPENSE_GROUPS, OTHER_GROUP, useYmParam, withYm } from './finlib';
+import { money, EXPENSE_GROUPS, OTHER_GROUP, useYmParam, withYm } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
@@ -57,12 +57,7 @@ export default function FinanceExpensePage() {
         {EXPENSE_GROUPS.map((g) => {
           const pp = paidProgress(g.key);
           const allPaid = !!pp && pp.total > 0 && pp.paid >= pp.total;
-          // Из текущего календарного месяца зарплата открывает основной
-          // незакрытый период (в августе — июль). Для явно выбранной истории
-          // сохраняем месяц пользователя.
-          const href = g.key === 'salary' && ym === currentYm()
-            ? '/finance/expense/salary'
-            : withYm(`/finance/expense/${g.key}`, ym);
+          const href = withYm(`/finance/expense/${g.key}`, ym);
           return (
             <BreakdownHover className="card clickable" key={g.key} ym={ym} kind="group" id={g.key} title={g.label} color={g.color} icon={g.icon} onClick={() => navigate(href)}>
               <div className="summary-head"><span className="t" style={{ color: g.color }}><CatIcon icon={g.icon} color={g.color} size={30} /> {g.label}</span></div>

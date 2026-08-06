@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
   transactions: vi.fn(),
   categories: vi.fn(),
   accounts: vi.fn(),
+  projects: vi.fn(),
+  employees: vi.fn(),
+  debts: vi.fn(),
   forecast: vi.fn(),
   removeForecastAdjustment: vi.fn(),
 }));
@@ -22,6 +25,9 @@ vi.mock('@/services/api.service', () => ({
     transactions: mocks.transactions,
     categories: mocks.categories,
     accounts: mocks.accounts,
+    projects: mocks.projects,
+    employees: mocks.employees,
+    debts: mocks.debts,
     forecast: mocks.forecast,
     removeForecastAdjustment: mocks.removeForecastAdjustment,
   },
@@ -65,11 +71,17 @@ describe('imported Notion finance history', () => {
     mocks.transactions.mockReset();
     mocks.categories.mockReset();
     mocks.accounts.mockReset();
+    mocks.projects.mockReset();
+    mocks.employees.mockReset();
+    mocks.debts.mockReset();
     mocks.forecast.mockReset();
     mocks.removeForecastAdjustment.mockReset();
     mocks.transactions.mockResolvedValue({ items: [importedTx], total: 1, page: 1, pageSize: 100 });
     mocks.categories.mockResolvedValue([{ id: 'rent', name: 'Аренда', type: 'expense' }]);
     mocks.accounts.mockResolvedValue([{ id: 'cash', name: 'Cash' }]);
+    mocks.projects.mockResolvedValue([]);
+    mocks.employees.mockResolvedValue([]);
+    mocks.debts.mockResolvedValue([]);
   });
 
   it('renders an imported transaction read-only in table and calendar views', async () => {
@@ -119,6 +131,23 @@ describe('imported Notion finance history', () => {
     const error = await screen.findByRole('alert');
     expect(error).toHaveTextContent('Не удалось загрузить операции календаря.');
     expect(within(error).getByRole('button', { name: 'Повторить' })).toBeInTheDocument();
+  });
+
+  it('keeps regular transaction rows view-first and opens one edit form on demand', async () => {
+    const user = userEvent.setup();
+    const regular = { ...importedTx, id: 'regular-1', source: null, affectsBalance: true };
+    mocks.transactions.mockResolvedValue({ items: [regular], total: 1, page: 1, pageSize: 50 });
+
+    wrap(<FinanceTransactionsPage />, '/finance/transactions?type=expense');
+    const action = await screen.findByLabelText(/Действия операции/);
+    const row = action.closest('tr');
+    expect(row).not.toBeNull();
+    expect(within(row!).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(row!).queryByRole('combobox')).not.toBeInTheDocument();
+
+    await user.click(action);
+    await user.click(screen.getByRole('button', { name: 'Редактировать' }));
+    expect(screen.getAllByRole('dialog', { name: 'Изменить операцию' })).toHaveLength(1);
   });
 
   it('keeps the archive source in the CSV contract', () => {
@@ -196,7 +225,7 @@ describe('imported Notion finance history', () => {
 
     expect(await screen.findByText('Оплата старого проекта')).toBeInTheDocument();
     expect(screen.getByLabelText('Notion · архив')).toHaveAttribute('title', IMPORTED_ARCHIVE_HINT);
-    expect(screen.getByText(/12 март 2026.*категория: SMM.*счёт: Cash/)).toBeInTheDocument();
+    expect(screen.getByText(/12 марта 2026.*категория: SMM.*счёт: Cash/)).toBeInTheDocument();
 
     await act(async () => {
       await user.selectOptions(screen.getByRole('combobox', { name: 'Другой год' }), '2027');

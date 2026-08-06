@@ -2,26 +2,26 @@
    intentionally leaves the rest of the CRM untouched. */
 
 .fin-root {
-  --bg: #f4f5f8;
+  --bg: #f6f7fb;
   --surface: #ffffff;
-  --surface-2: #f6f6f8;
-  --surface-hover: #f1f2f5;
-  --surface-selected: #eeeeff;
-  --border: #e7e8ed;
-  --text: #1b1c20;
+  --surface-2: #f9fafb;
+  --surface-hover: #f2f4f7;
+  --surface-selected: #f0f0ff;
+  --border: #e4e7ec;
+  --text: #101828;
   /* 4.8:1 на белом: мелкие подписи остаются приглушёнными, но читаемыми. */
-  --muted: #6b7280;
-  --accent: #8385ff;
-  --accent-hover: #7477f2;
-  --accent-soft: #eeeeff;
-  --green: #20b965;
+  --muted: #667085;
+  --accent: #6d6ae8;
+  --accent-hover: #5d5ad8;
+  --accent-soft: #f0f0ff;
+  --green: #18864b;
   --green-plan: #a9e5c2;
   --green-soft: #e8f8ee;
-  --red: #e6535f;
+  --red: #c5455a;
   --red-plan: #f3adb3;
   --red-soft: #fdecef;
-  --amber: #ee980d;
-  --violet: #8385ff;
+  --amber: #b7791f;
+  --violet: #6d6ae8;
   --amber-soft: #fff4df;
   --radius: 18px;
   --radius-sm: 12px;
@@ -110,6 +110,17 @@
 .fin-root .brk-row { gap: 12px; }
 .fin-root .brk-row .name { display: flex; align-items: center; gap: 9px; min-width: 0; overflow-wrap: anywhere; }
 .fin-root .brk-row .num { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+.fin-root .fin-breakdown-trigger {
+  appearance: none;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.fin-root .fin-breakdown-trigger.brk-row { border-width: 0 0 1px; border-style: dashed; border-color: var(--border); background: transparent; }
+.fin-root .fin-breakdown-trigger.brk-row:last-child { border-bottom: 0; }
+.fin-root button.card { display: block; width: 100%; font: inherit; text-align: left; }
+.fin-root .fin-open-details { margin-top: 10px; margin-left: auto; }
 
 /* Table */
 .fin-root .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; overflow-x: auto; }
@@ -462,24 +473,24 @@
    Раздел построен на CSS-переменных — переопределяем палитру целиком,
    ниже только точечные добивки захардкоженных светлых мест. */
 .dark .fin-root {
-  --bg: #0d0e12;
-  --surface: #15161b;
-  --surface-2: #1d1f25;
-  --surface-hover: #252730;
-  --surface-selected: #262642;
-  --border: #2c2e37;
-  --text: #f2f3f5;
-  --muted: #9ea3ae;
-  --accent: #9b9dff;
+  --bg: #0f1218;
+  --surface: #151821;
+  --surface-2: #1d2230;
+  --surface-hover: #252c3a;
+  --surface-selected: #292846;
+  --border: #3a4352;
+  --text: #f2f4f7;
+  --muted: #b0b8c5;
+  --accent: #9b9af4;
   --accent-hover: #b0b1ff;
   --accent-soft: #262642;
-  --green: #36ce7a;
+  --green: #55c98a;
   --green-plan: #286a47;
   --green-soft: rgba(34, 197, 94, .14);
-  --red: #ff737d;
+  --red: #ff8a9b;
   --red-plan: #7a3c43;
   --red-soft: rgba(244, 63, 94, .14);
-  --amber: #f4ac36;
+  --amber: #e4b35b;
   --amber-soft: rgba(245, 158, 11, .14);
   --violet: #9b9dff;
   --gradient-selected: linear-gradient(90deg, rgba(155,157,255,.15), rgba(95,125,255,.04));
@@ -950,25 +961,20 @@
 .fin-plan-flow-cell{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:150px;font-variant-numeric:tabular-nums}.fin-plan-flow-cell strong{white-space:nowrap}.fin-plan-flow-cell small{font-size:10.5px;color:var(--muted);white-space:nowrap}.income-dot{background:#16a34a}.income-plan-dot{background:#86efac}.expense-dot{background:#e11d48}.expense-plan-dot{background:#fda4af}
 
 /* ─── Quiet finance cockpit · shared visual layer ───────────────────
-   The pastel gradient belongs to the route backdrop. Operational data stays
-   on one calm canvas; semantic color is reserved for financial meaning. */
+   Operational data stays on one calm canvas; semantic color is reserved for
+   financial meaning. */
 .finance-workspace {
-  background:
-    radial-gradient(circle at 8% 4%, rgba(214, 204, 255, .86), transparent 34%),
-    radial-gradient(circle at 95% 12%, rgba(194, 222, 255, .82), transparent 38%),
-    radial-gradient(circle at 72% 100%, rgba(202, 241, 222, .72), transparent 42%),
-    #e9ebff;
+  background: #f6f7fb;
 }
 .finance-workspace-inner { min-height: 100%; }
 
 .fin-root {
   position: relative;
-  isolation: isolate;
   min-height: calc(100dvh - 108px);
   padding: clamp(20px, 2vw, 28px);
   overflow: visible;
-  background: color-mix(in srgb, var(--surface) 97%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 24px;
   box-shadow: 0 24px 70px rgba(63, 67, 117, .08);
 }
@@ -1302,13 +1308,8 @@
 .fin-root .modal-foot,
 .fin-overlay .modal-foot { padding: 14px 20px; }
 
-.dark .finance-workspace {
-  background:
-    radial-gradient(circle at 10% 0, rgba(101, 92, 190, .16), transparent 36%),
-    radial-gradient(circle at 96% 12%, rgba(69, 109, 173, .13), transparent 40%),
-    #0d0e12;
-}
-.dark .fin-root { background: color-mix(in srgb, var(--surface) 98%, transparent); box-shadow: 0 24px 70px rgba(0,0,0,.2); }
+.dark .finance-workspace { background: #0f1218; }
+.dark .fin-root { background: var(--surface); box-shadow: 0 24px 70px rgba(0,0,0,.2); }
 .dark .fin-overlay {
   --surface: #15161b;
   --surface-2: #1d1f25;
@@ -1880,6 +1881,170 @@
   border-color: var(--accent);
   background: var(--accent-soft);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* Portal modal: the finance token scope travels with the dialog, but does not
+   inherit the page canvas dimensions. This keeps it above the CRM shell. */
+.fin-root .overlay,
+.fin-overlay { z-index: 1000; }
+.fin-overlay .fin-modal-scope {
+  width: 100%;
+  max-width: 560px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.fin-overlay .fin-modal-scope > .modal { max-width: none; }
+
+/* Compact row action menu — one clear entry point instead of many icon-only
+   controls. */
+.fin-root .fin-row-menu { position: relative; display: inline-block; text-align: left; }
+.fin-root .fin-row-menu > summary {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--muted);
+  background: transparent;
+  list-style: none;
+  cursor: pointer;
+}
+.fin-root .fin-row-menu > summary::-webkit-details-marker { display: none; }
+.fin-root .fin-row-menu > summary:hover,
+.fin-root .fin-row-menu[open] > summary { color: var(--text); border-color: var(--border); background: var(--surface-hover); }
+.fin-root .fin-row-menu-pop {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  width: 210px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.fin-root .fin-row-menu-pop button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  font-size: 12.5px;
+}
+.fin-root .fin-row-menu-pop button:hover { background: var(--surface-hover); }
+.fin-root .fin-row-menu-pop button.danger { color: var(--red); }
+
+.fin-root .fin-settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin: -6px 0 22px;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  scrollbar-width: thin;
+}
+.fin-root .fin-settings-tabs button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.fin-root .fin-settings-tabs button:hover { color: var(--text); background: var(--surface-hover); }
+.fin-root .fin-settings-tabs button.active { color: var(--text); background: var(--surface); box-shadow: var(--shadow-control); }
+.fin-root .fin-directory-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
+.fin-root .fin-directory-head .section-title { margin-bottom: 1px; }
+.fin-root .fin-directory-head input { width: min(230px, 32vw); }
+.fin-root .fin-danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-color: color-mix(in srgb, var(--red) 52%, var(--border)); }
+.fin-root .fin-danger-zone p { margin: 5px 0 0; }
+
+/* On a phone operational tables become scan-friendly cards. Wide analytical
+   matrices keep their own horizontal scroll, but never widen the page body. */
+@media (max-width: 720px) {
+  .fin-root .fin-settings-tabs { margin-inline: -16px; padding-inline: 16px; border-inline: 0; border-radius: 0; }
+  .fin-root .fin-directory-head { align-items: stretch; flex-direction: column; }
+  .fin-root .fin-directory-head > .flex { align-items: stretch; flex-direction: column; }
+  .fin-root .fin-directory-head input { width: 100%; }
+  .fin-root .fin-danger-zone { align-items: stretch; flex-direction: column; }
+  .fin-root .fin-mobile-cards {
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .fin-root .fin-mobile-cards table,
+  .fin-root .fin-mobile-cards tbody { display: block; width: 100%; }
+  .fin-root .fin-mobile-cards thead,
+  .fin-root .fin-mobile-cards tfoot { display: none; }
+  .fin-root .fin-mobile-cards tbody { display: grid; gap: 10px; }
+  .fin-root .fin-mobile-cards tbody > tr:not(.fin-tx-details-row):not(.fin-activity-details-row) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0 14px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+  }
+  .fin-root .fin-mobile-cards tbody > tr > td {
+    position: static;
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 0;
+    border: 0;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-align: right;
+    white-space: normal;
+  }
+  .fin-root .fin-mobile-cards tbody > tr > td::before {
+    content: attr(data-label);
+    flex: none;
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 550;
+    text-align: left;
+  }
+  .fin-root .fin-mobile-cards tbody > tr > td[data-label="Название"],
+  .fin-root .fin-mobile-cards tbody > tr > td[data-label="Описание"],
+  .fin-root .fin-mobile-cards tbody > tr > td[data-label="Кратко"] { grid-column: 1 / -1; }
+  .fin-root .fin-mobile-cards tbody > tr > td[data-label="Описание"] > span,
+  .fin-root .fin-mobile-cards tbody > tr > td[data-label="Кратко"] { overflow-wrap: anywhere; }
+  .fin-root .fin-mobile-cards .fin-tx-details-row,
+  .fin-root .fin-mobile-cards .fin-activity-details-row { display: block; width: 100%; }
+  .fin-root .fin-mobile-cards .fin-tx-details-row > td,
+  .fin-root .fin-mobile-cards .fin-activity-details-row > td { display: block; width: 100%; padding: 0; }
+  .fin-root .fin-mobile-cards .fin-tx-details-row > td::before,
+  .fin-root .fin-mobile-cards .fin-activity-details-row > td::before { content: none; }
+  .fin-root .fin-row-menu-pop { position: fixed; top: auto; right: 16px; bottom: 16px; left: 16px; width: auto; z-index: 1100; }
+  .fin-root .fin-row-menu-pop button { min-height: 42px; }
+  .fin-overlay { padding: 8px; align-items: flex-end; }
+  .fin-overlay .fin-modal-scope { max-width: none !important; }
+  .fin-overlay .modal { max-height: calc(100dvh - 16px); border-radius: 18px; }
 }
 
 @media (max-width: 720px) {

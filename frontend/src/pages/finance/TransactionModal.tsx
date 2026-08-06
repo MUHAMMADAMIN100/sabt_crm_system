@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import './finance.css';
 import { TYPE_LABEL, todayISO, currentYm, apiErr } from './finlib';
 import FinIcon from './FinIcon';
-import { useModalKeys, invalidateFinance, invalidateFinanceAll } from './FinKit';
+import { FinModal, finConfirm, invalidateFinance, invalidateFinanceAll } from './FinKit';
 import { financeApi } from '@/services/api.service';
 import { AccountMark } from './AccountIdentity';
 
@@ -15,7 +15,6 @@ const TYPES = ['income', 'expense', 'transfer', 'saving'];
 
 export default function TransactionModal({ initial, initialType, initialDate, onClose }: { initial?: any; initialType?: string; initialDate?: string; onClose: () => void }) {
   const qc = useQueryClient();
-  useModalKeys(onClose);
   const { data: allAccounts = [] } = useQuery({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
   const { data: categories = [] } = useQuery({ queryKey: ['finref', 'categories'], queryFn: () => financeApi.categories() });
   const { data: projects = [] } = useQuery({ queryKey: ['finref', 'projects'], queryFn: () => financeApi.projects() });
@@ -63,6 +62,20 @@ export default function TransactionModal({ initial, initialType, initialDate, on
     (!['transfer', 'saving'].includes(type) || accountFrom !== accountTo) &&
     (!salaryExpense || (!!employeeId && /^\d{4}-(0[1-9]|1[0-2])$/.test(salaryYm))) &&
     (!debtExpense || !!debtId);
+  const dirty = initial
+    ? type !== initial.type || date !== String(initial.date || '').slice(0, 10) || amount !== String(initial.amount)
+      || categoryId !== (initial.categoryId ?? '') || accountFrom !== ((['transfer', 'saving'].includes(initial.type) ? initial.fromAccountId : initial.type === 'expense' ? initial.accountId : '') ?? '')
+      || accountTo !== ((['transfer', 'saving'].includes(initial.type) ? (initial.toAccountId ?? initial.accountId) : initial.type !== 'expense' ? initial.accountId : '') ?? '')
+      || projectId !== (initial.projectId ?? '') || employeeId !== (initial.employeeId ?? '')
+      || debtId !== (initial.debtId ?? '') || salaryYm !== (initial.salaryYm || String(initial.date ?? '').slice(0, 7) || currentYm())
+      || comment !== (initial.comment ?? '')
+    : !!(amount || categoryId || accountFrom || accountTo || projectId || employeeId || debtId || comment);
+
+  async function requestClose() {
+    if (!dirty || await finConfirm('Закрыть форму? Несохранённые изменения будут потеряны.', {
+      title: 'Несохранённые изменения', danger: true, confirmLabel: 'Закрыть без сохранения',
+    })) onClose();
+  }
 
   function selectCategory(nextId: string) {
     if (nextId === '__new__') {
@@ -127,13 +140,14 @@ export default function TransactionModal({ initial, initialType, initialDate, on
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={initial ? 'Изменить операцию' : 'Новая операция'} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>{initial ? 'Изменить операцию' : 'Новая операция'}</h3>
-          <button className="btn ghost sm" aria-label="Закрыть окно" onClick={onClose}><FinIcon name="close" size={16} /></button>
-        </div>
-        <div className="modal-body">
+    <FinModal
+      title={initial ? 'Изменить операцию' : 'Новая операция'}
+      onClose={() => { void requestClose(); }}
+      footer={<>
+        <button className="btn ghost" onClick={() => { void requestClose(); }}>Отмена</button>
+        <button className="btn primary" disabled={!valid || busy} onClick={save}>{initial ? 'Сохранить' : 'Добавить'}</button>
+      </>}
+    >
           <div className="type-tabs" role="group" aria-label="Тип операции">
             {TYPES.map((t) => (
               <button key={t} className={`type-tab t-${t}` + (type === t ? ' active' : '')}
@@ -228,12 +242,6 @@ export default function TransactionModal({ initial, initialType, initialDate, on
           <div className="field"><label>Комментарий</label>
             <input placeholder="Например: половина суммы контракта" value={comment} onChange={(e) => setComment(e.target.value)} />
           </div>
-        </div>
-        <div className="modal-foot">
-          <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={!valid || busy} onClick={save}>{initial ? 'Сохранить' : 'Добавить'}</button>
-        </div>
-      </div>
-    </div>
+    </FinModal>
   );
 }

@@ -191,10 +191,6 @@ function ActivityDetailPanel({ row, refs, onClose }: { row: any; refs: RefMaps; 
       )}
     </div>
 
-    <div className="fin-activity-technical">
-      <span>Событие <b>{String(row.id).slice(0, 8)}…</b></span>
-      <span>Маршрут <b>{row.route || '—'}</b></span>
-    </div>
   </section>;
 }
 
@@ -249,7 +245,7 @@ export default function FinanceActivityPage() {
         <div className="card empty">Пока пусто — здесь появятся все изменения раздела «Финансы»</div>
       ) : (
         <>
-          <div className="table-wrap fin-wide-table fin-activity-table">
+          <div className="table-wrap fin-wide-table fin-mobile-cards fin-activity-table">
             <table>
               <thead>
                 <tr>
@@ -272,10 +268,10 @@ export default function FinanceActivityPage() {
                       onClick={() => setExpandedId(current => current === r.id ? null : r.id)}
                       onKeyDown={event => onRowKeyDown(event, r.id)}
                     >
-                      <td className="muted nowrap">{fmtWhen(r.createdAt)}</td>
-                      <td><b>{r.userName || 'Система'}</b></td>
-                      <td><span className={`fin-activity-action ${eventTone(r.action || '')}`}>{r.action}</span></td>
-                      <td className="mini muted fin-activity-details">
+                      <td data-label="Когда" className="muted nowrap">{fmtWhen(r.createdAt)}</td>
+                      <td data-label="Кто"><b>{r.userName || 'Система'}</b></td>
+                      <td data-label="Действие"><span className={`fin-activity-action ${eventTone(r.action || '')}`}>{r.action}</span></td>
+                      <td data-label="Кратко" className="mini muted fin-activity-details">
                         {changeSet.rows.length > 0 ? <>
                           {changeSet.rows.slice(0, 3).map(item => (
                             <span key={item.key} className="fin-activity-detail">

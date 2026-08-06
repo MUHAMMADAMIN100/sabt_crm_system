@@ -2,7 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import './finance.css';
-import { money, monthLabel, INCOME_GROUPS, useYmParam, withYm } from './finlib';
+import { money, monthLabel, pluralRu, INCOME_GROUPS, useYmParam, withYm } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
@@ -42,7 +42,7 @@ export default function FinanceIncomePage() {
               </div>
               <div className="value" style={{ fontSize: 26, fontWeight: 700 }}>{money(cash)}</div>
               <div className="mini muted" style={{ marginTop: 6 }}>
-                {projects} проектов{expected > 0 ? ` · ожидается ${money(expected)}` : ''}
+                {pluralRu(projects, 'проект', 'проекта', 'проектов')}{expected > 0 ? ` · ожидается ${money(expected)}` : ''}
                 {(d.pausedCount ?? 0) > 0 ? <span style={{ color: 'var(--amber)' }}> · на паузе {d.pausedCount}</span> : null}
               </div>
               <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>

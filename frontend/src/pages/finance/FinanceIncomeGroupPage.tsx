@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, INCOME_GROUPS, apiErr, downloadCsv, useYmParam, withYm } from './finlib';
+import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, pluralRu, INCOME_GROUPS, apiErr, downloadCsv, useYmParam, withYm } from './finlib';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
 import { FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinanceAll } from './FinKit';
@@ -604,7 +604,7 @@ function DevSection({ data, direction, archived, onShift }: { data: any; directi
           <div className="cards grid-3" style={{ marginBottom: 16 }}>
             <Stat label="Ожидается за месяц" value={money(data.stats.expected)} sub={monthLabel(cm, true)} />
             <Stat label="Получено за месяц" value={money(data.stats.received)} cls="pos" sub={monthLabel(cm, true)} />
-            <Stat label="Всего сумма" value={money(data.totals.tariff)} sub={`${rows.length} проектов`} />
+            <Stat label="Всего сумма" value={money(data.totals.tariff)} sub={pluralRu(rows.length, 'проект', 'проекта', 'проектов')} />
           </div>
           <MatrixSection rows={rows} months={data.months} totals={data.totals} direction={direction} onShift={onShift} />
         </>
@@ -867,7 +867,7 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
       <div className="cards grid-3" style={{ marginBottom: 16 }}>
         <Stat label="Ожидается за месяц" value={money(data.stats.expected)} sub={monthLabel(cm, true)} />
         <Stat label="Получено за месяц" value={money(data.stats.received)} cls="pos" sub={monthLabel(cm, true)} />
-        <Stat label="Всего сумма" value={money(data.stats.total)} sub={`${simple.length + matrixRows.length} проектов`} />
+        <Stat label="Всего сумма" value={money(data.stats.total)} sub={pluralRu(simple.length + matrixRows.length, 'проект', 'проекта', 'проектов')} />
       </div>
 
       <div className="between" style={{ marginTop: 8, marginBottom: 12 }}>

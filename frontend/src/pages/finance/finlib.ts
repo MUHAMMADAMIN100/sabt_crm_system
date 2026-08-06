@@ -86,9 +86,17 @@ export function formatDate(iso?: string | null): string {
   if (!iso) return '—'
   const d = new Date(iso + (iso.length === 10 ? 'T00:00:00' : ''))
   if (isNaN(d.getTime())) return '—'
-  const day = String(d.getDate()).padStart(2, '0')
-  const month = d.toLocaleDateString('ru-RU', { month: 'short' }).replace('.', '')
-  return `${day} ${month} ${d.getFullYear()}`
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+    .replace(/\s*г\.?$/i, '')
+}
+
+/** Склонение русских счётных существительных: 1 проект, 2 проекта, 5 проектов. */
+export function pluralRu(value: number, one: string, few: string, many: string): string {
+  const n = Math.abs(Math.trunc(Number(value) || 0))
+  const mod100 = n % 100
+  const mod10 = n % 10
+  const word = mod100 >= 11 && mod100 <= 14 ? many : mod10 === 1 ? one : mod10 >= 2 && mod10 <= 4 ? few : many
+  return `${value} ${word}`
 }
 
 // ---------- Таксономия: 4 направления дохода, 3 статьи расхода ----------

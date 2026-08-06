@@ -99,7 +99,7 @@ export default function FinanceInventoryPage() {
       ) : rows.length === 0 ? (
         <div className="card empty"><div className="big"><FinIcon name="folder" size={30} /></div>Пусто — добавьте оборудование кнопкой «＋»</div>
       ) : (
-        <div className="table-wrap fin-wide-table">
+        <div className="table-wrap fin-wide-table fin-mobile-cards fin-inventory-table">
           <table>
             <thead>
               <tr>
@@ -122,19 +122,19 @@ export default function FinanceInventoryPage() {
                 const activeRow = a.status === 'in_use' || a.status === 'repair';
                 return (
                   <tr key={a.id} style={{ opacity: activeRow ? 1 : 0.6 }} onDoubleClick={() => setModal(a)}>
-                    <td>
+                    <td data-label="Название">
                       <b>{a.name}</b>
                       {a.serial && <div className="mini muted">SN: {a.serial}</div>}
                       {a.warrantyUntil && a.warrantyUntil >= todayISO() && (
                         <div className="mini muted">гарантия до {formatDate(a.warrantyUntil)}</div>
                       )}
                     </td>
-                    <td className="muted">{a.category ?? '—'}</td>
-                    <td className="muted nowrap">{a.purchaseDate ? formatDate(a.purchaseDate) : '—'}</td>
-                    <td className="num">{money(a.price)}</td>
-                    <td className="num muted">{a.serviceMonths || '—'}</td>
-                    <td className="num muted">{a.monthlyDep ? money(a.monthlyDep) : '—'}</td>
-                    <td>
+                    <td data-label="Категория" className="muted">{a.category ?? '—'}</td>
+                    <td data-label="Куплено" className="muted nowrap">{a.purchaseDate ? formatDate(a.purchaseDate) : '—'}</td>
+                    <td data-label="Цена" className="num">{money(a.price)}</td>
+                    <td data-label="Срок, мес" className="num muted">{a.serviceMonths || '—'}</td>
+                    <td data-label="Аморт./мес" className="num muted">{a.monthlyDep ? money(a.monthlyDep) : '—'}</td>
+                    <td data-label="Остаточная">
                       {activeRow && a.serviceMonths > 0 ? (
                         <>
                           <div className="progress" style={{ marginBottom: 4 }}>
@@ -149,9 +149,9 @@ export default function FinanceInventoryPage() {
                         <span className="mini muted nowrap">{money(a.residual)} · без износа</span>
                       ) : <span className="mini muted">—</span>}
                     </td>
-                    <td className="muted">{a.assignee ?? '—'}</td>
-                    <td><span className={'badge ' + st.badge}>{st.label}</span></td>
-                    <td className="num nowrap">
+                    <td data-label="Ответственный" className="muted">{a.assignee ?? '—'}</td>
+                    <td data-label="Статус"><span className={'badge ' + st.badge}>{st.label}</span></td>
+                    <td data-label="Действия" className="num nowrap">
                       <button className="btn ghost sm" title="Редактировать" onClick={() => setModal(a)}><FinIcon name="edit" size={15} /></button>
                     </td>
                   </tr>
