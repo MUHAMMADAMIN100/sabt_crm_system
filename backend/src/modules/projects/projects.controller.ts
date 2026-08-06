@@ -43,7 +43,7 @@ export class ProjectsController {
   @Post()
   @RequirePerm('projects.create')
   create(@Body() dto: CreateProjectDto, @Request() req) {
-    return this.service.create(dto, req.user.id, req.user.role);
+    return this.service.create(dto, req.user.id, req.user.role, req.user.secondaryRole);
   }
 
   @Patch(':id')

@@ -44,6 +44,7 @@ export class CalendarService {
     scope?: 'personal' | 'business' | 'general',
     viewerId?: string,
     viewerRole?: string,
+    viewerSecondaryRole?: string | null,
   ) {
     if (from && to && new Date(from) > new Date(to)) {
       throw new BadRequestException('from date must be before to date');
@@ -107,7 +108,12 @@ export class CalendarService {
     // своего направления. Задачи без проекта видны, если они созданы им,
     // назначены ему или это общие задачи (scope='general').
     const salesSegment = getSalesSegment(viewerRole);
-    if (salesSegment) {
+    // Руководитель разработки второй ролью (Сабрина) видит задачи и вехи
+    // всех проектов направления без продажной сегментации — зеркально
+    // smm_director. Клиентские встречи/лиды ниже остаются по salesSegment:
+    // это её продажная часть.
+    const taskSegment = viewerSecondaryRole === 'dev_director' ? null : salesSegment;
+    if (taskSegment) {
       // Все типы сегмента, а не один дефолтный (у МП по разработке их пять).
       taskQb.andWhere(
         `(project.projectType IN (:...salesProjTypes)
@@ -116,7 +122,7 @@ export class CalendarService {
             OR t.assigneeId = :salesViewerId
             OR t.scope = 'general'
           )))`,
-        { salesProjTypes: salesSegment.projectTypes, salesViewerId: viewerId ?? null },
+        { salesProjTypes: taskSegment.projectTypes, salesViewerId: viewerId ?? null },
       );
     }
 
@@ -127,9 +133,11 @@ export class CalendarService {
 
     if (projectId) projectQb.andWhere('p.id = :projectId', { projectId });
     // МП по продажам — старты/концы только проектов своего направления.
-    if (salesSegment) {
-      projectQb.andWhere('p.projectType = :salesProjType', {
-        salesProjType: salesSegment.projectType,
+    // ВСЕ типы сегмента, а не один дефолтный: у МП по разработке их пять,
+    // иначе видны вехи только «Лендинга» (как уже сделано для задач выше).
+    if (taskSegment) {
+      projectQb.andWhere('p.projectType IN (:...salesProjTypesP)', {
+        salesProjTypesP: taskSegment.projectTypes,
       });
     }
     // Если фильтр по scope активен — не показываем старты/концы проектов

@@ -735,7 +735,9 @@ export class ProjectsService implements OnModuleInit {
     // трогая остальных. Поэтому в его личном архиве лежат ОБЫЧНЫЕ (не
     // архивированные компанией) проекты, и общий флаг isArchived к списку не
     // применяется — условие добавляется ниже, после определения роли.
-    const personalArchive = archived && isSalesManager(requestUser?.role);
+    // Вторая роль dev_director (Сабрина) — архив ОБЩИЙ, как у smm_director.
+    const devDirectorSecond = (requestUser as any)?.secondaryRole === 'dev_director';
+    const personalArchive = archived && isSalesManager(requestUser?.role) && !devDirectorSecond;
     if (!personalArchive) {
       qb.andWhere('p.isArchived = :archived', { archived });
     } else {
@@ -820,7 +822,9 @@ export class ProjectsService implements OnModuleInit {
       if (isSalesManager(role)) {
         const hiddenSql = `SELECT ph.project_id FROM project_hidden ph WHERE ph.user_id = :hideUid`;
         if (archived) {
-          qb.andWhere(`p.id IN (${hiddenSql})`, { hideUid: userId });
+          // Руководитель разработки второй ролью смотрит ОБЩИЙ архив компании
+          // (personalArchive выше не сработал) — личный фильтр не применяем.
+          if (!devDirectorSecond) qb.andWhere(`p.id IN (${hiddenSql})`, { hideUid: userId });
         } else {
           qb.andWhere(`p.id NOT IN (${hiddenSql})`, { hideUid: userId });
         }
@@ -1051,7 +1055,7 @@ export class ProjectsService implements OnModuleInit {
     return clean;
   }
 
-  async create(dto: CreateProjectDto, userId: string, userRole?: string) {
+  async create(dto: CreateProjectDto, userId: string, userRole?: string, userSecondaryRole?: string | null) {
     // smm_director может создавать только SMM-проекты
     if (userRole === UserRole.SMM_DIRECTOR && dto.projectType !== 'SMM') {
       throw new ForbiddenException('Руководитель SMM может создавать только SMM-проекты');
@@ -1117,11 +1121,13 @@ export class ProjectsService implements OnModuleInit {
     const saved = await this.repo.save(project);
 
     // Транши оплаты: создаём ProjectPayment записи и суммируем в paidAmount.
-    // Доступно ролям, которые могут создавать/редактировать проект:
-    // admin, founder, co_founder, smm_director, video_director.
+    // Доступно ролям, которые могут создавать/редактировать проект (включая
+    // руководителей направлений — в т.ч. второй ролью, как dev_director у
+    // Сабрины).
+    const PAYMENT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director'];
     if (Array.isArray((dto as any).initialPayments) && (dto as any).initialPayments.length > 0
-        && ['admin', 'founder', 'co_founder', 'smm_director', 'video_director']
-            .includes(userRole as string)) {
+        && (PAYMENT_ROLES.includes(userRole as string)
+            || PAYMENT_ROLES.includes(userSecondaryRole as string))) {
       const items = (dto as any).initialPayments as Array<{ amount: number; paidAt: string; note?: string }>;
       let totalDelta = 0;
       for (let i = 0; i < items.length; i++) {
@@ -1414,10 +1420,13 @@ export class ProjectsService implements OnModuleInit {
 
     // Транши оплаты при UPDATE: добавляем только НОВЫЕ платежи (без id).
     // Существующие платежи редактируются через отдельный финансовый таб
-    // и здесь не трогаются. Доступно ролям с правом редактирования проекта.
+    // и здесь не трогаются. Доступно ролям с правом редактирования проекта
+    // (вторая роль тоже даёт право — dev_director у Сабрины).
+    const UPD_PAYMENT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director'];
     if (Array.isArray((dto as any).initialPayments)
-        && (['admin', 'founder', 'co_founder', 'smm_director', 'video_director']
-            .includes(user.role) || project.managerId === user.id)) {
+        && (UPD_PAYMENT_ROLES.includes(user.role)
+            || UPD_PAYMENT_ROLES.includes((user as any).secondaryRole)
+            || project.managerId === user.id)) {
       const items = (dto as any).initialPayments as Array<{ id?: string; amount: number; paidAt: string; note?: string }>;
       const newOnes = items.filter(it => !it.id && Number(it.amount) > 0 && it.paidAt);
       let totalNew = 0;
@@ -1702,8 +1711,12 @@ export class ProjectsService implements OnModuleInit {
     }
     // Менеджер продаж прячет проект ТОЛЬКО у себя: команда продолжает по нему
     // работать, задачи и дедлайны живут дальше. Общий архив ведут руководство
-    // и руководитель СММ.
-    if (isSalesManager(user?.role) && user?.id) {
+    // и руководители направлений. Исключение — вторая роль dev_director
+    // (Сабрина): руководитель разработки ведёт НАСТОЯЩИЙ архив dev-проектов,
+    // как smm_director в SMM, а не личное скрытие.
+    const archAsDevDirector = (user as any)?.secondaryRole === 'dev_director'
+      && DEV_PROJECT_TYPES.includes(project.projectType as string);
+    if (!archAsDevDirector && isSalesManager(user?.role) && user?.id) {
       await this.repo.manager.query(
         `INSERT INTO project_hidden (user_id, project_id) VALUES ($1, $2)
          ON CONFLICT (user_id, project_id) DO NOTHING`,
@@ -1746,7 +1759,10 @@ export class ProjectsService implements OnModuleInit {
     }
     // Менеджеру продаж «восстановить» = вернуть проект в свой список.
     // Общий флаг isArchived он не трогает — проект и не был архивирован.
-    if (isSalesManager(user?.role) && user?.id) {
+    // Вторая роль dev_director — настоящее восстановление, зеркально archive().
+    const restoreAsDevDirector = (user as any)?.secondaryRole === 'dev_director'
+      && DEV_PROJECT_TYPES.includes(project.projectType as string);
+    if (!restoreAsDevDirector && isSalesManager(user?.role) && user?.id) {
       await this.repo.manager.query(
         `DELETE FROM project_hidden WHERE user_id = $1 AND project_id = $2`,
         [user.id, id],

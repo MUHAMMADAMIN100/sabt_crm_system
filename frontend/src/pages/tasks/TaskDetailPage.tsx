@@ -20,7 +20,7 @@ import clsx from 'clsx'
 import { isTaskOverdue } from '@/lib/taskStatus'
 import { stripLeadingEmoji } from '@/lib/stripEmoji'
 
-const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director']
+const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director']
 const WORKER_ROLES = ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'scriptwriter', 'qa', 'publisher', 'targetologist', 'employee']
 
 /** Доступные tech tags + их цвета. Можно вводить и свои — fallback цвет
@@ -109,7 +109,8 @@ export default function TaskDetailPage() {
   const [deleteResultId, setDeleteResultId] = useState<string | null>(null)
 
   const role = user?.role || 'employee'
-  const isPM = PM_ROLES.includes(role)
+  // Вторая роль тоже даёт PM-уровень — зеркально RolesGuard бэка.
+  const isPM = PM_ROLES.includes(role) || PM_ROLES.includes(user?.secondaryRole || '')
   const isWorker = WORKER_ROLES.includes(role)
   // Упрощённый вид задачи: для основателя, сооснователя и разработчиков
   // показываем только заголовок + описание + комментарии. Без вкладок

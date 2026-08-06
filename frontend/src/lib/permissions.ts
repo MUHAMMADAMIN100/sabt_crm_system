@@ -212,7 +212,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'projects.archive', 'projects.members.manage', 'projects.manager.change',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
     'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',
-    'employees.view', 'analytics.view',
+    'employees.view', 'analytics.view', 'risks.view',
     'reports.view', 'reports.create',
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',

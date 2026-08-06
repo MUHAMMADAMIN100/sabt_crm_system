@@ -51,7 +51,9 @@ export default function TasksPage() {
   const PAGE_SIZE = 10
   const user = useAuthStore(s => s.user)
   const isHeadSMM = user?.role === 'smm_director'
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
+  // Вторая роль тоже даёт управленческий уровень — зеркально RolesGuard бэка.
+  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director']
+  const isManagerPlus = MANAGER_PLUS_ROLES.includes(user?.role || '') || MANAGER_PLUS_ROLES.includes(user?.secondaryRole || '')
   // МП по продажам: видят задачи своего направления и могут создавать
   // задачи в доступных им проектах (сервер фильтрует /tasks и /projects).
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'

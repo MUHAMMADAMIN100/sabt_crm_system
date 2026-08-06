@@ -125,7 +125,7 @@ export const GRANTABLE: Record<string, GrantDef> = {
   // ─── Тарифы и настройки ────────────────────────────────────────────
   'tariffs.manage': { label: 'SMM-тарифы — управление', category: 'Настройки', roles: [...TOP, 'smm_director'] },
   'tariffs.delete': { label: 'SMM-тарифы — удаление',   category: 'Настройки', roles: [...TOP], danger: true },
-  'risks.view':     { label: 'Риски — просмотр',        category: 'Настройки', roles: [...TOP, 'smm_director', 'video_director'] },
+  'risks.view':     { label: 'Риски — просмотр',        category: 'Настройки', roles: [...TOP, 'smm_director', 'video_director', 'dev_director'] },
   // Менеджеры продаж видят в «Архиве» СВОЙ личный список скрытых проектов
   // (см. project_hidden в projects.service) — им доступ нужен нативно.
   'archive.view':      { label: 'Архив — просмотр',            category: 'Настройки', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },

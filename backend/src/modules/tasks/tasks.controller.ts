@@ -35,6 +35,7 @@ export class TasksController {
       projectId, assigneeId, status, priority, search, deadlineBefore, scope,
       viewerId: req?.user?.id,
       viewerRole: req?.user?.role,
+      viewerSecondaryRole: req?.user?.secondaryRole,
     });
   }
 
@@ -51,6 +52,7 @@ export class TasksController {
       projectId, assigneeId, status,
       viewerId: req?.user?.id,
       viewerRole: req?.user?.role,
+      viewerSecondaryRole: req?.user?.secondaryRole,
     });
     const header = 'ID,Title,Status,Priority,Project,Assignee,Deadline,LoggedHours\n';
     const rows = tasks.map(t =>

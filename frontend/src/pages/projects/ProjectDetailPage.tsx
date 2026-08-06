@@ -66,11 +66,12 @@ export default function ProjectDetailPage() {
   const qc = useQueryClient()
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
-  // smm_director — руководитель SMM-проектов, имеет те же права что
-  // и назначенный менеджер (создавать задачи, редактировать, управлять составом).
-  // Бэкенд отдельно проверит что smm_director управляет именно SMM-проектом
-  // (project.managerId === user.id) и вернёт 403 для чужих.
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
+  // smm_director / dev_director — руководители направлений, имеют те же права
+  // что и назначенный менеджер (создавать задачи, редактировать, управлять
+  // составом). Бэкенд отдельно проверит направление проекта и вернёт 403 для
+  // чужих. Вторая роль тоже даёт право — зеркально RolesGuard бэка.
+  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director']
+  const isManagerPlus = MANAGER_PLUS_ROLES.includes(user?.role || '') || MANAGER_PLUS_ROLES.includes(user?.secondaryRole || '')
   const canManagePayment = user?.role === 'founder' || user?.role === 'co_founder'
   const canSeePayment = ['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
   const canRequestPayment = ['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')

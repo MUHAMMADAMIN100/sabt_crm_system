@@ -25,7 +25,9 @@ export default function ArchivePage() {
   const user = useAuthStore(s => s.user)
   // У менеджеров продаж «Архив» — личный список скрытых проектов, а не общий
   // архив компании: они прячут проект только у себя (см. project_hidden).
-  const isPersonal = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
+  // Вторая роль dev_director (Сабрина) — общий архив, как у smm_director.
+  const isPersonal = (user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev')
+    && user?.secondaryRole !== 'dev_director'
   const [projectType, setProjectType] = useState('')
 
   const { data: allProjects, isLoading } = useQuery({

@@ -92,7 +92,9 @@ export default function CalendarPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
+  // Вторая роль тоже даёт управленческий уровень — зеркально RolesGuard бэка.
+  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director']
+  const isManagerPlus = MANAGER_PLUS_ROLES.includes(user?.role || '') || MANAGER_PLUS_ROLES.includes(user?.secondaryRole || '')
   // МП по продажам получают календарь как у основателя, но без типа «Общая».
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
   // Проект-менеджер по разработке ведёт в календаре свои задачи: форма с
@@ -302,7 +304,11 @@ export default function CalendarPage() {
     // исполнитель или автор), без чужих задач команды.
     'pm_dev',
   ]
-  const isPersonalView = PERSONAL_VIEW_ROLES.includes(user?.role || '')
+  // Руководитель разработки второй ролью (dev_director у Сабрины) видит
+  // командный календарь, а не только личный: бэк уже отдаёт задачи и вехи
+  // всех проектов направления. Основателя не трогаем — его личный вид
+  // задуман (он тоже в обоих списках).
+  const isPersonalView = PERSONAL_VIEW_ROLES.includes(user?.role || '') && user?.secondaryRole !== 'dev_director'
 
   const projectEvents = (events || []).filter((e: any) => {
     if (isPersonalView) {

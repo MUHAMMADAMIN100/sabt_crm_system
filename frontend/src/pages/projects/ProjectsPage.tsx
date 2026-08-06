@@ -110,9 +110,11 @@ export default function ProjectsPage() {
     (projectRisks ?? []).map((r: any) => [r.projectId, r.level]),
   )
 
-  // Список PM-ов: только сотрудники с менеджерскими ролями
+  // Список PM-ов: только сотрудники с менеджерскими ролями (вторая роль
+  // тоже считается — dev_director у Сабрины).
+  const PM_FILTER_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director']
   const pmList = (employees ?? []).filter((e: any) =>
-    ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(e.user?.role),
+    PM_FILTER_ROLES.includes(e.user?.role) || PM_FILTER_ROLES.includes(e.user?.secondaryRole),
   )
 
   // Reset page when filters change
@@ -596,8 +598,10 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
   // Платежи (транши) — может управлять любой кто имеет доступ к форме проекта:
   // Admin, Founder, Co-founder, SMM Director, Head SMM, Project Manager.
   // Они вносят оплаты от клиента — финансовая информация по проекту, не зарплаты.
-  const canManagePayments = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director']
-    .includes(formUser?.role || '')
+  // Вторая роль тоже даёт право (dev_director у Сабрины) — зеркально бэку.
+  const PAYMENT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director']
+  const canManagePayments = PAYMENT_ROLES.includes(formUser?.role || '')
+    || PAYMENT_ROLES.includes(formUser?.secondaryRole || '')
   const [smmAnswers, setSmmAnswers] = useState<Record<string, string>>({})
   // Лимиты и цена ИНДИВИДУАЛЬНОГО тарифа — задаются для этого проекта.
   // В справочнике «Индивидуальный» один на всех и хранит нули, поэтому цифры

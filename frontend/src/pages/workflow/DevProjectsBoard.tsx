@@ -31,7 +31,7 @@ const DEV_TYPES = ['Web сайт', 'Лендинг', 'Телеграм бот', 
 const DEV_ASSIGNEE_ROLES = ['developer', 'pm_dev']
 
 /** Кто двигает карточки — зеркало @Roles на PATCH /projects/:id/dev-stage. */
-const MOVE_ROLES = ['admin', 'founder', 'co_founder', 'pm_dev', 'developer']
+const MOVE_ROLES = ['admin', 'founder', 'co_founder', 'dev_director', 'pm_dev', 'developer']
 
 const clampStage = (v: any): number => {
   const n = Number(v)

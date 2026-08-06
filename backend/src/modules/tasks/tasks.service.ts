@@ -31,7 +31,7 @@ const isPmUser = (u: { role?: string; secondaryRole?: string | null } | undefine
  *  Массив строк: подставляется в SQL-параметр (u.role = ANY(...)). */
 const MANAGEMENT_ROLES: string[] = [
   UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-  UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
+  UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR, UserRole.DEV_DIRECTOR,
 ];
 /** Кто вправе ставить задачу «от основателя» и рассылать общую задачу всей
  *  компании (сайт + email + Telegram каждому активному сотруднику). */
@@ -360,6 +360,8 @@ export class TasksService implements OnModuleInit {
     viewerId?: string;
     /** Роль текущего пользователя — нужна для сегментации МП по продажам. */
     viewerRole?: string;
+    /** Вторая роль: dev_director поверх МП снимает продажную сегментацию. */
+    viewerSecondaryRole?: string | null;
   }) {
     const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
@@ -404,7 +406,11 @@ export class TasksService implements OnModuleInit {
     // Сегментация менеджеров продаж: МП видит только задачи проектов
     // своего направления. Задачи без проекта видны, если они созданы им,
     // назначены ему или это общие задачи (scope='general').
-    const salesSegment = getSalesSegment(filters.viewerRole);
+    // Руководитель (в т.ч. второй ролью — dev_director у Сабрины) видит
+    // список без продажной сегментации, как smm_director.
+    const salesSegment = isPmUser({ role: filters.viewerRole, secondaryRole: filters.viewerSecondaryRole })
+      ? null
+      : getSalesSegment(filters.viewerRole);
     if (salesSegment) {
       // ВСЕ типы сегмента, а не один дефолтный: у МП по разработке их пять
       // (Лендинг, Телеграм бот, CRM, Интернет магазин, legacy «Web сайт») —
@@ -741,7 +747,8 @@ export class TasksService implements OnModuleInit {
     // PM-полномочий в этом проекте. Раньше здесь был список WORKER_ROLES, и
     // роли вне него (developer, pm_dev) обходили проверку целиком — правили
     // любую чужую задачу.
-    const isPmHere = await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
+    const isPmHere = isPmUser(user as any)
+      || await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
     if (
       !isPmHere &&
       task.assigneeId !== user.id &&
@@ -807,6 +814,9 @@ export class TasksService implements OnModuleInit {
     if (
       dto.status === TaskStatus.DONE &&
       WORKER_ROLES.includes(user.role as UserRole) &&
+      // Руководитель (в т.ч. второй ролью — dev_director у Сабрины) принимает
+      // работу прямой сменой статуса, требование файла-результата не для него.
+      !isPmUser(user as any) &&
       !isSmmSpecialist &&
       !isSelfCreated
     ) {
@@ -1226,7 +1236,8 @@ export class TasksService implements OnModuleInit {
       .where('t.id = :id', { id })
       .getRawOne();
     if (!taskRaw) throw new NotFoundException('Task not found');
-    const isPM = await this.hasPmPowersOnProject(user.id, user.role, taskRaw.t_projectId);
+    const isPM = isPmUser(user as any)
+      || await this.hasPmPowersOnProject(user.id, user.role, taskRaw.t_projectId);
     if (!isPM) {
       throw new ForbiddenException('Only project managers can return tasks');
     }
