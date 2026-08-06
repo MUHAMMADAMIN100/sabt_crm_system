@@ -1039,8 +1039,8 @@
 .fin-root .page-head {
   align-items: center;
   margin-bottom: 24px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 .fin-root .page-head h1 {
   display: flex;
@@ -1073,7 +1073,8 @@
 .fin-root .summary-head .total { font-size: 21px; font-weight: 700; }
 .fin-root .muted { color: var(--muted); }
 
-/* Flat KPI rhythm and restrained cards */
+/* Shared KPI treatment across every finance section. Main figures live in
+   consistent bordered containers; the grid itself has no divider lines. */
 .fin-root .card {
   padding: 18px;
   border-color: var(--border);
@@ -1082,19 +1083,24 @@
 }
 .fin-root .cards { gap: 14px; }
 .fin-root .cards.grid-balances,
-.fin-root .cards.grid-4:has(> .card.stat) {
-  padding: 8px 0;
-  border-block: 1px solid var(--border);
+.fin-root .cards:has(> .card.stat) {
+  padding: 0;
+  border: 0;
 }
 .fin-root .cards.grid-balances > .card,
-.fin-root .cards.grid-4 > .card.stat {
-  padding: 12px 14px;
-  border: 0;
-  border-radius: 14px;
-  background: transparent;
+.fin-root .cards > .card.stat,
+.fin-root .cards > .card:has(> .value) {
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 .fin-root .cards.grid-balances > .card:hover,
-.fin-root .cards.grid-4 > .card.stat:hover { background: var(--surface-2); }
+.fin-root .cards > .card.stat:hover,
+.fin-root .cards > .card:has(> .value):hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  background: var(--surface-2);
+}
 .fin-root .stat .label { font-size: 12.5px; font-weight: 500; }
 .fin-root .stat .value {
   margin-top: 7px;
@@ -1407,13 +1413,12 @@
     border-radius: 0;
     box-shadow: none;
   }
-  .fin-root .page-head { gap: 12px; margin-bottom: 18px; padding-bottom: 14px; }
+  .fin-root .page-head { gap: 12px; margin-bottom: 18px; padding-bottom: 0; }
   .fin-root .page-head h1 { font-size: 21px; }
   .fin-root .page-head > .flex { justify-content: flex-start; }
-  .fin-root .cards.grid-balances,
-  .fin-root .cards.grid-4:has(> .card.stat) { padding-block: 5px; }
   .fin-root .cards.grid-balances > .card,
-  .fin-root .cards.grid-4 > .card.stat { padding: 10px 8px; }
+  .fin-root .cards > .card.stat,
+  .fin-root .cards > .card:has(> .value) { padding: 14px; }
   .fin-root .toolbar { align-items: stretch; }
   .fin-root .toolbar .grow { flex-basis: 100%; max-width: none !important; }
   .fin-root .btn:not(.sm),
