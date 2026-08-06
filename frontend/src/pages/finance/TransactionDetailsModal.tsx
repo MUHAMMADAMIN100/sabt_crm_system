@@ -28,9 +28,13 @@ function formatDateTime(value?: string | null) {
   return date.toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-function Detail({ label, value, strong = false }: { label: string; value?: React.ReactNode; strong?: boolean }) {
+function Detail({ label, value, sub, primary = false }: {
+  label: string; value?: React.ReactNode; sub?: React.ReactNode; primary?: boolean;
+}) {
   if (value === null || value === undefined || value === '') return null;
-  return <div className="fin-tx-detail"><span>{label}</span><b className={strong ? 'strong' : undefined}>{value}</b></div>;
+  return <div className={'fin-tx-detail' + (primary ? ' primary' : '')}>
+    <span>{label}</span><b>{value}</b>{sub && <small>{sub}</small>}
+  </div>;
 }
 
 export default function TransactionDetailsPanel({ transaction: t, id, onClose, onEdit }: {
@@ -50,92 +54,61 @@ export default function TransactionDetailsPanel({ transaction: t, id, onClose, o
   const flowToValue = t.type === 'expense'
     ? (t.employeeId ? (t.employeeName || 'Сотрудник не найден') : t.debtCounterparty || t.debtName || t.subscriptionName || t.counterparty)
     : to;
-  const linked = !!(t.employeeId || t.projectId || t.debtId || t.subscriptionId || t.counterparty || t.legacyProject);
   const canEdit = !!onEdit && !isImportedArchive(t) && t.status !== 'cancelled';
+  const role = [t.employeeRole, t.employeeCategory].filter(Boolean).join(' · ');
+  const direction = t.projectDirection ? (DIRECTION_LABEL[t.projectDirection] || t.projectDirection) : null;
+  const contextLabel = t.employeeId ? 'Кому выплачено'
+    : t.projectId || t.legacyProject ? 'Проект / клиент'
+    : t.debtId ? 'Долг'
+    : t.subscriptionId ? (t.subscriptionKind === 'rent' ? 'Аренда' : 'Подписка')
+    : t.counterparty ? 'Контрагент' : null;
+  const contextValue = t.employeeId ? (t.employeeName || 'Сотрудник не найден')
+    : t.projectName || t.legacyProject || t.debtName || t.subscriptionName || t.counterparty || null;
+  const contextSub = t.employeeId ? role : t.projectId ? direction : t.debtId ? (t.debtCounterparty || t.counterparty) : null;
 
   return (
     <section id={id} className="fin-tx-details-panel" role="region"
       aria-label={`Подробности операции — ${t.comment || t.categoryName || TYPE_LABEL[t.type] || t.id}`}>
       <div className="fin-tx-details-panel-head">
-        <div><strong>Подробности операции</strong><span>Все данные без перехода со страницы</span></div>
+        <div className="fin-tx-compact-title">
+          <CatIcon
+            icon={paired ? (t.type === 'saving' ? 'piggy' : 'transactions') : t.categoryIcon}
+            color={paired ? (t.type === 'saving' ? 'var(--violet)' : 'var(--accent)') : t.categoryColor}
+            size={30}
+          />
+          <div><strong>{kind || t.categoryName || TYPE_LABEL[t.type] || 'Операция'}</strong>
+            <span>{t.comment || t.legacyDescription || 'Без описания'} · {formatDate(t.date)}</span></div>
+        </div>
+        <div className="fin-tx-compact-summary">
+          <b className={t.type === 'income' ? 'pos' : t.type === 'expense' ? 'neg' : ''}>
+            {t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}{money(t.amount)}
+          </b>
+          <span className={`fin-tx-status ${status.cls}`}>{status.label}</span>
+        </div>
         <div className="flex">
           {canEdit && <button className="btn primary sm" onClick={() => onEdit?.(t)}><FinIcon name="edit" size={14} /> Изменить</button>}
           <button className="btn ghost sm" onClick={onClose}><FinIcon name="chevronLeft" size={14} /> Свернуть</button>
         </div>
       </div>
-      <div className={`fin-tx-detail-hero ${t.type}`}>
-        <CatIcon
-          icon={paired ? (t.type === 'saving' ? 'piggy' : 'transactions') : t.categoryIcon}
-          color={paired ? (t.type === 'saving' ? 'var(--violet)' : 'var(--accent)') : t.categoryColor}
-          size={42}
-        />
-        <div className="fin-tx-detail-heading">
-          <div className="fin-tx-detail-kicker">{kind || t.categoryName || TYPE_LABEL[t.type] || 'Операция'}</div>
-          <div className={`fin-tx-detail-amount ${t.type === 'income' ? 'pos' : t.type === 'expense' ? 'neg' : ''}`}>
-            {t.type === 'income' ? '+' : t.type === 'expense' ? '−' : ''}{money(t.amount)}
-          </div>
-          <div className="fin-tx-detail-caption">{t.comment || t.legacyDescription || 'Без описания'}</div>
-        </div>
-        <span className={`fin-tx-status ${status.cls}`}>{status.label}</span>
+
+      <div className="fin-tx-compact-grid">
+        {contextLabel && <Detail label={contextLabel} value={contextValue} sub={contextSub || undefined} primary />}
+        {flowFromValue && flowFromValue !== contextValue && <Detail label={flowFromLabel} value={flowFromValue} />}
+        {flowToValue && flowToValue !== contextValue && <Detail label={flowToLabel} value={flowToValue} />}
+        <Detail label="Тип / категория" value={`${TYPE_LABEL[t.type] || t.type} · ${t.categoryName || (paired ? TYPE_LABEL[t.type] : 'Без категории')}`} />
+        {t.employeeId && <Detail label="Месяц начисления" value={monthLabel(t.salaryYm || String(t.date).slice(0, 7), true)} />}
+        <Detail label="Тариф проекта" value={t.projectTariff != null ? money(t.projectTariff) : null} />
+        <Detail label="Способ оплаты" value={t.paymentMethod} />
       </div>
 
-      {t.employeeId && (
-        <section className="fin-tx-detail-focus">
-          <span className="fin-tx-detail-focus-label">Кому выплачено</span>
-          <strong>{t.employeeName || 'Сотрудник не найден'}</strong>
-          {(t.employeeRole || t.employeeCategory) && <small>{[t.employeeRole, t.employeeCategory].filter(Boolean).join(' · ')}</small>}
-        </section>
-      )}
-
-      <section className="fin-tx-detail-section">
-        <h4>Операция</h4>
-        <div className="fin-tx-detail-grid">
-          <Detail label="Дата операции" value={formatDate(t.date)} strong />
-          <Detail label="Тип" value={TYPE_LABEL[t.type] || t.type} />
-          <Detail label="Категория" value={t.categoryName || (paired ? TYPE_LABEL[t.type] : 'Без категории')} />
-          <Detail label="Тип выплаты" value={kind} />
-          {t.employeeId && <Detail label="Месяц начисления" value={monthLabel(t.salaryYm || String(t.date).slice(0, 7), true)} />}
-          <Detail label="Способ оплаты" value={t.paymentMethod} />
-          <Detail label="Описание" value={t.comment || t.legacyDescription} />
-        </div>
-      </section>
-
-      <section className="fin-tx-detail-section">
-        <h4>Движение денег</h4>
-        <div className="fin-tx-account-flow">
-          <div><span>{flowFromLabel}</span><b>{flowFromValue || '—'}</b></div>
-          <FinIcon name="arrowRight" size={20} />
-          <div><span>{flowToLabel}</span><b>{flowToValue || '—'}</b></div>
-        </div>
-      </section>
-
-      {linked && (
-        <section className="fin-tx-detail-section">
-          <h4>Связанные данные</h4>
-          <div className="fin-tx-detail-grid">
-            <Detail label="Сотрудник" value={t.employeeName} strong />
-            <Detail label="Должность / отдел" value={[t.employeeRole, t.employeeCategory].filter(Boolean).join(' · ')} />
-            <Detail label="Проект / клиент" value={t.projectName || t.legacyProject} strong />
-            <Detail label="Направление" value={t.projectDirection ? (DIRECTION_LABEL[t.projectDirection] || t.projectDirection) : null} />
-            <Detail label="Тариф проекта" value={t.projectTariff != null ? money(t.projectTariff) : null} />
-            <Detail label="Долг" value={t.debtName} strong />
-            <Detail label="Кредитор / контрагент" value={t.debtCounterparty || t.counterparty} />
-            <Detail label={t.subscriptionKind === 'rent' ? 'Аренда' : 'Подписка'} value={t.subscriptionName} strong />
-          </div>
-        </section>
-      )}
-
-      <section className="fin-tx-detail-section quiet">
-        <h4>Учётная информация</h4>
-        <div className="fin-tx-detail-grid">
-          <Detail label="Создал" value={t.createdByName} />
-          <Detail label="Создано" value={formatDateTime(t.createdAt)} />
-          <Detail label="Последнее изменение" value={formatDateTime(t.updatedAt)} />
-          <Detail label="Влияет на баланс" value={t.affectsBalance === false ? 'Нет — архивный факт' : 'Да'} />
-          <Detail label="Источник" value={isImportedArchive(t) ? <ImportedArchiveBadge /> : 'CRM'} />
-          <Detail label="ID операции" value={<code>{t.id}</code>} />
-        </div>
-      </section>
+      <div className="fin-tx-compact-audit">
+        {t.createdByName && <span>Создал: <b>{t.createdByName}</b></span>}
+        {formatDateTime(t.createdAt) && <span>Создано: <b>{formatDateTime(t.createdAt)}</b></span>}
+        {formatDateTime(t.updatedAt) && <span>Изменено: <b>{formatDateTime(t.updatedAt)}</b></span>}
+        <span>Баланс: <b>{t.affectsBalance === false ? 'не влияет' : 'учитывается'}</b></span>
+        <span>Источник: <b>{isImportedArchive(t) ? <ImportedArchiveBadge /> : 'CRM'}</b></span>
+        <code title="ID операции">{t.id}</code>
+      </div>
     </section>
   );
 }

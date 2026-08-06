@@ -401,41 +401,32 @@
   padding: 0 !important; background: var(--surface-2) !important;
   box-shadow: inset 0 -1px 0 var(--border) !important;
 }
-.fin-root .fin-tx-details-panel { display: grid; gap: 14px; padding: 18px 20px 22px; border-top: 2px solid var(--accent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 48%, var(--surface)) 0, var(--surface-2) 150px);
+.fin-root .fin-tx-details-panel { display: grid; gap: 8px; padding: 10px 12px 11px; border-top: 2px solid color-mix(in srgb, var(--accent) 65%, var(--border));
+  color: color-mix(in srgb, var(--text) 85%, var(--surface-2)); background: color-mix(in srgb, var(--accent-soft) 18%, var(--surface-2));
   animation: finHistoryIn .16s ease-out; }
-.fin-root .fin-tx-details-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.fin-root .fin-tx-details-panel-head > div:first-child { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.fin-root .fin-tx-details-panel-head strong { font-size: 16px; }
-.fin-root .fin-tx-details-panel-head span { color: var(--muted); font-size: 12px; }
-.fin-root .fin-tx-calendar-details { margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
-.fin-root .fin-tx-detail-hero { display: flex; align-items: center; gap: 13px; padding: 2px 0 6px; }
-.fin-root .fin-tx-detail-heading { flex: 1; min-width: 0; }
-.fin-root .fin-tx-detail-kicker { color: var(--muted); font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .45px; }
-.fin-root .fin-tx-detail-amount { margin-top: 2px; font-size: 28px; line-height: 1.15; font-weight: 750; letter-spacing: -.6px; font-variant-numeric: tabular-nums; }
-.fin-root .fin-tx-detail-caption { margin-top: 4px; color: var(--muted); overflow-wrap: anywhere; }
-.fin-root .fin-tx-status { align-self: flex-start; padding: 5px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.fin-root .fin-tx-details-panel-head { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; align-items: center; gap: 12px; }
+.fin-root .fin-tx-compact-title { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.fin-root .fin-tx-compact-title > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.fin-root .fin-tx-compact-title strong { font-size: 13.5px; line-height: 1.25; }
+.fin-root .fin-tx-compact-title span { color: color-mix(in srgb, var(--muted) 85%, var(--surface-2)); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .fin-tx-compact-summary { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.fin-root .fin-tx-compact-summary > b { font-size: 18px; font-weight: 720; font-variant-numeric: tabular-nums; }
+.fin-root .fin-tx-compact-summary > b.pos { color: color-mix(in srgb, var(--green) 82%, var(--text)); }
+.fin-root .fin-tx-compact-summary > b.neg { color: color-mix(in srgb, var(--red) 82%, var(--text)); }
+.fin-root .fin-tx-calendar-details { margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.fin-root .fin-tx-status { padding: 3px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 650; white-space: nowrap; }
 .fin-root .fin-tx-status.completed { background: var(--green-soft); color: var(--green); }
 .fin-root .fin-tx-status.planned { background: var(--amber-soft); color: var(--amber); }
 .fin-root .fin-tx-status.cancelled { background: var(--red-soft); color: var(--red); }
-.fin-root .fin-tx-detail-focus { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 3px 14px; padding: 14px 16px; border-left: 3px solid var(--amber); background: var(--amber-soft); border-radius: 0 10px 10px 0; }
-.fin-root .fin-tx-detail-focus-label { grid-row: span 2; color: var(--amber); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .35px; }
-.fin-root .fin-tx-detail-focus strong { font-size: 17px; }
-.fin-root .fin-tx-detail-focus small { color: var(--muted); }
-.fin-root .fin-tx-detail-section { border-top: 1px solid var(--border); padding-top: 14px; }
-.fin-root .fin-tx-detail-section h4 { margin: 0 0 10px; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .55px; }
-.fin-root .fin-tx-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 24px; }
-.fin-root .fin-tx-detail { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.fin-root .fin-tx-detail > span { color: var(--muted); font-size: 11.5px; }
-.fin-root .fin-tx-detail > b { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
-.fin-root .fin-tx-detail > b.strong { font-size: 14.5px; }
-.fin-root .fin-tx-detail code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 500; }
-.fin-root .fin-tx-detail-section.quiet { opacity: .88; }
-.fin-root .fin-tx-account-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 14px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); }
-.fin-root .fin-tx-account-flow > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.fin-root .fin-tx-account-flow > div:last-child { text-align: right; }
-.fin-root .fin-tx-account-flow span { color: var(--muted); font-size: 11.5px; }
-.fin-root .fin-tx-account-flow b { overflow-wrap: anywhere; }
+.fin-root .fin-tx-compact-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 1px; border: 1px solid color-mix(in srgb, var(--border) 80%, transparent); border-radius: 8px; overflow: hidden; }
+.fin-root .fin-tx-detail { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-width: 0; min-height: 45px; padding: 6px 9px; background: color-mix(in srgb, var(--surface) 52%, transparent); }
+.fin-root .fin-tx-detail.primary { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+.fin-root .fin-tx-detail > span { color: color-mix(in srgb, var(--muted) 85%, var(--surface-2)); font-size: 10px; }
+.fin-root .fin-tx-detail > b { font-size: 12px; font-weight: 600; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .fin-tx-detail > small { color: color-mix(in srgb, var(--muted) 85%, var(--surface-2)); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .fin-tx-compact-audit { display: flex; align-items: center; gap: 5px 14px; flex-wrap: wrap; color: color-mix(in srgb, var(--muted) 78%, var(--surface-2)); font-size: 9.5px; line-height: 1.2; }
+.fin-root .fin-tx-compact-audit b { font-weight: 550; color: color-mix(in srgb, var(--text) 72%, var(--surface-2)); }
+.fin-root .fin-tx-compact-audit code { margin-left: auto; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; opacity: .7; }
 /* «ещё N» / «свернуть» в длинных днях. */
 .fin-root .tx-cal-more { border: none; background: none; color: var(--accent); font-size: 11px; font-weight: 600;
   padding: 2px 5px; border-radius: 6px; text-align: left; cursor: pointer; align-self: flex-start; }
@@ -518,15 +509,12 @@
 
   /* На тач-устройствах hover нет — кнопки строк видны всегда. */
   .fin-root .row-actions { opacity: 1; }
-  .fin-root .fin-tx-detail-hero { align-items: flex-start; flex-wrap: wrap; }
-  .fin-root .fin-tx-detail-heading { flex-basis: calc(100% - 60px); }
-  .fin-root .fin-tx-status { margin-left: 55px; }
-  .fin-root .fin-tx-detail-grid { grid-template-columns: 1fr; gap: 11px; }
-  .fin-root .fin-tx-detail-focus { grid-template-columns: 1fr; gap: 4px; }
-  .fin-root .fin-tx-detail-focus-label { grid-row: auto; }
-  .fin-root .fin-tx-details-panel { padding: 15px 14px 18px; }
-  .fin-root .fin-tx-details-panel-head { align-items: flex-start; }
-  .fin-root .fin-tx-details-panel-head > div:first-child span { display: none; }
+  .fin-root .fin-tx-details-panel { padding: 8px; gap: 7px; }
+  .fin-root .fin-tx-details-panel-head { grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px 10px; }
+  .fin-root .fin-tx-compact-summary { grid-column: 1; }
+  .fin-root .fin-tx-details-panel-head > .flex { grid-column: 2; grid-row: 1 / span 2; flex-direction: column; align-items: stretch; gap: 3px; }
+  .fin-root .fin-tx-details-panel-head > .flex .btn { justify-content: center; padding: 6px 8px; }
+  .fin-root .fin-tx-compact-grid { grid-template-columns: repeat(2, minmax(135px, 1fr)); }
 
   /* Модалка почти во весь экран, кнопки — в столбик, если не влезают. */
   .fin-root .overlay, .fin-overlay {
