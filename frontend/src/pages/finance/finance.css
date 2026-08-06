@@ -2125,3 +2125,38 @@
   .fin-root .cards.grid-balances .stat .value { padding-left: 0; }
   .fin-table-note { padding-inline: 2px; }
 }
+
+
+/* :only-child ignores text nodes, so icon + label buttons were collapsed. */
+.fin-root .btn.sm:has(> .fin-icon:only-child),
+.fin-overlay .btn.sm:has(> .fin-icon:only-child) {
+  width: auto;
+  min-width: 0;
+  height: auto;
+  min-height: 30px;
+  padding: 5px 9px;
+}
+
+/* Keep the activity summary visible without a hidden horizontal scrollbar. */
+.fin-root .fin-activity-table table {
+  min-width: 0;
+  table-layout: fixed;
+}
+.fin-root .fin-activity-table th:nth-child(1) { width: 128px !important; }
+.fin-root .fin-activity-table th:nth-child(2) { width: 120px !important; }
+.fin-root .fin-activity-table th:nth-child(3) { width: 220px !important; }
+.fin-root .fin-activity-table .fin-activity-details {
+  max-width: none;
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .fin-root .btn.sm:has(> .fin-icon:only-child),
+  .fin-overlay .btn.sm:has(> .fin-icon:only-child) {
+    width: auto;
+    min-width: 0;
+    height: auto;
+    min-height: 36px;
+    padding: 7px 10px;
+  }
+}
