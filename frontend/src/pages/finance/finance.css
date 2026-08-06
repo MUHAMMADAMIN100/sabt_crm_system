@@ -120,7 +120,12 @@
 .fin-root .fin-breakdown-trigger.brk-row { border-width: 0 0 1px; border-style: dashed; border-color: var(--border); background: transparent; }
 .fin-root .fin-breakdown-trigger.brk-row:last-child { border-bottom: 0; }
 .fin-root button.card { display: block; width: 100%; font: inherit; text-align: left; }
-.fin-root .fin-open-details { margin-top: 10px; margin-left: auto; }
+.fin-root .btn.fin-open-details {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  margin: 10px 0 0 auto;
+}
 
 /* Table */
 .fin-root .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; overflow-x: auto; }
@@ -886,12 +891,59 @@
 .fin-root .fin-current-month-cell { background: color-mix(in srgb, var(--accent-soft) 48%, var(--surface)) !important; box-shadow: inset 1px 0 color-mix(in srgb, var(--accent) 18%, transparent), inset -1px 0 color-mix(in srgb, var(--accent) 18%, transparent); }
 .fin-current-month-dot { display: inline-block; width: 5px; height: 5px; margin-left: 6px; border-radius: 50%; background: var(--accent); vertical-align: 2px; }
 
-/* Состояния проектов всегда занимают отдельную строку — без наложения у края canvas. */
-.fin-project-state-group { clear: both; display: block; width: 100%; min-width: 0; margin-top: 10px; position: relative; }
-.fin-project-state-group + .fin-project-state-group { margin-top: 4px; }
-.fin-project-state-toggle { max-width: 100%; min-height: 30px; white-space: normal; text-align: left; line-height: 1.35; }
-.fin-project-state-group.paused > .fin-project-state-toggle { color: var(--amber); }
-.fin-project-state-group .table-wrap { width: 100%; margin-top: 8px !important; }
+/* Вторичные таблицы (пауза, архив, уволенные) — одна полноширинная секция.
+   Раньше прозрачный inline-toggle визуально выпадал в левый gutter после
+   широких прокручиваемых таблиц. */
+.fin-secondary-table-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 14px;
+}
+.fin-secondary-table-stack:empty { display: none; }
+.fin-secondary-table-section {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.fin-root .btn.fin-secondary-table-toggle {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: none;
+  min-height: 36px;
+  margin: 0;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface-2);
+  white-space: normal;
+  text-align: left;
+  line-height: 1.35;
+}
+.fin-root .btn.fin-secondary-table-toggle:hover { background: var(--surface-hover); }
+.fin-secondary-table-section.paused > .fin-secondary-table-toggle { color: var(--amber); }
+.fin-secondary-table-section > .table-wrap {
+  width: 100%;
+  margin: 0 !important;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+}
+.fin-table-note {
+  max-width: 100%;
+  margin: 10px 0 0;
+  padding-inline: 12px;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
 .fin-plan-controls{display:flex;align-items:end;gap:14px;margin:0 0 18px}.fin-plan-controls .field{margin:0;min-width:150px}.fin-segments{display:flex;padding:4px;background:var(--surface,#f1f5f9);border-radius:12px;margin-left:auto}.fin-segments button{border:0;background:transparent;padding:9px 14px;border-radius:9px;color:var(--muted);cursor:pointer;white-space:nowrap}.fin-segments button.active{background:#fff;color:#1d4ed8;box-shadow:0 1px 5px #0f172a18}.fin-plan-warning{padding:12px 16px;margin-bottom:16px;border:1px solid #fecaca;background:#fff1f2;color:#be123c;border-radius:12px}.fin-plan-chart{margin:18px 0;overflow:hidden}.fin-plan-chart-scroll{overflow-x:auto;overflow-y:hidden;padding:2px 2px 8px;scrollbar-width:thin}.fin-plan-chart-canvas{height:320px}.fin-plan-detail-row>td{padding:14px;background:color-mix(in srgb,var(--surface-2) 58%,var(--surface))}.fin-plan-detail{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;padding:0}.fin-plan-source{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}.fin-plan-source>span:first-child{min-width:0;overflow-wrap:anywhere}.fin-plan-source>b{white-space:nowrap;font-variant-numeric:tabular-nums}.fin-plan-source small{display:block;color:var(--muted);margin-top:2px}.fin-plan-source button{border:0;background:transparent;color:#94a3b8;font-size:20px;cursor:pointer}.fin-salary-history{border:1px solid var(--border);border-radius:10px;padding:4px 12px;max-height:150px;overflow:auto}.fin-salary-history>div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)}.fin-salary-history>div strong{white-space:nowrap}.fin-salary-history>div:last-child{border:0}@media(max-width:760px){.fin-plan-controls{align-items:stretch;flex-wrap:wrap}.fin-segments{margin-left:0;width:100%;overflow:auto}.fin-plan-controls .field{flex:1 1 145px;min-width:0}.fin-plan-detail{grid-template-columns:1fr}.fin-plan-detail-row>td{padding:10px}.fin-plan-chart{padding-left:10px!important;padding-right:10px!important}}
 
 .fin-plan-chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 8px 20px}.fin-plan-chart-head>div{min-width:0}.fin-plan-chart-head strong{font-size:17px}.fin-plan-chart-head span{display:block;color:var(--muted);font-size:12px;margin-top:4px}.fin-plan-chart-head .fin-plan-scenario{padding:6px 10px;margin:0;border-radius:999px;background:#eff6ff;color:#2563eb;font-weight:650;white-space:nowrap}.fin-plan-column{padding:16px 18px;border:1px solid;border-radius:14px;min-width:0}.fin-plan-column.income{background:linear-gradient(145deg,#f0fdf4,#fff);border-color:#bbf7d0}.fin-plan-column.expense{background:linear-gradient(145deg,#fff1f2,#fff);border-color:#fecdd3}.fin-plan-column-title{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:9px;border-bottom:1px solid var(--border)}.fin-plan-column-title span{white-space:nowrap;font-variant-numeric:tabular-nums}.fin-plan-column.income .fin-plan-column-title{color:#15803d}.fin-plan-column.expense .fin-plan-column-title{color:#e11d48}.fin-plan-source.has-popover{position:relative;cursor:help}.fin-plan-source.has-popover>span:first-child{text-decoration:underline dotted;text-underline-offset:4px}.fin-salary-popover{box-sizing:border-box;position:fixed;z-index:300;width:min(410px,calc(100vw - 16px));padding:12px 14px 9px;background:#fff;border:1px solid #e2e8f0;border-radius:13px;box-shadow:0 18px 50px #0f172a2e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;color:#16191d}.fin-salary-popover.pinned{cursor:default;box-shadow:0 20px 55px #0f172a3d;border-color:#fda4af}.fin-salary-popover-head{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:3px 0 10px;color:#e11d48;border-bottom:1px solid #eef2f7}.fin-salary-popover-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fin-salary-popover-head b{white-space:nowrap}.fin-salary-popover-body{max-height:min(300px,52vh);overflow-y:auto;overscroll-behavior:contain;padding-right:3px;scrollbar-width:thin}.fin-salary-popover-body>div{display:flex;justify-content:space-between;align-items:baseline;gap:20px;padding:8px 0;border-bottom:1px solid #eef2f7}.fin-salary-popover-body>div span{min-width:0;overflow-wrap:anywhere}.fin-salary-popover-body>div b{white-space:nowrap}.fin-salary-popover-body>div:last-child{border-bottom:0}.fin-chart-tooltip{box-sizing:border-box;min-width:210px;padding:12px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 35px #0f172a24}.fin-chart-tooltip>strong{display:block;margin-bottom:8px}.fin-chart-tooltip>div{display:grid;grid-template-columns:10px 1fr auto;align-items:center;gap:7px;padding:3px 0}.fin-chart-tooltip i,.fin-chart-tooltip span{width:8px;height:8px;border-radius:50%}.income-dot{background:#22c55e}.expense-dot{background:#fb7185}.balance-dot{background:#2563eb}.dark .fin-plan-column.income{background:linear-gradient(145deg,#123122,#171b22);border-color:#235c3c}.dark .fin-plan-column.expense{background:linear-gradient(145deg,#3a1820,#171b22);border-color:#63303b}.dark .fin-salary-popover,.dark .fin-chart-tooltip{background:#202630;border-color:#364152;color:#e8ebf1}@media(max-width:760px){.fin-plan-chart-head span:not(.fin-plan-scenario){display:none}.fin-plan-column{padding:13px}.fin-salary-popover-body{max-height:52vh}}
@@ -965,11 +1017,16 @@
    financial meaning. */
 .finance-workspace {
   background: #f6f7fb;
+  overflow-x: clip !important;
 }
-.finance-workspace-inner { min-height: 100%; }
+.finance-workspace-inner { min-height: 100%; max-width: 100%; min-width: 0; overflow-x: clip; }
 
 .fin-root {
+  box-sizing: border-box;
   position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: calc(100dvh - 108px);
   padding: clamp(20px, 2vw, 28px);
   overflow: visible;
@@ -1864,8 +1921,15 @@
 .fin-root .fin-account-select.form-control { width: 100%; min-width: 0; }
 .fin-root .fin-account-select.form-control > select { min-width: 0; }
 .fin-root .cards.grid-balances .stat .label { color: var(--text); }
-.fin-root .cards.grid-balances .stat .value { padding-left: 37px; }
-.fin-root .cards.grid-balances .stat:has(.dushanbe-city) .value { padding-left: 47px; }
+.fin-root .cards.grid-balances .fin-account-label {
+  display: grid;
+  grid-template-columns: 39px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  width: 100%;
+}
+.fin-root .cards.grid-balances .fin-account-mark { justify-self: center; }
+.fin-root .cards.grid-balances .stat .value { padding-left: 47px; }
 
 .fin-root .fin-icon-choice {
   display: grid;
@@ -2057,6 +2121,7 @@
     min-height: 36px;
   }
   .fin-root .page-head > .flex { width: 100%; justify-content: flex-start; }
-  .fin-root .cards.grid-balances .stat .value,
-  .fin-root .cards.grid-balances .stat:has(.dushanbe-city) .value { padding-left: 0; }
+  .fin-root .cards.grid-balances .fin-account-label { display: inline-flex; width: auto; }
+  .fin-root .cards.grid-balances .stat .value { padding-left: 0; }
+  .fin-table-note { padding-inline: 2px; }
 }

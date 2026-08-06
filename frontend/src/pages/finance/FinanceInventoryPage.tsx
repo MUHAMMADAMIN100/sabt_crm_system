@@ -172,7 +172,7 @@ export default function FinanceInventoryPage() {
         </div>
       )}
 
-      <p className="mini muted" style={{ marginTop: 12 }}>
+      <p className="mini muted fin-table-note">
         Амортизация линейная: цена делится на срок службы; остаточная стоимость уменьшается каждый полный
         месяц с даты покупки. Списанное и проданное в стоимости парка не учитывается.
       </p>

@@ -381,7 +381,7 @@ function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd }: {
           })}
         </div>
       </div>
-      <p className="mini muted" style={{ marginTop: 10 }}>Строка — открыть операцию · «＋» в дне — добавить этой датой.</p>
+      <p className="mini muted fin-table-note">Строка — открыть операцию · «＋» в дне — добавить этой датой.</p>
     </>
   );
 }

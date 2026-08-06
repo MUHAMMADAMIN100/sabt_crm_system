@@ -299,7 +299,7 @@ export default function FinanceActivityPage() {
               </button>
             </div>
           )}
-          <p className="mini muted" style={{ marginTop: 10 }}>Всего записей: {total}</p>
+          <p className="mini muted fin-table-note">Всего записей: {total}</p>
         </>
       )}
     </div>

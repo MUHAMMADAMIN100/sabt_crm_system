@@ -122,14 +122,15 @@ function PausedProjects({ direction }: { direction: string }) {
     return weeks > 0 ? `${weeks} нед.` : `${-d} дн.`;
   };
   const tariffSum = projects.reduce((s, p) => s + (Number(p.tariff) || 0), 0);
+  const panelId = `paused-projects-${direction}`;
 
   return (
-    <section className="fin-project-state-group paused">
-      <button className="btn ghost sm fin-project-state-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+    <section className="fin-secondary-table-section paused">
+      <button type="button" className="btn ghost sm fin-secondary-table-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-controls={panelId}>
         <FinIcon name="pause" size={14} /> На паузе ({projects.length} · {money(tariffSum)}/мес)
       </button>
       {open && (
-        <div className="table-wrap" style={{ marginTop: 10 }}>
+        <div id={panelId} className="table-wrap">
           <table>
             <thead><tr><th>Проект</th><th>На паузе с</th><th className="num">Тариф</th><th style={{ width: 200 }} /></tr></thead>
             <tbody>
@@ -287,17 +288,18 @@ function ArchivedProjects({ projects }: { projects: any[] }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   if (!projects || projects.length === 0) return null;
+  const panelId = 'archived-projects-table';
 
   async function restore(p: any) {
     try { await financeApi.updateProject(p.id, { archived: false }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
   return (
-    <section className="fin-project-state-group archived">
-      <button className="btn ghost sm fin-project-state-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+    <section className="fin-secondary-table-section archived">
+      <button type="button" className="btn ghost sm fin-secondary-table-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-controls={panelId}>
         <FinIcon name={open ? 'chevronLeft' : 'chevronRight'} size={14} /> Архив проектов ({projects.length})
       </button>
       {open && (
-        <div className="table-wrap" style={{ marginTop: 10 }}>
+        <div id={panelId} className="table-wrap">
           <table>
             <thead><tr><th>Проект</th><th>Дата контракта</th><th className="num">Тариф</th><th style={{ width: 172 }} /></tr></thead>
             <tbody>
@@ -316,6 +318,15 @@ function ArchivedProjects({ projects }: { projects: any[] }) {
         </div>
       )}
     </section>
+  );
+}
+
+function ProjectStateSections({ direction, archived }: { direction: string; archived: any[] }) {
+  return (
+    <div className="fin-secondary-table-stack">
+      <PausedProjects direction={direction} />
+      <ArchivedProjects projects={archived} />
+    </div>
   );
 }
 
@@ -473,13 +484,12 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
         </table>
       </div>
 
-      <p className="mini muted" style={{ marginTop: 12 }}>
+      <p className="mini muted fin-table-note">
         Частичная оплата: остаток планируется сам со сроком +15 дней. Полная оплата: дата контракта
         сдвигается на день оплаты, план следующего месяца создаётся автоматически.
       </p>
 
-      <PausedProjects direction="smm" />
-      <ArchivedProjects projects={data.archived || []} />
+      <ProjectStateSections direction="smm" archived={data.archived || []} />
 
       {planFor && <PayPartModal row={planFor.row} partNo={planFor.partNo} ym={ym} onClose={() => setPlanFor(null)} />}
       {receive && <ReceiveModal part={receive} onClose={() => setReceive(null)} />}
@@ -594,9 +604,6 @@ function DevSection({ data, direction, archived, onShift }: { data: any; directi
   const rows: any[] = data.rows || [];
   const cm = currentYm();
 
-  if (rows.length === 0 && archived.length === 0)
-    return <div className="card empty"><div className="big"><FinIcon name="folder" size={30} /></div>Нет проектов — нажмите «＋ Проект»</div>;
-
   return (
     <>
       {rows.length > 0 ? (
@@ -609,8 +616,7 @@ function DevSection({ data, direction, archived, onShift }: { data: any; directi
           <MatrixSection rows={rows} months={data.months} totals={data.totals} direction={direction} onShift={onShift} />
         </>
       ) : <div className="card empty">Нет активных проектов</div>}
-      <PausedProjects direction={direction} />
-      <ArchivedProjects projects={archived} />
+      <ProjectStateSections direction={direction} archived={archived} />
     </>
   );
 }
@@ -855,9 +861,6 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
   const matrixRows: any[] = data.matrix?.rows || [];
   const cm = currentYm();
 
-  if (simple.length === 0 && matrixRows.length === 0 && archived.length === 0)
-    return <div className="card empty"><div className="big"><FinIcon name="folder" size={30} /></div>Нет проектов — нажмите «＋ Проект»</div>;
-
   async function archiveProject(p: any) {
     try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
@@ -921,8 +924,7 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
         </>
       )}
 
-      <PausedProjects direction={direction} />
-      <ArchivedProjects projects={archived} />
+      <ProjectStateSections direction={direction} archived={archived} />
 
       {payFor && <RecordIncomeModal row={payFor} onClose={() => setPayFor(null)} />}
       {workFor && <WorkModal row={workFor === 'new' ? undefined : workFor} onClose={() => setWorkFor(null)} />}

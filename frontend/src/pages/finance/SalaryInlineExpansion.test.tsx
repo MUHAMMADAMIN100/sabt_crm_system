@@ -154,4 +154,38 @@ describe('salary employee inline expansion', () => {
     fireEvent.keyDown(row, { key: ' ' });
     expect(row).toHaveAttribute('aria-expanded', 'true');
   });
+
+  it('keeps fired employees in one accessible full-width section', async () => {
+    const user = userEvent.setup();
+    const firedEmployee = {
+      id: 'emp-fired', name: 'Сотрудник Архивный', role: 'Менеджер',
+      hireDate: '2025-03-01', salary: 3_000, status: 'fired',
+    };
+    mocks.expenseDetail.mockResolvedValue({
+      cards: { fund: 0, advances: 0, bonuses: 0, fines: 0, paid: 0, toPay: 0 },
+      rows: [], fired: [firedEmployee], allPaid: true,
+    });
+    mocks.employees.mockResolvedValue([firedEmployee]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/finance/expense/salary?ym=2026-07']}>
+          <Routes>
+            <Route path="/finance/expense/:kind" element={<FinanceExpenseGroupPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const toggle = await screen.findByRole('button', { name: /Уволенные сотрудники/ });
+    expect(toggle).toHaveClass('fin-secondary-table-toggle');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAttribute('aria-controls', 'fired-employees-table');
+    expect(toggle.closest('section')).toHaveClass('fin-secondary-table-section');
+
+    await act(async () => { await user.click(toggle); });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById('fired-employees-table')).toBeInTheDocument();
+    expect(screen.getByText('Сотрудник Архивный')).toBeInTheDocument();
+  });
 });

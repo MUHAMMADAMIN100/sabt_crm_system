@@ -129,7 +129,7 @@ function OtherExpenseList({ ym }: { ym: string }) {
           </table>
         </div>
       )}
-      <p className="mini muted" style={{ marginTop: 12 }}>
+      <p className="mini muted fin-table-note">
         Сюда попадают расходы с категориями вне ЗП / Аренда+Подписки / Долги. Заводи такие операции на странице «Транзакции».
       </p>
     </>
@@ -381,12 +381,18 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
       )}
 
       {fired.length > 0 && (
-        <>
-          <button className="btn ghost sm" style={{ marginTop: 16 }} onClick={() => setShowFired((v) => !v)}>
+        <section className="fin-secondary-table-section" style={{ marginTop: 14 }}>
+          <button
+            type="button"
+            className="btn ghost sm fin-secondary-table-toggle"
+            onClick={() => setShowFired((v) => !v)}
+            aria-expanded={showFired}
+            aria-controls="fired-employees-table"
+          >
             <FinIcon name={showFired ? 'chevronLeft' : 'chevronRight'} size={14} /> Уволенные сотрудники ({fired.length})
           </button>
           {showFired && (
-            <div className="table-wrap" style={{ marginTop: 10 }}>
+            <div id="fired-employees-table" className="table-wrap">
               <table>
                 <thead><tr><th>ФИО</th><th>Должность</th><th>Дата приёма</th><th className="num">ЗП</th><th /></tr></thead>
                 <tbody>
@@ -426,7 +432,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
               </table>
             </div>
           )}
-        </>
+        </section>
       )}
 
       {payFor && <SalaryPayModal row={payFor} ym={ym} onClose={() => setPayFor(null)} />}
