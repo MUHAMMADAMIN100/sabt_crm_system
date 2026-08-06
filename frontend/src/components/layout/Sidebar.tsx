@@ -160,7 +160,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                     className={clsx(
                       'group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                       financeActive
-                        ? 'bg-primary-600 text-white shadow-sm'
+                        ? 'bg-[#696bdc] text-white shadow-sm'
                         : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
                       !open && 'lg:justify-center lg:px-2',
                     )}
@@ -189,7 +189,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                               clsx(
                                 'flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors',
                                 isActive
-                                  ? 'bg-primary-600/90 text-white'
+                                  ? 'bg-[#8385ff]/90 text-white'
                                   : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
                               )
                             }

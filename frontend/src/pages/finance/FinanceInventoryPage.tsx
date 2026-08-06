@@ -84,8 +84,8 @@ export default function FinanceInventoryPage() {
       </div>
 
       <div className="toolbar">
-        <input className="grow" style={{ maxWidth: 280 }} placeholder="Поиск: название, серийник, кто…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} style={{ width: 170 }}>
+        <input aria-label="Поиск по инвентарю" className="grow" style={{ maxWidth: 280 }} placeholder="Поиск: название, серийник, кто…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select aria-label="Категория инвентаря" value={catFilter} onChange={(e) => setCatFilter(e.target.value)} style={{ width: 170 }}>
           <option value="">Все категории</option>
           {categories.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>

@@ -57,8 +57,8 @@ export default function FinanceOverviewPage() {
   const expensePlanTotal = expenseRows.reduce((s, r) => s + r.plan, 0);
 
   const pie = [
-    { name: 'Доход', value: income, color: '#16a34a' },
-    { name: 'Расход', value: expense, color: '#e11d48' },
+    { name: 'Доход', value: income, color: 'var(--green)' },
+    { name: 'Расход', value: expense, color: 'var(--red)' },
   ].filter((p) => p.value > 0);
 
   const handleDelete = async (t: any) => {
@@ -171,9 +171,9 @@ export default function FinanceOverviewPage() {
                   tickFormatter={(v) => new Intl.NumberFormat('ru-RU', { notation: 'compact' }).format(Number(v))} />
                 <Tooltip formatter={(v: any, name: any) => [money(Number(v)), name]} labelFormatter={(l) => monthLabel(String(l), true)} />
                 <Legend formatter={(v) => <span style={{ fontSize: 12 }}>{v}</span>} />
-                <Line type="monotone" dataKey="income" name="Доход" stroke="#16a34a" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="expense" name="Расход" stroke="#e11d48" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="profit" name="Прибыль" stroke="#2563eb" strokeWidth={2} dot={false} strokeDasharray="5 3" />
+                <Line type="monotone" dataKey="income" name="Доход" stroke="var(--green)" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="expense" name="Расход" stroke="var(--red)" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="profit" name="Прибыль" stroke="var(--accent)" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>

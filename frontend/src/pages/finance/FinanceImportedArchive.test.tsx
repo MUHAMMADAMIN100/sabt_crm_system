@@ -76,6 +76,9 @@ describe('imported Notion finance history', () => {
     const user = userEvent.setup();
     wrap(<FinanceTransactionsPage />, '/finance/transactions');
 
+    expect(screen.getByRole('textbox', { name: 'Поиск транзакций' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Тип транзакции' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Статус транзакции' })).toBeInTheDocument();
     const badge = await screen.findByLabelText('Notion · архив');
     expect(badge).toHaveAttribute('title', IMPORTED_ARCHIVE_HINT);
     const row = badge.closest('tr');
@@ -99,6 +102,23 @@ describe('imported Notion finance history', () => {
     await act(async () => { await user.click(calendarRow!); });
     expect(screen.getByRole('region', { name: /Подробности операции/ })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows an explicit retry state when the calendar request fails', async () => {
+    const user = userEvent.setup();
+    mocks.transactions.mockImplementation((params: any) => (
+      params?.from
+        ? Promise.reject(new Error('calendar unavailable'))
+        : Promise.resolve({ items: [importedTx], total: 1, page: 1, pageSize: 100 })
+    ));
+
+    wrap(<FinanceTransactionsPage />, '/finance/transactions');
+    await screen.findByLabelText('Notion · архив');
+    await act(async () => { await user.click(screen.getByRole('button', { name: 'Календарь' })); });
+
+    const error = await screen.findByRole('alert');
+    expect(error).toHaveTextContent('Не удалось загрузить операции календаря.');
+    expect(within(error).getByRole('button', { name: 'Повторить' })).toBeInTheDocument();
   });
 
   it('keeps the archive source in the CSV contract', () => {

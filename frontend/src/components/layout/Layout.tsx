@@ -64,6 +64,7 @@ export default function Layout() {
   // фронт его не видит. Socket / heartbeat пускаем когда юзер залогинен.
   const authenticated = useAuthStore(s => s.authenticated)
   const location = useLocation()
+  const financeRoute = location.pathname === '/finance' || location.pathname.startsWith('/finance/')
 
   // fetchMe нужен только если пришли по F5 (user пуст). После свежего login()
   // user уже загружен — повторный вызов плодит гонку с interceptor'ом
@@ -120,9 +121,12 @@ export default function Layout() {
         )}
       >
         <Header onMenuClick={() => setSidebarOpen(o => !o)} />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <main className={clsx('flex-1 overflow-y-auto p-4 lg:p-6', financeRoute && 'finance-workspace')}>
           {/* key on pathname so each navigation re-triggers the animation */}
-          <div key={location.pathname} className="max-w-screen-2xl mx-auto animate-page-in">
+          <div
+            key={location.pathname}
+            className={clsx('max-w-screen-2xl mx-auto animate-page-in', financeRoute && 'finance-workspace-inner')}
+          >
             {/* Внутренний Suspense ловит lazy-чанки страниц, не давая
                 верхнему Suspense вышибить весь Layout (sidebar+header) до
                 splash-логотипа. */}

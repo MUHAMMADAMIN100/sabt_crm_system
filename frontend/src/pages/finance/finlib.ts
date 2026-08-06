@@ -96,19 +96,19 @@ export function formatDate(iso?: string | null): string {
 export interface GroupMeta { key: string; label: string; icon: string; color: string }
 
 export const INCOME_GROUPS: GroupMeta[] = [
-  { key: 'smm', label: 'SMM', icon: 'smm', color: '#16a34a' },
-  { key: 'development', label: 'Development', icon: 'development', color: '#2563eb' },
-  { key: 'design', label: 'Design', icon: 'design', color: '#a855f7' },
-  { key: 'maintenance', label: 'Обслуживание', icon: 'maintenance', color: '#0f766e' },
+  { key: 'smm', label: 'SMM', icon: 'smm', color: '#20b965' },
+  { key: 'development', label: 'Development', icon: 'development', color: '#5f7dff' },
+  { key: 'design', label: 'Design', icon: 'design', color: '#9b77d8' },
+  { key: 'maintenance', label: 'Обслуживание', icon: 'maintenance', color: '#47aaa4' },
 ]
 
 export const EXPENSE_GROUPS: GroupMeta[] = [
-  { key: 'salary', label: 'Зарплата', icon: 'banknote', color: '#f59e0b' },
-  { key: 'rent_subs', label: 'Аренда и подписки', icon: 'building', color: '#8b5cf6' },
-  { key: 'debts', label: 'Долги', icon: 'receipt', color: '#e11d48' },
+  { key: 'salary', label: 'Зарплата', icon: 'banknote', color: '#ee980d' },
+  { key: 'rent_subs', label: 'Аренда и подписки', icon: 'building', color: '#8385ff' },
+  { key: 'debts', label: 'Долги', icon: 'receipt', color: '#e6535f' },
 ]
 
-export const OTHER_GROUP: GroupMeta = { key: 'other', label: 'Прочее', icon: 'box', color: '#64748b' }
+export const OTHER_GROUP: GroupMeta = { key: 'other', label: 'Прочее', icon: 'box', color: '#8b909a' }
 
 export const TYPE_LABEL: Record<string, string> = {
   income: 'Доход',
@@ -118,7 +118,7 @@ export const TYPE_LABEL: Record<string, string> = {
 }
 
 /** Палитра из 8 цветов для счетов/категорий (модалки настроек). */
-export const COLOR_PALETTE = ['#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#14b8a6', '#ec4899', '#6366f1']
+export const COLOR_PALETTE = ['#20b965', '#5f7dff', '#ee980d', '#8385ff', '#e6535f', '#47aaa4', '#c45f9b', '#6970d8']
 
 /** Человекочитаемый текст ошибки API — единый для всего раздела. */
 export function apiErr(e: any): string {

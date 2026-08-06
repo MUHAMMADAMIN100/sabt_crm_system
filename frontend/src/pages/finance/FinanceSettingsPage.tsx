@@ -118,7 +118,7 @@ export default function FinanceSettingsPage() {
     }
   }
 
-  if (accountsQ.isLoading) {
+  if (referenceQueries.some((q) => q.isLoading)) {
     return (
       <div className="fin-root">
         <div className="page-head"><div><h1>Настройки</h1><p>Счета, справочники, резервные копии</p></div></div>

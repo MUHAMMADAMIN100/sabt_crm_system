@@ -65,7 +65,7 @@ export default function FinanceTransactionsPage() {
     placeholderData: (prev: any) => prev, // при листании не мигаем пустотой
   });
   // Календарь берёт СВОЙ месяц целиком — в постраничном журнале месяца может не быть.
-  const { data: calData } = useQuery({
+  const calQ = useQuery({
     queryKey: ['finance', 'transactions', 'month', calYm, statusFilter],
     queryFn: () => {
       const [y, m] = calYm.split('-').map(Number);
@@ -79,6 +79,7 @@ export default function FinanceTransactionsPage() {
     },
     enabled: view === 'calendar',
   });
+  const calData = calQ.data;
   const { data: categories = [] } = useQuery({ queryKey: ['finref', 'categories'], queryFn: () => financeApi.categories() });
   const { data: accounts = [] } = useQuery({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
 
@@ -167,12 +168,12 @@ export default function FinanceTransactionsPage() {
             onClick={() => { setView('calendar'); setExpandedTxId(null); }}><FinIcon name="overview" size={13} /> Календарь</button>
         </div>
         {view === 'calendar' && <MonthNav ym={calYm} onChange={setCalYm} />}
-        <input className="grow" style={{ maxWidth: 300 }} placeholder="Поиск…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={{ width: 150 }}>
+        <input aria-label="Поиск транзакций" className="grow" style={{ maxWidth: 300 }} placeholder="Поиск…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select aria-label="Тип транзакции" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={{ width: 150 }}>
           <option value="">Все типы</option>
           {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
         </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: 160 }}>
+        <select aria-label="Статус транзакции" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: 160 }}>
           <option value="">Действующие</option>
           <option value="cancelled">Отменённые</option>
           <option value="all">Все статусы</option>
@@ -185,7 +186,11 @@ export default function FinanceTransactionsPage() {
         )}
       </div>
 
-      {view === 'calendar' ? (
+      {view === 'calendar' && calQ.isLoading ? (
+        <FinLoading />
+      ) : view === 'calendar' && calQ.isError ? (
+        <FinLoadError onRetry={() => calQ.refetch()} text="Не удалось загрузить операции календаря." />
+      ) : view === 'calendar' ? (
         <>
           <TxCalendar ym={calYm} txns={calTxns} expandedTxId={expandedTxId} onToggle={toggleDetails} onAdd={setAddDate} />
           {expandedTx && <div className="fin-tx-calendar-details"><TransactionDetailsPanel

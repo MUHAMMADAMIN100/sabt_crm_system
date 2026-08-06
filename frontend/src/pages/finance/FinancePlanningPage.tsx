@@ -69,20 +69,20 @@ export default function FinancePlanningPage() {
         <div className="fin-plan-chart-head"><div><strong>Денежный поток</strong><span>Столбцы — поступления и выплаты, синяя область — прогноз остатка</span></div><span className="fin-plan-scenario">{scenarios[scenario]}</span></div>
         <div className="fin-plan-chart-scroll"><div className="fin-plan-chart-canvas" style={{ minWidth: Math.max(680, visibleRows.length * 76) }}>
         <ResponsiveContainer width="100%" height={320}><ComposedChart data={visibleRows} margin={{ top: 8, right: 12, bottom: 4, left: 0 }}>
-          <defs><linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563eb" stopOpacity={.22}/><stop offset="95%" stopColor="#2563eb" stopOpacity={.015}/></linearGradient></defs>
-          <CartesianGrid strokeDasharray="4 5" vertical={false} stroke="#94a3b833" /><XAxis dataKey="ym" tickFormatter={(v) => monthLabel(v)} axisLine={false} tickLine={false} />
+          <defs><linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--accent)" stopOpacity={.16}/><stop offset="95%" stopColor="var(--accent)" stopOpacity={0}/></linearGradient></defs>
+          <CartesianGrid strokeDasharray="2 4" vertical={false} stroke="var(--border)" /><XAxis dataKey="ym" tickFormatter={(v) => monthLabel(v)} axisLine={false} tickLine={false} />
           <YAxis tickFormatter={(v) => `${Math.round(v / 1000)}к`} axisLine={false} tickLine={false} width={52} />
           <Tooltip content={<PlanChartTooltip />} /><Legend iconType="circle" />
-          <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1.5} />
-          <Area type="monotone" dataKey="closingBalance" name="Остаток" stroke="#2563eb" fill="url(#balanceFill)" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} activeDot={{ r: 5 }} />
-          <Bar dataKey="actualIncome" name="Доход · факт" stackId="income" fill="#16a34a" maxBarSize={30}>
+          <ReferenceLine y={0} stroke="var(--red)" strokeDasharray="4 4" strokeWidth={1} />
+          <Area type="monotone" dataKey="closingBalance" name="Остаток" stroke="var(--accent)" fill="url(#balanceFill)" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+          <Bar dataKey="actualIncome" name="Доход · факт" stackId="income" fill="var(--green)" maxBarSize={24}>
             {visibleRows.map((row: any) => <Cell key={row.ym} radius={(row.plannedIncome > 0 ? 0 : [8, 8, 0, 0]) as any} />)}
           </Bar>
-          <Bar dataKey="plannedIncome" name="Доход · осталось получить" stackId="income" fill="#86efac" radius={[8, 8, 0, 0]} maxBarSize={30} />
-          <Bar dataKey="actualExpense" name="Расход · факт" stackId="expense" fill="#e11d48" maxBarSize={30}>
+          <Bar dataKey="plannedIncome" name="Доход · осталось получить" stackId="income" fill="var(--green-plan)" radius={[6, 6, 0, 0]} maxBarSize={24} />
+          <Bar dataKey="actualExpense" name="Расход · факт" stackId="expense" fill="var(--red)" maxBarSize={24}>
             {visibleRows.map((row: any) => <Cell key={row.ym} radius={(row.plannedExpense > 0 ? 0 : [8, 8, 0, 0]) as any} />)}
           </Bar>
-          <Bar dataKey="plannedExpense" name="Расход · осталось оплатить" stackId="expense" fill="#fda4af" radius={[8, 8, 0, 0]} maxBarSize={30} />
+          <Bar dataKey="plannedExpense" name="Расход · осталось оплатить" stackId="expense" fill="var(--red-plan)" radius={[6, 6, 0, 0]} maxBarSize={24} />
         </ComposedChart></ResponsiveContainer>
         </div></div>
       </div>
