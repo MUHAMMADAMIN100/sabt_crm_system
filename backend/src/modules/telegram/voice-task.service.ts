@@ -70,12 +70,21 @@ export class VoiceTaskService {
   private static readonly VOICE_ROLES: string[] = [
     UserRole.FOUNDER,
     UserRole.SALES_MANAGER_DEV,
+    UserRole.DEV_DIRECTOR,
   ];
 
-  /** Кто может голосом ставить задачи ДРУГИМ. Только основатель: иначе
-   *  роль получила бы право раздавать поручения по всей компании, а речь
-   *  шла не об этом. */
-  private static readonly ASSIGN_ROLES: string[] = [UserRole.FOUNDER];
+  /** Кому и КОГО можно назначать голосом. Основатель — кого угодно;
+   *  руководитель разработки — только свою команду (разработчики и ПМ
+   *  разработки), а не всю компанию. Остальным — только себе. */
+  private assignScopeOf(user: User): 'all' | 'dev' | null {
+    const roles = [user.role, user.secondaryRole || ''];
+    if (roles.includes(UserRole.FOUNDER)) return 'all';
+    if (roles.includes(UserRole.DEV_DIRECTOR)) return 'dev';
+    return null;
+  }
+
+  /** Команда разработки — кого видит dev-руководитель при назначении. */
+  private static readonly DEV_TEAM_ROLES: string[] = [UserRole.DEVELOPER, UserRole.PM_DEV];
 
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,
@@ -139,20 +148,21 @@ export class VoiceTaskService {
     let assigneeLabel: string | undefined;
 
     if (intent.assignee) {
-      if (!VoiceTaskService.ASSIGN_ROLES.includes(user.role)
-          && !VoiceTaskService.ASSIGN_ROLES.includes(user.secondaryRole || '')) {
+      const scope = this.assignScopeOf(user);
+      if (!scope) {
         await this.telegram.sendMessage(
-          chatId, '⚠️ Ставить задачи другим сотрудникам может только основатель.');
+          chatId, '⚠️ Ставить задачи другим сотрудникам могут только основатель и руководитель разработки.');
         return;
       }
-      const found = await this.findEmployees(intent.assignee);
+      const teamRoles = scope === 'dev' ? VoiceTaskService.DEV_TEAM_ROLES : undefined;
+      const found = await this.findEmployees(intent.assignee, teamRoles);
       if (found.length === 1) {
         assigneeId = found[0].userId;
         assigneeLabel = found[0].name;
       } else {
         // Не нашли или несколько тёзок — пусть выберет кнопкой.
         const key = this.remember({ ...intent, userId: user.id, chatId, at: Date.now() });
-        const list = found.length ? found : await this.findEmployees('');
+        const list = found.length ? found : await this.findEmployees('', teamRoles);
         if (!list.length) {
           await this.telegram.sendMessage(chatId, '⚠️ В системе нет сотрудников с привязанным аккаунтом.');
           return;
@@ -161,7 +171,9 @@ export class VoiceTaskService {
           chatId,
           (found.length
             ? `🎤 Кого именно вы имели в виду под «${esc(intent.assignee)}»?`
-            : `🎤 Не нашёл сотрудника «${esc(intent.assignee)}». Выберите из списка:`) +
+            : (scope === 'dev'
+              ? `🎤 В команде разработки нет «${esc(intent.assignee)}». Выберите из списка:`
+              : `🎤 Не нашёл сотрудника «${esc(intent.assignee)}». Выберите из списка:`)) +
           `\n\n<b>${esc(intent.title)}</b>` +
           `\n📅 ${intent.date ? fmtRu(intent.date) : 'сегодня'}${intent.time ? ` в ${intent.time}` : ''}`,
           list.slice(0, 12).map(e => [{ text: e.name, callback_data: `vt:who:${key}:${e.userId}` }]),
@@ -194,7 +206,11 @@ export class VoiceTaskService {
     if (who) {
       const item = this.pending.get(who[1]);
       if (!item || item.chatId !== chatId) return 'Запрос устарел — наговорите заново';
-      const emp = (await this.findEmployees('')).find(e => e.userId === who[2]);
+      const user2 = await this.resolveVoiceUser(chatId);
+      const scope2 = user2 ? this.assignScopeOf(user2) : null;
+      if (!scope2) return 'Недоступно';
+      const emp = (await this.findEmployees('', scope2 === 'dev' ? VoiceTaskService.DEV_TEAM_ROLES : undefined))
+        .find(e => e.userId === who[2]);
       if (!emp) return 'Сотрудник не найден';
       this.pending.delete(who[1]);
       const key = this.remember({ ...item, at: Date.now(), assigneeId: emp.userId, assigneeLabel: emp.name });
@@ -281,17 +297,22 @@ export class VoiceTaskService {
   }
 
   /** Сотрудники с привязанным аккаунтом. Пустой запрос — все. */
-  private async findEmployees(query: string): Promise<{ userId: string; name: string }[]> {
+  private async findEmployees(query: string, roles?: string[]): Promise<{ userId: string; name: string }[]> {
     const qb = this.empRepo.createQueryBuilder('e')
       .where('e."userId" IS NOT NULL')
       .andWhere(`COALESCE(e.status, 'active') = 'active'`);
+    if (roles?.length) {
+      // Охват по роли смотрит и вторую: разработчик-совместитель — тоже команда.
+      qb.innerJoin(User, 'u', 'u.id = e."userId"')
+        .andWhere('(u.role IN (:...tr) OR u."secondaryRole" IN (:...tr))', { tr: roles });
+    }
     const q = query.trim().toLowerCase();
     if (q) {
       // Ищем по любому слову имени: сказали «Лашкарова» — найдём
       // «Лашкарова Саврибегим Эраджевна».
       qb.andWhere('LOWER(e."fullName") LIKE :q', { q: `%${q}%` });
     }
-    const rows = await qb.orderBy('e."fullName"', 'ASC').take(60).getMany();
+    const rows = await qb.orderBy('e.fullName', 'ASC').take(60).getMany();
     return rows.map(e => ({ userId: e.userId as string, name: e.fullName }));
   }
 

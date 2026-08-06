@@ -19,7 +19,14 @@ import { TaskResultsService } from '../task-results/task-results.service';
 import { DailyReport } from '../reports/daily-report.entity';
 import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES } from '../../common/sales-segment';
 
-const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR];
+const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR, UserRole.DEV_DIRECTOR];
+
+/** PM-полномочия учитывают и ВТОРУЮ роль: руководитель разработки назначен
+ *  Сабрине второй ролью поверх менеджера продаж, и без этого проверки ниже
+ *  видели бы только основную. Контроллеры передают req.user целиком, поэтому
+ *  secondaryRole в объекте есть, хоть и не описан в узком типе параметра. */
+const isPmUser = (u: { role?: string; secondaryRole?: string | null } | undefined | null): boolean =>
+  !!u && (PM_ROLES.includes(u.role as UserRole) || PM_ROLES.includes((u as any).secondaryRole as UserRole));
 /** Управляющие роли — их задачи попадают в раздел «Задачи от руководителя».
  *  Массив строк: подставляется в SQL-параметр (u.role = ANY(...)). */
 const MANAGEMENT_ROLES: string[] = [
@@ -441,9 +448,9 @@ export class TasksService implements OnModuleInit {
     //   - участник проекта (project.members)
     //   - GENERAL-задача от основателя (видна всей компании)
     if (viewer) {
-      const isPm = task.project
+      const isPm = isPmUser(viewer as any) || (task.project
         ? await this.hasPmPowersOnProject(viewer.id, viewer.role, task.projectId)
-        : (viewer.role ? PM_ROLES.includes(viewer.role as UserRole) : false);
+        : false);
       const isAssignee = task.assigneeId === viewer.id;
       const isCoAssignee = ((task as any).assignees || []).some((a: any) => a.userId === viewer.id);
       const isCreator = task.createdById === viewer.id;
@@ -462,7 +469,7 @@ export class TasksService implements OnModuleInit {
   /** Лёгкая проверка доступа к задаче без полной загрузки relations —
    *  для comments/files/time-tracker IDOR-фильтров. */
   async assertCanAccessTask(taskId: string, viewer: { id: string; role?: string }): Promise<void> {
-    if (viewer.role && PM_ROLES.includes(viewer.role as UserRole)) return;
+    if (isPmUser(viewer as any)) return;
     const task = await this.repo.findOne({
       where: { id: taskId },
       relations: ['project', 'project.members'],
@@ -1016,7 +1023,7 @@ export class TasksService implements OnModuleInit {
     const task = await this.findOne(id);
     // Workers (any non-PM role) can only delete their own tasks (assigned to them or created by them).
     // Менеджер целевого проекта тоже может удалять задачи в своём проекте.
-    const isPM = await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
+    const isPM = isPmUser(user as any) || await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
     if (!isPM && task.assigneeId !== user.id && task.createdById !== user.id) {
       throw new ForbiddenException('Not allowed');
     }
@@ -1170,7 +1177,7 @@ export class TasksService implements OnModuleInit {
 
   async approveTask(id: string, user: { id: string; role: string; name?: string }) {
     const task = await this.findOne(id);
-    const isPM = await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
+    const isPM = isPmUser(user as any) || await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
     if (!isPM) {
       throw new ForbiddenException('Only project managers can approve tasks');
     }
@@ -1312,7 +1319,7 @@ export class TasksService implements OnModuleInit {
     user: { id: string; role: string; name?: string },
   ): Promise<{ affected: number }> {
     if (!ids?.length) return { affected: 0 };
-    if (!PM_ROLES.includes(user.role as UserRole)) {
+    if (!isPmUser(user as any)) {
       throw new ForbiddenException('Массовые действия доступны только менеджерам');
     }
 

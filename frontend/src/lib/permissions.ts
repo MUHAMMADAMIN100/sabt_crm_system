@@ -16,6 +16,7 @@ const ROLE_LABELS: Record<string, string> = {
   designer: 'Дизайнер',
   sales_manager_smm: 'Менеджер продаж (СММ)',
   sales_manager_dev: 'Менеджер продаж (Разработка)',
+  dev_director: 'Руководитель разработки',
   pm_dev: 'Проект-менеджер (Разработка)',
   developer: 'Разработчик',
   videographer: 'Видеограф',
@@ -202,6 +203,21 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
     'clients.view',
+  ],
+  // Руководитель направления разработки — зеркало smm_director для dev:
+  // все dev-проекты, задачи команде (approve/return/bulk), доска
+  // «Разработка». Без SMM-доски, сторис и тарифов.
+  dev_director: [
+    'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
+    'projects.archive', 'projects.members.manage', 'projects.manager.change',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
+    'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',
+    'employees.view', 'analytics.view',
+    'reports.view', 'reports.create',
+    'calendar.view', 'calendar.create', 'archive.view',
+    'files.view', 'files.upload', 'files.delete.any',
+    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
+    'ai.chat',
   ],
   // Проект-менеджер по разработке — «тестировщик» направления: все
   // dev-проекты компании, задачи-замечания, календарь и отчёты.
@@ -430,7 +446,7 @@ export function canSeeWorkflowBoard(role?: string | null, secondaryRole?: string
 
 /** Вид «Разработка» на доске проектов — канбан dev-проектов по бизнес-этапам
  *  [10%]…[100%]. Топ видит оба вида (переключатель), pm_dev — только этот. */
-export const DEV_BOARD_ROLES = ['admin', 'founder', 'co_founder', 'pm_dev', 'developer']
+export const DEV_BOARD_ROLES = ['admin', 'founder', 'co_founder', 'dev_director', 'pm_dev', 'developer']
 export function canSeeDevBoard(role?: string | null, secondaryRole?: string | null): boolean {
   return DEV_BOARD_ROLES.includes(role || '') || DEV_BOARD_ROLES.includes(secondaryRole || '')
 }

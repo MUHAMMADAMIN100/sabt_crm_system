@@ -677,7 +677,7 @@ export class ProjectsService implements OnModuleInit {
     const isFinance = role === 'founder' || role === 'co_founder';
     if (isFinance) return data;
     const isSales = role === 'sales_manager_smm' || role === 'sales_manager_dev';
-    const isProjectManager = role === 'video_director' || role === 'smm_director';
+    const isProjectManager = role === 'video_director' || role === 'smm_director' || role === 'dev_director';
     const strip = (p: any) => {
       if (!p) return p;
       // Поля связанные с маржой/прибыльностью — только finance role видит
@@ -760,7 +760,7 @@ export class ProjectsService implements OnModuleInit {
       // не сегмент продаж), чтобы не добавлять запрос каждому вызову списка.
       let isStoryMaker = !!emp?.isStoryMaker || role === 'storymaker';
       if (!isStoryMaker
-        && !['admin', 'founder', 'co_founder', 'smm_director', 'organizer', 'pm_dev', 'video_director'].includes(role)
+        && !['admin', 'founder', 'co_founder', 'smm_director', 'organizer', 'pm_dev', 'dev_director', 'video_director'].includes(role)
         && !getSalesSegment(role)) {
         const userRow = await this.userRepo.findOne({
           where: { id: userId },
@@ -785,7 +785,7 @@ export class ProjectsService implements OnModuleInit {
         // компании (управляющие роли производства; видеопродакшн живёт
         // внутри SMM-проектов). Проекты разработки им не показываем.
         qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
-      } else if (role === 'pm_dev' || role === 'developer') {
+      } else if (role === 'pm_dev' || role === 'developer' || role === 'dev_director') {
         // Команда разработки видит ВСЕ dev-проекты компании без членства:
         // проект-менеджер — для анализа и задач-замечаний, разработчик — чтобы
         // на доске «Разработка» находились его карточки. Иначе карточку можно
@@ -975,7 +975,7 @@ export class ProjectsService implements OnModuleInit {
       throw new ForbiddenException('Проект не относится к вашему направлению');
     }
     // ПМ по разработке — только dev-проекты (SMM/Дизайн не его направление).
-    if (requestUserRole === 'pm_dev' && !DEV_PROJECT_TYPES.includes(project.projectType as string)) {
+    if (['pm_dev', 'dev_director'].includes(requestUserRole as string) && !DEV_PROJECT_TYPES.includes(project.projectType as string)) {
       throw new ForbiddenException('Проект не относится к направлению разработки');
     }
     // Задачи-«Истории» из контент-плана не показываем в списке задач проекта —
@@ -1016,6 +1016,11 @@ export class ProjectsService implements OnModuleInit {
         'Руководитель SMM может быть менеджером только SMM-проектов',
       );
     }
+    if (mgr.role === UserRole.DEV_DIRECTOR && !DEV_PROJECT_TYPES.includes(projectType as string)) {
+      throw new ForbiddenException(
+        'Руководитель разработки может быть менеджером только проектов разработки',
+      );
+    }
   }
 
   /** Индивидуальные лимиты имеют смысл только на тарифе с пометкой
@@ -1050,6 +1055,9 @@ export class ProjectsService implements OnModuleInit {
     // smm_director может создавать только SMM-проекты
     if (userRole === UserRole.SMM_DIRECTOR && dto.projectType !== 'SMM') {
       throw new ForbiddenException('Руководитель SMM может создавать только SMM-проекты');
+    }
+    if (userRole === UserRole.DEV_DIRECTOR && !DEV_PROJECT_TYPES.includes(dto.projectType as string)) {
+      throw new ForbiddenException('Руководитель разработки может создавать только проекты разработки');
     }
     // SMM-проект без тарифа не создаётся: все тарифы действуют 1 месяц,
     // от тарифа считаются лимиты/финансы. Старые проекты без тарифа
@@ -1689,7 +1697,7 @@ export class ProjectsService implements OnModuleInit {
       throw new ForbiddenException('Вы можете архивировать только проекты своего направления');
     }
     // ПМ по разработке (грант projects.archive) — только dev-проекты.
-    if (user?.role === 'pm_dev' && !DEV_PROJECT_TYPES.includes(project.projectType as string)) {
+    if (['pm_dev', 'dev_director'].includes(user?.role as string) && !DEV_PROJECT_TYPES.includes(project.projectType as string)) {
       throw new ForbiddenException('Проект-менеджер по разработке может архивировать только проекты разработки');
     }
     // Менеджер продаж прячет проект ТОЛЬКО у себя: команда продолжает по нему
@@ -1733,7 +1741,7 @@ export class ProjectsService implements OnModuleInit {
       throw new ForbiddenException('Вы можете восстанавливать только проекты своего направления');
     }
     // ПМ по разработке (грант projects.archive) — только dev-проекты.
-    if (user?.role === 'pm_dev' && !DEV_PROJECT_TYPES.includes(project.projectType as string)) {
+    if (['pm_dev', 'dev_director'].includes(user?.role as string) && !DEV_PROJECT_TYPES.includes(project.projectType as string)) {
       throw new ForbiddenException('Проект-менеджер по разработке может восстанавливать только проекты разработки');
     }
     // Менеджеру продаж «восстановить» = вернуть проект в свой список.

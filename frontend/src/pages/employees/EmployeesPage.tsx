@@ -735,6 +735,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
               <option value="video_director">Руководитель по видеографии</option>
               <option value="sales_manager_smm">Менеджер продаж (СММ)</option>
               <option value="sales_manager_dev">Менеджер продаж (Разработка)</option>
+              <option value="dev_director">Руководитель разработки</option>
               <option value="pm_dev">Проект-менеджер (Разработка)</option>
               <option value="employee">Сотрудник</option>
             </select>

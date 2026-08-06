@@ -30,7 +30,7 @@ const FOUNDERS = ['founder', 'co_founder'];
 /** Все роли системы — для возможностей, которые нативно есть у каждого.
  *  Выдать такую нельзя (она и так есть), а вот ОТНЯТЬ запретом — можно. */
 const ALL_ROLES = [
-  'admin', 'founder', 'co_founder', 'smm_director', 'video_director',
+  'admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director',
   'smm_specialist', 'designer', 'sales_manager_smm', 'sales_manager_dev',
   'pm_dev', 'developer', 'videographer', 'video_editor', 'organizer',
   'storymaker', 'scriptwriter', 'qa', 'publisher', 'targetologist', 'employee',
@@ -38,15 +38,15 @@ const ALL_ROLES = [
 
 export const GRANTABLE: Record<string, GrantDef> = {
   // ─── Проекты ───────────────────────────────────────────────────────
-  'projects.view':   { label: 'Проекты — просмотр',       category: 'Проекты', roles: [...TOP, 'smm_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'] },
-  'projects.create': { label: 'Проекты — добавление',     category: 'Проекты', roles: [...TOP, 'smm_director', 'sales_manager_smm', 'sales_manager_dev'] },
-  'projects.edit':   { label: 'Проекты — редактирование', category: 'Проекты', roles: [...TOP, 'smm_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'] },
+  'projects.view':   { label: 'Проекты — просмотр',       category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'] },
+  'projects.create': { label: 'Проекты — добавление',     category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'] },
+  'projects.edit':   { label: 'Проекты — редактирование', category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'] },
   // Архив/восстановление проектов. Нативно — те же роли, что были в @Roles
   // эндпоинта; грантом можно выдать другим (напр. проект-менеджеру по
   // разработке — он архивирует только dev-проекты, см. projects.service).
-  'projects.archive': { label: 'Проекты — архивирование',  category: 'Проекты', roles: [...TOP, 'smm_director', 'sales_manager_smm', 'sales_manager_dev'] },
-  'projects.delete':  { label: 'Проекты — удаление',       category: 'Проекты', roles: [...TOP, 'smm_director', 'sales_manager_smm', 'sales_manager_dev'], danger: true },
-  'projects.payments.view':    { label: 'Оплаты проекта — просмотр',  category: 'Проекты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev', 'smm_director', 'video_director'] },
+  'projects.archive': { label: 'Проекты — архивирование',  category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'] },
+  'projects.delete':  { label: 'Проекты — удаление',       category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'], danger: true },
+  'projects.payments.view':    { label: 'Оплаты проекта — просмотр',  category: 'Проекты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev', 'smm_director', 'dev_director', 'video_director'] },
   'projects.payments.request': { label: 'Оплаты проекта — запрос',    category: 'Проекты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },
   'projects.brief.manage':     { label: 'Бриф проекта — заполнение',  category: 'Проекты', roles: [...TOP, 'smm_director', 'video_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'] },
   'projects.brief.clear':      { label: 'Бриф проекта — очистка',     category: 'Проекты', roles: [...TOP, 'smm_director', 'video_director'], danger: true },
@@ -71,14 +71,14 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'tasks.edit':   { label: 'Задачи — редактирование', category: 'Задачи', roles: [...ALL_ROLES] },
   'tasks.delete': { label: 'Задачи — удаление',       category: 'Задачи', roles: [...ALL_ROLES], danger: true },
   'tasks.export': { label: 'Задачи — выгрузка CSV',   category: 'Задачи', roles: [...ALL_ROLES] },
-  'tasks.approve':      { label: 'Задачи — подтверждение результата', category: 'Задачи', roles: [...TOP, 'smm_director', 'video_director'] },
-  'tasks.return':       { label: 'Задачи — возврат на доработку',     category: 'Задачи', roles: [...TOP, 'smm_director', 'video_director'] },
-  'tasks.bulk':         { label: 'Задачи — массовые операции',        category: 'Задачи', roles: [...TOP, 'smm_director', 'video_director'] },
-  'tasks.overdue.view': { label: 'Задачи — просроченные по компании', category: 'Задачи', roles: [...TOP, 'smm_director', 'video_director'] },
+  'tasks.approve':      { label: 'Задачи — подтверждение результата', category: 'Задачи', roles: [...TOP, 'smm_director', 'dev_director', 'video_director'] },
+  'tasks.return':       { label: 'Задачи — возврат на доработку',     category: 'Задачи', roles: [...TOP, 'smm_director', 'dev_director', 'video_director'] },
+  'tasks.bulk':         { label: 'Задачи — массовые операции',        category: 'Задачи', roles: [...TOP, 'smm_director', 'dev_director', 'video_director'] },
+  'tasks.overdue.view': { label: 'Задачи — просроченные по компании', category: 'Задачи', roles: [...TOP, 'smm_director', 'dev_director', 'video_director'] },
 
   // ─── Календарь ─────────────────────────────────────────────────────
   'calendar.view':   { label: 'Календарь — просмотр', category: 'Календарь', roles: [...ALL_ROLES] },
-  'calendar.create': { label: 'Календарь — создание задач кликом по дню', category: 'Календарь', roles: [...TOP, 'smm_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev', 'pm_dev'] },
+  'calendar.create': { label: 'Календарь — создание задач кликом по дню', category: 'Календарь', roles: [...TOP, 'smm_director', 'dev_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev', 'pm_dev'] },
 
   // ─── Клиенты ───────────────────────────────────────────────────────
   'clients.view':    { label: 'Клиенты — просмотр',       category: 'Клиенты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },
@@ -88,7 +88,7 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'clients.kpi.all': { label: 'Клиенты — KPI всех менеджеров', category: 'Клиенты', roles: [...TOP] },
 
   // ─── Сотрудники ────────────────────────────────────────────────────
-  'employees.view':   { label: 'Сотрудники — просмотр',       category: 'Сотрудники', roles: [...TOP, 'smm_director', 'video_director'] },
+  'employees.view':   { label: 'Сотрудники — просмотр',       category: 'Сотрудники', roles: [...TOP, 'smm_director', 'dev_director', 'video_director'] },
   'employees.create': { label: 'Сотрудники — добавление',     category: 'Сотрудники', roles: [...TOP] },
   'employees.edit':   { label: 'Сотрудники — редактирование', category: 'Сотрудники', roles: [...TOP] },
   'employees.delete': { label: 'Сотрудники — удаление',       category: 'Сотрудники', roles: [...TOP], danger: true },
@@ -99,13 +99,13 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'teams.manage': { label: 'Команды — управление', category: 'Сотрудники', roles: [...FOUNDERS] },
 
   // ─── Отчёты ────────────────────────────────────────────────────────
-  'reports.view':   { label: 'Отчёты — просмотр',       category: 'Аналитика и отчёты', roles: [...TOP, 'smm_director', 'video_director'] },
+  'reports.view':   { label: 'Отчёты — просмотр',       category: 'Аналитика и отчёты', roles: [...TOP, 'smm_director', 'dev_director', 'video_director'] },
   'reports.create': { label: 'Отчёты — добавление',     category: 'Аналитика и отчёты', roles: [...ALL_ROLES] },
   'reports.edit':   { label: 'Отчёты — редактирование', category: 'Аналитика и отчёты', roles: [...ALL_ROLES] },
   'reports.delete': { label: 'Отчёты — удаление',       category: 'Аналитика и отчёты', roles: [...TOP], danger: true },
 
   // ─── Аналитика ─────────────────────────────────────────────────────
-  'analytics.view':           { label: 'Аналитика — просмотр',            category: 'Аналитика и отчёты', roles: [...TOP, 'smm_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'] },
+  'analytics.view':           { label: 'Аналитика — просмотр',            category: 'Аналитика и отчёты', roles: [...TOP, 'smm_director', 'dev_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'] },
   'analytics.sales':          { label: 'Аналитика — продажи',             category: 'Аналитика и отчёты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },
   'analytics.payroll':        { label: 'Аналитика — фонд оплаты труда',   category: 'Аналитика и отчёты', roles: [...FOUNDERS], danger: true },
   'analytics.income-expense': { label: 'Аналитика — доходы и расходы',    category: 'Аналитика и отчёты', roles: [...FOUNDERS], danger: true },
