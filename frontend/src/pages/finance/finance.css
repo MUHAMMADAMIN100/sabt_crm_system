@@ -700,6 +700,7 @@
 
 .fin-month-payment-history { display: grid; }
 .fin-payment-month { padding: 13px 0; border-bottom: 1px solid var(--border); }
+.fin-payment-month.current { margin: 0 -10px; padding: 13px 10px; border-radius: 12px; background: color-mix(in srgb, var(--accent-soft) 48%, var(--surface)); box-shadow: inset 3px 0 var(--accent); }
 .fin-payment-month:last-child { padding-bottom: 2px; border-bottom: 0; }
 .fin-payment-month-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -797,15 +798,89 @@
 .fin-payout-pin-hint.pinned { color: #16835b; }
 .dark .fin-payout-pin-hint.pinned { color: #5fd0a1; }
 
-/* Детали журнала: вместо технической строки — компактные пары ключ/значение. */
-.fin-activity-details { max-width: 720px; line-height: 1.7; }
-.fin-activity-detail { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; margin-right: 12px; }
+/* Журнал: строка остаётся быстрой для просмотра, подробности раскрываются под ней. */
+.fin-activity-table { max-height: min(76vh, 820px); }
+.fin-root tbody tr.fin-activity-openable { cursor: pointer; }
+.fin-root tbody tr.fin-activity-openable.expanded > td,
+.fin-root .fin-wide-table tbody tr.fin-activity-openable.expanded > td:first-child {
+  background: var(--surface-selected);
+  border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+.fin-activity-action {
+  display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 8px;
+  background: var(--accent-soft); color: color-mix(in srgb, var(--accent) 75%, var(--text));
+  font-size: 12px; font-weight: 650; white-space: nowrap;
+}
+.fin-activity-action.success { color: var(--green); background: var(--green-soft); }
+.fin-activity-action.danger { color: var(--red); background: var(--red-soft); }
+.fin-activity-details { max-width: 620px; line-height: 1.65; }
+.fin-activity-detail { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; margin-right: 10px; }
 .fin-activity-detail > span { color: var(--muted); }
 .fin-activity-detail > span::after { content: ':'; }
 .fin-activity-detail b {
-  color: var(--text); font-weight: 650; max-width: 260px;
+  color: color-mix(in srgb, var(--text) 82%, var(--muted)); font-weight: 600; max-width: 190px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.fin-activity-more {
+  display: inline-flex; padding: 1px 6px; border-radius: 7px;
+  background: var(--surface-hover); color: var(--muted); font-weight: 650;
+}
+.fin-root .fin-activity-details-row > td,
+.fin-root .fin-wide-table .fin-activity-details-row > td:first-child {
+  position: static; padding: 0; background: var(--surface); box-shadow: none; border-bottom: 1px solid var(--border);
+}
+.fin-activity-panel { padding: 16px 18px 14px; background: linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 34%, var(--surface)), var(--surface) 48%); }
+.fin-activity-panel-head { display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 11px; }
+.fin-activity-panel-head > div { min-width: 0; display: grid; gap: 2px; }
+.fin-activity-panel-head strong { font-size: 15px; overflow-wrap: anywhere; }
+.fin-activity-panel-head small { color: var(--muted); }
+.fin-activity-event-icon { display: inline-flex; width: 36px; height: 36px; align-items: center; justify-content: center; border-radius: 11px; color: var(--accent); background: var(--accent-soft); }
+.fin-activity-event-icon.success { color: var(--green); background: var(--green-soft); }
+.fin-activity-event-icon.danger { color: var(--red); background: var(--red-soft); }
+.fin-activity-context { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin: 14px 0 10px; }
+.fin-activity-context > div { display: grid; gap: 3px; min-width: 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--border) 72%, transparent); border-radius: 11px; background: color-mix(in srgb, var(--surface) 82%, transparent); }
+.fin-activity-context span { color: var(--muted); font-size: 10.5px; }
+.fin-activity-context b { font-size: 12px; font-weight: 650; overflow-wrap: anywhere; }
+.fin-activity-change-block { overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.fin-activity-section-title { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+.fin-activity-section-title strong { font-size: 12px; }
+.fin-activity-section-title span { color: var(--muted); font-size: 11px; }
+.fin-activity-change-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.fin-activity-change { display: grid; grid-template-columns: minmax(100px,.7fr) minmax(0,1fr); align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px; border-bottom: 1px solid color-mix(in srgb, var(--border) 64%, transparent); }
+.fin-activity-change:nth-child(odd) { border-right: 1px solid color-mix(in srgb, var(--border) 64%, transparent); }
+.fin-activity-change.compared { grid-template-columns: minmax(100px,.72fr) minmax(0,1fr) 14px minmax(0,1fr); }
+.fin-activity-change-label { color: var(--muted); font-size: 11px; }
+.fin-activity-change b, .fin-activity-old { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.fin-activity-old { color: var(--muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--red) 45%, transparent); }
+.fin-activity-new { color: var(--text); }
+.fin-activity-change > .fin-icon { color: var(--muted); }
+.fin-activity-value { text-align: right; }
+.fin-activity-legacy-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 8px 12px; color: var(--muted); background: var(--surface-2); font-size: 10.5px; }
+.fin-activity-empty-detail { padding: 12px; color: var(--muted); font-size: 12px; }
+.fin-activity-technical { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 9px 3px 0; color: var(--muted); font-size: 10px; }
+.fin-activity-technical b { color: color-mix(in srgb, var(--muted) 82%, var(--text)); font-weight: 500; overflow-wrap: anywhere; }
+@media(max-width:760px){
+  .fin-activity-context,.fin-activity-change-list{grid-template-columns:1fr}
+  .fin-activity-change:nth-child(odd){border-right:0}
+  .fin-activity-panel{padding:13px 12px}
+  .fin-activity-panel-head{grid-template-columns:34px minmax(0,1fr)}
+  .fin-activity-panel-head>.btn{grid-column:1/-1;justify-self:start}
+}
+
+/* Текущий месяц: один спокойный акцент в прогнозах и матрицах. */
+.fin-root tbody tr.fin-current-month-row > td { background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface)) !important; }
+.fin-root tbody tr.fin-current-month-row > td:first-child { box-shadow: inset 3px 0 var(--accent); }
+.fin-root tbody tr.fin-current-month-row:hover > td { background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface)) !important; }
+.fin-current-month-badge { display: block; width: fit-content; margin-top: 5px; padding: 2px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 9.5px; font-weight: 650; line-height: 1.4; }
+.fin-root .fin-current-month-cell { background: color-mix(in srgb, var(--accent-soft) 48%, var(--surface)) !important; box-shadow: inset 1px 0 color-mix(in srgb, var(--accent) 18%, transparent), inset -1px 0 color-mix(in srgb, var(--accent) 18%, transparent); }
+.fin-current-month-dot { display: inline-block; width: 5px; height: 5px; margin-left: 6px; border-radius: 50%; background: var(--accent); vertical-align: 2px; }
+
+/* Состояния проектов всегда занимают отдельную строку — без наложения у края canvas. */
+.fin-project-state-group { clear: both; display: block; width: 100%; min-width: 0; margin-top: 10px; position: relative; }
+.fin-project-state-group + .fin-project-state-group { margin-top: 4px; }
+.fin-project-state-toggle { max-width: 100%; min-height: 30px; white-space: normal; text-align: left; line-height: 1.35; }
+.fin-project-state-group.paused > .fin-project-state-toggle { color: var(--amber); }
+.fin-project-state-group .table-wrap { width: 100%; margin-top: 8px !important; }
 .fin-plan-controls{display:flex;align-items:end;gap:14px;margin:0 0 18px}.fin-plan-controls .field{margin:0;min-width:150px}.fin-segments{display:flex;padding:4px;background:var(--surface,#f1f5f9);border-radius:12px;margin-left:auto}.fin-segments button{border:0;background:transparent;padding:9px 14px;border-radius:9px;color:var(--muted);cursor:pointer;white-space:nowrap}.fin-segments button.active{background:#fff;color:#1d4ed8;box-shadow:0 1px 5px #0f172a18}.fin-plan-warning{padding:12px 16px;margin-bottom:16px;border:1px solid #fecaca;background:#fff1f2;color:#be123c;border-radius:12px}.fin-plan-chart{margin:18px 0;overflow:hidden}.fin-plan-chart-scroll{overflow-x:auto;overflow-y:hidden;padding:2px 2px 8px;scrollbar-width:thin}.fin-plan-chart-canvas{height:320px}.fin-plan-detail-row>td{padding:14px;background:color-mix(in srgb,var(--surface-2) 58%,var(--surface))}.fin-plan-detail{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;padding:0}.fin-plan-source{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}.fin-plan-source>span:first-child{min-width:0;overflow-wrap:anywhere}.fin-plan-source>b{white-space:nowrap;font-variant-numeric:tabular-nums}.fin-plan-source small{display:block;color:var(--muted);margin-top:2px}.fin-plan-source button{border:0;background:transparent;color:#94a3b8;font-size:20px;cursor:pointer}.fin-salary-history{border:1px solid var(--border);border-radius:10px;padding:4px 12px;max-height:150px;overflow:auto}.fin-salary-history>div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)}.fin-salary-history>div strong{white-space:nowrap}.fin-salary-history>div:last-child{border:0}@media(max-width:760px){.fin-plan-controls{align-items:stretch;flex-wrap:wrap}.fin-segments{margin-left:0;width:100%;overflow:auto}.fin-plan-controls .field{flex:1 1 145px;min-width:0}.fin-plan-detail{grid-template-columns:1fr}.fin-plan-detail-row>td{padding:10px}.fin-plan-chart{padding-left:10px!important;padding-right:10px!important}}
 
 .fin-plan-chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 8px 20px}.fin-plan-chart-head>div{min-width:0}.fin-plan-chart-head strong{font-size:17px}.fin-plan-chart-head span{display:block;color:var(--muted);font-size:12px;margin-top:4px}.fin-plan-chart-head .fin-plan-scenario{padding:6px 10px;margin:0;border-radius:999px;background:#eff6ff;color:#2563eb;font-weight:650;white-space:nowrap}.fin-plan-column{padding:16px 18px;border:1px solid;border-radius:14px;min-width:0}.fin-plan-column.income{background:linear-gradient(145deg,#f0fdf4,#fff);border-color:#bbf7d0}.fin-plan-column.expense{background:linear-gradient(145deg,#fff1f2,#fff);border-color:#fecdd3}.fin-plan-column-title{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:9px;border-bottom:1px solid var(--border)}.fin-plan-column-title span{white-space:nowrap;font-variant-numeric:tabular-nums}.fin-plan-column.income .fin-plan-column-title{color:#15803d}.fin-plan-column.expense .fin-plan-column-title{color:#e11d48}.fin-plan-source.has-popover{position:relative;cursor:help}.fin-plan-source.has-popover>span:first-child{text-decoration:underline dotted;text-underline-offset:4px}.fin-salary-popover{box-sizing:border-box;position:fixed;z-index:300;width:min(410px,calc(100vw - 16px));padding:12px 14px 9px;background:#fff;border:1px solid #e2e8f0;border-radius:13px;box-shadow:0 18px 50px #0f172a2e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;color:#16191d}.fin-salary-popover.pinned{cursor:default;box-shadow:0 20px 55px #0f172a3d;border-color:#fda4af}.fin-salary-popover-head{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:3px 0 10px;color:#e11d48;border-bottom:1px solid #eef2f7}.fin-salary-popover-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fin-salary-popover-head b{white-space:nowrap}.fin-salary-popover-body{max-height:min(300px,52vh);overflow-y:auto;overscroll-behavior:contain;padding-right:3px;scrollbar-width:thin}.fin-salary-popover-body>div{display:flex;justify-content:space-between;align-items:baseline;gap:20px;padding:8px 0;border-bottom:1px solid #eef2f7}.fin-salary-popover-body>div span{min-width:0;overflow-wrap:anywhere}.fin-salary-popover-body>div b{white-space:nowrap}.fin-salary-popover-body>div:last-child{border-bottom:0}.fin-chart-tooltip{box-sizing:border-box;min-width:210px;padding:12px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 35px #0f172a24}.fin-chart-tooltip>strong{display:block;margin-bottom:8px}.fin-chart-tooltip>div{display:grid;grid-template-columns:10px 1fr auto;align-items:center;gap:7px;padding:3px 0}.fin-chart-tooltip i,.fin-chart-tooltip span{width:8px;height:8px;border-radius:50%}.income-dot{background:#22c55e}.expense-dot{background:#fb7185}.balance-dot{background:#2563eb}.dark .fin-plan-column.income{background:linear-gradient(145deg,#123122,#171b22);border-color:#235c3c}.dark .fin-plan-column.expense{background:linear-gradient(145deg,#3a1820,#171b22);border-color:#63303b}.dark .fin-salary-popover,.dark .fin-chart-tooltip{background:#202630;border-color:#364152;color:#e8ebf1}@media(max-width:760px){.fin-plan-chart-head span:not(.fin-plan-scenario){display:none}.fin-plan-column{padding:13px}.fin-salary-popover-body{max-height:52vh}}
@@ -1077,7 +1152,7 @@
   background: var(--surface);
 }
 .fin-root td { padding: 10px 12px; border-bottom-color: color-mix(in srgb, var(--border) 60%, transparent); font-size: 13.5px; }
-.fin-root tbody tr:not(.fin-tx-details-row):not(.fin-employee-history-row):nth-child(even) > td {
+.fin-root tbody tr:not(.fin-tx-details-row):not(.fin-employee-history-row):not(.fin-activity-details-row):nth-child(even) > td {
   background: var(--surface-2);
 }
 .fin-root tbody tr:hover > td,
@@ -1246,7 +1321,7 @@
 }
 .dark .fin-root .view-toggle button.active,
 .dark .fin-segments button.active { color: var(--text); background: var(--surface-hover); }
-.dark .fin-root tbody tr:not(.fin-tx-details-row):not(.fin-employee-history-row):nth-child(even) > td { background: var(--surface-2); }
+.dark .fin-root tbody tr:not(.fin-tx-details-row):not(.fin-employee-history-row):not(.fin-activity-details-row):nth-child(even) > td { background: var(--surface-2); }
 .dark .fin-root tbody tr:hover > td,
 .dark .fin-root .fin-wide-table tbody tr:hover > td:first-child { background: var(--surface-hover); }
 .dark .fin-salary-popover,

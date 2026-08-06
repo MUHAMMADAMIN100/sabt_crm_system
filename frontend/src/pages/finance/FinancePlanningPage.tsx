@@ -70,7 +70,8 @@ export default function FinancePlanningPage() {
       <div className="table-wrap"><table id="fin-planning-data"><caption className="sr-only">Подробные значения прогноза движения денег по месяцам</caption><thead><tr><th>Месяц</th><th>Доход · факт / осталось</th><th>Расход · факт / осталось</th><th>Результат</th><th>Баланс сейчас / после плана</th></tr></thead><tbody>
         {visibleRows.map((r: any) => {
           const toggle = () => setExpanded(expanded === r.ym ? null : r.ym);
-          return <Fragment key={r.ym}><tr className="clickable" aria-expanded={expanded === r.ym}
+          const isCurrentMonth = r.ym === currentYm();
+          return <Fragment key={r.ym}><tr className={`clickable${isCurrentMonth ? ' fin-current-month-row' : ''}`} aria-expanded={expanded === r.ym}
             tabIndex={0} onClick={toggle}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -80,6 +81,7 @@ export default function FinancePlanningPage() {
             }}>
           <td>
             <strong>{monthLabel(r.ym, true)}</strong>
+            {isCurrentMonth && <small className="fin-current-month-badge">текущий месяц</small>}
             {r.balanceReset && (
               <small className="fin-plan-balance-reset"
                 title="С этого месяца остаток считается по счетам CRM, а не по архиву Notion">

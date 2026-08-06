@@ -871,7 +871,7 @@ function DebtsList({ ym }: { ym: string }) {
               <tr>
                 <th style={{ minWidth: 190 }}>Наименование</th>
                 <th className="num" style={{ width: 96 }}>Сумма</th>
-                {months.map((m) => <th key={m} className="num" style={{ textTransform: 'capitalize', minWidth: 84 }}>{monthLabel(m)}</th>)}
+                {months.map((m) => <th key={m} className={`num${m === currentYm() ? ' fin-current-month-cell' : ''}`} style={{ textTransform: 'capitalize', minWidth: 84 }}>{monthLabel(m)}{m === currentYm() && <small className="fin-current-month-dot" title="Текущий месяц" />}</th>)}
                 <th style={{ width: 60 }} />
               </tr>
             </thead>
@@ -885,7 +885,7 @@ function DebtsList({ ym }: { ym: string }) {
                   </td>
                   <td className="num">{money(r.debt.totalAmount)}</td>
                   {r.cells.map((cell: any) => (
-                    <td key={cell.ym} className="num">
+                    <td key={cell.ym} className={`num${cell.ym === currentYm() ? ' fin-current-month-cell' : ''}`}>
                       {(cell.plans ?? []).length === 0 ? (
                         <button className="btn ghost sm" title="Добавить платёж" onClick={() => setCellFor({ debt: r.debt, ym: cell.ym })}><FinIcon name="plus" size={14} /></button>
                       ) : (
@@ -911,7 +911,7 @@ function DebtsList({ ym }: { ym: string }) {
               <tr>
                 <td><b>Итого</b></td>
                 <td className="num"><b>{money(totals.total)}</b></td>
-                {months.map((m) => <td key={m} className="num"><b>{money(perMonth(m))}</b></td>)}
+                {months.map((m) => <td key={m} className={`num${m === currentYm() ? ' fin-current-month-cell' : ''}`}><b>{money(perMonth(m))}</b></td>)}
                 <td />
               </tr>
             </tfoot>

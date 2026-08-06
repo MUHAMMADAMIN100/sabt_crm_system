@@ -124,8 +124,8 @@ function PausedProjects({ direction }: { direction: string }) {
   const tariffSum = projects.reduce((s, p) => s + (Number(p.tariff) || 0), 0);
 
   return (
-    <>
-      <button className="btn ghost sm" style={{ marginTop: 16, color: 'var(--amber)' }} onClick={() => setOpen((v) => !v)}>
+    <section className="fin-project-state-group paused">
+      <button className="btn ghost sm fin-project-state-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         <FinIcon name="pause" size={14} /> На паузе ({projects.length} · {money(tariffSum)}/мес)
       </button>
       {open && (
@@ -152,7 +152,7 @@ function PausedProjects({ direction }: { direction: string }) {
           </table>
         </div>
       )}
-    </>
+    </section>
   );
 }
 
@@ -292,8 +292,8 @@ function ArchivedProjects({ projects }: { projects: any[] }) {
     try { await financeApi.updateProject(p.id, { archived: false }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
   }
   return (
-    <>
-      <button className="btn ghost sm" style={{ marginTop: 16 }} onClick={() => setOpen((v) => !v)}>
+    <section className="fin-project-state-group archived">
+      <button className="btn ghost sm fin-project-state-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         <FinIcon name={open ? 'chevronLeft' : 'chevronRight'} size={14} /> Архив проектов ({projects.length})
       </button>
       {open && (
@@ -315,7 +315,7 @@ function ArchivedProjects({ projects }: { projects: any[] }) {
           </table>
         </div>
       )}
-    </>
+    </section>
   );
 }
 
@@ -651,7 +651,7 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
             <tr>
               <th style={{ minWidth: 190 }}>Проект</th>
               <th className="num" style={{ width: 96 }}>Сумма</th>
-              {months.map((m) => <th key={m} className="num" style={{ textTransform: 'capitalize', minWidth: 84 }}>{monthLabel(m)}</th>)}
+              {months.map((m) => <th key={m} className={`num${m === currentYm() ? ' fin-current-month-cell' : ''}`} style={{ textTransform: 'capitalize', minWidth: 84 }}>{monthLabel(m)}{m === currentYm() && <small className="fin-current-month-dot" title="Текущий месяц" />}</th>)}
               <th style={{ minWidth: 160 }}>Комментарий</th>
               <th style={{ width: 124 }} />
             </tr>
@@ -672,7 +672,7 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
                     const cell = cellOf(r, m);
                     const plans: any[] = cell?.plans || [];
                     return (
-                      <td key={m} className="num">
+                      <td key={m} className={`num${m === currentYm() ? ' fin-current-month-cell' : ''}`}>
                         {plans.length === 0 ? (
                           <button className="btn ghost sm" title="Добавить поступление" onClick={() => setCellFor({ row: r, ym: m })}><FinIcon name="plus" size={14} /></button>
                         ) : (
@@ -707,7 +707,7 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
             <tr>
               <td><b>Итого</b></td>
               <td className="num"><b>{money(totals.tariff)}</b></td>
-              {months.map((m) => <td key={m} className="num"><b>{money(monthTotal(m))}</b></td>)}
+              {months.map((m) => <td key={m} className={`num${m === currentYm() ? ' fin-current-month-cell' : ''}`}><b>{money(monthTotal(m))}</b></td>)}
               <td />
               <td />
             </tr>

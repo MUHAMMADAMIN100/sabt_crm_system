@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
-import { formatDate, money, monthLabel } from './finlib';
+import { currentYm, formatDate, money, monthLabel } from './finlib';
 import FinIcon from './FinIcon';
 import { AccountLabel } from './AccountIdentity';
 
@@ -135,7 +135,7 @@ function MonthPaymentHistory({ periods, rows }: { periods: PayrollPeriod[]; rows
             .filter(row => row.salaryYm === period.ym)
             .sort((a, b) => b.date.localeCompare(a.date));
           return (
-            <article className="fin-payment-month legacy-notion" key={period.ym}>
+            <article className={`fin-payment-month legacy-notion${period.ym === currentYm() ? ' current' : ''}`} key={period.ym}>
               <div className="fin-payment-month-head">
                 <div>
                   <strong>{monthLabel(period.ym, true)}</strong>
@@ -193,7 +193,7 @@ function MonthPaymentHistory({ periods, rows }: { periods: PayrollPeriod[]; rows
         const salaryDelta = period.salaryDelta == null ? null : Number(period.salaryDelta);
 
         return (
-          <article className="fin-payment-month" key={period.ym}>
+          <article className={`fin-payment-month${period.ym === currentYm() ? ' current' : ''}`} key={period.ym}>
             <div className="fin-payment-month-head">
               <div>
                 <strong>{monthLabel(period.ym, true)}</strong>
