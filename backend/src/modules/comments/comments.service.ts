@@ -10,6 +10,7 @@ import { MailService } from '../mail/mail.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
+import { AppGateway } from '../gateway/app.gateway';
 
 const PM_ROLES = new Set(['admin', 'founder', 'co_founder', 'smm_director', 'video_director']);
 
@@ -23,7 +24,13 @@ export class CommentsService {
     private mailService: MailService,
     private activityLog: ActivityLogService,
     private telegramService: TelegramService,
+    private gateway: AppGateway,
   ) {}
+
+  /** Реалтайм-сигнал: комментарии видны всем, кто открыл карточку задачи. */
+  private notifyChanged(taskId: string) {
+    this.gateway.broadcast('comments:changed', { taskId });
+  }
 
   /** Доступ к комментариям задачи имеют только: PM-роли, исполнитель,
    *  создатель, участник проекта, менеджер проекта. */
@@ -129,6 +136,7 @@ export class CommentsService {
       // best-effort: ничего не делаем — комментарий уже сохранён.
     }
 
+    this.notifyChanged(taskId);
     return this.repo.findOne({ where: { id: saved.id }, relations: ['author'] });
   }
 
@@ -153,6 +161,7 @@ export class CommentsService {
       details: { taskId: comment.taskId },
     });
 
+    this.notifyChanged(comment.taskId);
     return saved;
   }
 
@@ -170,7 +179,9 @@ export class CommentsService {
       entityId: id,
       details: { taskId: comment.taskId },
     });
+    const { taskId } = comment;
     await this.repo.remove(comment);
+    this.notifyChanged(taskId);
     return { message: 'Comment deleted' };
   }
 }

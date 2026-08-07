@@ -457,6 +457,18 @@ export function canSeeProjectStories(role?: string | null, secondaryRole?: strin
   return role === 'storymaker' || secondaryRole === 'storymaker'
 }
 
+/** Руководитель направления разработки — основной ролью или второй (у Сабрины
+ *  она поверх «МП по разработке»). Его кабинет показывает ТОЛЬКО разработку:
+ *  ни SMM-разделов, ни SMM-сотрудников, ни общекомпанейских цифр. Бэкенд
+ *  сегментирует данные сам (common/direction-scope.ts), фронт прячет разделы. */
+export function isDevDirector(user?: { role?: string | null; secondaryRole?: string | null } | null): boolean {
+  return !!user && (user.role === 'dev_director' || user.secondaryRole === 'dev_director')
+}
+
+/** Команда разработки — кого руководитель видит в списках, KPI и задачах.
+ *  Двойник backend/src/common/direction-scope.ts (DEV_TEAM_ROLES). */
+export const DEV_TEAM_ROLES = ['developer', 'pm_dev', 'sales_manager_dev', 'dev_director']
+
 export function canAccessRoute(
   role: UserRole | undefined,
   route: string,

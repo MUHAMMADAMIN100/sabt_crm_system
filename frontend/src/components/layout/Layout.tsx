@@ -37,7 +37,11 @@ function useSessionHeartbeat(authMarker: string | null) {
     // максимально близок к реальному уходу.
     const sendBeacon = () => {
       try {
-        const url = `${(import.meta as any).env.VITE_API_URL || ''}/auth/heartbeat`
+        // Тот же базовый путь, что у axios (lib/api): без /api маяк уходил на
+        // origin фронта и всегда получал 404 — сессия «жила» до бесконечности,
+        // а консоль засорялась ошибками.
+        const base = (import.meta as any).env.VITE_API_URL
+        const url = base ? `${base}/api/auth/heartbeat` : '/api/auth/heartbeat'
         const blob = new Blob([JSON.stringify({})], { type: 'application/json' })
         // Authorization-заголовок к sendBeacon прицепить нельзя; fallback на
         // обычный fetch с keepalive — куки/токен пойдут через axios-interceptor.

@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeDevBoard, canSeeProjectStories, canManageAccess, canSeeSmmDaily, userCan, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeDevBoard, canSeeProjectStories, canManageAccess, canSeeSmmDaily, userCan, isDevDirector, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
@@ -59,7 +59,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     // задачи выдают, а не получают, и следят за ними в Календаре (см. фильтр
     // ниже). Сам маршрут им доступен — по ссылке из уведомления о закрытии
     // задачи карточка должна открываться.
-    { to: '/tasks',         icon: ClipboardCheck,  label: 'Задачи от руководителя', permission: 'tasks.view' },
+    // Руководителю направления здесь полноценный список задач его сферы,
+    // а не кабинет полученных поручений — и подпись должна это отражать.
+    { to: '/tasks',         icon: ClipboardCheck,  label: isDevDirector(user) ? 'Задачи' : 'Задачи от руководителя', permission: 'tasks.view' },
     { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
     { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
     // Ежедневный автоотчёт по СММ-команде — только основатель.

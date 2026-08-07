@@ -4,9 +4,10 @@ import { TaskResult } from './task-result.entity';
 import { Task } from '../tasks/task.entity';
 import { TaskResultsService } from './task-results.service';
 import { TaskResultsController } from './task-results.controller';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([TaskResult, Task])],
+  imports: [TypeOrmModule.forFeature([TaskResult, Task]), GatewayModule],
   controllers: [TaskResultsController],
   providers: [TaskResultsService],
   exports: [TaskResultsService],

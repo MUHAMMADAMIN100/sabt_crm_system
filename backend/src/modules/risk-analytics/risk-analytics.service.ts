@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Project, ProjectPaymentStatus } from '../projects/project.entity';
@@ -6,6 +6,7 @@ import { Task, TaskStatus } from '../tasks/task.entity';
 import { ContentPlanItem, ContentItemType, ContentPlanStatus } from '../content-plan/content-plan-item.entity';
 import { SmmTariff } from '../smm-tariffs/smm-tariff.entity';
 import { User, UserRole } from '../users/user.entity';
+import { DirectionScope, isInDirection } from '../../common/direction-scope';
 import {
   PlanFactRow,
   EmployeeWorkload,
@@ -53,9 +54,10 @@ export class RiskAnalyticsService {
   /** План-факт по проекту с учётом лимита тарифа.
    *  Возвращает строку на каждый тип контента из тарифа + любые типы,
    *  которые есть в плане, но не покрыты тарифом. */
-  async getPlanFactRich(projectId: string): Promise<PlanFactRow[]> {
+  async getPlanFactRich(projectId: string, scope?: DirectionScope | null): Promise<PlanFactRow[]> {
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Project not found');
+    this.assertProjectInScope(project.projectType, scope);
 
     const tariff = project.tariffId
       ? await this.tariffRepo.findOne({ where: { id: project.tariffId } })
@@ -120,12 +122,16 @@ export class RiskAnalyticsService {
   // ─────────────────────────────────────────────────────────────────────
 
   /** Нагрузка одного или всех сотрудников. */
-  async getEmployeeWorkload(employeeId?: string): Promise<EmployeeWorkload[]> {
+  async getEmployeeWorkload(employeeId?: string, scope?: DirectionScope | null): Promise<EmployeeWorkload[]> {
     const usersQb = this.userRepo
       .createQueryBuilder('u')
       .where('u.isActive = true')
       .andWhere('u.isBlocked = false');
     if (employeeId) usersQb.andWhere('u.id = :id', { id: employeeId });
+    // Руководитель направления — только своя команда.
+    if (scope) {
+      usersQb.andWhere('(u.role IN (:...dirRoles) OR u."secondaryRole" IN (:...dirRoles))', { dirRoles: scope.teamRoles });
+    }
     const users = await usersQb.getMany();
     if (users.length === 0) return [];
 
@@ -228,15 +234,17 @@ export class RiskAnalyticsService {
   }
 
   /** Нагрузка PM-ов (опционально по конкретному pmId). */
-  async getPmWorkload(pmId?: string): Promise<PmWorkload[]> {
-    const pmRoles: UserRole[] = [
+  async getPmWorkload(pmId?: string, scope?: DirectionScope | null): Promise<PmWorkload[]> {
+    // Для руководителя направления «PM» — это менеджеры его команды
+    // (проект-менеджер и руководитель разработки), а не топ-менеджмент.
+    const pmRoles: string[] = scope ? scope.teamRoles : [
       UserRole.VIDEO_DIRECTOR,
       UserRole.ADMIN,
       UserRole.FOUNDER,
       UserRole.CO_FOUNDER,
     ];
     const qb = this.userRepo.createQueryBuilder('u')
-      .where('u.role IN (:...roles)', { roles: pmRoles })
+      .where('(u.role IN (:...roles) OR u."secondaryRole" IN (:...roles))', { roles: pmRoles })
       .andWhere('u.isActive = true')
       .andWhere('u.isBlocked = false');
     if (pmId) qb.andWhere('u.id = :id', { id: pmId });
@@ -339,9 +347,12 @@ export class RiskAnalyticsService {
    *  ОПТИМИЗИРОВАНО: вместо N+1 (computeProjectRisk на каждый проект,
    *  плюс getEmployeeWorkload в цикле) — батчевая загрузка всех данных
    *  за ~5 запросов и расчёт в памяти. ~200 запросов → ~5. */
-  async getProjectRisks(): Promise<ProjectRisk[]> {
+  async getProjectRisks(scope?: DirectionScope | null): Promise<ProjectRisk[]> {
     const projects = await this.projectRepo.find({
-      where: { isArchived: false },
+      // Руководитель направления оценивает риски только своих проектов.
+      where: scope
+        ? { isArchived: false, projectType: In(scope.projectTypes) as any }
+        : { isArchived: false },
       relations: ['manager'],
     });
     if (projects.length === 0) return [];
@@ -490,12 +501,13 @@ export class RiskAnalyticsService {
   }
 
   /** Детальный риск-скор одного проекта (сразу с факторами и пояснениями). */
-  async getProjectRiskDetail(projectId: string): Promise<ProjectRisk> {
+  async getProjectRiskDetail(projectId: string, scope?: DirectionScope | null): Promise<ProjectRisk> {
     const project = await this.projectRepo.findOne({
       where: { id: projectId },
       relations: ['manager'],
     });
     if (!project) throw new NotFoundException('Project not found');
+    this.assertProjectInScope(project.projectType, scope);
     return this.computeProjectRisk(project);
   }
 
@@ -613,10 +625,12 @@ export class RiskAnalyticsService {
 
   /** ОПТИМИЗИРОВАНО: вместо N+1 (taskRepo.find на каждого юзера) —
    *  один запрос всех задач + группировка по assigneeId в памяти. */
-  async getEmployeeRisks(): Promise<EmployeeRisk[]> {
-    const users = await this.userRepo.find({
+  async getEmployeeRisks(scope?: DirectionScope | null): Promise<EmployeeRisk[]> {
+    const all = await this.userRepo.find({
       where: { isActive: true, isBlocked: false },
     });
+    // Руководитель направления видит риски только своей команды.
+    const users = scope ? all.filter(u => isInDirection(scope, u)) : all;
     if (users.length === 0) return [];
     const userIds = users.map(u => u.id);
 
@@ -635,11 +649,22 @@ export class RiskAnalyticsService {
     return out;
   }
 
-  async getEmployeeRiskDetail(userId: string): Promise<EmployeeRisk> {
+  async getEmployeeRiskDetail(userId: string, scope?: DirectionScope | null): Promise<EmployeeRisk> {
     const u = await this.userRepo.findOne({ where: { id: userId } });
     if (!u) throw new NotFoundException('User not found');
+    if (scope && !isInDirection(scope, u)) {
+      throw new ForbiddenException('Сотрудник не относится к вашему направлению');
+    }
     const tasks = await this.taskRepo.find({ where: { assigneeId: u.id } });
     return this.computeEmployeeRiskSync(u, tasks);
+  }
+
+  /** Отсечка по направлению для детальных ручек: без неё руководитель
+   *  направления читал бы риск-профиль чужого проекта по прямому id. */
+  private assertProjectInScope(projectType?: string | null, scope?: DirectionScope | null) {
+    if (scope && !scope.projectTypes.includes(projectType as string)) {
+      throw new ForbiddenException('Проект не относится к вашему направлению');
+    }
   }
 
   /** Синхронный расчёт риска сотрудника из уже загруженных задач. */

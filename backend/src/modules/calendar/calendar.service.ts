@@ -5,6 +5,7 @@ import { Task } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
 import { ClientLead } from '../clients/client-lead.entity';
 import { getSalesSegment } from '../../common/sales-segment';
+import { directionScopeOf } from '../../common/direction-scope';
 
 /** Прогресс задачи в % для отображения на карточке календаря.
  *  Приоритет: 1) доля выполненных подзадач (acceptanceCriteria),
@@ -108,11 +109,23 @@ export class CalendarService {
     // своего направления. Задачи без проекта видны, если они созданы им,
     // назначены ему или это общие задачи (scope='general').
     const salesSegment = getSalesSegment(viewerRole);
-    // Руководитель разработки второй ролью (Сабрина) видит задачи и вехи
-    // всех проектов направления без продажной сегментации — зеркально
-    // smm_director. Клиентские встречи/лиды ниже остаются по salesSegment:
-    // это её продажная часть.
-    const taskSegment = viewerSecondaryRole === 'dev_director' ? null : salesSegment;
+    // Руководитель направления (в т.ч. второй ролью — dev_director у Сабрины)
+    // видит в календаре задачи и вехи ВСЕХ проектов своего направления и
+    // поручения своей команды, но не чужую сферу. Клиентские встречи/лиды
+    // ниже остаются по salesSegment — это её продажная часть.
+    const dirScope = directionScopeOf({ role: viewerRole, secondaryRole: viewerSecondaryRole });
+    if (dirScope) {
+      taskQb.andWhere(
+        `(project.projectType IN (:...dirTypes)
+          OR (t.projectId IS NULL AND (
+            t."createdById" IN (SELECT id FROM users WHERE role IN (:...dirRoles) OR "secondaryRole" IN (:...dirRoles))
+            OR t.assigneeId IN (SELECT id FROM users WHERE role IN (:...dirRoles) OR "secondaryRole" IN (:...dirRoles))
+            OR t.scope = 'general'
+          )))`,
+        { dirTypes: dirScope.projectTypes, dirRoles: dirScope.teamRoles },
+      );
+    }
+    const taskSegment = dirScope ? null : salesSegment;
     if (taskSegment) {
       // Все типы сегмента, а не один дефолтный (у МП по разработке их пять).
       taskQb.andWhere(
@@ -132,12 +145,13 @@ export class CalendarService {
       .andWhere('p.isArchived = false');
 
     if (projectId) projectQb.andWhere('p.id = :projectId', { projectId });
-    // МП по продажам — старты/концы только проектов своего направления.
-    // ВСЕ типы сегмента, а не один дефолтный: у МП по разработке их пять,
-    // иначе видны вехи только «Лендинга» (как уже сделано для задач выше).
-    if (taskSegment) {
+    // Вехи проектов — только своего направления. ВСЕ типы сегмента, а не один
+    // дефолтный: у направления разработки их пять, иначе видны вехи только
+    // «Лендинга» (как уже сделано для задач выше).
+    const projTypesFilter = dirScope?.projectTypes ?? taskSegment?.projectTypes;
+    if (projTypesFilter) {
       projectQb.andWhere('p.projectType IN (:...salesProjTypesP)', {
-        salesProjTypesP: taskSegment.projectTypes,
+        salesProjTypesP: projTypesFilter,
       });
     }
     // Если фильтр по scope активен — не показываем старты/концы проектов

@@ -5,12 +5,13 @@ import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { StatCard, PageLoader, StatusBadge, PriorityBadge, ProgressBar, Avatar } from '@/components/ui'
 import { FolderKanban, CheckSquare, Users, Clock, AlertTriangle, TrendingDown } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { format, startOfMonth } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { isTaskOverdue } from '@/lib/taskStatus'
 import { useChartColors } from '@/lib/theme'
+import { isDevDirector } from '@/lib/permissions'
 
 const FounderDashboard = lazy(() => import('./components/FounderDashboard'))
 const PMDashboard = lazy(() => import('./components/PMDashboard'))
@@ -39,6 +40,8 @@ const MyDevCards = lazy(() => import('./components/MyDevCards'))
 const MyPlainTasks = lazy(() => import('./components/MyPlainTasks'))
 const StorymakerDashboard = lazy(() => import('./components/StorymakerDashboard'))
 const UpcomingPublications = lazy(() => import('./components/UpcomingPublications'))
+/** KPI команды разработки — кабинет руководителя направления. */
+const DevTeamKpiWidget = lazy(() => import('@/components/kpi/DevTeamKpiWidget'))
 
 
 // ── Helpers for story dot colors ──────────────────────────────────
@@ -157,6 +160,10 @@ export default function DashboardPage() {
   const isFounderView = ['admin', 'founder', 'co_founder'].includes(role)
   const isPMView = role === 'video_director' || role === 'smm_director'
   const isSalesView = role === 'sales_manager_smm' || role === 'sales_manager_dev'
+  // Руководитель разработки второй ролью поверх МП: тот же продажный дашборд
+  // плюс KPI команды направления сверху.
+  const isDevDirectorView = isDevDirector(user)
+  const navigate = useNavigate()
   // Команда разработки — разработчики и проект-менеджер по разработке.
   const isDevTeam = role === 'developer' || role === 'pm_dev'
   const isWorkerView = ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'developer', 'videographer', 'scriptwriter', 'qa', 'publisher', 'targetologist', 'employee'].includes(role)
@@ -232,9 +239,17 @@ export default function DashboardPage() {
         <div>
           <h1 className="page-title">{salesGreeting}</h1>
           <p className="text-surface-500 dark:text-surface-400 mt-0.5">
-            Менеджер по продажам · {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
+            {isDevDirectorView ? 'Руководитель разработки' : 'Менеджер по продажам'} · {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
           </p>
         </div>
+        {/* Руководителю направления — KPI его команды первым блоком: сразу
+            видно, кто чем занят и на каком этапе задачи. Ниже остаётся его
+            собственная продажная сводка. */}
+        {isDevDirectorView && (
+          <Suspense fallback={null}>
+            <DevTeamKpiWidget onCreateTask={uid => navigate(`/tasks?new=1&assignee=${uid}`)} />
+          </Suspense>
+        )}
         <Suspense fallback={<PageLoader />}>
           <SalesDashboard />
         </Suspense>

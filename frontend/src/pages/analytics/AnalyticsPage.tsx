@@ -16,6 +16,8 @@ import {
   PieChart, Pie, Cell, AreaChart, Area, Legend,
 } from 'recharts'
 import { useChartColors } from '@/lib/theme'
+import { isDevDirector } from '@/lib/permissions'
+import DevTeamKpiWidget from '@/components/kpi/DevTeamKpiWidget'
 
 
 export default function AnalyticsPage() {
@@ -23,6 +25,9 @@ export default function AnalyticsPage() {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const isHeadSMM = user?.role === 'smm_director'
+  // Руководитель разработки ведёт только своё направление: SMM-раздел и
+  // SMM-тарифы ему не показываем, цифры бэкенд уже отдаёт по его сфере.
+  const devOnly = isDevDirector(user)
   // МП по продажам не видят вкладку Founder в аналитике.
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
   const [expandedEmp, setExpandedEmp] = useState<string | null>(null)
@@ -88,6 +93,8 @@ export default function AnalyticsPage() {
       <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
         {(['all', 'founder', 'team', 'smm', 'finance', 'risk', 'tariff'] as const)
           .filter(s => !isSalesManager || s !== 'founder')
+          // SMM-аналитика и SMM-тарифы — не сфера руководителя разработки.
+          .filter(s => !devOnly || (s !== 'smm' && s !== 'tariff'))
           .map(s => (
           <button key={s} onClick={() => setSection(s)}
             className={clsx('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
@@ -99,11 +106,14 @@ export default function AnalyticsPage() {
       </div>
 
       {section === 'founder' && <FounderAnalyticsSection />}
+      {/* Руководителю разработки во вкладке «Команда» первым делом — KPI его
+          людей с раскрытием задач: видно, кто на каком этапе. */}
+      {section === 'team'    && devOnly && <DevTeamKpiWidget />}
       {section === 'team'    && <TeamAnalyticsSection />}
-      {section === 'smm'     && <SmmAnalyticsSection />}
+      {section === 'smm'     && !devOnly && <SmmAnalyticsSection />}
       {section === 'finance' && <FinanceAnalyticsSection />}
       {section === 'risk'    && <RiskAnalyticsSection />}
-      {section === 'tariff'  && <TariffAnalyticsSection />}
+      {section === 'tariff'  && !devOnly && <TariffAnalyticsSection />}
 
       {section === 'all' && <>
 

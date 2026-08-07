@@ -7,6 +7,7 @@ import { Project } from '../projects/project.entity';
 import * as fs from 'fs/promises';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
+import { AppGateway } from '../gateway/app.gateway';
 
 const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'];
 const PM_ROLES_SET = new Set(PM_ROLES);
@@ -20,7 +21,13 @@ export class FilesService {
     @InjectRepository(Task) private taskRepo: Repository<Task>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
     private activityLog: ActivityLogService,
+    private gateway: AppGateway,
   ) {}
+
+  /** Реалтайм: вложение появляется у всех, кто смотрит задачу/проект. */
+  private notifyChanged(projectId?: string | null, taskId?: string | null) {
+    this.gateway.broadcast('files:changed', { projectId, taskId });
+  }
 
   async findByProject(projectId: string, viewer?: { id: string; role?: string } | null) {
     if (viewer && !PM_ROLES_SET.has(viewer.role || '')) {
@@ -93,6 +100,7 @@ export class FilesService {
       details: { filename: file.filename, size: file.size, mimetype: file.mimetype },
     });
 
+    this.notifyChanged(projectId, taskId);
     return saved;
   }
 
@@ -121,7 +129,9 @@ export class FilesService {
         this.logger.warn(`Failed to delete file ${fsPath}: ${err?.message}`);
       }
     }
+    const { projectId, taskId } = file;
     await this.repo.remove(file);
+    this.notifyChanged(projectId, taskId);
     return { message: 'File deleted' };
   }
 }

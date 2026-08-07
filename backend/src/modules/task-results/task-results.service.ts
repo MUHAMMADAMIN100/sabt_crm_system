@@ -4,14 +4,18 @@ import { Repository } from 'typeorm';
 import { TaskResult } from './task-result.entity';
 import { Task } from '../tasks/task.entity';
 import { CreateTaskResultDto } from './dto/create-task-result.dto';
+import { AppGateway } from '../gateway/app.gateway';
 
-const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'];
+// Руководитель разработки — такой же приёмщик работ, как руководители SMM
+// и видео: может приложить/снять результат по задаче своего направления.
+const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director'];
 
 @Injectable()
 export class TaskResultsService {
   constructor(
     @InjectRepository(TaskResult) private repo: Repository<TaskResult>,
     @InjectRepository(Task) private taskRepo: Repository<Task>,
+    private gateway: AppGateway,
   ) {}
 
   async create(taskId: string, submittedById: string, role: string, dto: CreateTaskResultDto): Promise<TaskResult> {
@@ -23,7 +27,10 @@ export class TaskResultsService {
       }
     }
     const result = this.repo.create({ taskId, submittedById, ...dto });
-    return this.repo.save(result);
+    const saved = await this.repo.save(result);
+    // Реалтайм: руководитель видит приложенный результат сразу, без F5.
+    this.gateway.broadcast('task-results:changed', { taskId });
+    return saved;
   }
 
   findByTask(taskId: string): Promise<TaskResult[]> {
@@ -43,7 +50,9 @@ export class TaskResultsService {
     if (!PM_ROLES.includes(role) && result.submittedById !== userId) {
       throw new ForbiddenException('Not allowed');
     }
+    const { taskId } = result;
     await this.repo.remove(result);
+    this.gateway.broadcast('task-results:changed', { taskId });
     return { message: 'Deleted' };
   }
 }

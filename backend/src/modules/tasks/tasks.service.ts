@@ -18,6 +18,7 @@ import { AppGateway } from '../gateway/app.gateway';
 import { TaskResultsService } from '../task-results/task-results.service';
 import { DailyReport } from '../reports/daily-report.entity';
 import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES } from '../../common/sales-segment';
+import { directionScopeOf } from '../../common/direction-scope';
 
 const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR, UserRole.DEV_DIRECTOR];
 
@@ -27,6 +28,21 @@ const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRol
  *  secondaryRole в объекте есть, хоть и не описан в узком типе параметра. */
 const isPmUser = (u: { role?: string; secondaryRole?: string | null } | undefined | null): boolean =>
   !!u && (PM_ROLES.includes(u.role as UserRole) || PM_ROLES.includes((u as any).secondaryRole as UserRole));
+
+/** PM-полномочия руководителя направления действуют ТОЛЬКО в его сфере.
+ *  Без этой отсечки isPmUser открывал бы Сабрине любую задачу компании по
+ *  прямому id (включая SMM) — на чтение, правку и массовые действия. */
+const outOfDirection = (
+  u: { role?: string; secondaryRole?: string | null } | undefined | null,
+  projectType?: string | null,
+): boolean => {
+  const dir = directionScopeOf(u as any);
+  if (!dir) return false;
+  // Безпроектные задачи направлением не ограничены: это личные поручения,
+  // их видимость решают другие проверки (исполнитель/автор/общая).
+  if (!projectType) return false;
+  return !dir.projectTypes.includes(projectType);
+};
 /** Управляющие роли — их задачи попадают в раздел «Задачи от руководителя».
  *  Массив строк: подставляется в SQL-параметр (u.role = ANY(...)). */
 const MANAGEMENT_ROLES: string[] = [
@@ -403,14 +419,36 @@ export class TasksService implements OnModuleInit {
       );
     }
 
+    // Руководитель направления (в т.ч. второй ролью — dev_director у Сабрины)
+    // видит ВСЕ задачи своей сферы, а не только свои: задачи проектов
+    // направления плюс безпроектные поручения внутри его команды. Чужое
+    // направление (SMM) при этом остаётся скрытым.
+    const dirScope = directionScopeOf({
+      role: filters.viewerRole,
+      secondaryRole: filters.viewerSecondaryRole,
+    });
+    if (dirScope) {
+      qb.andWhere(
+        `(project.projectType IN (:...dirTypes)
+          OR (t.projectId IS NULL AND (
+            t."createdById" IN (SELECT id FROM users WHERE role IN (:...dirRoles) OR "secondaryRole" IN (:...dirRoles))
+            OR t.assigneeId IN (SELECT id FROM users WHERE role IN (:...dirRoles) OR "secondaryRole" IN (:...dirRoles))
+            OR t.scope = 'general'
+          )))`,
+        { dirTypes: dirScope.projectTypes, dirRoles: dirScope.teamRoles },
+      );
+    }
+
     // Сегментация менеджеров продаж: МП видит только задачи проектов
     // своего направления. Задачи без проекта видны, если они созданы им,
     // назначены ему или это общие задачи (scope='general').
-    // Руководитель (в т.ч. второй ролью — dev_director у Сабрины) видит
-    // список без продажной сегментации, как smm_director.
-    const salesSegment = isPmUser({ role: filters.viewerRole, secondaryRole: filters.viewerSecondaryRole })
-      ? null
-      : getSalesSegment(filters.viewerRole);
+    // Управляющая роль на ЛЮБОЙ из двух позиций (например «МП + руководитель
+    // SMM») тоже снимает продажную сегментацию — иначе такой сотрудник терял
+    // бы доступ, который ему уже дали.
+    const salesSegment = (dirScope || isPmUser({
+      role: filters.viewerRole,
+      secondaryRole: filters.viewerSecondaryRole,
+    })) ? null : getSalesSegment(filters.viewerRole);
     if (salesSegment) {
       // ВСЕ типы сегмента, а не один дефолтный: у МП по разработке их пять
       // (Лендинг, Телеграм бот, CRM, Интернет магазин, legacy «Web сайт») —
@@ -454,9 +492,12 @@ export class TasksService implements OnModuleInit {
     //   - участник проекта (project.members)
     //   - GENERAL-задача от основателя (видна всей компании)
     if (viewer) {
-      const isPm = isPmUser(viewer as any) || (task.project
-        ? await this.hasPmPowersOnProject(viewer.id, viewer.role, task.projectId)
-        : false);
+      // Руководитель направления — PM только в своей сфере: чужое направление
+      // не открывается даже по прямой ссылке.
+      const isPm = (isPmUser(viewer as any) && !outOfDirection(viewer as any, task.project?.projectType))
+        || (task.project
+          ? await this.hasPmPowersOnProject(viewer.id, viewer.role, task.projectId)
+          : false);
       const isAssignee = task.assigneeId === viewer.id;
       const isCoAssignee = ((task as any).assignees || []).some((a: any) => a.userId === viewer.id);
       const isCreator = task.createdById === viewer.id;
@@ -475,13 +516,17 @@ export class TasksService implements OnModuleInit {
   /** Лёгкая проверка доступа к задаче без полной загрузки relations —
    *  для comments/files/time-tracker IDOR-фильтров. */
   async assertCanAccessTask(taskId: string, viewer: { id: string; role?: string }): Promise<void> {
-    if (isPmUser(viewer as any)) return;
+    // Руководителю направления PM-доступ даём только после проверки сферы —
+    // поэтому сначала грузим задачу, а не выходим раньше времени.
+    const isDirectionLead = !!directionScopeOf(viewer as any);
+    if (isPmUser(viewer as any) && !isDirectionLead) return;
     const task = await this.repo.findOne({
       where: { id: taskId },
       relations: ['project', 'project.members'],
       select: { id: true, assigneeId: true, createdById: true, projectId: true } as any,
     });
     if (!task) throw new NotFoundException('Task not found');
+    if (isPmUser(viewer as any) && !outOfDirection(viewer as any, task.project?.projectType)) return;
     if (task.assigneeId === viewer.id) return;
     if (task.createdById === viewer.id) return;
     const coAssignees = await this.assigneesRepo.find({ where: { taskId, userId: viewer.id } });
@@ -747,7 +792,7 @@ export class TasksService implements OnModuleInit {
     // PM-полномочий в этом проекте. Раньше здесь был список WORKER_ROLES, и
     // роли вне него (developer, pm_dev) обходили проверку целиком — правили
     // любую чужую задачу.
-    const isPmHere = isPmUser(user as any)
+    const isPmHere = (isPmUser(user as any) && !outOfDirection(user as any, task.project?.projectType))
       || await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
     if (
       !isPmHere &&
@@ -1033,7 +1078,8 @@ export class TasksService implements OnModuleInit {
     const task = await this.findOne(id);
     // Workers (any non-PM role) can only delete their own tasks (assigned to them or created by them).
     // Менеджер целевого проекта тоже может удалять задачи в своём проекте.
-    const isPM = isPmUser(user as any) || await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
+    const isPM = (isPmUser(user as any) && !outOfDirection(user as any, task.project?.projectType))
+      || await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
     if (!isPM && task.assigneeId !== user.id && task.createdById !== user.id) {
       throw new ForbiddenException('Not allowed');
     }
@@ -1182,12 +1228,24 @@ export class TasksService implements OnModuleInit {
       );
     }
     // admin / founder / co_founder — без фильтров (видят всё).
+    // Руководитель направления видит просрочки только своей сферы: грант
+    // tasks.overdue.view приходит вместе со второй ролью, а веток по этой
+    // роли в фильтрах выше нет — без отсечки он получал бы всю компанию.
+    const overdueDir = directionScopeOf(viewer as any);
+    if (overdueDir) {
+      qb.andWhere(
+        '(project."projectType" IN (:...dirTypes) OR t."projectId" IS NULL)',
+        { dirTypes: overdueDir.projectTypes },
+      );
+    }
+
     return qb.getMany();
   }
 
   async approveTask(id: string, user: { id: string; role: string; name?: string }) {
     const task = await this.findOne(id);
-    const isPM = isPmUser(user as any) || await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
+    const isPM = (isPmUser(user as any) && !outOfDirection(user as any, task.project?.projectType))
+      || await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
     if (!isPM) {
       throw new ForbiddenException('Only project managers can approve tasks');
     }
@@ -1232,11 +1290,15 @@ export class TasksService implements OnModuleInit {
   async returnTask(id: string, user: { id: string; role: string; name?: string }, reason: string) {
     const taskRaw = await this.repo
       .createQueryBuilder('t')
+      .leftJoin('t.project', 'p')
       .select(['t.id', 't.title', 't.status', 't.assigneeId', 't.projectId', 't.reworkCount'])
+      // Тип проекта нужен, чтобы руководитель направления не мог вернуть на
+      // доработку задачу чужой сферы по прямому id.
+      .addSelect('p.projectType', 'p_projectType')
       .where('t.id = :id', { id })
       .getRawOne();
     if (!taskRaw) throw new NotFoundException('Task not found');
-    const isPM = isPmUser(user as any)
+    const isPM = (isPmUser(user as any) && !outOfDirection(user as any, taskRaw.p_projectType))
       || await this.hasPmPowersOnProject(user.id, user.role, taskRaw.t_projectId);
     if (!isPM) {
       throw new ForbiddenException('Only project managers can return tasks');
@@ -1332,6 +1394,22 @@ export class TasksService implements OnModuleInit {
     if (!ids?.length) return { affected: 0 };
     if (!isPmUser(user as any)) {
       throw new ForbiddenException('Массовые действия доступны только менеджерам');
+    }
+    // Руководитель направления действует только в своей сфере: массовая
+    // операция по чужим id (в т.ч. массовое удаление) должна отклоняться
+    // целиком, а не выполняться частично.
+    const dirScope = directionScopeOf(user as any);
+    if (dirScope) {
+      const foreign = await this.repo
+        .createQueryBuilder('t')
+        .leftJoin('t.project', 'p')
+        .where('t.id IN (:...ids)', { ids })
+        .andWhere('t."projectId" IS NOT NULL')
+        .andWhere('p."projectType" NOT IN (:...dirTypes)', { dirTypes: dirScope.projectTypes })
+        .getCount();
+      if (foreign > 0) {
+        throw new ForbiddenException('В списке есть задачи чужого направления');
+      }
     }
 
     if (action === 'delete') {

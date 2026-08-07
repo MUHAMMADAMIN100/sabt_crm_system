@@ -83,8 +83,12 @@ export class VoiceTaskService {
     return null;
   }
 
-  /** Команда разработки — кого видит dev-руководитель при назначении. */
-  private static readonly DEV_TEAM_ROLES: string[] = [UserRole.DEVELOPER, UserRole.PM_DEV];
+  /** Команда разработки — кого видит dev-руководитель при назначении.
+   *  Менеджер продаж направления тоже в списке: руководитель ставит задачи
+   *  и ему (сбор требований, счета, согласование с клиентом). */
+  private static readonly DEV_TEAM_ROLES: string[] = [
+    UserRole.DEVELOPER, UserRole.PM_DEV, UserRole.SALES_MANAGER_DEV,
+  ];
 
   constructor(
     @InjectRepository(Task) private taskRepo: Repository<Task>,

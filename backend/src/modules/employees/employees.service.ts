@@ -12,6 +12,7 @@ import { AppGateway } from '../gateway/app.gateway';
 import { MailService } from '../mail/mail.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { hasGrant } from '../auth/permissions';
+import { directionScopeOf, isInDirectory } from '../../common/direction-scope';
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
@@ -87,7 +88,14 @@ export class EmployeesService implements OnModuleInit {
     if (department) where.department = department;
     if (status) where.status = status;
     if (search) where.fullName = ILike(`%${search}%`);
-    const list = await this.repo.find({ where, order: { createdAt: 'DESC' }, relations: ['user'] });
+    let list = await this.repo.find({ where, order: { createdAt: 'DESC' }, relations: ['user'] });
+    // Руководитель направления видит только свою команду: SMM-сотрудники не
+    // должны попадать ни в списки, ни в выбор исполнителя задачи. Сотрудники
+    // без учётки (user = null) — служебные записи, их тоже скрываем.
+    const scope = directionScopeOf(viewer);
+    if (scope) {
+      list = list.filter(emp => isInDirectory(scope, emp.user as any));
+    }
     // Legacy data: employee.avatar мог не синхронизироваться с user.avatar
     // (старые загрузки до фикса). Coalesce: если у employee нет картинки —
     // подставляем из связанного user.

@@ -35,9 +35,27 @@ export function CollapsibleSection({ id, title, children, defaultOpen = true, cl
 
   return (
     <div className={clsx('card', className)}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-2 text-left"
+      {/* Заголовок — div с role="button", а не <button>: в title приходит
+          произвольный контент, и у некоторых секций внутри свои кнопки
+          (переключатель периода в сводке продаж). Вложенный button в button —
+          невалидная разметка: React ругается, а клик по внутренней кнопке
+          браузер может отдать внешней. Клики по интерактивным элементам
+          внутри заголовка не схлопывают секцию. */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={e => {
+          const t = e.target as HTMLElement
+          if (t.closest('button, a, input, select, textarea, [role="button"]:not([data-collapse-root])')) return
+          setOpen(o => !o)
+        }}
+        onKeyDown={e => {
+          if (e.target !== e.currentTarget) return
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) }
+        }}
+        data-collapse-root
+        className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
       >
         <div className="flex-1 min-w-0">{title}</div>
         <ChevronDown
@@ -47,7 +65,7 @@ export function CollapsibleSection({ id, title, children, defaultOpen = true, cl
             open ? 'rotate-0' : '-rotate-90',
           )}
         />
-      </button>
+      </div>
       {open && <div className="mt-4">{children}</div>}
     </div>
   )

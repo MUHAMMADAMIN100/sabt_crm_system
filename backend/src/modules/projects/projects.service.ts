@@ -819,12 +819,15 @@ export class ProjectsService implements OnModuleInit {
       // скрытых им; «Архив» (archived=true) для него — это и есть его личный
       // список скрытых, а не общий архив компании (общий архив ведут
       // руководство и руководитель СММ).
-      if (isSalesManager(role)) {
+      // Личный список скрытых действует только для «чистого» менеджера продаж.
+      // У руководителя направления архив общий, поэтому и скрытия применять
+      // нельзя: иначе спрятанный когда-то dev-проект пропадал бы и из списка
+      // (отфильтрован), и из архива (там теперь только isArchived=true) —
+      // вернуть его было бы нечем.
+      if (isSalesManager(role) && !devDirectorSecond) {
         const hiddenSql = `SELECT ph.project_id FROM project_hidden ph WHERE ph.user_id = :hideUid`;
         if (archived) {
-          // Руководитель разработки второй ролью смотрит ОБЩИЙ архив компании
-          // (personalArchive выше не сработал) — личный фильтр не применяем.
-          if (!devDirectorSecond) qb.andWhere(`p.id IN (${hiddenSql})`, { hideUid: userId });
+          qb.andWhere(`p.id IN (${hiddenSql})`, { hideUid: userId });
         } else {
           qb.andWhere(`p.id NOT IN (${hiddenSql})`, { hideUid: userId });
         }
@@ -1060,7 +1063,12 @@ export class ProjectsService implements OnModuleInit {
     if (userRole === UserRole.SMM_DIRECTOR && dto.projectType !== 'SMM') {
       throw new ForbiddenException('Руководитель SMM может создавать только SMM-проекты');
     }
-    if (userRole === UserRole.DEV_DIRECTOR && !DEV_PROJECT_TYPES.includes(dto.projectType as string)) {
+    // Руководитель разработки — только проекты своего направления. Проверка
+    // ДО тарифов и прочей валидации: иначе на попытке создать SMM-проект он
+    // получал бы «Выберите SMM-тариф» вместо честного «не ваше направление».
+    // Роль может быть и второй (у Сабрины поверх «МП по разработке»).
+    if ((userRole === UserRole.DEV_DIRECTOR || userSecondaryRole === UserRole.DEV_DIRECTOR)
+        && !DEV_PROJECT_TYPES.includes(dto.projectType as string)) {
       throw new ForbiddenException('Руководитель разработки может создавать только проекты разработки');
     }
     // SMM-проект без тарифа не создаётся: все тарифы действуют 1 месяц,

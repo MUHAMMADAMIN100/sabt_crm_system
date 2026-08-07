@@ -13,6 +13,7 @@ import { WorkSession } from '../auth/work-session.entity';
 import { ProjectAd, BudgetSource } from '../project-ads/project-ad.entity';
 import { StoryLog } from '../stories/story.entity';
 import { getSalesSegment, isSalesManager } from '../../common/sales-segment';
+import { DirectionScope } from '../../common/direction-scope';
 
 @Injectable()
 export class AnalyticsService {
@@ -30,31 +31,61 @@ export class AnalyticsService {
     @InjectRepository(StoryLog) private storyRepo: Repository<StoryLog>,
   ) {}
 
-  async getDashboardOverview() {
+  /** SQL-фрагменты скоупа направления: подставляются в сводные запросы, чтобы
+   *  руководитель направления видел цифры только своей сферы. Без скоупа
+   *  (null) возвращаются пустые условия — поведение как было. */
+  private scopeSql(scope?: DirectionScope | null) {
+    if (!scope) {
+      return { params: [] as any[], projects: '', tasks: '', teamUsers: '' };
+    }
+    return {
+      params: [scope.projectTypes, scope.teamRoles],
+      // $1 — типы проектов направления, $2 — роли команды направления.
+      projects: ` AND "projectType" = ANY($1)`,
+      // Задачи направления: привязанные к его проектам ЛИБО поставленные
+      // внутри команды (безпроектные поручения руководителя тоже считаются).
+      tasks: ` AND (
+        "projectId" IN (SELECT id FROM projects WHERE "projectType" = ANY($1))
+        OR ("projectId" IS NULL AND (
+          "assigneeId" IN (SELECT id FROM users WHERE role = ANY($2) OR "secondaryRole" = ANY($2))
+          OR "createdById" IN (SELECT id FROM users WHERE role = ANY($2) OR "secondaryRole" = ANY($2))
+        ))
+      )`,
+      teamUsers: ` AND (role = ANY($2) OR "secondaryRole" = ANY($2))`,
+    };
+  }
+
+  async getDashboardOverview(scope?: DirectionScope | null) {
+    const s = this.scopeSql(scope);
     const [counts, hoursRow] = await Promise.all([
       this.taskRepo.manager.query(`
         SELECT
-          (SELECT COUNT(*)::int FROM projects WHERE "isArchived" = false)                                        AS "totalProjects",
-          (SELECT COUNT(*)::int FROM projects WHERE status = 'in_progress' AND "isArchived" = false)            AS "activeProjects",
-          (SELECT COUNT(*)::int FROM tasks)                                                                     AS "totalTasks",
-          (SELECT COUNT(*)::int FROM tasks WHERE status = 'done')                                              AS "doneTasks",
-          (SELECT COUNT(*)::int FROM employees)                                                                 AS "totalEmployees",
-          (SELECT COUNT(*)::int FROM users WHERE "isActive" = true)                                            AS "totalUsers",
+          (SELECT COUNT(*)::int FROM projects WHERE "isArchived" = false${s.projects})                          AS "totalProjects",
+          (SELECT COUNT(*)::int FROM projects WHERE status = 'in_progress' AND "isArchived" = false${s.projects}) AS "activeProjects",
+          (SELECT COUNT(*)::int FROM tasks t WHERE true${s.tasks})                                              AS "totalTasks",
+          (SELECT COUNT(*)::int FROM tasks t WHERE status = 'done'${s.tasks})                                   AS "doneTasks",
+          (SELECT COUNT(*)::int FROM employees e WHERE ${scope
+            ? `EXISTS (SELECT 1 FROM users u WHERE u.id = e."userId" AND (u.role = ANY($2) OR u."secondaryRole" = ANY($2)))`
+            : 'true'})                                                                                          AS "totalEmployees",
+          (SELECT COUNT(*)::int FROM users WHERE "isActive" = true${s.teamUsers})                               AS "totalUsers",
           -- Просроченные: дедлайн прошёл И задача всё ещё в активной работе.
           -- Статусы review/on_pm_review/on_client_approval/approved/published —
           -- исполнитель уже отдал работу, эти не считаем просрочкой.
           -- Истории контент-плана и КП-задачи онбординга не считаем —
           -- так счётчик совпадает со списком GET /tasks/overdue.
           (SELECT COUNT(*)::int FROM tasks t WHERE t.deadline < NOW()
-              AND t.status NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published')
+              -- ::text обязателен: в списке есть легаси-статусы, которых нет в
+              -- enum'е tasks_status_enum, и Postgres падал бы на приведении
+              -- литерала к типу колонки ещё до сравнения.
+              AND t.status::text NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published')
               AND (t."originStage" IS NULL OR t."originStage" <> 'kp_creation')
               AND NOT EXISTS (
                 SELECT 1 FROM content_plan_items cpi
                 WHERE cpi."taskId" = t.id AND cpi."contentType" = 'story'
               )
-              AND t.title NOT ILIKE 'История:%')
+              AND t.title NOT ILIKE 'История:%'${s.tasks})
               AS "overdueTasks"
-      `),
+      `, s.params),
       this.timeRepo
         .createQueryBuilder('tl')
         .select('SUM(tl.timeSpent)', 'total')
@@ -76,35 +107,72 @@ export class AnalyticsService {
     };
   }
 
-  async getProjectsByStatus() {
-    return this.projectRepo
+  /** Ограничить выборку проектов направлением (типы проектов). */
+  private scopeProjects(qb: any, alias: string, scope?: DirectionScope | null) {
+    if (scope) {
+      qb.andWhere(`${alias}."projectType" IN (:...dirTypes)`, { dirTypes: scope.projectTypes });
+    }
+    return qb;
+  }
+
+  /** Ограничить выборку задач направлением: задачи его проектов плюс
+   *  безпроектные поручения внутри команды направления. */
+  private scopeTasks(qb: any, alias: string, scope?: DirectionScope | null) {
+    if (scope) {
+      qb.andWhere(
+        `(${alias}."projectId" IN (SELECT id FROM projects WHERE "projectType" IN (:...dirTypes))
+          OR (${alias}."projectId" IS NULL AND (
+            ${alias}."assigneeId" IN (SELECT id FROM users WHERE role IN (:...dirRoles) OR "secondaryRole" IN (:...dirRoles))
+            OR ${alias}."createdById" IN (SELECT id FROM users WHERE role IN (:...dirRoles) OR "secondaryRole" IN (:...dirRoles))
+          )))`,
+        { dirTypes: scope.projectTypes, dirRoles: scope.teamRoles },
+      );
+    }
+    return qb;
+  }
+
+  /** Ограничить выборку сотрудников командой направления. */
+  private scopeTeam(qb: any, alias: string, scope?: DirectionScope | null) {
+    if (scope) {
+      qb.andWhere(
+        `(${alias}.role IN (:...dirRoles) OR ${alias}."secondaryRole" IN (:...dirRoles))`,
+        { dirRoles: scope.teamRoles },
+      );
+    }
+    return qb;
+  }
+
+  async getProjectsByStatus(scope?: DirectionScope | null) {
+    const qb = this.projectRepo
       .createQueryBuilder('p')
       .select('p.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .where('p.isArchived = false')
-      .groupBy('p.status')
-      .getRawMany();
+      .where('p.isArchived = false');
+    this.scopeProjects(qb, 'p', scope);
+    return qb.groupBy('p.status').getRawMany();
   }
 
-  async getTasksByStatus() {
-    return this.taskRepo
+  async getTasksByStatus(scope?: DirectionScope | null) {
+    const qb = this.taskRepo
       .createQueryBuilder('t')
       .select('t.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .groupBy('t.status')
-      .getRawMany();
+      .where('1 = 1');
+    this.scopeTasks(qb, 't', scope);
+    return qb.groupBy('t.status').getRawMany();
   }
 
-  async getTasksByPriority() {
-    return this.taskRepo
+  async getTasksByPriority(scope?: DirectionScope | null) {
+    const qb = this.taskRepo
       .createQueryBuilder('t')
       .select('t.priority', 'priority')
       .addSelect('COUNT(*)', 'count')
-      .groupBy('t.priority')
-      .getRawMany();
+      .where('1 = 1');
+    this.scopeTasks(qb, 't', scope);
+    return qb.groupBy('t.priority').getRawMany();
   }
 
-  async getEmployeeActivity(from?: string, to?: string) {
+  async getEmployeeActivity(from?: string, to?: string, scope?: DirectionScope | null) {
     // Default to TODAY only — chart resets daily
     const today = new Date().toISOString().split('T')[0];
     const fromDate = from || today;
@@ -123,6 +191,7 @@ export class AnalyticsService {
       .groupBy('u.id, u.name, emp.fullName')
       .orderBy('"totalHours"', 'DESC')
       .limit(10);
+    this.scopeTeam(qb, 'u', scope);
 
     const data = await qb.getRawMany();
     return data.map(d => ({ ...d, totalHours: parseFloat(d.totalHours || '0') }));
@@ -144,9 +213,11 @@ export class AnalyticsService {
     return data.map(d => ({ ...d, hours: parseFloat(d.hours || '0') }));
   }
 
-  async getProjectsPerformance(page = 1, limit = 10) {
+  async getProjectsPerformance(page = 1, limit = 10, scope?: DirectionScope | null) {
     const [projects, total] = await this.projectRepo.findAndCount({
-      where: { isArchived: false },
+      where: scope
+        ? { isArchived: false, projectType: In(scope.projectTypes) as any }
+        : { isArchived: false },
       relations: ['members', 'tasks'],
       order: { createdAt: 'DESC' },
       take: limit,
@@ -166,9 +237,9 @@ export class AnalyticsService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async getEmployeeEfficiency(page = 1, limit = 10) {
+  async getEmployeeEfficiency(page = 1, limit = 10, scope?: DirectionScope | null) {
     const offset = (page - 1) * limit;
-    const data = await this.userRepo
+    const qb = this.userRepo
       .createQueryBuilder('u')
       .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
       .leftJoin('u.tasks', 't')
@@ -186,15 +257,17 @@ export class AnalyticsService {
       .groupBy('u.id, u.name, e.fullName, e.position, e.id')
       .orderBy('"doneTasks"', 'DESC')
       .limit(limit)
-      .offset(offset)
-      .getRawMany();
+      .offset(offset);
+    this.scopeTeam(qb, 'u', scope);
+    const data = await qb.getRawMany();
 
-    const totalCount = await this.userRepo
+    const countQb = this.userRepo
       .createQueryBuilder('u')
       .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
       .where('u.isActive = true')
-      .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder', 'co_founder'] })
-      .getCount();
+      .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder', 'co_founder'] });
+    this.scopeTeam(countQb, 'u', scope);
+    const totalCount = await countQb.getCount();
 
     const mapped = data.map(d => ({
       ...d,
@@ -208,8 +281,8 @@ export class AnalyticsService {
     return { data: mapped, total: totalCount, page, limit, totalPages: Math.ceil(totalCount / limit) };
   }
 
-  async getEmployeeWorkload() {
-    const data = await this.userRepo
+  async getEmployeeWorkload(scope?: DirectionScope | null) {
+    const qb = this.userRepo
       .createQueryBuilder('u')
       .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
       .leftJoin('u.tasks', 't', "t.status NOT IN ('done','cancelled')")
@@ -225,7 +298,7 @@ export class AnalyticsService {
       // Истории КП и kp_creation-задачи не считаем просрочкой — единая
       // логика с GET /tasks/overdue и dashboard overview.
       .addSelect(`SUM(CASE WHEN t.deadline < NOW()
-        AND t.status NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published')
+        AND t.status::text NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published')
         AND (t."originStage" IS NULL OR t."originStage" <> 'kp_creation')
         AND t.title NOT ILIKE 'История:%'
         AND NOT EXISTS (
@@ -235,8 +308,9 @@ export class AnalyticsService {
       .where('u.isActive = true')
       .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder', 'co_founder'] })
       .groupBy('e.id, u.id, u.name, e.fullName, e.position, e.department, u.avatar')
-      .orderBy('"activeTasks"', 'DESC')
-      .getRawMany();
+      .orderBy('"activeTasks"', 'DESC');
+    this.scopeTeam(qb, 'u', scope);
+    const data = await qb.getRawMany();
 
     return data.map(d => ({
       // Primary `id` is the EMPLOYEE id — used for /employees/:id routes

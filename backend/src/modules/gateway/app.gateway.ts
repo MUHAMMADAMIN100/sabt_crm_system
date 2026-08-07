@@ -144,23 +144,36 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { event: 'joined', data: taskId };
   }
 
+  /** Реалтайм — вспомогательный канал: если сокет-сервер ещё не поднялся
+   *  (старт приложения, консольный контекст) или соединение оборвалось,
+   *  бизнес-операция обязана завершиться успешно. Раньше падение здесь
+   *  роняло весь вызов — так терялись уведомления. */
+  private safeEmit(fn: () => void, event: string) {
+    try {
+      if (!this.server) return;
+      fn();
+    } catch (e) {
+      this.logger?.warn?.(`Не удалось отправить событие ${event}: ${(e as Error).message}`);
+    }
+  }
+
   // Emit to specific user
   notifyUser(userId: string, event: string, data: any) {
-    this.server.to(`user:${userId}`).emit(event, data);
+    this.safeEmit(() => this.server.to(`user:${userId}`).emit(event, data), event);
   }
 
   // Emit to project room
   notifyProject(projectId: string, event: string, data: any) {
-    this.server.to(`project:${projectId}`).emit(event, data);
+    this.safeEmit(() => this.server.to(`project:${projectId}`).emit(event, data), event);
   }
 
   // Emit to task room
   notifyTask(taskId: string, event: string, data: any) {
-    this.server.to(`task:${taskId}`).emit(event, data);
+    this.safeEmit(() => this.server.to(`task:${taskId}`).emit(event, data), event);
   }
 
   // Broadcast to all
   broadcast(event: string, data: any) {
-    this.server.emit(event, data);
+    this.safeEmit(() => this.server.emit(event, data), event);
   }
 }

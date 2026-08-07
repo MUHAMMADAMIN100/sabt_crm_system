@@ -5,6 +5,7 @@ import { SmmDailyService } from './smm-daily.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
+import { directionScopeOf } from '../../common/direction-scope';
 
 @ApiTags('KPI')
 @ApiBearerAuth()
@@ -16,11 +17,13 @@ export class KpiController {
     private smmDaily: SmmDailyService,
   ) {}
 
-  /** KPI всех сотрудников за период. Для дашборда основателя. */
+  /** KPI сотрудников за период. Руководство видит всех; руководитель
+   *  направления (в т.ч. второй ролью) — только свою команду: сервис
+   *  урезает выборку по скоупу, роль сама по себе всех не открывает. */
   @Get('all')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
-  getAll(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.kpi.getAllKpi(from, to);
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.DEV_DIRECTOR)
+  getAll(@Query('from') from?: string, @Query('to') to?: string, @Request() req?) {
+    return this.kpi.getAllKpi(from, to, directionScopeOf(req?.user));
   }
 
   /** Ежедневный автоотчёт по СММ-команде: что каждый сделал за день.
@@ -31,8 +34,20 @@ export class KpiController {
     return this.smmDaily.getDaily(date);
   }
 
+  /** Может ли смотрящий видеть KPI этого сотрудника: руководство — любого,
+   *  руководитель направления — своей команды, остальные — только свой. */
+  private async canSeeKpiOf(req: any, userId: string): Promise<boolean> {
+    const role = req?.user?.role;
+    if (['admin', 'founder', 'co_founder'].includes(role)) return true;
+    if (req?.user?.id === userId) return true;
+    const scope = directionScopeOf(req?.user);
+    if (!scope) return false;
+    return this.kpi.isUserInDirection(userId, scope);
+  }
+
   /** KPI конкретного юзера.
    *   - admin/founder/co_founder — любого;
+   *   - руководитель направления — своей команды;
    *   - сам юзер — только свой. */
   @Get('user/:userId')
   async getOne(
@@ -41,11 +56,7 @@ export class KpiController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const role = req.user?.role;
-    const isPrivileged = ['admin', 'founder', 'co_founder'].includes(role);
-    if (!isPrivileged && req.user?.id !== userId) {
-      return null;
-    }
+    if (!(await this.canSeeKpiOf(req, userId))) return null;
     return this.kpi.getUserKpi(userId, from, to);
   }
 
@@ -59,11 +70,7 @@ export class KpiController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const role = req.user?.role;
-    const isPrivileged = ['admin', 'founder', 'co_founder'].includes(role);
-    if (!isPrivileged && req.user?.id !== userId) {
-      return [];
-    }
+    if (!(await this.canSeeKpiOf(req, userId))) return [];
     if (!metric) return [];
     return this.kpi.getMetricDetails(userId, metric, from, to);
   }

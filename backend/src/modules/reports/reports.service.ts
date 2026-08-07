@@ -6,6 +6,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
+import { DirectionScope } from '../../common/direction-scope';
+import { AppGateway } from '../gateway/app.gateway';
 
 @Injectable()
 export class ReportsService {
@@ -13,14 +15,31 @@ export class ReportsService {
     @InjectRepository(DailyReport) private repo: Repository<DailyReport>,
     private notificationsService: NotificationsService,
     private activityLog: ActivityLogService,
+    private gateway: AppGateway,
   ) {}
 
-  findAll(filters: { employeeId?: string; projectId?: string; from?: string; to?: string }) {
+  /** Реалтайм: отчёт появляется у руководителя сразу после отправки. */
+  private notifyChanged() {
+    this.gateway.broadcast('reports:changed', {});
+  }
+
+  findAll(filters: {
+    employeeId?: string; projectId?: string; from?: string; to?: string;
+    /** Скоуп направления: руководитель разработки видит отчёты только своей
+     *  команды и своих проектов, без SMM. */
+    scope?: DirectionScope | null;
+  }) {
     const qb = this.repo.createQueryBuilder('r')
       .leftJoinAndSelect('r.employee', 'employee')
       .leftJoinAndSelect('r.project', 'project')
       .leftJoinAndSelect('r.task', 'task');
 
+    if (filters.scope) {
+      qb.andWhere(
+        `(employee.role IN (:...dirRoles) OR employee."secondaryRole" IN (:...dirRoles))`,
+        { dirRoles: filters.scope.teamRoles },
+      );
+    }
     if (filters.employeeId) qb.andWhere('r.employeeId = :employeeId', { employeeId: filters.employeeId });
     if (filters.projectId) qb.andWhere('r.projectId = :projectId', { projectId: filters.projectId });
     if (filters.from) qb.andWhere('r.date >= :from', { from: filters.from });
@@ -65,6 +84,7 @@ export class ReportsService {
       details: { date: dto.date, projectId: dto.projectId, taskId: dto.taskId },
     });
 
+    this.notifyChanged();
     return this.findOne(result.id);
   }
 
@@ -81,6 +101,7 @@ export class ReportsService {
       details: dto,
     });
 
+    this.notifyChanged();
     return this.findOne(id);
   }
 
@@ -91,6 +112,7 @@ export class ReportsService {
       entityId: id,
     });
     await this.repo.delete(id);
+    this.notifyChanged();
     return { message: 'Report deleted' };
   }
 

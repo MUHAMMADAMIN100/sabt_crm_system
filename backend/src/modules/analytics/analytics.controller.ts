@@ -7,6 +7,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
+import { directionScopeOf } from '../../common/direction-scope';
 
 @ApiTags('Analytics')
 @ApiBearerAuth()
@@ -21,16 +22,19 @@ export class AnalyticsController {
   @RequirePerm('analytics.view')
   @CacheKey('analytics:dashboard')
   @CacheTTL(120000)
-  async getDashboard() {
+  async getDashboard(@Request() req?) {
+    // Руководитель направления видит сводку только своей сферы: цифры,
+    // графики и команда считаются по его проектам и его людям.
+    const scope = directionScopeOf(req?.user);
     const [overview, projByStatus, taskByStatus, taskByPriority, empActivity, hoursPerDay, projPerfPaged, empEffPaged] = await Promise.all([
-      this.service.getDashboardOverview(),
-      this.service.getProjectsByStatus(),
-      this.service.getTasksByStatus(),
-      this.service.getTasksByPriority(),
-      this.service.getEmployeeActivity(),
+      this.service.getDashboardOverview(scope),
+      this.service.getProjectsByStatus(scope),
+      this.service.getTasksByStatus(scope),
+      this.service.getTasksByPriority(scope),
+      this.service.getEmployeeActivity(undefined, undefined, scope),
       this.service.getHoursPerDay(undefined, 30),
-      this.service.getProjectsPerformance(1, 9),
-      this.service.getEmployeeEfficiency(1, 9),
+      this.service.getProjectsPerformance(1, 9, scope),
+      this.service.getEmployeeEfficiency(1, 9, scope),
     ]);
     // Dashboard uses flat arrays; paginated endpoints return {data,...}
     return {
@@ -44,30 +48,30 @@ export class AnalyticsController {
   @RequirePerm('analytics.view')
   @CacheKey('analytics:overview')
   @CacheTTL(120000)
-  getOverview() { return this.service.getDashboardOverview(); }
+  getOverview(@Request() req?) { return this.service.getDashboardOverview(directionScopeOf(req?.user)); }
 
   @Get('projects-by-status')
   @RequirePerm('analytics.view')
   @CacheKey('analytics:projects-by-status')
   @CacheTTL(120000)
-  getProjectsByStatus() { return this.service.getProjectsByStatus(); }
+  getProjectsByStatus(@Request() req?) { return this.service.getProjectsByStatus(directionScopeOf(req?.user)); }
 
   @Get('tasks-by-status')
   @RequirePerm('analytics.view')
   @CacheKey('analytics:tasks-by-status')
   @CacheTTL(60000)
-  getTasksByStatus() { return this.service.getTasksByStatus(); }
+  getTasksByStatus(@Request() req?) { return this.service.getTasksByStatus(directionScopeOf(req?.user)); }
 
   @Get('tasks-by-priority')
   @RequirePerm('analytics.view')
   @CacheKey('analytics:tasks-by-priority')
   @CacheTTL(120000)
-  getTasksByPriority() { return this.service.getTasksByPriority(); }
+  getTasksByPriority(@Request() req?) { return this.service.getTasksByPriority(directionScopeOf(req?.user)); }
 
   @Get('employee-activity')
   @RequirePerm('analytics.view')
-  getEmployeeActivity(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.service.getEmployeeActivity(from, to);
+  getEmployeeActivity(@Query('from') from?: string, @Query('to') to?: string, @Request() req?) {
+    return this.service.getEmployeeActivity(from, to, directionScopeOf(req?.user));
   }
 
   @Get('hours-per-day')
@@ -80,23 +84,23 @@ export class AnalyticsController {
   @RequirePerm('analytics.view')
   @CacheKey('analytics:projects-performance')
   @CacheTTL(120000)
-  getProjectsPerformance(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.service.getProjectsPerformance(parseInt(page ?? '1', 10) || 1, parseInt(limit ?? '10', 10) || 10);
+  getProjectsPerformance(@Query('page') page?: string, @Query('limit') limit?: string, @Request() req?) {
+    return this.service.getProjectsPerformance(parseInt(page ?? '1', 10) || 1, parseInt(limit ?? '10', 10) || 10, directionScopeOf(req?.user));
   }
 
   @Get('employee-efficiency')
   @RequirePerm('analytics.view')
   @CacheKey('analytics:employee-efficiency')
   @CacheTTL(120000)
-  getEmployeeEfficiency(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.service.getEmployeeEfficiency(parseInt(page ?? '1', 10) || 1, parseInt(limit ?? '10', 10) || 10);
+  getEmployeeEfficiency(@Query('page') page?: string, @Query('limit') limit?: string, @Request() req?) {
+    return this.service.getEmployeeEfficiency(parseInt(page ?? '1', 10) || 1, parseInt(limit ?? '10', 10) || 10, directionScopeOf(req?.user));
   }
 
   @Get('employee-workload')
   @RequirePerm('analytics.view')
   @CacheKey('analytics:employee-workload')
   @CacheTTL(60000)
-  getEmployeeWorkload() { return this.service.getEmployeeWorkload(); }
+  getEmployeeWorkload(@Request() req?) { return this.service.getEmployeeWorkload(directionScopeOf(req?.user)); }
 
   @Get('monthly-report')
   @RequirePerm('analytics.view')

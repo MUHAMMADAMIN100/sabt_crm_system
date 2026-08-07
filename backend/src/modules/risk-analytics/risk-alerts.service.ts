@@ -343,7 +343,9 @@ export class RiskAlertsService {
       `SELECT p."managerId" AS "managerId", COUNT(*) AS cnt
        FROM tasks t
        JOIN projects p ON p.id = t."projectId"
-       WHERE t.status IN ('review', 'on_pm_review')
+       -- ::text — статусы легаси, в enum'е их может не быть (см. миграцию
+       -- SimplifyTaskStatuses); без приведения запрос падает на кастинге.
+       WHERE t.status::text IN ('review', 'on_pm_review')
          AND p."isArchived" = false
        GROUP BY p."managerId"
        HAVING COUNT(*) > $1`,

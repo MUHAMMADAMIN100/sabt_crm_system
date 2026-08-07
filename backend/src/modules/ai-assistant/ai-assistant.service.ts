@@ -464,7 +464,7 @@ ${context}
       this.taskRepo.manager.query(
         // Задачи в review/approved/published уже отданы исполнителем — не overdue.
         `SELECT COUNT(*)::int AS count FROM tasks WHERE deadline < NOW()
-          AND status NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published')`
+          AND status::text NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published')`
       ),
       this.employeeRepo.find({ relations: ['user'], order: { fullName: 'ASC' } }),
       this.projectRepo.find({

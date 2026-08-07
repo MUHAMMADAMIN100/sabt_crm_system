@@ -118,9 +118,17 @@ export function useSocket(authMarker: string | null) {
       qc.invalidateQueries({ queryKey: ['calendar'] })
       qc.invalidateQueries({ queryKey: ['files'] })
       qc.invalidateQueries({ queryKey: ['files-project'] })
+      // Загруженность, KPI и риски зависят от состава проектов.
+      qc.invalidateQueries({ queryKey: ['analytics-workload'] })
+      qc.invalidateQueries({ queryKey: ['kpi-all'] })
+      qc.invalidateQueries({ queryKey: ['risks-projects'] })
+      qc.invalidateQueries({ queryKey: ['workload-pm'] })
+      qc.invalidateQueries({ queryKey: ['workload-pm-all'] })
+      qc.invalidateQueries({ queryKey: ['workload-team-all'] })
       qc.refetchQueries({ queryKey: ['projects'], type: 'active' })
       qc.refetchQueries({ queryKey: ['project'], type: 'active' })
       qc.refetchQueries({ queryKey: ['project-ads'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['analytics-dashboard'], type: 'active' })
     })
 
     socket.on('stories:changed', () => {
@@ -161,10 +169,65 @@ export function useSocket(authMarker: string | null) {
       qc.invalidateQueries({ queryKey: ['calendar'] })
       qc.invalidateQueries({ queryKey: ['unread-count'] })
       qc.invalidateQueries({ queryKey: ['reports'] })
+      // KPI и риски считаются из задач — без этого виджет KPI команды и
+      // раздел «Риски» отставали до перезагрузки страницы.
+      qc.invalidateQueries({ queryKey: ['kpi-all'] })
+      qc.invalidateQueries({ queryKey: ['kpi-user'] })
+      qc.invalidateQueries({ queryKey: ['kpi-details'] })
+      qc.invalidateQueries({ queryKey: ['risks-projects'] })
+      qc.invalidateQueries({ queryKey: ['risks-employees'] })
+      qc.invalidateQueries({ queryKey: ['workload-employees-all'] })
+      qc.invalidateQueries({ queryKey: ['workload-pm-all'] })
+      qc.invalidateQueries({ queryKey: ['workload-employees'] })
+      // Ключи страницы «Риски и нагрузка» и вкладки проекта — React Query
+      // сопоставляет ключи поэлементно, префикс их не покрывает.
+      qc.invalidateQueries({ queryKey: ['workload-pm'] })
+      qc.invalidateQueries({ queryKey: ['workload-team-all'] })
+      // Кабинет поручений исполнителя: выданная задача должна появиться у
+      // него сразу, а не через минуту по refetchInterval.
+      qc.invalidateQueries({ queryKey: ['tasks-from-management'] })
+      qc.invalidateQueries({ queryKey: ['tasks-assigned-by-me'] })
+      qc.refetchQueries({ queryKey: ['tasks-from-management'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['tasks-assigned-by-me'], type: 'active' })
       // Force active queries to refetch immediately
       qc.refetchQueries({ queryKey: ['tasks'], type: 'active' })
       qc.refetchQueries({ queryKey: ['project'], type: 'active' })
       qc.refetchQueries({ queryKey: ['my-tasks'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['kpi-all'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['analytics-workload'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['analytics-dashboard'], type: 'active' })
+    })
+
+    // Комментарии, результаты работ и вложения — карточка задачи обновляется
+    // у всех, кто её сейчас открыл, без перезагрузки.
+    socket.on('comments:changed', () => {
+      // Реальный ключ карточки — ['task-comments', taskId] (TaskDrawer).
+      qc.invalidateQueries({ queryKey: ['task-comments'] })
+      qc.invalidateQueries({ queryKey: ['task'] })
+      qc.refetchQueries({ queryKey: ['task-comments'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['task'], type: 'active' })
+    })
+
+    socket.on('task-results:changed', () => {
+      qc.invalidateQueries({ queryKey: ['task-results'] })
+      qc.invalidateQueries({ queryKey: ['task'] })
+      qc.refetchQueries({ queryKey: ['task-results'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['task'], type: 'active' })
+    })
+
+    socket.on('files:changed', () => {
+      qc.invalidateQueries({ queryKey: ['files'] })
+      qc.invalidateQueries({ queryKey: ['files-project'] })
+      qc.invalidateQueries({ queryKey: ['task-files'] })
+      qc.refetchQueries({ queryKey: ['files'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['task-files'], type: 'active' })
+    })
+
+    socket.on('reports:changed', () => {
+      qc.invalidateQueries({ queryKey: ['reports'] })
+      qc.invalidateQueries({ queryKey: ['my-reports'] })
+      qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
+      qc.refetchQueries({ queryKey: ['reports'], type: 'active' })
     })
 
     // Real-time KPI продаж: бэк броадкастит при любом изменении лида
@@ -192,10 +255,23 @@ export function useSocket(authMarker: string | null) {
     // обновляем у всех, кто смотрит эту доску.
     socket.on('workflow:changed', () => {
       qc.invalidateQueries({ queryKey: ['workflow'] })
+      // Отдельные ключи доски: ['workflow'] их НЕ покрывает — React Query
+      // сравнивает элементы ключа, а не строковый префикс.
+      qc.invalidateQueries({ queryKey: ['workflow-overdue'] })
+      qc.invalidateQueries({ queryKey: ['workflow-events'] })
+      qc.invalidateQueries({ queryKey: ['workflow-archive'] })
       qc.refetchQueries({ queryKey: ['workflow'], type: 'active' })
+      qc.refetchQueries({ queryKey: ['workflow-events'], type: 'active' })
     })
 
-    socket.on('disconnect', () => {})
+    // Сервер принудительно рвёт сокет при протухшем JWT ('io server
+    // disconnect') — в этом случае socket.io НЕ переподключается сам, и
+    // реалтайм умирал до перезагрузки страницы. Пробуем вернуться сами.
+    socket.on('disconnect', (reason: string) => {
+      if (reason === 'io server disconnect') {
+        setTimeout(() => { try { socket.connect() } catch { /* уже закрыт */ } }, 2000)
+      }
+    })
 
     socketRef.current = socket
     return () => { socket.disconnect() }

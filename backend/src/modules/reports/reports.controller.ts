@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { UserRole } from '../users/user.entity';
+import { directionScopeOf } from '../../common/direction-scope';
 
 @ApiTags('Reports')
 @ApiBearerAuth()
@@ -21,8 +22,9 @@ export class ReportsController {
     @Query('projectId') projectId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Request() req?,
   ) {
-    return this.service.findAll({ employeeId, projectId, from, to });
+    return this.service.findAll({ employeeId, projectId, from, to, scope: directionScopeOf(req?.user) });
   }
 
   @Get('export/csv')
@@ -33,8 +35,9 @@ export class ReportsController {
     @Query('from') from: string,
     @Query('to') to: string,
     @Res() res: Response,
+    @Request() req?,
   ) {
-    const reports = await this.service.findAll({ employeeId, projectId, from, to });
+    const reports = await this.service.findAll({ employeeId, projectId, from, to, scope: directionScopeOf(req?.user) });
     const header = 'ID,Date,Employee,Project,Task,Hours,Description\n';
     const rows = reports.map(r =>
       [

@@ -10,6 +10,7 @@ import { Task } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
 import { FilesService } from './files.service';
 import { FilesController } from './files.controller';
+import { GatewayModule } from '../gateway/gateway.module';
 import * as fs from 'fs';
 
 /** MIME-типы, которые разрешено загружать. SVG ИСКЛЮЧЁН — он
@@ -44,6 +45,7 @@ const FORBIDDEN_EXTENSIONS = new Set([
 @Module({
   imports: [
     TypeOrmModule.forFeature([FileAttachment, Task, Project]),
+    GatewayModule,
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads/files',

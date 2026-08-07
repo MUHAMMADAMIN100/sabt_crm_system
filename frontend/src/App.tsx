@@ -49,7 +49,9 @@ const ProjectsPage      = lazy(() => import('@/pages/projects/ProjectsPage'))
 const ProjectsBoardPage = lazy(() => import('@/pages/workflow/ProjectsBoardPage'))
 const ProjectStoriesPage = lazy(() => import('@/pages/stories/ProjectStoriesPage'))
 const MyNotesPage       = lazy(() => import('@/pages/notes/MyNotesPage'))
-const ManagementTasksPage = lazy(() => import('@/pages/tasks/ManagementTasksPage'))
+// Раздел «Задачи»: исполнителю — кабинет поручений, руководителю
+// направления — полный список задач его сферы (см. TasksRoute).
+const TasksRoute = lazy(() => import('@/pages/tasks/TasksRoute'))
 const TaskDetailPage    = lazy(() => import('@/pages/tasks/TaskDetailPage'))
 const ProjectDetailPage = lazy(() => import('@/pages/projects/ProjectDetailPage'))
 const EmployeesPage     = lazy(() => import('@/pages/employees/EmployeesPage'))
@@ -143,7 +145,7 @@ export default function App() {
           {/* Задачи от руководителя + детальная карточка задачи. Раньше этих
               маршрутов не было вовсе — ссылки из уведомлений (/tasks/:id)
               падали в «*» и уводили на дашборд. */}
-          <Route path="tasks" element={<RoleGuard><ManagementTasksPage /></RoleGuard>} />
+          <Route path="tasks" element={<RoleGuard><TasksRoute /></RoleGuard>} />
           <Route path="tasks/:id" element={<RoleGuard><TaskDetailPage /></RoleGuard>} />
           <Route path="projects/:id" element={<RoleGuard><ProjectDetailPage /></RoleGuard>} />
           <Route path="employees" element={<RoleGuard><EmployeesPage /></RoleGuard>} />

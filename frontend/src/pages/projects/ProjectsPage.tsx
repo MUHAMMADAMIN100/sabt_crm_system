@@ -1244,13 +1244,19 @@ function ProjectForm({ open, onClose, onSubmit, initial, employees, loading }: P
                 <div className="flex flex-wrap gap-1.5 flex-1">
                   {selectedMembers.map(uid => {
                     const emp = employees.find((e: any) => (e.userId || e.id) === uid)
-                    if (!emp) return null
+                    // Участник может быть вне видимого справочника (у
+                    // руководителя направления список людей урезан его сферой).
+                    // Раньше такой чип просто исчезал: состав команды выглядел
+                    // неполным, а снять участника было нечем. Берём имя из
+                    // самого проекта, иначе показываем прочерк.
+                    const fallback = (initial as any)?.members?.find((m: any) => m.id === uid)
+                    const label = emp?.fullName || emp?.name || fallback?.name || '—'
                     return (
                       <span
                         key={uid}
                         className="flex items-center gap-1 bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs px-2 py-0.5 rounded-full"
                       >
-                        {emp.fullName || emp.name}
+                        {label}
                         <button
                           type="button"
                           onClick={e => { e.stopPropagation(); toggleMember(uid) }}

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import StoryCalendar from '@/components/stories/StoryCalendar'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { shortenName } from '@/lib/name'
@@ -37,6 +38,9 @@ export default function TasksPage() {
   const [view, setView] = useState<'list' | 'grid'>('list')
   const [showCreate, setShowCreate] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
+  /** Предзаполнение формы создания (исполнитель из виджета KPI). */
+  const [prefill, setPrefill] = useState<any>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
   // Right-side drawer: клик по задаче открывает её здесь, без перехода на /tasks/:id.
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
@@ -103,6 +107,21 @@ export default function TasksPage() {
   // Reset page when filters change
   useEffect(() => { setPage(1) }, [search, statuses, priorities, projectId, assigneeUserId, scopeFilter, filterReviewer, filterReturnReason, filterReworkMin, filterDeliveryType])
 
+  // Быстрая постановка задачи из виджета KPI: /tasks?new=1&assignee=<userId>
+  // сразу открывает форму с выбранным исполнителем. Параметры снимаем, чтобы
+  // модалка не открывалась повторно при возврате «назад».
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return
+    const uid = searchParams.get('assignee') || ''
+    // prefill, а НЕ editingTask: объект без id ушёл бы в update вместо create.
+    setPrefill(uid ? { assigneeId: uid, assigneeIds: [uid] } : null)
+    setEditingTask(null)
+    setShowCreate(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('new'); next.delete('assignee')
+    setSearchParams(next, { replace: true })
+  }, [searchParams])
+
   // Хелпер: задача «моя» если я в её assignees (включая multi-assignee)
   // или это моя личная заметка (scope=personal, createdById=я).
   const isTaskMine = (t: any): boolean => {
@@ -144,6 +163,9 @@ export default function TasksPage() {
     onMutate: async (dto: any) => {
       setShowCreate(false)
       setEditingTask(null)
+      // Сбрасываем предзаполнение: иначе следующая «Новая задача» молча
+      // открывалась бы с прошлым исполнителем.
+      setPrefill(null)
       await qc.cancelQueries({ queryKey: ['tasks'] })
       const previous = qc.getQueryData(['tasks'])
       const tempTask = { id: `temp-${Date.now()}`, ...dto, status: 'new', createdAt: new Date().toISOString() }
@@ -273,7 +295,7 @@ export default function TasksPage() {
             <button onClick={() => setView('list')} className={clsx('p-1.5 rounded-lg', view === 'list' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm' : 'text-surface-500 dark:text-surface-400')}><List size={16} /></button>
             <button onClick={() => setView('grid')} className={clsx('p-1.5 rounded-lg', view === 'grid' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm' : 'text-surface-500 dark:text-surface-400')}><LayoutGrid size={16} /></button>
           </div>
-          <button onClick={() => { setEditingTask(null); setShowCreate(true) }} className="btn-primary">
+          <button onClick={() => { setEditingTask(null); setPrefill(null); setShowCreate(true) }} className="btn-primary">
             <Plus size={16} /> <span className="hidden sm:inline">{t('tasks.task')}</span>
           </button>
         </div>
@@ -458,7 +480,7 @@ export default function TasksPage() {
       <div className={clsx(showStoryWidget && 'lg:col-span-2')}>
       {!tasks?.length ? (
         <EmptyState title={t('tasks.noTasks')} description={t('tasks.createFirst')} action={
-          <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
+          <button onClick={() => { setEditingTask(null); setPrefill(null); setShowCreate(true) }} className="btn-primary"><Plus size={16} />{t('common.create')}</button>
         } />
       ) : view === 'list' ? (
         <div key={page} className="animate-fade-in stagger-rows card p-0 overflow-hidden">
@@ -621,13 +643,13 @@ export default function TasksPage() {
       </div>{/* end grid */}
 
       {showCreate && (
-        <Modal open onClose={() => { setShowCreate(false); setEditingTask(null) }} title={editingTask ? t('tasks.editTask') : t('tasks.newTask')} size="lg">
+        <Modal open onClose={() => { setShowCreate(false); setEditingTask(null); setPrefill(null) }} title={editingTask ? t('tasks.editTask') : t('tasks.newTask')} size="lg">
           <TaskForm
-            onSubmit={data => { if (editingTask) updateMut.mutate({ id: editingTask.id, data }); else createMut.mutate(data) }}
-            onClose={() => { setShowCreate(false); setEditingTask(null) }}
+            onSubmit={data => { if (editingTask?.id) updateMut.mutate({ id: editingTask.id, data }); else createMut.mutate(data) }}
+            onClose={() => { setShowCreate(false); setEditingTask(null); setPrefill(null) }}
             projects={availableProjects} employees={employees || []}
             loading={createMut.isPending || updateMut.isPending}
-            initial={editingTask}
+            initial={editingTask || prefill}
             isAdmin={isManagerPlus || isSalesManager} currentUserId={user?.id}
           />
         </Modal>

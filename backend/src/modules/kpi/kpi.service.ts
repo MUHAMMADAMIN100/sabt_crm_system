@@ -10,6 +10,7 @@ import { Project } from '../projects/project.entity';
 import { ClientLead, ClientLeadDirection } from '../clients/client-lead.entity';
 import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity';
 import { ClientsService } from '../clients/clients.service';
+import { DirectionScope, isInDirection } from '../../common/direction-scope';
 
 /** Универсальная KPI-метрика. */
 export interface KpiItem {
@@ -377,15 +378,27 @@ export class KpiService {
 
   /** KPI всех активных не-top сотрудников. Для дашборда основателя.
    *  Делает 5 групповых SQL-агрегаций → быстро даже на 100+ юзерах. */
-  async getAllKpi(from?: string, to?: string): Promise<UserKpi[]> {
+  async getAllKpi(from?: string, to?: string, scope?: DirectionScope | null): Promise<UserKpi[]> {
     // Выбираем всех активных юзеров кроме admin/founder/co_founder.
     const users = await this.userRepo.find({
       where: { isActive: true, isBlocked: false },
       order: { name: 'ASC' },
     });
-    const candidates = users.filter(u => !TOP_ROLES.has(u.role));
+    // Руководитель направления видит KPI только своей команды.
+    const candidates = users
+      .filter(u => !TOP_ROLES.has(u.role))
+      .filter(u => !scope || isInDirection(scope, u));
     if (candidates.length === 0) return [];
     return this.bulkKpi(candidates.map(u => u.id), from, to, candidates);
+  }
+
+  /** Относится ли сотрудник к направлению смотрящего (по любой из ролей). */
+  async isUserInDirection(userId: string, scope: DirectionScope): Promise<boolean> {
+    const u = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['id', 'role', 'secondaryRole'] as any,
+    }).catch(() => null);
+    return isInDirection(scope, u as any);
   }
 
   /** Эффективный bulk-расчёт KPI для списка userId. */
