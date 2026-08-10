@@ -1,6 +1,6 @@
 import { IsString, IsOptional, IsEnum, IsDateString, IsNumber, IsInt, IsUUID, IsBoolean, IsArray, IsNotEmpty, Min, Max, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { TaskPriority, TaskStatus, TaskScope } from '../task.entity';
+import { TaskPriority, TaskStatus, TaskScope, TaskKind } from '../task.entity';
 import { PartialType } from '@nestjs/mapped-types';
 
 export class CreateTaskDto {
@@ -14,6 +14,11 @@ export class CreateTaskDto {
    *  general (видит вся компания). Используется основателем для разделения
    *  личных заметок от рабочих задач. */
   @ApiProperty({ enum: TaskScope, required: false }) @IsOptional() @IsEnum(TaskScope) scope?: TaskScope;
+  /** Вид записи: обычная задача или встреча. Встреча иначе выглядит в
+   *  календаре и иначе звучит в напоминаниях. */
+  @ApiProperty({ enum: TaskKind, required: false }) @IsOptional() @IsEnum(TaskKind) kind?: TaskKind;
+  /** Место встречи (адрес, «Zoom», «офис»). Только для kind=meeting. */
+  @ApiProperty({ required: false }) @IsOptional() @IsString() location?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() assigneeId?: string;
   /** Multi-assignee — список UUID. Поле необязательное; если задано —
    *  заменяет старое assigneeId (assigneeId в БД будет = первому из списка). */

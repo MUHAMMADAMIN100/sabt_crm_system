@@ -78,6 +78,13 @@ export enum TaskScope {
   GENERAL  = 'general',
 }
 
+/** Вид записи в календаре: рабочая задача с дедлайном или встреча в
+ *  конкретное время. Различие видно и в календаре, и в напоминаниях. */
+export enum TaskKind {
+  TASK    = 'task',
+  MEETING = 'meeting',
+}
+
 @Entity('tasks')
 export class Task {
   @PrimaryGeneratedColumn('uuid')
@@ -108,6 +115,18 @@ export class Task {
    *  Личные задачи видны ТОЛЬКО создателю — это его приватные заметки. */
   @Column({ type: 'enum', enum: TaskScope, default: TaskScope.BUSINESS })
   scope: TaskScope;
+
+  /** Вид записи: обычная задача или встреча. У встречи в календаре свой
+   *  значок, а в напоминаниях другой текст («Встреча в 15:00», а не
+   *  «дедлайн»). Тип varchar, а не enum: на проде synchronize выключен,
+   *  и добавить значение в enum сложнее, чем прожить со строкой. */
+  @Column({ type: 'varchar', length: 16, default: TaskKind.TASK })
+  kind: TaskKind;
+
+  /** Место встречи — свободный текст: адрес, «Zoom», «офис, 2 этаж».
+   *  Для обычных задач NULL. */
+  @Column({ type: 'varchar', length: 300, nullable: true })
+  location: string | null;
 
   /** Этап онбординга клиента, из которого автогенерирована задача.
    *  Значения: negotiation / meeting / kp_creation / contract / implementation.

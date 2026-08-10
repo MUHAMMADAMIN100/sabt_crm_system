@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { Task, TaskStatus, TaskPriority, TASK_CLOSED_FOR_OVERDUE } from './task.entity';
+import { Task, TaskStatus, TaskPriority, TaskKind, TASK_CLOSED_FOR_OVERDUE } from './task.entity';
+
+/** Вся компания живёт по Душанбе — даты в напоминаниях считаем в этой зоне. */
+const DUSHANBE_TZ = 'Asia/Dushanbe';
 import { TaskAssignee } from './task-assignee.entity';
 import { Project } from '../projects/project.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -63,6 +66,18 @@ export class TasksService implements OnModuleInit {
   /** Идемпотентный DDL (на проде synchronize off): этап dev-доски у задач.
    *  Миграция AddTaskDevStage дублирует это для чистого деплоя. */
   async onModuleInit() {
+    try {
+      // Вид записи (задача/встреча) и место встречи. На проде synchronize
+      // выключен, поэтому колонки добавляем идемпотентным DDL.
+      await this.repo.manager.query(
+        `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "kind" varchar(16) NOT NULL DEFAULT 'task'`,
+      );
+      await this.repo.manager.query(
+        `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "location" varchar(300)`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`ALTER TABLE tasks kind/location failed: ${e?.message || e}`);
+    }
     try {
       await this.repo.manager.query(
         `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "devStage" int`,
@@ -718,6 +733,20 @@ export class TasksService implements OnModuleInit {
       }
     }
 
+    // Задача или встреча, поставленная САМОМУ СЕБЕ: раньше подтверждения не
+    // было вообще (рассылка идёт только другим исполнителям), и человек не
+    // видел в боте, что запись создалась. Шлём короткое подтверждение —
+    // с кнопками управления статусом, чтобы закрыть прямо из Telegram.
+    const selfAssigned = (dto.assigneeId === userId)
+      || (incomingAssigneeIds?.length === 1 && incomingAssigneeIds[0] === userId);
+    if (selfAssigned && !notifyIds.includes(userId)) {
+      this.telegramService.sendToUser(
+        userId,
+        this.calendarEntryMessage(saved, 'created'),
+        this.taskBotButtons(saved.id),
+      ).catch(() => {});
+    }
+
     await this.activityLog.log({
       userId,
       userName: creator?.name,
@@ -738,6 +767,52 @@ export class TasksService implements OnModuleInit {
   }
 
   /** Inline-кнопки управления статусом задачи в Telegram. */
+  /** Единый текст для записи календаря (задача или встреча) во всех
+   *  каналах: подтверждение при создании, утренняя сводка, напоминание за
+   *  час, вечерний разбор. Один формат — чтобы человек узнавал сообщение. */
+  calendarEntryMessage(
+    task: { id: string; title: string; kind?: string | null; location?: string | null; deadline?: Date | string | null; description?: string | null },
+    mode: 'created' | 'today' | 'soon' | 'unfinished',
+  ): string {
+    const isMeeting = (task.kind || 'task') === TaskKind.MEETING;
+    const when = task.deadline ? new Date(task.deadline) : null;
+    const dateStr = when
+      ? when.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: DUSHANBE_TZ })
+      : null;
+    const timeStr = when
+      ? when.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: DUSHANBE_TZ })
+      : null;
+
+    const head = isMeeting
+      ? {
+        created: '🤝 <b>Встреча в календаре</b>',
+        today: '🤝 <b>Сегодня встреча</b>',
+        soon: '⏰ <b>Встреча через час</b>',
+        unfinished: '🤝 <b>Встреча не закрыта</b>',
+      }[mode]
+      : {
+        created: '📝 <b>Задача в календаре</b>',
+        today: '📌 <b>Задача на сегодня</b>',
+        soon: '⏰ <b>Задача через час</b>',
+        unfinished: '🌙 <b>Задача не закрыта</b>',
+      }[mode];
+
+    return (
+      `${head}\n\n` +
+      `📋 ${task.title}` +
+      (dateStr ? `\n📅 ${dateStr}${timeStr ? ` в ${timeStr}` : ''}` : '') +
+      (isMeeting && task.location ? `\n📍 ${task.location}` : '') +
+      (task.description ? `\n\n<i>${task.description.slice(0, 300)}</i>` : '') +
+      `\n\n👉 ${this.telegramService.appUrl}/tasks/${task.id}`
+    );
+  }
+
+  /** Те же кнопки «Готово / В работу» для внешних потребителей (крон
+   *  напоминаний) — чтобы человек закрывал запись прямо из Telegram. */
+  publicTaskButtons(taskId: string) {
+    return this.taskBotButtons(taskId);
+  }
+
   private taskBotButtons(taskId: string): { text: string; callback_data: string }[][] {
     return [[
       { text: '✅ Готово', callback_data: `t:done:${taskId}` },

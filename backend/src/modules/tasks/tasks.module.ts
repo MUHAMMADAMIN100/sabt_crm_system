@@ -13,13 +13,14 @@ import { TasksController } from './tasks.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { DeadlineScheduler } from './deadline.scheduler';
+import { PersonalReminderScheduler } from './personal-reminder.scheduler';
 import { GatewayModule } from '../gateway/gateway.module';
 import { TaskResultsModule } from '../task-results/task-results.module';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Task, TaskAssignee, User, Employee, ActivityLog, Project, DailyReport, WorkflowCard]), NotificationsModule, ProjectsModule, GatewayModule, TaskResultsModule],
   controllers: [TasksController],
-  providers: [TasksService, DeadlineScheduler],
+  providers: [TasksService, DeadlineScheduler, PersonalReminderScheduler],
   exports: [TasksService],
 })
 export class TasksModule {}

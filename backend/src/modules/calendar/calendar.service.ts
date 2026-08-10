@@ -272,6 +272,10 @@ export class CalendarService {
       createdById: t.createdById,
       fromFounder: (t as any).fromFounder ?? false,
       scope: (t as any).scope ?? 'business',
+      // Вид записи и место: календарь рисует встречу отдельным значком,
+      // а место показывает прямо на карточке.
+      kind: (t as any).kind ?? 'task',
+      location: (t as any).location ?? null,
       // Прогресс задачи в % — по подзадачам (acceptanceCriteria) если
       // они есть, иначе оценка по статусу. Показывается на карточке
       // задачи в календаре.

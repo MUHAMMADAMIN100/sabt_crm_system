@@ -10,7 +10,7 @@ import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday, isSameMonth, subDays, addDays, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, ChevronDown, Plus, X, User, Calendar as CalIcon, Flag, FolderKanban, Edit, Trash2, Lock, Briefcase, Globe, Check } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, X, User, Calendar as CalIcon, Flag, FolderKanban, Edit, Trash2, Lock, Briefcase, Globe, Check, Users as UsersIcon, ClipboardList, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -23,6 +23,17 @@ const TYPE_COLORS: Record<string, string> = {
   // 🟠 Повторный звонок клиенту — отдельная оранжевая отметка, чтобы менеджер
   // сразу видел: в этот день и час надо перезвонить.
   client_repeat_call: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-300 dark:border-orange-800',
+}
+
+/** Встреча — отдельный вид записи: своё время и место, поэтому в календаре
+ *  она выделена цветом и значком, а не теряется среди задач. */
+const MEETING_COLOR = 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300 border-primary-200 dark:border-primary-800'
+
+/** Цвет карточки события: встреча → свой, задача → по типу задачи. */
+const eventColor = (e: any): string => {
+  if (e.type === 'task' && e.kind === 'meeting') return MEETING_COLOR
+  if (e.type === 'task' && e.scope) return SCOPE_COLORS[e.scope] || TYPE_COLORS.task
+  return TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700'
 }
 
 // Scope чипы для задач — нужны для визуальной идентификации в календаре.
@@ -582,9 +593,11 @@ export default function CalendarPage() {
                         ? 'text-surface-700 dark:text-surface-200 font-medium'
                         : 'text-surface-400 dark:text-surface-500',
                   )}>{format(day, 'd')}</span>
+                  {/* Подпись нейтральная: в форме выбирается вид записи —
+                      задача или встреча. */}
                   {canCreate && inMonth && (
-                    <span className="flex items-center gap-0.5 text-[10px] text-primary-600 dark:text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity font-medium" title="Кликните, чтобы создать задачу">
-                      <Plus size={12} /> задача
+                    <span className="flex items-center gap-0.5 text-[10px] text-primary-600 dark:text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity font-medium" title="Кликните, чтобы создать задачу или встречу">
+                      <Plus size={12} /> создать
                     </span>
                   )}
                 </div>
@@ -592,9 +605,7 @@ export default function CalendarPage() {
                   {/* Показываем ВСЕ события дня (без «+N ещё»). Ячейка
                       растягивается по высоте под содержимое. */}
                   {dayEvents.map((e: any) => {
-                    const colorClass = e.type === 'task' && e.scope
-                      ? SCOPE_COLORS[e.scope] || TYPE_COLORS.task
-                      : (TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')
+                    const colorClass = eventColor(e)
                     // Перетаскивать можно задачи и встречи клиентов.
                     const isDraggable = (e.type === 'task' && !!e.taskId)
                       || (e.type === 'client_meeting' && !!e.clientId)
@@ -624,6 +635,7 @@ export default function CalendarPage() {
                             }}
                           />
                         )}
+                        {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={9} />}
                         {e.scope === 'personal' && <Lock className="shrink-0" size={9} />}
                         <span className="truncate flex-1 min-w-0">{e.title}</span>
                         {/* Прогресс % — только для основателя/сооснователя. */}
@@ -684,9 +696,7 @@ export default function CalendarPage() {
                 ) : (
                   <div className="flex flex-col gap-1 w-full">
                     {dayEvents.map((e: any) => {
-                      const colorClass = e.type === 'task' && e.scope
-                        ? SCOPE_COLORS[e.scope] || TYPE_COLORS.task
-                        : (TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')
+                      const colorClass = eventColor(e)
                       return (
                         <button
                           key={e.id}
@@ -707,6 +717,7 @@ export default function CalendarPage() {
                               }}
                             />
                           )}
+                          {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={10} />}
                           {e.scope === 'personal' && <Lock className="shrink-0" size={10} />}
                           <span className="truncate flex-1 min-w-0">{e.title}</span>
                         </button>
@@ -802,7 +813,7 @@ export default function CalendarPage() {
         <Modal
           open={!!editingTaskId}
           onClose={() => setEditingTaskId(null)}
-          title={`Редактировать задачу${editingTaskFull?.deadline ? ' — ' + format(new Date(editingTaskFull.deadline), 'dd.MM.yyyy') : ''}`}
+          title={`Редактировать ${editingTaskFull?.kind === 'meeting' ? 'встречу' : 'задачу'}${editingTaskFull?.deadline ? ' — ' + format(new Date(editingTaskFull.deadline), 'dd.MM.yyyy') : ''}`}
           size="lg"
         >
           {!editingTaskFull ? (
@@ -876,7 +887,8 @@ export default function CalendarPage() {
               // и МП по продажам. ПМ тип менять не может — блокируем в форме.
               lockScope={isPmDev}
               onDelete={() => {
-                if (confirm('Удалить задачу?')) deleteTaskMut.mutate(editingTaskFull.id)
+                const what = editingTaskFull.kind === 'meeting' ? 'встречу' : 'задачу'
+                if (confirm(`Удалить ${what}?`)) deleteTaskMut.mutate(editingTaskFull.id)
               }}
               initial={{
                 id: editingTaskFull.id,
@@ -891,6 +903,8 @@ export default function CalendarPage() {
                   ? editingTaskFull.acceptanceCriteria
                   : [],
                 projectId: editingTaskFull.projectId || undefined,
+                kind: (editingTaskFull.kind || 'task') as any,
+                location: editingTaskFull.location || undefined,
               }}
               onSubmit={data => editTaskMut.mutate({
                 id: editingTaskFull.id,
@@ -900,6 +914,11 @@ export default function CalendarPage() {
                   priority: data.priority,
                   // scope теперь редактируемый — отправляем всегда.
                   scope: data.scope,
+                  // Вид записи и место: без них правка встречи не сохранялась
+                  // (менялось всё, кроме места, и «встреча» тихо превращалась
+                  // в задачу при следующем открытии).
+                  kind: data.kind,
+                  location: data.kind === 'meeting' ? (data.location ?? null) : null,
                   acceptanceCriteria: data.acceptanceCriteria,
                   // Дедлайн (дата + время) из формы.
                   deadline: data.deadline,
@@ -926,7 +945,7 @@ export default function CalendarPage() {
         onClose={() => setDetailEventId(null)}
         onDelete={async () => {
           if (!detailEvent?.taskId) return
-          if (!confirm('Удалить задачу?')) return
+          if (!confirm(`Удалить ${detailEvent.kind === 'meeting' ? 'встречу' : 'задачу'}?`)) return
           try {
             await tasksApi.remove(detailEvent.taskId, 'Удалено из календаря')
             qc.invalidateQueries({ queryKey: ['calendar'] })
@@ -963,9 +982,7 @@ export default function CalendarPage() {
         >
           <div className="space-y-1.5">
             {eventsForDay(dayModalDate).map((e: any) => {
-              const colorClass = e.type === 'task' && e.scope
-                ? SCOPE_COLORS[e.scope] || TYPE_COLORS.task
-                : (TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')
+              const colorClass = eventColor(e)
               return (
                 <button
                   key={e.id}
@@ -986,6 +1003,7 @@ export default function CalendarPage() {
                       }}
                     />
                   )}
+                  {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={12} />}
                   {e.scope === 'personal' && <Lock size={12} className="shrink-0" />}
                   <span className="flex-1 min-w-0 truncate">{e.title}</span>
                   {e.type === 'task' && typeof e.progress === 'number' && (
@@ -1182,9 +1200,7 @@ function WeekView({
                 className="border-l border-surface-100 dark:border-surface-700 min-h-[28px] p-1 space-y-0.5"
               >
                 {cellEvents.map((e: any) => {
-                  const colorClass = e.type === 'task' && e.scope
-                    ? SCOPE_COLORS[e.scope] || TYPE_COLORS.task
-                    : (TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')
+                  const colorClass = eventColor(e)
                   return (
                     <button
                       key={e.id}
@@ -1203,6 +1219,7 @@ function WeekView({
                           onToggle={(ev) => { ev.stopPropagation(); onToggleStatus?.(e) }}
                         />
                       )}
+                      {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={9} />}
                       {e.scope === 'personal' && <Lock size={9} className="shrink-0" />}
                       <span className="truncate flex-1 min-w-0">{e.title}</span>
                     </button>
@@ -1259,9 +1276,7 @@ function WeekView({
                     </div>
                   )}
                   {cellEvents.map((e: any) => {
-                    const colorClass = e.type === 'task' && e.scope
-                      ? SCOPE_COLORS[e.scope] || TYPE_COLORS.task
-                      : (TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700')
+                    const colorClass = eventColor(e)
                     const eventTime = format(new Date(e.date), 'HH:mm')
                     const draggable = !!onMoveEvent && e.type === 'task' && !!e.taskId
                     return (
@@ -1287,6 +1302,7 @@ function WeekView({
                             onToggle={(ev) => { ev.stopPropagation(); onToggleStatus?.(e) }}
                           />
                         )}
+                        {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={9} />}
                         {e.scope === 'personal' && <Lock size={9} className="shrink-0" />}
                         <span className="text-[10px] tabular-nums opacity-70 shrink-0">{eventTime}</span>
                         <span className="truncate flex-1 min-w-0">{e.title}</span>
@@ -1333,6 +1349,8 @@ function FounderQuickTaskForm({
     assigneeIds?: string[]
     subtasks?: Array<{ id: string; text: string; done: boolean; assigneeId?: string }>
     projectId?: string
+    kind?: 'task' | 'meeting'
+    location?: string
   }
   // Дедлайн для префилла: полный ISO (режим правки) либо дата YYYY-MM-DD
   // выбранного дня календаря (режим создания).
@@ -1389,6 +1407,11 @@ function FounderQuickTaskForm({
   }, [initialDeadline])
   const [deadlineDate, setDeadlineDate] = useState(initDeadline.date)
   const [deadlineTime, setDeadlineTime] = useState(initDeadline.time)
+  // Вид записи: рабочая задача или встреча. У встречи спрашиваем место и
+  // иначе называем поля («Когда» вместо «Дедлайн»).
+  const [kind, setKind] = useState<'task' | 'meeting'>(initial?.kind || 'task')
+  const [location, setLocation] = useState(initial?.location || '')
+  const isMeeting = kind === 'meeting'
 
   const eligibleEmployees = useMemo(
     () => (employees || []).filter((emp: any) => emp.user?.id),
@@ -1425,17 +1448,19 @@ function FounderQuickTaskForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!title.trim()) { toast.error('Укажите название задачи'); return }
+    if (!title.trim()) { toast.error(isMeeting ? 'Укажите название встречи' : 'Укажите название задачи'); return }
     if (scope === 'business' && selectedIds.length === 0) {
-      toast.error('Выберите хотя бы одного исполнителя')
+      toast.error('Выберите хотя бы одного участника')
       return
     }
     if (!deadlineDate) {
-      toast.error('Укажите дедлайн задачи')
+      toast.error(isMeeting ? 'Укажите дату и время встречи' : 'Укажите дедлайн задачи')
       return
     }
     onSubmit({
       scope,
+      kind,
+      location: isMeeting ? (location.trim() || undefined) : undefined,
       title: title.trim(),
       description: description.trim() || undefined,
       priority,
@@ -1458,6 +1483,35 @@ function FounderQuickTaskForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Вид записи. Встреча — это про «во сколько и где», задача — про
+          «что сделать к сроку»; от вида зависят подписи полей, значок в
+          календаре и текст напоминаний в Telegram. */}
+      <div>
+        <label className="label">Что создаём *</label>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { v: 'task' as const, icon: <ClipboardList size={14} />, label: 'Задача', hint: 'Сделать к сроку' },
+            { v: 'meeting' as const, icon: <UsersIcon size={14} />, label: 'Встреча', hint: 'Время и место' },
+          ].map(opt => (
+            <button
+              key={opt.v}
+              type="button"
+              onClick={() => setKind(opt.v)}
+              className={clsx(
+                'flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all',
+                kind === opt.v
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                  : 'border-surface-200 dark:border-surface-700 text-surface-600 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-600',
+              )}
+            >
+              {opt.icon}
+              <span className="text-sm font-medium">{opt.label}</span>
+              <span className="text-[10px] text-surface-400 dark:text-surface-500">{opt.hint}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Селектор типа задачи — редактируемый при создании. При правке он
           блокируется тем, кому backend всё равно не даст сменить тип (ПМ):
           иначе клик по «Личная/Общая» очищал список исполнителей, а сам тип
@@ -1495,12 +1549,12 @@ function FounderQuickTaskForm({
       </div>
 
       <div>
-        <label className="label">Название задачи *</label>
+        <label className="label">{isMeeting ? 'Название встречи *' : 'Название задачи *'}</label>
         <input
           value={title}
           onChange={e => setTitle(e.target.value)}
           className="input"
-          placeholder="Что нужно сделать?"
+          placeholder={isMeeting ? 'С кем и о чём встреча?' : 'Что нужно сделать?'}
           autoFocus
         />
       </div>
@@ -1729,11 +1783,11 @@ function FounderQuickTaskForm({
           время оставляем native (он терпимый), только стилизован. */}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="label">Дата дедлайна *</label>
+          <label className="label">{isMeeting ? 'Дата встречи *' : 'Дата дедлайна *'}</label>
           <DatePicker value={deadlineDate} onChange={setDeadlineDate} />
         </div>
         <div>
-          <label className="label">Время</label>
+          <label className="label">{isMeeting ? 'Время начала' : 'Время'}</label>
           <input
             type="time"
             value={deadlineTime}
@@ -1742,6 +1796,21 @@ function FounderQuickTaskForm({
           />
         </div>
       </div>
+
+      {/* Место — только у встречи: адрес, «Zoom», «офис, 2 этаж».
+          Попадает в карточку календаря и в напоминание в Telegram. */}
+      {isMeeting && (
+        <div>
+          <label className="label">Место</label>
+          <input
+            value={location}
+            onChange={e => setLocation(e.target.value)}
+            className="input"
+            placeholder="Офис, Zoom, адрес…"
+            maxLength={300}
+          />
+        </div>
+      )}
 
       <div>
         <label className="label">Приоритет *</label>
@@ -1776,7 +1845,10 @@ function FounderQuickTaskForm({
             ? (isEdit ? 'Сохраняю...' : 'Создаю...')
             : isEdit
               ? 'Сохранить изменения'
-              : scope === 'personal' ? 'Сохранить заметку' : scope === 'general' ? 'Разослать всей команде' : 'Отправить задачу'}
+              // У встречи своя подпись: «Сохранить заметку» на встрече
+              // читалось как ошибка.
+              : isMeeting ? 'Создать встречу'
+                : scope === 'personal' ? 'Сохранить заметку' : scope === 'general' ? 'Разослать всей команде' : 'Отправить задачу'}
         </button>
       </div>
     </form>
@@ -1873,6 +1945,16 @@ function TaskDetailDrawer({
         {/* Header — фиксирован сверху естественным flex'ом */}
         <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-surface-100 dark:border-surface-700 bg-surface-50 dark:bg-surface-900">
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
+            {/* Встреча — первым бейджем: это главное, что отличает её от
+                обычной задачи, вместе с местом ниже. */}
+            {event.kind === 'meeting' && (
+              <span className={clsx(
+                'inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap',
+                MEETING_COLOR,
+              )}>
+                <UsersIcon size={10} /> Встреча
+              </span>
+            )}
             <span className={clsx(
               'inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap',
               SCOPE_COLORS[event.scope] || 'bg-surface-100 text-surface-600',
@@ -1979,6 +2061,11 @@ function TaskDetailDrawer({
             {event.projectName && (
               <DetailRow icon={<FolderKanban size={14} />} label="Проект">
                 <span className="text-sm text-surface-700 dark:text-surface-300">{event.projectName}</span>
+              </DetailRow>
+            )}
+            {event.location && (
+              <DetailRow icon={<MapPin size={14} />} label="Место">
+                <span className="text-sm text-surface-700 dark:text-surface-300">{event.location}</span>
               </DetailRow>
             )}
           </div>
