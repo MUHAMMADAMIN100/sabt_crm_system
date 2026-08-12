@@ -26,7 +26,11 @@ const ACCESS_COOKIE_OPTS = {
 };
 const REFRESH_COOKIE_OPTS = {
   ...ACCESS_COOKIE_OPTS,
-  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 дней
+  // «Постоянный вход»: 400 дней — потолок, который браузеры (Chrome)
+  // разрешают куке. Ротация refresh-токена при каждом заходе ставит куку
+  // заново, так что у активного сотрудника она не истечёт никогда; сам
+  // токен в БД живёт 10 лет (auth.service REFRESH_TTL_DAYS).
+  maxAge: 400 * 24 * 60 * 60 * 1000,
 };
 const COOKIE_OPTS = ACCESS_COOKIE_OPTS; // alias для clearCookie
 

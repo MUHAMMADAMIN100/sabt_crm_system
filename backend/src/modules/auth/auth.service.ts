@@ -21,8 +21,15 @@ import { MailService } from '../mail/mail.service';
 import { AppGateway } from '../gateway/app.gateway';
 import type { Request } from 'express';
 
-/** Время жизни refresh-токена. */
-const REFRESH_TTL_DAYS = 30;
+/** Время жизни refresh-токена.
+ *
+ *  По решению владельца вход на устройстве живёт «навсегда»: сотрудник
+ *  логинится один раз, и сессия сбрасывается только явным «Выйти»,
+ *  блокировкой аккаунта или сменой пароля (все три пути отзывают токены,
+ *  см. revokeAllRefresh). 10 лет здесь — «бессрочно» на практике, притом
+ *  ротация при каждом заходе выпускает свежий токен с новым сроком, так
+ *  что активная сессия не истечёт никогда. */
+const REFRESH_TTL_DAYS = 3650;
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -116,16 +123,34 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Refresh expired');
     }
     if (found.revokedAt) {
-      // Этот токен УЖЕ был использован для ротации — кто-то применил повторно.
-      // Отзываем все активные токены этого пользователя на всякий случай.
-      await this.refreshRepo.update({ userId: found.userId, revokedAt: IsNull() }, { revokedAt: new Date() });
-      await this.audit.log({
-        type: SecurityEventType.REFRESH_REUSE,
-        userId: found.userId,
-        req,
-        details: { reason: 'reuse_of_revoked' },
-      });
-      throw new UnauthorizedException('Refresh token reused — all sessions revoked');
+      // Токен уже был использован для ротации. Два принципиально разных случая:
+      //
+      //  1) Гонка вкладок: сотрудник открыл систему в двух вкладках, обе
+      //     одновременно пошли продлевать сессию одним и тем же токеном.
+      //     Первая успела, вторая пришла с «уже использованным». Это НЕ
+      //     кража — без грейс-окна мы разлогинивали человека на всех
+      //     устройствах на ровном месте (главная причина «постоянно
+      //     просит вход заново»).
+      //
+      //  2) Настоящее повторное использование спустя время — признак
+      //     украденного токена: отзываем все сессии пользователя.
+      const ageMs = Date.now() - new Date(found.revokedAt).getTime();
+      const GRACE_MS = 60_000;
+      // Грейс — ТОЛЬКО для токена, отозванного ротацией (replacedBy заполнен).
+      // Токены, отозванные logout/блокировкой/сменой пароля, идут без
+      // replacedBy — им грейс давать нельзя, иначе «Выйти» не выходил бы.
+      if (!found.replacedBy || ageMs > GRACE_MS) {
+        await this.refreshRepo.update({ userId: found.userId, revokedAt: IsNull() }, { revokedAt: new Date() });
+        await this.audit.log({
+          type: SecurityEventType.REFRESH_REUSE,
+          userId: found.userId,
+          req,
+          details: { reason: 'reuse_of_revoked' },
+        });
+        throw new UnauthorizedException('Refresh token reused — all sessions revoked');
+      }
+      // Внутри грейс-окна продолжаем как с валидным токеном: обе вкладки
+      // получают свои свежие пары и живут дальше.
     }
     const user = await this.userRepo.findOne({ where: { id: found.userId } });
     if (!user || !user.isActive || user.isBlocked) throw new UnauthorizedException('User inactive');
