@@ -46,7 +46,7 @@ export default function FinanceExpensePage() {
     <div className="fin-root">
       <div className="page-head">
         <div>
-          <h1 className="flex"><FinIcon name="expense" size={22} /> Расход $</h1>
+          <h1 className="flex"><FinIcon name="expense" size={22} /> Расход</h1>
           <p>Нажмите карточку, чтобы открыть детали</p>
         </div>
         <MonthNav ym={ym} onChange={setYm} />
