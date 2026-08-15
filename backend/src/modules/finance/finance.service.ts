@@ -3375,6 +3375,34 @@ export class FinanceService implements OnModuleInit {
   // Сотрудники
   listEmployees() { return this.empRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } }); }
   private normStatus(v: any): 'active' | 'fired' { return v === 'fired' || v === 'inactive' ? 'fired' : 'active'; }
+  /** Готовит salaryHistory с учётом плана будущих окладов. Прошлые/текущие
+   * ставки (ym <= текущего месяца) сохраняются как есть, будущие (ym >
+   * текущего) полностью заменяются переданным планом. Текущий оклад не
+   * трогаем — план влияет только на свой месяц и дальше. */
+  private async applyPlannedSalaries(
+    existing: Record<string, number> | null,
+    planned: unknown,
+  ): Promise<Record<string, number>> {
+    const cur = currentYm();
+    const cleaned: Record<string, number> = {};
+    if (planned && typeof planned === 'object') {
+      for (const [ym, raw] of Object.entries(planned as Record<string, unknown>)) {
+        if (!YM_RE.test(ym)) throw new BadRequestException(`Неверный месяц плана: «${ym}»`);
+        if (ym <= cur) throw new BadRequestException('Планировать оклад можно только на будущие месяцы');
+        const amount = Number(raw);
+        if (!Number.isFinite(amount) || amount <= 0) {
+          throw new BadRequestException(`Неверная сумма плана для ${ym}`);
+        }
+        await this.assertPayrollPeriodOpen(ym);
+        cleaned[ym] = Math.round(amount * 100) / 100;
+      }
+    }
+    const base = Object.fromEntries(
+      Object.entries(existing || {}).filter(([ym]) => ym <= cur),
+    );
+    return { ...base, ...cleaned };
+  }
+
   async createEmployee(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Имя обязательно');
     const position = await this.empRepo.count();
@@ -3391,9 +3419,12 @@ export class FinanceService implements OnModuleInit {
     const effectiveYm = YM_RE.test(dto.salaryEffectiveYm || '')
       ? dto.salaryEffectiveYm : ymOf(dto.hireDate || todayISO());
     await this.assertPayrollPeriodOpen(effectiveYm);
+    const salaryHistory = dto.plannedSalaries !== undefined
+      ? await this.applyPlannedSalaries({ [effectiveYm]: salary }, dto.plannedSalaries)
+      : { [effectiveYm]: salary };
     return this.empRepo.save(this.empRepo.create({
       name: dto.name.trim(), role: dto.role ?? null, salary,
-      salaryHistory: { [effectiveYm]: salary },
+      salaryHistory,
       advance: Number(dto.advance) || 0, hireDate,
       terminationDate, employmentHistory: null,
       category: (dto.category ?? '').trim() || null,
@@ -3416,6 +3447,10 @@ export class FinanceService implements OnModuleInit {
       if (changed || dto.salaryEffectiveYm) await this.assertPayrollPeriodOpen(effectiveYm);
       e.salary = salary;
       if (changed || dto.salaryEffectiveYm) e.salaryHistory = { ...(e.salaryHistory || {}), [effectiveYm]: salary };
+    }
+    // План будущих окладов — заменяет будущие ставки, текущий оклад не трогает.
+    if (dto.plannedSalaries !== undefined) {
+      e.salaryHistory = await this.applyPlannedSalaries(e.salaryHistory, dto.plannedSalaries);
     }
     if (dto.advance !== undefined) e.advance = Number(dto.advance) || 0;
     const nextStatus = dto.status !== undefined ? this.normStatus(dto.status) : e.status;

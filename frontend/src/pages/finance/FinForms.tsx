@@ -107,9 +107,38 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
   const [terminationDate, setTerminationDate] = useState(employee?.terminationDate ?? '');
   const [salary, setSalary] = useState(employee != null ? String(employee.salary ?? '') : '');
   const [salaryEffectiveYm, setSalaryEffectiveYm] = useState(currentYm());
+  // План будущих окладов: строки на месяцы позже текущего. Инициализируем
+  // из salaryHistory (будущие записи), сортируя по возрастанию месяца.
+  const [plannedRows, setPlannedRows] = useState<{ ym: string; amount: string }[]>(() =>
+    Object.entries(employee?.salaryHistory || {})
+      .filter(([ym]) => ym > currentYm())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([ym, amount]) => ({ ym, amount: String(amount) })),
+  );
   const [status, setStatus] = useState<string>(employee?.status ?? 'active');
   const [busy, setBusy] = useState(false);
   const invalidEmploymentDates = !!terminationDate && !!hireDate && terminationDate < hireDate;
+
+  const cur = currentYm();
+  // Минимально допустимый месяц плана — следующий за текущим.
+  const nextYm = (() => {
+    const [y, m] = cur.split('-').map(Number);
+    const d = new Date(y, m, 1); // m — 1-based; месяц в Date 0-based → следующий месяц
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  })();
+  // Валидация плана: заполненные строки должны быть будущими, без повторов, сумма > 0.
+  const plannedIssue = (() => {
+    const seen = new Set<string>();
+    for (const r of plannedRows) {
+      if (!r.ym && !r.amount) continue;
+      if (!r.ym) return 'Выберите месяц для запланированного оклада.';
+      if (r.ym <= cur) return 'Планировать можно только будущие месяцы.';
+      if (seen.has(r.ym)) return 'Месяц не должен повторяться.';
+      seen.add(r.ym);
+      if (num(r.amount) <= 0) return 'Сумма должна быть больше нуля.';
+    }
+    return '';
+  })();
 
   async function save() {
     if (!name.trim() || busy) return;
@@ -125,6 +154,14 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
         salary: num(salary), status,
       };
       if (salaryChanged) p.salaryEffectiveYm = salaryEffectiveYm;
+      // План будущих окладов — отправляем полный набор будущих месяцев
+      // (пустой = очистить план). Бэкенд заменяет ими будущие ставки.
+      const plannedSalaries: Record<string, number> = {};
+      for (const r of plannedRows) {
+        if (!r.ym) continue;
+        plannedSalaries[r.ym] = num(r.amount);
+      }
+      p.plannedSalaries = plannedSalaries;
       if (isEdit) await financeApi.updateEmployee(employee.id, p);
       else await financeApi.createEmployee(p);
       invalidateFinanceAll(qc);
@@ -155,7 +192,7 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
           <DeleteButton label="Уволить" confirmText={`Уволить сотрудника «${employee!.name}»? История зарплаты и операций сохранится.`} busy={busy} onDelete={remove} />
         )}
         <button className="btn ghost" onClick={onClose}>Отмена</button>
-        <button className="btn primary" disabled={!name.trim() || invalidEmploymentDates || busy} onClick={save}>{busy ? 'Сохраняю…' : isEdit ? 'Сохранить' : 'Добавить'}</button>
+        <button className="btn primary" disabled={!name.trim() || invalidEmploymentDates || !!plannedIssue || busy} onClick={save}>{busy ? 'Сохраняю…' : isEdit ? 'Сохранить' : 'Добавить'}</button>
       </>}>
       <div className="field"><label>ФИО</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
       <div className="form-grid">
@@ -169,15 +206,41 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
         <div className="field"><label>ЗП / мес</label><input inputMode="decimal" value={salary} onChange={(e) => setSalary(e.target.value)} /></div>
         <div className="field"><label>Оклад действует с</label><input type="month" value={salaryEffectiveYm} onChange={(e) => setSalaryEffectiveYm(e.target.value)} /></div>
       </div>
-      {isEdit && Object.keys(employee?.salaryHistory || {}).length > 0 && (
+      <div className="field">
+        <label>План будущих окладов</label>
+        <div className="fin-salary-history" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {plannedRows.length === 0 && (
+            <span className="mini muted">Пока нет запланированных изменений.</span>
+          )}
+          {plannedRows.map((r, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="month" min={nextYm} value={r.ym} style={{ flex: 1 }}
+                onChange={(e) => setPlannedRows(rows => rows.map((x, idx) => idx === i ? { ...x, ym: e.target.value } : x))} />
+              <input inputMode="decimal" placeholder="Сумма" value={r.amount} style={{ width: 110 }}
+                onChange={(e) => setPlannedRows(rows => rows.map((x, idx) => idx === i ? { ...x, amount: e.target.value } : x))} />
+              <button type="button" className="btn ghost" title="Удалить" style={{ padding: '4px 10px' }}
+                onClick={() => setPlannedRows(rows => rows.filter((_, idx) => idx !== i))}>🗑</button>
+            </div>
+          ))}
+          <button type="button" className="btn ghost" style={{ alignSelf: 'flex-start' }}
+            onClick={() => setPlannedRows(rows => [...rows, { ym: '', amount: '' }])}>+ Добавить месяц</button>
+        </div>
+        {plannedIssue
+          ? <span className="mini neg">{plannedIssue}</span>
+          : <span className="mini muted">С указанного месяца оклад автоматически учитывается в аналитике, ведомости и прогнозе.</span>}
+      </div>
+      {isEdit && Object.entries(employee?.salaryHistory || {}).filter(([ym]) => ym <= cur).length > 0 && (
         <div className="field">
-          <label>История оклада</label>
+          <label>История оклада (факт)</label>
           <div className="fin-salary-history">
-            {Object.entries(employee!.salaryHistory || {}).sort(([a], [b]) => b.localeCompare(a)).map(([ym, amount]) => (
-              <div key={ym}><span>{monthLabel(ym, true)}</span><strong>{money(Number(amount))}</strong></div>
-            ))}
+            {Object.entries(employee!.salaryHistory || {})
+              .filter(([ym]) => ym <= cur)
+              .sort(([a], [b]) => b.localeCompare(a))
+              .map(([ym, amount]) => (
+                <div key={ym}><span>{monthLabel(ym, true)}</span><strong>{money(Number(amount))}</strong></div>
+              ))}
           </div>
-          <span className="mini muted">Прошлые месяцы сохраняют прежний оклад.</span>
+          <span className="mini muted">Прошлые месяцы менять нельзя — они закрыты выплатой.</span>
         </div>
       )}
       <div className="form-grid">

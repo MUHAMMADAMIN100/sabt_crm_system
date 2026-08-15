@@ -1,4 +1,4 @@
-import { IsEnum, IsISO8601, IsNumber, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
+import { IsEnum, IsISO8601, IsNumber, IsObject, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -28,6 +28,15 @@ export class CreateEmployeeDto {
   @IsString()
   @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
   salaryEffectiveYm?: string;
+
+  /** План будущих окладов: карта { 'YYYY-MM': сумма } для месяцев позже
+   * текущего. Пишется в salaryHistory; текущий оклад не меняет. Валидация
+   * значений — в сервисе (формат месяца, только будущее, сумма > 0,
+   * период не закрыт выплатой). */
+  @ApiPropertyOptional({ example: { '2026-10': 3000, '2026-12': 3500 } })
+  @IsOptional()
+  @IsObject()
+  plannedSalaries?: Record<string, number>;
 
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
   advance?: number;
