@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, apiErr, INCOME_GROUPS, EXPENSE_GROUPS , useYmParam, withYm } from './finlib';
+import { money, apiErr, INCOME_GROUPS, EXPENSE_GROUPS , useYmParam, withYm, todayISO } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
@@ -16,9 +16,23 @@ import { financeApi } from '@/services/api.service';
 import { MonthlyFlowComparison, OverviewCashFlowChart } from './FinanceCharts';
 import { AccountLabel } from './AccountIdentity';
 
+// ── Экспорт CSV: подписи и экранирование ячейки ──────────────────────
+const FIN_TYPE_RU: Record<string, string> = {
+  income: 'Доход', expense: 'Расход', transfer: 'Перевод', saving: 'Накопление',
+};
+const FIN_STATUS_RU: Record<string, string> = {
+  completed: 'Проведено', pending: 'Ожидание', cancelled: 'Отменено',
+};
+/** Экранирование значения для CSV (разделитель «;», кавычки удваиваются). */
+const csvCell = (v: any): string => {
+  const s = v == null ? '' : String(v);
+  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
 export default function FinanceOverviewPage() {
   const [ym, setYm] = useYmParam();
   const [modal, setModal] = useState<{ open: boolean; initial?: any }>({ open: false });
+  const [exporting, setExporting] = useState(false);
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -61,6 +75,60 @@ export default function FinanceOverviewPage() {
     }
   };
 
+  /** Выгрузка ВСЕХ финансовых операций (включая отменённые) в CSV.
+   *  Файл открывается в Excel: UTF-8 BOM + разделитель «;». */
+  const exportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const res = await financeApi.transactions({ pageSize: 100000, status: 'all' });
+      const items: any[] = res?.items || [];
+      const headers = [
+        'Дата', 'Тип', 'Категория', 'Счёт', 'Проект/Клиент', 'Сотрудник', 'Долг',
+        'Подписка/Аренда', 'Контрагент', 'Описание', 'Комментарий', 'Способ оплаты',
+        'Месяц ЗП', 'Сумма', 'Статус', 'Создал',
+      ];
+      const lines = items.map((t) => {
+        const account = t.type === 'transfer' || t.type === 'saving'
+          ? [t.fromAccountName, t.toAccountName].filter(Boolean).join(' → ')
+          : (t.accountName ?? t.fromAccountName ?? t.toAccountName ?? '');
+        return [
+          t.date ?? '',
+          FIN_TYPE_RU[t.type] ?? t.type ?? '',
+          t.categoryName ?? '',
+          account,
+          t.projectName ?? t.legacyProject ?? '',
+          t.employeeName ?? '',
+          t.debtName ?? '',
+          t.subscriptionName ?? '',
+          t.counterparty ?? '',
+          t.legacyDescription ?? '',
+          t.comment ?? '',
+          t.paymentMethod ?? '',
+          t.salaryYm ?? '',
+          Number(t.amount) || 0,
+          FIN_STATUS_RU[t.status] ?? t.status ?? '',
+          t.createdByName ?? '',
+        ];
+      });
+      const csv = [headers, ...lines].map((r) => r.map(csvCell).join(';')).join('\r\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sabt-finance-${todayISO()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Экспортировано операций: ${items.length}`);
+    } catch (e) {
+      toast.error(apiErr(e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (isLoading || isError) {
     return (
       <div className="fin-root">
@@ -82,6 +150,9 @@ export default function FinanceOverviewPage() {
         </div>
         <div className="flex">
           <MonthNav ym={ym} onChange={setYm} />
+          <button className="btn ghost" onClick={exportCsv} disabled={exporting} title="Скачать все операции в CSV (Excel)">
+            <FinIcon name="download" size={16} /> {exporting ? 'Экспорт…' : 'Экспорт CSV'}
+          </button>
           <button className="btn primary" onClick={() => setModal({ open: true })}><FinIcon name="plus" size={16} /> Операция</button>
         </div>
       </div>
