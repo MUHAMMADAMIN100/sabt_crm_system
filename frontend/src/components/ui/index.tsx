@@ -110,6 +110,15 @@ export function Modal({ open, onClose, title, children, size = 'md', titleAction
     return () => { document.body.style.overflow = '' }
   }, [open])
 
+  // Escape закрывает окно — привычно и позволяет выйти с клавиатуры, не
+  // целясь мышью в крестик. Клик по подложке уже работает.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
   if (!mounted) return null
 
   const sizes = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-4xl' }
@@ -126,6 +135,9 @@ export function Modal({ open, onClose, title, children, size = 'md', titleAction
       />
       {/* Panel — спокойный fade + лёгкий slide-up без overshoot. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title || undefined}
         className={clsx(
           'relative bg-surface-50 dark:bg-surface-800 w-full',
           'rounded-t-xl sm:rounded-xl border border-surface-200 dark:border-surface-700',
@@ -145,6 +157,8 @@ export function Modal({ open, onClose, title, children, size = 'md', titleAction
               {titleAction}
               <button
                 onClick={onClose}
+                aria-label="Закрыть"
+                title="Закрыть"
                 className="p-1.5 rounded-md hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 transition-colors"
               >
                 <X size={16} />
@@ -155,6 +169,8 @@ export function Modal({ open, onClose, title, children, size = 'md', titleAction
         {!title && (
           <button
             onClick={onClose}
+            aria-label="Закрыть"
+            title="Закрыть"
             className="absolute top-3 right-3 p-1.5 rounded-md hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 z-10 transition-colors"
           >
             <X size={16} />

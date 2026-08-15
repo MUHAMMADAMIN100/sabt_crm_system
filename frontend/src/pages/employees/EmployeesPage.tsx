@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/auth.store'
 import { getRoleLabel } from '@/lib/permissions'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera } from 'lucide-react'
+import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
@@ -31,6 +31,9 @@ export default function EmployeesPage() {
   const [blockEmp, setBlockEmp] = useState<any>(null)
   const [blockReason, setBlockReason] = useState('')
   const [unblockId, setUnblockId] = useState<string | null>(null)
+  /** id сотрудника, у которого открыто меню действий на карточке. Шесть
+   *  кнопок в узкой колонке перекрывали имя, поэтому они спрятаны под «⋯». */
+  const [actionsFor, setActionsFor] = useState<string | null>(null)
   const [resetPwdEmp, setResetPwdEmp] = useState<any>(null)
   const [customPwd, setCustomPwd] = useState('')
   const [resetResult, setResetResult] = useState<{ name: string; password: string } | null>(null)
@@ -305,80 +308,190 @@ export default function EmployeesPage() {
       )}
 
       {!employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'cards' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {pagedEmployees.map((emp: any) => (
-            <div key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className="card group cursor-pointer hover:shadow-md transition-shadow flex flex-col h-full">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <Avatar name={emp.fullName} src={emp.avatar} size={44} />
-                  <div>
-                    <div className="flex items-center gap-1 min-h-[2.75rem]">
-                      <span className="font-semibold text-surface-900 dark:text-surface-100 line-clamp-2">{emp.fullName}</span>
-                      {emp.isSubAdmin && <ShieldCheck size={14} className="text-primary-500 shrink-0" aria-label="Помощник администратора" />}
-                      {emp.isStoryMaker && <Camera size={14} className="text-surface-500 shrink-0" aria-label="Сторисмейкер" />}
+            <div key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className="card group relative cursor-pointer hover:shadow-md transition-shadow flex flex-col h-full p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Avatar name={emp.fullName} src={emp.avatar} size={40} />
+                  {/* min-w-0 + truncate: длинное ФИО не ломает сетку и не тянет
+                      карточку в высоту — раньше под имя резервировались две
+                      строки даже когда оно в одну. */}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1 min-w-0">
+                      <span className="font-semibold text-surface-900 dark:text-surface-100 truncate" title={emp.fullName}>{emp.fullName}</span>
+                      {emp.isSubAdmin && <ShieldCheck size={13} className="text-primary-500 shrink-0" aria-label="Помощник администратора" />}
+                      {emp.isStoryMaker && <Camera size={13} className="text-surface-500 shrink-0" aria-label="Сторисмейкер" />}
                     </div>
-                    <p className="text-sm text-surface-500 dark:text-surface-400">{emp.position}{emp.user?.secondaryRole ? ` / ${getRoleLabel(emp.user.secondaryRole)}` : ''}</p>
-                    <span className="text-xs bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 px-2 py-0.5 rounded-full">{emp.department}</span>
+                    <p className="text-xs text-surface-500 dark:text-surface-400 truncate" title={`${emp.position || ''}${emp.user?.secondaryRole ? ` / ${getRoleLabel(emp.user.secondaryRole)}` : ''}`}>
+                      {emp.position}{emp.user?.secondaryRole ? ` / ${getRoleLabel(emp.user.secondaryRole)}` : ''}
+                    </p>
                   </div>
                 </div>
-                {isAdmin && (
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                    {canEditEmployee(emp) && (
+                {/* Действия — под «⋯»: шесть иконок в узкой колонке
+                    перекрывали имя и должность. Меню с подписями к тому же
+                    понятнее, чем ряд одинаковых значков. */}
+                {isAdmin && canEditEmployee(emp) && (
+                  <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => setActionsFor(actionsFor === emp.id ? null : emp.id)}
+                      title="Действия"
+                      aria-label="Действия"
+                      aria-expanded={actionsFor === emp.id}
+                      className={clsx(
+                        'p-1.5 rounded-lg text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-700 transition-all',
+                        // На тач-устройствах наведения нет — там кнопка видна
+                        // всегда; на десктопе проявляется при наведении.
+                        actionsFor === emp.id
+                          ? 'opacity-100'
+                          : 'opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100',
+                      )}
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                    {actionsFor === emp.id && (
                       <>
-                        <button onClick={() => toggleSubAdmin.mutate(emp.id)} className={clsx('p-1.5 rounded-lg', emp.isSubAdmin ? 'bg-primary-50 dark:bg-primary-900/30' : 'hover:bg-surface-100 dark:hover:bg-surface-700')} title="Помощник админа">
-                          <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400'} />
-                        </button>
-                        <button onClick={() => toggleStoryMaker.mutate(emp.id)} className={clsx('p-1.5 rounded-lg', emp.isStoryMaker ? 'bg-surface-50 dark:bg-surface-900/30' : 'hover:bg-surface-100 dark:hover:bg-surface-700')} title="Сторисмейкер — доступ к историям всех SMM-проектов">
-                          <Camera size={14} className={emp.isStoryMaker ? 'text-surface-600 dark:text-surface-400' : 'text-surface-400'} />
-                        </button>
-                        <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-surface-50 dark:hover:bg-surface-900/20 rounded-lg text-surface-500" title="Сбросить пароль">
-                          <Key size={14} />
-                        </button>
-                        {emp.user?.isBlocked ? (
-                          <button onClick={() => setUnblockId(emp.userId)} className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600" title="Разблокировать">
-                            <Unlock size={14} />
+                        {/* Подложка: клик мимо меню закрывает его. */}
+                        <div className="fixed inset-0 z-20" onClick={() => setActionsFor(null)} />
+                        <div className="absolute right-0 top-full mt-1 z-30 w-52 rounded-lg bg-white dark:bg-surface-800 shadow-lg ring-1 ring-surface-200 dark:ring-surface-700 py-1 text-sm">
+                          <button
+                            onClick={() => { toggleSubAdmin.mutate(emp.id); setActionsFor(null) }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-50 dark:hover:bg-surface-700/60 transition-colors"
+                          >
+                            <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400'} />
+                            <span className="text-surface-700 dark:text-surface-200">
+                              {emp.isSubAdmin ? 'Снять помощника админа' : 'Сделать помощником админа'}
+                            </span>
                           </button>
-                        ) : (
-                          <button onClick={() => setBlockEmp(emp)} className="p-1.5 hover:bg-surface-50 dark:hover:bg-surface-900/20 rounded-lg text-surface-500" title="Заблокировать">
-                            <Lock size={14} />
+                          <button
+                            onClick={() => { toggleStoryMaker.mutate(emp.id); setActionsFor(null) }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-50 dark:hover:bg-surface-700/60 transition-colors"
+                            title="Доступ к историям всех SMM-проектов"
+                          >
+                            <Camera size={14} className={emp.isStoryMaker ? 'text-surface-600 dark:text-surface-300' : 'text-surface-400'} />
+                            <span className="text-surface-700 dark:text-surface-200">
+                              {emp.isStoryMaker ? 'Снять сторисмейкера' : 'Назначить сторисмейкером'}
+                            </span>
                           </button>
-                        )}
-                        <button onClick={() => setEditEmp(emp)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg"><Edit size={14} className="text-surface-500 dark:text-surface-400" /></button>
-                        <button onClick={() => setDeleteId(emp.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500"><Trash2 size={14} /></button>
+                          <button
+                            onClick={() => { setResetPwdEmp(emp); setCustomPwd(''); setActionsFor(null) }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-50 dark:hover:bg-surface-700/60 transition-colors"
+                          >
+                            <Key size={14} className="text-surface-400" />
+                            <span className="text-surface-700 dark:text-surface-200">Сбросить пароль</span>
+                          </button>
+                          {emp.user?.isBlocked ? (
+                            <button
+                              onClick={() => { setUnblockId(emp.userId); setActionsFor(null) }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                            >
+                              <Unlock size={14} className="text-green-600" />
+                              <span className="text-green-700 dark:text-green-400">Разблокировать</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => { setBlockEmp(emp); setActionsFor(null) }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-50 dark:hover:bg-surface-700/60 transition-colors"
+                            >
+                              <Lock size={14} className="text-surface-400" />
+                              <span className="text-surface-700 dark:text-surface-200">Заблокировать</span>
+                            </button>
+                          )}
+                          <div className="my-1 border-t border-surface-100 dark:border-surface-700" />
+                          <button
+                            onClick={() => { setEditEmp(emp); setActionsFor(null) }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-50 dark:hover:bg-surface-700/60 transition-colors"
+                          >
+                            <Edit size={14} className="text-surface-400" />
+                            <span className="text-surface-700 dark:text-surface-200">Редактировать</span>
+                          </button>
+                          <button
+                            onClick={() => { setDeleteId(emp.id); setActionsFor(null) }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          >
+                            <Trash2 size={14} className="text-red-500" />
+                            <span className="text-red-600 dark:text-red-400">Удалить</span>
+                          </button>
+                        </div>
                       </>
                     )}
                   </div>
                 )}
               </div>
-              <div className="mt-3 space-y-1 min-h-[76px]">
-                <div className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400"><Mail size={11} /><span>{emp.email}</span></div>
-                {emp.phone && <div className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400"><Phone size={11} /><span>{emp.phone}</span></div>}
-                {emp.telegram && (
-                  <a href={getTelegramUrl(emp.telegram)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-primary-500 hover:underline"><Send size={11} /><span>{emp.telegram}</span></a>
-                )}
-                {emp.instagram && (
-                  <a href={`https://instagram.com/${emp.instagram.replace('@','')}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="flex items-center gap-2 text-xs text-surface-500 hover:underline"><AtSignIcon /><span>{emp.instagram}</span></a>
-                )}
-              </div>
               {/* Wave 13/14: KPI любого сотрудника. Видно только canManage-ролям.
-                  Период берётся из общего переключателя сверху страницы. */}
+                  Период берётся из общего переключателя сверху страницы.
+                  mt-auto прижимает подвал вниз, поэтому карточки в ряду
+                  остаются одной высоты даже с разным числом метрик. */}
               {canViewSalesKpi && hasKpi(emp.user?.role) && emp.userId && (
                 <div
                   className="mt-3 pt-3 border-t border-surface-50 dark:border-surface-700"
                   onClick={e => e.stopPropagation()}
                 >
-                  <EmployeeKpiCard userId={emp.userId} compact period={kpiPeriod} />
+                  <EmployeeKpiCard userId={emp.userId} compact period={kpiPeriod} emptyLabel="KPI не ведётся" />
                 </div>
               )}
-              <div className="flex items-center justify-between mt-auto pt-3 border-t border-surface-50 dark:border-surface-700">
+              <div className="flex items-center justify-between gap-2 mt-auto pt-3 border-t border-surface-50 dark:border-surface-700">
+                <div className="flex items-center gap-1.5 min-w-0">
                 {emp.user?.isBlocked ? (
-                  <span className="badge bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 flex items-center gap-1">
+                  <span className="badge bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 flex items-center gap-1 shrink-0">
                     <Ban size={11} /> Заблокирован
                   </span>
                 ) : (
-                  <span className={clsx('badge', emp.status==='active' ? 'status-done' : 'status-cancelled')}>{emp.status==='active' ? t('common.active') : t('common.inactive')}</span>
+                  <span className={clsx('badge shrink-0', emp.status==='active' ? 'status-done' : 'status-cancelled')}>{emp.status==='active' ? t('common.active') : t('common.inactive')}</span>
                 )}
-                <span className="text-xs text-surface-400 dark:text-surface-500">{format(new Date(emp.hireDate), 'dd.MM.yyyy')}</span>
+                {/* Контакты — иконками: три строки текста превращались в
+                    треть высоты карточки. Наведение показывает адрес,
+                    клик открывает почту / звонок / чат. Держим их рядом со
+                    статусом, иначе одинокая иконка висит посреди подвала. */}
+                <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                  {emp.email && (
+                    <a
+                      href={`mailto:${emp.email}`}
+                      title={emp.email}
+                      aria-label={`Написать на ${emp.email}`}
+                      className="p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+                    >
+                      <Mail size={14} />
+                    </a>
+                  )}
+                  {emp.phone && (
+                    <a
+                      href={`tel:${String(emp.phone).replace(/[^\d+]/g, '')}`}
+                      title={emp.phone}
+                      aria-label={`Позвонить ${emp.phone}`}
+                      className="p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+                    >
+                      <Phone size={14} />
+                    </a>
+                  )}
+                  {emp.telegram && (
+                    <a
+                      href={getTelegramUrl(emp.telegram)}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={emp.telegram}
+                      aria-label={`Telegram ${emp.telegram}`}
+                      className="p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+                    >
+                      <Send size={14} />
+                    </a>
+                  )}
+                  {emp.instagram && (
+                    <a
+                      href={`https://instagram.com/${emp.instagram.replace('@','')}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={emp.instagram}
+                      aria-label={`Instagram ${emp.instagram}`}
+                      className="p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+                    >
+                      <AtSignIcon />
+                    </a>
+                  )}
+                </div>
+                </div>
+                <span className="text-xs text-surface-400 dark:text-surface-500 shrink-0">{format(new Date(emp.hireDate), 'dd.MM.yyyy')}</span>
               </div>
             </div>
           ))}

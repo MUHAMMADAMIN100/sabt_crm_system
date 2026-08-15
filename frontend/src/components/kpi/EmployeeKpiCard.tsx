@@ -147,6 +147,10 @@ interface Props {
   showPeriodSelector?: boolean
   /** Предзагруженный KPI — позволяет переиспользовать карточку для bulk-данных. */
   kpi?: UserKpi | null
+  /** Подпись в compact-режиме, когда работы за период не было. По умолчанию
+   *  «— нет данных»; список сотрудников передаёт свой текст, чтобы карточки
+   *  без KPI не выглядели «сломанными». */
+  emptyLabel?: string
 }
 
 /**
@@ -157,7 +161,7 @@ interface Props {
  */
 export default function EmployeeKpiCard({
   userId, compact, period: externalPeriod, from, to,
-  showPeriodSelector, kpi: preloadedKpi,
+  showPeriodSelector, kpi: preloadedKpi, emptyLabel,
 }: Props) {
   // Внутренний state переключателя — используется когда родитель не передал
   // ни period, ни from/to, но запросил showPeriodSelector.
@@ -227,7 +231,7 @@ export default function EmployeeKpiCard({
   )
   if (noData) {
     return compact
-      ? <span className="text-xs text-surface-400 dark:text-surface-500" title="За выбранный период работы для оценки не было">— нет данных</span>
+      ? <span className="text-xs text-surface-400 dark:text-surface-500" title="За выбранный период работы для оценки не было">{emptyLabel || '— нет данных'}</span>
       : (
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
