@@ -6,10 +6,16 @@ import { useAuthStore } from '@/store/auth.store'
 import { useWallpaperStore, syncWallpaperFromServer, canUseWallpaper, veilOf } from '@/lib/wallpaper'
 
 /** До какого размера ужимаем картинку перед отправкой. 1920 хватает на
- *  любой монитор, а вес держим в пределах, которые примет сервер (700 КБ
- *  в base64 ≈ 520 КБ бинарных). */
+ *  любой монитор, а вес держим в пределах, которые примет сервер: он режет
+ *  на 700 КБ ПОСЛЕ base64-кодирования, а оно раздувает данные примерно на
+ *  треть — отсюда 480 КБ бинарных с запасом. */
 const MAX_SIDE = 1920
 const TARGET_BYTES = 480 * 1024
+/** Если качества не хватило, уменьшаем и саму картинку. Шумное фото с
+ *  телефона не влезает даже на качестве 0.35, и раньше уходило на сервер
+ *  как есть — тот отвечал «слишком большая», и фон просто не ставился. */
+const SCALE_STEPS = [1, 0.75, 0.55, 0.4]
+const QUALITY_STEPS = [0.82, 0.7, 0.58, 0.45, 0.35]
 
 /** Читаем картинку. createImageBitmap быстрее и не держит DOM-узел, но есть
  *  не везде (старые Safari) — тогда падаем на обычный <img>. */
@@ -49,27 +55,41 @@ async function loadImage(file: File): Promise<{ image: unknown; width: number; h
 async function compress(file: File): Promise<{ blob: Blob; ratio: number }> {
   const src = await loadImage(file)
   const fit = Math.min(1, MAX_SIDE / Math.max(src.width, src.height))
-  const w = Math.max(1, Math.round(src.width * fit))
-  const h = Math.max(1, Math.round(src.height * fit))
-  const ratio = Math.round((w / h) * 1000) / 1000
+  const baseW = Math.max(1, Math.round(src.width * fit))
+  const baseH = Math.max(1, Math.round(src.height * fit))
+  // Пропорции берём у исходника: они не меняются от того, насколько сильно
+  // мы ужали картинку, а по ним считается «Размер» на экране.
+  const ratio = Math.round((baseW / baseH) * 1000) / 1000
 
   const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Браузер не дал холст для сжатия картинки')
-  ctx.drawImage(src.image as CanvasImageSource, 0, 0, w, h)
-  src.dispose()
+  if (!ctx) { src.dispose(); throw new Error('Браузер не дал холст для сжатия картинки') }
 
-  const toBlob = (q: number) => new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', q))
-  // Понижаем качество, пока не уложимся в лимит: одного прохода мало —
-  // фото с детализацией и на 0.8 бывает под мегабайт.
-  for (const q of [0.82, 0.7, 0.58, 0.45, 0.35]) {
-    const blob = await toBlob(q)
-    if (blob && blob.size <= TARGET_BYTES) return { blob, ratio }
-    if (q === 0.35 && blob) return { blob, ratio }
+  let last: Blob | null = null
+  try {
+    // Сначала снижаем качество, и только если этого мало — уменьшаем саму
+    // картинку. Так фото 12 Мп с шумом всё равно укладывается в лимит.
+    for (const s of SCALE_STEPS) {
+      const w = Math.max(1, Math.round(baseW * s))
+      const h = Math.max(1, Math.round(baseH * s))
+      canvas.width = w
+      canvas.height = h
+      ctx.clearRect(0, 0, w, h)
+      ctx.drawImage(src.image as CanvasImageSource, 0, 0, w, h)
+      for (const q of QUALITY_STEPS) {
+        const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', q))
+        if (!blob) continue
+        last = blob
+        if (blob.size <= TARGET_BYTES) return { blob, ratio }
+      }
+    }
+  } finally {
+    src.dispose()
   }
-  throw new Error('Не удалось сжать картинку')
+  // Сюда попадаем, только если даже 40 % размера на качестве 0.35 не влезли —
+  // на практике недостижимо, но отдавать заведомо отвергаемый файл нельзя.
+  if (last && last.size <= TARGET_BYTES) return { blob: last, ratio }
+  throw new Error('Картинка слишком тяжёлая даже после сжатия — попробуйте другое фото')
 }
 
 export default function WallpaperSection() {

@@ -40,12 +40,10 @@ const AVATAR_MULTER_CONFIG = {
   },
 };
 
-/** Кому доступны персональные обои интерфейса. По требованию владельца —
- *  проект-менеджер разработки и менеджер продаж по разработке; основатель и
- *  сооснователь добавлены, чтобы настройку можно было увидеть у себя. */
-const BACKGROUND_ROLES = [
-  UserRole.PM_DEV, UserRole.SALES_MANAGER_DEV, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-] as const;
+/* Персональные обои доступны ВСЕМ сотрудникам (по требованию владельца).
+ * Отдельный список ролей больше не нужен: ручки ниже работают только со
+ * «своим» пользователем (req.user.id), поэтому чужой фон не прочитать и не
+ * переписать — ограничивать роль незачем. */
 
 /** Обои: файл идёт В ПАМЯТЬ и уезжает в БД. На диск класть нельзя — он на
  *  Railway эфемерный, фон слетал бы при каждом редеплое. 4 МБ на входе:
@@ -199,7 +197,6 @@ export class UsersController {
   /** Загрузка обоев. Файл идёт в память и сохраняется в БД как data URI —
    *  на диск класть нельзя, он на Railway эфемерный. */
   @Patch('me/background')
-  @Roles(...BACKGROUND_ROLES)
   @UseInterceptors(FileInterceptor('background', BACKGROUND_MULTER_CONFIG))
   setMyBackground(
     @Request() req,
@@ -214,7 +211,6 @@ export class UsersController {
 
   /** Затемнение и масштаб — двигаются ползунками, картинку заново не гоняем. */
   @Patch('me/background/view')
-  @Roles(...BACKGROUND_ROLES)
   setMyBackgroundView(@Request() req, @Body() body: { dim?: number; scale?: number }) {
     return this.usersService.setBackgroundView(req.user.id, body?.dim, body?.scale);
   }
@@ -223,13 +219,11 @@ export class UsersController {
    *  деплоя фронта, не получала 404, пока Vercel и Railway обновляются
    *  независимо друг от друга. */
   @Patch('me/background/dim')
-  @Roles(...BACKGROUND_ROLES)
   setMyBackgroundDim(@Request() req, @Body() body: { dim?: number }) {
     return this.usersService.setBackgroundView(req.user.id, body?.dim, undefined);
   }
 
   @Delete('me/background')
-  @Roles(...BACKGROUND_ROLES)
   clearMyBackground(@Request() req) {
     return this.usersService.clearBackground(req.user.id);
   }
