@@ -103,29 +103,60 @@ api.interceptors.request.use(config => {
   return config
 })
 
+/** Чем закончилась попытка продлить сессию.
+ *
+ *  Различать обязательно: раньше ЛЮБАЯ неудача считалась «сессия мертва», и
+ *  сотрудника выбрасывало на экран входа из-за моргнувшего Wi-Fi, спящего
+ *  ноутбука или перезапуска сервера. Выходить можно только когда сервер
+ *  прямо ответил «токен недействителен». */
+type RefreshResult = 'ok' | 'rejected' | 'offline'
+
+/** Ошибка сети/сервера, а не отказ авторизации: связи нет, таймаут,
+ *  502/503 при редеплое. Сессию по таким причинам не рвём. */
+const isTransient = (e: any): boolean => {
+  const status = e?.response?.status
+  if (status === undefined) return true              // сеть не ответила вовсе
+  if (status >= 500) return true                     // сервер лёг/перезапускается
+  if (status === 408 || status === 429) return true  // таймаут, лимит запросов
+  return false
+}
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
 // Concurrent-safe refresh: пока один запрос обновляет access-токен,
 // остальные ждут его результат, не плодя N параллельных /auth/refresh.
-let refreshPromise: Promise<boolean> | null = null
-const tryRefresh = (): Promise<boolean> => {
+let refreshPromise: Promise<RefreshResult> | null = null
+const tryRefresh = (): Promise<RefreshResult> => {
   if (refreshPromise) return refreshPromise
   refreshPromise = (async () => {
-    try {
-      // Если у нас есть refresh-токен в sessionStorage (cookies заблокированы)
-      // — отдаём его в body. Иначе бэк прочитает из httpOnly cookie.
-      const refreshFromStore = tokenStore.getRefresh()
-      const { data } = await api.post('/auth/refresh', refreshFromStore ? { refreshToken: refreshFromStore } : {})
-      // Обновляем sessionStorage свежими токенами (если бэк их вернул).
-      if (data?.accessToken || data?.refreshToken) {
-        tokenStore.set(data.accessToken, data.refreshToken)
+    // Несколько попыток с нарастающей паузой: перезапуск сервера длится
+    // секунды, за это время не нужно никого разлогинивать.
+    const delays = [0, 1500, 4000, 8000]
+    let lastTransient = false
+    for (const wait of delays) {
+      if (wait) await sleep(wait)
+      try {
+        // Если refresh-токен лежит у нас (cookies заблокированы) — отдаём его
+        // в body. Иначе бэк прочитает из httpOnly cookie.
+        const refreshFromStore = tokenStore.getRefresh()
+        const { data } = await api.post(
+          '/auth/refresh',
+          refreshFromStore ? { refreshToken: refreshFromStore } : {},
+        )
+        if (data?.accessToken || data?.refreshToken) {
+          tokenStore.set(data.accessToken, data.refreshToken)
+        }
+        return 'ok' as const
+      } catch (e: any) {
+        lastTransient = isTransient(e)
+        // Сервер сказал «не годен» — повторять бессмысленно.
+        if (!lastTransient) return 'rejected' as const
       }
-      return true
-    } catch {
-      return false
-    } finally {
-      // Освобождаем чтобы следующий 401 мог снова попробовать.
-      setTimeout(() => { refreshPromise = null }, 0)
     }
+    return lastTransient ? ('offline' as const) : ('rejected' as const)
   })()
+  // Освобождаем слот после завершения — следующий 401 сможет попробовать снова.
+  refreshPromise.finally(() => { setTimeout(() => { refreshPromise = null }, 0) })
   return refreshPromise
 }
 
@@ -147,14 +178,25 @@ api.interceptors.response.use(
 
     // Один раз пробуем refresh при 401 (access-токен живёт всего 15 мин).
     // Не для /auth/* — иначе бесконечный цикл.
+    let refreshOutcome: RefreshResult | null = null
     if (status === 401 && !isAuthEndpoint && !err.config?.__retry) {
-      const ok = await tryRefresh()
-      if (ok) {
+      refreshOutcome = await tryRefresh()
+      if (refreshOutcome === 'ok') {
         err.config.__retry = true
         return api.request(err.config)
       }
     }
 
+    // Связи нет или сервер перезапускается — молча отдаём ошибку запросу.
+    // Выкидывать человека из системы из-за этого нельзя: сессия жива,
+    // просто сейчас недоступен сервер.
+    if (refreshOutcome === 'offline') {
+      return Promise.reject(err)
+    }
+
+    // Досюда доходим либо когда refresh отверг сервер, либо когда продлевать
+    // не пробовали (повторный 401 после уже обновлённого токена) — в обоих
+    // случаях выходим, иначе получится вечный цикл 401.
     if (
       status === 401 &&
       !window.location.pathname.includes('/auth') &&
@@ -166,9 +208,18 @@ api.interceptors.response.use(
       if (Date.now() < justAuthedUntil) {
         return Promise.reject(err)
       }
+      // Причину выхода показываем на экране входа: человек не должен гадать,
+      // сломалась система или его действительно вывели.
       const msg: string = err.response?.data?.message || ''
-      if (msg.includes('заблокировал') || msg.toLowerCase().startsWith('blocked')) {
+      const low = msg.toLowerCase()
+      if (msg.includes('заблокировал') || low.startsWith('blocked')) {
         sessionStorage.setItem('blocked-message', msg.replace(/^BLOCKED:\s*/i, ''))
+      } else if (low.includes('reuse') || low.includes('revoked')) {
+        sessionStorage.setItem('blocked-message',
+          'Вход выполнен на другом устройстве или пароль был изменён. Войдите заново.')
+      } else {
+        sessionStorage.setItem('blocked-message',
+          'Сессия завершена. Войдите заново — вход сохранится надолго.')
       }
       try { localStorage.removeItem('token') } catch {}
       try { localStorage.removeItem('auth-storage') } catch {}
@@ -182,5 +233,27 @@ api.interceptors.response.use(
     return Promise.reject(err)
   },
 )
+
+/** Вкладка вернулась из сна (крышку закрыли, ушли на встречу) — access-токен
+ *  за это время протух. Обновляем сессию заранее, до того как страница
+ *  выстрелит десяток запросов: иначе каждый получит 401 и они хором пойдут
+ *  продлевать, а первая же неудача уводила на экран входа.
+ *
+ *  Проверка «прошло больше 10 минут» бережёт сеть: обычный alt-tab ничего
+ *  не запускает. */
+if (typeof document !== 'undefined') {
+  let hiddenAt = 0
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      hiddenAt = Date.now()
+      return
+    }
+    const slept = Date.now() - hiddenAt
+    if (hiddenAt && slept > 10 * 60 * 1000 && tokenStore.getAccess()) {
+      tryRefresh().catch(() => { /* не вышло — обычный поток разберётся */ })
+    }
+    hiddenAt = 0
+  })
+}
 
 export default api

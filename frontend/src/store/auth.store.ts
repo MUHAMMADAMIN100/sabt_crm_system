@@ -192,7 +192,19 @@ export const useAuthStore = create<AuthState>()(
           if (oldRole && data.role && oldRole !== data.role) {
             window.location.reload()
           }
-        } catch {
+        } catch (e: any) {
+          // Нет связи / сервер перезапускается — состояние НЕ трогаем:
+          // сессия жива, просто сейчас не достучались. Иначе моргнувший
+          // Wi-Fi выбрасывал сотрудника на экран входа посреди работы.
+          const st = e?.response?.status
+          if (st === undefined || st >= 500 || st === 408 || st === 429) {
+            set({ loading: false })
+            setTimeout(() => {
+              const s = get()
+              if (s.authenticated && !s.user) s.fetchMe().catch(() => {})
+            }, 3000)
+            return
+          }
           // КРИТИЧНО: грейс после login. Иначе если /auth/me случайно
           // вернётся с 401 в первые секунды после входа (тайминг cookie,
           // первый запрос ещё не успел донести Set-Cookie), мы сами себя
