@@ -66,8 +66,9 @@ export class VoiceTaskService {
   /** Чаты, ждущие исправленный текст. Ключ — chatId. */
   private readonly awaitingEdit = new Map<number, AwaitingEdit>();
 
-  /** Кому доступна голосовая постановка задач СЕБЕ. */
-  private static readonly VOICE_ROLES: string[] = [
+  /** Наговорить задачу СЕБЕ может любой сотрудник (по решению владельца) —
+   *  список ниже нужен только для назначения задач ДРУГИМ. */
+  private static readonly ASSIGN_ROLES: string[] = [
     UserRole.FOUNDER,
     UserRole.SALES_MANAGER_DEV,
     UserRole.DEV_DIRECTOR,
@@ -108,7 +109,7 @@ export class VoiceTaskService {
    *  обработано и дальше его вести не надо. */
   async handleVoice(chatId: number, fileId: string, durationSec: number): Promise<boolean> {
     const user = await this.resolveVoiceUser(chatId);
-    if (!user) return false; // не основатель — ведём себя как раньше
+    if (!user) return false; // чат не привязан к сотруднику — не наше сообщение
 
     if (!this.gemini) {
       await this.telegram.sendMessage(chatId, '🎤 Распознавание голоса не настроено. Нужен GEMINI_API_KEY.');
@@ -154,8 +155,17 @@ export class VoiceTaskService {
     if (intent.assignee) {
       const scope = this.assignScopeOf(user);
       if (!scope) {
+        // Поручать другим может не каждый, но обрывать разговор на этом
+        // нельзя: человек уже наговорил задачу — предлагаем взять её себе.
+        const selfKey = this.remember({ ...intent, assignee: null, userId: user.id, chatId, at: Date.now() });
         await this.telegram.sendMessage(
-          chatId, '⚠️ Ставить задачи другим сотрудникам могут только основатель и руководитель разработки.');
+          chatId,
+          '⚠️ Поручать задачи другим сотрудникам могут основатель и руководитель разработки.\n\n'
+          + `Записать эту задачу на вас?\n\n<b>${esc(intent.title)}</b>`
+          + `\n📅 ${intent.date ? fmtRu(intent.date) : 'сегодня'}${intent.time ? ` в ${intent.time}` : ''}`,
+          [[{ text: '✓ Поставить себе', callback_data: `vt:ok:${selfKey}` },
+            { text: '✕ Отмена', callback_data: `vt:no:${selfKey}` }]],
+        );
         return;
       }
       const teamRoles = scope === 'dev' ? VoiceTaskService.DEV_TEAM_ROLES : undefined;
@@ -342,9 +352,9 @@ export class VoiceTaskService {
     if (!userId) return null;
     const user = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null);
     if (!user || !user.isActive || user.isBlocked) return null;
-    const ok = VoiceTaskService.VOICE_ROLES.includes(user.role)
-      || VoiceTaskService.VOICE_ROLES.includes(user.secondaryRole || '');
-    return ok ? user : null;
+    // Голосом наговорить задачу СЕБЕ может любой сотрудник. Ограничение
+    // осталось только на назначение ДРУГИМ — см. assignScopeOf.
+    return user;
   }
 
   /** Аудио → смысл.

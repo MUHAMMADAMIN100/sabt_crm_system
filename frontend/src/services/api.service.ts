@@ -268,8 +268,8 @@ export const kpiApi = {
   details: (userId: string, metric: string, params?: { from?: string; to?: string }) =>
     api.get(`/kpi/user/${userId}/details`, { params: { metric, ...params } }).then(r => r.data),
   /** Ежедневный автоотчёт СММ (только основатель). */
-  smmDaily: (date?: string) =>
-    api.get('/kpi/smm-daily', { params: { date } }).then(r => r.data),
+  smmDaily: (date?: string, scope?: 'all' | 'smm') =>
+    api.get('/kpi/smm-daily', { params: { date, scope } }).then(r => r.data),
 }
 
 // ─── Clients (sales CRM) ─────────────────────────────────

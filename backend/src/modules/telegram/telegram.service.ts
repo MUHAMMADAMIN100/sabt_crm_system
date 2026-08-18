@@ -21,8 +21,27 @@ export class TelegramService {
 
     if (this.token) {
       this.logger.log('Telegram Bot ready');
+      // Меню команд в чате: без него сотрудник не догадается, что бот
+      // умеет показывать задачи. Сбой регистрации не должен ронять старт.
+      void this.registerCommands();
     } else {
       this.logger.warn('TELEGRAM_BOT_TOKEN not set — Telegram notifications disabled');
+    }
+  }
+
+  /** Список команд в кнопке «Меню» у бота. */
+  private async registerCommands(): Promise<void> {
+    try {
+      await this.callApiJson('setMyCommands', {
+        commands: [
+          { command: 'tasks', description: 'Мои задачи' },
+          { command: 'today', description: 'Задачи и встречи на сегодня' },
+          { command: 'help', description: 'Что умеет бот' },
+          { command: 'start', description: 'Привязать аккаунт' },
+        ],
+      });
+    } catch (e: any) {
+      this.logger.warn(`setMyCommands failed: ${e?.message || e}`);
     }
   }
 

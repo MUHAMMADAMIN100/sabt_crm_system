@@ -65,7 +65,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
     { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
     // Ежедневный автоотчёт по СММ-команде — только основатель.
-    { to: '/smm-daily',     icon: ClipboardList,   label: 'Отчёты СММ',        permission: 'reports.view' },
+    { to: '/smm-daily',     icon: ClipboardList,   label: 'Ежедневный отчёт',  permission: 'reports.view' },
     { to: '/analytics',     icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },
     { to: '/archive',       icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
     { to: '/employees',     icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
@@ -100,7 +100,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'notes.use')
     // «Доступы сотрудников» — только основатель/сооснователь/админ.
     if (item.to === '/employee-access') return canManageAccess(role)
-    // «Отчёты СММ» (ежедневный автоотчёт) — только основатель.
+    // «Ежедневный отчёт» (автоотчёт по компании) — только основатель.
     if (item.to === '/smm-daily') return canSeeSmmDaily(role)
     // «Задачи от руководителя» — раздел получателя поручений. Основателю и
     // со-основателю он не нужен: выданные ими задачи видны в Календаре (там же

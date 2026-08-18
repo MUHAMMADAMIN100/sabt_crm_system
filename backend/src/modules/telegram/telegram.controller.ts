@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TelegramService } from './telegram.service';
 import { VoiceTaskService } from './voice-task.service';
+import { BotWorkspaceService } from './bot-workspace.service';
 import { Employee } from '../employees/employee.entity';
 import { WorkflowService } from '../workflow/workflow.service';
 import { TasksService } from '../tasks/tasks.service';
@@ -13,6 +14,8 @@ interface TelegramUpdate {
     text?: string;
     /** Голосовое сообщение: из него основатель ставит себе задачу. */
     voice?: { file_id: string; duration?: number };
+    photo?: Array<{ file_id: string; file_size?: number }>;
+    document?: { file_id: string; file_name?: string };
   };
   callback_query?: {
     id: string;
@@ -27,6 +30,7 @@ export class TelegramController {
   constructor(
     private telegramService: TelegramService,
     private voiceTaskService: VoiceTaskService,
+    private botWorkspace: BotWorkspaceService,
     @Inject(forwardRef(() => WorkflowService)) private workflowService: WorkflowService,
     @Inject(forwardRef(() => TasksService)) private tasksService: TasksService,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
@@ -39,8 +43,25 @@ export class TelegramController {
     if (cq) {
       const chatId = cq.from?.id;
       const data = cq.data || '';
-      // Подтверждение голосовой задачи (vt:ok|no:<ключ>) — отдельная ветка,
-      // до разбора кнопок доски и задач.
+      // Кнопки рабочего места («Готово», «В работу», «Комментарий»,
+      // «Результат») — пишутся теми же сервисами, что и веб-интерфейс.
+      if (data.startsWith('w:') && chatId) {
+        const answer = await this.botWorkspace.handleCallback(chatId, data).catch(() => null);
+        if (answer) {
+          await this.telegramService.answerCallbackQuery(cq.id, answer);
+          if ((answer === 'Задача закрыта' || answer === 'Взято в работу')
+              && cq.message?.chat?.id && cq.message?.message_id) {
+            const base = cq.message.text ? `${cq.message.text}\n\n` : '';
+            await this.telegramService.editMessageText(
+              cq.message.chat.id, cq.message.message_id,
+              `${base}${answer === 'Задача закрыта' ? '✅ Закрыто' : '▶️ В работе'}`,
+            ).catch(() => {});
+          }
+          return { ok: true };
+        }
+      }
+      // Подтверждение голосовой задачи (vt:ok|no:<ключ>) — до разбора
+      // кнопок доски и задач.
       if (data.startsWith('vt:') && chatId) {
         const text = await this.voiceTaskService.handleCallback(data, chatId);
         if (text) {
@@ -105,6 +126,37 @@ export class TelegramController {
       return { ok: true };
     }
 
+    // Фото или документ после кнопки «Результат» — приложение к задаче.
+    const fileId = msg.document?.file_id
+      || (msg.photo && msg.photo.length ? msg.photo[msg.photo.length - 1].file_id : undefined);
+    if (chatId && fileId && this.botWorkspace.isAwaitingFile(chatId)) {
+      await this.botWorkspace.handleFile(chatId, fileId, msg.document?.file_name)
+        .catch(() => { /* бот не должен падать из-за файла */ });
+      return { ok: true };
+    }
+
+    // Команды рабочего места.
+    if (chatId && text) {
+      const cmd = text.trim().toLowerCase().split(/[@\s]/)[0];
+      if (cmd === '/tasks' || cmd === '/today') {
+        const handled = await this.botWorkspace.sendList(chatId, cmd === '/today').catch(() => false);
+        if (handled) return { ok: true };
+        await this.telegramService.sendMessage(chatId,
+          'Ваш Telegram не привязан к сотруднику. Отправьте /start.');
+        return { ok: true };
+      }
+      if (cmd === '/help') {
+        await this.telegramService.sendMessage(chatId, this.botWorkspace.helpText());
+        return { ok: true };
+      }
+    }
+
+    // Комментарий к задаче после кнопки «Комментарий».
+    if (chatId && text && !text.startsWith('/')) {
+      const handled = await this.botWorkspace.handleText(chatId, text).catch(() => false);
+      if (handled) return { ok: true };
+    }
+
     // Ждём исправление после кнопки «Изменить» — обычный текст в этот
     // момент означает правку, а не команду.
     if (chatId && text && !text.startsWith('/')) {
@@ -150,6 +202,8 @@ export class TelegramController {
       `Привет, <b>${employee.fullName}</b>!\n` +
       `Теперь вы будете получать уведомления Sabt System прямо здесь. 🎉`,
     );
+    // Сразу показываем, что бот умеет: иначе о командах никто не узнает.
+    await this.telegramService.sendMessage(chatId, this.botWorkspace.helpText()).catch(() => {});
 
     return { ok: true };
   }

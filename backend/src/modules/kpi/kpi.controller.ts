@@ -26,12 +26,14 @@ export class KpiController {
     return this.kpi.getAllKpi(from, to, directionScopeOf(req?.user));
   }
 
-  /** Ежедневный автоотчёт по СММ-команде: что каждый сделал за день.
-   *  По требованию основателя видит ТОЛЬКО основатель (пока). */
+  /** Ежедневный автоотчёт: что каждый сделал за день. Видит ТОЛЬКО
+   *  основатель. По умолчанию — вся компания, как в вечернем отчёте в
+   *  Telegram: страница по ссылке из отчёта должна показывать то же
+   *  самое. scope=smm оставляет прежний срез по СММ-отделу. */
   @Get('smm-daily')
   @Roles(UserRole.FOUNDER)
-  getSmmDaily(@Query('date') date?: string) {
-    return this.smmDaily.getDaily(date);
+  getSmmDaily(@Query('date') date?: string, @Query('scope') scope?: string) {
+    return this.smmDaily.getDaily(date, { allStaff: scope !== 'smm' });
   }
 
   /** Может ли смотрящий видеть KPI этого сотрудника: руководство — любого,

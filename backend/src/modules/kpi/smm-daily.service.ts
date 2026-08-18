@@ -59,13 +59,34 @@ export interface SmmDailyEmployee {
   hours: number;
   /** Суммарное время на закрытые за день этапы/задачи, минут. */
   spentMinutes: number;
+  /** Сколько задач сейчас открыто и сколько из них просрочено. Нужно, чтобы
+   *  отличить «человек ничего не делал» от «человеку нечего было делать». */
+  openTasks: number;
+  overdueTasks: number;
   items: SmmDailyItem[];
+}
+
+/** Движение по одному проекту за день — для отчёта основателю. */
+export interface DailyProjectRow {
+  id: string;
+  name: string;
+  projectType: string;
+  /** Сколько карточек доски продвинулось за день. */
+  moved: number;
+  /** Сколько задач проекта закрыто за день. */
+  tasksDone: number;
+  /** Сколько сейчас просрочено (карточки доски + задачи). */
+  overdue: number;
+  /** Дата последнего движения — чтобы видеть застой. */
+  lastMoveAt: string | null;
 }
 
 export interface SmmDailyReport {
   date: string; // YYYY-MM-DD (Душанбе)
   employees: SmmDailyEmployee[];
   totals: { stagesDone: number; storiesTotal: number; tasksDone: number; activeCount: number };
+  /** Заполняется только для отчёта по всей компании (allStaff). */
+  projects?: DailyProjectRow[];
 }
 
 /** Сегодняшняя дата по Душанбе — сервер (Railway) живёт в UTC. */
@@ -114,7 +135,7 @@ export class SmmDailyService {
     };
   }
 
-  async getDaily(dateArg?: string): Promise<SmmDailyReport> {
+  async getDaily(dateArg?: string, opts?: { allStaff?: boolean }): Promise<SmmDailyReport> {
     const date = /^\d{4}-\d{2}-\d{2}$/.test(dateArg || '') ? (dateArg as string) : todayISO();
     // Границы дня D по Душанбе как абсолютные моменты времени. Драйвер pg
     // передаёт Date с оффсетом, сессия БД приводит к своим часам — сравнение
@@ -124,8 +145,11 @@ export class SmmDailyService {
     const dayEnd = new Date(dayStart.getTime() + 86_400_000);
 
     // ─── Состав СММ-команды (основная ИЛИ вторая роль) ───────────────────
+    // allStaff — отчёт основателю по ВСЕЙ компании: разработка, продажи,
+    // руководство. Без флага — прежний состав SMM-отдела.
     const roster = await this.userRepo.createQueryBuilder('u')
-      .where('(u.role IN (:...roles) OR u.secondaryRole IN (:...roles))', { roles: SMM_TEAM_ROLES })
+      .where(opts?.allStaff ? '1 = 1' : '(u.role IN (:...roles) OR u.secondaryRole IN (:...roles))',
+        opts?.allStaff ? {} : { roles: SMM_TEAM_ROLES })
       .andWhere('u.isActive = true')
       .andWhere('u.isBlocked = false')
       .orderBy('u.name', 'ASC')
@@ -255,7 +279,8 @@ export class SmmDailyService {
         id: u.id, name: u.name, avatar: (u as any).avatar ?? null,
         role: u.role, secondaryRole: (u as any).secondaryRole ?? null,
         stagesDone: 0, returns: 0, storiesTotal: 0, tasksDone: 0,
-        hours: hoursBy.get(u.id) ?? 0, spentMinutes: 0, items: [],
+        hours: hoursBy.get(u.id) ?? 0, spentMinutes: 0,
+        openTasks: 0, overdueTasks: 0, items: [],
       });
     }
     const push = (uid: string, item: SmmDailyItem) => {
@@ -327,11 +352,27 @@ export class SmmDailyService {
       });
     }
 
+    // Движение по проектам — только для отчёта основателю: он смотрит на
+    // компанию сверху, ему нужны и проекты, а не только люди.
+    const projects = opts?.allStaff ? await this.dailyProjects(dayStart, dayEnd) : undefined;
+
+    for (const r of await this.openLoad(ids)) {
+      const e = byUser.get(r.uid); if (!e) continue;
+      e.openTasks = Number(r.open) || 0;
+      e.overdueTasks = Number(r.overdue) || 0;
+    }
+
     const employees = [...byUser.values()];
     for (const e of employees) e.items.sort((a, b) => a.at.localeCompare(b.at));
-    // Активные — сверху (по объёму сделанного), внутри групп — по имени.
+    // Порядок чтения отчёта: сначала кто работал (по объёму сделанного),
+    // затем кто молчал, но задачи на нём висят — по просрочке, — и в
+    // конце те, кому вообще ничего не назначено.
     const weight = (e: SmmDailyEmployee) => e.stagesDone + e.storiesTotal + e.tasksDone + e.returns;
-    employees.sort((a, b) => (weight(b) - weight(a)) || a.name.localeCompare(b.name, 'ru'));
+    employees.sort((a, b) =>
+      (weight(b) - weight(a))
+      || (b.overdueTasks - a.overdueTasks)
+      || (b.openTasks - a.openTasks)
+      || a.name.localeCompare(b.name, 'ru'));
 
     return {
       date,
@@ -342,6 +383,85 @@ export class SmmDailyService {
         tasksDone: employees.reduce((s, e) => s + e.tasksDone, 0),
         activeCount: employees.filter(e => weight(e) > 0).length,
       },
+      ...(projects ? { projects } : {}),
     };
+  }
+
+  /** Текущая нагрузка сотрудников: открытые и просроченные задачи. Отчёту
+   *  это нужно, чтобы не путать «не работал» с «нечего было делать» —
+   *  без этого раздел «требует внимания» тонет в именах тех, кому вообще
+   *  ничего не назначено. */
+  private async openLoad(ids: string[]): Promise<Array<{ uid: string; open: number; overdue: number }>> {
+    if (ids.length === 0) return [];
+    return this.projectRepo.manager.query(`
+      SELECT u.id AS uid,
+             COUNT(*) FILTER (WHERE t.id IS NOT NULL)::int AS open,
+             COUNT(*) FILTER (WHERE t.deadline < NOW())::int AS overdue
+      FROM unnest($1::uuid[]) AS u(id)
+      LEFT JOIN tasks t
+        ON t.status::text NOT IN ('done','cancelled','archived')
+       AND (t."assigneeId" = u.id
+            OR EXISTS (SELECT 1 FROM task_assignees ta
+                        WHERE ta."taskId" = t.id AND ta."userId" = u.id))
+      GROUP BY u.id
+    `, [ids]).catch(this.fallback('открытые задачи'));
+  }
+
+  /** Что произошло с проектами за день: движение карточек доски, закрытые
+   *  задачи и текущие просрочки. Один запрос на метрику — считаем в БД,
+   *  чтобы не тянуть все карточки в память. */
+  private async dailyProjects(dayStart: Date, dayEnd: Date): Promise<DailyProjectRow[]> {
+    const rows: any[] = await this.projectRepo.manager.query(
+      `WITH moved AS (
+         SELECT c."projectId" AS pid, COUNT(*)::int AS cnt, MAX(c."updatedAt") AS last_at
+         FROM workflow_cards c
+         WHERE c."updatedAt" >= $1 AND c."updatedAt" < $2
+         GROUP BY c."projectId"
+       ), done AS (
+         SELECT t."projectId" AS pid, COUNT(*)::int AS cnt
+         FROM tasks t
+         WHERE t.status::text = 'done'
+           AND COALESCE(t."completedAt", t."reviewedAt", t."updatedAt") >= $1
+           AND COALESCE(t."completedAt", t."reviewedAt", t."updatedAt") < $2
+         GROUP BY t."projectId"
+       ), late_cards AS (
+         SELECT c."projectId" AS pid, COUNT(*)::int AS cnt
+         FROM workflow_cards c
+         WHERE c.deadline IS NOT NULL AND c.deadline < NOW()
+           AND c.stage NOT IN ('published','ads')
+           AND COALESCE(c.status, '') NOT IN ('done','published')
+           AND (c.kind IS NULL OR c.kind <> 'kp')
+         GROUP BY c."projectId"
+       ), late_tasks AS (
+         SELECT t."projectId" AS pid, COUNT(*)::int AS cnt
+         FROM tasks t
+         WHERE t.deadline < NOW() AND t.status::text NOT IN ('done','cancelled')
+           AND (t."originStage" IS NULL OR t."originStage" <> 'kp_creation')
+         GROUP BY t."projectId"
+       )
+       SELECT p.id, p.name, p."projectType",
+              COALESCE(m.cnt, 0) AS moved,
+              COALESCE(d.cnt, 0) AS tasks_done,
+              COALESCE(lc.cnt, 0) + COALESCE(lt.cnt, 0) AS overdue,
+              m.last_at AS last_move_at
+       FROM projects p
+       LEFT JOIN moved m       ON m.pid  = p.id
+       LEFT JOIN done d        ON d.pid  = p.id
+       LEFT JOIN late_cards lc ON lc.pid = p.id
+       LEFT JOIN late_tasks lt ON lt.pid = p.id
+       WHERE p."isArchived" = false
+       ORDER BY (COALESCE(m.cnt,0) + COALESCE(d.cnt,0)) DESC, p.name ASC`,
+      [dayStart, dayEnd],
+    ).catch(this.fallback('движение по проектам'));
+
+    return rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      projectType: r.projectType,
+      moved: Number(r.moved) || 0,
+      tasksDone: Number(r.tasks_done) || 0,
+      overdue: Number(r.overdue) || 0,
+      lastMoveAt: r.last_move_at ? new Date(r.last_move_at).toISOString() : null,
+    }));
   }
 }

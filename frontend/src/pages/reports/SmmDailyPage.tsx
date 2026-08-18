@@ -27,12 +27,18 @@ interface DailyEmployee {
   role: string; secondaryRole: string | null
   stagesDone: number; returns: number; storiesTotal: number; tasksDone: number; hours: number
   spentMinutes: number
+  openTasks: number; overdueTasks: number
   items: DailyItem[]
+}
+interface DailyProject {
+  id: string; name: string; projectType: string
+  moved: number; tasksDone: number; overdue: number; lastMoveAt: string | null
 }
 interface DailyReport {
   date: string
   employees: DailyEmployee[]
   totals: { stagesDone: number; storiesTotal: number; tasksDone: number; activeCount: number }
+  projects?: DailyProject[]
 }
 
 // «Сегодня» — по Душанбе (бизнес-зона отчёта), как на бэкенде, иначе при
@@ -74,16 +80,26 @@ const KIND_META: Record<DailyItem['kind'], { icon: any; cls: string }> = {
 export default function SmmDailyPage() {
   const [date, setDate] = useState(todayISO())
   const isToday = date === todayISO()
+  // По умолчанию — вся компания: именно такой отчёт приходит вечером,
+  // и по ссылке из него человек ожидает увидеть то же самое.
+  const [scope, setScope] = useState<'all' | 'smm'>('all')
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery<DailyReport>({
-    queryKey: ['smm-daily', date],
-    queryFn: () => kpiApi.smmDaily(date),
+    queryKey: ['smm-daily', date, scope],
+    queryFn: () => kpiApi.smmDaily(date, scope),
     // При листании дней держим прошлые данные — без вспышки полного лоадера.
     placeholderData: keepPreviousData,
   })
 
   const totals = data?.totals
   const employees = data?.employees || []
+  const projects = data?.projects || []
+  // Проектов много, и большинство в любой день стоит без движения —
+  // по умолчанию показываем те, где что-то происходило или горит срок,
+  // иначе список оттесняет сотрудников на второй экран.
+  const [allProjects, setAllProjects] = useState(false)
+  const notable = projects.filter(pr => pr.moved + pr.tasksDone > 0 || pr.overdue > 0)
+  const shownProjects = allProjects ? projects : notable
 
   return (
     <div className="space-y-5">
@@ -91,15 +107,28 @@ export default function SmmDailyPage() {
         <div>
           <div className="flex items-center gap-2">
             <ClipboardList size={20} className="text-primary-600" />
-            <h1 className="page-title">Отчёты СММ</h1>
+            <h1 className="page-title">Ежедневный отчёт</h1>
           </div>
           <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">
-            Автоматический ежедневный отчёт команды — собирается из доски проектов, историй и задач
+            {scope === "all"
+              ? "Вся компания: сотрудники и проекты — собирается из доски проектов, историй и задач"
+              : "СММ-отдел — собирается из доски проектов, историй и задач"}
           </p>
         </div>
 
-        {/* Навигация по дням */}
+        {/* Область отчёта и навигация по дням */}
         <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden text-xs mr-1">
+            {([["all", "Вся компания"], ["smm", "СММ-отдел"]] as const).map(([v, label]) => (
+              <button key={v} type="button" onClick={() => setScope(v)}
+                className={clsx("px-3 py-2 font-medium transition-colors",
+                  scope === v
+                    ? "bg-primary-600 text-white"
+                    : "text-surface-500 hover:bg-surface-50 dark:hover:bg-surface-700")}>
+                {label}
+              </button>
+            ))}
+          </div>
           <button onClick={() => setDate(shiftDay(date, -1))} title="Предыдущий день"
             className="p-2 rounded-lg border border-surface-200 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-700 text-surface-500">
             <ChevronLeft size={16} />
@@ -151,8 +180,47 @@ export default function SmmDailyPage() {
             </div>
           )}
 
+          {/* Движение по проектам — приходит только в отчёте по компании */}
+          {shownProjects.length > 0 && (
+            <div className="card">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-surface-900 dark:text-surface-100">Проекты за день</p>
+                {projects.length > notable.length && (
+                  <button type="button" onClick={() => setAllProjects(v => !v)}
+                    className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline">
+                    {allProjects
+                      ? "Только активные"
+                      : `Показать все (${projects.length})`}
+                  </button>
+                )}
+              </div>
+              <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
+                {shownProjects.map(pr => {
+                  const moved = pr.moved + pr.tasksDone
+                  return (
+                    <div key={pr.id} className="flex items-center gap-3 py-2 text-sm">
+                      <span className={clsx("w-2 h-2 rounded-full shrink-0",
+                        moved > 0 ? "bg-green-500" : pr.overdue > 0 ? "bg-red-500" : "bg-surface-300 dark:bg-surface-600")} />
+                      <span className="flex-1 min-w-0 truncate text-surface-800 dark:text-surface-200">{pr.name}</span>
+                      <span className="text-[11px] text-surface-400 shrink-0">
+                        {moved > 0
+                          ? [pr.moved > 0 ? `этапов ${pr.moved}` : "", pr.tasksDone > 0 ? `задач ${pr.tasksDone}` : ""].filter(Boolean).join(" · ")
+                          : "без движения"}
+                      </span>
+                      {pr.overdue > 0 && (
+                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 shrink-0">
+                          просрочено {pr.overdue}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {employees.length === 0 ? (
-            <EmptyState title="Нет сотрудников СММ" description="В команде не найдено активных сотрудников СММ-ролей." />
+            <EmptyState title="Нет данных" description="Не найдено активных сотрудников для этого отчёта." />
           ) : (
             <div className="space-y-3">
               {employees.map(e => <EmployeeCard key={e.id} e={e} />)}
@@ -186,8 +254,14 @@ function EmployeeCard({ e }: { e: DailyEmployee }) {
         </div>
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {idle ? (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
-              <Moon size={11} /> Нет активности
+            <span className={clsx("inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full",
+              e.openTasks > 0
+                ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                : "bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400")}>
+              <Moon size={11} />
+              {e.openTasks > 0
+                ? `Нет активности · открыто ${e.openTasks}${e.overdueTasks > 0 ? `, просрочено ${e.overdueTasks}` : ""}`
+                : "Нет активности · задач не назначено"}
             </span>
           ) : chips.map(c => (
             <span key={c.label} className={clsx('text-[11px] font-medium px-2 py-0.5 rounded-full', c.cls)}>{c.label}</span>
