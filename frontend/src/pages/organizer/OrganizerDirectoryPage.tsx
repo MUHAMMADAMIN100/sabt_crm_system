@@ -182,7 +182,7 @@ export default function OrganizerDirectoryPage({ kind }: { kind: Kind }) {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <Icon size={20} className="text-primary-600" />
+            {kind !== 'places' && <Icon size={20} className="text-primary-600" />}
             <h1 className="page-title">{cfg.title}</h1>
           </div>
           <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">{cfg.subtitle}</p>
