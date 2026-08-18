@@ -32,6 +32,9 @@ export default function AuthPage() {
   const [founderExists, setFounderExists] = useState(false)
   const [coFounderExists, setCoFounderExists] = useState(false)
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null)
+  /** Обычное завершение сессии — спокойная подсказка, а не красная тревога:
+   *  «Доступ заблокирован» пугало сотрудников, хотя их никто не блокировал. */
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null)
   const [needs2FA, setNeeds2FA] = useState(false)
   const { login, register: doRegister } = useAuthStore()
   const { t } = useTranslation()
@@ -42,6 +45,11 @@ export default function AuthPage() {
     if (blockMsg) {
       setBlockedMessage(blockMsg)
       sessionStorage.removeItem('blocked-message')
+    }
+    const sessMsg = sessionStorage.getItem('session-message')
+    if (sessMsg) {
+      setSessionMessage(sessMsg)
+      sessionStorage.removeItem('session-message')
     }
   }, [])
 
@@ -196,6 +204,19 @@ export default function AuthPage() {
                 <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 whitespace-pre-line">{blockedMessage}</p>
               </div>
               <button onClick={() => setBlockedMessage(null)} className="text-red-400 hover:text-red-600 shrink-0">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          )}
+
+          {/* Обычное истечение сессии — нейтральная подсказка */}
+          {sessionMessage && !blockedMessage && mode === 'login' && (
+            <div className="mb-3 p-3 rounded-xl bg-surface-100 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 flex items-start gap-2 animate-fade-in">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-surface-400 shrink-0 mt-0.5">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+              </svg>
+              <p className="flex-1 min-w-0 text-xs text-surface-600 dark:text-surface-300">{sessionMessage}</p>
+              <button onClick={() => setSessionMessage(null)} className="text-surface-400 hover:text-surface-600 shrink-0">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>

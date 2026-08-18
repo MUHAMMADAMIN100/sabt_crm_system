@@ -73,6 +73,14 @@ export class AuthService implements OnModuleInit {
       this.logger.warn(`deniedPermissions column add failed: ${e?.message || e}`);
     }
     try {
+      // Метка смены пароля: по ней отвергаются токены, выданные раньше.
+      await this.userRepo.manager.query(
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "passwordChangedAt" timestamp`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`passwordChangedAt column add failed: ${e?.message || e}`);
+    }
+    try {
       // FCM-токены устройств мобильного приложения (пуш-уведомления).
       await this.userRepo.manager.query(
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "fcmTokens" jsonb`,
@@ -588,6 +596,7 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Wrong current password');
     }
     user.password = newPassword;
+    user.passwordChangedAt = new Date();
     await this.userRepo.save(user);
 
     // Security: при смене пароля отзываем ВСЕ refresh-токены этого юзера.
@@ -631,6 +640,7 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Invalid or expired token');
     }
     user.password = newPassword;
+    user.passwordChangedAt = new Date();
     user.resetPasswordToken = null;
     user.resetPasswordExpires = null;
     await this.userRepo.save(user);

@@ -93,8 +93,11 @@ api.interceptors.request.use(config => {
   // withCredentials — что сработает, то backend и примет (JwtStrategy
   // умеет извлекать из обоих источников). Это нужно для браузеров,
   // блокирующих third-party cookies (Chrome anti-tracking, incognito).
+  // Токен ставим ВСЕГДА, а не «если пусто». Иначе повтор запроса после
+  // обновления уходил со старым протухшим заголовком, ловил второй 401 и
+  // сотрудника выбрасывало на экран входа — каждые 15 минут работы.
   const access = tokenStore.getAccess()
-  if (access && config.headers && !(config.headers as any).Authorization) {
+  if (access && config.headers) {
     ;(config.headers as any).Authorization = `Bearer ${access}`
   }
   if (config.method === 'get' || config.method === 'GET') {
@@ -179,10 +182,20 @@ api.interceptors.response.use(
     // Один раз пробуем refresh при 401 (access-токен живёт всего 15 мин).
     // Не для /auth/* — иначе бесконечный цикл.
     let refreshOutcome: RefreshResult | null = null
-    if (status === 401 && !isAuthEndpoint && !err.config?.__retry) {
+    // Две попытки: первый 401 — обычное истечение, второй после успешного
+    // обновления означает, что мы промахнулись с токеном (гонка вкладок,
+    // ротация) — обновляемся ещё раз, и только потом выходим.
+    const attempts: number = err.config?.__retry || 0
+    if (status === 401 && !isAuthEndpoint && attempts < 2) {
       refreshOutcome = await tryRefresh()
       if (refreshOutcome === 'ok') {
-        err.config.__retry = true
+        err.config.__retry = attempts + 1
+        // Заголовок берём свежий: в err.config лежит тот, с которым запрос
+        // уже провалился.
+        const fresh = tokenStore.getAccess()
+        if (fresh && err.config.headers) {
+          err.config.headers.Authorization = `Bearer ${fresh}`
+        }
         return api.request(err.config)
       }
     }
@@ -214,12 +227,12 @@ api.interceptors.response.use(
       const low = msg.toLowerCase()
       if (msg.includes('заблокировал') || low.startsWith('blocked')) {
         sessionStorage.setItem('blocked-message', msg.replace(/^BLOCKED:\s*/i, ''))
-      } else if (low.includes('reuse') || low.includes('revoked')) {
-        sessionStorage.setItem('blocked-message',
-          'Вход выполнен на другом устройстве или пароль был изменён. Войдите заново.')
+      } else if (low.includes('reuse') || low.includes('revoked') || low.includes('password')) {
+        sessionStorage.setItem('session-message',
+          'Пароль был изменён или выполнен вход на другом устройстве. Войдите заново.')
       } else {
-        sessionStorage.setItem('blocked-message',
-          'Сессия завершена. Войдите заново — вход сохранится надолго.')
+        // Обычное истечение — спокойная подсказка, а не красная тревога.
+        sessionStorage.setItem('session-message', 'Войдите заново, чтобы продолжить работу.')
       }
       try { localStorage.removeItem('token') } catch {}
       try { localStorage.removeItem('auth-storage') } catch {}

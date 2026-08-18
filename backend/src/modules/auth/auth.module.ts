@@ -26,7 +26,15 @@ import { GatewayModule } from '../gateway/gateway.module';
         secret: config.get('JWT_SECRET'),
         // Короткий access-token (15 минут). Долгоживущая авторизация
         // выдерживается refresh-токеном — см. auth.service.refresh().
-        signOptions: { expiresIn: config.get('JWT_ACCESS_TTL', '15m') },
+        // Рабочий токен бессрочный (по решению владельца): обновлять нечего —
+        // значит нечему и ломаться, сотрудников больше не выбрасывает посреди
+        // работы. Безопасность держится на другом: КАЖДЫЙ запрос сверяется с
+        // базой (jwt.strategy), поэтому заблокированный или уволенный
+        // отсекается мгновенно, а токены, выданные до смены пароля, отвергаются
+        // по метке passwordChangedAt.
+        signOptions: config.get('JWT_ACCESS_TTL')
+          ? { expiresIn: config.get('JWT_ACCESS_TTL') }
+          : {},
       }),
       inject: [ConfigService],
     }),

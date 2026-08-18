@@ -232,6 +232,9 @@ export class UsersService {
     // Generate random password if not provided
     const finalPassword = trimmed || this.generateRandomPassword(10);
     user.password = finalPassword; // BeforeUpdate hook will hash it
+    // Отзываем и бессрочные рабочие токены: всё выданное до этой метки
+    // перестаёт действовать (см. jwt.strategy).
+    user.passwordChangedAt = new Date();
     await this.repo.save(user);
 
     // Security: админский сброс пароля — это обычно ответ на инцидент

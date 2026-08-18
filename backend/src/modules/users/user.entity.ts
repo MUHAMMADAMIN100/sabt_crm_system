@@ -145,6 +145,13 @@ export class User {
   @Column({ type: 'numeric', precision: 6, scale: 3, nullable: true })
   backgroundRatio: string | null;
 
+  /** Когда пароль менялся последний раз. Рабочий токен бессрочный, поэтому
+   *  отзывать его иначе нечем: токены, выданные ДО этой метки, считаются
+   *  недействительными (см. jwt.strategy). Так смена пароля по-прежнему
+   *  выкидывает все чужие устройства. */
+  @Column({ type: 'timestamp', nullable: true })
+  passwordChangedAt: Date | null;
+
   @Column({ default: true })
   isActive: boolean;
 

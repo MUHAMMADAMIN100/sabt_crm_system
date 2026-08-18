@@ -21,8 +21,9 @@ const ACCESS_COOKIE_OPTS = {
   secure: true as const,
   sameSite: 'none' as const,
   path: '/',
-  // 15 минут — синхронно с JWT_ACCESS_TTL
-  maxAge: 15 * 60 * 1000,
+  // Кука живёт столько же, сколько разрешает браузер: сам токен бессрочный,
+  // а короткая кука заставляла бы переходить на заголовок раньше времени.
+  maxAge: 400 * 24 * 60 * 60 * 1000,
 };
 const REFRESH_COOKIE_OPTS = {
   ...ACCESS_COOKIE_OPTS,
