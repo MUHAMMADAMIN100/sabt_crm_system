@@ -8,7 +8,7 @@ import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, UserPlus,
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
-  Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal,
+  Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal, MoreHorizontal,
   Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck, LineChart,
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -38,6 +38,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const location = useLocation()
   const financeActive = location.pathname === '/finance' || location.pathname.startsWith('/finance/')
   const [financeOpen, setFinanceOpen] = useState(financeActive)
+  // «Ещё» — свёрнутая нижняя группа навбара (только у основателя).
+  const [moreOpen, setMoreOpen] = useState(false)
 
   const handleNavClick = () => {
     if (window.innerWidth < 993) onClose()
@@ -111,6 +113,25 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     return userCan(user, item.permission)
   })
 
+  // Навбар основателя: основные пункты на виду, остальные — под кнопкой «Ещё».
+  // Прочие роли видят полный список без изменений.
+  const isFounder = role === 'founder'
+  const FOUNDER_CORE = new Set<string>([
+    '/', '/finance', '/projects', '/workflow-board', '/calendar',
+    '/analytics', '/employees', '/clients', '/ai',
+  ])
+  const coreItems = isFounder ? filtered.filter(i => FOUNDER_CORE.has(i.to)) : filtered
+  const moreItems = isFounder ? filtered.filter(i => !FOUNDER_CORE.has(i.to)) : []
+  // Список для рендера: у основателя вставляем маркер «Ещё» и (если раскрыто)
+  // остальные пункты; у прочих ролей — просто отфильтрованный список.
+  const renderList: any[] = !isFounder
+    ? filtered
+    : [
+        ...coreItems,
+        ...(moreItems.length > 0 ? [{ to: '__more__' }] : []),
+        ...(moreOpen ? moreItems : []),
+      ]
+
   return (
     <aside
       className={clsx(
@@ -151,7 +172,35 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {/* Навигация */}
       <nav className="flex-1 p-3 overflow-y-auto overflow-x-hidden">
         <ul className="space-y-1">
-          {filtered.map(item => {
+          {renderList.map(item => {
+            // «Ещё» — кнопка-переключатель нижней группы (только у основателя).
+            if (item.to === '__more__') {
+              return (
+                <li key="__more__">
+                  <button
+                    type="button"
+                    onClick={() => setMoreOpen(v => !v)}
+                    className={clsx(
+                      'group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                      'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
+                      !open && 'lg:justify-center lg:px-2',
+                    )}
+                    title={!open ? (moreOpen ? 'Свернуть' : 'Ещё') : undefined}
+                  >
+                    <MoreHorizontal size={18} className="shrink-0" />
+                    <span className={clsx(
+                      'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
+                      open ? 'max-w-[200px] opacity-100' : 'max-w-0 opacity-0',
+                    )}>
+                      {moreOpen ? 'Свернуть' : 'Ещё'}
+                    </span>
+                    {open && (
+                      <ChevronDown size={15} className={clsx('ml-auto shrink-0 transition-transform', moreOpen && 'rotate-180')} />
+                    )}
+                  </button>
+                </li>
+              )
+            }
             // «Финансы» — раскрывающийся раздел с подпунктами (Fin System).
             if (item.to === '/finance') {
               return (
