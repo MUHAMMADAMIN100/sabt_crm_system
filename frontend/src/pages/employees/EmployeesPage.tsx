@@ -21,7 +21,7 @@ export default function EmployeesPage() {
   const [position, setPosition] = useState('')
   const [view, setView] = useState<'cards' | 'table' | 'org'>('cards')
   const [page, setPage] = useState(1)
-  const PAGE_SIZE = 12
+  const PAGE_SIZE = 16
   const [showCreate, setShowCreate] = useState(false)
   const [editEmp, setEditEmp] = useState<any>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
