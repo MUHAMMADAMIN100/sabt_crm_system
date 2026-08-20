@@ -3318,14 +3318,20 @@ export class FinanceService implements OnModuleInit {
       && ['lead', 'active', 'paused', 'done', 'archived'].includes(dto.status);
     let nextStatus = validStatus ? dto.status : p.status;
     let nextArchived = dto.archived !== undefined ? !!dto.archived : p.archived;
-    if (nextStatus === 'archived' || dto.archived === true) {
+    if (dto.archived === false) {
+      // Явный возврат из архива (кнопка «Вернуть») имеет приоритет: снимаем
+      // флаг и, если статус остался «архивным» (archived/done), возвращаем в
+      // рабочий. Иначе проект остаётся в списке архива (он включает и done).
+      nextArchived = false;
+      if (!validStatus && ['archived', 'done'].includes(nextStatus || '')) {
+        nextStatus = 'active';
+      }
+    } else if (nextStatus === 'archived' || dto.archived === true) {
       nextStatus = 'archived';
       nextArchived = true;
     } else if (validStatus) {
-      // Явный перевод архивного проекта в рабочий статус восстанавливает его.
+      // Явный перевод архивного проекта в рабочий статус тоже восстанавливает его.
       nextArchived = false;
-    } else if (dto.archived === false && nextStatus === 'archived') {
-      nextStatus = 'active';
     }
     if (nextStatus !== p.status) {
       const prev = p.status;
