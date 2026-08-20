@@ -1,53 +1,21 @@
-import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { analyticsApi, workflowApi } from '@/services/api.service'
 import { STAGES } from '@/components/projects/workflowShared'
-import { useAuthStore } from '@/store/auth.store'
 import { StatCard, PageLoader, Avatar } from '@/components/ui'
 import {
   FolderKanban, Users, AlertTriangle, TrendingDown,
-  UserX, Activity, Clock, DollarSign, Calendar,
+  UserX, Activity, Clock,
 } from 'lucide-react'
-import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear } from 'date-fns'
+import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import clsx from 'clsx'
-
-type FinancePeriod = 'this_month' | 'last_3_months' | 'this_year' | 'all_time'
-
-const PERIOD_LABELS: Record<FinancePeriod, string> = {
-  this_month: 'Этот месяц',
-  last_3_months: 'Последние 3 месяца',
-  this_year: 'Этот год',
-  all_time: 'Всё время',
-}
-
-function periodToRange(period: FinancePeriod): { from?: string; to?: string } {
-  const now = new Date()
-  if (period === 'all_time') return {}
-  if (period === 'this_month') {
-    return { from: format(startOfMonth(now), 'yyyy-MM-dd'), to: format(endOfMonth(now), 'yyyy-MM-dd') }
-  }
-  if (period === 'last_3_months') {
-    return { from: format(startOfMonth(subMonths(now, 2)), 'yyyy-MM-dd'), to: format(endOfMonth(now), 'yyyy-MM-dd') }
-  }
-  // this_year
-  return { from: format(startOfYear(now), 'yyyy-MM-dd'), to: format(endOfYear(now), 'yyyy-MM-dd') }
-}
-
-const fmtMoney = (n: number) => n.toLocaleString('ru-RU')
 
 /**
- * Панель основателя — только лаконичная ВЫЖИМКА. Подробности (таблицы ФОТ,
- * графики, KPI всех сотрудников, истории) живут на своих страницах: Финансы,
+ * Панель основателя — только лаконичная ВЫЖИМКА. Подробности (финансы, KPI
+ * всех сотрудников, истории, графики) живут на своих страницах: Финансы,
  * Сотрудники, Аналитика, Риски. Здесь — пульс компании одним взглядом.
  */
 export default function FounderDashboard() {
-  const user = useAuthStore(s => s.user)
-  const canSeeFinance = user?.role === 'founder' || user?.role === 'co_founder'
-  const [period, setPeriod] = useState<FinancePeriod>('this_month')
-  const range = useMemo(() => periodToRange(period), [period])
-
   const { data: overview, isLoading } = useQuery({
     queryKey: ['analytics-overview'],
     queryFn: analyticsApi.overview,
@@ -64,11 +32,6 @@ export default function FounderDashboard() {
     queryKey: ['avg-completion'],
     queryFn: analyticsApi.avgCompletion,
   })
-  const { data: payroll } = useQuery({
-    queryKey: ['payroll', range.from, range.to],
-    queryFn: () => analyticsApi.payroll(range),
-    enabled: canSeeFinance,
-  })
 
   if (isLoading) return <PageLoader />
 
@@ -77,10 +40,6 @@ export default function FounderDashboard() {
   const atRiskProjects = overdueCount > 0 ? Math.ceil(overdueCount / 3) : 0
   const inactiveEmployees = (workload || []).filter((e: any) => e.activeTasks === 0)
   const overloadedPMs = (workload || []).filter((e: any) => e.activeTasks >= 10)
-
-  const revenueForPeriod = Number(payroll?.revenueForPeriod || 0)
-  const payrollForPeriod = Number(payroll?.payrollForPeriod || 0)
-  const profitForPeriod = Number(payroll?.profitForPeriod || 0)
 
   return (
     <div className="space-y-6">
@@ -122,75 +81,6 @@ export default function FounderDashboard() {
           sub={avgCompletion ? `${avgCompletion.totalDone} задач закрыто` : 'нет данных'}
         />
       </div>
-
-      {/* Финансовая сводка за период — только 3 главных числа. Детали → /finance */}
-      {canSeeFinance && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Calendar size={14} className="text-surface-400 dark:text-surface-500" />
-              <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Период:</span>
-              {(Object.keys(PERIOD_LABELS) as FinancePeriod[]).map(p => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={clsx(
-                    'px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                    period === p
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
-                  )}
-                >{PERIOD_LABELS[p]}</button>
-              ))}
-            </div>
-            <Link to="/finance" className="text-xs text-primary-600 dark:text-primary-400 hover:underline shrink-0">
-              Все финансы →
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="card flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
-                <DollarSign size={20} className="text-green-600 dark:text-green-400" />
-              </div>
-              <div>
-                <p className="text-xs text-surface-500 dark:text-surface-400">Получено за период</p>
-                <p className="text-xl font-bold text-green-700 dark:text-green-400">
-                  {fmtMoney(revenueForPeriod)} <span className="text-sm font-normal">сомони</span>
-                </p>
-                <p className="text-xs text-surface-400 dark:text-surface-500">{payroll?.payments?.length || 0} платежей</p>
-              </div>
-            </div>
-            <div className="card flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-surface-100 dark:bg-surface-900/30 flex items-center justify-center shrink-0">
-                <Users size={20} className="text-surface-600 dark:text-surface-400" />
-              </div>
-              <div>
-                <p className="text-xs text-surface-500 dark:text-surface-400">Расход на ЗП за период</p>
-                <p className="text-xl font-bold text-surface-700 dark:text-surface-400">
-                  {fmtMoney(payrollForPeriod)} <span className="text-sm font-normal">сомони</span>
-                </p>
-                <p className="text-xs text-surface-400 dark:text-surface-500">по истории зарплат</p>
-              </div>
-            </div>
-            <div className="card flex items-center gap-4">
-              <div className={clsx(
-                'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
-                profitForPeriod >= 0 ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30',
-              )}>
-                <Activity size={20} className={profitForPeriod >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} />
-              </div>
-              <div>
-                <p className="text-xs text-surface-500 dark:text-surface-400">Прибыль за период</p>
-                <p className={`text-xl font-bold ${profitForPeriod >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
-                  {fmtMoney(profitForPeriod)} <span className="text-sm font-normal">сомони</span>
-                </p>
-                <p className="text-xs text-surface-400 dark:text-surface-500">получено − ЗП</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Требует внимания — просрочки + люди */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
