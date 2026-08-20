@@ -257,8 +257,11 @@ export default function FinanceTransactionsPage() {
  *  Клик по строке — подробности, «+» в дне — новая операция этой датой,
  *  длинные дни сворачиваются до 5 строк («ещё N»). */
 const CAL_DAY_LIMIT = 5;
-function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd }: {
+export function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd, hideAdd }: {
   ym: string; txns: any[]; expandedTxId: string | null; onToggle: (t: any) => void; onAdd: (iso: string) => void;
+  /** Скрыть кнопку «＋ добавить операцию» в дне — для read-only календарей
+   *  (например, план выплат на странице «Планирование»). */
+  hideAdd?: boolean;
 }) {
   const [y, m] = ym.split('-').map(Number);
   const firstIdx = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Пн = 0
@@ -340,7 +343,7 @@ function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd }: {
                   <>
                     <div className="tx-cal-day">
                       <span className="n">{Number(iso.slice(8))}</span>
-                      <button className="tx-cal-add" title="Добавить операцию этой датой" onClick={() => onAdd(iso)}>＋</button>
+                      {!hideAdd && <button className="tx-cal-add" title="Добавить операцию этой датой" onClick={() => onAdd(iso)}>＋</button>}
                     </div>
                     {dt && (dt.inc > 0 || dt.exp > 0) && (
                       <div className="tx-day-sum">

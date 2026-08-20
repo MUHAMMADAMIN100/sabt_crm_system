@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -6,6 +6,8 @@ import { financeApi } from '@/services/api.service';
 import { apiErr, currentYm, formatDate, money, monthLabel } from './finlib';
 import { FinLoadError, FinLoading, FinModal } from './FinKit';
 import FinIcon from './FinIcon';
+import MonthNav from './MonthNav';
+import { TxCalendar } from './FinanceTransactionsPage';
 import ImportedArchiveBadge, { isImportedArchive } from './ImportedArchiveBadge';
 import { floatingPosition, scrollableAncestors, type FloatingPosition } from './floatingPosition';
 import './finance.css';
@@ -23,6 +25,9 @@ export default function FinancePlanningPage() {
   const [scenario, setScenario] = useState('base');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  // Календарь ожидаемых выплат от клиентов/контрактов (переключается кнопкой).
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calYm, setCalYm] = useState(currentYm());
   const query = useQuery({
     queryKey: ['finance', 'forecast', start, months, scenario],
     queryFn: () => financeApi.forecast({ start, months, scenario }),
@@ -32,6 +37,36 @@ export default function FinancePlanningPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['finance', 'forecast'] }),
     onError: (e) => toast.error(apiErr(e)),
   });
+  // Данные календаря: плановые платежи (ожидаемые, по проектам) + имена проектов.
+  const plannedQ = useQuery({
+    queryKey: ['finance', 'planned-payments'],
+    queryFn: () => financeApi.plannedPayments(),
+    enabled: showCalendar,
+  });
+  const projectsQ = useQuery({
+    queryKey: ['finance', 'projects'],
+    queryFn: () => financeApi.projects(),
+    enabled: showCalendar,
+  });
+  const projNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of (projectsQ.data || [])) m.set(p.id, p.name);
+    return m;
+  }, [projectsQ.data]);
+  // Маппим ожидаемые оплаты по проектам в формат, который ждёт TxCalendar:
+  // дата = срок оплаты, тип = доход, подпись = название проекта/клиента.
+  const calTxns = useMemo(() =>
+    (plannedQ.data || [])
+      .filter((p: any) => p.status === 'expected' && p.projectId && p.dueDate && String(p.dueDate).slice(0, 7) === calYm)
+      .map((p: any) => ({
+        id: p.id,
+        date: p.dueDate,
+        amount: p.amount,
+        type: 'income',
+        status: 'completed',
+        comment: projNameById.get(p.projectId) || 'Оплата по проекту',
+      })),
+    [plannedQ.data, projNameById, calYm]);
   if (query.isLoading) return <div className="fin-root"><FinLoading cards={4} /></div>;
   if (query.isError) return <div className="fin-root"><FinLoadError onRetry={() => query.refetch()} /></div>;
   const data = query.data;
@@ -45,8 +80,24 @@ export default function FinancePlanningPage() {
     <div className="fin-root">
       <div className="page-head">
         <div><h1 className="flex"><FinIcon name="chart" size={22} /> Планирование</h1><p>Прогноз движения денег по уже известным доходам и обязательствам</p></div>
-        <button className="btn primary" onClick={() => setAdding(true)}>+ Корректировка</button>
+        <div className="flex" style={{ gap: 8 }}>
+          <button className="btn" onClick={() => setShowCalendar(v => !v)}>
+            <FinIcon name="overview" size={15} /> {showCalendar ? 'К прогнозу' : 'Календарь выплат'}
+          </button>
+          <button className="btn primary" onClick={() => setAdding(true)}>+ Корректировка</button>
+        </div>
       </div>
+      {showCalendar ? (
+      <div className="fin-plan-payments-cal" style={{ marginTop: 16 }}>
+        <div className="page-head" style={{ marginBottom: 8 }}>
+          <p className="muted mini" style={{ margin: 0 }}>Ожидаемые оплаты от клиентов и контрактов по датам — сумма показана на дне.</p>
+          <MonthNav ym={calYm} onChange={setCalYm} />
+        </div>
+        {(plannedQ.isLoading || projectsQ.isLoading) ? <FinLoading /> : (
+          <TxCalendar ym={calYm} txns={calTxns} expandedTxId={null} onToggle={() => {}} onAdd={() => {}} hideAdd />
+        )}
+      </div>
+      ) : (<>
       <div className="fin-plan-controls">
         <div className="field fin-plan-period-field">
           <label>Период планирования</label>
@@ -109,6 +160,7 @@ export default function FinancePlanningPage() {
         </label>
         <button type="button" className="btn ghost" onClick={() => setYear(year + 1)}>›</button>
       </div>
+      </>)}
       {adding && <AdjustmentModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); qc.invalidateQueries({ queryKey: ['finance', 'forecast'] }); }} />}
     </div>
   );
