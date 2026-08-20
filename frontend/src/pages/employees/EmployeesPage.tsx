@@ -577,7 +577,8 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      <Pagination page={page} total={employees.length} pageSize={PAGE_SIZE} onChange={setPage} />
+      {/* Оргструктура — на одной странице, без постраничной навигации. */}
+      {view !== 'org' && <Pagination page={page} total={employees.length} pageSize={PAGE_SIZE} onChange={setPage} />}
 
       <EmployeeForm open={showCreate || !!editEmp} initial={editEmp}
         onClose={() => { setShowCreate(false); setEditEmp(null) }}

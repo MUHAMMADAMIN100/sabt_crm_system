@@ -61,10 +61,14 @@ export default function OrgChart({ employees }: { employees: any[] }) {
   const navigate = useNavigate()
   const go = (id: string) => navigate(`/employees/${id}`)
 
+  // В оргструктуру попадают только АКТИВНЫЕ и не заблокированные сотрудники —
+  // уволенные/неактивные/заблокированные не отражают текущую структуру.
+  const active = (employees || []).filter(e => e?.status === 'active' && !e?.user?.isBlocked)
+
   // Раскладываем сотрудников по уровням/отделам, каждый — ровно один раз.
   const assigned = new Set<string>()
   const take = (pred: (e: any) => boolean) => {
-    const res = (employees || []).filter(e => !assigned.has(e.id) && pred(e))
+    const res = active.filter(e => !assigned.has(e.id) && pred(e))
     res.forEach(e => assigned.add(e.id))
     return res
   }
@@ -77,7 +81,7 @@ export default function OrgChart({ employees }: { employees: any[] }) {
     heads: d.head ? take(e => isRole(e, d.head!)) : [],
     members: take(e => d.members.some(m => isRole(e, m))),
   }))
-  const others = (employees || []).filter(e => !assigned.has(e.id))
+  const others = active.filter(e => !assigned.has(e.id))
   const visibleDepts = depts.filter(d => d.heads.length || d.members.length)
 
   return (
