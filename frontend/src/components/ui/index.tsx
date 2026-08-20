@@ -1,4 +1,4 @@
-import { useEffect, useState, ReactNode } from 'react'
+import { useEffect, useRef, useState, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import clsx from 'clsx'
@@ -351,10 +351,93 @@ export function FormField({ label, error, children, required }: {
 
 // ── Avatar ────────────────────────────────────────────────────────────
 const AVATAR_BASE = import.meta.env.VITE_API_URL || ''
-export function Avatar({ name, src, size = 32 }: { name?: string; src?: string; size?: number }) {
+
+/** Полноэкранный просмотр фотографии: затемнённый фон, фото по центру,
+ *  подпись-имя. Закрытие — крестик, клик по фону, Escape.
+ *  z-[10001] — выше боковой панели задач (z-[9999]) и всех модалок:
+ *  аватарки живут и внутри них, а под панелью просмотр был бы невидим,
+ *  но при этом перехватывал бы Escape. Ниже короткой сцены
+ *  StampCelebration (z-[10050]), которая должна оставаться сверху. */
+function PhotoLightbox({ url, name, onClose, onBroken }: {
+  url: string; name?: string; onClose: () => void; onBroken: () => void
+}) {
+  useEffect(() => {
+    // Свой замок прокрутки: восстанавливаем прежнее значение, а не пустое —
+    // лайтбокс мог открыться поверх модалки, у которой прокрутка уже заперта.
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+    }
+    // capture — чтобы Escape закрыл лайтбокс, а не модалку под ним.
+    document.addEventListener('keydown', onKey, true)
+    return () => {
+      document.body.style.overflow = prev
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [onClose])
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={name ? `Фото: ${name}` : 'Фото'}
+      className="fixed inset-0 z-[10001] flex items-center justify-center p-4 animate-fade-in"
+      onClick={e => { e.stopPropagation(); onClose() }}
+    >
+      <div className="absolute inset-0 bg-black/80" />
+      <button
+        type="button"
+        aria-label="Закрыть"
+        onClick={e => { e.stopPropagation(); onClose() }}
+        className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+      >
+        <X size={22} />
+      </button>
+      <figure
+        className="relative flex flex-col items-center gap-3 max-w-[92vw]"
+        onClick={e => e.stopPropagation()}
+      >
+        <img
+          src={url}
+          alt={name || 'Фото'}
+          className="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl"
+          // Файл мог пропасть с диска (эфемерное хранилище) — тогда молча
+          // закрываемся и возвращаем аватарке инициалы, а не чёрный экран.
+          onError={() => { onBroken(); onClose() }}
+        />
+        {name && (
+          <figcaption className="text-white/90 text-sm font-medium text-center px-3">
+            {name}
+          </figcaption>
+        )}
+      </figure>
+    </div>,
+    document.body,
+  )
+}
+
+export function Avatar({ name, src, size = 32, zoomable = true }: {
+  name?: string; src?: string; size?: number
+  /** false — клик по аватарке не открывает фото. Нужно там, где аватарка
+   *  сама по себе кнопка: «сменить фото» в профиле и карточке сотрудника,
+   *  переход в профиль из бокового меню. Ломать это ради просмотра нельзя. */
+  zoomable?: boolean
+}) {
   // Если src указан и ещё не упал с onError — пытаемся показать картинку.
   // Если src отсутствует или картинка не загрузилась — показываем инициалы.
   const [failed, setFailed] = useState(false)
+  // Открыт ли полноэкранный просмотр этого фото.
+  const [zoom, setZoom] = useState(false)
+  // Аватарка часто лежит внутри ссылки или кнопки — перехода к сотруднику,
+  // загрузки фото, раскрытия карточки. Там перехватывать клик нельзя:
+  // элемент управления превратился бы в мёртвую зону. Определяем это по
+  // разметке, а не списком мест: список неизбежно отстанет от кода.
+  const imgRef = useRef<HTMLImageElement>(null)
+  const [insideControl, setInsideControl] = useState(false)
+  useEffect(() => {
+    setInsideControl(!!imgRef.current?.parentElement?.closest('a,button,label,[role="button"]'))
+  }, [src])
   // Сбрасываем флаг ошибки, если src сменился (например, юзер загрузил новый аватар).
   useEffect(() => { setFailed(false) }, [src])
 
@@ -362,24 +445,53 @@ export function Avatar({ name, src, size = 32 }: { name?: string; src?: string; 
     ? name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('')
     : '?'
 
+  // Просмотр возможен, только если он разрешён и не отнимает клик у родителя.
+  const canZoom = zoomable && !insideControl
+
   if (src && !failed) {
     // Бэкенд хранит только filename аватара (uuid.ext). Фронт может быть
     // на другом домене (Vercel) чем backend (Railway) — поэтому строим
     // полный URL через VITE_API_URL. Если src уже полный http(s) — берём
     // как есть.
     const url = src.startsWith('http') ? src : `${AVATAR_BASE}/uploads/avatars/${src}`
+    // Аватарки часто лежат внутри кликабельных карточек и кнопок —
+    // stopPropagation, чтобы клик открывал фото, а не родителя. Роль кнопки
+    // намеренно НЕ ставим: это перебило бы роль картинки, а обёртка-кнопка
+    // внутри уже существующих кнопок дала бы невалидную вложенность.
+    // Клавиатурный доступ обеспечиваем tabIndex + Enter/Пробел.
+    const openZoom = (e: { stopPropagation(): void; preventDefault(): void }) => {
+      if (!canZoom) return
+      e.stopPropagation()
+      e.preventDefault()
+      setZoom(true)
+    }
     return (
-      <img
-        src={url}
-        alt={name}
-        title={name}
-        loading="lazy"
-        decoding="async"
-        style={{ width: size, height: size }}
-        className="rounded-full object-cover cursor-default shrink-0"
-        // Если картинка 404 / битая — переключаемся на инициалы вместо пустого квадрата.
-        onError={() => setFailed(true)}
-      />
+      <>
+        <img
+          ref={imgRef}
+          src={url}
+          alt={name}
+          title={canZoom ? (name ? `Открыть фото: ${name}` : 'Открыть фото') : name}
+          loading="lazy"
+          decoding="async"
+          tabIndex={canZoom ? 0 : undefined}
+          style={{ width: size, height: size }}
+          className={clsx('rounded-full object-cover shrink-0',
+            canZoom ? 'cursor-zoom-in' : 'cursor-default')}
+          onClick={openZoom}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') openZoom(e) }}
+          // Если картинка 404 / битая — переключаемся на инициалы вместо пустого квадрата.
+          onError={() => setFailed(true)}
+        />
+        {zoom && (
+          <PhotoLightbox
+            url={url}
+            name={name}
+            onClose={() => setZoom(false)}
+            onBroken={() => setFailed(true)}
+          />
+        )}
+      </>
     )
   }
 

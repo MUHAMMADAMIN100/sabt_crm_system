@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { StatusBadge, PriorityBadge, Avatar } from './index'
 
 describe('StatusBadge', () => {
@@ -83,5 +83,40 @@ describe('Avatar', () => {
   it('renders placeholder when name is undefined', () => {
     render(<Avatar />)
     expect(screen.getByText('?')).toBeInTheDocument()
+  })
+
+  it('opens fullscreen photo on click and closes on Escape', async () => {
+    render(<Avatar name="Test User" src="https://example.com/avatar.jpg" />)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('img'))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveAttribute('aria-label', 'Фото: Test User')
+    // Имя подписано под фотографией — понятно, чьё это фото.
+    expect(within(dialog).getByText('Test User')).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('yields to a parent button instead of opening the photo', () => {
+    // Аватарка внутри кнопки/ссылки не должна отнимать у неё клик:
+    // иначе переход к сотруднику или загрузка фото перестают работать.
+    const onParent = vi.fn()
+    render(
+      <button type="button" onClick={onParent}>
+        <Avatar name="Test User" src="https://example.com/avatar.jpg" />
+      </button>,
+    )
+    fireEvent.click(screen.getByRole('img'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(onParent).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('img')).not.toHaveAttribute('tabindex')
+  })
+
+  it('does not open photo view for initials placeholder', () => {
+    render(<Avatar name="Иван Петров" />)
+    fireEvent.click(screen.getByText('ИП'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

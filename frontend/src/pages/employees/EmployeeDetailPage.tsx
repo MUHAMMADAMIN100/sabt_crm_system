@@ -230,7 +230,7 @@ export default function EmployeeDetailPage() {
                   className="relative group rounded-full"
                   title="Сменить аватар сотрудника"
                 >
-                  <Avatar name={emp.fullName} src={emp.avatar} size={80} />
+                  <Avatar name={emp.fullName} src={emp.avatar} size={80} zoomable={false} />
                   <span className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                     <Camera size={22} className="text-white" />
                   </span>

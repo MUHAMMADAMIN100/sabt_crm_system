@@ -310,7 +310,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               onClick={handleNavClick}
               className="flex items-center gap-2 min-w-0 flex-1 p-1.5 rounded-lg hover:bg-surface-50/5 transition-colors"
             >
-              <Avatar name={user.name} src={user.avatar} size={32} />
+              <Avatar name={user.name} src={user.avatar} size={32} zoomable={false} />
               <div className={clsx(
                 'min-w-0 transition-all duration-300 overflow-hidden',
                 open ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0',
