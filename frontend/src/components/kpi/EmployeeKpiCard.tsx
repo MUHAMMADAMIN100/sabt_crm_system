@@ -138,6 +138,9 @@ interface Props {
   userId: string
   /** Компактный режим — для карточек / виджета дашборда. */
   compact?: boolean
+  /** Режим прогресс-бара: строка «Выполнение KPI» + полоса, фиксированной
+   *  высоты. Для стандартизированных карточек сотрудников (одинаковый размер). */
+  bar?: boolean
   /** Внешний период (если родитель управляет фильтром). */
   period?: KpiPeriod
   /** Прямой from/to (если нужно вручную, минуя enum). Имеет приоритет над `period`. */
@@ -160,7 +163,7 @@ interface Props {
  *  - showPeriodSelector в full mode добавляет встроенный chip-переключатель.
  */
 export default function EmployeeKpiCard({
-  userId, compact, period: externalPeriod, from, to,
+  userId, compact, bar, period: externalPeriod, from, to,
   showPeriodSelector, kpi: preloadedKpi, emptyLabel,
 }: Props) {
   // Внутренний state переключателя — используется когда родитель не передал
@@ -229,7 +232,32 @@ export default function EmployeeKpiCard({
       ))}
     </div>
   )
+  // Режим «бар»: строка «Выполнение KPI» + полоса. Высота одинакова и при
+  // данных, и при их отсутствии — карточки сотрудников не скачут по высоте.
+  const renderBar = (percent: number | null) => {
+    const has = percent != null
+    const clamp = has ? Math.min(100, Math.max(0, percent)) : 0
+    const barBg = !has ? '' : clamp >= 80 ? 'bg-green-500' : clamp >= 50 ? 'bg-amber-500' : 'bg-red-500'
+    const pctText = !has
+      ? 'text-surface-400 dark:text-surface-500'
+      : clamp >= 80 ? 'text-green-600 dark:text-green-400'
+        : clamp >= 50 ? 'text-amber-600 dark:text-amber-400'
+          : 'text-red-500'
+    return (
+      <div>
+        <div className="flex items-baseline justify-between gap-2 mb-1.5">
+          <span className="text-xs text-surface-500 dark:text-surface-400">Выполнение KPI</span>
+          <span className={clsx('text-xs font-bold tabular-nums', pctText)}>{has ? `${percent}%` : (emptyLabel || 'не ведётся')}</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-surface-100 dark:bg-surface-700 overflow-hidden">
+          {has && <div className={clsx('h-full rounded-full transition-[width]', barBg)} style={{ width: `${clamp}%` }} />}
+        </div>
+      </div>
+    )
+  }
+
   if (noData) {
+    if (bar) return renderBar(null)
     return compact
       ? <span className="text-xs text-surface-400 dark:text-surface-500" title="За выбранный период работы для оценки не было">{emptyLabel || '— нет данных'}</span>
       : (
@@ -248,6 +276,8 @@ export default function EmployeeKpiCard({
         </div>
       )
   }
+
+  if (bar) return renderBar(kpi.overallPercent)
 
   if (compact) {
     return (

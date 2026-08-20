@@ -16,10 +16,6 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import EmployeeKpiCard, { KpiPeriod, KPI_PERIOD_LABELS } from '@/components/kpi/EmployeeKpiCard'
 
-/** Wave 13: KPI считается для всех «рабочих» ролей. Top-роли исключаются. */
-const hasKpi = (role?: string | null): boolean =>
-  !!role && !['admin', 'founder', 'co_founder'].includes(role)
-
 export default function EmployeesPage() {
   const [search, setSearch] = useState('')
   const [position, setPosition] = useState('')
@@ -427,12 +423,25 @@ export default function EmployeesPage() {
                   Период берётся из общего переключателя сверху страницы.
                   mt-auto прижимает подвал вниз, поэтому карточки в ряду
                   остаются одной высоты даже с разным числом метрик. */}
-              {canViewSalesKpi && hasKpi(emp.user?.role) && emp.userId && (
+              {/* KPI-слот единой высоты у ВСЕХ карточек (прогресс-бар) — сетка
+                  стандартизирована. Нет KPI/данных → «KPI не ведётся» той же
+                  высоты. Детальные метрики — в профиле сотрудника по клику. */}
+              {canViewSalesKpi && (
                 <div
-                  className="mt-3 pt-3 border-t border-surface-50 dark:border-surface-700"
+                  className="mt-3 pt-3 border-t border-surface-50 dark:border-surface-700 min-h-[54px]"
                   onClick={e => e.stopPropagation()}
                 >
-                  <EmployeeKpiCard userId={emp.userId} compact period={kpiPeriod} emptyLabel="KPI не ведётся" />
+                  {emp.userId ? (
+                    <EmployeeKpiCard userId={emp.userId} bar period={kpiPeriod} emptyLabel="KPI не ведётся" />
+                  ) : (
+                    <div>
+                      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                        <span className="text-xs text-surface-500 dark:text-surface-400">Выполнение KPI</span>
+                        <span className="text-xs font-bold text-surface-400 dark:text-surface-500">KPI не ведётся</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-surface-100 dark:bg-surface-700" />
+                    </div>
+                  )}
                 </div>
               )}
               <div className="flex items-center justify-between gap-2 mt-auto pt-3 border-t border-surface-50 dark:border-surface-700">
