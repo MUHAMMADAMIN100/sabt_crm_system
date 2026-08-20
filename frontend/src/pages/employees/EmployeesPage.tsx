@@ -6,7 +6,8 @@ import { useAuthStore } from '@/store/auth.store'
 import { getRoleLabel } from '@/lib/permissions'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal } from 'lucide-react'
+import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, Network, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal } from 'lucide-react'
+import OrgChart from './OrgChart'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
@@ -22,7 +23,7 @@ const hasKpi = (role?: string | null): boolean =>
 export default function EmployeesPage() {
   const [search, setSearch] = useState('')
   const [position, setPosition] = useState('')
-  const [view, setView] = useState<'cards' | 'table'>('cards')
+  const [view, setView] = useState<'cards' | 'table' | 'org'>('cards')
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 12
   const [showCreate, setShowCreate] = useState(false)
@@ -263,8 +264,9 @@ export default function EmployeesPage() {
         <h1 className="page-title">{t('employees.title')}</h1>
         <div className="flex gap-2">
           <div className="flex gap-1 bg-surface-100 dark:bg-surface-700 p-1 rounded-xl">
-            <button onClick={() => setView('cards')} className={clsx('p-1.5 rounded-lg', view==='cards' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><LayoutGrid size={16}/></button>
-            <button onClick={() => setView('table')} className={clsx('p-1.5 rounded-lg', view==='table' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><List size={16}/></button>
+            <button onClick={() => setView('cards')} title="Карточки" className={clsx('p-1.5 rounded-lg', view==='cards' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><LayoutGrid size={16}/></button>
+            <button onClick={() => setView('table')} title="Таблица" className={clsx('p-1.5 rounded-lg', view==='table' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><List size={16}/></button>
+            <button onClick={() => setView('org')} title="Оргструктура" className={clsx('p-1.5 rounded-lg', view==='org' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><Network size={16}/></button>
           </div>
           {isAdmin && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} /> {t('employees.add')}</button>}
         </div>
@@ -307,7 +309,9 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {!employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'cards' ? (
+      {!employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'org' ? (
+        <OrgChart employees={employees} />
+      ) : view === 'cards' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {pagedEmployees.map((emp: any) => (
             <div key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className="card group relative cursor-pointer hover:shadow-md transition-shadow flex flex-col h-full p-4">
