@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { apiErr, currentYm, formatDate, money, monthLabel } from './finlib';
+import { apiErr, currentYm, formatDate, money, monthLabel, todayISO } from './finlib';
 import { FinLoadError, FinLoading, FinModal } from './FinKit';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
@@ -37,7 +37,8 @@ export default function FinancePlanningPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['finance', 'forecast'] }),
     onError: (e) => toast.error(apiErr(e)),
   });
-  // Данные календаря: плановые платежи (ожидаемые, по проектам) + имена проектов.
+  // ── Данные календаря: всё движение денег по датам ──────────────────
+  const calYear = calYm.slice(0, 4);
   const plannedQ = useQuery({
     queryKey: ['finance', 'planned-payments'],
     queryFn: () => financeApi.plannedPayments(),
@@ -48,25 +49,88 @@ export default function FinancePlanningPage() {
     queryFn: () => financeApi.projects(),
     enabled: showCalendar,
   });
+  const debtsQ = useQuery({
+    queryKey: ['finance', 'debts'],
+    queryFn: () => financeApi.debts(),
+    enabled: showCalendar,
+  });
+  const subsQ = useQuery({
+    queryKey: ['finance', 'subscriptions'],
+    queryFn: () => financeApi.subscriptions(),
+    enabled: showCalendar,
+  });
+  // Прогноз того же года — источник агрегата зарплат за месяц (учитывает
+  // будущие ставки). Ключ совпадает с основным прогнозом при base — кэш общий.
+  const calForecastQ = useQuery({
+    queryKey: ['finance', 'forecast', `${calYear}-01`, months, 'base'],
+    queryFn: () => financeApi.forecast({ start: `${calYear}-01`, months, scenario: 'base' }),
+    enabled: showCalendar,
+  });
+  // Операции журнала за месяц — берём только будущие разовые (не привязанные к
+  // зарплате/подписке/долгу, чтобы не задваивать эти источники).
+  const txMonthQ = useQuery({
+    queryKey: ['finance', 'transactions', 'month-plan', calYm],
+    queryFn: () => financeApi.transactions({ from: `${calYm}-01`, to: `${calYm}-31`, status: 'all', pageSize: 1000 }),
+    enabled: showCalendar,
+  });
   const projNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of (projectsQ.data || [])) m.set(p.id, p.name);
     return m;
   }, [projectsQ.data]);
-  // Маппим ожидаемые оплаты по проектам в формат, который ждёт TxCalendar:
-  // дата = срок оплаты, тип = доход, подпись = название проекта/клиента.
-  const calTxns = useMemo(() =>
-    (plannedQ.data || [])
-      .filter((p: any) => p.status === 'expected' && p.projectId && p.dueDate && String(p.dueDate).slice(0, 7) === calYm)
-      .map((p: any) => ({
-        id: p.id,
-        date: p.dueDate,
-        amount: p.amount,
-        type: 'income',
-        status: 'completed',
-        comment: projNameById.get(p.projectId) || 'Оплата по проекту',
-      })),
-    [plannedQ.data, projNameById, calYm]);
+  const debtNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const d of (debtsQ.data || [])) m.set(d.id, d.name);
+    return m;
+  }, [debtsQ.data]);
+
+  // Единый список движения денег за месяц для TxCalendar: приходы (оплаты
+  // клиентов) + расходы (долги, аренда/подписки, зарплаты, разовые операции).
+  const calTxns = useMemo(() => {
+    const items: any[] = [];
+    const today = todayISO();
+    const lastDay = new Date(Number(calYear), Number(calYm.slice(5, 7)), 0).getDate();
+
+    // 1. Плановые платежи: проект → доход, долг → расход.
+    for (const p of (plannedQ.data || [])) {
+      if (p.status !== 'expected' || !p.dueDate || String(p.dueDate).slice(0, 7) !== calYm) continue;
+      if (p.projectId) {
+        items.push({ id: `pp-${p.id}`, date: p.dueDate, amount: p.amount, type: 'income', status: 'completed',
+          comment: projNameById.get(p.projectId) || 'Оплата по проекту' });
+      } else if (p.debtId) {
+        items.push({ id: `pp-${p.id}`, date: p.dueDate, amount: p.amount, type: 'expense', status: 'completed',
+          comment: debtNameById.get(p.debtId) || 'Погашение долга' });
+      }
+    }
+    // 2. Аренда и подписки: активные, по дню оплаты этого месяца.
+    for (const s of (subsQ.data || [])) {
+      if (!s.active || !s.dueDay) continue;
+      const day = Math.min(Number(s.dueDay), lastDay);
+      items.push({ id: `sub-${s.id}`, date: `${calYm}-${String(day).padStart(2, '0')}`, amount: s.amount, type: 'expense', status: 'completed',
+        comment: s.name });
+    }
+    // 3. Зарплаты (ФОТ) — агрегат за месяц, на последний день.
+    const fRow = (calForecastQ.data?.rows || []).find((r: any) => r.ym === calYm);
+    if (fRow) {
+      const salaryAmt = (fRow.expenseSources || [])
+        .filter((x: any) => x.salary || String(x.kind || '').startsWith('Зарплата'))
+        .reduce((s: number, x: any) => s + (Number(x.amount) || 0), 0);
+      if (salaryAmt > 0) {
+        items.push({ id: `salary-${calYm}`, date: `${calYm}-${String(lastDay).padStart(2, '0')}`, amount: salaryAmt, type: 'expense', status: 'completed',
+          comment: 'Зарплаты (ФОТ)' });
+      }
+    }
+    // 4. Прочие будущие разовые операции журнала (без привязки к источникам выше).
+    for (const t of ((txMonthQ.data?.items) || [])) {
+      if (t.status === 'cancelled') continue;
+      if (t.type !== 'income' && t.type !== 'expense') continue;
+      if (t.employeeId || t.subscriptionId || t.debtId) continue;
+      if (String(t.date || '').slice(0, 10) <= today) continue;
+      items.push({ id: `tx-${t.id}`, date: t.date, amount: t.amount, type: t.type, status: 'completed',
+        comment: t.comment || t.categoryName || (t.type === 'income' ? 'Поступление' : 'Расход') });
+    }
+    return items;
+  }, [plannedQ.data, subsQ.data, calForecastQ.data, txMonthQ.data, projNameById, debtNameById, calYm, calYear]);
   if (query.isLoading) return <div className="fin-root"><FinLoading cards={4} /></div>;
   if (query.isError) return <div className="fin-root"><FinLoadError onRetry={() => query.refetch()} /></div>;
   const data = query.data;
@@ -82,7 +146,7 @@ export default function FinancePlanningPage() {
         <div><h1 className="flex"><FinIcon name="chart" size={22} /> Планирование</h1><p>Прогноз движения денег по уже известным доходам и обязательствам</p></div>
         <div className="flex" style={{ gap: 8 }}>
           <button className="btn" onClick={() => setShowCalendar(v => !v)}>
-            <FinIcon name="overview" size={15} /> {showCalendar ? 'К прогнозу' : 'Календарь выплат'}
+            <FinIcon name="overview" size={15} /> {showCalendar ? 'К прогнозу' : 'Денежный календарь'}
           </button>
           <button className="btn primary" onClick={() => setAdding(true)}>+ Корректировка</button>
         </div>
@@ -90,10 +154,10 @@ export default function FinancePlanningPage() {
       {showCalendar ? (
       <div className="fin-plan-payments-cal" style={{ marginTop: 16 }}>
         <div className="page-head" style={{ marginBottom: 8 }}>
-          <p className="muted mini" style={{ margin: 0 }}>Ожидаемые оплаты от клиентов и контрактов по датам — сумма показана на дне.</p>
+          <p className="muted mini" style={{ margin: 0 }}>Всё движение денег по датам: приходы от клиентов (+) и расходы — долги, аренда/подписки, зарплаты, разовые платежи (−). Суммы на дне.</p>
           <MonthNav ym={calYm} onChange={setCalYm} />
         </div>
-        {(plannedQ.isLoading || projectsQ.isLoading) ? <FinLoading /> : (
+        {(plannedQ.isLoading || subsQ.isLoading || txMonthQ.isLoading || calForecastQ.isLoading) ? <FinLoading /> : (
           <TxCalendar ym={calYm} txns={calTxns} expandedTxId={null} onToggle={() => {}} onAdd={() => {}} hideAdd />
         )}
       </div>
