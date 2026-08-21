@@ -257,11 +257,15 @@ export default function FinanceTransactionsPage() {
  *  Клик по строке — подробности, «+» в дне — новая операция этой датой,
  *  длинные дни сворачиваются до 5 строк («ещё N»). */
 const CAL_DAY_LIMIT = 5;
-export function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd, hideAdd }: {
+export function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd, hideAdd, planMode }: {
   ym: string; txns: any[]; expandedTxId: string | null; onToggle: (t: any) => void; onAdd: (iso: string) => void;
   /** Скрыть кнопку «＋ добавить операцию» в дне — для read-only календарей
    *  (например, план выплат на странице «Планирование»). */
   hideAdd?: boolean;
+  /** Режим «план»: итог КАЖДОГО дня считается из всех движений (включая
+   *  будущие). Без него будущие суммы уходят в месячный «план» и у дня нет
+   *  своего +/− итога. Для денежного календаря на «Планировании». */
+  planMode?: boolean;
 }) {
   const [y, m] = ym.split('-').map(Number);
   const firstIdx = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Пн = 0
@@ -294,10 +298,10 @@ export function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd, hideAdd }:
         if (x.status === 'cancelled') continue;
         const future = String(x.date || '').slice(0, 10) > todayISO();
         if (x.type === 'income') {
-          if (future) plannedInc += Number(x.amount) || 0;
+          if (future && !planMode) plannedInc += Number(x.amount) || 0;
           else t.inc += Number(x.amount) || 0;
         } else if (x.type === 'expense') {
-          if (future) plannedExp += Number(x.amount) || 0;
+          if (future && !planMode) plannedExp += Number(x.amount) || 0;
           else t.exp += Number(x.amount) || 0;
         }
       }
@@ -305,7 +309,7 @@ export function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd, hideAdd }:
       inc += t.inc; exp += t.exp; count += list.length;
     }
     return { day, inc, exp, plannedInc, plannedExp, count };
-  }, [byDay]);
+  }, [byDay, planMode]);
 
   const today = todayISO();
   const net = totals.inc - totals.exp;

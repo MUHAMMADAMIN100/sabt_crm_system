@@ -102,12 +102,14 @@ export default function FinancePlanningPage() {
           comment: debtNameById.get(p.debtId) || 'Погашение долга' });
       }
     }
-    // 2. Аренда и подписки: активные, по дню оплаты этого месяца.
+    // 2. Аренда и подписки: ВСЕ активные. Оплаченный месяц — на фактическую
+    // дату (paidMarks); иначе — на день оплаты, а если он не задан — на 1-е.
     for (const s of (subsQ.data || [])) {
-      if (!s.active || !s.dueDay) continue;
-      const day = Math.min(Number(s.dueDay), lastDay);
-      items.push({ id: `sub-${s.id}`, date: `${calYm}-${String(day).padStart(2, '0')}`, amount: s.amount, type: 'expense', status: 'completed',
-        comment: s.name });
+      if (!s.active) continue;
+      const paid = (s.paidMarks || []).find((pm: any) => pm.ym === calYm);
+      const day = Math.min(Number(s.dueDay) || 1, lastDay);
+      const date = paid?.date ? String(paid.date).slice(0, 10) : `${calYm}-${String(day).padStart(2, '0')}`;
+      items.push({ id: `sub-${s.id}`, date, amount: s.amount, type: 'expense', status: 'completed', comment: s.name });
     }
     // 3. Зарплаты (ФОТ) — агрегат за месяц, на последний день.
     const fRow = (calForecastQ.data?.rows || []).find((r: any) => r.ym === calYm);
@@ -158,7 +160,7 @@ export default function FinancePlanningPage() {
           <MonthNav ym={calYm} onChange={setCalYm} />
         </div>
         {(plannedQ.isLoading || subsQ.isLoading || txMonthQ.isLoading || calForecastQ.isLoading) ? <FinLoading /> : (
-          <TxCalendar ym={calYm} txns={calTxns} expandedTxId={null} onToggle={() => {}} onAdd={() => {}} hideAdd />
+          <TxCalendar ym={calYm} txns={calTxns} expandedTxId={null} onToggle={() => {}} onAdd={() => {}} hideAdd planMode />
         )}
       </div>
       ) : (<>
