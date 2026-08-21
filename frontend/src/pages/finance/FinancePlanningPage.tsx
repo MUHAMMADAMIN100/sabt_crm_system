@@ -25,8 +25,8 @@ export default function FinancePlanningPage() {
   const [scenario, setScenario] = useState('base');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  // Календарь ожидаемых выплат от клиентов/контрактов (переключается кнопкой).
-  const [showCalendar, setShowCalendar] = useState(false);
+  // Денежный календарь открыт по умолчанию; кнопкой можно переключиться на прогноз.
+  const [showCalendar, setShowCalendar] = useState(true);
   const [calYm, setCalYm] = useState(currentYm());
   const query = useQuery({
     queryKey: ['finance', 'forecast', start, months, scenario],
