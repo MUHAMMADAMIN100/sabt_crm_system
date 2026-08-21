@@ -14,6 +14,7 @@ import TwoFactorSection from '@/components/profile/TwoFactorSection'
 import ThemeEditorSection from '@/components/profile/ThemeEditorSection'
 import WallpaperSection from '@/components/profile/WallpaperSection'
 import TaskCelebrationSection from '@/components/profile/TaskCelebrationSection'
+import { prepareAvatar } from '@/lib/imageCompress'
 
 export default function ProfilePage() {
   const user = useAuthStore(s => s.user)
@@ -35,19 +36,23 @@ export default function ProfilePage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка загрузки'),
   })
 
-  const handleAvatarPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      toast.error('Выберите файл-изображение')
-      return
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Файл слишком большой (макс. 5 МБ)')
-      return
-    }
-    uploadAvatarMut.mutate(file)
     if (fileRef.current) fileRef.current.value = ''
+    if (!file) return
+    // Тип не проверяем по file.type: у HEIC с айфона он часто пустой,
+    // а картинка при этом читается. Решает попытка сжатия ниже.
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error('Файл слишком большой (макс. 25 МБ)')
+      return
+    }
+    try {
+      // Жмём в браузере: фото с телефона весит мегабайты и раньше
+      // отвергалось сервером — человек видел только «Ошибка загрузки».
+      uploadAvatarMut.mutate(await prepareAvatar(file))
+    } catch (err: any) {
+      toast.error(err?.message || 'Не удалось прочитать файл как изображение')
+    }
   }
 
   // Refresh user profile (incl. role) on mount — admin may have changed it

@@ -185,8 +185,19 @@ export class User {
   @Column({ type: 'text', nullable: true })
   blockReason: string;
 
+  /** Что показывать вместо инициалов. Для новых загрузок — ключ
+   *  «db:<uuid>»: сама картинка лежит в avatarImage, а по ключу её
+   *  отдаёт /api/avatars/<uuid>. Старые значения — имя файла на диске,
+   *  их продолжаем отдавать из /uploads/avatars. */
   @Column({ nullable: true })
   avatar: string;
+
+  /** Фотография сотрудника как data URI. В БД, а не на диске: диск на
+   *  Railway эфемерный — при каждом редеплое аватарки исчезали, и людям
+   *  приходилось загружать их заново. select:false — картинка не должна
+   *  ездить в каждом списке пользователей, её забирают по URL. */
+  @Column({ type: 'text', nullable: true, select: false })
+  avatarImage: string | null;
 
   @Column({ nullable: true })
   @Exclude()

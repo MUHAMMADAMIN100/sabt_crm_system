@@ -80,6 +80,19 @@ describe('Avatar', () => {
     expect(img).toHaveAttribute('alt', 'Test User')
   })
 
+  it('builds the photo URL for both storage kinds', () => {
+    // Новые загрузки лежат в базе и отдаются ручкой, старые — файлом на диске.
+    // Обе ссылки должны продолжать работать, иначе у части сотрудников
+    // фотография молча пропадёт.
+    const { unmount } = render(<Avatar name="Db User" src="db:11111111-2222-3333-4444-555555555555" />)
+    expect(screen.getByRole('img')).toHaveAttribute(
+      'src', expect.stringContaining('/api/avatars/11111111-2222-3333-4444-555555555555'),
+    )
+    unmount()
+    render(<Avatar name="Legacy User" src="old-file.png" />)
+    expect(screen.getByRole('img')).toHaveAttribute('src', expect.stringContaining('/uploads/avatars/old-file.png'))
+  })
+
   it('renders placeholder when name is undefined', () => {
     render(<Avatar />)
     expect(screen.getByText('?')).toBeInTheDocument()

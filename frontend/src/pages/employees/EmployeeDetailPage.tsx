@@ -22,6 +22,7 @@ const hasKpi = (role?: string | null): boolean =>
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
+import { prepareAvatar } from '@/lib/imageCompress'
 
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -46,13 +47,17 @@ export default function EmployeeDetailPage() {
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Ошибка загрузки'),
   })
-  const handleAvatarPick = (e: React.ChangeEvent<HTMLInputElement>, userId: string | undefined) => {
+  const handleAvatarPick = async (e: React.ChangeEvent<HTMLInputElement>, userId: string | undefined) => {
     const file = e.target.files?.[0]
-    if (!file || !userId) return
-    if (!file.type.startsWith('image/')) { toast.error('Выберите файл-изображение'); return }
-    if (file.size > 5 * 1024 * 1024) { toast.error('Файл слишком большой (макс. 5 МБ)'); return }
-    uploadAvatarMut.mutate({ userId, file })
     if (avatarFileRef.current) avatarFileRef.current.value = ''
+    if (!file || !userId) return
+    if (file.size > 25 * 1024 * 1024) { toast.error('Файл слишком большой (макс. 25 МБ)'); return }
+    try {
+      // Сжимаем в браузере — иначе фото с телефона не проходит по весу.
+      uploadAvatarMut.mutate({ userId, file: await prepareAvatar(file) })
+    } catch (err: any) {
+      toast.error(err?.message || 'Не удалось прочитать файл как изображение')
+    }
   }
 
   const [editingSalary, setEditingSalary] = useState(false)

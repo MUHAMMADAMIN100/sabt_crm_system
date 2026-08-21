@@ -453,7 +453,14 @@ export function Avatar({ name, src, size = 32, zoomable = true }: {
     // на другом домене (Vercel) чем backend (Railway) — поэтому строим
     // полный URL через VITE_API_URL. Если src уже полный http(s) — берём
     // как есть.
-    const url = src.startsWith('http') ? src : `${AVATAR_BASE}/uploads/avatars/${src}`
+    // «db:<uuid>» — фотография лежит в базе, её отдаёт отдельная ручка.
+    // Прежние значения — имя файла на диске: их продолжаем брать из
+    // /uploads, иначе у всех, кто загрузился раньше, пропало бы фото.
+    const url = src.startsWith('http')
+      ? src
+      : src.startsWith('db:')
+        ? `${AVATAR_BASE}/api/avatars/${src.slice(3)}`
+        : `${AVATAR_BASE}/uploads/avatars/${src}`
     // Аватарки часто лежат внутри кликабельных карточек и кнопок —
     // stopPropagation, чтобы клик открывал фото, а не родителя. Роль кнопки
     // намеренно НЕ ставим: это перебило бы роль картинки, а обёртка-кнопка

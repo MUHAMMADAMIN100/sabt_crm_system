@@ -20,21 +20,28 @@ const AVATAR_ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const AVATAR_ALLOWED_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 
 const AVATAR_MULTER_CONFIG = {
-  storage: diskStorage({
-    destination: './uploads/avatars',
-    filename: (_req: any, file: Express.Multer.File, cb: any) => {
-      const ext = extname(file.originalname).toLowerCase().slice(0, 8);
-      cb(null, `${uuidv4()}${ext}`);
-    },
-  }),
-  limits: { fileSize: 2 * 1024 * 1024, files: 1 }, // 2MB max
+  // В память, а не на диск: файл уходит в БД. Диск на Railway
+  // эфемерный — при каждом редеплое загруженные фото исчезали.
+  storage: memoryStorage(),
+  // 8 МБ на входе — обычное фото с телефона. Фронт сжимает картинку
+  // до ~200 КБ, но лимит держим с запасом: при жёстких 2 МБ загрузка
+  // падала с 413 ещё до того, как сервер успевал что-то объяснить.
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
   fileFilter: (_req: any, file: Express.Multer.File, cb: any) => {
     const ext = extname(file.originalname).toLowerCase();
+    // HEIC — формат съёмки айфонов и маков. Браузеры его не рисуют,
+    // поэтому фронт конвертирует картинку в JPEG перед отправкой.
+    // Если файл всё же дошёл сырым — объясняем, а не отвечаем кодом.
+    if (ext === '.heic' || ext === '.heif') {
+      return cb(new BadRequestException(
+        'Фото в формате HEIC. Откройте его и сохраните как JPEG, либо снимите в режиме «Наиболее совместимые».',
+      ), false);
+    }
     if (!AVATAR_ALLOWED_EXT.has(ext)) {
-      return cb(new BadRequestException(`Аватар: расширение ${ext} запрещено. Только JPG/PNG/WEBP.`), false);
+      return cb(new BadRequestException(`Фотография: формат ${ext} не подходит. Нужен JPG, PNG или WEBP.`), false);
     }
     if (!AVATAR_ALLOWED_MIME.has(file.mimetype)) {
-      return cb(new BadRequestException(`Аватар: тип ${file.mimetype} запрещён.`), false);
+      return cb(new BadRequestException(`Фотография: тип ${file.mimetype} не подходит. Нужен JPG, PNG или WEBP.`), false);
     }
     cb(null, true);
   },
@@ -179,7 +186,7 @@ export class UsersController {
   updateAvatar(@Request() req, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('Файл не загружен');
     // Self-edit — actor.id совпадает с целевым id, assertCanManage skip'нется.
-    return this.usersService.updateAvatar(req.user.id, file.filename, { id: req.user.id, role: req.user.role });
+    return this.usersService.updateAvatarFile(req.user.id, file, { id: req.user.id, role: req.user.role });
   }
 
   // ─── Персональные обои интерфейса ────────────────────────────────────
@@ -236,6 +243,6 @@ export class UsersController {
   @UseInterceptors(FileInterceptor('avatar', AVATAR_MULTER_CONFIG))
   updateAvatarFor(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Request() req) {
     if (!file) throw new BadRequestException('Файл не загружен');
-    return this.usersService.updateAvatar(id, file.filename, { id: req.user.id, role: req.user.role });
+    return this.usersService.updateAvatarFile(id, file, { id: req.user.id, role: req.user.role });
   }
 }

@@ -5,6 +5,7 @@ import { AppModule } from './app.module';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ThrottlerExceptionFilter } from './throttler-exception.filter';
+import { UploadExceptionFilter } from './upload-exception.filter';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
 import 'winston-daily-rotate-file';
@@ -215,7 +216,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.useGlobalFilters(new ThrottlerExceptionFilter());
+  app.useGlobalFilters(new ThrottlerExceptionFilter(), new UploadExceptionFilter());
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.useGlobalPipes(
     new ValidationPipe({

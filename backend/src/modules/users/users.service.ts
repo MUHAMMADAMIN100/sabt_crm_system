@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { User, UserRole } from './user.entity';
@@ -10,9 +10,19 @@ import { SecurityAuditService } from '../auth/security-audit.service';
 import { SecurityEventType } from '../auth/security-event.entity';
 import { RefreshToken } from '../auth/refresh-token.entity';
 import { sanitizeGrants, hasGrant, GRANTABLE } from '../auth/permissions';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
+  private readonly logger = new Logger(UsersService.name);
+
+  /** Максимум на фотографию ПОСЛЕ кодирования в base64. Фронт сжимает
+   *  картинку примерно до 200 КБ, так что запас десятикратный: у
+   *  сотрудника может быть открыта вкладка со старой версией сайта,
+   *  и его фото должно загрузиться даже без сжатия в браузере. */
+  private static readonly MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+  private static readonly AVATAR_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
   constructor(
     @InjectRepository(User) private repo: Repository<User>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
@@ -21,6 +31,16 @@ export class UsersService {
     private gateway: AppGateway,
     private securityAudit: SecurityAuditService,
   ) {}
+
+  /** В проде synchronize выключён — колонку под фотографию заводим сами.
+   *  IF NOT EXISTS: метод выполняется при каждом старте. */
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.repo.manager.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS "avatarImage" text');
+    } catch (e: any) {
+      this.logger.warn(`avatarImage column check failed: ${e?.message || e}`);
+    }
+  }
 
   /** Отзываем все ещё-активные refresh-токены пользователя.
    *  Используется при блокировке / сбросе пароля админом / похожих операциях,
@@ -495,7 +515,56 @@ export class UsersService {
     return this.getBackground(userId);
   }
 
-  async updateAvatar(id: string, avatar: string, actor?: { id: string; role?: string }) {
+  /** Фотография по ключу «db:<uuid>» — для публичной отдачи картинки.
+   *  avatarImage помечена select:false, читаем явно. */
+  async getAvatarImage(key: string): Promise<{ mime: string; data: Buffer } | null> {
+    // Ключ приходит из URL — пускаем только формат uuid, чтобы в LIKE
+    // или сравнение не уехало ничего постороннего.
+    if (!/^[0-9a-f-]{36}$/i.test(key)) return null;
+    const row = await this.repo
+      .createQueryBuilder('u')
+      .select(['u.id'])
+      .addSelect('u.avatarImage')
+      .where('u.avatar = :key', { key: `db:${key}` })
+      .getOne()
+      .catch(() => null);
+    const uri = row?.avatarImage;
+    if (!uri) return null;
+    const m = /^data:([^;,]+);base64,(.+)$/s.exec(uri);
+    if (!m) return null;
+    const mime = UsersService.AVATAR_MIME.has(m[1]) ? m[1] : 'image/jpeg';
+    return { mime, data: Buffer.from(m[2], 'base64') };
+  }
+
+  /** Сохранение фотографии сотрудника. Кладём в БД: диск на Railway
+   *  эфемерный, файлы исчезали при каждом редеплое. */
+  async updateAvatarFile(
+    id: string,
+    file: Express.Multer.File,
+    actor?: { id: string; role?: string },
+  ) {
+    if (!file?.buffer?.length) throw new BadRequestException('Файл пустой');
+    // Размер считаем до кодирования: base64 раздувает данные на треть.
+    const encoded = Math.ceil(file.buffer.length / 3) * 4;
+    if (encoded > UsersService.MAX_AVATAR_BYTES) {
+      const kb = Math.round(encoded / 1024);
+      throw new BadRequestException(
+        `Фотография слишком тяжёлая (${kb} КБ). Выберите изображение поменьше.`,
+      );
+    }
+    const mime = UsersService.AVATAR_MIME.has(file.mimetype) ? file.mimetype : 'image/jpeg';
+    const key = uuidv4();
+    // Ключ меняется при каждой загрузке — браузер сам берёт новое фото,
+    // и картинку можно отдавать с «вечным» кэшем.
+    return this.updateAvatar(id, `db:${key}`, actor, `data:${mime};base64,${file.buffer.toString('base64')}`);
+  }
+
+  async updateAvatar(
+    id: string,
+    avatar: string,
+    actor?: { id: string; role?: string },
+    avatarImage?: string,
+  ) {
     const user = await this.findOne(id);
     // Security: смена аватарки другого пользователя должна проходить через
     // ту же policy-проверку assertCanManage, что и остальные mutator'ы
@@ -506,7 +575,7 @@ export class UsersService {
     if (actor && actor.id !== id) {
       this.assertCanManage(user, actor.role);
     }
-    await this.repo.update(id, { avatar });
+    await this.repo.update(id, avatarImage ? { avatar, avatarImage } : { avatar });
 
     // У Employee своя колонка avatar — синхронизируем, иначе на странице
     // сотрудников и в карточках задач (где avatar тянется из employee)

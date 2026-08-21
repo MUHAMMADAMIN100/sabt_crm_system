@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useWallpaperStore, syncWallpaperFromServer, canUseWallpaper, veilOf } from '@/lib/wallpaper'
+import { compressImage } from '@/lib/imageCompress'
 
 /** До какого размера ужимаем картинку перед отправкой. 1920 хватает на
  *  любой монитор, а вес держим в пределах, которые примет сервер: он режет
@@ -11,87 +12,6 @@ import { useWallpaperStore, syncWallpaperFromServer, canUseWallpaper, veilOf } f
  *  треть — отсюда 480 КБ бинарных с запасом. */
 const MAX_SIDE = 1920
 const TARGET_BYTES = 480 * 1024
-/** Если качества не хватило, уменьшаем и саму картинку. Шумное фото с
- *  телефона не влезает даже на качестве 0.35, и раньше уходило на сервер
- *  как есть — тот отвечал «слишком большая», и фон просто не ставился. */
-const SCALE_STEPS = [1, 0.75, 0.55, 0.4]
-const QUALITY_STEPS = [0.82, 0.7, 0.58, 0.45, 0.35]
-
-/** Читаем картинку. createImageBitmap быстрее и не держит DOM-узел, но есть
- *  не везде (старые Safari) — тогда падаем на обычный <img>. */
-async function loadImage(file: File): Promise<{ image: unknown; width: number; height: number; dispose: () => void }> {
-  if (typeof createImageBitmap === 'function') {
-    try {
-      const bmp = await createImageBitmap(file)
-      return { image: bmp, width: bmp.width, height: bmp.height, dispose: () => bmp.close?.() }
-    } catch {
-      // Битый файл или неподдерживаемый формат — пробуем через <img>,
-      // он даст внятную ошибку onerror.
-    }
-  }
-  const url = URL.createObjectURL(file)
-  try {
-    const img = await new Promise<HTMLImageElement>((res, rej) => {
-      const el = new Image()
-      el.onload = () => res(el)
-      el.onerror = () => rej(new Error('Файл не похож на картинку'))
-      el.src = url
-    })
-    return {
-      image: img,
-      width: img.naturalWidth,
-      height: img.naturalHeight,
-      dispose: () => URL.revokeObjectURL(url),
-    }
-  } catch (e) {
-    URL.revokeObjectURL(url)
-    throw e
-  }
-}
-
-/** Сжимаем на клиенте: sharp на бэкенде нет, а гнать 12-мегапиксельное фото
- *  с телефона в базу нельзя. Возвращает JPEG-blob нужного веса и пропорции
- *  картинки — по ним считается масштаб («Размер»). */
-async function compress(file: File): Promise<{ blob: Blob; ratio: number }> {
-  const src = await loadImage(file)
-  const fit = Math.min(1, MAX_SIDE / Math.max(src.width, src.height))
-  const baseW = Math.max(1, Math.round(src.width * fit))
-  const baseH = Math.max(1, Math.round(src.height * fit))
-  // Пропорции берём у исходника: они не меняются от того, насколько сильно
-  // мы ужали картинку, а по ним считается «Размер» на экране.
-  const ratio = Math.round((baseW / baseH) * 1000) / 1000
-
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')
-  if (!ctx) { src.dispose(); throw new Error('Браузер не дал холст для сжатия картинки') }
-
-  let last: Blob | null = null
-  try {
-    // Сначала снижаем качество, и только если этого мало — уменьшаем саму
-    // картинку. Так фото 12 Мп с шумом всё равно укладывается в лимит.
-    for (const s of SCALE_STEPS) {
-      const w = Math.max(1, Math.round(baseW * s))
-      const h = Math.max(1, Math.round(baseH * s))
-      canvas.width = w
-      canvas.height = h
-      ctx.clearRect(0, 0, w, h)
-      ctx.drawImage(src.image as CanvasImageSource, 0, 0, w, h)
-      for (const q of QUALITY_STEPS) {
-        const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', q))
-        if (!blob) continue
-        last = blob
-        if (blob.size <= TARGET_BYTES) return { blob, ratio }
-      }
-    }
-  } finally {
-    src.dispose()
-  }
-  // Сюда попадаем, только если даже 40 % размера на качестве 0.35 не влезли —
-  // на практике недостижимо, но отдавать заведомо отвергаемый файл нельзя.
-  if (last && last.size <= TARGET_BYTES) return { blob: last, ratio }
-  throw new Error('Картинка слишком тяжёлая даже после сжатия — попробуйте другое фото')
-}
-
 export default function WallpaperSection() {
   const user = useAuthStore(s => s.user)
   const image = useWallpaperStore(s => s.image)
@@ -144,7 +64,7 @@ export default function WallpaperSection() {
     }
     setBusy(true)
     try {
-      const { blob, ratio } = await compress(file)
+      const { blob, ratio } = await compressImage(file, { maxSide: MAX_SIDE, targetBytes: TARGET_BYTES })
       const res = await usersApi.uploadMyBackground(blob, { dim: view.dim, scale: view.scale, ratio })
       syncWallpaperFromServer(res?.image, res)
       toast.success('Фон установлен')
