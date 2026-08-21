@@ -348,6 +348,7 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "paidMarks" jsonb`);
     // День оплаты подписки/аренды — для напоминаний.
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "dueDay" int`);
+    await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "dueDate" date`);
     // Дата постановки проекта на паузу (статус 'paused').
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "pausedAt" date`);
     // Архивные счета: скрыты из карточек и селектов, история цела.
@@ -3918,10 +3919,12 @@ export class FinanceService implements OnModuleInit {
   async createSubscription(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Название обязательно');
     const position = await this.subRepo.count();
+    const dueDate = dto.dueDate ? String(dto.dueDate).slice(0, 10) : null;
+    const dueDay = dueDate ? Number(dueDate.slice(8, 10)) : this.normDueDay(dto.dueDay);
     return this.subRepo.save(this.subRepo.create({
       name: dto.name.trim(), kind: dto.kind === 'rent' ? 'rent' : 'subscription',
       amount: Number(dto.amount) || 0, active: dto.active !== false,
-      dueDay: this.normDueDay(dto.dueDay), position,
+      dueDay, dueDate, position,
     }));
   }
   async updateSubscription(id: string, dto: any) {
@@ -3931,7 +3934,12 @@ export class FinanceService implements OnModuleInit {
     if (dto.kind !== undefined) s.kind = dto.kind === 'rent' ? 'rent' : 'subscription';
     if (dto.amount !== undefined) s.amount = Number(dto.amount) || 0;
     if (dto.active !== undefined) s.active = !!dto.active;
-    if (dto.dueDay !== undefined) s.dueDay = this.normDueDay(dto.dueDay);
+    if (dto.dueDate !== undefined) {
+      s.dueDate = dto.dueDate ? String(dto.dueDate).slice(0, 10) : null;
+      s.dueDay = s.dueDate ? Number(s.dueDate.slice(8, 10)) : this.normDueDay(dto.dueDay);
+    } else if (dto.dueDay !== undefined) {
+      s.dueDay = this.normDueDay(dto.dueDay);
+    }
     return this.subRepo.save(s);
   }
   async removeSubscription(id: string) { await this.subRepo.delete(id); return { ok: true }; }

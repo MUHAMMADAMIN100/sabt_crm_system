@@ -277,17 +277,16 @@ export function SubFormModal({ sub, onClose }: { sub?: FinSubscription; onClose:
   const [name, setName] = useState(sub?.name ?? '');
   const [kind, setKind] = useState<string>(sub?.kind ?? 'subscription');
   const [amount, setAmount] = useState(sub != null ? String(sub.amount ?? '') : '');
-  const [dueDay, setDueDay] = useState(sub?.dueDay ? String(sub.dueDay) : '');
+  const [dueDate, setDueDate] = useState(sub?.dueDate ? String(sub.dueDate).slice(0, 10) : '');
   const [busy, setBusy] = useState(false);
 
   async function save() {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const day = Math.round(num(dueDay));
       const p = {
         name: name.trim(), kind, amount: num(amount), active: sub?.active ?? true,
-        dueDay: day >= 1 && day <= 31 ? day : null,
+        dueDate: dueDate || null,
       };
       if (isEdit) await financeApi.updateSubscription(sub.id, p);
       else await financeApi.createSubscription(p);
@@ -329,8 +328,9 @@ export function SubFormModal({ sub, onClose }: { sub?: FinSubscription; onClose:
         <div className="field"><label>Сумма / мес</label><input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
       </div>
       <div className="field">
-        <label>День оплаты (1–31)</label>
-        <input inputMode="numeric" placeholder="пусто — без напоминаний" value={dueDay} onChange={(e) => setDueDay(e.target.value)} />
+        <label>Дата снятия денег</label>
+        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        <span className="mini muted">Расход повторяется каждый месяц в этот день. Пусто — без даты.</span>
       </div>
     </FinModal>
   );

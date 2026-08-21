@@ -705,7 +705,15 @@ function SubsList({ ym }: { ym: string }) {
                   <td><b>{s.name}</b></td>
                   <td className="muted">{s.kind === 'rent' ? 'Аренда' : 'Подписка'}</td>
                   <td className="num">{money(s.amount)}</td>
-                  <td className="muted nowrap">{s.dueDay ? `до ${s.dueDay}-го` : '—'}</td>
+                  <td className="muted nowrap">{(() => {
+                    if (s.dueDate) {
+                      const day = Number(String(s.dueDate).slice(8, 10));
+                      const [yy, mm] = ym.split('-').map(Number);
+                      const last = new Date(yy, mm, 0).getDate();
+                      return formatDate(`${ym}-${String(Math.min(day, last)).padStart(2, '0')}`);
+                    }
+                    return s.dueDay ? `до ${s.dueDay}-го` : '—';
+                  })()}</td>
                   <td>
                     {isPaid ? (
                       <span className="flex">

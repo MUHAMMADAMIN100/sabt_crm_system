@@ -57,6 +57,7 @@ export interface FinSubscription {
   amount?: number;
   active?: boolean;
   dueDay?: number | null;
+  dueDate?: string | null;
   paidMarks?: Array<{ ym: string; date: string }> | null;
 }
 

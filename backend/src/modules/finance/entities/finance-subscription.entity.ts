@@ -25,6 +25,11 @@ export class FinanceSubscription {
   @Column({ type: 'int', nullable: true })
   dueDay: number | null;
 
+  /** Конкретная дата снятия денег ('YYYY-MM-DD'). Из неё берётся день месяца
+   *  (dueDay) для повторяющегося платежа; хранится для точного отображения. */
+  @Column({ type: 'date', nullable: true })
+  dueDate: string | null;
+
   /** Месяцы, отмеченные оплаченными вручную — без операции в журнале
    *  (деньги по счетам не двигаются): [{ ym: '2026-07', date: '2026-07-02' }]. */
   @Column({ type: 'jsonb', nullable: true })

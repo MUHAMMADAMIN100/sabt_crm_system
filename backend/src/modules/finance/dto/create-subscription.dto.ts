@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsISO8601, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -23,4 +23,8 @@ export class CreateSubscriptionDto {
   /** День оплаты (1..31) — для напоминаний; null — без срока. */
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(31)
   dueDay?: number | null;
+
+  /** Конкретная дата снятия денег ('YYYY-MM-DD'). Из неё выводится dueDay. */
+  @ApiPropertyOptional({ example: '2026-09-12' }) @IsOptional() @IsISO8601()
+  dueDate?: string | null;
 }
