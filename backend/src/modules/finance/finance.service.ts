@@ -349,6 +349,7 @@ export class FinanceService implements OnModuleInit {
     // День оплаты подписки/аренды — для напоминаний.
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "dueDay" int`);
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "dueDate" date`);
+    await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "endDate" date`);
     // Дата постановки проекта на паузу (статус 'paused').
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "pausedAt" date`);
     // Архивные счета: скрыты из карточек и селектов, история цела.
@@ -3924,7 +3925,7 @@ export class FinanceService implements OnModuleInit {
     return this.subRepo.save(this.subRepo.create({
       name: dto.name.trim(), kind: dto.kind === 'rent' ? 'rent' : 'subscription',
       amount: Number(dto.amount) || 0, active: dto.active !== false,
-      dueDay, dueDate, position,
+      dueDay, dueDate, endDate: dto.endDate ? String(dto.endDate).slice(0, 10) : null, position,
     }));
   }
   async updateSubscription(id: string, dto: any) {
@@ -3940,6 +3941,7 @@ export class FinanceService implements OnModuleInit {
     } else if (dto.dueDay !== undefined) {
       s.dueDay = this.normDueDay(dto.dueDay);
     }
+    if (dto.endDate !== undefined) s.endDate = dto.endDate ? String(dto.endDate).slice(0, 10) : null;
     return this.subRepo.save(s);
   }
   async removeSubscription(id: string) { await this.subRepo.delete(id); return { ok: true }; }

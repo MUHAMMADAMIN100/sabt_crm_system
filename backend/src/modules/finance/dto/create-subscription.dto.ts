@@ -24,7 +24,11 @@ export class CreateSubscriptionDto {
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(31)
   dueDay?: number | null;
 
-  /** Конкретная дата снятия денег ('YYYY-MM-DD'). Из неё выводится dueDay. */
+  /** Дата начала (первое списание, 'YYYY-MM-DD'). Из неё выводится dueDay. */
   @ApiPropertyOptional({ example: '2026-09-12' }) @IsOptional() @IsISO8601()
   dueDate?: string | null;
+
+  /** Дата окончания ('YYYY-MM-DD'); null — без ограничения. */
+  @ApiPropertyOptional({ example: '2027-09-12' }) @IsOptional() @IsISO8601()
+  endDate?: string | null;
 }

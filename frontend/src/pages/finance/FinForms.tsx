@@ -278,6 +278,7 @@ export function SubFormModal({ sub, onClose }: { sub?: FinSubscription; onClose:
   const [kind, setKind] = useState<string>(sub?.kind ?? 'subscription');
   const [amount, setAmount] = useState(sub != null ? String(sub.amount ?? '') : '');
   const [dueDate, setDueDate] = useState(sub?.dueDate ? String(sub.dueDate).slice(0, 10) : '');
+  const [endDate, setEndDate] = useState(sub?.endDate ? String(sub.endDate).slice(0, 10) : '');
   const [busy, setBusy] = useState(false);
 
   async function save() {
@@ -286,7 +287,7 @@ export function SubFormModal({ sub, onClose }: { sub?: FinSubscription; onClose:
     try {
       const p = {
         name: name.trim(), kind, amount: num(amount), active: sub?.active ?? true,
-        dueDate: dueDate || null,
+        dueDate: dueDate || null, endDate: endDate || null,
       };
       if (isEdit) await financeApi.updateSubscription(sub.id, p);
       else await financeApi.createSubscription(p);
@@ -327,11 +328,17 @@ export function SubFormModal({ sub, onClose }: { sub?: FinSubscription; onClose:
         </div>
         <div className="field"><label>Сумма / мес</label><input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
       </div>
-      <div className="field">
-        <label>Дата снятия денег</label>
-        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-        <span className="mini muted">Расход повторяется каждый месяц в этот день. Пусто — без даты.</span>
+      <div className="form-grid">
+        <div className="field">
+          <label>Дата начала (первое списание)</label>
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Дата окончания</label>
+          <input type="date" value={endDate} min={dueDate || undefined} onChange={(e) => setEndDate(e.target.value)} />
+        </div>
       </div>
+      <span className="mini muted">Списание повторяется каждый месяц в день начала — с даты начала до даты окончания. Дата окончания пуста — без ограничения.</span>
     </FinModal>
   );
 }

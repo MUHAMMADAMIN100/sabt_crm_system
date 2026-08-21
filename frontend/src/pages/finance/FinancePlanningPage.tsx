@@ -102,13 +102,19 @@ export default function FinancePlanningPage() {
           comment: debtNameById.get(p.debtId) || 'Погашение долга' });
       }
     }
-    // 2. Аренда и подписки: ВСЕ активные. Оплаченный месяц — на фактическую
-    // дату (paidMarks); иначе — на день оплаты, а если он не задан — на 1-е.
+    // 2. Аренда и подписки: активные, каждый месяц в день начала — с даты
+    // начала (dueDate) до даты окончания (endDate). Оплаченный месяц — на
+    // фактическую дату (paidMarks).
     for (const s of (subsQ.data || [])) {
       if (!s.active) continue;
+      const startYm = s.dueDate ? String(s.dueDate).slice(0, 7) : null;
+      const endYmSub = s.endDate ? String(s.endDate).slice(0, 7) : null;
+      if (startYm && calYm < startYm) continue;   // ещё не началась
+      if (endYmSub && calYm > endYmSub) continue;  // уже закончилась
       const paid = (s.paidMarks || []).find((pm: any) => pm.ym === calYm);
       const day = Math.min(Number(s.dueDay) || 1, lastDay);
       const date = paid?.date ? String(paid.date).slice(0, 10) : `${calYm}-${String(day).padStart(2, '0')}`;
+      if (s.endDate && !paid && date > String(s.endDate).slice(0, 10)) continue; // позже окончания
       items.push({ id: `sub-${s.id}`, date, amount: s.amount, type: 'expense', status: 'completed', comment: s.name });
     }
     // 3. Зарплаты (ФОТ) — агрегат за месяц, на последний день.
