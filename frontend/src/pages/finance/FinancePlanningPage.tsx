@@ -65,11 +65,11 @@ export default function FinancePlanningPage() {
     queryFn: () => financeApi.subscriptions(),
     enabled: showCalendar,
   });
-  // Прогноз того же года — источник агрегата зарплат за месяц (учитывает
-  // будущие ставки). Ключ совпадает с основным прогнозом при base — кэш общий.
-  const calForecastQ = useQuery({
-    queryKey: ['finance', 'forecast', `${calYear}-01`, months, 'base'],
-    queryFn: () => financeApi.forecast({ start: `${calYear}-01`, months, scenario: 'base' }),
+  // Зарплата для календаря — тот же источник, что страница «Зарплата»:
+  // expenseDetail('salary') → «К выплате» (toPay) за месяц. Совпадает с экраном.
+  const salaryQ = useQuery({
+    queryKey: ['finance', 'expenseDetail', 'salary', calYm],
+    queryFn: () => financeApi.expenseDetail('salary', calYm),
     enabled: showCalendar,
   });
   // Операции журнала за месяц — берём только будущие разовые (не привязанные к
@@ -127,16 +127,11 @@ export default function FinancePlanningPage() {
       if (s.endDate && !paid && date > String(s.endDate).slice(0, 10)) continue; // позже окончания
       items.push({ id: `sub-${s.id}`, date, amount: s.amount, type: 'expense', status: 'completed', comment: s.name });
     }
-    // 3. Зарплаты (ФОТ) — агрегат за месяц, на последний день.
-    const fRow = (calForecastQ.data?.rows || []).find((r: any) => r.ym === calYm);
-    if (fRow) {
-      const salaryAmt = (fRow.expenseSources || [])
-        .filter((x: any) => x.salary || String(x.kind || '').startsWith('Зарплата'))
-        .reduce((s: number, x: any) => s + (Number(x.amount) || 0), 0);
-      if (salaryAmt > 0) {
-        items.push({ id: `salary-${calYm}`, date: `${calYm}-${String(lastDay).padStart(2, '0')}`, amount: salaryAmt, type: 'expense', status: 'completed',
-          comment: 'Зарплаты (ФОТ)' });
-      }
+    // 3. Зарплаты — «к выплате» за месяц (как на странице «Зарплата»), на последний день.
+    const salaryToPay = Number(salaryQ.data?.cards?.toPay || 0);
+    if (salaryToPay > 0) {
+      items.push({ id: `salary-${calYm}`, date: `${calYm}-${String(lastDay).padStart(2, '0')}`, amount: salaryToPay, type: 'expense', status: 'completed',
+        comment: 'Зарплаты (к выплате)' });
     }
     // 4. Прочие будущие разовые операции журнала (без привязки к источникам выше).
     for (const t of ((txMonthQ.data?.items) || [])) {
@@ -148,7 +143,7 @@ export default function FinancePlanningPage() {
         comment: t.comment || t.categoryName || (t.type === 'income' ? 'Поступление' : 'Расход') });
     }
     return items;
-  }, [plannedQ.data, subsQ.data, calForecastQ.data, txMonthQ.data, projById, debtNameById, calYm, calYear]);
+  }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, projById, debtNameById, calYm, calYear]);
   if (query.isLoading) return <div className="fin-root"><FinLoading cards={4} /></div>;
   if (query.isError) return <div className="fin-root"><FinLoadError onRetry={() => query.refetch()} /></div>;
   const data = query.data;
@@ -175,7 +170,7 @@ export default function FinancePlanningPage() {
           <p className="muted mini" style={{ margin: 0 }}>Всё движение денег по датам: приходы от клиентов (+) и расходы — долги, аренда/подписки, зарплаты, разовые платежи (−). Суммы на дне.</p>
           <MonthNav ym={calYm} onChange={setCalYm} />
         </div>
-        {(plannedQ.isLoading || subsQ.isLoading || txMonthQ.isLoading || calForecastQ.isLoading) ? <FinLoading /> : (
+        {(plannedQ.isLoading || subsQ.isLoading || txMonthQ.isLoading || salaryQ.isLoading) ? <FinLoading /> : (
           <TxCalendar ym={calYm} txns={calTxns} expandedTxId={null} onToggle={() => {}} onAdd={() => {}} hideAdd planMode />
         )}
       </div>
