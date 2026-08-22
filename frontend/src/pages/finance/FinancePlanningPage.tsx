@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { apiErr, currentYm, formatDate, money, monthLabel, todayISO } from './finlib';
+import { apiErr, currentYm, formatDate, money, monthLabel, shiftYm, todayISO } from './finlib';
 import { FinLoadError, FinLoading, FinModal } from './FinKit';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
@@ -45,6 +45,9 @@ export default function FinancePlanningPage() {
   });
   // ── Данные календаря: всё движение денег по датам ──────────────────
   const calYear = calYm.slice(0, 4);
+  // Зарплата выдаётся 10-го числа за ПРЕДЫДУЩИЙ месяц (работали в августе —
+  // платим 10 сентября). Значит в месяце calYm платим ЗП за salaryYm = calYm − 1.
+  const salaryYm = shiftYm(calYm, -1);
   const plannedQ = useQuery({
     queryKey: ['finance', 'planned-payments'],
     queryFn: () => financeApi.plannedPayments(),
@@ -68,8 +71,8 @@ export default function FinancePlanningPage() {
   // Зарплата для календаря — тот же источник, что страница «Зарплата»:
   // expenseDetail('salary') → «К выплате» (toPay) за месяц. Совпадает с экраном.
   const salaryQ = useQuery({
-    queryKey: ['finance', 'expenseDetail', 'salary', calYm],
-    queryFn: () => financeApi.expenseDetail('salary', calYm),
+    queryKey: ['finance', 'expenseDetail', 'salary', salaryYm],
+    queryFn: () => financeApi.expenseDetail('salary', salaryYm),
     enabled: showCalendar,
   });
   // Операции журнала за месяц — берём только будущие разовые (не привязанные к
@@ -127,11 +130,12 @@ export default function FinancePlanningPage() {
       if (s.endDate && !paid && date > String(s.endDate).slice(0, 10)) continue; // позже окончания
       items.push({ id: `sub-${s.id}`, date, amount: s.amount, type: 'expense', status: 'completed', comment: s.name });
     }
-    // 3. Зарплаты — «к выплате» за месяц (как на странице «Зарплата»), на последний день.
+    // 3. Зарплаты за ПРЕДЫДУЩИЙ месяц — выплата 10-го числа текущего месяца.
+    // Сумма = «К выплате» за отработанный месяц (совпадает с экраном «Зарплата»).
     const salaryToPay = Number(salaryQ.data?.cards?.toPay || 0);
     if (salaryToPay > 0) {
-      items.push({ id: `salary-${calYm}`, date: `${calYm}-${String(lastDay).padStart(2, '0')}`, amount: salaryToPay, type: 'expense', status: 'completed',
-        comment: 'Зарплаты (к выплате)' });
+      items.push({ id: `salary-${calYm}`, date: `${calYm}-10`, amount: salaryToPay, type: 'expense', status: 'completed',
+        comment: `Зарплаты за ${monthLabel(salaryYm)}` });
     }
     // 4. Прочие будущие разовые операции журнала (без привязки к источникам выше).
     for (const t of ((txMonthQ.data?.items) || [])) {
@@ -143,7 +147,7 @@ export default function FinancePlanningPage() {
         comment: t.comment || t.categoryName || (t.type === 'income' ? 'Поступление' : 'Расход') });
     }
     return items;
-  }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, projById, debtNameById, calYm, calYear]);
+  }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, projById, debtNameById, calYm, calYear, salaryYm]);
   if (query.isLoading) return <div className="fin-root"><FinLoading cards={4} /></div>;
   if (query.isError) return <div className="fin-root"><FinLoadError onRetry={() => query.refetch()} /></div>;
   const data = query.data;
