@@ -1543,11 +1543,15 @@ export class FinanceService implements OnModuleInit {
       .filter(pp => pp.projectId && pp.status === 'expected' && pp.ym === ym && earningProjectIds.has(pp.projectId))
       .reduce((s, pp) => s + Number(pp.amount), 0));
     const nextYm = shiftYm(ym, 1);
+    // SMM и Обслуживание — повторяющийся месячный доход по тарифу (у обслуживания
+    // планы не материализуются в БД, поэтому берём тариф активных проектов —
+    // иначе обслуживание выпадало из прогноза следующего месяца). Dev/Design —
+    // по ожидаемым планам матриц.
     const smmForecast = r2(m.projects
-      .filter(p => p.direction === 'smm' && isEarning(p))
+      .filter(p => (p.direction === 'smm' || p.direction === 'maintenance') && isEarning(p))
       .reduce((s, p) => s + Number(p.tariff), 0));
     const otherIds = new Set(m.projects
-      .filter(p => p.direction !== 'smm' && isEarning(p))
+      .filter(p => !['smm', 'maintenance'].includes(p.direction) && isEarning(p))
       .map(p => p.id));
     const otherForecast = r2(planned
       .filter(pp => pp.projectId && otherIds.has(pp.projectId) && pp.status === 'expected' && pp.ym === nextYm)
@@ -2380,9 +2384,15 @@ export class FinanceService implements OnModuleInit {
         const salaryYm = shiftYm(ym, -1);
         if (!workedInFinanceMonth(employee, salaryYm)) continue;
         if (snapOf(employee, salaryYm)) continue;
-        const exactPaid = this.sum(postedTxs.filter(t => t.type === FinanceTxType.EXPENSE && t.employeeId === employee.id &&
-          (t.salaryYm || salaryPeriodForDate(t.date)) === salaryYm));
-        const due = Math.max(0, salaryForMonth(employee, salaryYm) + bonusOf(employee, salaryYm) - fineOf(employee, salaryYm));
+        const empSalaryTx = postedTxs.filter(t => t.type === FinanceTxType.EXPENSE && t.employeeId === employee.id &&
+          (t.salaryYm || salaryPeriodForDate(t.date)) === salaryYm);
+        const exactPaid = this.sum(empSalaryTx);
+        // Обязательство = оклад + ВЫДАННЫЕ бонусы − штраф (как в ведомости):
+        // выплаченный бонус входит в exactPaid и самокомпенсируется. Раньше брали
+        // bonusOf (jsonb, который не заполняется), поэтому выплаченный бонус
+        // ошибочно занижал базовую ЗП в прогнозе.
+        const bonusesPaid = this.sum(empSalaryTx.filter(isBonusTx));
+        const due = Math.max(0, salaryForMonth(employee, salaryYm) + bonusesPaid - fineOf(employee, salaryYm));
         let amount = Math.max(0, due - exactPaid);
         const covered = Math.min(amount, unlinkedSalaryPaid);
         amount -= covered;
@@ -2400,13 +2410,17 @@ export class FinanceService implements OnModuleInit {
       }
       for (const debt of debts) {
         if (!canProject) continue;
-        const remaining = debtRemaining.get(debt.id) || 0;
+        let remaining = debtRemaining.get(debt.id) || 0;
         if (remaining <= 0) continue;
         const scheduled = plans.filter(p => p.ym === ym && p.debtId === debt.id).reduce((s, p) => s + Number(p.amount), 0);
         const exactPaid = this.sum([...actualExpenseTx, ...scheduledExpenseTx].filter(t => t.debtId === debt.id));
         const scheduledPaid = this.sum(scheduledExpenseTx.filter(t => t.debtId === debt.id));
         if (scheduledPaid > 0) {
-          debtRemaining.set(debt.id, r2(Math.max(0, remaining - scheduledPaid)));
+          // Уменьшаем ЛОКАЛЬНЫЙ remaining, а не только карту, иначе финальный
+          // debtRemaining.set(remaining − amount) ниже перетирал это уменьшение
+          // (использовал stale remaining) → долг переоценивался в след. месяцах.
+          remaining = r2(Math.max(0, remaining - scheduledPaid));
+          debtRemaining.set(debt.id, remaining);
         }
         let dueThisMonth = Math.max(0, (scheduled || Number(debt.monthlyPayment) || 0) - exactPaid);
         const covered = Math.min(dueThisMonth, unlinkedDebtPaid);
