@@ -101,17 +101,24 @@ export default function FinancePlanningPage() {
     const lastDay = new Date(Number(calYear), Number(calYm.slice(5, 7)), 0).getDate();
 
     // 1. Плановые платежи: проект → доход, долг → расход.
+    // Месяц берём по дате оплаты, а если её нет (авто-график долгов, ячейки
+    // матриц Dev/Design создаются без dueDate) — по ym плана; тогда ставим на
+    // конец месяца. Иначе такие платежи вообще не попадали в календарь.
+    const monthEnd = `${calYm}-${String(lastDay).padStart(2, '0')}`;
     for (const p of (plannedQ.data || [])) {
-      if (p.status !== 'expected' || !p.dueDate || String(p.dueDate).slice(0, 7) !== calYm) continue;
+      if (p.status !== 'expected') continue;
+      const planYm = p.dueDate ? String(p.dueDate).slice(0, 7) : (p.ym || '');
+      if (planYm !== calYm) continue;
+      const date = p.dueDate ? String(p.dueDate).slice(0, 10) : monthEnd;
       if (p.projectId) {
         const proj = projById.get(p.projectId);
         // Проект на паузе (или иной незарабатывающий статус) — плановый доход
         // не актуален, пока проект не вернут в «Активный».
         if (!isEarningProject(proj)) continue;
-        items.push({ id: `pp-${p.id}`, date: p.dueDate, amount: p.amount, type: 'income', status: 'completed',
+        items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'income', status: 'completed',
           comment: proj?.name || 'Оплата по проекту' });
       } else if (p.debtId) {
-        items.push({ id: `pp-${p.id}`, date: p.dueDate, amount: p.amount, type: 'expense', status: 'completed',
+        items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'expense', status: 'completed',
           comment: debtNameById.get(p.debtId) || 'Погашение долга' });
       }
     }
@@ -142,6 +149,8 @@ export default function FinancePlanningPage() {
       if (t.status === 'cancelled') continue;
       if (t.type !== 'income' && t.type !== 'expense') continue;
       if (t.employeeId || t.subscriptionId || t.debtId) continue;
+      // Доход проекта на паузе не актуален — как и в источнике 1.
+      if (t.projectId && !isEarningProject(projById.get(t.projectId))) continue;
       if (String(t.date || '').slice(0, 10) <= today) continue;
       items.push({ id: `tx-${t.id}`, date: t.date, amount: t.amount, type: t.type, status: 'completed',
         comment: t.comment || t.categoryName || (t.type === 'income' ? 'Поступление' : 'Расход') });
