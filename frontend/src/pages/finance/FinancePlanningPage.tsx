@@ -16,6 +16,12 @@ import { AccountMark } from './AccountIdentity';
 
 const scenarios: Record<string, string> = { conservative: 'Осторожный', base: 'Базовый', optimistic: 'Оптимистичный' };
 
+// Проект «зарабатывает» — как на бэкенде (isEarningFinanceProject): не архивный
+// и статус не в [lead, paused, done, archived]. Плановые доходы проектов на
+// паузе не актуальны, пока проект не вернут в «Активный».
+const NON_EARNING_PROJECT_STATUSES = new Set(['lead', 'paused', 'done', 'archived']);
+const isEarningProject = (p: any) => !!p && !p.archived && !NON_EARNING_PROJECT_STATUSES.has(p.status || 'active');
+
 export default function FinancePlanningPage() {
   const qc = useQueryClient();
   const currentYear = Number(currentYm().slice(0, 4));
@@ -73,9 +79,9 @@ export default function FinancePlanningPage() {
     queryFn: () => financeApi.transactions({ from: `${calYm}-01`, to: `${calYm}-31`, status: 'all', pageSize: 1000 }),
     enabled: showCalendar,
   });
-  const projNameById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const p of (projectsQ.data || [])) m.set(p.id, p.name);
+  const projById = useMemo(() => {
+    const m = new Map<string, any>();
+    for (const p of (projectsQ.data || [])) m.set(p.id, p);
     return m;
   }, [projectsQ.data]);
   const debtNameById = useMemo(() => {
@@ -95,8 +101,12 @@ export default function FinancePlanningPage() {
     for (const p of (plannedQ.data || [])) {
       if (p.status !== 'expected' || !p.dueDate || String(p.dueDate).slice(0, 7) !== calYm) continue;
       if (p.projectId) {
+        const proj = projById.get(p.projectId);
+        // Проект на паузе (или иной незарабатывающий статус) — плановый доход
+        // не актуален, пока проект не вернут в «Активный».
+        if (!isEarningProject(proj)) continue;
         items.push({ id: `pp-${p.id}`, date: p.dueDate, amount: p.amount, type: 'income', status: 'completed',
-          comment: projNameById.get(p.projectId) || 'Оплата по проекту' });
+          comment: proj?.name || 'Оплата по проекту' });
       } else if (p.debtId) {
         items.push({ id: `pp-${p.id}`, date: p.dueDate, amount: p.amount, type: 'expense', status: 'completed',
           comment: debtNameById.get(p.debtId) || 'Погашение долга' });
@@ -138,7 +148,7 @@ export default function FinancePlanningPage() {
         comment: t.comment || t.categoryName || (t.type === 'income' ? 'Поступление' : 'Расход') });
     }
     return items;
-  }, [plannedQ.data, subsQ.data, calForecastQ.data, txMonthQ.data, projNameById, debtNameById, calYm, calYear]);
+  }, [plannedQ.data, subsQ.data, calForecastQ.data, txMonthQ.data, projById, debtNameById, calYm, calYear]);
   if (query.isLoading) return <div className="fin-root"><FinLoading cards={4} /></div>;
   if (query.isError) return <div className="fin-root"><FinLoadError onRetry={() => query.refetch()} /></div>;
   const data = query.data;
