@@ -235,7 +235,7 @@ export default function FinancePlanningPage() {
           <MonthNav ym={calYm} onChange={setCalYm} />
         </div>
         {(plannedQ.isLoading || subsQ.isLoading || txMonthQ.isLoading || salaryQ.isLoading) ? <FinLoading /> : (
-          <TxCalendar ym={calYm} txns={calTxns} expandedTxId={null} onToggle={() => {}} onAdd={() => {}} hideAdd planMode />
+          <TxCalendar ym={calYm} txns={calTxns} onAdd={() => {}} hideAdd planMode />
         )}
       </div>
       ) : (<>

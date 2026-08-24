@@ -411,6 +411,16 @@
 .fin-root .msw.over { background: var(--red-soft); border: 1px solid var(--red); }
 .fin-root .msw.soon { border: 1px dashed var(--border); }
 
+/* ─── Карточка операции по клику в календаре ─── */
+.fin-root .cal-item { display: flex; flex-direction: column; gap: 3px; }
+.fin-root .cal-item-amount { font-size: 26px; font-weight: 750; letter-spacing: -.6px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.fin-root .cal-item-title { font-size: 14px; color: var(--text); margin-bottom: 10px; overflow-wrap: anywhere; }
+.fin-root .cal-item-rows { display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.fin-root .cal-item-row { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.fin-root .cal-item-row > span { color: var(--muted); }
+.fin-root .cal-item-row > b { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+
 /* ─── Календарь транзакций ───────────────────────────────── */
 .fin-root .view-toggle { display: inline-flex; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 3px; gap: 3px; }

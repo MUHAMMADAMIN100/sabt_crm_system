@@ -12,7 +12,7 @@ import MonthNav from './MonthNav';
 import TransactionModal from './TransactionModal';
 import TransactionDetailsPanel from './TransactionDetailsModal';
 import ImportedArchiveBadge, { IMPORTED_ARCHIVE_HINT, isImportedArchive } from './ImportedArchiveBadge';
-import { FinLoading, FinLoadError, finConfirm, invalidateFinance } from './FinKit';
+import { FinLoading, FinLoadError, FinModal, finConfirm, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
 import { AccountLabel } from './AccountIdentity';
 
@@ -117,8 +117,6 @@ export default function FinanceTransactionsPage() {
     return true;
   };
   const calTxns = ((calData?.items ?? []) as any[]).filter(matches);
-  const expandedTx = [...txns, ...calTxns].find((t: any) => t.id === expandedTxId) ?? null;
-
   function toggleDetails(t: any) {
     setExpandedTxId((current) => current === t.id ? null : t.id);
   }
@@ -201,12 +199,7 @@ export default function FinanceTransactionsPage() {
       ) : view === 'calendar' && calQ.isError ? (
         <FinLoadError onRetry={() => calQ.refetch()} text="Не удалось загрузить операции календаря." />
       ) : view === 'calendar' ? (
-        <>
-          <TxCalendar ym={calYm} txns={calTxns} expandedTxId={expandedTxId} onToggle={toggleDetails} onAdd={setAddDate} />
-          {expandedTx && <div className="fin-tx-calendar-details"><TransactionDetailsPanel
-            id={`finance-tx-details-${expandedTx.id}`} transaction={expandedTx}
-            onClose={() => closeDetails(expandedTx.id)} onEdit={editFromDetails} /></div>}
-        </>
+        <TxCalendar ym={calYm} txns={calTxns} onAdd={setAddDate} onEditItem={editFromDetails} />
       ) : txQ.isLoading ? (
         <FinLoading />
       ) : txQ.isError ? (
@@ -258,8 +251,8 @@ export default function FinanceTransactionsPage() {
  *  Клик по строке — подробности, «+» в дне — новая операция этой датой,
  *  длинные дни сворачиваются до 5 строк («ещё N»). */
 const CAL_DAY_LIMIT = 5;
-export function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd, hideAdd, planMode }: {
-  ym: string; txns: any[]; expandedTxId: string | null; onToggle: (t: any) => void; onAdd: (iso: string) => void;
+export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem }: {
+  ym: string; txns: any[]; onAdd: (iso: string) => void;
   /** Скрыть кнопку «＋ добавить операцию» в дне — для read-only календарей
    *  (например, план выплат на странице «Планирование»). */
   hideAdd?: boolean;
@@ -267,7 +260,12 @@ export function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd, hideAdd, p
    *  будущие). Без него будущие суммы уходят в месячный «план» и у дня нет
    *  своего +/− итога. Для денежного календаря на «Планировании». */
   planMode?: boolean;
+  /** Кнопка «Открыть» в модалке операции — редактирование реальной операции
+   *  (только «Транзакции»; на «Планировании» не передаётся). */
+  onEditItem?: (t: any) => void;
 }) {
+  // Клик по операции в дне открывает модалку с краткой информацией.
+  const [detail, setDetail] = useState<any>(null);
   const [y, m] = ym.split('-').map(Number);
   const firstIdx = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Пн = 0
   const daysIn = new Date(y, m, 0).getDate();
@@ -369,12 +367,11 @@ export function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd, hideAdd, p
                         <button key={t.id} type="button" className={'tx-row ' + t.type + (isImportedArchive(t) ? ' imported' : '')}
                           // «Сделанные» (оплачено/получено) — приглушённо, чтобы отличать от плана.
                           style={t.done ? { opacity: 0.4 } : undefined}
-                          id={`finance-tx-row-${t.id}`} aria-expanded={expandedTxId === t.id}
-                          aria-controls={expandedTxId === t.id ? `finance-tx-details-${t.id}` : undefined}
+                          id={`finance-tx-row-${t.id}`} aria-haspopup="dialog"
                           title={isImportedArchive(t)
                             ? `${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)} · ${IMPORTED_ARCHIVE_HINT}`
                             : `${String(t.date || '').slice(0, 10) > today ? 'Запланировано · ' : ''}${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}`}
-                          onClick={() => onToggle(t)}>
+                          onClick={() => setDetail(t)}>
                           {content}
                         </button>
                       );
@@ -391,8 +388,44 @@ export function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd, hideAdd, p
           })}
         </div>
       </div>
-      <p className="mini muted fin-table-note">Строка — открыть операцию · «＋» в дне — добавить этой датой.</p>
+      <p className="mini muted fin-table-note">Нажмите операцию — откроется карточка · «＋» в дне — добавить этой датой.</p>
+      {detail && <CalendarItemModal item={detail} planMode={planMode} onEdit={onEditItem} onClose={() => setDetail(null)} />}
     </>
+  );
+}
+
+/** Краткая карточка операции по клику в календаре (Транзакции и Планирование). */
+function CalendarItemModal({ item, planMode, onEdit, onClose }: {
+  item: any; planMode?: boolean; onEdit?: (t: any) => void; onClose: () => void;
+}) {
+  const type = item.type;
+  const sign = type === 'expense' ? '−' : type === 'income' ? '+' : '';
+  const amtCls = type === 'income' ? 'pos' : type === 'expense' ? 'neg' : 'muted';
+  const title = item.comment || item.categoryName || TYPE_LABEL[type] || 'Операция';
+  const dateStr = String(item.date || '').slice(0, 10);
+  const future = dateStr > todayISO();
+  const status = planMode
+    ? (item.done ? 'Проведено' : future ? 'Запланировано' : 'Ожидается')
+    : (item.status === 'cancelled' ? 'Отменено' : future ? 'Запланировано' : 'Проведено');
+  const canEdit = !!onEdit && !isImportedArchive(item) && item.status !== 'cancelled';
+  return (
+    <FinModal title="Операция" onClose={onClose} width={340}
+      footer={<>
+        {canEdit && <button className="btn primary" onClick={() => { onEdit!(item); onClose(); }}>Открыть</button>}
+        <button className="btn ghost" onClick={onClose}>Закрыть</button>
+      </>}>
+      <div className="cal-item">
+        <div className={'cal-item-amount ' + amtCls}>{sign}{money(item.amount)}</div>
+        <div className="cal-item-title">{title}</div>
+        <div className="cal-item-rows">
+          <div className="cal-item-row"><span>Тип</span><b>{TYPE_LABEL[type] || type}</b></div>
+          <div className="cal-item-row"><span>Дата</span><b>{formatDate(dateStr)}</b></div>
+          {item.categoryName && <div className="cal-item-row"><span>Категория</span><b>{item.categoryName}</b></div>}
+          {item.accountName && <div className="cal-item-row"><span>Счёт</span><b>{item.accountName}</b></div>}
+          <div className="cal-item-row"><span>Статус</span><b>{status}</b></div>
+        </div>
+      </div>
+    </FinModal>
   );
 }
 
