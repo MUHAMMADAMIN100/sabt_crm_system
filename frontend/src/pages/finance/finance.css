@@ -420,6 +420,11 @@
   padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
 .fin-root .cal-item-row > span { color: var(--muted); }
 .fin-root .cal-item-row > b { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.fin-root .cal-item-status { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; margin-top: 6px; border-top: 1px solid var(--border); }
+.fin-root .cal-item-status-head { font-size: 13px; color: var(--muted); }
+.fin-root .cal-item-status-head b { color: var(--text); font-weight: 650; }
+.fin-root .cal-item-status .field { gap: 5px; }
+.fin-root .cal-item-status .btn { width: 100%; justify-content: center; padding: 10px; }
 
 /* ─── Календарь транзакций ───────────────────────────────── */
 .fin-root .view-toggle { display: inline-flex; background: var(--surface); border: 1px solid var(--border);

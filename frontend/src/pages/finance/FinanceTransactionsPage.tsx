@@ -251,7 +251,7 @@ export default function FinanceTransactionsPage() {
  *  Клик по строке — подробности, «+» в дне — новая операция этой датой,
  *  длинные дни сворачиваются до 5 строк («ещё N»). */
 const CAL_DAY_LIMIT = 5;
-export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem }: {
+export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, renderStatusControl }: {
   ym: string; txns: any[]; onAdd: (iso: string) => void;
   /** Скрыть кнопку «＋ добавить операцию» в дне — для read-only календарей
    *  (например, план выплат на странице «Планирование»). */
@@ -263,6 +263,9 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem }: {
   /** Кнопка «Открыть» в модалке операции — редактирование реальной операции
    *  (только «Транзакции»; на «Планировании» не передаётся). */
   onEditItem?: (t: any) => void;
+  /** Блок управления статусом в модалке (Планирование): отметить полученным/
+   *  оплаченным / вернуть в план. Возвращает JSX или null. */
+  renderStatusControl?: (item: any, close: () => void) => any;
 }) {
   // Клик по операции в дне открывает модалку с краткой информацией.
   const [detail, setDetail] = useState<any>(null);
@@ -389,14 +392,16 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem }: {
         </div>
       </div>
       <p className="mini muted fin-table-note">Нажмите операцию — откроется карточка · «＋» в дне — добавить этой датой.</p>
-      {detail && <CalendarItemModal item={detail} planMode={planMode} onEdit={onEditItem} onClose={() => setDetail(null)} />}
+      {detail && <CalendarItemModal item={detail} planMode={planMode} onEdit={onEditItem}
+        renderStatusControl={renderStatusControl} onClose={() => setDetail(null)} />}
     </>
   );
 }
 
 /** Краткая карточка операции по клику в календаре (Транзакции и Планирование). */
-function CalendarItemModal({ item, planMode, onEdit, onClose }: {
-  item: any; planMode?: boolean; onEdit?: (t: any) => void; onClose: () => void;
+function CalendarItemModal({ item, planMode, onEdit, renderStatusControl, onClose }: {
+  item: any; planMode?: boolean; onEdit?: (t: any) => void;
+  renderStatusControl?: (item: any, close: () => void) => any; onClose: () => void;
 }) {
   const type = item.type;
   const sign = type === 'expense' ? '−' : type === 'income' ? '+' : '';
@@ -404,10 +409,9 @@ function CalendarItemModal({ item, planMode, onEdit, onClose }: {
   const title = item.comment || item.categoryName || TYPE_LABEL[type] || 'Операция';
   const dateStr = String(item.date || '').slice(0, 10);
   const future = dateStr > todayISO();
-  const status = planMode
-    ? (item.done ? 'Проведено' : future ? 'Запланировано' : 'Ожидается')
-    : (item.status === 'cancelled' ? 'Отменено' : future ? 'Запланировано' : 'Проведено');
+  const status = item.status === 'cancelled' ? 'Отменено' : future ? 'Запланировано' : 'Проведено';
   const canEdit = !!onEdit && !isImportedArchive(item) && item.status !== 'cancelled';
+  const statusNode = renderStatusControl ? renderStatusControl(item, onClose) : null;
   return (
     <FinModal title="Операция" onClose={onClose} width={340}
       footer={<>
@@ -418,15 +422,15 @@ function CalendarItemModal({ item, planMode, onEdit, onClose }: {
         <div className={'cal-item-amount ' + amtCls}>{sign}{money(item.amount)}</div>
         <div className="cal-item-title">{title}</div>
         <div className="cal-item-rows">
-          <div className="cal-item-row"><span>Тип</span><b>{TYPE_LABEL[type] || type}</b></div>
-          <div className="cal-item-row"><span>Дата</span><b>{formatDate(dateStr)}</b></div>
+          {!planMode && <div className="cal-item-row"><span>Тип</span><b>{TYPE_LABEL[type] || type}</b></div>}
+          {!planMode && <div className="cal-item-row"><span>Дата</span><b>{formatDate(dateStr)}</b></div>}
           {item.categoryName && <div className="cal-item-row"><span>Категория</span><b>{item.categoryName}</b></div>}
           {item.accountName && <div className="cal-item-row"><span>Счёт</span><b>{item.accountName}</b></div>}
           {Array.isArray(item.details) && item.details.map((d: any, i: number) => (
             <div className="cal-item-row" key={i}><span>{d.label}</span><b>{d.value}</b></div>
           ))}
-          <div className="cal-item-row"><span>Статус</span><b>{status}</b></div>
         </div>
+        {statusNode || <div className="cal-item-rows"><div className="cal-item-row"><span>Статус</span><b>{status}</b></div></div>}
       </div>
     </FinModal>
   );

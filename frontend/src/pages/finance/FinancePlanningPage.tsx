@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
 import { apiErr, currentYm, formatDate, money, monthLabel, shiftYm, todayISO } from './finlib';
-import { FinLoadError, FinLoading, FinModal } from './FinKit';
+import { FinLoadError, FinLoading, FinModal, invalidateFinanceAll } from './FinKit';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
 import { TxCalendar } from './FinanceTransactionsPage';
@@ -26,6 +26,72 @@ const DIR_LABEL: Record<string, string> = { smm: 'SMM', development: 'Developmen
 // Собрать список деталей операции (label/value), отбросив пустые.
 const detailList = (rows: (({ label: string; value: any }) | null | false | undefined)[]) =>
   rows.filter((r): r is { label: string; value: any } => !!r && r.value != null && r.value !== '');
+
+/** Управление статусом операции в модалке «Планирования»: отметить
+ *  полученной/оплаченной или вернуть в план. Работает для план-платежей
+ *  (id `pp-…`) и подписок (`sub-…`); для остальных просто показывает статус. */
+function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const { data: accounts = [] } = useQuery({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
+  const activeAccounts = ((accounts as any[]) || []).filter((a) => !a.archived);
+  const [accountId, setAccountId] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (!accountId && activeAccounts.length) setAccountId(activeAccounts[0].id); }, [activeAccounts, accountId]);
+
+  const id = String(item.id || '');
+  const isPlan = id.startsWith('pp-');
+  const isSub = id.startsWith('sub-');
+  const done = !!item.done;
+  const income = item.type === 'income';
+  const doneLabel = done ? (income ? 'Получено' : 'Оплачено') : 'Запланировано';
+
+  if (!isPlan && !isSub) {
+    return <div className="cal-item-rows"><div className="cal-item-row"><span>Статус</span><b>{doneLabel}</b></div></div>;
+  }
+  const rawId = isPlan ? id.slice(3) : id.slice(4);
+  const date = String(item.date || '').slice(0, 10) || todayISO();
+
+  async function mark() {
+    if (busy || (isPlan && !accountId)) return;
+    setBusy(true);
+    try {
+      if (isPlan) await financeApi.receivePlanned(rawId, { accountId, date });
+      else await financeApi.markSubPaid(rawId, { ym, date });
+      invalidateFinanceAll(qc); onClose();
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
+  }
+  async function revert() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (isPlan) await financeApi.unreceivePlanned(rawId);
+      else await financeApi.unmarkSubPaid(rawId, { ym });
+      invalidateFinanceAll(qc); onClose();
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
+  }
+
+  return (
+    <div className="cal-item-status">
+      <div className="cal-item-status-head">Статус: <b>{doneLabel}</b></div>
+      {done ? (
+        <button className="btn ghost" disabled={busy} onClick={revert}>Вернуть в план</button>
+      ) : (
+        <>
+          {isPlan && (
+            <div className="field"><label>{income ? 'На счёт' : 'Со счёта'}</label>
+              <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                {activeAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          )}
+          <button className="btn primary" disabled={busy || (isPlan && !accountId)} onClick={mark}>
+            {income ? 'Отметить полученной' : 'Отметить оплаченной'}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function FinancePlanningPage() {
   const qc = useQueryClient();
@@ -134,11 +200,7 @@ export default function FinancePlanningPage() {
         items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'income', status: 'completed', done,
           comment: proj?.name || 'Оплата по проекту',
           details: detailList([
-            { label: 'Проект', value: proj?.name },
             { label: 'Направление', value: proj ? (DIR_LABEL[proj.direction] || proj.direction) : null },
-            { label: 'Тариф', value: proj?.tariff ? money(Number(proj.tariff)) : null },
-            { label: 'Дата контракта', value: proj?.contractDate ? formatDate(proj.contractDate) : null },
-            { label: 'Часть', value: p.partNo ? `№${p.partNo}` : null },
           ]) });
       } else if (p.debtId) {
         if (!date) date = `${calYm}-10`; // долги — 10-го числа
@@ -244,10 +306,7 @@ export default function FinancePlanningPage() {
         items.push({ id: `fc-${proj.id}-${calYm}`, date: `${calYm}-${String(cday).padStart(2, '0')}`,
           amount: Number(proj.tariff), type: 'income', status: 'completed', done: false, comment: proj.name,
           details: detailList([
-            { label: 'Проект', value: proj.name },
             { label: 'Направление', value: DIR_LABEL[proj.direction] || proj.direction },
-            { label: 'Тариф', value: money(Number(proj.tariff)) },
-            { label: 'Дата контракта', value: proj.contractDate ? formatDate(proj.contractDate) : null },
             { label: 'Прогноз', value: proj.retentionMonths ? `на ${proj.retentionMonths} мес. вперёд` : 'бессрочно (12 мес.)' },
           ]) });
       }
@@ -281,7 +340,8 @@ export default function FinancePlanningPage() {
           <MonthNav ym={calYm} onChange={setCalYm} />
         </div>
         {(plannedQ.isLoading || subsQ.isLoading || txMonthQ.isLoading || salaryQ.isLoading) ? <FinLoading /> : (
-          <TxCalendar ym={calYm} txns={calTxns} onAdd={() => {}} hideAdd planMode />
+          <TxCalendar ym={calYm} txns={calTxns} onAdd={() => {}} hideAdd planMode
+            renderStatusControl={(item, close) => <PlanningStatusControl item={item} ym={calYm} onClose={close} />} />
         )}
       </div>
       ) : (<>
