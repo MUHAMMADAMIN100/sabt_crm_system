@@ -422,6 +422,9 @@ function CalendarItemModal({ item, planMode, onEdit, onClose }: {
           <div className="cal-item-row"><span>Дата</span><b>{formatDate(dateStr)}</b></div>
           {item.categoryName && <div className="cal-item-row"><span>Категория</span><b>{item.categoryName}</b></div>}
           {item.accountName && <div className="cal-item-row"><span>Счёт</span><b>{item.accountName}</b></div>}
+          {Array.isArray(item.details) && item.details.map((d: any, i: number) => (
+            <div className="cal-item-row" key={i}><span>{d.label}</span><b>{d.value}</b></div>
+          ))}
           <div className="cal-item-row"><span>Статус</span><b>{status}</b></div>
         </div>
       </div>

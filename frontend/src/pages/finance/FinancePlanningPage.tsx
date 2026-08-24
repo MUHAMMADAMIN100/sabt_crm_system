@@ -22,6 +22,11 @@ const scenarios: Record<string, string> = { conservative: 'Осторожный'
 const NON_EARNING_PROJECT_STATUSES = new Set(['lead', 'paused', 'done', 'archived']);
 const isEarningProject = (p: any) => !!p && !p.archived && !NON_EARNING_PROJECT_STATUSES.has(p.status || 'active');
 
+const DIR_LABEL: Record<string, string> = { smm: 'SMM', development: 'Development', design: 'Design', maintenance: 'Обслуживание' };
+// Собрать список деталей операции (label/value), отбросив пустые.
+const detailList = (rows: (({ label: string; value: any }) | null | false | undefined)[]) =>
+  rows.filter((r): r is { label: string; value: any } => !!r && r.value != null && r.value !== '');
+
 export default function FinancePlanningPage() {
   const qc = useQueryClient();
   const currentYear = Number(currentYm().slice(0, 4));
@@ -92,6 +97,11 @@ export default function FinancePlanningPage() {
     for (const d of (debtsQ.data || [])) m.set(d.id, d.name);
     return m;
   }, [debtsQ.data]);
+  const debtById = useMemo(() => {
+    const m = new Map<string, any>();
+    for (const d of (debtsQ.data || [])) m.set(d.id, d);
+    return m;
+  }, [debtsQ.data]);
 
   // Единый список движения денег за месяц для TxCalendar: приходы (оплаты
   // клиентов) + расходы (долги, аренда/подписки, зарплаты, разовые операции).
@@ -122,11 +132,25 @@ export default function FinancePlanningPage() {
           date = `${calYm}-${String(cday).padStart(2, '0')}`;
         }
         items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'income', status: 'completed', done,
-          comment: proj?.name || 'Оплата по проекту' });
+          comment: proj?.name || 'Оплата по проекту',
+          details: detailList([
+            { label: 'Проект', value: proj?.name },
+            { label: 'Направление', value: proj ? (DIR_LABEL[proj.direction] || proj.direction) : null },
+            { label: 'Тариф', value: proj?.tariff ? money(Number(proj.tariff)) : null },
+            { label: 'Дата контракта', value: proj?.contractDate ? formatDate(proj.contractDate) : null },
+            { label: 'Часть', value: p.partNo ? `№${p.partNo}` : null },
+          ]) });
       } else if (p.debtId) {
         if (!date) date = `${calYm}-10`; // долги — 10-го числа
+        const debt = debtById.get(p.debtId);
         items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'expense', status: 'completed', done,
-          comment: debtNameById.get(p.debtId) || 'Погашение долга' });
+          comment: debtNameById.get(p.debtId) || 'Погашение долга',
+          details: detailList([
+            { label: 'Долг', value: debt?.name || debtNameById.get(p.debtId) },
+            { label: 'Кому', value: debt?.counterparty },
+            { label: 'Остаток долга', value: debt?.remaining != null ? money(Number(debt.remaining)) : null },
+            { label: 'Платёж/мес', value: debt?.monthlyPayment ? money(Number(debt.monthlyPayment)) : null },
+          ]) });
       }
     }
     // 2. Аренда и подписки: активные, каждый месяц в день начала — с даты
@@ -150,15 +174,29 @@ export default function FinancePlanningPage() {
         : (subTx.length ? String(subTx[subTx.length - 1].date).slice(0, 10) : null);
       const date = done && paidDate ? paidDate : `${calYm}-${String(day).padStart(2, '0')}`;
       if (s.endDate && !done && date > String(s.endDate).slice(0, 10)) continue; // позже окончания
-      items.push({ id: `sub-${s.id}`, date, amount: s.amount, type: 'expense', status: 'completed', done, comment: s.name });
+      items.push({ id: `sub-${s.id}`, date, amount: s.amount, type: 'expense', status: 'completed', done, comment: s.name,
+        details: detailList([
+          { label: 'Категория', value: s.kind === 'rent' ? 'Аренда' : 'Подписка' },
+          { label: 'Сумма/мес', value: money(Number(s.amount)) },
+          { label: 'День оплаты', value: s.dueDay ? `${s.dueDay}-го` : null },
+        ]) });
     }
     // 3. Зарплата за ПРЕДЫДУЩИЙ месяц выплачивается 10-го числа. В календаре
     // показываем ТОЛЬКО реальный отток этого дня — остаток «к выплате». Уже
     // выданные авансы/бонусы ушли в своём месяце и не относятся к 10-му числу.
     const salaryToPay = Number(salaryQ.data?.cards?.toPay || 0);
     if (salaryToPay > 0) {
+      const cards = salaryQ.data?.cards || {};
+      const empCount = (salaryQ.data?.rows || []).length;
       items.push({ id: `salary-topay-${calYm}`, date: `${calYm}-10`, amount: salaryToPay, type: 'expense', status: 'completed', done: false,
-        comment: `Зарплаты за ${monthLabel(salaryYm)}` });
+        comment: `Зарплаты за ${monthLabel(salaryYm)}`,
+        details: detailList([
+          { label: 'За месяц', value: monthLabel(salaryYm, true) },
+          { label: 'Сотрудников', value: empCount ? String(empCount) : null },
+          { label: 'Фонд', value: cards.fund ? money(Number(cards.fund)) : null },
+          { label: 'Уже выдано', value: cards.paid ? money(Number(cards.paid)) : null },
+          { label: 'К выплате 10-го', value: money(salaryToPay) },
+        ]) });
     }
     // 4. Прочие операции журнала за месяц (без привязки к ЗП/подписке/долгу/
     // полученному план-платежу). Прошедшие (≤ сегодня) — сделано (приглушённо),
@@ -171,8 +209,14 @@ export default function FinancePlanningPage() {
       // Плановый доход проекта на паузе не актуален; фактический (прошедший) оставляем.
       const past = String(t.date || '').slice(0, 10) <= today;
       if (!past && t.projectId && !isEarningProject(projById.get(t.projectId))) continue;
+      const txTitle = t.comment || t.categoryName || (t.type === 'income' ? 'Поступление' : 'Расход');
       items.push({ id: `tx-${t.id}`, date: t.date, amount: t.amount, type: t.type, status: 'completed', done: past,
-        comment: t.comment || t.categoryName || (t.type === 'income' ? 'Поступление' : 'Расход') });
+        comment: txTitle,
+        details: detailList([
+          { label: 'Категория', value: t.categoryName },
+          { label: 'Счёт', value: t.accountName },
+          { label: 'Проект', value: t.projectId ? projById.get(t.projectId)?.name : null },
+        ]) });
     }
     // 5. Прогноз будущего дохода по SMM/обслуживанию на «ориентировочный срок»
     // проекта. Только будущие месяцы (текущий/прошлые считаем по фактам и планам).
@@ -198,11 +242,18 @@ export default function FinancePlanningPage() {
         if (calYm > shiftYm(curYm, horizonN)) continue; // за пределом срока
         const cday = proj.contractDate ? Math.min(Number(String(proj.contractDate).slice(8, 10)) || 1, lastDay) : 1;
         items.push({ id: `fc-${proj.id}-${calYm}`, date: `${calYm}-${String(cday).padStart(2, '0')}`,
-          amount: Number(proj.tariff), type: 'income', status: 'completed', done: false, comment: proj.name });
+          amount: Number(proj.tariff), type: 'income', status: 'completed', done: false, comment: proj.name,
+          details: detailList([
+            { label: 'Проект', value: proj.name },
+            { label: 'Направление', value: DIR_LABEL[proj.direction] || proj.direction },
+            { label: 'Тариф', value: money(Number(proj.tariff)) },
+            { label: 'Дата контракта', value: proj.contractDate ? formatDate(proj.contractDate) : null },
+            { label: 'Прогноз', value: proj.retentionMonths ? `на ${proj.retentionMonths} мес. вперёд` : 'бессрочно (12 мес.)' },
+          ]) });
       }
     }
     return items;
-  }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, projById, debtNameById, calYm, calYear, salaryYm]);
+  }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, projById, debtNameById, debtById, calYm, calYear, salaryYm]);
   if (query.isLoading) return <div className="fin-root"><FinLoading cards={4} /></div>;
   if (query.isError) return <div className="fin-root"><FinLoadError onRetry={() => query.refetch()} /></div>;
   const data = query.data;
