@@ -100,28 +100,31 @@ export default function FinancePlanningPage() {
     const today = todayISO();
     const lastDay = new Date(Number(calYear), Number(calYm.slice(5, 7)), 0).getDate();
 
-    const monthEnd = `${calYm}-${String(lastDay).padStart(2, '0')}`;
     // Операции, привязанные к полученным план-платежам — не дублируем в источнике 4.
     const linkedTxIds = new Set<string>();
 
     // 1. Плановые платежи: проект → доход, долг → расход. Показываем и expected
-    // (не сделано), и received (сделано, приглушённо). Месяц — по дате оплаты, а
-    // если её нет (авто-график долгов, ячейки матриц Dev/Design) — по ym плана.
+    // (не сделано), и received (сделано, приглушённо). Дата: dueDate; без неё —
+    // долг на 10-е, проект — на день контракта проекта, иначе 1-е число.
     for (const p of (plannedQ.data || [])) {
       if (p.status !== 'expected' && p.status !== 'received') continue;
       const planYm = p.dueDate ? String(p.dueDate).slice(0, 7) : (p.ym || '');
       if (planYm !== calYm) continue;
       if (p.receivedTxId) linkedTxIds.add(p.receivedTxId);
       const done = p.status === 'received';
-      const date = p.dueDate ? String(p.dueDate).slice(0, 10) : monthEnd;
+      let date = p.dueDate ? String(p.dueDate).slice(0, 10) : '';
       if (p.projectId) {
         const proj = projById.get(p.projectId);
-        // Проект на паузе — ПЛАНОВЫЙ доход не актуален; уже полученный оставляем
-        // (деньги пришли — это факт).
+        // Проект на паузе — ПЛАНОВЫЙ доход не актуален; уже полученный оставляем.
         if (!done && !isEarningProject(proj)) continue;
+        if (!date) {
+          const cday = proj?.contractDate ? Math.min(Number(String(proj.contractDate).slice(8, 10)) || 1, lastDay) : 1;
+          date = `${calYm}-${String(cday).padStart(2, '0')}`;
+        }
         items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'income', status: 'completed', done,
           comment: proj?.name || 'Оплата по проекту' });
       } else if (p.debtId) {
+        if (!date) date = `${calYm}-10`; // долги — 10-го числа
         items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'expense', status: 'completed', done,
           comment: debtNameById.get(p.debtId) || 'Погашение долга' });
       }
@@ -135,11 +138,19 @@ export default function FinancePlanningPage() {
       const endYmSub = s.endDate ? String(s.endDate).slice(0, 7) : null;
       if (startYm && calYm < startYm) continue;   // ещё не началась
       if (endYmSub && calYm > endYmSub) continue;  // уже закончилась
-      const paid = (s.paidMarks || []).find((pm: any) => pm.ym === calYm);
+      // «Оплачено» = отметка paidMark ИЛИ фактическая оплата операциями
+      // (транзакции с subscriptionId за этот месяц покрывают сумму подписки).
+      const mark = (s.paidMarks || []).find((pm: any) => pm.ym === calYm);
+      const subTx = ((txMonthQ.data?.items) || []).filter((t: any) =>
+        t.subscriptionId === s.id && t.status !== 'cancelled');
+      const paidViaTx = subTx.reduce((acc: number, t: any) => acc + (Number(t.amount) || 0), 0);
+      const done = !!mark || paidViaTx >= Number(s.amount) - 0.005;
       const day = Math.min(Number(s.dueDay) || 1, lastDay);
-      const date = paid?.date ? String(paid.date).slice(0, 10) : `${calYm}-${String(day).padStart(2, '0')}`;
-      if (s.endDate && !paid && date > String(s.endDate).slice(0, 10)) continue; // позже окончания
-      items.push({ id: `sub-${s.id}`, date, amount: s.amount, type: 'expense', status: 'completed', done: !!paid, comment: s.name });
+      const paidDate = mark?.date ? String(mark.date).slice(0, 10)
+        : (subTx.length ? String(subTx[subTx.length - 1].date).slice(0, 10) : null);
+      const date = done && paidDate ? paidDate : `${calYm}-${String(day).padStart(2, '0')}`;
+      if (s.endDate && !done && date > String(s.endDate).slice(0, 10)) continue; // позже окончания
+      items.push({ id: `sub-${s.id}`, date, amount: s.amount, type: 'expense', status: 'completed', done, comment: s.name });
     }
     // 3. Зарплата за ПРЕДЫДУЩИЙ месяц — 10-го числа. Выплаченную часть показываем
     // как сделано (приглушённо), остаток «к выплате» — как обычное.

@@ -3230,7 +3230,8 @@ export class FinanceService implements OnModuleInit {
       guard++;
       if (!receivedMonths.has(ym)) {
         const amount = r2(Math.min(monthly, remaining));
-        news.push(this.ppRepo.create({ debtId, ym, partNo: 1, amount, status: 'expected', auto: false }));
+        // Долги гасим 10-го числа — фиксированный день выплаты (как зарплата).
+        news.push(this.ppRepo.create({ debtId, ym, partNo: 1, amount, status: 'expected', auto: false, dueDate: dueDateForMonth(ym, 10) }));
         remaining = r2(remaining - amount);
       }
       ym = shiftYm(ym, 1);
