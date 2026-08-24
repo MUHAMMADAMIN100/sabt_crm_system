@@ -20,13 +20,13 @@ import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import {
   ProjectOverviewTab, ProjectActivityTab,
 } from '@/components/projects/ProjectExtraTabs'
-import ProjectBriefTab from '@/components/projects/ProjectBriefTab'
 import ProjectWorkflowTab from '@/components/projects/ProjectWorkflowTab'
 import SMM_QUESTIONS from '@/config/smm-questions'
 import { downloadSmmBrief } from '@/lib/smmBrief'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { STATUS_LABELS as TASK_STATUS_LABELS } from '@/lib/taskStatus'
+import ClientAccessCard from '@/components/projects/ClientAccessCard'
 
 // Wave 11: 4-статусная модель — канбан имеет 4 колонки = 4 статуса.
 // Маппер STATUS_TO_COLUMN остаётся для безопасной обработки старых
@@ -49,7 +49,7 @@ const fileUrl = (path: string) => path?.startsWith('http') ? path : `${API_URL}$
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'workflow' | 'about' | 'client' | 'members' | 'activity' | 'brief'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'workflow' | 'about' | 'client' | 'members' | 'activity'>('overview')
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
@@ -556,16 +556,15 @@ export default function ProjectDetailPage() {
       )}
 
       <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
-        {((['overview', 'workflow', 'about', 'client', 'members', 'brief'] as const)
+        {((['overview', 'workflow', 'about', 'client', 'members'] as const)
           // Вкладки «Задачи» и «Активность» убраны — работаем по Доске проектов.
-          // «Бриф» и «Процесс работы» — только для SMM-проектов.
-          .filter(tab => (tab !== 'brief' && tab !== 'workflow') || project?.projectType === 'SMM'))
+          // «Процесс работы» — только для SMM-проектов.
+          .filter(tab => tab !== 'workflow' || project?.projectType === 'SMM'))
           .map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={clsx('px-4 py-3 sm:py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px]',
                 activeTab === tab ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400' : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300')}>
               {tab === 'overview' ? 'Обзор'
-                : tab === 'brief' ? 'Бриф'
                 : tab === 'workflow' ? 'Процесс работы'
                 : t(`tabs.${tab}`)}
             </button>
@@ -574,7 +573,6 @@ export default function ProjectDetailPage() {
 
       {activeTab === 'overview' && project && <ProjectOverviewTab project={project} />}
       {activeTab === 'activity' && project && <ProjectActivityTab projectId={project.id} />}
-      {activeTab === 'brief' && project && <ProjectBriefTab project={project} />}
       {activeTab === 'workflow' && project && <ProjectWorkflowTab project={project} />}
 
       {activeTab === 'tasks' && (
@@ -861,6 +859,9 @@ export default function ProjectDetailPage() {
               </div>
             )}
           </div>
+          {/* Доступы к аккаунтам клиента — компонент сам решает,
+              показываться ли: у остальных ролей его нет вовсе. */}
+          <ClientAccessCard projectId={id!} />
         </div>
       )}
 

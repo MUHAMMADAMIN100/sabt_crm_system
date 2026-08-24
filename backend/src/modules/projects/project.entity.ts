@@ -128,6 +128,13 @@ export class Project {
   @Column({ type: 'jsonb', nullable: true })
   clientInfo: Record<string, any>;
 
+  /** Доступы к аккаунтам клиента (логин, пароль, заметка). Пароль лежит
+   *  зашифрованным. select:false — поле не должно случайно уехать в общий
+   *  список проектов или в карточку: его отдаёт только отдельная ручка,
+   *  и только тем ролям, которым это положено. */
+  @Column({ type: 'jsonb', nullable: true, select: false })
+  clientAccess: Record<string, any> | null;
+
   @Column({ default: false })
   isArchived: boolean;
 

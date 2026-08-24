@@ -20,6 +20,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { MailService } from '../mail/mail.service';
+import { encryptSecret, decryptSecret } from '../../common/secret-box';
 import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES, projectTypeLabel } from '../../common/sales-segment';
 import { effectiveLimits, sanitizeCustomTariff, TariffLimits } from './tariff-limits';
 
@@ -68,6 +69,10 @@ export class ProjectsService implements OnModuleInit {
       // Лимиты и цена индивидуального тарифа — на конкретный проект.
       await this.repo.manager.query(
         `ALTER TABLE projects ADD COLUMN IF NOT EXISTS "customTariff" jsonb`,
+      );
+      // Доступы к аккаунтам клиента: логин, зашифрованный пароль, заметка.
+      await this.repo.manager.query(
+        `ALTER TABLE projects ADD COLUMN IF NOT EXISTS "clientAccess" jsonb`,
       );
       // Личный архив: менеджер продаж убирает проект из СВОЕГО списка, у
       // остальной команды проект остаётся активным. Общий архив (isArchived)
@@ -223,6 +228,73 @@ export class ProjectsService implements OnModuleInit {
   }
 
   // ─── SMM-бриф клиента ────────────────────────────────────────────────
+  // ─── Доступы к аккаунтам клиента ──────────────────────────────────
+  /** Кому положено видеть и менять доступы. Список намеренно короткий и
+   *  жёстко зашит: это чужие учётные данные, а не рабочая настройка.
+   *  Руководитель СММ работает с аккаунтами, менеджер продаж по СММ их
+   *  получает от клиента, основатель не должен остаться без доступа,
+   *  если сотрудник уйдёт. */
+  static readonly CLIENT_ACCESS_ROLES: string[] = [
+    UserRole.SMM_DIRECTOR,
+    UserRole.SALES_MANAGER_SMM,
+    UserRole.FOUNDER,
+  ];
+
+  private assertCanSeeClientAccess(user: { role?: string; secondaryRole?: string }) {
+    const ok = ProjectsService.CLIENT_ACCESS_ROLES.includes(user?.role || '')
+      || ProjectsService.CLIENT_ACCESS_ROLES.includes((user as any)?.secondaryRole || '');
+    if (!ok) throw new ForbiddenException('Доступы клиента видит только руководитель СММ, менеджер продаж СММ и основатель');
+  }
+
+  /** Доступы одного проекта. Пароль расшифровываем только здесь — в общей
+   *  карточке проекта колонка не выбирается вовсе (select: false). */
+  async getClientAccess(projectId: string, user: { role?: string; secondaryRole?: string }) {
+    this.assertCanSeeClientAccess(user);
+    const row = await this.repo
+      .createQueryBuilder('p')
+      .select(['p.id'])
+      .addSelect('p.clientAccess')
+      .where('p.id = :id', { id: projectId })
+      .getOne();
+    if (!row) throw new NotFoundException('Проект не найден');
+    const a = row.clientAccess || {};
+    return {
+      login: a.login || '',
+      password: decryptSecret(a.password || ''),
+      note: a.note || '',
+      updatedAt: a.updatedAt || null,
+      updatedByName: a.updatedByName || null,
+    };
+  }
+
+  async saveClientAccess(
+    projectId: string,
+    body: { login?: string; password?: string; note?: string },
+    user: { id: string; role?: string; secondaryRole?: string; name?: string },
+  ) {
+    this.assertCanSeeClientAccess(user);
+    const project = await this.repo.findOne({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Проект не найден');
+
+    const login = String(body?.login ?? '').trim().slice(0, 200);
+    const password = String(body?.password ?? '');
+    const note = String(body?.note ?? '').trim().slice(0, 2000);
+
+    // Всё пустое — считаем, что доступы удалили.
+    const empty = !login && !password && !note;
+    await this.repo.update(projectId, {
+      clientAccess: empty ? null : {
+        login,
+        password: password ? encryptSecret(password) : '',
+        note,
+        updatedAt: new Date().toISOString(),
+        updatedByName: user?.name || '',
+      },
+    } as any);
+
+    return this.getClientAccess(projectId, user);
+  }
+
   /** Сохраняет/обновляет бриф проекта. Доступно admin/founder/co_founder,
    *  PM-ролям и менеджеру проекта. SMM-специалист тоже может (часто бриф
    *  заполняет он совместно с менеджером). */

@@ -124,6 +124,20 @@ export class ProjectsController {
     return this.service.setManualLaunchItem(id, body.item, body.value);
   }
 
+  // ─── Доступы к аккаунтам клиента ──────────────────────────────────
+  // Роли перечислены в сервисе (CLIENT_ACCESS_ROLES) и проверяются там же:
+  // так правило одно и то же для чтения и для записи, и его нельзя обойти,
+  // добавив новую ручку мимо @Roles.
+  @Get(':id/client-access')
+  getClientAccess(@Param('id') id: string, @Request() req) {
+    return this.service.getClientAccess(id, req.user);
+  }
+
+  @Patch(':id/client-access')
+  saveClientAccess(@Param('id') id: string, @Body() body: any, @Request() req) {
+    return this.service.saveClientAccess(id, body, req.user);
+  }
+
   // ─── SMM-бриф клиента (вкладка «Бриф» в карточке SMM-проекта) ─────
   @Patch(':id/brief')
   // Менеджеры продаж заполняют бриф клиента при заведении проекта.
