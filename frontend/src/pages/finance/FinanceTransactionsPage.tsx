@@ -366,6 +366,8 @@ export function TxCalendar({ ym, txns, expandedTxId, onToggle, onAdd, hideAdd, p
                       </>;
                       return (
                         <button key={t.id} type="button" className={'tx-row ' + t.type + (isImportedArchive(t) ? ' imported' : '')}
+                          // «Сделанные» (оплачено/получено) — приглушённо, чтобы отличать от плана.
+                          style={t.done ? { opacity: 0.4 } : undefined}
                           id={`finance-tx-row-${t.id}`} aria-expanded={expandedTxId === t.id}
                           aria-controls={expandedTxId === t.id ? `finance-tx-details-${t.id}` : undefined}
                           title={isImportedArchive(t)

@@ -100,25 +100,29 @@ export default function FinancePlanningPage() {
     const today = todayISO();
     const lastDay = new Date(Number(calYear), Number(calYm.slice(5, 7)), 0).getDate();
 
-    // 1. Плановые платежи: проект → доход, долг → расход.
-    // Месяц берём по дате оплаты, а если её нет (авто-график долгов, ячейки
-    // матриц Dev/Design создаются без dueDate) — по ym плана; тогда ставим на
-    // конец месяца. Иначе такие платежи вообще не попадали в календарь.
     const monthEnd = `${calYm}-${String(lastDay).padStart(2, '0')}`;
+    // Операции, привязанные к полученным план-платежам — не дублируем в источнике 4.
+    const linkedTxIds = new Set<string>();
+
+    // 1. Плановые платежи: проект → доход, долг → расход. Показываем и expected
+    // (не сделано), и received (сделано, приглушённо). Месяц — по дате оплаты, а
+    // если её нет (авто-график долгов, ячейки матриц Dev/Design) — по ym плана.
     for (const p of (plannedQ.data || [])) {
-      if (p.status !== 'expected') continue;
+      if (p.status !== 'expected' && p.status !== 'received') continue;
       const planYm = p.dueDate ? String(p.dueDate).slice(0, 7) : (p.ym || '');
       if (planYm !== calYm) continue;
+      if (p.receivedTxId) linkedTxIds.add(p.receivedTxId);
+      const done = p.status === 'received';
       const date = p.dueDate ? String(p.dueDate).slice(0, 10) : monthEnd;
       if (p.projectId) {
         const proj = projById.get(p.projectId);
-        // Проект на паузе (или иной незарабатывающий статус) — плановый доход
-        // не актуален, пока проект не вернут в «Активный».
-        if (!isEarningProject(proj)) continue;
-        items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'income', status: 'completed',
+        // Проект на паузе — ПЛАНОВЫЙ доход не актуален; уже полученный оставляем
+        // (деньги пришли — это факт).
+        if (!done && !isEarningProject(proj)) continue;
+        items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'income', status: 'completed', done,
           comment: proj?.name || 'Оплата по проекту' });
       } else if (p.debtId) {
-        items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'expense', status: 'completed',
+        items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'expense', status: 'completed', done,
           comment: debtNameById.get(p.debtId) || 'Погашение долга' });
       }
     }
@@ -135,24 +139,33 @@ export default function FinancePlanningPage() {
       const day = Math.min(Number(s.dueDay) || 1, lastDay);
       const date = paid?.date ? String(paid.date).slice(0, 10) : `${calYm}-${String(day).padStart(2, '0')}`;
       if (s.endDate && !paid && date > String(s.endDate).slice(0, 10)) continue; // позже окончания
-      items.push({ id: `sub-${s.id}`, date, amount: s.amount, type: 'expense', status: 'completed', comment: s.name });
+      items.push({ id: `sub-${s.id}`, date, amount: s.amount, type: 'expense', status: 'completed', done: !!paid, comment: s.name });
     }
-    // 3. Зарплаты за ПРЕДЫДУЩИЙ месяц — выплата 10-го числа текущего месяца.
-    // Сумма = «К выплате» за отработанный месяц (совпадает с экраном «Зарплата»).
+    // 3. Зарплата за ПРЕДЫДУЩИЙ месяц — 10-го числа. Выплаченную часть показываем
+    // как сделано (приглушённо), остаток «к выплате» — как обычное.
+    const salaryPaid = Number(salaryQ.data?.cards?.paid || 0);
     const salaryToPay = Number(salaryQ.data?.cards?.toPay || 0);
-    if (salaryToPay > 0) {
-      items.push({ id: `salary-${calYm}`, date: `${calYm}-10`, amount: salaryToPay, type: 'expense', status: 'completed',
-        comment: `Зарплаты за ${monthLabel(salaryYm)}` });
+    const salDate = `${calYm}-10`;
+    if (salaryPaid > 0) {
+      items.push({ id: `salary-paid-${calYm}`, date: salDate, amount: salaryPaid, type: 'expense', status: 'completed', done: true,
+        comment: `Зарплаты за ${monthLabel(salaryYm)} (выплачено)` });
     }
-    // 4. Прочие будущие разовые операции журнала (без привязки к источникам выше).
+    if (salaryToPay > 0) {
+      items.push({ id: `salary-topay-${calYm}`, date: salDate, amount: salaryToPay, type: 'expense', status: 'completed', done: false,
+        comment: `Зарплаты за ${monthLabel(salaryYm)} (к выплате)` });
+    }
+    // 4. Прочие операции журнала за месяц (без привязки к ЗП/подписке/долгу/
+    // полученному план-платежу). Прошедшие (≤ сегодня) — сделано (приглушённо),
+    // будущие — обычное.
     for (const t of ((txMonthQ.data?.items) || [])) {
       if (t.status === 'cancelled') continue;
       if (t.type !== 'income' && t.type !== 'expense') continue;
       if (t.employeeId || t.subscriptionId || t.debtId) continue;
-      // Доход проекта на паузе не актуален — как и в источнике 1.
-      if (t.projectId && !isEarningProject(projById.get(t.projectId))) continue;
-      if (String(t.date || '').slice(0, 10) <= today) continue;
-      items.push({ id: `tx-${t.id}`, date: t.date, amount: t.amount, type: t.type, status: 'completed',
+      if (linkedTxIds.has(t.id)) continue; // уже показан как полученный план-платёж
+      // Плановый доход проекта на паузе не актуален; фактический (прошедший) оставляем.
+      const past = String(t.date || '').slice(0, 10) <= today;
+      if (!past && t.projectId && !isEarningProject(projById.get(t.projectId))) continue;
+      items.push({ id: `tx-${t.id}`, date: t.date, amount: t.amount, type: t.type, status: 'completed', done: past,
         comment: t.comment || t.categoryName || (t.type === 'income' ? 'Поступление' : 'Расход') });
     }
     return items;
