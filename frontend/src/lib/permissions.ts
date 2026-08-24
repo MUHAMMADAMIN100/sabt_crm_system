@@ -180,7 +180,11 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'ai.chat',
   ],
   sales_manager_smm: [
-    'dashboard', 'projects.view',
+    // projects.edit: менеджер продаж заполняет данные клиента в карточке
+    // проекта. На сервере это право у него было всегда (GRANTABLE в
+    // backend/src/modules/auth/permissions.ts), а здесь его не хватало —
+    // кнопки просто не показывались, хотя сохранение бы прошло.
+    'dashboard', 'projects.view', 'projects.edit',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view', 'calendar.create',
     // «Архив» у менеджера продаж — его личный список скрытых проектов.

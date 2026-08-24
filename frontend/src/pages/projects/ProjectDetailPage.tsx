@@ -27,6 +27,7 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { STATUS_LABELS as TASK_STATUS_LABELS } from '@/lib/taskStatus'
 import ClientAccessCard from '@/components/projects/ClientAccessCard'
+import { userCan } from '@/lib/permissions'
 
 // Wave 11: 4-статусная модель — канбан имеет 4 колонки = 4 статуса.
 // Маппер STATUS_TO_COLUMN остаётся для безопасной обработки старых
@@ -72,6 +73,11 @@ export default function ProjectDetailPage() {
   // чужих. Вторая роль тоже даёт право — зеркально RolesGuard бэка.
   const MANAGER_PLUS_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director']
   const isManagerPlus = MANAGER_PLUS_ROLES.includes(user?.role || '') || MANAGER_PLUS_ROLES.includes(user?.secondaryRole || '')
+  // Данные клиента заполняет тот, кто общается с клиентом, — прежде всего
+  // менеджер продаж. Право берём то же, что проверяет сервер на PATCH
+  // проекта: список ролей в интерфейсе успел разойтись с бэкендом, и
+  // менеджер продаж по СММ видел карточку без кнопки «Добавить».
+  const canEditClientInfo = userCan(user as any, 'projects.edit')
   const canManagePayment = user?.role === 'founder' || user?.role === 'co_founder'
   const canSeePayment = ['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
   const canRequestPayment = ['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
@@ -791,7 +797,7 @@ export default function ProjectDetailPage() {
           <div className="card space-y-4">
             <div className="flex items-center justify-between border-b border-surface-100 dark:border-surface-700 pb-3">
               <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-base">Данные клиента</h3>
-              {isManagerPlus && (
+              {canEditClientInfo && (
                 <button onClick={() => { setClientForm({ companyName: project.clientInfo?.companyName || '', contactPerson: project.clientInfo?.contactPerson || '', phone: project.clientInfo?.phone || '', email: project.clientInfo?.email || '', whatsapp: project.clientInfo?.whatsapp || '', instagram: project.clientInfo?.instagram || '' }); setShowEditClient(true) }}
                   className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline">
                   <Edit size={13} /> {project.clientInfo && Object.keys(project.clientInfo).length > 0 ? 'Редактировать' : 'Добавить'}
