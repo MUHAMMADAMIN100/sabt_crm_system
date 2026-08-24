@@ -1989,7 +1989,7 @@ export class FinanceService implements OnModuleInit {
           };
         })
         .sort((a, b) => (a.effDate < b.effDate ? -1 : a.effDate > b.effDate ? 1 : 0));
-      return { project: { id: p.id, name: p.name, tariff: Number(p.tariff), note: p.note, multiMonth: p.multiMonth }, paidLife, scheduledLife, cells, parts };
+      return { project: { id: p.id, name: p.name, tariff: Number(p.tariff), note: p.note, multiMonth: p.multiMonth, contractDate: p.contractDate }, paidLife, scheduledLife, cells, parts };
     });
     const totals = {
       tariff: r2(clients.reduce((s, p) => s + Number(p.tariff), 0)),

@@ -388,6 +388,29 @@
 .fin-root .fin-parts-total { display: flex; align-items: center; justify-content: space-between; gap: 12px;
   margin-top: 14px; padding: 12px 16px; border-top: 2px solid var(--border); flex-wrap: wrap; }
 
+/* ─── Обслуживание · месячный трекер (сайт × месяц) ─── */
+.fin-root table.fin-maint td, .fin-root table.fin-maint th { text-align: center; }
+.fin-root table.fin-maint th:first-child, .fin-root table.fin-maint td:first-child { text-align: left; }
+.fin-root table.fin-maint td.num, .fin-root table.fin-maint th.num { text-align: right; }
+.fin-root .mcell { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  min-width: 46px; min-height: 38px; padding: 3px 6px; border-radius: 9px; border: 1px solid transparent;
+  font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; transition: filter .12s, border-color .12s; }
+.fin-root .mcell:hover { filter: brightness(1.06); border-color: var(--accent); }
+.fin-root .mcell .mamt { font-weight: 700; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.fin-root .mcell .msub { font-size: 10px; letter-spacing: .2px; opacity: .9; white-space: nowrap; }
+.fin-root .mcell svg { width: 15px; height: 15px; }
+.fin-root .mcell.paid { background: var(--green-soft); color: var(--green); border-color: var(--green); }
+.fin-root .mcell.due  { background: var(--amber-soft); color: var(--amber); border-color: var(--amber); }
+.fin-root .mcell.over { background: var(--red-soft); color: var(--red); border-color: var(--red); }
+.fin-root .mcell.soon { color: var(--muted); border: 1px dashed var(--border); background: var(--surface-2); }
+.fin-root .fin-maint-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--muted); }
+.fin-root .fin-maint-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.fin-root .msw { width: 13px; height: 13px; border-radius: 4px; display: inline-block; }
+.fin-root .msw.paid { background: var(--green-soft); border: 1px solid var(--green); }
+.fin-root .msw.due  { background: var(--amber-soft); border: 1px solid var(--amber); }
+.fin-root .msw.over { background: var(--red-soft); border: 1px solid var(--red); }
+.fin-root .msw.soon { border: 1px dashed var(--border); }
+
 /* ─── Календарь транзакций ───────────────────────────────── */
 .fin-root .view-toggle { display: inline-flex; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 3px; gap: 3px; }

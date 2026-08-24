@@ -69,7 +69,10 @@ export default function FinanceIncomeGroupPage() {
         : isError ? <FinLoadError onRetry={refetch} />
         : !data ? null
         : data.kind === 'smm' ? <SmmSection data={data} ym={ym} />
-        : data.kind === 'matrix' ? <DevSection data={data} direction={direction} archived={archivedOther} onShift={shiftStart} />
+        : data.kind === 'matrix'
+          ? (direction === 'maintenance'
+              ? <MaintenanceSection data={data} direction={direction} archived={archivedOther} onShift={shiftStart} />
+              : <DevSection data={data} direction={direction} archived={archivedOther} onShift={shiftStart} />)
         : <DesignSection data={data} direction={direction} archived={archivedOther} onShift={shiftStart} />}
 
       {showNew && <ProjectFormModal direction={direction} onClose={() => setShowNew(false)} />}
@@ -617,6 +620,129 @@ function DevSection({ data, direction, archived, onShift }: { data: any; directi
         </>
       ) : <div className="card empty">Нет активных проектов</div>}
       <ProjectStateSections direction={direction} archived={archived} />
+    </>
+  );
+}
+
+// ---------- Обслуживание (месячный трекер «сайт × месяц») ----------
+
+const MAINT_MONTH_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+
+function MaintenanceSection({ data, direction, archived, onShift }: { data: any; direction: string; archived: any[]; onShift: (months: string[], d: number) => void }) {
+  const qc = useQueryClient();
+  const [cellFor, setCellFor] = useState<{ row: any; ym?: string; plan?: any } | null>(null);
+  const [editProject, setEditProject] = useState<any>(null);
+  const rows: any[] = data.rows || [];
+  const months: string[] = data.months || [];
+  const cm = currentYm();
+
+  async function archiveProject(p: any) {
+    try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
+  }
+  async function pauseProject(p: any) {
+    try {
+      await financeApi.updateProject(p.id, { status: 'paused' });
+      toast.success(`«${p.name}» на паузе — вне планов и напоминаний`);
+      invalidateFinanceAll(qc);
+    } catch (e) { toast.error(apiErr(e)); }
+  }
+
+  const cellOf = (r: any, m: string) => (r.cells || []).find((c: any) => c.ym === m);
+  // День оплаты клиента: из даты договора, иначе из dueDate любого плана, иначе 1.
+  const dayOf = (r: any) => {
+    const cd = r.project.contractDate;
+    if (cd && String(cd).length >= 10) return Number(String(cd).slice(8, 10)) || 1;
+    const pl = (r.cells || []).flatMap((c: any) => c.plans || []).find((x: any) => x.dueDate);
+    return pl ? (Number(String(pl.dueDate).slice(8, 10)) || 1) : 1;
+  };
+
+  return (
+    <>
+      {rows.length > 0 ? (
+        <>
+          <div className="cards grid-3" style={{ marginBottom: 16 }}>
+            <Stat label="Ожидается за месяц" value={money(data.stats.expected)} sub={monthLabel(cm, true)} />
+            <Stat label="Получено за месяц" value={money(data.stats.received)} cls="pos" sub={monthLabel(cm, true)} />
+            <Stat label="В месяц (MRR)" value={money(data.totals.tariff)} sub={pluralRu(rows.length, 'сайт', 'сайта', 'сайтов')} />
+          </div>
+
+          <div className="toolbar">
+            <div className="month-nav">
+              <button onClick={() => onShift(months, -1)} title="Раньше">‹</button>
+              <span className="label" style={{ minWidth: 170, textTransform: 'none' }}>{monthLabel(months[0])} – {monthLabel(months[5])}</span>
+              <button onClick={() => onShift(months, 1)} title="Позже">›</button>
+            </div>
+            <span className="mini muted">Строка — сайт, столбец — месяц. Нажмите ячейку, чтобы отметить оплату.</span>
+          </div>
+
+          <div className="table-wrap fin-wide-table">
+            <table className="fin-maint">
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 170 }}>Сайт</th>
+                  <th className="num" style={{ width: 104 }}>Тариф/мес</th>
+                  <th style={{ width: 110 }}>День оплаты</th>
+                  {months.map((m) => <th key={m} className={`num${m === cm ? ' fin-current-month-cell' : ''}`} style={{ textTransform: 'capitalize', minWidth: 86 }}>{monthLabel(m)}{m === cm && <small className="fin-current-month-dot" title="Текущий месяц" />}</th>)}
+                  <th style={{ width: 116 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const p = r.project;
+                  const day = dayOf(r);
+                  return (
+                    <tr key={p.id}>
+                      <td><b>{p.name}</b></td>
+                      <td className="num">{money(p.tariff)}</td>
+                      <td className="muted nowrap"><b style={{ color: 'var(--text)' }}>{day}-го</b> числа</td>
+                      {months.map((m) => {
+                        const cell = cellOf(r, m);
+                        const pl = (cell?.plans || [])[0];
+                        const isCur = m === cm;
+                        if (!pl) return <td key={m} className={`num${isCur ? ' fin-current-month-cell' : ''}`}><span className="muted">—</span></td>;
+                        const received = pl.status === 'received';
+                        const past = m < cm;
+                        const cls = received ? 'paid' : past ? 'over' : isCur ? 'due' : 'soon';
+                        const mShort = MAINT_MONTH_SHORT[Number(m.slice(5, 7)) - 1];
+                        const dd = pl.dueDate ? String(pl.dueDate).slice(8, 10) : String(day).padStart(2, '0');
+                        const paidShort = pl.receivedAt ? `${String(pl.receivedAt).slice(8, 10)}.${String(pl.receivedAt).slice(5, 7)}` : `${dd}.${m.slice(5, 7)}`;
+                        const title = received ? `Оплачено ${formatDate(pl.receivedAt || pl.dueDate)}`
+                          : past ? `Просрочено — было до ${day} ${mShort}`
+                          : isCur ? `Ожидается ${money(pl.amount)} до ${day} ${mShort} — нажмите «Получено»`
+                          : `Ожидается ${money(pl.amount)} ${formatDate(pl.dueDate) || ''}`;
+                        return (
+                          <td key={m} className={`num${isCur ? ' fin-current-month-cell' : ''}`}>
+                            <button type="button" className={'mcell ' + cls} title={title} onClick={() => setCellFor({ row: r, ym: m, plan: pl })}>
+                              {received
+                                ? <><FinIcon name="check" size={14} /><span className="msub">{paidShort}</span></>
+                                : past
+                                  ? <><span className="mamt">{money(pl.amount).replace(' с.', '')}</span><span className="msub">просроч.</span></>
+                                  : isCur
+                                    ? <><span className="mamt">{money(pl.amount).replace(' с.', '')}</span><span className="msub">до {day} {mShort}</span></>
+                                    : <><span className="mamt" style={{ opacity: .5 }}>·</span><span className="msub">{dd}.{m.slice(5, 7)}</span></>}
+                            </button>
+                          </td>
+                        );
+                      })}
+                      <RowActions onEdit={() => setEditProject(p)} onPause={() => pauseProject(p)} onArchive={() => archiveProject(p)} />
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="fin-maint-legend">
+            <span><i className="msw paid" /> оплачено</span>
+            <span><i className="msw due" /> текущий месяц — ждём</span>
+            <span><i className="msw over" /> просрочено</span>
+            <span><i className="msw soon" /> будущий месяц</span>
+          </div>
+        </>
+      ) : <div className="card empty">Нет активных сайтов</div>}
+      <ProjectStateSections direction={direction} archived={archived} />
+      {cellFor && <CellModal row={cellFor.row} ym={cellFor.ym} plan={cellFor.plan} onClose={() => setCellFor(null)} />}
+      {editProject && <ProjectFormModal direction={direction} project={editProject} onClose={() => setEditProject(null)} />}
     </>
   );
 }
