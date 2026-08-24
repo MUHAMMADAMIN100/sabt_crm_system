@@ -478,7 +478,7 @@
 .fin-root .tx-row { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; border: none; background: none;
   padding: 3px 5px; border-radius: 7px; cursor: pointer; text-align: left; }
 .fin-root .tx-row:hover { background: var(--surface-2); }
-.fin-root .tx-row.movable { cursor: grab; }
+.fin-root .tx-row.movable { cursor: grab; -webkit-user-drag: element; user-select: none; }
 .fin-root .tx-row.movable:active { cursor: grabbing; }
 .fin-root .tx-row.dragging { opacity: .35 !important; }
 .fin-root .tx-cal-cell.drop-over { outline: 2px dashed var(--accent); outline-offset: -3px;

@@ -395,7 +395,8 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
                       </>;
                       const movable = canMove(t);
                       return (
-                        <button key={t.id} type="button"
+                        // div, а не button: нативный drag на <button> в Chrome не стартует.
+                        <div key={t.id} role="button" tabIndex={0}
                           className={'tx-row ' + t.type + (isImportedArchive(t) ? ' imported' : '') + (movable ? ' movable' : '') + (dragId === t.id ? ' dragging' : '')}
                           // «Сделанные» (оплачено/получено) — приглушённо, чтобы отличать от плана.
                           style={t.done ? { opacity: 0.4 } : undefined}
@@ -406,9 +407,10 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
                           title={isImportedArchive(t)
                             ? `${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)} · ${IMPORTED_ARCHIVE_HINT}`
                             : `${String(t.date || '').slice(0, 10) > today ? 'Запланировано · ' : ''}${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}${movable ? ' · перетащите на другой день' : ''}`}
-                          onClick={() => setDetail(t)}>
+                          onClick={() => setDetail(t)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail(t); } }}>
                           {content}
-                        </button>
+                        </div>
                       );
                     })}
                     {collapsible && (
