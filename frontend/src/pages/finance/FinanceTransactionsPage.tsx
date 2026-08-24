@@ -44,7 +44,8 @@ export default function FinanceTransactionsPage() {
   const [page, setPage] = useState(() => Math.max(1, Number(urlParams.get('page')) || 1));
   const [addType, setAddType] = useState<string | null>(null);
   // Вид: журнал-таблица или календарь месяца (карточки операций по дням).
-  const [view, setView] = useState<'table' | 'calendar'>(() => urlParams.get('view') === 'calendar' ? 'calendar' : 'table');
+  // По умолчанию открываем Календарь; «Таблица» хранится в URL явно (?view=table).
+  const [view, setView] = useState<'table' | 'calendar'>(() => urlParams.get('view') === 'table' ? 'table' : 'calendar');
   const [calYm, setCalYm] = useYmParam();
   const [editTx, setEditTx] = useState<any>(null);
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
@@ -62,14 +63,14 @@ export default function FinanceTransactionsPage() {
     setDq(nextQ);
     setTypeFilter(urlParams.get('type') || '');
     setStatusFilter(urlParams.get('status') || '');
-    setView(urlParams.get('view') === 'calendar' ? 'calendar' : 'table');
+    setView(urlParams.get('view') === 'table' ? 'table' : 'calendar');
     setPage(Math.max(1, Number(urlParams.get('page')) || 1));
   }, [urlParams]);
   useEffect(() => {
     const next = new URLSearchParams(urlParams);
     const sync = (key: string, value: string) => value ? next.set(key, value) : next.delete(key);
     sync('q', dq); sync('type', typeFilter); sync('status', statusFilter);
-    sync('view', view === 'calendar' ? 'calendar' : '');
+    sync('view', view === 'table' ? 'table' : '');
     sync('page', page > 1 ? String(page) : '');
     if (next.toString() !== urlParams.toString()) setUrlParams(next, { replace: true });
   }, [dq, typeFilter, statusFilter, view, page, urlParams, setUrlParams]);
