@@ -260,7 +260,7 @@ export default function FinanceTransactionsPage() {
  *  Клик по строке — подробности, «+» в дне — новая операция этой датой,
  *  длинные дни сворачиваются до 5 строк («ещё N»). */
 const CAL_DAY_LIMIT = 5;
-export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, renderStatusControl }: {
+export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, renderStatusControl, onMoveItem, canMoveItem }: {
   ym: string; txns: any[]; onAdd: (iso: string) => void;
   /** Скрыть кнопку «＋ добавить операцию» в дне — для read-only календарей
    *  (например, план выплат на странице «Планирование»). */
