@@ -1975,7 +1975,21 @@ export class FinanceService implements OnModuleInit {
           expected: r2(cp.filter(x => x.status === 'expected').reduce((s, x) => s + Number(x.amount), 0)),
         };
       });
-      return { project: { id: p.id, name: p.name, tariff: Number(p.tariff), note: p.note, multiMonth: p.multiMonth }, paidLife, scheduledLife, cells };
+      // Плоский список ВСЕХ частей проекта (не только окно месяцев) — для
+      // представления «список частей по датам». Дата = срок оплаты (план) или
+      // фактическая дата (получено), иначе 1-е число месяца плана.
+      const parts = pPlans
+        .map(x => {
+          const receivedAt = x.receivedTxId ? (txDates?.get(x.receivedTxId) ?? null) : null;
+          const effDate = x.dueDate ?? receivedAt ?? `${x.ym}-01`;
+          return {
+            id: x.id, amount: Number(x.amount), status: x.status, ym: x.ym,
+            dueDate: x.dueDate ?? null, receivedAt, effDate,
+            virtual: String(x.id).startsWith('virtual:'), txId: x.receivedTxId,
+          };
+        })
+        .sort((a, b) => (a.effDate < b.effDate ? -1 : a.effDate > b.effDate ? 1 : 0));
+      return { project: { id: p.id, name: p.name, tariff: Number(p.tariff), note: p.note, multiMonth: p.multiMonth }, paidLife, scheduledLife, cells, parts };
     });
     const totals = {
       tariff: r2(clients.reduce((s, p) => s + Number(p.tariff), 0)),

@@ -623,7 +623,7 @@ function DevSection({ data, direction, archived, onShift }: { data: any; directi
 
 function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any[]; months: string[]; totals: any; direction: string; onShift: (months: string[], d: number) => void }) {
   const qc = useQueryClient();
-  const [cellFor, setCellFor] = useState<{ row: any; ym: string; plan?: any } | null>(null);
+  const [cellFor, setCellFor] = useState<{ row: any; ym?: string; plan?: any } | null>(null);
   const [editProject, setEditProject] = useState<any>(null);
 
   async function archiveProject(p: any) {
@@ -637,88 +637,73 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
     } catch (e) { toast.error(apiErr(e)); }
   }
 
-  const monthTotal = (m: string) => (totals.perMonth || []).find((x: any) => x.ym === m)?.total ?? 0;
-  const cellOf = (row: any, m: string) => (row.cells || []).find((c: any) => c.ym === m);
+  const totReceived = rows.reduce((s, r) => s + Number(r.paidLife || 0), 0);
+  const totScheduled = rows.reduce((s, r) => s + Number(r.scheduledLife || 0), 0);
 
   return (
     <>
       <div className="toolbar">
-        <div className="month-nav">
-          <button onClick={() => onShift(months, -1)} title="Раньше">‹</button>
-          <span className="label" style={{ minWidth: 170, textTransform: 'none' }}>{monthLabel(months[0])} – {monthLabel(months[5])}</span>
-          <button onClick={() => onShift(months, 1)} title="Позже">›</button>
-        </div>
-        <span className="mini muted">Ячейка — поступление за месяц. «+» добавляет план или сразу оплату.</span>
+        <span className="mini muted">Каждая часть оплаты — со своей датой. «Добавить часть» создаёт план или сразу оплату.</span>
       </div>
 
-      <div className="table-wrap fin-wide-table">
-        <table>
-          <thead>
-            <tr>
-              <th style={{ minWidth: 190 }}>Проект</th>
-              <th className="num" style={{ width: 96 }}>Сумма</th>
-              {months.map((m) => <th key={m} className={`num${m === currentYm() ? ' fin-current-month-cell' : ''}`} style={{ textTransform: 'capitalize', minWidth: 84 }}>{monthLabel(m)}{m === currentYm() && <small className="fin-current-month-dot" title="Текущий месяц" />}</th>)}
-              <th style={{ minWidth: 160 }}>Комментарий</th>
-              <th style={{ width: 124 }} />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const p = r.project;
-              const pct = p.tariff ? Math.min(100, Math.round((r.paidLife / p.tariff) * 100)) : 0;
-              return (
-                <tr key={p.id}>
-                  <td>
-                    <b>{p.name}</b>
-                    <div className="progress" style={{ marginTop: 6 }}><i style={{ width: pct + '%' }} /></div>
-                    <span className="mini muted">{money(r.paidLife)} / {money(p.tariff)}</span>
-                  </td>
-                  <td className="num">{money(p.tariff)}</td>
-                  {months.map((m) => {
-                    const cell = cellOf(r, m);
-                    const plans: any[] = cell?.plans || [];
+      <div className="fin-parts-list">
+        {rows.map((r) => {
+          const p = r.project;
+          const pct = p.tariff ? Math.min(100, Math.round((r.paidLife / p.tariff) * 100)) : 0;
+          const parts: any[] = r.parts || [];
+          const remaining = Math.max(0, Number(p.tariff) - Number(r.scheduledLife ?? 0));
+          return (
+            <div className="card fin-project-parts" key={p.id}>
+              <div className="fin-pp-head">
+                <div className="fin-pp-title">
+                  <b>{p.name}</b>
+                  <div className="progress"><i style={{ width: pct + '%' }} /></div>
+                  <span className="mini muted">{money(r.paidLife)} / {money(p.tariff)}</span>
+                </div>
+                <div className="fin-pp-actions">
+                  <button className="btn ghost sm" title="Редактировать" onClick={() => setEditProject(p)}><FinIcon name="edit" size={15} /></button>
+                  <button className="btn ghost sm" title="На паузу (клиент приостановил — деньги и напоминания замораживаются)" onClick={() => pauseProject(p)}><FinIcon name="pause" size={15} /></button>
+                  <button className="btn ghost sm" title="В архив (больше не работаем)" onClick={() => archiveProject(p)}><FinIcon name="archive" size={15} /></button>
+                </div>
+              </div>
+
+              {parts.length === 0 ? (
+                <div className="fin-pp-empty mini muted">Частей пока нет — добавьте первую.</div>
+              ) : (
+                <div className="fin-pp-parts">
+                  {parts.map((pl) => {
+                    const received = pl.status === 'received';
+                    const overdue = !received && String(pl.effDate) < todayISO();
                     return (
-                      <td key={m} className={`num${m === currentYm() ? ' fin-current-month-cell' : ''}`}>
-                        {plans.length === 0 ? (
-                          <button className="btn ghost sm" title="Добавить поступление" onClick={() => setCellFor({ row: r, ym: m })}><FinIcon name="plus" size={14} /></button>
-                        ) : (
-                          // Столбиком, а не в ряд: три оплаты в ячейке растягивали
-                          // колонку месяца на всю таблицу.
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                            {plans.map((pl) => (
-                              <button
-                                key={pl.id}
-                                className={'badge ' + (pl.status === 'received' ? 'ok' : 'wait')}
-                                style={{ cursor: 'pointer' }}
-                                title={pl.status === 'received'
-                                  ? `Получено${pl.receivedAt ? ' ' + formatDate(pl.receivedAt) : ''} — нажмите для управления`
-                                  : 'Запланировано — нажмите, чтобы отметить оплату'}
-                                onClick={() => setCellFor({ row: r, ym: m, plan: pl })}
-                              >
-                                {pl.status === 'received' && <FinIcon name="check" size={12} />} {money(pl.amount)}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </td>
+                      <button key={pl.id} type="button"
+                        className={'fin-part-row' + (received ? ' done' : overdue ? ' over' : '')}
+                        title={received ? 'Получено — нажмите для управления' : 'Запланировано — нажмите, чтобы изменить срок/сумму или отметить оплату'}
+                        onClick={() => setCellFor({ row: r, plan: pl })}>
+                        <span className="fin-part-date">{formatDate(pl.effDate)}</span>
+                        <span className="fin-part-amount num">{money(pl.amount)}</span>
+                        <span className={'badge ' + (received ? 'ok' : overdue ? 'over' : 'wait')}>
+                          {received ? <><FinIcon name="check" size={12} /> получено</> : (daysLabel(pl.effDate) || 'ожидается')}
+                        </span>
+                      </button>
                     );
                   })}
-                  <td><NoteCell project={p} /></td>
-                  <RowActions onEdit={() => setEditProject(p)} onPause={() => pauseProject(p)} onArchive={() => archiveProject(p)} />
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td><b>Итого</b></td>
-              <td className="num"><b>{money(totals.tariff)}</b></td>
-              {months.map((m) => <td key={m} className={`num${m === currentYm() ? ' fin-current-month-cell' : ''}`}><b>{money(monthTotal(m))}</b></td>)}
-              <td />
-              <td />
-            </tr>
-          </tfoot>
-        </table>
+                </div>
+              )}
+
+              <div className="fin-pp-foot">
+                <button className="btn ghost sm" onClick={() => setCellFor({ row: r })}><FinIcon name="plus" size={14} /> Добавить часть</button>
+                <span className="mini muted">{remaining > 0.005 ? <>остаток по проекту: <b>{money(remaining)}</b></> : 'проект закрыт по сумме'}</span>
+              </div>
+
+              <div className="fin-pp-note"><NoteCell project={p} /></div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="fin-parts-total">
+        <span className="mini muted">Итого по направлению</span>
+        <span className="mini">получено <b className="pos">{money(totReceived)}</b> · в плане <b>{money(Math.max(0, totScheduled - totReceived))}</b> · тариф <b>{money(totals.tariff)}</b></span>
       </div>
 
       {cellFor && <CellModal row={cellFor.row} ym={cellFor.ym} plan={cellFor.plan} onClose={() => setCellFor(null)} />}
@@ -727,7 +712,7 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
   );
 }
 
-function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: any; onClose: () => void }) {
+function CellModal({ row, ym, plan, onClose }: { row: any; ym?: string; plan?: any; onClose: () => void }) {
   useModalKeys(onClose);
   const accounts = useAccounts();
   const inv = useInvalidate();
@@ -739,7 +724,9 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
   const amt = parseFloat(amount.replace(',', '.'));
-  const monthName = monthLabel(ym, true);
+  // Месяц выводим из выбранной даты (ym-пропа при добавлении части нет).
+  const effYm = ym ?? plan?.ym ?? ymOf(date);
+  const monthName = monthLabel(effYm, true);
 
   const remaining = project.tariff - (row.scheduledLife ?? 0);
   const overLimit = project.tariff > 0 && amt > remaining;
@@ -751,7 +738,7 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
         title={`${project.name} · ${monthName}`}
         plan={{
           id: plan.id, amount: Number(plan.amount), dueDate: plan.dueDate ?? null,
-          virtual: !!plan.virtual, projectId: project.id, ym,
+          virtual: !!plan.virtual, projectId: project.id, ym: plan.ym ?? ym,
         }}
         onClose={onClose}
         onDelete={async () => {
@@ -767,10 +754,11 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
     if (!(amt > 0) || overLimit || busy || (paidNow && !accountId)) return;
     setBusy(true);
     try {
+      const payYm = ymOf(date); // месяц части — по её дате
       if (paidNow) {
-        await financeApi.payNow({ projectId: project.id, ym, amount: amt, accountId, date });
+        await financeApi.payNow({ projectId: project.id, ym: payYm, amount: amt, accountId, date });
       } else {
-        await financeApi.createPlanned({ projectId: project.id, ym, amount: amt });
+        await financeApi.createPlanned({ projectId: project.id, ym: payYm, amount: amt, dueDate: date });
       }
       inv();
       onClose();
@@ -825,24 +813,24 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym: string; plan?: an
         ) : (
           <>
             <div className="modal-body">
-              <div className="field"><label>Сумма, сомони</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+              <div className="form-grid">
+                <div className="field"><label>Сумма, сомони</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+                <div className="field"><label>{paidNow ? 'Дата оплаты' : 'Срок оплаты'}</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+              </div>
               <label className="flex" style={{ cursor: 'pointer' }}>
                 <input type="checkbox" checked={paidNow} onChange={(e) => setPaidNow(e.target.checked)} style={{ width: 'auto' }} />
                 Уже получено (создать доход)
               </label>
               {paidNow && (
-                <div className="form-grid">
-                  <div className="field"><label>Дата оплаты</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-                  <div className="field"><label>На счёт</label><select value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
-                </div>
+                <div className="field"><label>На счёт</label><select value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
               )}
               {overLimit
                 ? <p className="mini neg">Больше остатка по проекту. Доступно ещё {money(Math.max(0, remaining))} из {money(project.tariff)}.</p>
-                : <p className="mini muted">Без галочки — план на {monthName}. С галочкой — деньги уже получены. Остаток по проекту: {money(Math.max(0, remaining))}.</p>}
+                : <p className="mini muted">Без галочки — план на {monthName} со сроком {formatDate(date)}. С галочкой — деньги уже получены. Остаток: {money(Math.max(0, remaining))}.</p>}
             </div>
             <div className="modal-foot">
               <button className="btn ghost" onClick={onClose}>Отмена</button>
-              <button className="btn primary" disabled={busy || !(amt > 0) || overLimit} onClick={saveNew}>{paidNow ? 'Записать оплату' : 'Добавить план'}</button>
+              <button className="btn primary" disabled={busy || !(amt > 0) || overLimit || !date || (paidNow && !accountId)} onClick={saveNew}>{paidNow ? 'Записать оплату' : 'Добавить план'}</button>
             </div>
           </>
         )}
