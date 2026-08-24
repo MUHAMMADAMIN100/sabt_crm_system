@@ -179,6 +179,33 @@ export default function FinancePlanningPage() {
       items.push({ id: `tx-${t.id}`, date: t.date, amount: t.amount, type: t.type, status: 'completed', done: past,
         comment: t.comment || t.categoryName || (t.type === 'income' ? 'Поступление' : 'Расход') });
     }
+    // 5. Прогноз будущего дохода по SMM/обслуживанию на «ориентировочный срок»
+    // проекта. Только будущие месяцы (текущий/прошлые считаем по фактам и планам).
+    // Не дублируем проекты, у которых уже есть план/оплата за этот месяц.
+    const curYm = currentYm();
+    if (calYm > curYm) {
+      const coveredProjIds = new Set<string>();
+      for (const p of (plannedQ.data || [])) {
+        const py = p.dueDate ? String(p.dueDate).slice(0, 7) : (p.ym || '');
+        if (p.projectId && py === calYm) coveredProjIds.add(p.projectId);
+      }
+      for (const t of ((txMonthQ.data?.items) || [])) {
+        if (t.type === 'income' && t.projectId && String(t.date || '').slice(0, 7) === calYm) coveredProjIds.add(t.projectId);
+      }
+      for (const proj of projById.values()) {
+        if (proj.direction !== 'smm' && proj.direction !== 'maintenance') continue;
+        if (!isEarningProject(proj) || !(Number(proj.tariff) > 0)) continue;
+        if (coveredProjIds.has(proj.id)) continue;
+        const startYm = proj.contractDate ? String(proj.contractDate).slice(0, 7) : curYm;
+        if (calYm < startYm) continue; // проект ещё не начался
+        // Горизонт: срок вперёд от текущего месяца; «бессрочно» (null) = 12 мес.
+        const horizonN = proj.retentionMonths != null ? Number(proj.retentionMonths) : 12;
+        if (calYm > shiftYm(curYm, horizonN)) continue; // за пределом срока
+        const cday = proj.contractDate ? Math.min(Number(String(proj.contractDate).slice(8, 10)) || 1, lastDay) : 1;
+        items.push({ id: `fc-${proj.id}-${calYm}`, date: `${calYm}-${String(cday).padStart(2, '0')}`,
+          amount: Number(proj.tariff), type: 'income', status: 'completed', done: false, comment: proj.name });
+      }
+    }
     return items;
   }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, projById, debtNameById, calYm, calYear, salaryYm]);
   if (query.isLoading) return <div className="fin-root"><FinLoading cards={4} /></div>;

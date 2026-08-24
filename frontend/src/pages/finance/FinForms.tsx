@@ -35,6 +35,9 @@ export function ProjectFormModal({ project, direction, onClose }: {
   // Со страницы направления новый проект чаще заводят в день подписания.
   const [contractDate, setContractDate] = useState(project ? (project.contractDate ?? '') : (direction ? todayISO() : ''));
   const [multiMonth, setMultiMonth] = useState(!!project?.multiMonth);
+  // Ориентировочный срок сотрудничества (мес.). '' = «Бессрочно». Новый проект — 6.
+  const [retentionMonths, setRetentionMonths] = useState<string>(
+    project ? (project.retentionMonths != null ? String(project.retentionMonths) : '') : '6');
   const [status, setStatus] = useState(project?.status ?? 'active');
   const [busy, setBusy] = useState(false);
 
@@ -42,10 +45,12 @@ export function ProjectFormModal({ project, direction, onClose }: {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
+      const recurring = dir === 'smm' || dir === 'maintenance';
       const p: any = {
         name: name.trim(), direction: dir, tariff: num(tariff),
         contractDate: contractDate || null,
         multiMonth: dir === 'design' ? multiMonth : false,
+        retentionMonths: recurring ? (retentionMonths === '' ? null : Number(retentionMonths)) : null,
         status,
       };
       if (isEdit) await financeApi.updateProject(project.id, p);
@@ -84,6 +89,18 @@ export function ProjectFormModal({ project, direction, onClose }: {
           </select>
         </div>
       </div>
+      {(dir === 'smm' || dir === 'maintenance') && (
+        <div className="field"><label>Ориентировочно работаем</label>
+          <select value={retentionMonths} onChange={(e) => setRetentionMonths(e.target.value)}>
+            <option value="3">3 месяца</option>
+            <option value="6">6 месяцев</option>
+            <option value="12">12 месяцев</option>
+            <option value="24">24 месяца</option>
+            <option value="">Бессрочно</option>
+          </select>
+          <span className="mini muted">На этот срок планируем будущий доход в календаре (по тарифу, на день оплаты). «Бессрочно» — на 12 мес. вперёд.</span>
+        </div>
+      )}
       {dir === 'design' && (
         <label className="flex" style={{ cursor: 'pointer' }}>
           <input type="checkbox" checked={multiMonth} onChange={(e) => setMultiMonth(e.target.checked)} style={{ width: 'auto' }} />

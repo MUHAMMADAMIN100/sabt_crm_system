@@ -53,6 +53,12 @@ export class FinanceProject {
   @Column({ type: 'boolean', default: false })
   multiMonth: boolean;
 
+  /** SMM/обслуживание: ориентировочный срок сотрудничества в месяцах — на
+   *  сколько вперёд планируем доход в календаре. NULL — «бессрочно»
+   *  (проецируем на 12 мес. вперёд с автопродлением). */
+  @Column({ type: 'int', nullable: true })
+  retentionMonths: number | null;
+
   @Column({ type: 'int', default: 0 })
   position: number;
 

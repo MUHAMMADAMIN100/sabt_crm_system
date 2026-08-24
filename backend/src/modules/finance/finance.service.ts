@@ -93,6 +93,13 @@ function contractDay(contractDate?: string | null): number | null {
   return Number.isFinite(d) && d > 0 ? d : null;
 }
 
+/** Ориентировочный срок сотрудничества (мес.): 1..60 → число, иначе null
+ *  («бессрочно»). */
+function normRetentionMonths(v: any): number | null {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 && n <= 60 ? n : null;
+}
+
 /** Дата оплаты в указанном месяце (ISO) с учётом длины месяца. */
 function dueDateForMonth(ym: string, day: number): string {
   const [y, m] = ym.split('-').map(Number);
@@ -301,6 +308,7 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "archived" boolean NOT NULL DEFAULT false`);
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "multiMonth" boolean NOT NULL DEFAULT false`);
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "status" varchar(16) DEFAULT 'active'`);
+    await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "retentionMonths" int`);
     await run(`ALTER TABLE finance_accounts ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
     await run(`ALTER TABLE finance_accounts ADD COLUMN IF NOT EXISTS "kind" varchar(16)`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "advance" numeric(15,2) NOT NULL DEFAULT 0`);
@@ -3328,6 +3336,7 @@ export class FinanceService implements OnModuleInit {
     return this.projRepo.save(this.projRepo.create({
       name: dto.name.trim(), direction, tariff: Number(dto.tariff) || 0, note: dto.note ?? null,
       contractDate: dto.contractDate ?? null, archived, multiMonth: !!dto.multiMonth,
+      retentionMonths: normRetentionMonths(dto.retentionMonths),
       status, pausedAt: status === 'paused' ? todayISO() : null, position,
     }));
   }
@@ -3345,6 +3354,7 @@ export class FinanceService implements OnModuleInit {
       p.cycleAnchor = null;
     }
     if (dto.multiMonth !== undefined) p.multiMonth = !!dto.multiMonth;
+    if (dto.retentionMonths !== undefined) p.retentionMonths = normRetentionMonths(dto.retentionMonths);
     const validStatus = dto.status !== undefined
       && ['lead', 'active', 'paused', 'done', 'archived'].includes(dto.status);
     let nextStatus = validStatus ? dto.status : p.status;

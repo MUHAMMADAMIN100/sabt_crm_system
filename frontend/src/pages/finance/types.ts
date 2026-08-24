@@ -32,6 +32,7 @@ export interface FinProject {
   cycleAnchor?: string | null;
   archived?: boolean;
   multiMonth?: boolean;
+  retentionMonths?: number | null;
   status?: 'lead' | 'active' | 'done' | 'archived' | string;
   note?: string | null;
 }
