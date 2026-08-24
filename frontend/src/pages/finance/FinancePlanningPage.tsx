@@ -313,6 +313,27 @@ export default function FinancePlanningPage() {
     }
     return items;
   }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, projById, debtNameById, debtById, calYm, calYear, salaryYm]);
+
+  // Перетаскивание операции на другой день сохраняет дату в записи:
+  // разовая → дата операции, план-платёж → срок оплаты, подписка → день оплаты.
+  const canMovePlanItem = (item: any) => {
+    const id = String(item.id || '');
+    if (id.startsWith('tx-')) return true;               // разовая операция
+    if (id.startsWith('pp-')) return !item.done;         // план-платёж, пока ожидается
+    if (id.startsWith('sub-')) return !item.done;        // подписка, пока не оплачена
+    return false;                                        // зарплата, прогноз — не двигаем
+  };
+  async function movePlanItem(item: any, dateISO: string) {
+    const id = String(item.id || '');
+    try {
+      if (id.startsWith('tx-')) await financeApi.updateTransaction(id.slice(3), { date: dateISO });
+      else if (id.startsWith('pp-')) await financeApi.updatePlanned(id.slice(3), { dueDate: dateISO });
+      else if (id.startsWith('sub-')) await financeApi.updateSubscription(id.slice(4), { dueDay: Number(dateISO.slice(8, 10)) || 1 });
+      else return;
+      invalidateFinanceAll(qc);
+    } catch (e) { toast.error(apiErr(e)); }
+  }
+
   if (query.isLoading) return <div className="fin-root"><FinLoading cards={4} /></div>;
   if (query.isError) return <div className="fin-root"><FinLoadError onRetry={() => query.refetch()} /></div>;
   const data = query.data;
@@ -341,7 +362,8 @@ export default function FinancePlanningPage() {
         </div>
         {(plannedQ.isLoading || subsQ.isLoading || txMonthQ.isLoading || salaryQ.isLoading) ? <FinLoading /> : (
           <TxCalendar ym={calYm} txns={calTxns} onAdd={() => {}} hideAdd planMode
-            renderStatusControl={(item, close) => <PlanningStatusControl item={item} ym={calYm} onClose={close} />} />
+            renderStatusControl={(item, close) => <PlanningStatusControl item={item} ym={calYm} onClose={close} />}
+            onMoveItem={movePlanItem} canMoveItem={canMovePlanItem} />
         )}
       </div>
       ) : (<>

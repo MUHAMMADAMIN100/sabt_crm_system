@@ -131,6 +131,14 @@ export default function FinanceTransactionsPage() {
     setEditTx(t);
   }
 
+  // Перетаскивание операции на другой день календаря — меняем дату операции.
+  async function moveTx(item: any, dateISO: string) {
+    try {
+      await financeApi.updateTransaction(item.id, { date: dateISO });
+      invalidateFinance(qc);
+    } catch (e: any) { toast.error(apiErr(e)); }
+  }
+
   async function remove(id: string) {
     try {
       await financeApi.removeTransaction(id);
@@ -199,7 +207,8 @@ export default function FinanceTransactionsPage() {
       ) : view === 'calendar' && calQ.isError ? (
         <FinLoadError onRetry={() => calQ.refetch()} text="Не удалось загрузить операции календаря." />
       ) : view === 'calendar' ? (
-        <TxCalendar ym={calYm} txns={calTxns} onAdd={setAddDate} onEditItem={editFromDetails} />
+        <TxCalendar ym={calYm} txns={calTxns} onAdd={setAddDate} onEditItem={editFromDetails}
+          onMoveItem={moveTx} canMoveItem={(t: any) => t.status !== 'cancelled' && !isImportedArchive(t)} />
       ) : txQ.isLoading ? (
         <FinLoading />
       ) : txQ.isError ? (
@@ -266,9 +275,17 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
   /** Блок управления статусом в модалке (Планирование): отметить полученным/
    *  оплаченным / вернуть в план. Возвращает JSX или null. */
   renderStatusControl?: (item: any, close: () => void) => any;
+  /** Перетаскивание операции на другой день: сохранить новую дату в записи. */
+  onMoveItem?: (item: any, dateISO: string) => void;
+  /** Можно ли тащить операцию (по умолчанию — да, если onMoveItem задан). */
+  canMoveItem?: (item: any) => boolean;
 }) {
   // Клик по операции в дне открывает модалку с краткой информацией.
   const [detail, setDetail] = useState<any>(null);
+  // Drag-and-drop: id перетаскиваемой строки и день-цель под курсором.
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overIso, setOverIso] = useState<string | null>(null);
+  const canMove = (t: any) => !!onMoveItem && (!canMoveItem || canMoveItem(t));
   const [y, m] = ym.split('-').map(Number);
   const firstIdx = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Пн = 0
   const daysIn = new Date(y, m, 0).getDate();
@@ -344,7 +361,17 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
             const visible = collapsible && !open ? list.slice(0, CAL_DAY_LIMIT) : list;
             const dt = iso ? totals.day.get(iso) : undefined;
             return (
-              <div key={i} className={'tx-cal-cell' + (iso ? '' : ' off') + (iso === today ? ' today' : '') + (i % 7 >= 5 ? ' wknd' : '')}>
+              <div key={i}
+                className={'tx-cal-cell' + (iso ? '' : ' off') + (iso === today ? ' today' : '') + (i % 7 >= 5 ? ' wknd' : '') + (iso && dragId && overIso === iso ? ' drop-over' : '')}
+                onDragOver={iso ? (e) => { if (dragId) { e.preventDefault(); if (overIso !== iso) setOverIso(iso); } } : undefined}
+                onDrop={iso ? (e) => {
+                  if (!dragId) return;
+                  e.preventDefault();
+                  const it = txns.find((x: any) => x.id === dragId);
+                  const target = iso;
+                  setDragId(null); setOverIso(null);
+                  if (it && onMoveItem && String(it.date || '').slice(0, 10) !== target) onMoveItem(it, target);
+                } : undefined}>
                 {iso && (
                   <>
                     <div className="tx-cal-day">
@@ -366,14 +393,19 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
                           {t.type === 'expense' ? '−' : t.type === 'income' ? '+' : ''}{moneyBare(t.amount)}
                         </span>
                       </>;
+                      const movable = canMove(t);
                       return (
-                        <button key={t.id} type="button" className={'tx-row ' + t.type + (isImportedArchive(t) ? ' imported' : '')}
+                        <button key={t.id} type="button"
+                          className={'tx-row ' + t.type + (isImportedArchive(t) ? ' imported' : '') + (movable ? ' movable' : '') + (dragId === t.id ? ' dragging' : '')}
                           // «Сделанные» (оплачено/получено) — приглушённо, чтобы отличать от плана.
                           style={t.done ? { opacity: 0.4 } : undefined}
                           id={`finance-tx-row-${t.id}`} aria-haspopup="dialog"
+                          draggable={movable}
+                          onDragStart={movable ? (e) => { setDragId(t.id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', t.id); } catch { /* noop */ } } : undefined}
+                          onDragEnd={() => { setDragId(null); setOverIso(null); }}
                           title={isImportedArchive(t)
                             ? `${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)} · ${IMPORTED_ARCHIVE_HINT}`
-                            : `${String(t.date || '').slice(0, 10) > today ? 'Запланировано · ' : ''}${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}`}
+                            : `${String(t.date || '').slice(0, 10) > today ? 'Запланировано · ' : ''}${t.comment || t.categoryName || TYPE_LABEL[t.type]} · ${money(t.amount)}${movable ? ' · перетащите на другой день' : ''}`}
                           onClick={() => setDetail(t)}>
                           {content}
                         </button>
