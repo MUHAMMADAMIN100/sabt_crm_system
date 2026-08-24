@@ -651,20 +651,28 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
           const p = r.project;
           const pct = p.tariff ? Math.min(100, Math.round((r.paidLife / p.tariff) * 100)) : 0;
           const parts: any[] = r.parts || [];
-          const remaining = Math.max(0, Number(p.tariff) - Number(r.scheduledLife ?? 0));
+          const paid = Number(r.paidLife || 0);
+          const toReceive = Math.max(0, Number(p.tariff) - paid);
           return (
             <div className="card fin-project-parts" key={p.id}>
               <div className="fin-pp-head">
-                <div className="fin-pp-title">
-                  <b>{p.name}</b>
-                  <div className="progress"><i style={{ width: pct + '%' }} /></div>
-                  <span className="mini muted">{money(r.paidLife)} / {money(p.tariff)}</span>
-                </div>
+                <b className="fin-pp-name" title={p.name}>{p.name}</b>
                 <div className="fin-pp-actions">
                   <button className="btn ghost sm" title="Редактировать" onClick={() => setEditProject(p)}><FinIcon name="edit" size={15} /></button>
                   <button className="btn ghost sm" title="На паузу (клиент приостановил — деньги и напоминания замораживаются)" onClick={() => pauseProject(p)}><FinIcon name="pause" size={15} /></button>
                   <button className="btn ghost sm" title="В архив (больше не работаем)" onClick={() => archiveProject(p)}><FinIcon name="archive" size={15} /></button>
                 </div>
+              </div>
+
+              <div className="fin-pp-stat">
+                <div className="fin-pp-statrow">
+                  <span className="fin-pp-pct">{pct}%</span>
+                  <div className="fin-pp-nums">
+                    <span className="pos">получено {money(paid)}</span>
+                    <span className="muted">осталось {money(toReceive)}</span>
+                  </div>
+                </div>
+                <div className="progress"><i style={{ width: pct + '%' }} /></div>
               </div>
 
               {parts.length === 0 ? (
@@ -674,12 +682,14 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
                   {parts.map((pl) => {
                     const received = pl.status === 'received';
                     const overdue = !received && String(pl.effDate) < todayISO();
+                    const d = String(pl.effDate);
+                    const short = d.length >= 10 ? `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(2, 4)}` : d;
                     return (
                       <button key={pl.id} type="button"
                         className={'fin-part-row' + (received ? ' done' : overdue ? ' over' : '')}
-                        title={received ? 'Получено — нажмите для управления' : 'Запланировано — нажмите, чтобы изменить срок/сумму или отметить оплату'}
+                        title={formatDate(pl.effDate) + (received ? ' · получено' : overdue ? ' · просрочено' : '')}
                         onClick={() => setCellFor({ row: r, plan: pl })}>
-                        <span className="fin-part-date">{formatDate(pl.effDate)}</span>
+                        <span className="fin-part-date">{short}</span>
                         <span className="fin-part-amount num">{money(pl.amount)}</span>
                         <span className={'badge ' + (received ? 'ok' : overdue ? 'over' : 'wait')}>
                           {received ? <><FinIcon name="check" size={12} /> получено</> : (daysLabel(pl.effDate) || 'ожидается')}
@@ -692,7 +702,6 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
 
               <div className="fin-pp-foot">
                 <button className="btn ghost sm" onClick={() => setCellFor({ row: r })}><FinIcon name="plus" size={14} /> Добавить часть</button>
-                <span className="mini muted">{remaining > 0.005 ? <>остаток по проекту: <b>{money(remaining)}</b></> : 'проект закрыт по сумме'}</span>
               </div>
 
               <div className="fin-pp-note"><NoteCell project={p} /></div>
