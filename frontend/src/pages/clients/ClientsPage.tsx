@@ -787,26 +787,26 @@ export default function ClientsPage() {
           initial={editLead}
           onClose={() => { setShowCreate(false); setEditLead(null) }}
           onSubmit={(data: any) => {
+            // Новый клиент на доску онбординга сам не встаёт — ни у СММ, ни у
+            // разработки. Раньше клиент СММ сразу помечался этапом «Встреча»:
+            // это осталось от старой воронки, где «Встреча» была первым этапом,
+            // и выглядело так, будто менеджер уже назначил встречу. На доску
+            // клиент попадает только по кнопке «В онбординг».
             if (editLead) updateMut.mutate({ id: editLead.id, data })
-            // МП по СММ — клиент сразу попадает в Онбординг (этап «Встреча»).
-            // МП по разработке — без явного клика онбординг не ставим.
-            else if (isSalesManager && role === 'sales_manager_dev') {
-              createMut.mutate(data)
-            } else {
-              createMut.mutate({ ...data, onboardingStage: 'meeting' })
-            }
+            else createMut.mutate(data)
           }}
           onSubmitWithOnboarding={
-            // Кнопка «+ Добавить в онбординг» в форме создания у МП по разработке.
-            !editLead && role === 'sales_manager_dev'
+            // «+ В онбординг» прямо из формы создания — для обоих направлений.
+            !editLead
               ? (data: any) => createMut.mutate({ ...data, onboardingStage: 'negotiation' })
               : undefined
           }
           onAddToOnboarding={
+            // Воронка едина для СММ и разработки, первый этап — «Переговор».
             editLead && !editLead.onboardingStage
               ? () => updateMut.mutate({
                   id: editLead.id,
-                  data: { onboardingStage: role === 'sales_manager_dev' ? 'negotiation' : 'meeting' },
+                  data: { onboardingStage: 'negotiation' },
                 })
               : undefined
           }

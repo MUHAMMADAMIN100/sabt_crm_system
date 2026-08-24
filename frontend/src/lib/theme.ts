@@ -37,16 +37,25 @@ export const DEFAULT_THEME: ThemeColors = {
   accent: '#345a7c',
 }
 
-/** Деловые наборы. Свободная пипетка убрана намеренно: она позволяла
- *  покрасить рабочую систему в розовый или лайм — ровно то, из-за чего
- *  интерфейс переставал выглядеть серьёзно. Здесь четыре выверенных
- *  варианта, каждый читаемый и сдержанный. */
-export const THEME_PRESETS: { name: string; colors: ThemeColors }[] = [
-  { name: 'Графит', colors: DEFAULT_THEME },
-  { name: 'Сталь',  colors: { text: '#16202b', background: '#fcfdfe', primary: '#1e4263', secondary: '#5c718a', accent: '#345a7c' } },
-  { name: 'Индиго', colors: { text: '#141a2e', background: '#fbfcff', primary: '#2b3a67', secondary: '#5f6b8c', accent: '#3f5288' } },
-  { name: 'Хаки',   colors: { text: '#1a1f16', background: '#fcfdfa', primary: '#3d4a2b', secondary: '#6b7558', accent: '#54663a' } },
-  { name: 'Тёмная', colors: { text: '#e8ecf1', background: '#161e28', primary: '#6a93bd', secondary: '#8fa2b8', accent: '#5c85b0' } },
+/** Готовые наборы. Свободной пипетки нет намеренно: произвольный цвет
+ *  легко делал текст нечитаемым. Здесь выверенные варианты — от
+ *  сдержанных деловых до насыщенных фиолетовых и розовых; у каждого
+ *  проверена читаемость текста и цифр при долгой работе.
+ *
+ *  mode — для какого режима набор задуман. Набор со светлым фоном в
+ *  тёмной теме смотрелся бы вспышкой, поэтому редактор показывает
+ *  только подходящие текущему режиму. */
+export const THEME_PRESETS: { name: string; mode: 'light' | 'dark'; colors: ThemeColors }[] = [
+  { name: 'Графит', mode: 'light', colors: DEFAULT_THEME },
+  { name: 'Сталь',  mode: 'light', colors: { text: '#16202b', background: '#fcfdfe', primary: '#1e4263', secondary: '#5c718a', accent: '#345a7c' } },
+  { name: 'Индиго', mode: 'light', colors: { text: '#141a2e', background: '#fbfcff', primary: '#2b3a67', secondary: '#5f6b8c', accent: '#3f5288' } },
+  { name: 'Хаки',   mode: 'light', colors: { text: '#1a1f16', background: '#fcfdfa', primary: '#3d4a2b', secondary: '#6b7558', accent: '#54663a' } },
+  { name: 'Фиалка', mode: 'light', colors: { text: '#1d1630', background: '#fdfbff', primary: '#5b3fa8', secondary: '#6d6490', accent: '#7c4dcc' } },
+  { name: 'Слива',  mode: 'light', colors: { text: '#2a1421', background: '#fffbfd', primary: '#9c2f63', secondary: '#8a6577', accent: '#c2437f' } },
+  { name: 'Тёмная',  mode: 'dark', colors: { text: '#e8ecf1', background: '#161e28', primary: '#6a93bd', secondary: '#8fa2b8', accent: '#5c85b0' } },
+  { name: 'Аметист', mode: 'dark', colors: { text: '#ece8f8', background: '#1a1630', primary: '#9b7ce0', secondary: '#a49bc2', accent: '#8b6ad6' } },
+  { name: 'Орхидея', mode: 'dark', colors: { text: '#f8e9f1', background: '#261420', primary: '#e07ca8', secondary: '#c09aac', accent: '#d66a9c' } },
+  { name: 'Индиго ночь', mode: 'dark', colors: { text: '#e6e9f7', background: '#141a2e', primary: '#7f95d6', secondary: '#98a2c4', accent: '#6e85cc' } },
 ]
 
 // ─── Цветовая математика ──────────────────────────────────────────────

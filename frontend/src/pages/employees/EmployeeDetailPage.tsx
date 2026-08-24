@@ -248,7 +248,7 @@ export default function EmployeeDetailPage() {
                 <input
                   ref={avatarFileRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/*,.heic,.heif"
                   onChange={e => handleAvatarPick(e, emp.userId)}
                   className="hidden"
                 />

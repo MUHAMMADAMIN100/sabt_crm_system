@@ -5,10 +5,11 @@
  * фото с телефона в базу нельзя — раньше такая загрузка отваливалась с
  * «File too large», и человек видел только «Ошибка загрузки».
  *
- * Побочная польза — формат. Айфоны и маки снимают в HEIC, который браузеры
- * не рисуют и сервер не принимает; после отрисовки на холст и выгрузки в
- * JPEG формат исходника перестаёт иметь значение везде, где браузер умеет
- * его декодировать (Safari HEIC умеет).
+ * Побочная польза — формат. Что бы человек ни выбрал, на сервер уходит
+ * обычный JPEG, поэтому формат исходника значения не имеет. HEIC со
+ * съёмки айфонов и маков Chrome и Firefox сами не читают — для них
+ * подключается декодер, но только если файл действительно HEIC:
+ * библиотека весит около 3 МБ и грузится по требованию.
  */
 
 /** Если качества не хватило, уменьшаем и саму картинку: шумное фото с
@@ -16,11 +17,36 @@
 const SCALE_STEPS = [1, 0.75, 0.55, 0.4]
 const QUALITY_STEPS = [0.82, 0.7, 0.58, 0.45, 0.35]
 
+type Loaded = { image: CanvasImageSource; width: number; height: number; dispose: () => void }
+
+/** Похож ли файл на HEIC/HEIF. Смотрим и расширение, и тип: Windows часто
+ *  отдаёт такой файл с пустым type, а Safari — с image/heic. */
+function looksLikeHeic(file: File): boolean {
+  const name = (file.name || '').toLowerCase()
+  return /\.(heic|heif)$/.test(name) || /^image\/hei[cf]/.test(file.type || '')
+}
+
+/** Декодируем HEIC отдельной библиотекой. Импорт динамический: три мегабайта
+ *  не должны попадать в основной бандл ради формата, который встречается у
+ *  части сотрудников. */
+async function decodeHeic(file: File): Promise<Loaded> {
+  const { heicTo } = await import('heic-to')
+  const bmp = await heicTo({ blob: file, type: 'bitmap' })
+  return { image: bmp, width: bmp.width, height: bmp.height, dispose: () => bmp.close?.() }
+}
+
 /** Читаем картинку. createImageBitmap быстрее и не держит DOM-узел, но есть
  *  не везде (старые Safari) — тогда падаем на обычный <img>. */
-async function loadImage(file: File): Promise<{
-  image: CanvasImageSource; width: number; height: number; dispose: () => void
-}> {
+async function loadImage(file: File): Promise<Loaded> {
+  // HEIC проверяем первым: встроенные декодеры на нём молча спотыкаются,
+  // и без этой ветки человек получал бы «не удалось прочитать файл».
+  if (looksLikeHeic(file)) {
+    try {
+      return await decodeHeic(file)
+    } catch {
+      // Не вышло — вдруг это Safari, который HEIC умеет сам.
+    }
+  }
   if (typeof createImageBitmap === 'function') {
     try {
       // imageOrientation: фотографии с телефона хранят поворот в EXIF.
@@ -48,6 +74,15 @@ async function loadImage(file: File): Promise<{
     }
   } catch (e) {
     URL.revokeObjectURL(url)
+    // Последняя попытка: файл мог оказаться HEIC без узнаваемого имени
+    // и типа — например, скачанный из мессенджера.
+    if (!looksLikeHeic(file)) {
+      try {
+        return await decodeHeic(file)
+      } catch {
+        // Значит, это действительно не картинка.
+      }
+    }
     throw e
   }
 }

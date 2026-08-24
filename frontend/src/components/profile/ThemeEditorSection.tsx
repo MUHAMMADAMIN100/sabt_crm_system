@@ -101,12 +101,12 @@ export default function ThemeEditorSection() {
 
       {/* Быстрые пресеты — применяются к выбранному режиму */}
       <div className="flex flex-wrap gap-2 mb-5">
-        {THEME_PRESETS.map(p => (
+        {THEME_PRESETS.filter(p => p.mode === mode).map(p => (
           <button
             key={p.name}
             type="button"
             onClick={() => applyPreset(p.colors)}
-            title={`${p.name} — для ${mode === 'dark' ? 'тёмной' : 'светлой'} темы`}
+            title={`${p.name} — набор для ${mode === 'dark' ? 'тёмной' : 'светлой'} темы`}
             className="flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-full border border-surface-200 dark:border-surface-700 hover:border-surface-400 dark:hover:border-surface-500 transition-colors"
           >
             <span className="flex -space-x-1">

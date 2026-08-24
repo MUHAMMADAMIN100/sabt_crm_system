@@ -14,10 +14,10 @@ import KpiDetailsModal from '@/components/kpi/KpiDetailsModal'
 
 const TYPE_FILTERS = [
   { value: '', label: 'Все' },
-  { value: 'overdue', label: '🔴 Просрочено' },
-  { value: 'upcoming', label: '🟠 Скоро' },
-  { value: 'outstanding', label: '⏳ К оплате' },
-  { value: 'paid', label: '✅ Оплачено' },
+  { value: 'overdue', label: 'Просрочено' },
+  { value: 'upcoming', label: 'Скоро' },
+  { value: 'outstanding', label: 'К оплате' },
+  { value: 'paid', label: 'Оплачено' },
 ]
 
 const PROJECT_STATUS_OPTIONS = [

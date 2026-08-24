@@ -134,7 +134,7 @@ export default function ProfilePage() {
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.heic,.heif"
             onChange={handleAvatarPick}
             className="hidden"
           />
