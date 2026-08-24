@@ -580,3 +580,31 @@ export const notesApi = {
     api.patch(`/my-notes/${id}`, data).then(r => r.data),
   remove: (id: string) => api.delete(`/my-notes/${id}`).then(r => r.data),
 }
+
+// ─── Лента команды (внутренние сторис сотрудников) ───────────────
+export const teamStoriesApi = {
+  feed: () => api.get('/team-stories').then(r => r.data),
+  emoji: () => api.get('/team-stories/emoji').then(r => r.data),
+  create: (file: File, caption: string, durationSec: number) => {
+    const fd = new FormData()
+    fd.append('media', file)
+    fd.append('caption', caption)
+    fd.append('durationSec', String(durationSec))
+    return api.post('/team-stories', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
+  view: (id: string) => api.post(`/team-stories/${id}/view`).then(r => r.data),
+  react: (id: string, emoji: string) =>
+    api.post(`/team-stories/${id}/reaction`, { emoji }).then(r => r.data),
+  comments: (id: string) => api.get(`/team-stories/${id}/comments`).then(r => r.data),
+  addComment: (id: string, text: string) =>
+    api.post(`/team-stories/${id}/comments`, { text }).then(r => r.data),
+  removeComment: (commentId: string) =>
+    api.delete(`/team-stories/comments/${commentId}`).then(r => r.data),
+  viewers: (id: string) => api.get(`/team-stories/${id}/viewers`).then(r => r.data),
+  remove: (id: string) => api.delete(`/team-stories/${id}`).then(r => r.data),
+  /** Ссылка на медиа: тег <img>/<video> идёт напрямую, без заголовков. */
+  mediaUrl: (key: string) =>
+    `${import.meta.env.VITE_API_URL || ''}/api/team-stories/media/${key}`,
+}

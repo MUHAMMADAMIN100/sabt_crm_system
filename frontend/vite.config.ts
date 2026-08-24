@@ -12,6 +12,10 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://localhost:3000', changeOrigin: true },
       '/uploads': { target: 'http://localhost:3000', changeOrigin: true },
+      // Без этой строки сокет уходил в сам Vite и падал: на локальной
+      // машине realtime не работал ни у ленты, ни у досок. В проде
+      // адрес бэкенда задаёт VITE_API_URL, прокси там не участвует.
+      '/socket.io': { target: 'http://localhost:3000', changeOrigin: true, ws: true },
     },
   },
   build: {

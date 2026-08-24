@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/auth.store'
 import { tokenStore } from '@/lib/api'
+import { addStory, removeStories, patchStory } from '@/lib/teamStories'
 
 /**
  * Подключение к WebSocket. JWT теперь живёт в httpOnly cookie — она
@@ -88,6 +89,40 @@ export function useSocket(authMarker: string | null) {
       qc.invalidateQueries({ queryKey: ['notifications-count'] })
       qc.invalidateQueries({ queryKey: ['unread-count'] })
       toast(notif.title || 'Новое уведомление', { icon: '🔔' })
+    })
+
+    // ─── Лента команды ────────────────────────────────────────────
+    // Правим кэш точечно, а не перезапрашиваем ленту: перезапрос сбросил
+    // бы оптимистичные изменения того, кто прямо сейчас ставит реакцию.
+    socket.on('team-story:new', (story: any) => {
+      addStory(qc, story, useAuthStore.getState().user?.id)
+    })
+    socket.on('team-story:removed', (p: any) => removeStories(qc, [p.storyId]))
+    socket.on('team-story:expired', (p: any) => removeStories(qc, p?.ids || []))
+    socket.on('team-story:view', (p: any) =>
+      patchStory(qc, p.storyId, s => ({ ...s, viewsCount: p.viewsCount })))
+    socket.on('team-story:reaction', (p: any) => {
+      const myId = useAuthStore.getState().user?.id
+      patchStory(qc, p.storyId, s => ({
+        ...s,
+        reactions: p.reactions,
+        // Свою реакцию не перетираем чужим событием — она уже учтена
+        // оптимистично; сервер пришлёт её значение только для автора клика.
+        myReaction: p.byUserId === myId ? p.myReaction : s.myReaction,
+      }))
+    })
+    socket.on('team-story:comment', (c: any) => {
+      patchStory(qc, c.storyId, s => ({ ...s, commentsCount: c.commentsCount ?? s.commentsCount }))
+      qc.setQueryData<any[]>(['team-story-comments', c.storyId], (list) => {
+        if (!list) return list
+        if (list.some(x => x.id === c.id)) return list
+        return [...list.filter(x => !(x.pending && x.text === c.text && x.authorId === c.authorId)), c]
+      })
+    })
+    socket.on('team-story:comment-removed', (p: any) => {
+      patchStory(qc, p.storyId, s => ({ ...s, commentsCount: p.commentsCount ?? s.commentsCount }))
+      qc.setQueryData<any[]>(['team-story-comments', p.storyId], (list) =>
+        (list || []).filter(x => x.id !== p.commentId))
     })
 
     socket.on('employees:changed', () => {

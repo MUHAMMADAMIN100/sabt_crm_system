@@ -12,6 +12,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { isTaskOverdue } from '@/lib/taskStatus'
 import { useChartColors } from '@/lib/theme'
 import { isDevDirector } from '@/lib/permissions'
+import TeamStoriesBar from '@/components/stories/TeamStoriesBar'
 
 const FounderDashboard = lazy(() => import('./components/FounderDashboard'))
 const PMDashboard = lazy(() => import('./components/PMDashboard'))
@@ -154,7 +155,7 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
   )
 }
 
-export default function DashboardPage() {
+function DashboardContent() {
   const user = useAuthStore(s => s.user)
   const role = user?.role || 'employee'
   const isFounderView = ['admin', 'founder', 'co_founder'].includes(role)
@@ -675,6 +676,20 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * Панель. Сверху — «Лента команды»: сторис сотрудников, как в инстаграме.
+ * Она общая для всех ролей, поэтому вынесена над ролевым дашбордом, а не
+ * продублирована внутри каждой ветки.
+ */
+export default function DashboardPage() {
+  return (
+    <div className="space-y-5">
+      <TeamStoriesBar />
+      <DashboardContent />
     </div>
   )
 }
