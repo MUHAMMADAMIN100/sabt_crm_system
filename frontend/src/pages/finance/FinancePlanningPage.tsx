@@ -152,18 +152,13 @@ export default function FinancePlanningPage() {
       if (s.endDate && !done && date > String(s.endDate).slice(0, 10)) continue; // позже окончания
       items.push({ id: `sub-${s.id}`, date, amount: s.amount, type: 'expense', status: 'completed', done, comment: s.name });
     }
-    // 3. Зарплата за ПРЕДЫДУЩИЙ месяц — 10-го числа. Выплаченную часть показываем
-    // как сделано (приглушённо), остаток «к выплате» — как обычное.
-    const salaryPaid = Number(salaryQ.data?.cards?.paid || 0);
+    // 3. Зарплата за ПРЕДЫДУЩИЙ месяц выплачивается 10-го числа. В календаре
+    // показываем ТОЛЬКО реальный отток этого дня — остаток «к выплате». Уже
+    // выданные авансы/бонусы ушли в своём месяце и не относятся к 10-му числу.
     const salaryToPay = Number(salaryQ.data?.cards?.toPay || 0);
-    const salDate = `${calYm}-10`;
-    if (salaryPaid > 0) {
-      items.push({ id: `salary-paid-${calYm}`, date: salDate, amount: salaryPaid, type: 'expense', status: 'completed', done: true,
-        comment: `Зарплаты за ${monthLabel(salaryYm)} (выплачено)` });
-    }
     if (salaryToPay > 0) {
-      items.push({ id: `salary-topay-${calYm}`, date: salDate, amount: salaryToPay, type: 'expense', status: 'completed', done: false,
-        comment: `Зарплаты за ${monthLabel(salaryYm)} (к выплате)` });
+      items.push({ id: `salary-topay-${calYm}`, date: `${calYm}-10`, amount: salaryToPay, type: 'expense', status: 'completed', done: false,
+        comment: `Зарплаты за ${monthLabel(salaryYm)}` });
     }
     // 4. Прочие операции журнала за месяц (без привязки к ЗП/подписке/долгу/
     // полученному план-платежу). Прошедшие (≤ сегодня) — сделано (приглушённо),
