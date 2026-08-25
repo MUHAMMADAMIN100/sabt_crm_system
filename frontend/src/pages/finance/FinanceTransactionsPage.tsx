@@ -19,18 +19,62 @@ import { AccountLabel } from './AccountIdentity';
 const TYPES = ['income', 'expense', 'transfer', 'saving'];
 const PAGE_SIZE = 50;
 
+const CSV_GROUP_LABEL: Record<string, string> = {
+  salary: 'Зарплата', rent_subs: 'Аренда и подписки', debts: 'Долги', other: 'Прочее',
+  smm: 'SMM', development: 'Development', design: 'Design', maintenance: 'Обслуживание',
+};
+const CSV_DIR_LABEL: Record<string, string> = { smm: 'SMM', development: 'Development', design: 'Design', maintenance: 'Обслуживание' };
+
+/** Полный CSV операций для детального анализа: все связи (проект, сотрудник,
+ *  долг, подписка/аренда), группа расхода/направление, знак суммы, счета,
+ *  автор и дата ввода. Разделитель «;», сумма со знаком для сведения. */
 export function buildFinanceTransactionCsv(items: any[]): Array<Array<string | number | null>> {
+  const header = [
+    'ID', 'Дата', 'Статус', 'Тип', 'Группа', 'Категория', 'Описание',
+    'Сумма', 'Сумма со знаком', 'Со счёта', 'На счёт',
+    'Проект', 'Направление проекта', 'Сотрудник', 'Месяц ЗП',
+    'Долг', 'Подписка / аренда', 'Тип подписки', 'Контрагент', 'Способ оплаты',
+    'Влияет на баланс', 'Кто внёс', 'Дата создания', 'Источник',
+  ];
   return [
-    ['Дата', 'Статус', 'Тип', 'Категория', 'Описание', 'Сумма', 'Со счёта', 'На счёт', 'Проект', 'Сотрудник', 'Месяц ЗП', 'Долг', 'Источник'],
-    ...items.map((t: any) => [
-      String(t.date || '').slice(0, 10),
-      t.status === 'cancelled' ? 'Отменено' : String(t.date || '').slice(0, 10) > todayISO() ? 'Запланировано' : 'Проведено',
-      TYPE_LABEL[t.type] ?? t.type, t.categoryName, t.comment,
-      t.amount, ['transfer', 'saving'].includes(t.type) ? t.fromAccountName : (t.type === 'expense' ? t.accountName : null),
-      ['transfer', 'saving'].includes(t.type) ? t.toAccountName : (t.type !== 'expense' ? t.accountName : null),
-      t.projectName, t.employeeName, t.employeeId ? (t.salaryYm ?? String(t.date || '').slice(0, 7)) : null, t.debtName,
-      isImportedArchive(t) ? 'Notion · архив' : null,
-    ]),
+    header,
+    ...items.map((t: any) => {
+      const d = String(t.date || '').slice(0, 10);
+      const cancelled = t.status === 'cancelled';
+      const status = cancelled ? 'Отменено' : d > todayISO() ? 'Запланировано' : 'Проведено';
+      const isTransfer = t.type === 'transfer' || t.type === 'saving';
+      const amount = Number(t.amount) || 0;
+      // Знаковая сумма — для корректного сведения. Переводы/накопления между
+      // своими счетами и отменённые в сумму не идут (пусто).
+      const signed = cancelled || isTransfer ? null : (t.type === 'income' ? amount : -amount);
+      const subKind = t.subscriptionKind === 'rent' ? 'Аренда' : t.subscriptionKind ? 'Подписка' : null;
+      return [
+        t.id ?? null,
+        d,
+        status,
+        TYPE_LABEL[t.type] ?? t.type,
+        t.group ? (CSV_GROUP_LABEL[t.group] ?? t.group) : null,
+        t.categoryName ?? null,
+        t.comment ?? null,
+        amount,
+        signed,
+        isTransfer ? (t.fromAccountName ?? null) : (t.type === 'expense' ? (t.accountName ?? null) : null),
+        isTransfer ? (t.toAccountName ?? null) : (t.type !== 'expense' ? (t.accountName ?? null) : null),
+        t.projectName ?? null,
+        t.projectDirection ? (CSV_DIR_LABEL[t.projectDirection] ?? t.projectDirection) : null,
+        t.employeeName ?? null,
+        t.employeeId ? (t.salaryYm ?? String(t.date || '').slice(0, 7)) : null,
+        t.debtName ?? null,
+        t.subscriptionName ?? null,
+        subKind,
+        t.counterparty ?? t.debtCounterparty ?? null,
+        t.paymentMethod ?? null,
+        t.affectsBalance === false ? 'нет' : 'да',
+        t.createdByName ?? null,
+        String(t.createdAt || '').slice(0, 10) || null,
+        isImportedArchive(t) ? 'Notion · архив' : null,
+      ];
+    }),
   ];
 }
 
