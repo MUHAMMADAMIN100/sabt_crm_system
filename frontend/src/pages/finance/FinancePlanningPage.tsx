@@ -248,23 +248,25 @@ export default function FinancePlanningPage() {
     // минус авансы (они ушли в своём месяце и здесь не считаются). Строка видна
     // ВСЕГДА; если остаток к выплате 0 — приглушённо («уже выплачено»).
     const salCards = salaryQ.data?.cards || {};
-    const salFund = Number(salCards.fund || 0);
-    const salBonuses = Number(salCards.bonuses || 0);
-    const salFines = Number(salCards.fines || 0);
     const salAdvances = Number(salCards.advances || 0);
+    const salPaid = Number(salCards.paid || 0);
     const salToPay = Number(salCards.toPay || 0);
-    const salTenth = Math.max(0, Math.round((salFund + salBonuses - salFines - salAdvances) * 100) / 100);
-    if (salTenth > 0.005) {
+    const salDone = salToPay <= 0.005; // остаток 0 → уже выплачено (приглушённо)
+    // Пока не выплачено — показываем остаток «к выплате» (совпадает с карточкой
+    // «Расход»). Когда выплачено — сумму, ушедшую ~10-го = выплаты без авансов
+    // прошлого месяца (авансы ушли в своём месяце и здесь не считаются).
+    const salPaidTenth = Math.max(0, Math.round((salPaid - salAdvances) * 100) / 100);
+    const salAmount = salDone ? salPaidTenth : Math.round(salToPay * 100) / 100;
+    if (salAmount > 0.005) {
       const empCount = (salaryQ.data?.rows || []).length;
-      const salDone = salToPay <= 0.005; // остаток 0 → уже выплачено (приглушённо)
-      items.push({ id: `salary-${calYm}`, date: `${calYm}-10`, amount: salTenth, type: 'expense', status: 'completed', done: salDone,
+      items.push({ id: `salary-${calYm}`, date: `${calYm}-10`, amount: salAmount, type: 'expense', status: 'completed', done: salDone,
         comment: `Зарплаты за ${monthLabel(salaryYm)}`,
         details: detailList([
           { label: 'За месяц', value: monthLabel(salaryYm, true) },
           { label: 'Сотрудников', value: empCount ? String(empCount) : null },
-          { label: 'Фонд', value: salFund ? money(salFund) : null },
+          { label: 'Фонд', value: salCards.fund ? money(Number(salCards.fund)) : null },
           { label: 'Авансы (в прошлом мес.)', value: salAdvances ? money(salAdvances) : null },
-          { label: salDone ? 'Выплачено 10-го' : 'К выплате 10-го', value: money(salTenth) },
+          { label: salDone ? 'Выплачено 10-го' : 'К выплате 10-го', value: money(salAmount) },
         ]) });
     }
     // 4. Прочие операции журнала за месяц (без привязки к ЗП/подписке/долгу/
