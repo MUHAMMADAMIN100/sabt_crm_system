@@ -108,10 +108,11 @@ export class FinanceController {
     @Query('type') type?: string, @Query('search') search?: string,
     @Query('from') from?: string, @Query('to') to?: string,
     @Query('status') status?: string,
+    @Query('projectId') projectId?: string,
     @Query('page') page?: string, @Query('pageSize') pageSize?: string,
   ) {
     return this.service.listTransactions({
-      type, search, from, to, status,
+      type, search, from, to, status, projectId,
       page: page ? parseInt(page, 10) || 1 : 1,
       pageSize: pageSize ? parseInt(pageSize, 10) || 100 : 100,
     });

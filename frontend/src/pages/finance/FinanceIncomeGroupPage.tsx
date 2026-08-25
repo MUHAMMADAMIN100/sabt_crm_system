@@ -90,13 +90,61 @@ function Stat({ label, value, cls, sub }: { label: string; value: string; cls?: 
   );
 }
 
-function RowActions({ onEdit, onPause, onArchive }: { onEdit: () => void; onPause?: () => void; onArchive: () => void }) {
+function RowActions({ onEdit, onPause, onArchive, onOps }: { onEdit: () => void; onPause?: () => void; onArchive: () => void; onOps?: () => void }) {
   return (
     <td className="num nowrap">
+      {onOps && <button className="btn ghost sm" title="Операции по проекту (доходы и расходы)" onClick={onOps}><FinIcon name="transactions" size={15} /></button>}
       <button className="btn ghost sm" title="Редактировать" onClick={onEdit}><FinIcon name="edit" size={15} /></button>
       {onPause && <button className="btn ghost sm" title="На паузу (клиент приостановил — деньги и напоминания замораживаются)" onClick={onPause}><FinIcon name="pause" size={15} /></button>}
       <button className="btn ghost sm" title="В архив (больше не работаем)" onClick={onArchive}><FinIcon name="archive" size={15} /></button>
     </td>
+  );
+}
+
+/** Все операции (доходы и расходы) по проекту — по клику у проекта в «Доходе».
+ *  Расходы попадают сюда, если при добавлении указан этот проект. */
+function ProjectOperationsModal({ project, onClose }: { project: any; onClose: () => void }) {
+  useModalKeys(onClose);
+  const { data, isLoading } = useQuery({
+    queryKey: ['finance', 'project-ops', project.id],
+    queryFn: () => financeApi.transactions({ projectId: project.id, status: 'all', pageSize: 1000 }),
+  });
+  const items: any[] = ((data as any)?.items || []).filter((t: any) => t.status !== 'cancelled');
+  const incTotal = items.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
+  const expTotal = items.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount || 0), 0);
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+        <div className="modal-head"><h3>Операции · {project.name}</h3><button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
+        <div className="modal-body">
+          <div className="proj-ops-summary">
+            <div><span className="mini muted">Доход</span><b className="pos">{money(incTotal)}</b></div>
+            <div><span className="mini muted">Расход</span><b className="neg">{money(expTotal)}</b></div>
+            <div><span className="mini muted">Итог</span><b className={incTotal - expTotal >= 0 ? 'pos' : 'neg'}>{money(incTotal - expTotal)}</b></div>
+          </div>
+          {isLoading ? <FinLoading />
+            : items.length === 0 ? <div className="empty" style={{ padding: '20px 0' }}>Пока нет операций по проекту. Расходы появятся здесь, если при добавлении указать этот проект.</div>
+            : (
+            <div className="table-wrap" style={{ marginTop: 10 }}>
+              <table>
+                <thead><tr><th>Дата</th><th>Операция</th><th>Категория / счёт</th><th className="num">Сумма</th></tr></thead>
+                <tbody>
+                  {items.map((t) => (
+                    <tr key={t.id}>
+                      <td className="muted nowrap">{formatDate(t.date)}</td>
+                      <td>{t.comment || t.categoryName || (t.type === 'income' ? 'Поступление' : 'Расход')}</td>
+                      <td className="muted">{[t.categoryName, t.accountName].filter(Boolean).join(' · ') || '—'}</td>
+                      <td className={'num nowrap ' + (t.type === 'income' ? 'pos' : 'neg')}>{t.type === 'expense' ? '−' : '+'}{money(t.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div className="modal-foot"><button className="btn ghost" onClick={onClose}>Закрыть</button></div>
+      </div>
+    </div>
   );
 }
 
@@ -342,6 +390,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
   const [receive, setReceive] = useState<any>(null); // part {plannedId, amount, ...}
   const [restFor, setRestFor] = useState<any>(null); // row с nextDue (остаток/след. платёж)
   const [editProject, setEditProject] = useState<any>(null);
+  const [opsFor, setOpsFor] = useState<any>(null); // операции по проекту
 
   const rows: any[] = data.rows || [];
   const { stats, totals, needPay, needRest } = data;
@@ -467,7 +516,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                   </button>
                 </td>
                 <td><NoteCell project={r.project} /></td>
-                <RowActions onEdit={() => setEditProject(r.project)} onPause={() => pauseProject(r.project)} onArchive={() => archiveProject(r.project)} />
+                <RowActions onEdit={() => setEditProject(r.project)} onPause={() => pauseProject(r.project)} onArchive={() => archiveProject(r.project)} onOps={() => setOpsFor(r.project)} />
               </tr>
             ))}
           </tbody>
@@ -508,6 +557,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
         />
       )}
       {editProject && <ProjectFormModal direction="smm" project={editProject} onClose={() => setEditProject(null)} />}
+      {opsFor && <ProjectOperationsModal project={opsFor} onClose={() => setOpsFor(null)} />}
     </>
   );
 }
@@ -632,6 +682,7 @@ function MaintenanceSection({ data, direction, archived, onShift }: { data: any;
   const qc = useQueryClient();
   const [cellFor, setCellFor] = useState<{ row: any; ym?: string; plan?: any } | null>(null);
   const [editProject, setEditProject] = useState<any>(null);
+  const [opsFor, setOpsFor] = useState<any>(null); // операции по проекту
   const rows: any[] = data.rows || [];
   const months: string[] = data.months || [];
   const cm = currentYm();
@@ -724,7 +775,7 @@ function MaintenanceSection({ data, direction, archived, onShift }: { data: any;
                           </td>
                         );
                       })}
-                      <RowActions onEdit={() => setEditProject(p)} onPause={() => pauseProject(p)} onArchive={() => archiveProject(p)} />
+                      <RowActions onEdit={() => setEditProject(p)} onPause={() => pauseProject(p)} onArchive={() => archiveProject(p)} onOps={() => setOpsFor(p)} />
                     </tr>
                   );
                 })}
@@ -743,6 +794,7 @@ function MaintenanceSection({ data, direction, archived, onShift }: { data: any;
       <ProjectStateSections direction={direction} archived={archived} />
       {cellFor && <CellModal row={cellFor.row} ym={cellFor.ym} plan={cellFor.plan} onClose={() => setCellFor(null)} />}
       {editProject && <ProjectFormModal direction={direction} project={editProject} onClose={() => setEditProject(null)} />}
+      {opsFor && <ProjectOperationsModal project={opsFor} onClose={() => setOpsFor(null)} />}
     </>
   );
 }
@@ -751,6 +803,7 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
   const qc = useQueryClient();
   const [cellFor, setCellFor] = useState<{ row: any; ym?: string; plan?: any } | null>(null);
   const [editProject, setEditProject] = useState<any>(null);
+  const [opsFor, setOpsFor] = useState<any>(null); // операции по проекту
 
   async function archiveProject(p: any) {
     try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
@@ -784,6 +837,7 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
               <div className="fin-pp-head">
                 <b className="fin-pp-name" title={p.name}>{p.name}</b>
                 <div className="fin-pp-actions">
+                  <button className="btn ghost sm" title="Операции по проекту (доходы и расходы)" onClick={() => setOpsFor(p)}><FinIcon name="transactions" size={15} /></button>
                   <button className="btn ghost sm" title="Редактировать" onClick={() => setEditProject(p)}><FinIcon name="edit" size={15} /></button>
                   <button className="btn ghost sm" title="На паузу (клиент приостановил — деньги и напоминания замораживаются)" onClick={() => pauseProject(p)}><FinIcon name="pause" size={15} /></button>
                   <button className="btn ghost sm" title="В архив (больше не работаем)" onClick={() => archiveProject(p)}><FinIcon name="archive" size={15} /></button>
@@ -843,6 +897,7 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
 
       {cellFor && <CellModal row={cellFor.row} ym={cellFor.ym} plan={cellFor.plan} onClose={() => setCellFor(null)} />}
       {editProject && <ProjectFormModal direction={direction} project={editProject} onClose={() => setEditProject(null)} />}
+      {opsFor && <ProjectOperationsModal project={opsFor} onClose={() => setOpsFor(null)} />}
     </>
   );
 }
@@ -980,6 +1035,7 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
   const qc = useQueryClient();
   const [payFor, setPayFor] = useState<any>(null);   // simple row
   const [workFor, setWorkFor] = useState<any>(null); // 'new' | simple row
+  const [opsFor, setOpsFor] = useState<any>(null); // операции по проекту
   const simple: any[] = data.simple || [];
   const matrixRows: any[] = data.matrix?.rows || [];
   const cm = currentYm();
@@ -1030,6 +1086,7 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
                       : <button className="btn primary sm" onClick={() => setPayFor(r)}>Записать оплату</button>}
                   </td>
                   <td className="num nowrap">
+                    <button className="btn ghost sm" title="Операции по проекту (доходы и расходы)" onClick={() => setOpsFor(r.project)}><FinIcon name="transactions" size={15} /></button>
                     <button className="btn ghost sm" title="Редактировать" onClick={() => setWorkFor(r)}><FinIcon name="edit" size={15} /></button>
                     <button className="btn ghost sm" title="В архив (больше не работаем)" onClick={() => archiveProject(r.project)}><FinIcon name="archive" size={15} /></button>
                   </td>
@@ -1051,6 +1108,7 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
 
       {payFor && <RecordIncomeModal row={payFor} onClose={() => setPayFor(null)} />}
       {workFor && <WorkModal row={workFor === 'new' ? undefined : workFor} onClose={() => setWorkFor(null)} />}
+      {opsFor && <ProjectOperationsModal project={opsFor} onClose={() => setOpsFor(null)} />}
     </>
   );
 }

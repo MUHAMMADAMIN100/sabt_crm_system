@@ -2545,6 +2545,7 @@ export class FinanceService implements OnModuleInit {
     from?: string;
     to?: string;
     status?: string;
+    projectId?: string;
     page?: number;
     pageSize?: number;
   } = {}) {
@@ -2559,6 +2560,7 @@ export class FinanceService implements OnModuleInit {
       qb.where(`COALESCE(t.status,'completed') <> 'cancelled'`);
     }
     if (f.type) qb.andWhere('t.type = :type', { type: f.type });
+    if (f.projectId) qb.andWhere('t."projectId" = :pid', { pid: f.projectId });
     if (f.from) qb.andWhere('t.date >= :from', { from: f.from });
     if (f.to) qb.andWhere('t.date <= :to', { to: f.to });
     if (f.search) qb.andWhere('(t.comment ILIKE :s OR t.category ILIKE :s)', { s: `%${f.search}%` });

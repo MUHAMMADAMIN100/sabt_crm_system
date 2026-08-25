@@ -420,6 +420,11 @@
   padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
 .fin-root .cal-item-row > span { color: var(--muted); }
 .fin-root .cal-item-row > b { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+/* Сводка «Операции по проекту» (доход / расход / итог). */
+.fin-root .proj-ops-summary { display: flex; gap: 22px; padding: 12px 14px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.fin-root .proj-ops-summary > div { display: flex; flex-direction: column; gap: 2px; }
+.fin-root .proj-ops-summary b { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .fin-root .cal-item-status { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; margin-top: 6px; border-top: 1px solid var(--border); }
 .fin-root .cal-item-status-head { font-size: 13px; color: var(--muted); }
 .fin-root .cal-item-status-head b { color: var(--text); font-weight: 650; }
