@@ -2600,7 +2600,9 @@ export class FinanceService implements OnModuleInit {
       base.accountId = dto.accountId;
       base.categoryId = dto.categoryId ?? null;
       if (dto.categoryId) base.category = (await this.catRepo.findOne({ where: { id: dto.categoryId } }))?.name ?? null;
-      if (type === FinanceTxType.INCOME) base.projectId = dto.projectId ?? null;
+      // Проект — и для дохода, и для обычного расхода (чтобы видеть траты по
+      // проекту внутри него). Для ЗП/долга фронт проект не шлёт.
+      if (type === FinanceTxType.INCOME || type === FinanceTxType.EXPENSE) base.projectId = dto.projectId ?? null;
       if (type === FinanceTxType.EXPENSE) {
         base.employeeId = dto.employeeId ?? null;
         base.debtId = dto.debtId ?? null;

@@ -56,6 +56,9 @@ export default function TransactionModal({ initial, initialType, initialDate, on
     && (selectedCategory?.key === 'salary' || (!selectedCategory && !!initial?.employeeId));
   const debtExpense = type === 'expense'
     && (selectedCategory?.key === 'debt' || (!selectedCategory && !!initial?.debtId));
+  // Привязка к проекту — для дохода и для ОБЫЧНОГО расхода (не ЗП/долг, у них
+  // своя привязка к сотруднику/долгу). Чтобы видеть траты по проекту внутри него.
+  const showProject = type === 'income' || (type === 'expense' && !salaryExpense && !debtExpense);
 
   const amt = parseFloat(amount.replace(',', '.'));
   const valid = amt > 0 && (!needFrom || accountFrom) && (!needTo || accountTo) &&
@@ -113,7 +116,7 @@ export default function TransactionModal({ initial, initialType, initialDate, on
       date,
       comment: comment.trim() || empty,
       categoryId: needCategory ? categoryId || empty : empty,
-      projectId: type === 'income' ? projectId || empty : empty,
+      projectId: showProject ? projectId || empty : empty,
       employeeId: salaryExpense ? employeeId : empty,
       salaryYm: salaryExpense ? salaryYm : empty,
       debtId: debtExpense ? debtId : empty,
@@ -209,7 +212,7 @@ export default function TransactionModal({ initial, initialType, initialDate, on
             )}
           </div>
 
-          {type === 'income' && (
+          {showProject && (
             <div className="field"><label>Проект / клиент (необязательно)</label>
               <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
                 <option value="">— не привязан —</option>
