@@ -498,6 +498,8 @@ export function canAccessRoute(
   if (route === '/employee-access') return canManageAccess(role)
   // «Отчёты СММ» (ежедневный автоотчёт) — только основатель.
   if (route === '/smm-daily') return canSeeSmmDaily(role)
+  // «СММ» — раздел-заглушка, пока только у основателя/со-основателя.
+  if (route === '/smm') return role === 'founder' || role === 'co_founder'
   // Финансы и все подстраницы — по гранту finance.manage.
   if (route === '/finance' || route.startsWith('/finance/')) return userCan(u, 'finance.manage')
   // Справочники организатора съёмок (клиенты/модели/места).

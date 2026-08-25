@@ -9,7 +9,7 @@ import {
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, UserPlus,
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
   Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal, MoreHorizontal,
-  Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck, LineChart,
+  Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck, LineChart, Megaphone,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -52,6 +52,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const navItems: { to: string; icon: any; label: string; permission: Permission; exact?: boolean }[] = [
     { to: '/',              icon: LayoutDashboard, label: t('nav.dashboard'),  permission: 'dashboard',         exact: true },
     { to: '/finance',       icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
+    { to: '/smm',           icon: Megaphone,       label: 'СММ',               permission: 'dashboard' },
     { to: '/projects',      icon: FolderKanban,    label: t('nav.projects'),   permission: 'projects.view' },
     { to: '/workflow-board', icon: Trello,         label: 'Доска проектов',    permission: 'projects.view' },
     { to: '/project-stories', icon: ImageIcon,     label: 'Истории по проектам', permission: 'stories.manage' },
@@ -104,6 +105,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     if (item.to === '/employee-access') return canManageAccess(role)
     // «Ежедневный отчёт» (автоотчёт по компании) — только основатель.
     if (item.to === '/smm-daily') return canSeeSmmDaily(role)
+    // «СММ» — раздел-заглушка, пока только у основателя/со-основателя.
+    if (item.to === '/smm') return isTopExec
     // «Задачи от руководителя» — раздел получателя поручений. Основателю и
     // со-основателю он не нужен: выданные ими задачи видны в Календаре (там же
     // исполнитель, статус и правка). Маршрут остаётся рабочим для ссылок из
@@ -117,7 +120,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   // Прочие роли видят полный список без изменений.
   const isFounder = role === 'founder'
   const FOUNDER_CORE = new Set<string>([
-    '/', '/finance', '/projects', '/workflow-board', '/calendar',
+    '/', '/finance', '/smm', '/projects', '/workflow-board', '/calendar',
     '/analytics', '/employees', '/clients', '/ai',
   ])
   const coreItems = isFounder ? filtered.filter(i => FOUNDER_CORE.has(i.to)) : filtered
