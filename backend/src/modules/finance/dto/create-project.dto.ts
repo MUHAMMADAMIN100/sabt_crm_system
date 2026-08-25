@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsISO8601, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsISO8601, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -43,4 +43,9 @@ export class CreateProjectDto {
 
   @ApiPropertyOptional({ enum: FinanceProjectStatus }) @IsOptional() @IsEnum(FinanceProjectStatus)
   status?: FinanceProjectStatus;
+
+  /** SMM/обслуживание: ориентировочный срок сотрудничества в месяцах (1..60).
+   *  null — «бессрочно». */
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(60)
+  retentionMonths?: number | null;
 }
