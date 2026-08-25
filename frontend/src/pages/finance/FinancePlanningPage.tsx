@@ -243,21 +243,28 @@ export default function FinancePlanningPage() {
           { label: 'День оплаты', value: s.dueDay ? `${s.dueDay}-го` : null },
         ]) });
     }
-    // 3. Зарплата за ПРЕДЫДУЩИЙ месяц выплачивается 10-го числа. В календаре
-    // показываем ТОЛЬКО реальный отток этого дня — остаток «к выплате». Уже
-    // выданные авансы/бонусы ушли в своём месяце и не относятся к 10-му числу.
-    const salaryToPay = Number(salaryQ.data?.cards?.toPay || 0);
-    if (salaryToPay > 0) {
-      const cards = salaryQ.data?.cards || {};
+    // 3. Зарплата за ПРЕДЫДУЩИЙ месяц выплачивается 10-го числа. Показываем сумму,
+    // уходящую ИМЕННО в этот день = обязательство месяца (фонд + бонусы − штрафы)
+    // минус авансы (они ушли в своём месяце и здесь не считаются). Строка видна
+    // ВСЕГДА; если остаток к выплате 0 — приглушённо («уже выплачено»).
+    const salCards = salaryQ.data?.cards || {};
+    const salFund = Number(salCards.fund || 0);
+    const salBonuses = Number(salCards.bonuses || 0);
+    const salFines = Number(salCards.fines || 0);
+    const salAdvances = Number(salCards.advances || 0);
+    const salToPay = Number(salCards.toPay || 0);
+    const salTenth = Math.max(0, Math.round((salFund + salBonuses - salFines - salAdvances) * 100) / 100);
+    if (salTenth > 0.005) {
       const empCount = (salaryQ.data?.rows || []).length;
-      items.push({ id: `salary-topay-${calYm}`, date: `${calYm}-10`, amount: salaryToPay, type: 'expense', status: 'completed', done: false,
+      const salDone = salToPay <= 0.005; // остаток 0 → уже выплачено (приглушённо)
+      items.push({ id: `salary-${calYm}`, date: `${calYm}-10`, amount: salTenth, type: 'expense', status: 'completed', done: salDone,
         comment: `Зарплаты за ${monthLabel(salaryYm)}`,
         details: detailList([
           { label: 'За месяц', value: monthLabel(salaryYm, true) },
           { label: 'Сотрудников', value: empCount ? String(empCount) : null },
-          { label: 'Фонд', value: cards.fund ? money(Number(cards.fund)) : null },
-          { label: 'Уже выдано', value: cards.paid ? money(Number(cards.paid)) : null },
-          { label: 'К выплате 10-го', value: money(salaryToPay) },
+          { label: 'Фонд', value: salFund ? money(salFund) : null },
+          { label: 'Авансы (в прошлом мес.)', value: salAdvances ? money(salAdvances) : null },
+          { label: salDone ? 'Выплачено 10-го' : 'К выплате 10-го', value: money(salTenth) },
         ]) });
     }
     // 4. Прочие операции журнала за месяц (без привязки к ЗП/подписке/долгу/
