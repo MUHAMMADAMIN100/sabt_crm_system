@@ -331,7 +331,7 @@ export default function FinancePlanningPage() {
       else if (id.startsWith('sub-')) await financeApi.updateSubscription(id.slice(4), { dueDay: Number(dateISO.slice(8, 10)) || 1 });
       else return;
       invalidateFinanceAll(qc);
-    } catch (e) { toast.error(apiErr(e)); }
+    } catch (e) { toast.error(apiErr(e)); throw e; }
   }
 
   if (query.isLoading) return <div className="fin-root"><FinLoading cards={4} /></div>;

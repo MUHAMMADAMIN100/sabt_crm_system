@@ -136,7 +136,7 @@ export default function FinanceTransactionsPage() {
     try {
       await financeApi.updateTransaction(item.id, { date: dateISO });
       invalidateFinance(qc);
-    } catch (e: any) { toast.error(apiErr(e)); }
+    } catch (e: any) { toast.error(apiErr(e)); throw e; }
   }
 
   async function remove(id: string) {
@@ -286,6 +286,20 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
   const [dragId, setDragId] = useState<string | null>(null);
   const [overIso, setOverIso] = useState<string | null>(null);
   const canMove = (t: any) => !!onMoveItem && (!canMoveItem || canMoveItem(t));
+  // Оптимистичный сдвиг: {id → новая дата}. Элемент сразу рисуется на новом
+  // дне и держится, пока перезагруженные данные не догонят (тогда снимаем).
+  const [moveOverrides, setMoveOverrides] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setMoveOverrides((prev) => {
+      if (!Object.keys(prev).length) return prev;
+      let changed = false; const next = { ...prev };
+      for (const t of txns) {
+        if (next[t.id] && String(t.date || '').slice(0, 10) === next[t.id]) { delete next[t.id]; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [txns]);
+  const effDate = (t: any) => moveOverrides[t.id] || String(t.date || '').slice(0, 10);
   const [y, m] = ym.split('-').map(Number);
   const firstIdx = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Пн = 0
   const daysIn = new Date(y, m, 0).getDate();
@@ -299,13 +313,13 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
   const byDay = useMemo(() => {
     const map = new Map<string, any[]>();
     for (const t of txns) {
-      const k = String(t.date || '').slice(0, 10);
+      const k = moveOverrides[t.id] || String(t.date || '').slice(0, 10);
       if (k.slice(0, 7) !== ym) continue;
       if (!map.has(k)) map.set(k, []);
       map.get(k)!.push(t);
     }
     return map;
-  }, [txns, ym]);
+  }, [txns, ym, moveOverrides]);
 
   // Итоги дня/месяца — только реальные деньги (доход/расход, без переводов).
   const totals = useMemo(() => {
@@ -370,7 +384,13 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
                   const it = txns.find((x: any) => x.id === dragId);
                   const target = iso;
                   setDragId(null); setOverIso(null);
-                  if (it && onMoveItem && String(it.date || '').slice(0, 10) !== target) onMoveItem(it, target);
+                  if (it && onMoveItem && effDate(it) !== target) {
+                    const movedId = it.id;
+                    setMoveOverrides((o) => ({ ...o, [movedId]: target })); // сразу двигаем визуально
+                    Promise.resolve(onMoveItem(it, target)).catch(() => {
+                      setMoveOverrides((o) => { const n = { ...o }; delete n[movedId]; return n; }); // откат при ошибке
+                    });
+                  }
                 } : undefined}>
                 {iso && (
                   <>
