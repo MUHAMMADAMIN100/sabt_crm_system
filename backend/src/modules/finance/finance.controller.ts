@@ -165,7 +165,7 @@ export class FinanceController {
   @Delete('categories/:id') removeCategory(@Param('id') id: string) { return this.service.removeCategory(id); }
 
   // ─── Справочники: Проекты/клиенты ────────────────────────────────
-  @Get('projects') listProjects() { return this.service.listProjects(); }
+  @Get('projects') listProjects(@Request() req) { return this.service.listProjects(req.user?.role); }
   @Post('projects') createProject(@Body() dto: CreateProjectDto) { return this.service.createProject(dto); }
   @Patch('projects/:id') updateProject(@Param('id') id: string, @Body() dto: UpdateProjectDto) { return this.service.updateProject(id, dto); }
   @Delete('projects/:id') removeProject(@Param('id') id: string) { return this.service.removeProject(id); }

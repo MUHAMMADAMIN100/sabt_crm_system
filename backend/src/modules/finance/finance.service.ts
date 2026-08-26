@@ -1447,6 +1447,13 @@ export class FinanceService implements OnModuleInit {
     return planned.filter(p => !(p.projectId && m.proj.get(p.projectId)?.direction === 'development'
       && (p.dueDate ? String(p.dueDate) >= from : (p.ym || '') >= fromYm)));
   }
+  /** Убрать САМИ проекты по Development, добавленные с 1 августа (для co_founder):
+   *  их не должно быть видно даже без денег. Дата — по createdAt проекта. */
+  private scopeProjects<T extends { direction?: string | null; createdAt?: any }>(projects: T[], role?: string): T[] {
+    if (!this.hidesDevIncome(role)) return projects;
+    const from = FinanceService.COFOUNDER_DEV_INCOME_FROM;
+    return projects.filter(p => !(p.direction === 'development' && String(p.createdAt ? new Date(p.createdAt).toISOString() : '') >= from));
+  }
 
   // ─── ОБЗОР ───────────────────────────────────────────────────────
   async overview(ym: string, role?: string) {
@@ -1488,7 +1495,7 @@ export class FinanceService implements OnModuleInit {
     // scopedTx), и план (тариф) прячем за месяцы от августа.
     const hideDevPlan = this.hidesDevIncome(role) && ym >= FinanceService.COFOUNDER_DEV_INCOME_FROM.slice(0, 7);
     const incomePlan = dirs.map(dir => {
-      const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
+      const projs = this.scopeProjects(m.projects.filter(p => p.direction === dir && isEarning(p)), role);
       const plan = (hideDevPlan && dir === 'development') ? 0 : r2(projs.reduce((s, p) => s + Number(p.tariff), 0));
       const fact = this.sum(monthIncome.filter(t => this.directionOf(t, m) === dir));
       return { direction: dir, plan, fact };
@@ -1742,7 +1749,7 @@ export class FinanceService implements OnModuleInit {
     const hideDevPlan = this.hidesDevIncome(role) && ym >= FinanceService.COFOUNDER_DEV_INCOME_FROM.slice(0, 7);
     const dirs = ['smm', 'development', 'design', 'maintenance'];
     return dirs.map(dir => {
-      const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
+      const projs = this.scopeProjects(m.projects.filter(p => p.direction === dir && isEarning(p)), role);
       const earningIds = new Set(projs.map(p => p.id));
       const forMonth = planned.filter(p => p.ym === ym && p.projectId && earningIds.has(p.projectId));
       const received = this.sum(actualIncome.filter(t => this.directionOf(t, m) === dir));
@@ -1850,7 +1857,8 @@ export class FinanceService implements OnModuleInit {
     }
 
     if (direction === 'development' || direction === 'maintenance') {
-      const active = m.projects.filter(p => p.direction === direction && isEarning(p));
+      // Со-основателю не показываем dev-проекты, добавленные с 1 августа.
+      const active = this.scopeProjects(m.projects.filter(p => p.direction === direction && isEarning(p)), role);
       const winStart = start || this.defaultStart(active, planned);
       const months = Array.from({ length: 6 }, (_, i) => shiftYm(winStart, i));
       // Обслуживание — регулярный месячный доход. Отсутствующие планы
@@ -3383,7 +3391,11 @@ export class FinanceService implements OnModuleInit {
   }
 
   // Проекты/клиенты
-  listProjects() { return this.projRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } }); }
+  async listProjects(role?: string) {
+    const rows = await this.projRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
+    // Со-основателю не отдаём dev-проекты, добавленные с 1 августа.
+    return this.scopeProjects(rows, role);
+  }
   async createProject(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Название обязательно');
     const direction = ['smm', 'development', 'design', 'maintenance'].includes(dto.direction) ? dto.direction : 'smm';
