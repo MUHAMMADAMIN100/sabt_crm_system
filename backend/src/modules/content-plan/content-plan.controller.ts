@@ -49,6 +49,14 @@ export class ContentPlanController {
     return this.service.getPlanFactByProject(projectId);
   }
 
+  /** Календарь производства SMM за месяц: публикации + съёмки (раздел СММ).
+   *  Только руководящие роли. Объявлено ДО ':id', иначе перехватит вайлдкард. */
+  @Get('smm-calendar')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
+  smmCalendar(@Query('month') month?: string, @Query('projectId') projectId?: string) {
+    return this.service.smmCalendar(month, projectId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 

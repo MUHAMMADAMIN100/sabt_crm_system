@@ -8,6 +8,7 @@ import {
   ContentItemType,
 } from './content-plan-item.entity';
 import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
+import { Project } from '../projects/project.entity';
 import { AppGateway } from '../gateway/app.gateway';
 
 export interface ContentPlanFilters {
@@ -260,5 +261,72 @@ export class ContentPlanService {
       cancelled: Number(r.cancelled),
       remaining: Math.max(0, Number(r.planned) - Number(r.published) - Number(r.cancelled)),
     }));
+  }
+
+  /** Текущий месяц по бизнес-зоне (Душанбе), формат YYYY-MM. */
+  private currentYm(): string {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dushanbe' }).slice(0, 7);
+  }
+
+  /**
+   * Календарь производства SMM за месяц: что и когда ПУБЛИКОВАТЬ (из контент-
+   * плана, по publishDate) и что и когда СНИМАТЬ (из shoot_sessions, по date).
+   * Фокус на проектах руководителя, без KPI. Готовность/цвет считает фронт.
+   */
+  async smmCalendar(ym?: string, projectId?: string) {
+    const month = ym && /^\d{4}-\d{2}$/.test(ym) ? ym : this.currentYm();
+
+    const projectRepo = this.repo.manager.getRepository(Project);
+    const all = await projectRepo.find({ where: { projectType: 'SMM' } });
+    const active = all.filter(p => String(p.status) !== 'archived');
+    const nameById = new Map(active.map(p => [p.id, p.name] as const));
+    // Список для фильтра — всегда все SMM-проекты; события фильтруем по projectId.
+    const projects = active
+      .map(p => ({ id: p.id, name: p.name }))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
+    const ids = (projectId ? active.filter(p => p.id === projectId) : active).map(p => p.id);
+    if (!ids.length) return { month, events: [], projects };
+
+    // Публикации — из контент-плана.
+    const pubs: any[] = await this.repo.manager.query(
+      `SELECT c.id, c."projectId" AS "projectId", c."contentType" AS "contentType",
+              c.topic, c.status, to_char(c."publishDate"::date, 'YYYY-MM-DD') AS date,
+              u.name AS "assigneeName"
+       FROM content_plan_items c
+       LEFT JOIN users u ON u.id = c."assigneeId"
+       WHERE c."publishDate" IS NOT NULL
+         AND c."projectId" = ANY($1::uuid[])
+         AND to_char(c."publishDate", 'YYYY-MM') = $2
+       ORDER BY c."publishDate" ASC`,
+      [ids, month],
+    ).catch((e: any) => { this.logger.warn(`smmCalendar pubs failed: ${e?.message || e}`); return []; });
+
+    // Съёмки — из shoot_sessions.
+    const shoots: any[] = await this.repo.manager.query(
+      `SELECT s.id, s."projectId" AS "projectId", s.title, s.time, s.location, s.note,
+              to_char(s.date::date, 'YYYY-MM-DD') AS date
+       FROM shoot_sessions s
+       WHERE s.date IS NOT NULL
+         AND s."projectId" = ANY($1::uuid[])
+         AND to_char(s.date::date, 'YYYY-MM') = $2
+       ORDER BY s.date ASC`,
+      [ids, month],
+    ).catch((e: any) => { this.logger.warn(`smmCalendar shoots failed: ${e?.message || e}`); return []; });
+
+    const events = [
+      ...shoots.map(s => ({
+        id: `shoot:${s.id}`, kind: 'shoot', date: s.date,
+        projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
+        title: s.title || 'Съёмка', time: s.time || null, location: s.location || null, note: s.note || null,
+      })),
+      ...pubs.map(p => ({
+        id: `pub:${p.id}`, kind: 'publication', date: p.date,
+        projectId: p.projectId, projectName: nameById.get(p.projectId) || '',
+        contentType: p.contentType, topic: p.topic || null, status: p.status,
+        assigneeName: p.assigneeName || null,
+      })),
+    ];
+
+    return { month, events, projects };
   }
 }
