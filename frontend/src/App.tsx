@@ -72,6 +72,7 @@ const OnboardingPage    = lazy(() => import('@/pages/onboarding/OnboardingPage')
 const TariffsPage       = lazy(() => import('@/pages/tariffs/TariffsPage'))
 const RisksPage         = lazy(() => import('@/pages/risks/RisksPage'))
 const SecurityLogPage   = lazy(() => import('@/pages/security/SecurityLogPage'))
+const TeamActivityPage  = lazy(() => import('@/pages/team-activity/TeamActivityPage'))
 // Fin System · WebRand — финансовый раздел (Обзор/Доход/Расход/Транзакции/Настройки)
 const FinanceOverviewPage     = lazy(() => import('@/pages/finance/FinanceOverviewPage'))
 const FinanceIncomePage       = lazy(() => import('@/pages/finance/FinanceIncomePage'))
@@ -167,6 +168,7 @@ export default function App() {
           <Route path="tariffs" element={<RoleGuard><TariffsPage /></RoleGuard>} />
           <Route path="risks" element={<RoleGuard><RisksPage /></RoleGuard>} />
           <Route path="security-log" element={<RoleGuard><SecurityLogPage /></RoleGuard>} />
+          <Route path="team-activity" element={<RoleGuard><TeamActivityPage /></RoleGuard>} />
           <Route path="finance" element={<RoleGuard><FinanceOverviewPage /></RoleGuard>} />
           <Route path="finance/income" element={<RoleGuard><FinanceIncomePage /></RoleGuard>} />
           <Route path="finance/income/:direction" element={<RoleGuard><FinanceIncomeGroupPage /></RoleGuard>} />

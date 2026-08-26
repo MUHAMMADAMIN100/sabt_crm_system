@@ -11,6 +11,26 @@ import { ActivityAction } from './activity-log.entity';
 export class ActivityLogController {
   constructor(private service: ActivityLogService) {}
 
+  /** Единая лента активности команды — только для основателя/админа
+   *  (сооснователь эту страницу мониторинга не видит). */
+  @Get('team')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  teamFeed(
+    @Query('userId') userId?: string,
+    @Query('from')   from?: string,
+    @Query('to')     to?: string,
+    @Query('limit')  limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.service.teamFeed({
+      userId,
+      from,
+      to,
+      limit:  limit  ? +limit  : 40,
+      offset: offset ? +offset : 0,
+    });
+  }
+
   @Get()
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
   findAll(

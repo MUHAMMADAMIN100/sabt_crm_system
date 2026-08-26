@@ -92,6 +92,7 @@ export type Permission =
   | 'finance.manage'
   | 'teams.manage'
   | 'security-log.view'
+  | 'team-activity.view'
 
 const PERMISSIONS: Record<UserRole, Permission[]> = {
   admin: [
@@ -106,6 +107,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'clients.view', 'security-log.view', 'organizer.directory',
+    'team-activity.view',
   ],
   founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -119,6 +121,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
+    'team-activity.view',
   ],
   co_founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -435,6 +438,7 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
   'finance.manage': '/finance',
   'teams.manage': '/teams',
   'security-log.view': '/security-log',
+  'team-activity.view': '/team-activity',
 }
 
 /** Роли, видящие глобальную «Доску проектов» — SMM-производство +
@@ -500,6 +504,9 @@ export function canAccessRoute(
   if (route === '/smm-daily') return canSeeSmmDaily(role)
   // «СММ» — раздел-заглушка, пока только у основателя/со-основателя.
   if (route === '/smm') return role === 'founder' || role === 'co_founder'
+  // «Активность команды» — мониторинг для основателя/админа. Сооснователь
+  // (за которым в т.ч. и следят) эту страницу не видит.
+  if (route === '/team-activity') return role === 'founder' || role === 'admin'
   // Финансы и все подстраницы — по гранту finance.manage.
   if (route === '/finance' || route.startsWith('/finance/')) return userCan(u, 'finance.manage')
   // Справочники организатора съёмок (клиенты/модели/места).

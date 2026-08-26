@@ -10,6 +10,7 @@ import {
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
   Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal, MoreHorizontal,
   Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck, LineChart, Megaphone,
+  Activity,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -82,6 +83,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     { to: '/tariffs',       icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/risks',         icon: ShieldAlert,     label: 'Риски',             permission: 'risks.view' },
     { to: '/security-log',  icon: Shield,          label: 'Журнал безопасности', permission: 'security-log.view' },
+    { to: '/team-activity', icon: Activity,        label: 'Активность команды', permission: 'team-activity.view' },
     { to: '/ai',            icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]
 

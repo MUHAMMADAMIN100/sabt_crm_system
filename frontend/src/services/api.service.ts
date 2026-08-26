@@ -326,6 +326,9 @@ export const aiApi = {
 export const activityLogApi = {
   list: (params?: { userId?: string; entity?: string; entityId?: string; limit?: number }) =>
     api.get('/activity-log', { params }).then(r => r.data),
+  // Единая лента активности команды (общий журнал + финансы) — для основателя.
+  team: (params?: { userId?: string; from?: string; to?: string; limit?: number; offset?: number }) =>
+    api.get('/activity-log/team', { params }).then(r => r.data),
 }
 
 // ─── SMM Tariffs (Wave 1) ────────────────────────────────
