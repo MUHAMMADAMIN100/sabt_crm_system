@@ -1426,14 +1426,38 @@ export class FinanceService implements OnModuleInit {
 
   private sum(arr: FinanceTransaction[]) { return r2(arr.reduce((s, t) => s + Number(t.amount), 0)); }
 
+  // ─── Ограничение доступа уволенного со-основателя ────────────────
+  // Со-основатель (co_founder) ушёл из компании: ему НЕ показываем доход по
+  // направлению Development с 1 августа 2026 — ни как операции, ни в итогах/
+  // сводках/прогнозе. Для всех остальных ролей данные без изменений.
+  private static readonly COFOUNDER_DEV_INCOME_FROM = '2026-08-01';
+  private hidesDevIncome(role?: string): boolean { return role === 'co_founder'; }
+  /** Убрать операции дохода по Development с 1 августа (для co_founder). */
+  private scopeIncomeTx(txs: FinanceTransaction[], m: FinMaps, role?: string): FinanceTransaction[] {
+    if (!this.hidesDevIncome(role)) return txs;
+    const from = FinanceService.COFOUNDER_DEV_INCOME_FROM;
+    return txs.filter(t => !(t.type === FinanceTxType.INCOME && t.projectId
+      && m.proj.get(t.projectId)?.direction === 'development' && String(t.date || '') >= from));
+  }
+  /** Убрать план-платежи по Development с 1 августа (для co_founder). */
+  private scopePlanned(planned: FinancePlannedPayment[], m: FinMaps, role?: string): FinancePlannedPayment[] {
+    if (!this.hidesDevIncome(role)) return planned;
+    const from = FinanceService.COFOUNDER_DEV_INCOME_FROM;
+    const fromYm = from.slice(0, 7);
+    return planned.filter(p => !(p.projectId && m.proj.get(p.projectId)?.direction === 'development'
+      && (p.dueDate ? String(p.dueDate) >= from : (p.ym || '') >= fromYm)));
+  }
+
   // ─── ОБЗОР ───────────────────────────────────────────────────────
-  async overview(ym: string) {
+  async overview(ym: string, role?: string) {
     const { from, to } = monthRange(ym);
     const m = await this.maps();
     const allTx = this.active(await this.txRepo.find());
     const balanceTx = this.postedAsOf(allTx);
-    const monthTx = allTx.filter(t => t.date >= from && t.date <= to);
-    const planned = await this.ppRepo.find();
+    // Доход по Development с 1 августа скрыт для уволенного со-основателя.
+    const scopedTx = this.scopeIncomeTx(allTx, m, role);
+    const monthTx = scopedTx.filter(t => t.date >= from && t.date <= to);
+    const planned = this.scopePlanned(await this.ppRepo.find(), m, role);
     const subs = await this.subRepo.find();
 
     const monthIncome = monthTx.filter(t => t.type === FinanceTxType.INCOME);
@@ -1460,9 +1484,12 @@ export class FinanceService implements OnModuleInit {
     // План/факт дохода по направлениям (пауза и лиды — вне денег).
     const dirs = ['smm', 'development', 'design', 'maintenance'];
     const earningProjectIds = new Set(m.projects.filter(isEarning).map(p => p.id));
+    // Development-доход у со-основателя «как будто 0» с 1 августа: и факт (через
+    // scopedTx), и план (тариф) прячем за месяцы от августа.
+    const hideDevPlan = this.hidesDevIncome(role) && ym >= FinanceService.COFOUNDER_DEV_INCOME_FROM.slice(0, 7);
     const incomePlan = dirs.map(dir => {
       const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
-      const plan = r2(projs.reduce((s, p) => s + Number(p.tariff), 0));
+      const plan = (hideDevPlan && dir === 'development') ? 0 : r2(projs.reduce((s, p) => s + Number(p.tariff), 0));
       const fact = this.sum(monthIncome.filter(t => this.directionOf(t, m) === dir));
       return { direction: dir, plan, fact };
     });
@@ -1628,7 +1655,7 @@ export class FinanceService implements OnModuleInit {
    *  kind='group' (id=salary|rent_subs|debts|other — статьи расхода),
    *  kind='direction' (id=smm|development|design|maintenance — направления дохода).
    *  Считается по РЕАЛЬНЫМ операциям месяца (как карточки), деньги не трогаем. */
-  async breakdown(ym: string, kind: string, id: string, txType?: string) {
+  async breakdown(ym: string, kind: string, id: string, txType?: string, role?: string) {
     const { from, to } = monthRange(ym);
     const m = await this.maps();
     const agg = new Map<string, number>();
@@ -1639,9 +1666,9 @@ export class FinanceService implements OnModuleInit {
     // считать ТАК ЖЕ, иначе сумма окна разойдётся с числом карточки (поздняя
     // оплата в другом месяце, доход по проекту на паузе, доход без плана).
     if (kind === 'direction') {
-      const actualIncome = this.active(await this.txRepo.find({
+      const actualIncome = this.scopeIncomeTx(this.active(await this.txRepo.find({
         where: { date: Between(from, to), type: FinanceTxType.INCOME } as any,
-      }));
+      })), m, role);
       let count = 0;
       for (const tx of actualIncome) {
         // Историческая строка Notion не привязывается к живому проекту:
@@ -1658,7 +1685,7 @@ export class FinanceService implements OnModuleInit {
 
     // Категория / статья расхода — по РЕАЛЬНЫМ операциям месяца (совпадает
     // с суммами карточек, которые тоже по операциям и дате).
-    const all = this.active(await this.txRepo.find({ where: { date: Between(from, to) } as any }));
+    const all = this.scopeIncomeTx(this.active(await this.txRepo.find({ where: { date: Between(from, to) } as any })), m, role);
     let txs: FinanceTransaction[] = [];
     let salaryMode = false;
     if (kind === 'category') {
@@ -1704,13 +1731,15 @@ export class FinanceService implements OnModuleInit {
   }
 
   // ─── ДОХОД: направления и детализация ────────────────────────────
-  async incomeDirections(ym: string) {
+  async incomeDirections(ym: string, role?: string) {
     const m = await this.maps();
-    const planned = await this.ppRepo.find();
+    const planned = this.scopePlanned(await this.ppRepo.find(), m, role);
     const { from, to } = monthRange(ym);
-    const actualIncome = this.active(await this.txRepo.find({
+    const actualIncome = this.scopeIncomeTx(this.active(await this.txRepo.find({
       where: { type: FinanceTxType.INCOME, date: Between(from, to) } as any,
-    }));
+    })), m, role);
+    // Development-доход у со-основателя «как будто 0» с 1 августа.
+    const hideDevPlan = this.hidesDevIncome(role) && ym >= FinanceService.COFOUNDER_DEV_INCOME_FROM.slice(0, 7);
     const dirs = ['smm', 'development', 'design', 'maintenance'];
     return dirs.map(dir => {
       const projs = m.projects.filter(p => p.direction === dir && isEarning(p));
@@ -1721,7 +1750,7 @@ export class FinanceService implements OnModuleInit {
       const paused = m.projects.filter(p => p.direction === dir && !p.archived && p.status === 'paused');
       return {
         direction: dir, received,
-        plan: r2(projs.reduce((s, p) => s + Number(p.tariff), 0)),
+        plan: (hideDevPlan && dir === 'development') ? 0 : r2(projs.reduce((s, p) => s + Number(p.tariff), 0)),
         projectCount: projs.length, expected,
         pausedCount: paused.length,
         pausedTariff: r2(paused.reduce((s, p) => s + Number(p.tariff), 0)),
@@ -1729,9 +1758,10 @@ export class FinanceService implements OnModuleInit {
     });
   }
 
-  async incomeDirectionDetail(direction: string, ym: string, start?: string) {
+  async incomeDirectionDetail(direction: string, ym: string, start?: string, role?: string) {
     const m = await this.maps();
-    const planned = await this.ppRepo.find();
+    // Development-план у со-основателя с 1 августа скрыт (см. scopePlanned).
+    const planned = this.scopePlanned(await this.ppRepo.find(), m, role);
     const today = todayISO();
 
     if (direction === 'smm') {
@@ -2265,16 +2295,24 @@ export class FinanceService implements OnModuleInit {
   }
 
   // ─── ФИНАНСОВОЕ ПЛАНИРОВАНИЕ ─────────────────────────────────────
-  async forecast(start = currentYm(), months = 12, scenario = 'base') {
+  async forecast(start = currentYm(), months = 12, scenario = 'base', role?: string) {
     if (!YM_RE.test(start)) start = currentYm();
     months = Math.min(24, Math.max(3, Number(months) || 12));
     if (!['base', 'conservative', 'optimistic'].includes(scenario)) scenario = 'base';
     const yms = Array.from({ length: months }, (_, i) => shiftYm(start, i));
-    const [balances, projects, employees, subscriptions, debts, plans, allTx, adjustments, categories] = await Promise.all([
+    let [balances, projects, employees, subscriptions, debts, plans, allTx, adjustments, categories] = await Promise.all([
       this.accountsBalances(), this.projRepo.find(), this.empRepo.find(), this.subRepo.find(),
       this.debtRepo.find(), this.ppRepo.find(), this.txRepo.find(), this.forecastAdjRepo.find({ order: { createdAt: 'DESC' } }),
       this.catRepo.find(),
     ]);
+    // Со-основатель не видит доход по Development с 1 августа — режем операции и планы.
+    if (this.hidesDevIncome(role)) {
+      const from = FinanceService.COFOUNDER_DEV_INCOME_FROM;
+      const fromYm = from.slice(0, 7);
+      const devIds = new Set(projects.filter(p => p.direction === 'development').map(p => p.id));
+      allTx = allTx.filter(t => !(t.type === FinanceTxType.INCOME && t.projectId && devIds.has(t.projectId) && String(t.date || '') >= from));
+      plans = plans.filter(p => !(p.projectId && devIds.has(p.projectId) && (p.dueDate ? String(p.dueDate) >= from : (p.ym || '') >= fromYm)));
+    }
     const postedTxs = this.posted(allTx);
     const availableFrom = postedTxs.length
       ? postedTxs.reduce(
@@ -2546,6 +2584,7 @@ export class FinanceService implements OnModuleInit {
     to?: string;
     status?: string;
     projectId?: string;
+    viewerRole?: string;
     page?: number;
     pageSize?: number;
   } = {}) {
@@ -2564,6 +2603,14 @@ export class FinanceService implements OnModuleInit {
     if (f.from) qb.andWhere('t.date >= :from', { from: f.from });
     if (f.to) qb.andWhere('t.date <= :to', { to: f.to });
     if (f.search) qb.andWhere('(t.comment ILIKE :s OR t.category ILIKE :s)', { s: `%${f.search}%` });
+    // Уволенный со-основатель не видит операции дохода по Development с 1 августа.
+    if (this.hidesDevIncome(f.viewerRole)) {
+      const devIds = [...m.proj.values()].filter((p: any) => p.direction === 'development').map((p: any) => p.id);
+      if (devIds.length) {
+        qb.andWhere('NOT (t.type = :cofInc AND t."projectId" IN (:...cofDev) AND t.date >= :cofFrom)',
+          { cofInc: FinanceTxType.INCOME, cofDev: devIds, cofFrom: FinanceService.COFOUNDER_DEV_INCOME_FROM });
+      }
+    }
     qb.orderBy('t.date', 'DESC').addOrderBy('t.createdAt', 'DESC');
 
     const page = Math.max(1, f.page ?? 1);
@@ -2992,12 +3039,19 @@ export class FinanceService implements OnModuleInit {
   }
 
   // ─── ПЛАНОВЫЕ ОПЛАТЫ ─────────────────────────────────────────────
-  async listPlannedPayments(f: { projectId?: string; debtId?: string; ym?: string } = {}) {
+  async listPlannedPayments(f: { projectId?: string; debtId?: string; ym?: string; viewerRole?: string } = {}) {
     const where: any = {};
     if (f.projectId) where.projectId = f.projectId;
     if (f.debtId) where.debtId = f.debtId;
     if (f.ym) where.ym = f.ym;
-    const rows = await this.ppRepo.find({ where, order: { ym: 'ASC', partNo: 'ASC' } });
+    let rows = await this.ppRepo.find({ where, order: { ym: 'ASC', partNo: 'ASC' } });
+    // Со-основатель не видит план дохода по Development с 1 августа.
+    if (this.hidesDevIncome(f.viewerRole)) {
+      const from = FinanceService.COFOUNDER_DEV_INCOME_FROM;
+      const fromYm = from.slice(0, 7);
+      const devIds = new Set((await this.projRepo.find({ where: { direction: 'development' } as any })).map(p => p.id));
+      rows = rows.filter(p => !(p.projectId && devIds.has(p.projectId) && (p.dueDate ? String(p.dueDate) >= from : (p.ym || '') >= fromYm)));
+    }
     return rows.map(p => ({ ...p, amount: Number(p.amount) }));
   }
 

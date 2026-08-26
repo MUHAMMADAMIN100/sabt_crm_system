@@ -59,14 +59,14 @@ export class FinanceController {
 
   // ─── Дашборды / расчёты ──────────────────────────────────────────
   @Get('overview')
-  overview(@Query('ym') ym: string) { return this.service.overview(ym || currentYm()); }
+  overview(@Query('ym') ym: string, @Request() req) { return this.service.overview(ym || currentYm(), req.user?.role); }
 
   @Get('income/directions')
-  incomeDirections(@Query('ym') ym: string) { return this.service.incomeDirections(ym || currentYm()); }
+  incomeDirections(@Query('ym') ym: string, @Request() req) { return this.service.incomeDirections(ym || currentYm(), req.user?.role); }
 
   @Get('income/directions/:direction')
-  incomeDirectionDetail(@Param('direction') direction: string, @Query('ym') ym: string, @Query('start') start?: string) {
-    return this.service.incomeDirectionDetail(direction, ym || currentYm(), start);
+  incomeDirectionDetail(@Param('direction') direction: string, @Query('ym') ym: string, @Request() req, @Query('start') start?: string) {
+    return this.service.incomeDirectionDetail(direction, ym || currentYm(), start, req.user?.role);
   }
 
   @Get('expense/summary')
@@ -81,8 +81,8 @@ export class FinanceController {
   accountsBalances() { return this.service.accountsBalances(); }
 
   @Get('forecast')
-  forecast(@Query('start') start?: string, @Query('months') months?: string, @Query('scenario') scenario?: string) {
-    return this.service.forecast(start || currentYm(), Number(months) || 12, scenario || 'base');
+  forecast(@Request() req, @Query('start') start?: string, @Query('months') months?: string, @Query('scenario') scenario?: string) {
+    return this.service.forecast(start || currentYm(), Number(months) || 12, scenario || 'base', req.user?.role);
   }
   @Get('forecast/adjustments')
   forecastAdjustments() { return this.service.listForecastAdjustments(); }
@@ -96,15 +96,17 @@ export class FinanceController {
   /** Разбивка карточки по под-типам (мини-окно при наведении на категорию). */
   @Get('breakdown')
   breakdown(
+    @Request() req,
     @Query('ym') ym: string, @Query('kind') kind: string,
     @Query('id') id?: string, @Query('txType') txType?: string,
   ) {
-    return this.service.breakdown(ym || currentYm(), kind || 'category', id || '', txType);
+    return this.service.breakdown(ym || currentYm(), kind || 'category', id || '', txType, req.user?.role);
   }
 
   // ─── Транзакции ──────────────────────────────────────────────────
   @Get('transactions')
   transactions(
+    @Request() req,
     @Query('type') type?: string, @Query('search') search?: string,
     @Query('from') from?: string, @Query('to') to?: string,
     @Query('status') status?: string,
@@ -112,7 +114,7 @@ export class FinanceController {
     @Query('page') page?: string, @Query('pageSize') pageSize?: string,
   ) {
     return this.service.listTransactions({
-      type, search, from, to, status, projectId,
+      type, search, from, to, status, projectId, viewerRole: req.user?.role,
       page: page ? parseInt(page, 10) || 1 : 1,
       pageSize: pageSize ? parseInt(pageSize, 10) || 100 : 100,
     });
@@ -133,8 +135,8 @@ export class FinanceController {
 
   // ─── Плановые оплаты (SMM части, матрицы Dev/Design, график долгов) ──
   @Get('planned-payments')
-  listPlanned(@Query('projectId') projectId?: string, @Query('debtId') debtId?: string, @Query('ym') ym?: string) {
-    return this.service.listPlannedPayments({ projectId, debtId, ym });
+  listPlanned(@Request() req, @Query('projectId') projectId?: string, @Query('debtId') debtId?: string, @Query('ym') ym?: string) {
+    return this.service.listPlannedPayments({ projectId, debtId, ym, viewerRole: req.user?.role });
   }
   @Post('planned-payments')
   createPlanned(@Body() dto: CreatePlannedPaymentDto) { return this.service.createPlannedPayment(dto); }
