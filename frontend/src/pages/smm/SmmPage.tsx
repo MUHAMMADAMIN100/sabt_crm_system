@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, Loader2, Camera, X, Check, RotateCcw, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi, workflowApi, tasksApi } from '@/services/api.service'
 
@@ -25,16 +25,23 @@ type CalData = { from: string; to: string; events: Ev[]; projects: { id: string;
 type View = 'month' | 'week' | 'day' | 'stories'
 
 // ─── мягкая палитра (Notion-стиль), адаптивная к теме ─────────────────
-const PUB_CLS = 'bg-[#e7f1eb] text-[#3f7a58] dark:bg-[#2c3a31] dark:text-[#8fbb9f]'
-const SHOOT_CLS = 'bg-[#f4ecdb] text-[#8a6a2e] dark:bg-[#3a3324] dark:text-[#c2a877]'
+// Иконка по типу контента — тип виден сразу, без чтения текста.
+const TYPE_ICON: Record<string, any> = {
+  reel: Film, video: Film, design: ImageIcon, story: Circle,
+  post: AlignLeft, ad: AlignLeft, carousel: ImageIcon, other: AlignLeft,
+}
 
-// Цвет проекта — полоска слева у события и точка на чипе-фильтре. Стабильный
-// по projectId, средние тона читаются и в тёмной, и в светлой теме.
+// Цвет проекта — стабильный по projectId; средние тона читаются в обеих темах.
 const PROJ_COLORS = ['#4fb3ac', '#7d8bea', '#d06e90', '#cf9f52', '#5fbd80', '#5aa9d8', '#c07be0', '#e0865a', '#d0b24f', '#8a97a6', '#6ac0a0', '#e07aa8']
 function projColor(id: string): string {
   let h = 0
   for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0
   return PROJ_COLORS[h % PROJ_COLORS.length]
+}
+// Мягкая заливка пилюли в цвет проекта (тон проступает над фоном страницы).
+function projFill(id: string): { background: string; color: string } {
+  const c = projColor(id)
+  return { background: `color-mix(in srgb, ${c} 16%, transparent)`, color: c }
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -112,6 +119,7 @@ export default function SmmPage() {
   const [cursor, setCursor] = useState(new Date())
   const [projectId, setProjectId] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState('')
+  const [filterOpen, setFilterOpen] = useState(false)
 
   const { from, to } = useMemo(() => {
     if (view === 'week') return { from: iso(startOfWeek(cursor, { weekStartsOn: 1 })), to: iso(endOfWeek(cursor, { weekStartsOn: 1 })) }
@@ -260,10 +268,33 @@ export default function SmmPage() {
             className="bg-transparent text-[13px] outline-none w-28 placeholder:text-gray-400" />
           {search && <button onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-600"><X size={12} /></button>}
         </div>
-        <FChip active={!projectId} onClick={() => setProjectId(undefined)}>Все проекты</FChip>
-        {projects.map(p => (
-          <FChip key={p.id} active={projectId === p.id} onClick={() => setProjectId(p.id)} dot={projColor(p.id)}>{p.name}</FChip>
-        ))}
+        <div className="relative">
+          <button onClick={() => setFilterOpen(o => !o)}
+            className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300">
+            {projectId && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: projColor(projectId) }} />}
+            {projects.find(p => p.id === projectId)?.name || 'Все проекты'}
+            <ChevronDown size={14} className="text-gray-400" />
+          </button>
+          {filterOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setFilterOpen(false)} />
+              <div className="absolute left-0 top-full mt-1 z-40 w-56 max-h-72 overflow-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg p-1">
+                <button onClick={() => { setProjectId(undefined); setFilterOpen(false) }}
+                  className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (!projectId ? 'font-semibold' : '')}>
+                  Все проекты {!projectId && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
+                </button>
+                {projects.map(p => (
+                  <button key={p.id} onClick={() => { setProjectId(p.id); setFilterOpen(false) }}
+                    className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (projectId === p.id ? 'font-semibold' : '')}>
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: projColor(p.id) }} />
+                    <span className="truncate">{p.name}</span>
+                    {projectId === p.id && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -319,7 +350,7 @@ function MonthView({ cells, byDate, today, onOpen, onDragStart, onDropDate, drag
               className={'min-h-[112px] border-b border-r border-gray-100 dark:border-gray-800/80 p-1 flex flex-col gap-0.5 '
                 + ((i + 1) % 7 === 0 ? 'border-r-0 ' : '')
                 + (c.iso && dragOverKey === c.iso ? 'ring-1 ring-inset ring-gray-400 ' : '')
-                + (c.inMonth ? '' : 'bg-gray-50/40 dark:bg-black/20')}>
+                + (!c.inMonth ? 'bg-gray-50/40 dark:bg-black/20' : isToday ? 'bg-[#eb5757]/[0.06]' : (i % 7 >= 5 ? 'bg-gray-50/50 dark:bg-white/[0.015]' : ''))}>
               <span className={'text-[12px] font-semibold self-end px-1 ' + (isToday ? 'bg-[#eb5757] text-white rounded-full w-[20px] h-[20px] grid place-items-center' : c.inMonth ? 'text-gray-500 dark:text-gray-400' : 'text-gray-300 dark:text-gray-600')}>{c.label}</span>
               {evs.slice(0, MAX_PER_DAY).map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
               {evs.length > MAX_PER_DAY && <span className="text-[11px] text-gray-400 px-1">+{evs.length - MAX_PER_DAY}</span>}
@@ -405,8 +436,8 @@ function TimeGridView({ days, events, onOpen, onDragStart, onDropDate, dragOverK
                       const mm = parseTime(s.time)!.m
                       return (
                         <div key={s.id} onClick={() => onOpen(s)} draggable={!!s.shootId} onDragStart={() => onDragStart(s)}
-                          className={'absolute left-0.5 right-0.5 rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] ' + SHOOT_CLS}
-                          style={{ top: (mm / 60) * HOUR_PX, height: HOUR_PX * 1.4, borderLeft: `3px solid ${projColor(s.projectId)}` }}>
+                          className="absolute left-0.5 right-0.5 rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
+                          style={{ top: (mm / 60) * HOUR_PX, height: HOUR_PX * 1.4, ...projFill(s.projectId) }}>
                           <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
                           <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time}{s.location ? ` · ${s.location}` : ''}</div>
                         </div>
@@ -461,27 +492,20 @@ function StoriesTab({ projects, cells, byProject, today, monthLabel, activeId, o
 function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void; onDragStart?: (e: Ev) => void }) {
   const canDrag = e.kind === 'publication' ? !!e.itemId : !!e.shootId
   const grab = canDrag ? ' cursor-grab active:cursor-grabbing' : ' cursor-pointer'
-  if (e.kind === 'shoot') {
-    return (
-      <span onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
-            style={{ borderLeft: `3px solid ${projColor(e.projectId)}` }}
-            className={'flex items-center gap-1 rounded-md pl-1.5 pr-1.5 py-[3px] text-[11.5px] font-medium truncate ' + SHOOT_CLS + grab}
-            title={`Съёмка · ${e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`}>
-        <Camera size={11} className="shrink-0" />
-        {e.time && <span className="font-semibold shrink-0">{e.time}</span>}
-        <span className="truncate">{e.projectName || e.title}</span>
-      </span>
-    )
-  }
   const type = e.contentType || 'other'
-  const done = isDone(e)
+  const Ic = e.kind === 'shoot' ? Camera : (TYPE_ICON[type] || AlignLeft)
+  const done = e.kind === 'publication' && isDone(e)
+  const label = e.kind === 'shoot' ? (e.projectName || e.title || 'Съёмка') : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`
   return (
     <span onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
-          style={{ borderLeft: `3px solid ${projColor(e.projectId)}` }}
-          className={'flex items-center gap-1 rounded-md pl-1.5 pr-1.5 py-[3px] text-[11.5px] font-medium truncate ' + PUB_CLS + (done ? ' opacity-45' : '') + grab}
-          title={`${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
-      {done && <Check size={11} className="shrink-0" />}
-      <span className="truncate">{TYPE_LABEL[type] || 'Контент'} · {e.projectName}</span>
+          style={projFill(e.projectId)}
+          className={'flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11.5px] font-medium truncate transition hover:brightness-110 ' + (done ? 'opacity-45 ' : '') + grab}
+          title={e.kind === 'shoot'
+            ? `Съёмка · ${e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`
+            : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
+      <Ic size={11} className="shrink-0" />
+      {e.kind === 'shoot' && e.time && <span className="font-semibold shrink-0">{e.time}</span>}
+      <span className="truncate">{label}</span>
     </span>
   )
 }
@@ -538,12 +562,13 @@ function EventModal({ e, onClose, onMark, marking }: { e: Ev; onClose: () => voi
   const isShoot = e.kind === 'shoot'
   const type = e.contentType || 'other'
   const done = isDone(e)
+  const Ic = isShoot ? Camera : (TYPE_ICON[type] || AlignLeft)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 mb-3">
-          <span className={'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold ' + (isShoot ? SHOOT_CLS : PUB_CLS)}>
-            {isShoot ? <><Camera size={12} /> Съёмка</> : (TYPE_LABEL[type] || 'Контент')}
+          <span style={projFill(e.projectId)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold">
+            <Ic size={12} /> {isShoot ? 'Съёмка' : (TYPE_LABEL[type] || 'Контент')}
           </span>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
@@ -587,20 +612,14 @@ function Row({ k, v }: { k: string; v: ReactNode }) {
 function MiniLegend() {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-gray-400 items-center mt-3">
-      <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-[#e7f1eb] dark:bg-[#2c3a31]" /> Публикация</span>
-      <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-[#f4ecdb] dark:bg-[#3a3324]" /> Съёмка</span>
-      <span className="inline-flex items-center gap-1.5"><span className="inline-flex items-center gap-1 opacity-45"><Check size={13} className="text-[#3f7a58] dark:text-[#8fbb9f]" /> сделано (бледно)</span> · обычное — не сделано</span>
+      <span className="inline-flex items-center gap-1.5"><Camera size={12} /> Съёмка</span>
+      <span className="inline-flex items-center gap-1.5"><Film size={12} /> Reel</span>
+      <span className="inline-flex items-center gap-1.5"><AlignLeft size={12} /> Пост</span>
+      <span className="inline-flex items-center gap-1.5"><ImageIcon size={12} /> Макет</span>
+      <span className="inline-flex items-center gap-1.5"><Circle size={12} /> Сторис</span>
+      <span className="w-px h-4 bg-gray-200 dark:bg-gray-700" />
+      <span>Цвет — проект · <span className="opacity-45">бледное — сделано</span></span>
     </div>
   )
 }
 
-function FChip({ children, active, onClick, dot }: { children: ReactNode; active?: boolean; onClick?: () => void; dot?: string }) {
-  return (
-    <button onClick={onClick}
-            className={'inline-flex items-center gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border transition '
-              + (active ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-transparent' : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}>
-      {dot && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: dot }} />}
-      {children}
-    </button>
-  )
-}
