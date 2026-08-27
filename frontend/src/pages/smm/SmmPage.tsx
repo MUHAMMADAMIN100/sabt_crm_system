@@ -467,7 +467,7 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const done = isDone(e)
   return (
     <span onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
-          className={'flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11.5px] font-medium truncate ' + PUB_CLS + (done ? '' : ' opacity-45') + grab}
+          className={'flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11.5px] font-medium truncate ' + PUB_CLS + (done ? ' opacity-45' : '') + grab}
           title={`${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
       {done && <Check size={11} className="shrink-0" />}
       <span className="truncate">{TYPE_LABEL[type] || 'Контент'} · {e.projectName}</span>
@@ -578,7 +578,7 @@ function MiniLegend() {
     <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-gray-400 items-center mt-3">
       <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-[#e7f1eb] dark:bg-[#2c3a31]" /> Публикация</span>
       <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-[#f4ecdb] dark:bg-[#3a3324]" /> Съёмка</span>
-      <span className="inline-flex items-center gap-1.5"><Check size={13} className="text-[#3f7a58] dark:text-[#8fbb9f]" /> сделано · <span className="opacity-45">бледное — не сделано</span></span>
+      <span className="inline-flex items-center gap-1.5"><span className="inline-flex items-center gap-1 opacity-45"><Check size={13} className="text-[#3f7a58] dark:text-[#8fbb9f]" /> сделано (бледно)</span> · обычное — не сделано</span>
     </div>
   )
 }
