@@ -288,7 +288,7 @@ export class ContentPlanService {
       .map(p => ({ id: p.id, name: p.name }))
       .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
     const ids = active.map(p => p.id);
-    if (!ids.length) return { from: f, to: t, events: [], projects };
+    if (!ids.length) return { from: f, to: t, events: [], projects, backlog: [] };
 
     // Публикации — из контент-плана. Джойним связанную задачу: «сделано» =
     // статус published ИЛИ задача выполнена (team чаще закрывает именно задачу).
@@ -333,6 +333,36 @@ export class ContentPlanService {
       })),
     ];
 
-    return { from: f, to: t, events, projects };
+    // «Не запланировано» — контент без даты публикации и съёмки без даты
+    // (их перетаскивают на календарь из панели сверху). Диапазон не важен.
+    const bpubs: any[] = await this.repo.manager.query(
+      `SELECT c.id, c."projectId" AS "projectId", c."contentType" AS "contentType", c.topic
+       FROM content_plan_items c
+       WHERE c."projectId" = ANY($1::uuid[]) AND c."publishDate" IS NULL AND c.status <> 'cancelled'
+       ORDER BY c."createdAt" ASC`,
+      [ids],
+    ).catch((e: any) => { this.logger.warn(`smmCalendar backlog pubs failed: ${e?.message || e}`); return []; });
+    const bshoots: any[] = await this.repo.manager.query(
+      `SELECT s.id, s."projectId" AS "projectId", s.title, s.location
+       FROM shoot_sessions s
+       WHERE s."projectId" = ANY($1::uuid[]) AND s.date IS NULL
+       ORDER BY s."createdAt" ASC`,
+      [ids],
+    ).catch((e: any) => { this.logger.warn(`smmCalendar backlog shoots failed: ${e?.message || e}`); return []; });
+
+    const backlog = [
+      ...bpubs.map(c => ({
+        id: `pub:${c.id}`, itemId: c.id, kind: 'publication',
+        projectId: c.projectId, projectName: nameById.get(c.projectId) || '',
+        contentType: c.contentType, topic: c.topic || null,
+      })),
+      ...bshoots.map(s => ({
+        id: `shoot:${s.id}`, shootId: s.id, kind: 'shoot',
+        projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
+        title: s.title || 'Съёмка', location: s.location || null,
+      })),
+    ];
+
+    return { from: f, to: t, events, projects, backlog };
   }
 }

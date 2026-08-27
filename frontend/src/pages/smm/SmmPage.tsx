@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi, workflowApi, tasksApi } from '@/services/api.service'
 
@@ -21,7 +21,7 @@ type Ev = {
 
 /** «Сделано» для публикации: опубликовано ИЛИ связанная задача выполнена. */
 const isDone = (e: Ev) => e.status === 'published' || e.taskStatus === 'done'
-type CalData = { from: string; to: string; events: Ev[]; projects: { id: string; name: string }[] }
+type CalData = { from: string; to: string; events: Ev[]; projects: { id: string; name: string }[]; backlog: Ev[] }
 type View = 'month' | 'week' | 'day' | 'stories'
 
 // ─── мягкая палитра (Notion-стиль), адаптивная к теме ─────────────────
@@ -135,6 +135,7 @@ export default function SmmPage() {
 
   const allEvents = data?.events ?? []
   const projects = data?.projects ?? []
+  const backlog = data?.backlog ?? []
   const today = todayIso()
 
   const qc = useQueryClient()
@@ -150,6 +151,7 @@ export default function SmmPage() {
 
   // Drag-перенос: оптимистичные оверрайды даты (чистятся, когда сервер догонит).
   const [moveOverrides, setMoveOverrides] = useState<Record<string, string>>({})
+  const [placedIds, setPlacedIds] = useState<Set<string>>(new Set())
   useEffect(() => {
     setMoveOverrides(prev => {
       if (!Object.keys(prev).length) return prev
@@ -158,6 +160,17 @@ export default function SmmPage() {
       return changed ? next : prev
     })
   }, [allEvents])
+  // Карточку из backlog скрываем оптимистично; убираем из placed, когда сервер
+  // её больше не отдаёт в backlog (значит дата проставилась).
+  useEffect(() => {
+    setPlacedIds(prev => {
+      if (!prev.size) return prev
+      const ids = new Set(backlog.map(b => b.id))
+      let changed = false; const next = new Set(prev)
+      for (const id of prev) if (!ids.has(id)) { next.delete(id); changed = true }
+      return changed ? next : prev
+    })
+  }, [backlog])
   const effEvents = useMemo(
     () => allEvents.map(e => (moveOverrides[e.id] ? { ...e, date: moveOverrides[e.id] } : e)),
     [allEvents, moveOverrides],
@@ -173,7 +186,8 @@ export default function SmmPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['smm-calendar'] }),
     onError: (_e, vars) => {
       setMoveOverrides(prev => { const n = { ...prev }; delete n[vars.ev.id]; return n })
-      toast.error('Не удалось перенести')
+      setPlacedIds(prev => { if (!prev.has(vars.ev.id)) return prev; const n = new Set(prev); n.delete(vars.ev.id); return n })
+      toast.error('Не удалось поставить дату')
     },
   })
   const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null) }
@@ -181,10 +195,17 @@ export default function SmmPage() {
     const e = dragRef.current
     dragRef.current = null
     setDragOverKey(null)
-    if (!e || e.date === dateStr) return
+    if (!e) return
     const refId = e.kind === 'publication' ? e.itemId : e.shootId
     if (!refId) return
-    setMoveOverrides(prev => ({ ...prev, [e.id]: dateStr }))
+    if (e.date) {
+      // Перенос существующего события календаря.
+      if (e.date === dateStr) return
+      setMoveOverrides(prev => ({ ...prev, [e.id]: dateStr }))
+    } else {
+      // Карточка из «Не запланировано» — прячем из панели оптимистично.
+      setPlacedIds(prev => new Set(prev).add(e.id))
+    }
     moveMut.mutate({ ev: e, dateStr })
   }
 
@@ -216,6 +237,16 @@ export default function SmmPage() {
     }
     return m
   }, [effEvents])
+
+  // «Не запланировано» по проектам (с учётом фильтра/поиска, минус уже брошенные).
+  const backlogGroups = useMemo(() => {
+    const filtered = backlog.filter(b => !placedIds.has(b.id) && (!projectId || b.projectId === projectId) && matchSearch(b, search))
+    const map = new Map<string, Ev[]>()
+    for (const b of filtered) { if (!map.has(b.projectId)) map.set(b.projectId, []); map.get(b.projectId)!.push(b) }
+    return [...map.entries()]
+      .map(([id, items]) => ({ id, name: items[0].projectName, items }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  }, [backlog, placedIds, projectId, search])
 
   const monthStr = format(cursor, 'yyyy-MM')
   const cells = useMemo(() => buildCells(monthStr), [monthStr])
@@ -302,19 +333,24 @@ export default function SmmPage() {
       ) : view === 'stories' ? (
         <StoriesTab projects={projects} cells={cells} byProject={byProject} today={today} monthLabel={monthTitle(monthStr)}
           activeId={projectId} onPick={id => setProjectId(projectId === id ? undefined : id)} fetching={isFetching} />
-      ) : view === 'month' ? (
-        <div className={'transition ' + (isFetching ? 'opacity-60' : '')}>
-          <MonthView cells={cells} byDate={mainByDate} today={today}
-            onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
-            dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
-          <MiniLegend />
-        </div>
       ) : (
-        <div className={'transition ' + (isFetching ? 'opacity-60' : '')}>
-          <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail}
-            onDragStart={onDragStartEv} onDropDate={onDropDate} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
-          <MiniLegend />
-        </div>
+        <>
+          {backlogGroups.length > 0 && <BacklogPanel groups={backlogGroups} onDragStart={onDragStartEv} />}
+          {view === 'month' ? (
+            <div className={'transition ' + (isFetching ? 'opacity-60' : '')}>
+              <MonthView cells={cells} byDate={mainByDate} today={today}
+                onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
+                dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
+              <MiniLegend />
+            </div>
+          ) : (
+            <div className={'transition ' + (isFetching ? 'opacity-60' : '')}>
+              <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail}
+                onDragStart={onDragStartEv} onDropDate={onDropDate} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
+              <MiniLegend />
+            </div>
+          )}
+        </>
       )}
 
       {detail && (
@@ -485,6 +521,49 @@ function StoriesTab({ projects, cells, byProject, today, monthLabel, activeId, o
         ))}
       </div>
     </div>
+  )
+}
+
+// ─── панель «Не запланировано» ─────────────────────────────────────────
+function BacklogPanel({ groups, onDragStart }: { groups: { id: string; name: string; items: Ev[] }[]; onDragStart: (e: Ev) => void }) {
+  return (
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/40 p-2.5">
+      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-2">
+        <Inbox size={13} /> Не запланировано — перетащите на дату
+      </div>
+      <div className="flex gap-2.5 overflow-x-auto pb-1">
+        {groups.map(g => {
+          const c = projColor(g.id)
+          return (
+            <div key={g.id} className="flex-none w-[184px] rounded-lg p-2"
+              style={{ border: `1px solid color-mix(in srgb, ${c} 40%, transparent)`, background: `color-mix(in srgb, ${c} 8%, transparent)` }}>
+              <div className="flex items-center gap-1.5 text-[12.5px] font-semibold mb-1.5" style={{ color: c }}>
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c }} />
+                <span className="truncate">{g.name}</span>
+                <span className="ml-auto text-[11px] text-gray-400 font-medium">{g.items.length}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {g.items.map(it => <BacklogCard key={it.id} e={it} onDragStart={onDragStart} />)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function BacklogCard({ e, onDragStart }: { e: Ev; onDragStart: (e: Ev) => void }) {
+  const type = e.contentType || 'other'
+  const Ic = e.kind === 'shoot' ? Camera : (TYPE_ICON[type] || AlignLeft)
+  const label = e.kind === 'shoot' ? 'Съёмка' : (TYPE_LABEL[type] || 'Контент')
+  return (
+    <span draggable onDragStart={() => onDragStart(e)}
+      style={projFill(e.projectId)}
+      className="inline-flex items-center gap-1 text-[11.5px] font-semibold px-2 py-1 rounded-md cursor-grab active:cursor-grabbing transition hover:brightness-110"
+      title={e.topic || e.title || label}>
+      <Ic size={11} className="shrink-0" /> {label}
+    </span>
   )
 }
 
