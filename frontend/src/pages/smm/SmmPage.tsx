@@ -28,6 +28,15 @@ type View = 'month' | 'week' | 'day' | 'stories'
 const PUB_CLS = 'bg-[#e7f1eb] text-[#3f7a58] dark:bg-[#2c3a31] dark:text-[#8fbb9f]'
 const SHOOT_CLS = 'bg-[#f4ecdb] text-[#8a6a2e] dark:bg-[#3a3324] dark:text-[#c2a877]'
 
+// Цвет проекта — полоска слева у события и точка на чипе-фильтре. Стабильный
+// по projectId, средние тона читаются и в тёмной, и в светлой теме.
+const PROJ_COLORS = ['#4fb3ac', '#7d8bea', '#d06e90', '#cf9f52', '#5fbd80', '#5aa9d8', '#c07be0', '#e0865a', '#d0b24f', '#8a97a6', '#6ac0a0', '#e07aa8']
+function projColor(id: string): string {
+  let h = 0
+  for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return PROJ_COLORS[h % PROJ_COLORS.length]
+}
+
 const TYPE_LABEL: Record<string, string> = {
   reel: 'Reel', story: 'Сторис', post: 'Пост', design: 'Макет',
   ad: 'Реклама', video: 'Видео', carousel: 'Карусель', other: 'Контент',
@@ -253,7 +262,7 @@ export default function SmmPage() {
         </div>
         <FChip active={!projectId} onClick={() => setProjectId(undefined)}>Все проекты</FChip>
         {projects.map(p => (
-          <FChip key={p.id} active={projectId === p.id} onClick={() => setProjectId(p.id)}>{p.name}</FChip>
+          <FChip key={p.id} active={projectId === p.id} onClick={() => setProjectId(p.id)} dot={projColor(p.id)}>{p.name}</FChip>
         ))}
       </div>
 
@@ -397,7 +406,7 @@ function TimeGridView({ days, events, onOpen, onDragStart, onDropDate, dragOverK
                       return (
                         <div key={s.id} onClick={() => onOpen(s)} draggable={!!s.shootId} onDragStart={() => onDragStart(s)}
                           className={'absolute left-0.5 right-0.5 rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] ' + SHOOT_CLS}
-                          style={{ top: (mm / 60) * HOUR_PX, height: HOUR_PX * 1.4 }}>
+                          style={{ top: (mm / 60) * HOUR_PX, height: HOUR_PX * 1.4, borderLeft: `3px solid ${projColor(s.projectId)}` }}>
                           <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
                           <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time}{s.location ? ` · ${s.location}` : ''}</div>
                         </div>
@@ -455,7 +464,8 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   if (e.kind === 'shoot') {
     return (
       <span onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
-            className={'flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11.5px] font-medium truncate ' + SHOOT_CLS + grab}
+            style={{ borderLeft: `3px solid ${projColor(e.projectId)}` }}
+            className={'flex items-center gap-1 rounded-md pl-1.5 pr-1.5 py-[3px] text-[11.5px] font-medium truncate ' + SHOOT_CLS + grab}
             title={`Съёмка · ${e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`}>
         <Camera size={11} className="shrink-0" />
         {e.time && <span className="font-semibold shrink-0">{e.time}</span>}
@@ -467,7 +477,8 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const done = isDone(e)
   return (
     <span onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
-          className={'flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11.5px] font-medium truncate ' + PUB_CLS + (done ? ' opacity-45' : '') + grab}
+          style={{ borderLeft: `3px solid ${projColor(e.projectId)}` }}
+          className={'flex items-center gap-1 rounded-md pl-1.5 pr-1.5 py-[3px] text-[11.5px] font-medium truncate ' + PUB_CLS + (done ? ' opacity-45' : '') + grab}
           title={`${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
       {done && <Check size={11} className="shrink-0" />}
       <span className="truncate">{TYPE_LABEL[type] || 'Контент'} · {e.projectName}</span>
@@ -583,11 +594,12 @@ function MiniLegend() {
   )
 }
 
-function FChip({ children, active, onClick }: { children: ReactNode; active?: boolean; onClick?: () => void }) {
+function FChip({ children, active, onClick, dot }: { children: ReactNode; active?: boolean; onClick?: () => void; dot?: string }) {
   return (
     <button onClick={onClick}
-            className={'text-[12.5px] font-medium px-3 py-1.5 rounded-full border transition '
+            className={'inline-flex items-center gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border transition '
               + (active ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-transparent' : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}>
+      {dot && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: dot }} />}
       {children}
     </button>
   )
