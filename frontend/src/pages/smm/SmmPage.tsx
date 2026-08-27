@@ -1,13 +1,13 @@
-// СММ — календарь производства. Виды Месяц / Неделя / День. Публикации 📤
-// (из контент-плана) и съёмки 📸 (из shoot_sessions). В неделя/день — почасовая
+// СММ — календарь производства. Виды Месяц / Неделя / День. Публикации
+// (из контент-плана) и съёмки (из shoot_sessions). В неделя/день — почасовая
 // сетка: съёмки на своём времени с местом, публикации «весь день», линия «сейчас».
-// Поиск по событиям. Клик по событию → окно с инфо и кнопкой статуса.
+// Статус публикации показываем яркостью: опубликовано — ярко, нет — бледно.
 import { useMemo, useState, Fragment, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, Megaphone, Loader2, Camera, Send, X, Check, RotateCcw, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Megaphone, Loader2, Camera, X, Check, RotateCcw, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi } from '@/services/api.service'
 
@@ -36,7 +36,6 @@ const TYPE_CLS: Record<string, string> = {
   other: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
 }
 const SHOOT_CLS = 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
-const DOT: Record<string, string> = { ok: 'bg-emerald-500', warn: 'bg-amber-500', late: 'bg-red-500', none: 'bg-gray-300 dark:bg-gray-600' }
 
 // ─── категории для точек (мини-календари) ─────────────────────────────
 type Cat = 'shoot' | 'reel' | 'design' | 'story' | 'post'
@@ -76,13 +75,6 @@ function matchSearch(e: Ev, q: string): boolean {
     .filter(Boolean).join(' ').toLowerCase()
   return hay.includes(q.toLowerCase())
 }
-function pubDot(e: Ev): 'ok' | 'warn' | 'late' | 'none' {
-  if (e.status === 'published' || e.status === 'approved') return 'ok'
-  if (e.status === 'cancelled') return 'none'
-  if (e.date < todayIso()) return 'late'
-  return 'warn'
-}
-
 type Cell = { label: number; inMonth: boolean; iso: string | null }
 function buildCells(ym: string): Cell[] {
   const [y, m] = ym.split('-').map(Number)
@@ -192,7 +184,7 @@ export default function SmmPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><Megaphone size={22} /> СММ</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Что и когда <b className="text-orange-600 dark:text-orange-400">📸 снимать</b> и что и когда <b className="text-blue-600 dark:text-blue-400">📤 публиковать</b> — по вашим проектам.
+            Что и когда <b className="text-orange-600 dark:text-orange-400">снимать</b> и что и когда <b className="text-blue-600 dark:text-blue-400">публиковать</b> — по вашим проектам.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -384,12 +376,12 @@ function TimeGridView({ days, events, onOpen, fetching }: { days: Date[]; events
 function Legend() {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-500 items-center">
-      <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-orange-500" /> 📸 Съёмка</span>
+      <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-orange-500" /> Съёмка</span>
       <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-pink-500" /> Reel</span>
       <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-violet-500" /> Макет</span>
       <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-500" /> Пост</span>
       <span className="w-px h-4 bg-gray-200 dark:bg-gray-700" />
-      <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> готово <span className="w-2.5 h-2.5 rounded-full bg-amber-500 ml-1" /> в работе <span className="w-2.5 h-2.5 rounded-full bg-red-500 ml-1" /> просрочено</span>
+      <span className="inline-flex items-center gap-1.5"><Check size={13} className="text-emerald-600 dark:text-emerald-400" /> опубликовано — ярко · <span className="opacity-50">не опубликовано — бледно</span></span>
       <span className="ml-auto text-gray-400">Сторис — точками в мини-календарях (в виде «Месяц»)</span>
     </div>
   )
@@ -408,14 +400,13 @@ function EventChip({ e, onOpen }: { e: Ev; onOpen?: (e: Ev) => void }) {
     )
   }
   const type = e.contentType || 'other'
-  const dot = pubDot(e)
+  const done = e.status === 'published'
   return (
     <span onClick={() => onOpen?.(e)}
-          className={'flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md truncate cursor-pointer ' + (TYPE_CLS[type] || TYPE_CLS.other)}
-          title={`${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${e.assigneeName ? ` · ${e.assigneeName}` : ''}`}>
-      <Send size={10} className="shrink-0" />
+          className={'flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md truncate cursor-pointer ' + (TYPE_CLS[type] || TYPE_CLS.other) + (done ? '' : ' opacity-50')}
+          title={`${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${e.assigneeName ? ` · ${e.assigneeName}` : ''}${done ? ' · опубликовано' : ''}`}>
+      {done && <Check size={11} className="shrink-0" />}
       <span className="truncate">{TYPE_LABEL[type] || 'Контент'} · {e.projectName}</span>
-      {dot !== 'none' && <span className={'w-1.5 h-1.5 rounded-full ml-auto shrink-0 ' + DOT[dot]} />}
     </span>
   )
 }
@@ -432,11 +423,11 @@ function MiniCalendar({ name, cells, dayMap, today, active, onClick }: {
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <span className="text-[13px] font-bold truncate">{name}</span>
         <span className="flex gap-1.5 text-[10px] font-bold tabular-nums shrink-0">
-          {counts.shoot > 0 && <span className="text-orange-500">📸{counts.shoot}</span>}
-          {counts.reel > 0 && <span className="text-pink-500">🎬{counts.reel}</span>}
-          {counts.design > 0 && <span className="text-violet-500">🎨{counts.design}</span>}
-          {counts.story > 0 && <span className="text-cyan-500">📱{counts.story}</span>}
-          {counts.post > 0 && <span className="text-blue-500">✉{counts.post}</span>}
+          {CAT_ORDER.filter(cat => counts[cat] > 0).map(cat => (
+            <span key={cat} className="inline-flex items-center gap-0.5 text-gray-500 dark:text-gray-400">
+              <span className={'w-1.5 h-1.5 rounded-full ' + CAT_DOT[cat]} />{counts[cat]}
+            </span>
+          ))}
         </span>
       </div>
       <div className="grid grid-cols-7 gap-px">
@@ -476,8 +467,8 @@ function EventModal({ e, onClose, onMark, marking }: { e: Ev; onClose: () => voi
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 mb-3">
-          <span className={'px-2 py-0.5 rounded-md text-xs font-bold ' + (isShoot ? SHOOT_CLS : (TYPE_CLS[type] || TYPE_CLS.other))}>
-            {isShoot ? '📸 Съёмка' : (TYPE_LABEL[type] || 'Контент')}
+          <span className={'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold ' + (isShoot ? SHOOT_CLS : (TYPE_CLS[type] || TYPE_CLS.other))}>
+            {isShoot ? <><Camera size={12} /> Съёмка</> : (TYPE_LABEL[type] || 'Контент')}
           </span>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
