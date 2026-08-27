@@ -23,6 +23,8 @@ const TYPE_COLORS: Record<string, string> = {
   // 🟠 Повторный звонок клиенту — отдельная оранжевая отметка, чтобы менеджер
   // сразу видел: в этот день и час надо перезвонить.
   client_repeat_call: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-300 dark:border-orange-800',
+  // 📸 Съёмка — оранжево-янтарная отметка, чтобы видеографы сразу видели день съёмки.
+  shoot: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-300 dark:border-amber-800',
 }
 
 /** Встреча — отдельный вид записи: своё время и место, поэтому в календаре
@@ -325,11 +327,13 @@ export default function CalendarPage() {
     if (isPersonalView) {
       // МП по продажам — встречи с клиентами из онбординга всегда показываем.
       if (e.type === 'client_meeting' || e.type === 'client_repeat_call') return true
+      // Съёмки — общий график, показываем всем (видеографам в т.ч.).
+      if (e.type === 'shoot') return true
       if (e.type !== 'task') return false
       return e.assigneeId === user?.id || e.createdById === user?.id
     }
     return e.type === 'project_start' || e.type === 'project_end' || e.type === 'task'
-      || e.type === 'client_meeting' || e.type === 'client_repeat_call'
+      || e.type === 'client_meeting' || e.type === 'client_repeat_call' || e.type === 'shoot'
   })
 
   const eventsForDay = (day: Date) =>

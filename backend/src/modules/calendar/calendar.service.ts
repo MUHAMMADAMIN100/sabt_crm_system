@@ -210,6 +210,42 @@ export class CalendarService {
       });
     }
 
+    // Съёмки (shoot_sessions) — отдельными событиями, чтобы видеографы и вся
+    // SMM-команда видели в календаре, КОГДА съёмка. У съёмки нет исполнителя,
+    // поэтому показываем всей производственной/управленческой команде (не МП
+    // и не разработчикам), и не при фильтре по конкретному сотруднику/личном.
+    const SHOOT_ROLES = [
+      'admin', 'founder', 'co_founder', 'smm_director', 'video_director',
+      'smm_specialist', 'videographer', 'video_editor', 'organizer', 'storymaker', 'designer',
+    ];
+    const showShoots = !employeeId && scope !== 'personal'
+      && (SHOOT_ROLES.includes(role) || (!!viewerSecondaryRole && SHOOT_ROLES.includes(viewerSecondaryRole)));
+    let shootRows: any[] = [];
+    if (showShoots) {
+      shootRows = await this.taskRepo.manager.query(
+        `SELECT s.id, s."projectId" AS "projectId", s.title, s.time, s.location, s.note,
+                to_char(s.date::date, 'YYYY-MM-DD') AS date, p.name AS "projectName"
+         FROM shoot_sessions s
+         LEFT JOIN projects p ON p.id = s."projectId"
+         WHERE s.date IS NOT NULL
+           AND s.date::date >= ($1)::date AND s.date::date <= ($2)::date`,
+        [from, to],
+      ).catch((e: any) => { this.logger.warn(`shoot events query failed: ${e?.message || e}`); return []; });
+    }
+    const shootEvents = shootRows.map(s => ({
+      id: `shoot-${s.id}`,
+      title: `📸 Съёмка: ${s.projectName || s.title || 'проект'}${s.time ? ` · ${s.time}` : ''}`,
+      description: [s.location, s.note].filter(Boolean).join(' · ') || null,
+      date: `${s.date}T12:00:00`,
+      startDate: `${s.date}T12:00:00`,
+      type: 'shoot',
+      projectName: s.projectName || null,
+      location: s.location || null,
+      time: s.time || null,
+      scope: 'business',
+      link: null,
+    }));
+
     const [tasks, projects] = await Promise.all([taskQb.getMany(), projectQb.getMany()]);
 
     const clientMeetingEvents = leads.map(c => {
@@ -312,6 +348,7 @@ export class CalendarService {
       ...repeatCallEvents,
       ...projectStartEvents,
       ...projectEndEvents,
+      ...shootEvents,
     ].sort(
       (a, b) => new Date(a.date as unknown as string).getTime() - new Date(b.date as unknown as string).getTime(),
     );
