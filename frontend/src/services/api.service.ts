@@ -34,24 +34,6 @@ export const usersApi = {
   // permissions — что выдать поверх роли, denied — что отнять из прав роли.
   setAccess: (id: string, permissions: string[], denied: string[] = []) =>
     api.patch(`/users/${id}/access`, { permissions, denied }).then(r => r.data),
-  // Обои интерфейса — персональные, хранятся в БД (диск на Railway эфемерный).
-  getMyBackground: () => api.get('/users/me/background').then(r => r.data),
-  uploadMyBackground: (blob: Blob, opts: { dim: number; scale: number; ratio: number }) => {
-    const fd = new FormData()
-    // Имя файла обязательно: без него multer не проставит mimetype.
-    fd.append('background', blob, 'background.jpg')
-    fd.append('dim', String(opts.dim))
-    fd.append('scale', String(opts.scale))
-    // Пропорции считает браузер: sharp на бэкенде нет, а без них не выразить
-    // масштаб относительно «заполнить экран».
-    fd.append('ratio', String(opts.ratio))
-    return api.patch('/users/me/background', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then(r => r.data)
-  },
-  setMyBackgroundView: (patch: { dim?: number; scale?: number }) =>
-    api.patch('/users/me/background/view', patch).then(r => r.data),
-  clearMyBackground: () => api.delete('/users/me/background').then(r => r.data),
 
   // Аватары — multipart/form-data загрузка картинки
   uploadMyAvatar: (file: File) =>

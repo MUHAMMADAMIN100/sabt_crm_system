@@ -6,15 +6,15 @@ import { Toaster } from 'react-hot-toast'
 import App from './App'
 import './index.css'
 import { initThemeFromStorage } from './lib/theme'
-import { initWallpaperFromStorage } from './lib/wallpaper'
 import { queryClient } from './lib/queryClient'
 
 // Применяем персональный акцентный цвет ДО первого рендера — иначе
 // интерфейс мигает дефолтным ч/б, пока не придёт /auth/me.
 initThemeFromStorage()
-// Обои — из того же кэша и по той же причине: иначе фон «прыгает» на
-// каждом F5, пока картинка едет с сервера.
-initWallpaperFromStorage()
+// Персональные обои интерфейса отключены: у всех сотрудников единый
+// стандартный фон темы. Старый кэш картинки (сотни килобайт base64) чистим,
+// чтобы он не занимал место в localStorage.
+try { localStorage.removeItem('wallpaper') } catch { /* ignore */ }
 
 /**
  * Одноразовая чистка legacy-данных в localStorage от старой схемы

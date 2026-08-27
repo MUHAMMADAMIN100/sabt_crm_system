@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense, type CSSProperties } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
@@ -96,17 +96,9 @@ export default function Layout() {
   }, [])
 
   return (
-    // app-shell — якорь для персональных обоев (lib/wallpaper.ts). Картинка
-    // ложится на этот же слой поверх цвета фона, поэтому шапка, сайдбар и
-    // карточки рисуются над ней без возни с z-index.
-    //
-    // --app-sidebar-w отдаём в CSS: сайдбар и шапка непрозрачные, и обои
-    // видно только в рабочей области. Без этой ширины уменьшенная картинка
-    // центровалась бы по всему экрану и уезжала левым краем под сайдбар.
-    <div
-      className="app-shell flex h-screen bg-surface-100 dark:bg-surface-900 overflow-hidden"
-      style={{ '--app-sidebar-w': sidebarOpen ? '260px' : '72px' } as CSSProperties}
-    >
+    // app-shell — якорь для эффектов на весь интерфейс (например, встряска
+    // при «печати успеха» в index.css). Фон у всех один — цвет темы.
+    <div className="app-shell flex h-screen bg-surface-100 dark:bg-surface-900 overflow-hidden">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div

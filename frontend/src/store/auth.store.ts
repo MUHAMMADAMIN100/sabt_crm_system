@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import api, { markJustAuthed, isJustAuthed, tokenStore } from '@/lib/api'
 import { syncThemeFromServer, resetTheme } from '@/lib/theme'
-import { syncWallpaperFromServer, resetWallpaper, canUseWallpaper, hasWallpaperLoaded } from '@/lib/wallpaper'
 import { queryClient } from '@/lib/queryClient'
 
 export type UserRole =
@@ -149,9 +148,6 @@ export const useAuthStore = create<AuthState>()(
         // (личные заметки, финансы) до завершения своих refetch'ей.
         try { queryClient.clear() } catch {}
         resetTheme()
-        // Обои тоже локальные: без сброса следующий вошедший на этом
-        // компьютере увидел бы чужую картинку.
-        resetWallpaper()
         set({ authenticated: false, user: null })
       },
 
@@ -164,29 +160,6 @@ export const useAuthStore = create<AuthState>()(
           // Персональный цвет интерфейса: значение с сервера — источник
           // истины, применяется мгновенно (ездит между устройствами).
           syncThemeFromServer(data?.themeColor)
-          // Обои не едут в /auth/me — картинка весит сотни килобайт, а этот
-          // запрос идёт при каждом F5. Тянем отдельной ручкой и только тем
-          // ролям, кому настройка доступна; остальным (в т.ч. если роль
-          // сменили) фон снимаем, чтобы не висел из кэша.
-          if (canUseWallpaper(data)) {
-            // Если картинка уже поднята из кэша — по сети не ходим: это
-            // сотни килобайт на каждый F5 ради того же самого файла.
-            // Свежую версию (например, поставленную с телефона) подтянет
-            // страница профиля, когда её откроют.
-            if (!hasWallpaperLoaded()) {
-              const forUserId = data?.id
-              api.get('/users/me/background')
-                .then(r => {
-                  // За время запроса могли выйти или войти другим
-                  // сотрудником — чужие обои применять нельзя.
-                  if (get().user?.id !== forUserId) return
-                  syncWallpaperFromServer(r.data?.image, r.data)
-                })
-                .catch(() => { /* фон не критичен, работаем без него */ })
-            }
-          } else {
-            resetWallpaper()
-          }
           // Если роль реально сменилась (промоут / демоут / blockUser) —
           // полный reload, чтобы все React Query кеши/sidebar/routes сбросились.
           if (oldRole && data.role && oldRole !== data.role) {
