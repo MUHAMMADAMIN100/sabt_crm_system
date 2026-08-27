@@ -2,12 +2,13 @@
 // (БЕЗ сторис — они забивают дни). Ниже — мини-календари по каждому проекту,
 // где точками отмечены все события (в т.ч. сторис). Только чтение.
 import { useMemo, useState, type ReactNode } from 'react'
-import { useQuery, keepPreviousData } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Megaphone, Loader2, Camera, Send } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { ChevronLeft, ChevronRight, Megaphone, Loader2, Camera, Send, X, Check, RotateCcw } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { contentPlanApi } from '@/services/api.service'
 
 type Ev = {
-  id: string; kind: 'shoot' | 'publication'; date: string
+  id: string; itemId?: string; kind: 'shoot' | 'publication'; date: string
   projectId: string; projectName: string
   title?: string; time?: string | null; location?: string | null; note?: string | null
   contentType?: string; topic?: string | null; status?: string; assigneeName?: string | null
@@ -104,6 +105,14 @@ export default function SmmPage() {
   const today = todayIso()
   const cells = useMemo(() => buildCells(month), [month])
 
+  const qc = useQueryClient()
+  const [detail, setDetail] = useState<Ev | null>(null)
+  const markMut = useMutation({
+    mutationFn: ({ itemId, status }: { itemId: string; status: string }) => contentPlanApi.update(itemId, { status }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Обновлено'); setDetail(null) },
+    onError: () => toast.error('Не удалось обновить'),
+  })
+
   // Основной календарь: выбранный проект + БЕЗ сторис.
   const mainByDate = useMemo(() => {
     const map = new Map<string, Ev[]>()
@@ -129,7 +138,9 @@ export default function SmmPage() {
     return m
   }, [allEvents])
 
-  const miniProjects = projects.filter(p => byProject.has(p.id))
+  // Все проекты (даже без событий в этом месяце — пустой мини-календарь = сигнал).
+  const miniProjects = projects
+  const EMPTY: Map<string, Ev[]> = new Map()
 
   return (
     <div className="space-y-4">
@@ -179,7 +190,7 @@ export default function SmmPage() {
                     + ((i + 1) % 7 === 0 ? 'border-r-0 ' : '')
                     + (isToday ? 'bg-surface-50/50 dark:bg-surface-900/20' : '')}>
                     <span className={'text-xs font-bold self-start px-1 ' + (isToday ? 'bg-surface-500 text-white rounded-md min-w-[22px] text-center' : c.inMonth ? 'text-gray-600 dark:text-gray-300' : 'text-gray-300 dark:text-gray-600')}>{c.label}</span>
-                    {evs.slice(0, MAX_PER_DAY).map(e => <EventChip key={e.id} e={e} />)}
+                    {evs.slice(0, MAX_PER_DAY).map(e => <EventChip key={e.id} e={e} onOpen={setDetail} />)}
                     {evs.length > MAX_PER_DAY && <span className="text-[10.5px] text-gray-400 font-semibold px-1">+{evs.length - MAX_PER_DAY} ещё</span>}
                   </div>
                 )
@@ -211,7 +222,7 @@ export default function SmmPage() {
               </div>
               <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))' }}>
                 {miniProjects.map(p => (
-                  <MiniCalendar key={p.id} name={p.name} cells={cells} dayMap={byProject.get(p.id)!} today={today}
+                  <MiniCalendar key={p.id} name={p.name} cells={cells} dayMap={byProject.get(p.id) ?? EMPTY} today={today}
                     active={projectId === p.id} onClick={() => setProjectId(projectId === p.id ? undefined : p.id)} />
                 ))}
               </div>
@@ -223,14 +234,24 @@ export default function SmmPage() {
           )}
         </>
       )}
+
+      {detail && (
+        <EventModal
+          e={detail}
+          marking={markMut.isPending}
+          onClose={() => setDetail(null)}
+          onMark={status => detail.itemId && markMut.mutate({ itemId: detail.itemId, status })}
+        />
+      )}
     </div>
   )
 }
 
-function EventChip({ e }: { e: Ev }) {
+function EventChip({ e, onOpen }: { e: Ev; onOpen?: (e: Ev) => void }) {
   if (e.kind === 'shoot') {
     return (
-      <span className={'flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md truncate ' + SHOOT_CLS}
+      <span onClick={() => onOpen?.(e)}
+            className={'flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md truncate cursor-pointer ' + SHOOT_CLS}
             title={`Съёмка · ${e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`}>
         <Camera size={11} className="shrink-0" />
         <span className="truncate">{e.projectName || e.title}</span>
@@ -241,7 +262,8 @@ function EventChip({ e }: { e: Ev }) {
   const type = e.contentType || 'other'
   const dot = pubDot(e)
   return (
-    <span className={'flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md truncate ' + (TYPE_CLS[type] || TYPE_CLS.other)}
+    <span onClick={() => onOpen?.(e)}
+          className={'flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md truncate cursor-pointer ' + (TYPE_CLS[type] || TYPE_CLS.other)}
           title={`${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${e.assigneeName ? ` · ${e.assigneeName}` : ''}`}>
       <Send size={10} className="shrink-0" />
       <span className="truncate">{TYPE_LABEL[type] || 'Контент'} · {e.projectName}</span>
@@ -285,6 +307,65 @@ function MiniCalendar({ name, cells, dayMap, today, active, onClick }: {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  planned: 'Запланировано', preparing: 'Подготовка', in_production: 'В производстве',
+  on_review: 'На проверке', on_approval: 'На согласовании', approved: 'Утверждено',
+  published: 'Опубликовано', cancelled: 'Отменено',
+}
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
+}
+
+function EventModal({ e, onClose, onMark, marking }: { e: Ev; onClose: () => void; onMark: (status: string) => void; marking: boolean }) {
+  const isShoot = e.kind === 'shoot'
+  const type = e.contentType || 'other'
+  const isPublished = e.status === 'published'
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <span className={'px-2 py-0.5 rounded-md text-xs font-bold ' + (isShoot ? SHOOT_CLS : (TYPE_CLS[type] || TYPE_CLS.other))}>
+            {isShoot ? '📸 Съёмка' : (TYPE_LABEL[type] || 'Контент')}
+          </span>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <h3 className="text-lg font-bold mb-1">{e.projectName || '—'}</h3>
+        {!isShoot && e.topic && <p className="text-sm text-gray-500">{e.topic}</p>}
+        <div className="space-y-1.5 text-sm my-4">
+          <Row k="Дата" v={fmtDate(e.date)} />
+          {isShoot && e.time && <Row k="Время" v={e.time} />}
+          {isShoot && e.location && <Row k="Место" v={e.location} />}
+          {isShoot && e.note && <Row k="Заметка" v={e.note} />}
+          {!isShoot && e.assigneeName && <Row k="Ответственный" v={e.assigneeName} />}
+          {!isShoot && <Row k="Статус" v={STATUS_LABEL[e.status || 'planned'] || e.status || '—'} />}
+        </div>
+        {isShoot ? (
+          <p className="text-xs text-gray-400 text-center">Съёмка запланирована.</p>
+        ) : isPublished ? (
+          <button disabled={marking} onClick={() => onMark('planned')}
+            className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">
+            <RotateCcw size={15} /> Снять отметку «опубликовано»
+          </button>
+        ) : (
+          <button disabled={marking} onClick={() => onMark('published')}
+            className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 text-white py-2.5 text-sm font-semibold hover:bg-emerald-700 disabled:opacity-60">
+            <Check size={15} /> Отметить опубликованным
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Row({ k, v }: { k: string; v: ReactNode }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-gray-400 shrink-0">{k}</span>
+      <span className="font-medium text-right">{v}</span>
     </div>
   )
 }

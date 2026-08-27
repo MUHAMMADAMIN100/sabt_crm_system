@@ -320,7 +320,7 @@ export class ContentPlanService {
         title: s.title || 'Съёмка', time: s.time || null, location: s.location || null, note: s.note || null,
       })),
       ...pubs.map(p => ({
-        id: `pub:${p.id}`, kind: 'publication', date: p.date,
+        id: `pub:${p.id}`, itemId: p.id, kind: 'publication', date: p.date,
         projectId: p.projectId, projectName: nameById.get(p.projectId) || '',
         contentType: p.contentType, topic: p.topic || null, status: p.status,
         assigneeName: p.assigneeName || null,
