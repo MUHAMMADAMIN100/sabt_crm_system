@@ -2,17 +2,17 @@
 // (из контент-плана) и съёмки (из shoot_sessions). В неделя/день — почасовая
 // сетка: съёмки на своём времени с местом, публикации «весь день», линия «сейчас».
 // Статус публикации показываем яркостью: опубликовано — ярко, нет — бледно.
-import { useMemo, useState, Fragment, type ReactNode } from 'react'
+import { useMemo, useState, useEffect, useRef, Fragment, type ReactNode, type DragEvent as RDragEvent } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
 import { ChevronLeft, ChevronRight, Megaphone, Loader2, Camera, X, Check, RotateCcw, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { contentPlanApi } from '@/services/api.service'
+import { contentPlanApi, workflowApi } from '@/services/api.service'
 
 type Ev = {
-  id: string; itemId?: string; kind: 'shoot' | 'publication'; date: string
+  id: string; itemId?: string; shootId?: string; kind: 'shoot' | 'publication'; date: string
   projectId: string; projectName: string
   title?: string; time?: string | null; location?: string | null; note?: string | null
   contentType?: string; topic?: string | null; status?: string; assigneeName?: string | null
@@ -128,12 +128,52 @@ export default function SmmPage() {
     onError: () => toast.error('Не удалось обновить'),
   })
 
+  // Drag-перенос: оптимистичные оверрайды даты (чистятся, когда сервер догонит).
+  const [moveOverrides, setMoveOverrides] = useState<Record<string, string>>({})
+  useEffect(() => {
+    setMoveOverrides(prev => {
+      if (!Object.keys(prev).length) return prev
+      let changed = false; const next = { ...prev }
+      for (const e of allEvents) if (next[e.id] && next[e.id] === e.date) { delete next[e.id]; changed = true }
+      return changed ? next : prev
+    })
+  }, [allEvents])
+  const effEvents = useMemo(
+    () => allEvents.map(e => (moveOverrides[e.id] ? { ...e, date: moveOverrides[e.id] } : e)),
+    [allEvents, moveOverrides],
+  )
+
+  const dragRef = useRef<Ev | null>(null)
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null)
+  const moveMut = useMutation({
+    mutationFn: ({ ev, dateStr }: { ev: Ev; dateStr: string }) =>
+      ev.kind === 'publication'
+        ? contentPlanApi.update(ev.itemId!, { publishDate: `${dateStr}T12:00:00` })
+        : workflowApi.updateShootSession(ev.shootId!, { date: dateStr }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['smm-calendar'] }),
+    onError: (_e, vars) => {
+      setMoveOverrides(prev => { const n = { ...prev }; delete n[vars.ev.id]; return n })
+      toast.error('Не удалось перенести')
+    },
+  })
+  const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null) }
+  const onDropDate = (dateStr: string) => {
+    const e = dragRef.current
+    dragRef.current = null
+    setDragOverKey(null)
+    if (!e || e.date === dateStr) return
+    const refId = e.kind === 'publication' ? e.itemId : e.shootId
+    if (!refId) return
+    setMoveOverrides(prev => ({ ...prev, [e.id]: dateStr }))
+    moveMut.mutate({ ev: e, dateStr })
+  }
+
   // Отфильтрованные события для основного вида: проект + поиск + без сторис.
-  const mainEvents = useMemo(() => allEvents.filter(e =>
+  const mainEvents = useMemo(() => effEvents.filter(e =>
     (!projectId || e.projectId === projectId)
     && matchSearch(e, search)
     && !(e.kind === 'publication' && e.contentType === 'story')
-  ), [allEvents, projectId, search])
+  ), [effEvents, projectId, search])
 
   // Месяц: события по дате (для больших ячеек).
   const mainByDate = useMemo(() => {
@@ -149,14 +189,14 @@ export default function SmmPage() {
   // Мини-календари (только в Месяце): все события по проекту → дате.
   const byProject = useMemo(() => {
     const m = new Map<string, Map<string, Ev[]>>()
-    for (const e of allEvents) {
+    for (const e of effEvents) {
       if (!m.has(e.projectId)) m.set(e.projectId, new Map())
       const dm = m.get(e.projectId)!
       if (!dm.has(e.date)) dm.set(e.date, [])
       dm.get(e.date)!.push(e)
     }
     return m
-  }, [allEvents])
+  }, [effEvents])
   const EMPTY: Map<string, Ev[]> = new Map()
 
   const monthStr = format(cursor, 'yyyy-MM')
@@ -234,12 +274,17 @@ export default function SmmPage() {
                 const evs = c.iso ? (mainByDate.get(c.iso) ?? []) : []
                 const isToday = c.iso === today
                 return (
-                  <div key={i} className={'min-h-[104px] border-r border-b border-gray-100 dark:border-gray-800 p-1.5 flex flex-col gap-1 '
+                  <div key={i}
+                    onDragOver={c.iso ? (ev => { ev.preventDefault(); if (dragOverKey !== c.iso) setDragOverKey(c.iso) }) : undefined}
+                    onDragLeave={c.iso ? (() => setDragOverKey(k => (k === c.iso ? null : k))) : undefined}
+                    onDrop={c.iso ? (() => onDropDate(c.iso!)) : undefined}
+                    className={'min-h-[104px] border-r border-b border-gray-100 dark:border-gray-800 p-1.5 flex flex-col gap-1 '
                     + (c.inMonth ? '' : 'bg-gray-50/60 dark:bg-gray-800/30 ')
                     + ((i + 1) % 7 === 0 ? 'border-r-0 ' : '')
+                    + (c.iso && dragOverKey === c.iso ? 'ring-2 ring-inset ring-surface-400 ' : '')
                     + (isToday ? 'bg-surface-50/50 dark:bg-surface-900/20' : '')}>
                     <span className={'text-xs font-bold self-start px-1 ' + (isToday ? 'bg-surface-500 text-white rounded-md min-w-[22px] text-center' : c.inMonth ? 'text-gray-600 dark:text-gray-300' : 'text-gray-300 dark:text-gray-600')}>{c.label}</span>
-                    {evs.slice(0, MAX_PER_DAY).map(e => <EventChip key={e.id} e={e} onOpen={setDetail} />)}
+                    {evs.slice(0, MAX_PER_DAY).map(e => <EventChip key={e.id} e={e} onOpen={setDetail} onDragStart={onDragStartEv} />)}
                     {evs.length > MAX_PER_DAY && <span className="text-[10.5px] text-gray-400 font-semibold px-1">+{evs.length - MAX_PER_DAY} ещё</span>}
                   </div>
                 )
@@ -271,7 +316,8 @@ export default function SmmPage() {
         </>
       ) : (
         <>
-          <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail} fetching={isFetching} />
+          <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail} fetching={isFetching}
+            onDragStart={onDragStartEv} onDropDate={onDropDate} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           <Legend />
         </>
       )}
@@ -285,9 +331,17 @@ export default function SmmPage() {
 }
 
 // ─── недельный / дневной вид с почасовой сеткой ────────────────────────
-function TimeGridView({ days, events, onOpen, fetching }: { days: Date[]; events: Ev[]; onOpen: (e: Ev) => void; fetching?: boolean }) {
+function TimeGridView({ days, events, onOpen, fetching, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
+  days: Date[]; events: Ev[]; onOpen: (e: Ev) => void; fetching?: boolean
+  onDragStart: (e: Ev) => void; onDropDate: (dateStr: string) => void
+  dragOverKey: string | null; setDragOverKey: (k: string | null) => void
+}) {
   const now = new Date()
   const dayKey = (d: Date) => format(d, 'yyyy-MM-dd')
+  const dropProps = (d: Date) => ({
+    onDragOver: (ev: RDragEvent) => { ev.preventDefault(); if (dragOverKey !== dayKey(d)) setDragOverKey(dayKey(d)) },
+    onDrop: () => onDropDate(dayKey(d)),
+  })
 
   // Диапазон часов — по съёмкам, но не уже 9–20.
   const timed = events.filter(e => e.kind === 'shoot' && parseTime(e.time))
@@ -326,9 +380,12 @@ function TimeGridView({ days, events, onOpen, fetching }: { days: Date[]; events
         <div className="border-r border-gray-100 dark:border-gray-800 text-[9px] font-bold uppercase text-gray-400 text-right pr-1.5 pt-1.5 leading-tight">Весь<br />день</div>
         {days.map(d => {
           const items = allDayFor(d)
+          const over = dragOverKey === dayKey(d)
           return (
-            <div key={dayKey(d)} className={'border-r border-gray-100 dark:border-gray-800 last:border-r-0 p-1 flex flex-col gap-1 min-h-[38px] ' + (isSameDay(d, now) ? 'bg-surface-50/40 dark:bg-surface-900/15' : '')}>
-              {items.slice(0, MAX_PER_DAY).map(e => <EventChip key={e.id} e={e} onOpen={onOpen} />)}
+            <div key={dayKey(d)} {...dropProps(d)}
+              className={'border-r border-gray-100 dark:border-gray-800 last:border-r-0 p-1 flex flex-col gap-1 min-h-[38px] '
+                + (over ? 'ring-2 ring-inset ring-surface-400 ' : isSameDay(d, now) ? 'bg-surface-50/40 dark:bg-surface-900/15' : '')}>
+              {items.slice(0, MAX_PER_DAY).map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
               {items.length > MAX_PER_DAY && <span className="text-[10px] text-gray-400 font-semibold px-1">+{items.length - MAX_PER_DAY}</span>}
             </div>
           )
@@ -341,13 +398,18 @@ function TimeGridView({ days, events, onOpen, fetching }: { days: Date[]; events
           {hours.map((h, hi) => (
             <Fragment key={h}>
               <div className="border-r border-b border-gray-100 dark:border-gray-800 text-[10.5px] text-gray-400 text-right pr-1.5 relative -top-[7px]" style={{ gridColumn: 1, gridRow: hi + 1 }}>{String(h).padStart(2, '0')}:00</div>
-              {days.map((d, di) => (
-                <div key={dayKey(d)} className={'border-r border-b border-gray-100 dark:border-gray-800 last:border-r-0 relative ' + (isSameDay(d, now) ? 'bg-surface-50/30 dark:bg-surface-900/10' : '')} style={{ gridColumn: di + 2, gridRow: hi + 1 }}>
+              {days.map((d, di) => {
+                const over = dragOverKey === dayKey(d)
+                return (
+                <div key={`${h}-${dayKey(d)}`} {...dropProps(d)}
+                  className={'border-r border-b border-gray-100 dark:border-gray-800 last:border-r-0 relative '
+                    + (over ? 'bg-surface-100/50 dark:bg-surface-800/30 ' : isSameDay(d, now) ? 'bg-surface-50/30 dark:bg-surface-900/10' : '')}
+                  style={{ gridColumn: di + 2, gridRow: hi + 1 }}>
                   {shootsFor(d, h).map(s => {
                     const mm = parseTime(s.time)!.m
                     return (
-                      <div key={s.id} onClick={() => onOpen(s)}
-                        className="absolute left-0.5 right-0.5 rounded-lg bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800/60 text-orange-700 dark:text-orange-300 px-1.5 py-1 overflow-hidden cursor-pointer shadow-sm z-[2]"
+                      <div key={s.id} onClick={() => onOpen(s)} draggable={!!s.shootId} onDragStart={() => onDragStart(s)}
+                        className="absolute left-0.5 right-0.5 rounded-lg bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800/60 text-orange-700 dark:text-orange-300 px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing shadow-sm z-[2]"
                         style={{ top: (mm / 60) * HOUR_PX, height: HOUR_PX * 1.35 }}>
                         <div className="flex items-center gap-1 text-[11px] font-bold leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
                         <div className="text-[10px] opacity-80 truncate mt-0.5">{s.time}{s.location ? ` · ${s.location}` : ''}</div>
@@ -355,7 +417,8 @@ function TimeGridView({ days, events, onOpen, fetching }: { days: Date[]; events
                     )
                   })}
                 </div>
-              ))}
+                )
+              })}
             </Fragment>
           ))}
 
@@ -387,11 +450,12 @@ function Legend() {
   )
 }
 
-function EventChip({ e, onOpen }: { e: Ev; onOpen?: (e: Ev) => void }) {
+function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void; onDragStart?: (e: Ev) => void }) {
+  const canDrag = e.kind === 'publication' ? !!e.itemId : !!e.shootId
   if (e.kind === 'shoot') {
     return (
-      <span onClick={() => onOpen?.(e)}
-            className={'flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md truncate cursor-pointer ' + SHOOT_CLS}
+      <span onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
+            className={'flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md truncate ' + SHOOT_CLS + (canDrag ? ' cursor-grab active:cursor-grabbing' : ' cursor-pointer')}
             title={`Съёмка · ${e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`}>
         <Camera size={11} className="shrink-0" />
         <span className="truncate">{e.projectName || e.title}</span>
@@ -402,8 +466,8 @@ function EventChip({ e, onOpen }: { e: Ev; onOpen?: (e: Ev) => void }) {
   const type = e.contentType || 'other'
   const done = e.status === 'published'
   return (
-    <span onClick={() => onOpen?.(e)}
-          className={'flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md truncate cursor-pointer ' + (TYPE_CLS[type] || TYPE_CLS.other) + (done ? '' : ' opacity-50')}
+    <span onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
+          className={'flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md truncate ' + (TYPE_CLS[type] || TYPE_CLS.other) + (done ? '' : ' opacity-50') + (canDrag ? ' cursor-grab active:cursor-grabbing' : ' cursor-pointer')}
           title={`${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${e.assigneeName ? ` · ${e.assigneeName}` : ''}${done ? ' · опубликовано' : ''}`}>
       {done && <Check size={11} className="shrink-0" />}
       <span className="truncate">{TYPE_LABEL[type] || 'Контент'} · {e.projectName}</span>

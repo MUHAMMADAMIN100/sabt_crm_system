@@ -110,6 +110,13 @@ export class WorkflowController {
     return this.service.createShootSession(projectId, body || {}, req.user);
   }
 
+  // Перенос/правка съёмки (дата/время/место) — например drag в СММ-календаре.
+  // Объявлено до ':id/*', т.к. 'shoot-session' — литеральный сегмент.
+  @Patch('shoot-session/:id')
+  updateShootSession(@Param('id') id: string, @Body() body: any, @Request() req) {
+    return this.service.updateShootSession(id, body || {}, req.user);
+  }
+
   @Patch(':id/move')
   move(@Param('id') id: string, @Body() dto: any, @Request() req) {
     return this.service.move(id, dto, req.user);

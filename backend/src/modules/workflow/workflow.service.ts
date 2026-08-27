@@ -933,6 +933,36 @@ export class WorkflowService implements OnModuleInit {
     return { ok: true, sessionId: session.id, moved: eligible.length };
   }
 
+  /** Обновить съёмочную сессию (дата/время/место) — например при переносе
+   *  съёмки на другой день из СММ-календаря. Синхронизирует денормализованные
+   *  поля на карточках сессии (shootDate/shootTime/shootLocation). */
+  async updateShootSession(
+    id: string,
+    dto: { date?: string; time?: string | null; location?: string | null; title?: string | null },
+    viewer: Viewer,
+  ) {
+    await this.assertCanManage(viewer);
+    const session = await this.shootRepo.findOne({ where: { id } });
+    if (!session) throw new NotFoundException('Съёмка не найдена');
+
+    const patch: any = {};
+    if (dto.date !== undefined) patch.date = dto.date;
+    if (dto.time !== undefined) patch.time = dto.time;
+    if (dto.location !== undefined) patch.location = dto.location;
+    if (dto.title !== undefined) patch.title = dto.title;
+    if (Object.keys(patch).length) await this.shootRepo.update(id, patch);
+
+    // Карточки той же сессии держат дату/время/место копией — обновляем.
+    const cardPatch: any = {};
+    if (dto.date !== undefined) cardPatch.shootDate = dto.date;
+    if (dto.time !== undefined) cardPatch.shootTime = dto.time;
+    if (dto.location !== undefined) cardPatch.shootLocation = dto.location;
+    if (Object.keys(cardPatch).length) await this.repo.update({ shootSessionId: id }, cardPatch);
+
+    this.broadcast(session.projectId);
+    return { ...session, ...patch };
+  }
+
   /** Уведомление о создании съёмки (3 канала) всем активным видеографам /
    *  руководителям видео (по роли, без требования участия в проекте) +
    *  заранее назначенным на карточках. Детали: дата/время/место, кол-во рилсов. */

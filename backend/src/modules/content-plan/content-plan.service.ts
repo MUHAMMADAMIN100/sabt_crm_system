@@ -318,7 +318,7 @@ export class ContentPlanService {
 
     const events = [
       ...shoots.map(s => ({
-        id: `shoot:${s.id}`, kind: 'shoot', date: s.date,
+        id: `shoot:${s.id}`, shootId: s.id, kind: 'shoot', date: s.date,
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
         title: s.title || 'Съёмка', time: s.time || null, location: s.location || null, note: s.note || null,
       })),
