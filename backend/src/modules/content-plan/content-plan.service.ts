@@ -273,19 +273,22 @@ export class ContentPlanService {
    * плана, по publishDate) и что и когда СНИМАТЬ (из shoot_sessions, по date).
    * Фокус на проектах руководителя, без KPI. Готовность/цвет считает фронт.
    */
-  async smmCalendar(ym?: string, projectId?: string) {
-    const month = ym && /^\d{4}-\d{2}$/.test(ym) ? ym : this.currentYm();
+  async smmCalendar(from?: string, to?: string) {
+    // Диапазон дат [from, to] (YYYY-MM-DD). По умолчанию — текущий месяц.
+    const ym = this.currentYm();
+    const f = from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : `${ym}-01`;
+    const lastDay = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
+    const t = to && /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : `${ym}-${String(lastDay).padStart(2, '0')}`;
 
     const projectRepo = this.repo.manager.getRepository(Project);
     const all = await projectRepo.find({ where: { projectType: 'SMM' } });
     const active = all.filter(p => String(p.status) !== 'archived');
     const nameById = new Map(active.map(p => [p.id, p.name] as const));
-    // Список для фильтра — всегда все SMM-проекты; события фильтруем по projectId.
     const projects = active
       .map(p => ({ id: p.id, name: p.name }))
       .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
-    const ids = (projectId ? active.filter(p => p.id === projectId) : active).map(p => p.id);
-    if (!ids.length) return { month, events: [], projects };
+    const ids = active.map(p => p.id);
+    if (!ids.length) return { from: f, to: t, events: [], projects };
 
     // Публикации — из контент-плана.
     const pubs: any[] = await this.repo.manager.query(
@@ -296,9 +299,9 @@ export class ContentPlanService {
        LEFT JOIN users u ON u.id = c."assigneeId"
        WHERE c."publishDate" IS NOT NULL
          AND c."projectId" = ANY($1::uuid[])
-         AND to_char(c."publishDate", 'YYYY-MM') = $2
+         AND c."publishDate"::date >= ($2)::date AND c."publishDate"::date <= ($3)::date
        ORDER BY c."publishDate" ASC`,
-      [ids, month],
+      [ids, f, t],
     ).catch((e: any) => { this.logger.warn(`smmCalendar pubs failed: ${e?.message || e}`); return []; });
 
     // Съёмки — из shoot_sessions.
@@ -308,9 +311,9 @@ export class ContentPlanService {
        FROM shoot_sessions s
        WHERE s.date IS NOT NULL
          AND s."projectId" = ANY($1::uuid[])
-         AND to_char(s.date::date, 'YYYY-MM') = $2
+         AND s.date::date >= ($2)::date AND s.date::date <= ($3)::date
        ORDER BY s.date ASC`,
-      [ids, month],
+      [ids, f, t],
     ).catch((e: any) => { this.logger.warn(`smmCalendar shoots failed: ${e?.message || e}`); return []; });
 
     const events = [
@@ -327,6 +330,6 @@ export class ContentPlanService {
       })),
     ];
 
-    return { month, events, projects };
+    return { from: f, to: t, events, projects };
   }
 }

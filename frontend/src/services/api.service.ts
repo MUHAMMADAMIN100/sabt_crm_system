@@ -351,8 +351,8 @@ export const contentPlanApi = {
   update: (id: string, data: any) => api.patch(`/content-plan/${id}`, data).then(r => r.data),
   remove: (id: string) => api.delete(`/content-plan/${id}`).then(r => r.data),
   planFact: (projectId: string) => api.get(`/content-plan/plan-fact/${projectId}`).then(r => r.data),
-  // Календарь производства SMM за месяц: публикации + съёмки (раздел СММ).
-  smmCalendar: (params?: { month?: string; projectId?: string }) =>
+  // Календарь производства SMM за диапазон дат: публикации + съёмки (раздел СММ).
+  smmCalendar: (params?: { from?: string; to?: string }) =>
     api.get('/content-plan/smm-calendar', { params }).then(r => r.data),
 }
 

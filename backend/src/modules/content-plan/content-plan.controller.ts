@@ -53,8 +53,8 @@ export class ContentPlanController {
    *  Только руководящие роли. Объявлено ДО ':id', иначе перехватит вайлдкард. */
   @Get('smm-calendar')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
-  smmCalendar(@Query('month') month?: string, @Query('projectId') projectId?: string) {
-    return this.service.smmCalendar(month, projectId);
+  smmCalendar(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.service.smmCalendar(from, to);
   }
 
   @Get(':id')
