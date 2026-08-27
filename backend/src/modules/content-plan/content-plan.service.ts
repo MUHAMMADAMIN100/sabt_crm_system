@@ -290,13 +290,15 @@ export class ContentPlanService {
     const ids = active.map(p => p.id);
     if (!ids.length) return { from: f, to: t, events: [], projects };
 
-    // Публикации — из контент-плана.
+    // Публикации — из контент-плана. Джойним связанную задачу: «сделано» =
+    // статус published ИЛИ задача выполнена (team чаще закрывает именно задачу).
     const pubs: any[] = await this.repo.manager.query(
       `SELECT c.id, c."projectId" AS "projectId", c."contentType" AS "contentType",
               c.topic, c.status, to_char(c."publishDate"::date, 'YYYY-MM-DD') AS date,
-              u.name AS "assigneeName"
+              u.name AS "assigneeName", c."taskId" AS "taskId", tk.status AS "taskStatus"
        FROM content_plan_items c
        LEFT JOIN users u ON u.id = c."assigneeId"
+       LEFT JOIN tasks tk ON tk.id = c."taskId"
        WHERE c."publishDate" IS NOT NULL
          AND c."projectId" = ANY($1::uuid[])
          AND c."publishDate"::date >= ($2)::date AND c."publishDate"::date <= ($3)::date
@@ -327,6 +329,7 @@ export class ContentPlanService {
         projectId: p.projectId, projectName: nameById.get(p.projectId) || '',
         contentType: p.contentType, topic: p.topic || null, status: p.status,
         assigneeName: p.assigneeName || null,
+        taskId: p.taskId || null, taskStatus: p.taskStatus || null,
       })),
     ];
 

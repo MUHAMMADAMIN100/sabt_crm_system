@@ -9,14 +9,18 @@ import {
 } from 'date-fns'
 import { ChevronLeft, ChevronRight, Loader2, Camera, X, Check, RotateCcw, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { contentPlanApi, workflowApi } from '@/services/api.service'
+import { contentPlanApi, workflowApi, tasksApi } from '@/services/api.service'
 
 type Ev = {
   id: string; itemId?: string; shootId?: string; kind: 'shoot' | 'publication'; date: string
   projectId: string; projectName: string
   title?: string; time?: string | null; location?: string | null; note?: string | null
   contentType?: string; topic?: string | null; status?: string; assigneeName?: string | null
+  taskId?: string | null; taskStatus?: string | null
 }
+
+/** «Сделано» для публикации: опубликовано ИЛИ связанная задача выполнена. */
+const isDone = (e: Ev) => e.status === 'published' || e.taskStatus === 'done'
 type CalData = { from: string; to: string; events: Ev[]; projects: { id: string; name: string }[] }
 type View = 'month' | 'week' | 'day' | 'stories'
 
@@ -119,7 +123,10 @@ export default function SmmPage() {
   const qc = useQueryClient()
   const [detail, setDetail] = useState<Ev | null>(null)
   const markMut = useMutation({
-    mutationFn: ({ itemId, status }: { itemId: string; status: string }) => contentPlanApi.update(itemId, { status }),
+    mutationFn: ({ ev, done }: { ev: Ev; done: boolean }) =>
+      ev.taskId
+        ? tasksApi.update(ev.taskId, { status: done ? 'done' : 'in_progress' })
+        : contentPlanApi.update(ev.itemId!, { status: done ? 'published' : 'planned' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Обновлено'); setDetail(null) },
     onError: () => toast.error('Не удалось обновить'),
   })
@@ -272,7 +279,7 @@ export default function SmmPage() {
 
       {detail && (
         <EventModal e={detail} marking={markMut.isPending} onClose={() => setDetail(null)}
-          onMark={status => detail.itemId && markMut.mutate({ itemId: detail.itemId, status })} />
+          onMark={done => markMut.mutate({ ev: detail, done })} />
       )}
     </div>
   )
@@ -457,11 +464,11 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
     )
   }
   const type = e.contentType || 'other'
-  const done = e.status === 'published'
+  const done = isDone(e)
   return (
     <span onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
           className={'flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11.5px] font-medium truncate ' + PUB_CLS + (done ? '' : ' opacity-45') + grab}
-          title={`${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · опубликовано' : ''}`}>
+          title={`${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
       {done && <Check size={11} className="shrink-0" />}
       <span className="truncate">{TYPE_LABEL[type] || 'Контент'} · {e.projectName}</span>
     </span>
@@ -516,10 +523,10 @@ function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
 }
 
-function EventModal({ e, onClose, onMark, marking }: { e: Ev; onClose: () => void; onMark: (status: string) => void; marking: boolean }) {
+function EventModal({ e, onClose, onMark, marking }: { e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean }) {
   const isShoot = e.kind === 'shoot'
   const type = e.contentType || 'other'
-  const isPublished = e.status === 'published'
+  const done = isDone(e)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
@@ -537,19 +544,19 @@ function EventModal({ e, onClose, onMark, marking }: { e: Ev; onClose: () => voi
           {isShoot && e.location && <Row k="Место" v={e.location} />}
           {isShoot && e.note && <Row k="Заметка" v={e.note} />}
           {!isShoot && e.assigneeName && <Row k="Ответственный" v={e.assigneeName} />}
-          {!isShoot && <Row k="Статус" v={STATUS_LABEL[e.status || 'planned'] || e.status || '—'} />}
+          {!isShoot && <Row k="Статус" v={done ? 'Сделано' : (STATUS_LABEL[e.status || 'planned'] || e.status || 'В работе')} />}
         </div>
         {isShoot ? (
           <p className="text-xs text-gray-400 text-center">Съёмка запланирована.</p>
-        ) : isPublished ? (
-          <button disabled={marking} onClick={() => onMark('planned')}
+        ) : done ? (
+          <button disabled={marking} onClick={() => onMark(false)}
             className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">
-            <RotateCcw size={15} /> Снять отметку «опубликовано»
+            <RotateCcw size={15} /> Вернуть в работу
           </button>
         ) : (
-          <button disabled={marking} onClick={() => onMark('published')}
+          <button disabled={marking} onClick={() => onMark(true)}
             className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#3f7a58] text-white py-2.5 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
-            <Check size={15} /> Отметить опубликованным
+            <Check size={15} /> Отметить сделанным
           </button>
         )}
       </div>
@@ -571,7 +578,7 @@ function MiniLegend() {
     <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-gray-400 items-center mt-3">
       <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-[#e7f1eb] dark:bg-[#2c3a31]" /> Публикация</span>
       <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-[#f4ecdb] dark:bg-[#3a3324]" /> Съёмка</span>
-      <span className="inline-flex items-center gap-1.5"><Check size={13} className="text-[#3f7a58] dark:text-[#8fbb9f]" /> опубликовано · <span className="opacity-45">бледное — ещё нет</span></span>
+      <span className="inline-flex items-center gap-1.5"><Check size={13} className="text-[#3f7a58] dark:text-[#8fbb9f]" /> сделано · <span className="opacity-45">бледное — не сделано</span></span>
     </div>
   )
 }
