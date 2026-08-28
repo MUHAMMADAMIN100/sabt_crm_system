@@ -238,15 +238,16 @@ export default function SmmPage() {
     return m
   }, [effEvents])
 
-  // «Не запланировано» по проектам (с учётом фильтра/поиска, минус уже брошенные).
+  // «Не запланировано» — ЯЧЕЙКА НА КАЖДЫЙ проект (даже пустую показываем),
+  // внутри — карточки без даты (минус уже брошенные, с учётом поиска).
   const backlogGroups = useMemo(() => {
-    const filtered = backlog.filter(b => !placedIds.has(b.id) && (!projectId || b.projectId === projectId) && matchSearch(b, search))
-    const map = new Map<string, Ev[]>()
-    for (const b of filtered) { if (!map.has(b.projectId)) map.set(b.projectId, []); map.get(b.projectId)!.push(b) }
-    return [...map.entries()]
-      .map(([id, items]) => ({ id, name: items[0].projectName, items }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-  }, [backlog, placedIds, projectId, search])
+    const filtered = backlog.filter(b => !placedIds.has(b.id) && matchSearch(b, search))
+    const byProj = new Map<string, Ev[]>()
+    for (const b of filtered) { if (!byProj.has(b.projectId)) byProj.set(b.projectId, []); byProj.get(b.projectId)!.push(b) }
+    return projects
+      .filter(p => !projectId || p.id === projectId)
+      .map(p => ({ id: p.id, name: p.name, items: byProj.get(p.id) ?? [] }))
+  }, [backlog, placedIds, projectId, search, projects])
 
   const monthStr = format(cursor, 'yyyy-MM')
   const cells = useMemo(() => buildCells(monthStr), [monthStr])
@@ -532,7 +533,7 @@ function BacklogPanel({ groups, onDragStart }: { groups: { id: string; name: str
         <Inbox size={13} /> Не запланировано — перетащите на дату
       </div>
       {groups.length === 0 ? (
-        <div className="text-[12.5px] text-gray-400 px-1 py-2">Всё запланировано — контента без даты нет.</div>
+        <div className="text-[12.5px] text-gray-400 px-1 py-2">Нет SMM-проектов.</div>
       ) : (
       <div className="flex gap-2.5 overflow-x-auto pb-1">
         {groups.map(g => {
@@ -545,8 +546,10 @@ function BacklogPanel({ groups, onDragStart }: { groups: { id: string; name: str
                 <span className="truncate">{g.name}</span>
                 <span className="ml-auto text-[11px] text-gray-400 font-medium">{g.items.length}</span>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {g.items.map(it => <BacklogCard key={it.id} e={it} onDragStart={onDragStart} />)}
+              <div className="flex flex-wrap gap-1.5 min-h-[24px]">
+                {g.items.length === 0
+                  ? <span className="text-[11px] text-gray-400/70 py-0.5">— пусто —</span>
+                  : g.items.map(it => <BacklogCard key={it.id} e={it} onDragStart={onDragStart} />)}
               </div>
             </div>
           )
