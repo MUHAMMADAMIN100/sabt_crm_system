@@ -318,6 +318,18 @@ export class ContentPlanService {
       [ids, f, t],
     ).catch((e: any) => { this.logger.warn(`smmCalendar shoots failed: ${e?.message || e}`); return []; });
 
+    // Сторис — из журнала сторисмейкера (story_logs), а не контент-плана.
+    // Нужны точками в мини-календарях; в большом календаре сторис скрыты.
+    const storyRows: any[] = await this.repo.manager.query(
+      `SELECT sl."projectId" AS "projectId", to_char(sl.date::date, 'YYYY-MM-DD') AS date,
+              SUM(sl."storiesCount")::int AS cnt
+       FROM story_logs sl
+       WHERE sl."projectId" = ANY($1::uuid[]) AND sl."storiesCount" > 0
+         AND sl.date::date >= ($2)::date AND sl.date::date <= ($3)::date
+       GROUP BY sl."projectId", sl.date`,
+      [ids, f, t],
+    ).catch((e: any) => { this.logger.warn(`smmCalendar stories failed: ${e?.message || e}`); return []; });
+
     const events = [
       ...shoots.map(s => ({
         id: `shoot:${s.id}`, shootId: s.id, kind: 'shoot', date: s.date,
@@ -330,6 +342,11 @@ export class ContentPlanService {
         contentType: p.contentType, topic: p.topic || null, status: p.status,
         assigneeName: p.assigneeName || null,
         taskId: p.taskId || null, taskStatus: p.taskStatus || null,
+      })),
+      ...storyRows.map(s => ({
+        id: `story:${s.projectId}:${s.date}`, kind: 'publication', date: s.date,
+        projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
+        contentType: 'story', topic: `Сторис ×${s.cnt}`, status: 'published',
       })),
     ];
 
