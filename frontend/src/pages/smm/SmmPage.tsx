@@ -335,7 +335,7 @@ export default function SmmPage() {
           activeId={projectId} onPick={id => setProjectId(projectId === id ? undefined : id)} fetching={isFetching} />
       ) : (
         <>
-          {backlogGroups.length > 0 && <BacklogPanel groups={backlogGroups} onDragStart={onDragStartEv} />}
+          <BacklogPanel groups={backlogGroups} onDragStart={onDragStartEv} />
           {view === 'month' ? (
             <div className={'transition ' + (isFetching ? 'opacity-60' : '')}>
               <MonthView cells={cells} byDate={mainByDate} today={today}
@@ -531,6 +531,9 @@ function BacklogPanel({ groups, onDragStart }: { groups: { id: string; name: str
       <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-2">
         <Inbox size={13} /> Не запланировано — перетащите на дату
       </div>
+      {groups.length === 0 ? (
+        <div className="text-[12.5px] text-gray-400 px-1 py-2">Всё запланировано — контента без даты нет.</div>
+      ) : (
       <div className="flex gap-2.5 overflow-x-auto pb-1">
         {groups.map(g => {
           const c = projColor(g.id)
@@ -549,6 +552,7 @@ function BacklogPanel({ groups, onDragStart }: { groups: { id: string; name: str
           )
         })}
       </div>
+      )}
     </div>
   )
 }
