@@ -516,6 +516,8 @@ export const workflowApi = {
     api.post(`/workflow/project/${projectId}/shoot-session`, data).then(r => r.data),
   updateShootSession: (id: string, data: any) =>
     api.patch(`/workflow/shoot-session/${id}`, data).then(r => r.data),
+  moveContentItem: (data: { projectId: string; itemId: string; publishDate: string | null }) =>
+    api.patch('/workflow/content-item', data).then(r => r.data),
   /** §11: настройка отступов дедлайнов. */
   getDeadlineSettings: () => api.get('/workflow/settings/deadlines').then(r => r.data),
   updateDeadlineSettings: (data: any) => api.patch('/workflow/settings/deadlines', data).then(r => r.data),

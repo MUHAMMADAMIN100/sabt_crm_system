@@ -181,7 +181,7 @@ export default function SmmPage() {
   const moveMut = useMutation({
     mutationFn: ({ ev, dateStr }: { ev: Ev; dateStr: string }) =>
       ev.kind === 'publication'
-        ? contentPlanApi.update(ev.itemId!, { publishDate: `${dateStr}T12:00:00` })
+        ? workflowApi.moveContentItem({ projectId: ev.projectId, itemId: ev.itemId!, publishDate: dateStr })
         : workflowApi.updateShootSession(ev.shootId!, { date: dateStr }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['smm-calendar'] }),
     onError: (_e, vars) => {
@@ -670,6 +670,8 @@ function EventModal({ e, onClose, onMark, marking }: { e: Ev; onClose: () => voi
         </div>
         {isShoot ? (
           <p className="text-xs text-gray-400 text-center">Съёмка запланирована.</p>
+        ) : !e.taskId ? (
+          <p className="text-xs text-gray-400 text-center">Статус этого элемента меняется на «Доске проектов».</p>
         ) : done ? (
           <button disabled={marking} onClick={() => onMark(false)}
             className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">

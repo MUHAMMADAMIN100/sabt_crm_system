@@ -290,19 +290,17 @@ export class ContentPlanService {
     const ids = active.map(p => p.id);
     if (!ids.length) return { from: f, to: t, events: [], projects, backlog: [] };
 
-    // Публикации — из контент-плана. Джойним связанную задачу: «сделано» =
-    // статус published ИЛИ задача выполнена (team чаще закрывает именно задачу).
+    // Публикации — из «Доски проектов»: элементы карточки контент-плана
+    // (kind='kp'), у каждого своя publishDate. Это и есть реальные рилсы/макеты.
     const pubs: any[] = await this.repo.manager.query(
-      `SELECT c.id, c."projectId" AS "projectId", c."contentType" AS "contentType",
-              c.topic, c.status, to_char(c."publishDate"::date, 'YYYY-MM-DD') AS date,
-              u.name AS "assigneeName", c."taskId" AS "taskId", tk.status AS "taskStatus"
-       FROM content_plan_items c
-       LEFT JOIN users u ON u.id = c."assigneeId"
-       LEFT JOIN tasks tk ON tk.id = c."taskId"
-       WHERE c."publishDate" IS NOT NULL
-         AND c."projectId" = ANY($1::uuid[])
-         AND c."publishDate"::date >= ($2)::date AND c."publishDate"::date <= ($3)::date
-       ORDER BY c."publishDate" ASC`,
+      `SELECT wc."projectId" AS "projectId", it->>'id' AS "itemId",
+              it->>'itemKind' AS "itemKind", it->>'title' AS title,
+              it->>'assigneeName' AS "assigneeName",
+              to_char((it->>'publishDate')::date, 'YYYY-MM-DD') AS date
+       FROM workflow_cards wc, jsonb_array_elements(COALESCE(wc.items, '[]'::jsonb)) it
+       WHERE wc.kind = 'kp' AND wc."projectId" = ANY($1::uuid[])
+         AND NULLIF(it->>'publishDate', '') IS NOT NULL
+         AND (it->>'publishDate')::date >= ($2)::date AND (it->>'publishDate')::date <= ($3)::date`,
       [ids, f, t],
     ).catch((e: any) => { this.logger.warn(`smmCalendar pubs failed: ${e?.message || e}`); return []; });
 
@@ -337,11 +335,10 @@ export class ContentPlanService {
         title: s.title || 'Съёмка', time: s.time || null, location: s.location || null, note: s.note || null,
       })),
       ...pubs.map(p => ({
-        id: `pub:${p.id}`, itemId: p.id, kind: 'publication', date: p.date,
+        id: `item:${p.itemId}`, itemId: p.itemId, kind: 'publication', date: p.date,
         projectId: p.projectId, projectName: nameById.get(p.projectId) || '',
-        contentType: p.contentType, topic: p.topic || null, status: p.status,
-        assigneeName: p.assigneeName || null,
-        taskId: p.taskId || null, taskStatus: p.taskStatus || null,
+        contentType: p.itemKind === 'reel' ? 'reel' : 'design',
+        topic: p.title || null, assigneeName: p.assigneeName || null,
       })),
       ...storyRows.map(s => ({
         id: `story:${s.projectId}:${s.date}`, kind: 'publication', date: s.date,
@@ -353,10 +350,11 @@ export class ContentPlanService {
     // «Не запланировано» — контент без даты публикации и съёмки без даты
     // (их перетаскивают на календарь из панели сверху). Диапазон не важен.
     const bpubs: any[] = await this.repo.manager.query(
-      `SELECT c.id, c."projectId" AS "projectId", c."contentType" AS "contentType", c.topic
-       FROM content_plan_items c
-       WHERE c."projectId" = ANY($1::uuid[]) AND c."publishDate" IS NULL AND c.status <> 'cancelled'
-       ORDER BY c."createdAt" ASC`,
+      `SELECT wc."projectId" AS "projectId", it->>'id' AS "itemId",
+              it->>'itemKind' AS "itemKind", it->>'title' AS title
+       FROM workflow_cards wc, jsonb_array_elements(COALESCE(wc.items, '[]'::jsonb)) it
+       WHERE wc.kind = 'kp' AND wc."projectId" = ANY($1::uuid[])
+         AND NULLIF(it->>'publishDate', '') IS NULL`,
       [ids],
     ).catch((e: any) => { this.logger.warn(`smmCalendar backlog pubs failed: ${e?.message || e}`); return []; });
     const bshoots: any[] = await this.repo.manager.query(
@@ -369,9 +367,9 @@ export class ContentPlanService {
 
     const backlog = [
       ...bpubs.map(c => ({
-        id: `pub:${c.id}`, itemId: c.id, kind: 'publication',
+        id: `item:${c.itemId}`, itemId: c.itemId, kind: 'publication',
         projectId: c.projectId, projectName: nameById.get(c.projectId) || '',
-        contentType: c.contentType, topic: c.topic || null,
+        contentType: c.itemKind === 'reel' ? 'reel' : 'design', topic: c.title || null,
       })),
       ...bshoots.map(s => ({
         id: `shoot:${s.id}`, shootId: s.id, kind: 'shoot',

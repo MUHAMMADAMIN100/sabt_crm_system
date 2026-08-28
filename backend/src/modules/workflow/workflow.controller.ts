@@ -117,6 +117,13 @@ export class WorkflowController {
     return this.service.updateShootSession(id, body || {}, req.user);
   }
 
+  // Перенос элемента контент-плана (рилс/макет) на дату — drag из СММ-календаря.
+  // Объявлено до ':id', т.к. 'content-item' — литеральный сегмент.
+  @Patch('content-item')
+  moveContentItem(@Body() body: { projectId: string; itemId: string; publishDate?: string | null }, @Request() req) {
+    return this.service.moveContentItem(body?.projectId, body?.itemId, body?.publishDate ?? null, req.user);
+  }
+
   @Patch(':id/move')
   move(@Param('id') id: string, @Body() dto: any, @Request() req) {
     return this.service.move(id, dto, req.user);

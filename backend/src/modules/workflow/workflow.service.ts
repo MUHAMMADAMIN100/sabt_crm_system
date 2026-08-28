@@ -963,6 +963,25 @@ export class WorkflowService implements OnModuleInit {
     return { ...session, ...patch };
   }
 
+  /** Перенос элемента контент-плана (рилс/макет) на дату — drag из СММ-
+   *  календаря. Обновляет publishDate элемента во всех групповых карточках
+   *  проекта (kp + рабочие «Рилсы»/«Макеты»), где он встречается. */
+  async moveContentItem(projectId: string, itemId: string, publishDate: string | null, viewer: Viewer) {
+    if (!projectId || !itemId) throw new BadRequestException('projectId и itemId обязательны');
+    await this.assertCanManage(viewer);
+    const cards = await this.repo.find({ where: { projectId, kind: In(['kp', 'reels', 'macros']) } });
+    let found = false;
+    for (const card of cards) {
+      if (!Array.isArray(card.items)) continue;
+      let hit = false;
+      const items = card.items.map((it: any) => (it && it.id === itemId ? (hit = true, { ...it, publishDate }) : it));
+      if (hit) { await this.repo.update(card.id, { items }); found = true; }
+    }
+    if (!found) throw new NotFoundException('Элемент не найден');
+    this.broadcast(projectId);
+    return { ok: true };
+  }
+
   /** Уведомление о создании съёмки (3 канала) всем активным видеографам /
    *  руководителям видео (по роли, без требования участия в проекте) +
    *  заранее назначенным на карточках. Детали: дата/время/место, кол-во рилсов. */
