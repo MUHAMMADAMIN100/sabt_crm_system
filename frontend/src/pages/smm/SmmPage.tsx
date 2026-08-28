@@ -514,7 +514,7 @@ function StoriesTab({ projects, cells, byProject, today, monthLabel, activeId, o
           ))}
         </div>
       </div>
-      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(232px, 1fr))' }}>
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {projects.map(p => (
           <MiniCalendar key={p.id} name={p.name} cells={cells} dayMap={byProject.get(p.id) ?? EMPTY} today={today}
             active={activeId === p.id} onClick={() => onPick(p.id)} />
@@ -608,17 +608,17 @@ function MiniCalendar({ name, cells, dayMap, today, active, onClick }: {
           ))}
         </span>
       </div>
-      <div className="grid grid-cols-7 gap-px">
-        {DOW.map(d => <span key={d} className="text-[8px] text-gray-300 dark:text-gray-600 text-center">{d[0]}</span>)}
+      <div className="grid grid-cols-7 gap-0.5">
+        {DOW.map(d => <span key={d} className="text-[9px] text-gray-300 dark:text-gray-600 text-center">{d[0]}</span>)}
         {cells.map((c, i) => {
           const evs = c.iso ? (dayMap.get(c.iso) ?? []) : []
           const cats = new Set<Cat>(evs.map(catOf))
           const isToday = c.iso === today
           return (
-            <div key={i} className={'h-[26px] rounded flex flex-col items-center pt-0.5 ' + (c.inMonth ? '' : 'opacity-30 ') + (isToday ? 'bg-gray-200/60 dark:bg-gray-700/40' : '')}>
-              <span className={'text-[8px] leading-none ' + (isToday ? 'font-bold text-gray-600 dark:text-gray-200' : 'text-gray-400')}>{c.label}</span>
-              <span className="flex gap-px mt-0.5 flex-wrap justify-center max-w-[22px]">
-                {CAT_ORDER.filter(cat => cats.has(cat)).map(cat => <span key={cat} className={'w-1 h-1 rounded-full ' + CAT_DOT[cat]} />)}
+            <div key={i} className={'h-[36px] rounded flex flex-col items-center pt-1 ' + (c.inMonth ? '' : 'opacity-30 ') + (isToday ? 'bg-gray-200/60 dark:bg-gray-700/40' : '')}>
+              <span className={'text-[10px] leading-none ' + (isToday ? 'font-bold text-gray-600 dark:text-gray-200' : 'text-gray-400')}>{c.label}</span>
+              <span className="flex gap-0.5 mt-1 flex-wrap justify-center max-w-[34px]">
+                {CAT_ORDER.filter(cat => cats.has(cat)).map(cat => <span key={cat} className={'w-1.5 h-1.5 rounded-full ' + CAT_DOT[cat]} />)}
               </span>
             </div>
           )
