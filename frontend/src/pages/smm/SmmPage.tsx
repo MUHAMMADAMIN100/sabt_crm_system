@@ -509,20 +509,21 @@ function BacklogPanel({ groups, onDragStart }: { groups: { id: string; name: str
       {groups.length === 0 ? (
         <div className="text-[12.5px] text-gray-400 px-1 py-2">Нет SMM-проектов.</div>
       ) : (
-      <div className="flex gap-2.5 overflow-x-auto pb-1">
+      <div className="grid gap-2 max-h-[176px] overflow-y-auto pr-0.5"
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
         {groups.map(g => {
           const c = projColor(g.id)
           return (
-            <div key={g.id} className="flex-none w-[184px] rounded-lg p-2"
+            <div key={g.id} className="rounded-lg p-1.5"
               style={{ border: `1px solid color-mix(in srgb, ${c} 40%, transparent)`, background: `color-mix(in srgb, ${c} 8%, transparent)` }}>
-              <div className="flex items-center gap-1.5 text-[12.5px] font-semibold mb-1.5" style={{ color: c }}>
+              <div className="flex items-center gap-1.5 text-[11.5px] font-semibold mb-1.5" style={{ color: c }}>
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c }} />
                 <span className="truncate">{g.name}</span>
                 <span className="ml-auto text-[11px] text-gray-400 font-medium">{g.items.length}</span>
               </div>
-              <div className="flex flex-wrap gap-1.5 min-h-[24px]">
+              <div className="flex flex-wrap gap-1 min-h-[20px]">
                 {g.items.length === 0
-                  ? <span className="text-[11px] text-gray-400/70 py-0.5">— пусто —</span>
+                  ? <span className="text-[11px] text-gray-400/60">—</span>
                   : g.items.map(it => <BacklogCard key={it.id} e={it} onDragStart={onDragStart} />)}
               </div>
             </div>
@@ -541,9 +542,9 @@ function BacklogCard({ e, onDragStart }: { e: Ev; onDragStart: (e: Ev) => void }
   return (
     <span draggable onDragStart={() => onDragStart(e)}
       style={projFill(e.projectId)}
-      className="inline-flex items-center gap-1 text-[11.5px] font-semibold px-2 py-1 rounded-md cursor-grab active:cursor-grabbing transition hover:brightness-110"
-      title={e.topic || e.title || label}>
-      <Ic size={11} className="shrink-0" /> {label}
+      className="inline-flex items-center justify-center w-6 h-6 rounded-md cursor-grab active:cursor-grabbing transition hover:brightness-110"
+      title={`${label}${e.topic ? ` · ${e.topic}` : ''}`}>
+      <Ic size={13} className="shrink-0" />
     </span>
   )
 }
