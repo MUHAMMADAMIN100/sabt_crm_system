@@ -270,10 +270,42 @@ export default function SmmPage() {
   return (
     <div className="space-y-3">
       {/* ── шапка ── */}
-      <header className="flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">СММ</div>
+      <header className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+          <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-700 px-2.5 py-1.5">
+            <Search size={13} className="text-gray-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск"
+              className="bg-transparent text-[13px] outline-none w-24 placeholder:text-gray-400" />
+            {search && <button onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-600"><X size={12} /></button>}
+          </div>
+          <div className="relative">
+            <button onClick={() => setFilterOpen(o => !o)}
+              className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300">
+              {projectId && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: projColor(projectId) }} />}
+              {projects.find(p => p.id === projectId)?.name || 'Все проекты'}
+              <ChevronDown size={14} className="text-gray-400" />
+            </button>
+            {filterOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setFilterOpen(false)} />
+                <div className="absolute left-0 top-full mt-1 z-40 w-56 max-h-72 overflow-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg p-1">
+                  <button onClick={() => { setProjectId(undefined); setFilterOpen(false) }}
+                    className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (!projectId ? 'font-semibold' : '')}>
+                    Все проекты {!projectId && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
+                  </button>
+                  {projects.map(p => (
+                    <button key={p.id} onClick={() => { setProjectId(p.id); setFilterOpen(false) }}
+                      className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (projectId === p.id ? 'font-semibold' : '')}>
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: projColor(p.id) }} />
+                      <span className="truncate">{p.name}</span>
+                      {projectId === p.id && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-lg bg-gray-100 dark:bg-gray-800/70 p-0.5">
@@ -291,43 +323,6 @@ export default function SmmPage() {
           </div>
         </div>
       </header>
-
-      {/* ── фильтр по проекту + поиск ── */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-700 px-2.5 py-1.5">
-          <Search size={13} className="text-gray-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск"
-            className="bg-transparent text-[13px] outline-none w-28 placeholder:text-gray-400" />
-          {search && <button onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-600"><X size={12} /></button>}
-        </div>
-        <div className="relative">
-          <button onClick={() => setFilterOpen(o => !o)}
-            className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300">
-            {projectId && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: projColor(projectId) }} />}
-            {projects.find(p => p.id === projectId)?.name || 'Все проекты'}
-            <ChevronDown size={14} className="text-gray-400" />
-          </button>
-          {filterOpen && (
-            <>
-              <div className="fixed inset-0 z-30" onClick={() => setFilterOpen(false)} />
-              <div className="absolute left-0 top-full mt-1 z-40 w-56 max-h-72 overflow-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg p-1">
-                <button onClick={() => { setProjectId(undefined); setFilterOpen(false) }}
-                  className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (!projectId ? 'font-semibold' : '')}>
-                  Все проекты {!projectId && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
-                </button>
-                {projects.map(p => (
-                  <button key={p.id} onClick={() => { setProjectId(p.id); setFilterOpen(false) }}
-                    className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (projectId === p.id ? 'font-semibold' : '')}>
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: projColor(p.id) }} />
-                    <span className="truncate">{p.name}</span>
-                    {projectId === p.id && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
@@ -384,7 +379,7 @@ function MonthView({ cells, byDate, today, onOpen, onDragStart, onDropDate, drag
               onDragOver={c.iso ? (ev => { ev.preventDefault(); if (dragOverKey !== c.iso) setDragOverKey(c.iso) }) : undefined}
               onDragLeave={c.iso ? (() => setDragOverKey(dragOverKey === c.iso ? null : dragOverKey)) : undefined}
               onDrop={c.iso ? (() => onDropDate(c.iso!)) : undefined}
-              className={'min-h-[112px] border-b border-r border-gray-100 dark:border-gray-800/80 p-1 flex flex-col gap-0.5 '
+              className={'min-h-[92px] border-b border-r border-gray-100 dark:border-gray-800/80 p-1 flex flex-col gap-0.5 '
                 + ((i + 1) % 7 === 0 ? 'border-r-0 ' : '')
                 + (c.iso && dragOverKey === c.iso ? 'ring-1 ring-inset ring-gray-400 ' : '')
                 + (!c.inMonth ? 'bg-gray-50/40 dark:bg-black/20' : isToday ? 'bg-[#eb5757]/[0.06]' : (i % 7 >= 5 ? 'bg-gray-50/50 dark:bg-white/[0.015]' : ''))}>
