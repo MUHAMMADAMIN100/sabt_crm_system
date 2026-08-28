@@ -2,7 +2,7 @@
 // Месяц / Неделя / День + таб «Сторисы» (мини-календари по проектам). Публикации
 // (зелёные) и съёмки (янтарные, со временем). Статус публикации: опубликовано —
 // ярко + галочка, нет — бледно. Drag-перенос на другой день.
-import { useMemo, useState, useEffect, useRef, Fragment, type ReactNode, type DragEvent as RDragEvent } from 'react'
+import { useMemo, useState, useRef, Fragment, type ReactNode, type DragEvent as RDragEvent } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
@@ -127,7 +127,7 @@ export default function SmmPage() {
     return { from: iso(startOfMonth(cursor)), to: iso(endOfMonth(cursor)) } // month + stories
   }, [view, cursor])
 
-  const { data, isLoading, isFetching } = useQuery<CalData>({
+  const { data, isLoading } = useQuery<CalData>({
     queryKey: ['smm-calendar', from, to],
     queryFn: () => contentPlanApi.smmCalendar({ from, to }),
     placeholderData: keepPreviousData,
@@ -149,72 +149,51 @@ export default function SmmPage() {
     onError: () => toast.error('Не удалось обновить'),
   })
 
-  // Drag-перенос: оптимистичные оверрайды даты (чистятся, когда сервер догонит).
-  const [moveOverrides, setMoveOverrides] = useState<Record<string, string>>({})
-  const [placedIds, setPlacedIds] = useState<Set<string>>(new Set())
-  useEffect(() => {
-    setMoveOverrides(prev => {
-      if (!Object.keys(prev).length) return prev
-      let changed = false; const next = { ...prev }
-      for (const e of allEvents) if (next[e.id] && next[e.id] === e.date) { delete next[e.id]; changed = true }
-      return changed ? next : prev
-    })
-  }, [allEvents])
-  // Карточку из backlog скрываем оптимистично; убираем из placed, когда сервер
-  // её больше не отдаёт в backlog (значит дата проставилась).
-  useEffect(() => {
-    setPlacedIds(prev => {
-      if (!prev.size) return prev
-      const ids = new Set(backlog.map(b => b.id))
-      let changed = false; const next = new Set(prev)
-      for (const id of prev) if (!ids.has(id)) { next.delete(id); changed = true }
-      return changed ? next : prev
-    })
-  }, [backlog])
-  const effEvents = useMemo(
-    () => allEvents.map(e => (moveOverrides[e.id] ? { ...e, date: moveOverrides[e.id] } : e)),
-    [allEvents, moveOverrides],
-  )
-
   const dragRef = useRef<Ev | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
+  // Оптимистичный перенос: правим кэш ПРЯМО на месте — событие мгновенно
+  // переезжает на дату (и уходит из «Не запланировано»), фоновый запрос лишь
+  // сохраняет. Никакого рефетча/затемнения; при ошибке — откат.
   const moveMut = useMutation({
     mutationFn: ({ ev, dateStr }: { ev: Ev; dateStr: string }) =>
       ev.kind === 'publication'
         ? workflowApi.moveContentItem({ projectId: ev.projectId, itemId: ev.itemId!, publishDate: dateStr })
         : workflowApi.updateShootSession(ev.shootId!, { date: dateStr }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['smm-calendar'] }),
-    onError: (_e, vars) => {
-      setMoveOverrides(prev => { const n = { ...prev }; delete n[vars.ev.id]; return n })
-      setPlacedIds(prev => { if (!prev.has(vars.ev.id)) return prev; const n = new Set(prev); n.delete(vars.ev.id); return n })
+    onMutate: async ({ ev, dateStr }) => {
+      const key = ['smm-calendar', from, to]
+      await qc.cancelQueries({ queryKey: key })
+      const prev = qc.getQueryData<CalData>(key)
+      qc.setQueryData<CalData>(key, old => {
+        if (!old) return old
+        const events = old.events.filter(e => e.id !== ev.id)
+        events.push({ ...ev, date: dateStr })
+        return { ...old, events, backlog: old.backlog.filter(b => b.id !== ev.id) }
+      })
+      return { prev, key }
+    },
+    onError: (_e, _vars, ctx: any) => {
+      if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev)
       toast.error('Не удалось поставить дату')
     },
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }) },
   })
   const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null) }
   const onDropDate = (dateStr: string) => {
     const e = dragRef.current
     dragRef.current = null
     setDragOverKey(null)
-    if (!e) return
+    if (!e || e.date === dateStr) return
     const refId = e.kind === 'publication' ? e.itemId : e.shootId
     if (!refId) return
-    if (e.date) {
-      // Перенос существующего события календаря.
-      if (e.date === dateStr) return
-      setMoveOverrides(prev => ({ ...prev, [e.id]: dateStr }))
-    } else {
-      // Карточка из «Не запланировано» — прячем из панели оптимистично.
-      setPlacedIds(prev => new Set(prev).add(e.id))
-    }
     moveMut.mutate({ ev: e, dateStr })
   }
 
   // Основной вид: проект + поиск + без сторис (сторис — в отдельном табе).
-  const mainEvents = useMemo(() => effEvents.filter(e =>
+  const mainEvents = useMemo(() => allEvents.filter(e =>
     (!projectId || e.projectId === projectId)
     && matchSearch(e, search)
     && !(e.kind === 'publication' && e.contentType === 'story')
-  ), [effEvents, projectId, search])
+  ), [allEvents, projectId, search])
 
   const mainByDate = useMemo(() => {
     const map = new Map<string, Ev[]>()
@@ -229,25 +208,25 @@ export default function SmmPage() {
   // Таб «Сторисы»: мини-календари по проекту → дате (все события, в т.ч. сторис).
   const byProject = useMemo(() => {
     const m = new Map<string, Map<string, Ev[]>>()
-    for (const e of effEvents) {
+    for (const e of allEvents) {
       if (!m.has(e.projectId)) m.set(e.projectId, new Map())
       const dm = m.get(e.projectId)!
       if (!dm.has(e.date)) dm.set(e.date, [])
       dm.get(e.date)!.push(e)
     }
     return m
-  }, [effEvents])
+  }, [allEvents])
 
   // «Не запланировано» — ЯЧЕЙКА НА КАЖДЫЙ проект (даже пустую показываем),
   // внутри — карточки без даты (минус уже брошенные, с учётом поиска).
   const backlogGroups = useMemo(() => {
-    const filtered = backlog.filter(b => !placedIds.has(b.id) && matchSearch(b, search))
+    const filtered = backlog.filter(b => matchSearch(b, search))
     const byProj = new Map<string, Ev[]>()
     for (const b of filtered) { if (!byProj.has(b.projectId)) byProj.set(b.projectId, []); byProj.get(b.projectId)!.push(b) }
     return projects
       .filter(p => !projectId || p.id === projectId)
       .map(p => ({ id: p.id, name: p.name, items: byProj.get(p.id) ?? [] }))
-  }, [backlog, placedIds, projectId, search, projects])
+  }, [backlog, projectId, search, projects])
 
   const monthStr = format(cursor, 'yyyy-MM')
   const cells = useMemo(() => buildCells(monthStr), [monthStr])
@@ -328,19 +307,19 @@ export default function SmmPage() {
         <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
       ) : view === 'stories' ? (
         <StoriesTab projects={projects} cells={cells} byProject={byProject} today={today} monthLabel={monthTitle(monthStr)}
-          activeId={projectId} onPick={id => setProjectId(projectId === id ? undefined : id)} fetching={isFetching} />
+          activeId={projectId} onPick={id => setProjectId(projectId === id ? undefined : id)} />
       ) : (
         <>
           <BacklogPanel groups={backlogGroups} onDragStart={onDragStartEv} />
           {view === 'month' ? (
-            <div className={'transition ' + (isFetching ? 'opacity-60' : '')}>
+            <div>
               <MonthView cells={cells} byDate={mainByDate} today={today}
                 onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
                 dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
               <MiniLegend />
             </div>
           ) : (
-            <div className={'transition ' + (isFetching ? 'opacity-60' : '')}>
+            <div>
               <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail}
                 onDragStart={onDragStartEv} onDropDate={onDropDate} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
               <MiniLegend />
@@ -495,13 +474,13 @@ function TimeGridView({ days, events, onOpen, onDragStart, onDropDate, dragOverK
 }
 
 // ─── ТАБ «СТОРИСЫ» — мини-календари по проектам ────────────────────────
-function StoriesTab({ projects, cells, byProject, today, monthLabel, activeId, onPick, fetching }: {
+function StoriesTab({ projects, cells, byProject, today, monthLabel, activeId, onPick }: {
   projects: { id: string; name: string }[]; cells: Cell[]; byProject: Map<string, Map<string, Ev[]>>
-  today: string; monthLabel: string; activeId?: string; onPick: (id: string) => void; fetching?: boolean
+  today: string; monthLabel: string; activeId?: string; onPick: (id: string) => void
 }) {
   const EMPTY: Map<string, Ev[]> = new Map()
   return (
-    <div className={'transition ' + (fetching ? 'opacity-60' : '')}>
+    <div>
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
         <h2 className="text-[13px] font-semibold text-gray-500">По проектам · {monthLabel}</h2>
         <div className="flex flex-wrap gap-3 text-[11px] text-gray-500">
