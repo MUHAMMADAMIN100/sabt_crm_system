@@ -312,18 +312,12 @@ export default function SmmPage() {
         <>
           <BacklogPanel groups={backlogGroups} onDragStart={onDragStartEv} />
           {view === 'month' ? (
-            <div>
-              <MonthView cells={cells} byDate={mainByDate} today={today}
-                onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
-                dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
-              <MiniLegend />
-            </div>
+            <MonthView cells={cells} byDate={mainByDate} today={today}
+              onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
+              dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           ) : (
-            <div>
-              <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail}
-                onDragStart={onDragStartEv} onDropDate={onDropDate} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
-              <MiniLegend />
-            </div>
+            <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail}
+              onDragStart={onDragStartEv} onDropDate={onDropDate} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           )}
         </>
       )}
@@ -668,20 +662,6 @@ function Row({ k, v }: { k: string; v: ReactNode }) {
     <div className="flex justify-between gap-3">
       <span className="text-gray-400 shrink-0">{k}</span>
       <span className="font-medium text-right">{v}</span>
-    </div>
-  )
-}
-
-function MiniLegend() {
-  return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-gray-400 items-center mt-3">
-      <span className="inline-flex items-center gap-1.5"><Camera size={12} /> Съёмка</span>
-      <span className="inline-flex items-center gap-1.5"><Film size={12} /> Reel</span>
-      <span className="inline-flex items-center gap-1.5"><AlignLeft size={12} /> Пост</span>
-      <span className="inline-flex items-center gap-1.5"><ImageIcon size={12} /> Макет</span>
-      <span className="inline-flex items-center gap-1.5"><Circle size={12} /> Сторис</span>
-      <span className="w-px h-4 bg-gray-200 dark:bg-gray-700" />
-      <span>Цвет — проект · <span className="opacity-45">бледное — сделано</span></span>
     </div>
   )
 }
