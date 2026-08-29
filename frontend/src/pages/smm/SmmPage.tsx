@@ -32,8 +32,20 @@ const TYPE_ICON: Record<string, any> = {
 }
 
 // Цвет проекта — стабильный по projectId; средние тона читаются в обеих темах.
-const PROJ_COLORS = ['#4fb3ac', '#7d8bea', '#d06e90', '#cf9f52', '#5fbd80', '#5aa9d8', '#c07be0', '#e0865a', '#d0b24f', '#8a97a6', '#6ac0a0', '#e07aa8']
+// Палитра максимально разнесённых оттенков (14 шт.) — по кругу цветового тона.
+const PROJ_COLORS = ['#e0865a', '#d9b74a', '#a7c14f', '#5fbd80', '#3fb6a0', '#4aa6cf', '#6f8bea', '#9a7be0', '#c77be0', '#e07ac0', '#e07a90', '#d0616a', '#c08a5a', '#8a97a6']
+// Цвет назначается по позиции проекта в отсортированном списке — так у разных
+// проектов цвета гарантированно разные (пока их не больше длины палитры),
+// а не «по хешу», где случались совпадения. Реестр заполняет assignProjectColors.
+const _projColorMap = new Map<string, string>()
+function assignProjectColors(ids: string[]): void {
+  const uniq = [...new Set(ids.map(String))].sort()
+  _projColorMap.clear()
+  uniq.forEach((id, i) => _projColorMap.set(id, PROJ_COLORS[i % PROJ_COLORS.length]))
+}
 function projColor(id: string): string {
+  const mapped = _projColorMap.get(String(id))
+  if (mapped) return mapped
   let h = 0
   for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0
   return PROJ_COLORS[h % PROJ_COLORS.length]
@@ -137,6 +149,17 @@ export default function SmmPage() {
   const projects = data?.projects ?? []
   const backlog = data?.backlog ?? []
   const today = todayIso()
+
+  // Назначаем каждому проекту свой цвет по индексу — все id из проектов,
+  // событий и бэклога, чтобы у любого проекта цвет был уникальным.
+  const projIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const p of projects) s.add(String(p.id))
+    for (const e of allEvents) if (e.projectId) s.add(String(e.projectId))
+    for (const b of backlog) if (b.projectId) s.add(String(b.projectId))
+    return [...s].sort()
+  }, [projects, allEvents, backlog])
+  useMemo(() => assignProjectColors(projIds), [projIds.join(',')])
 
   const qc = useQueryClient()
   const [detail, setDetail] = useState<Ev | null>(null)
