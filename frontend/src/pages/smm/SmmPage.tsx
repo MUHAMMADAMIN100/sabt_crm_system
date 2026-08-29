@@ -129,9 +129,16 @@ const VIEWS: { k: View; label: string }[] = [
 export default function SmmPage() {
   const [view, setView] = useState<View>('month')
   const [cursor, setCursor] = useState(new Date())
-  const [projectId, setProjectId] = useState<string | undefined>(undefined)
+  // Фильтр по проектам — множественный выбор (пусто = все проекты).
+  const [selProjects, setSelProjects] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
+  const toggleProject = (id: string) => setSelProjects(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const clearProjects = () => setSelProjects(new Set())
 
   const { from, to } = useMemo(() => {
     if (view === 'week') return { from: iso(startOfWeek(cursor, { weekStartsOn: 1 })), to: iso(endOfWeek(cursor, { weekStartsOn: 1 })) }
@@ -225,10 +232,10 @@ export default function SmmPage() {
 
   // Основной вид: проект + поиск + без сторис (сторис — в отдельном табе).
   const mainEvents = useMemo(() => allEvents.filter(e =>
-    (!projectId || e.projectId === projectId)
+    (selProjects.size === 0 || selProjects.has(e.projectId))
     && matchSearch(e, search)
     && !(e.kind === 'publication' && e.contentType === 'story')
-  ), [allEvents, projectId, search])
+  ), [allEvents, selProjects, search])
 
   const mainByDate = useMemo(() => {
     const map = new Map<string, Ev[]>()
@@ -258,10 +265,10 @@ export default function SmmPage() {
     const filtered = backlog.filter(b => matchSearch(b, search))
     const byProj = new Map<string, Ev[]>()
     for (const b of filtered) { if (!byProj.has(b.projectId)) byProj.set(b.projectId, []); byProj.get(b.projectId)!.push(b) }
-    return projects
-      .filter(p => !projectId || p.id === projectId)
-      .map(p => ({ id: p.id, name: p.name, items: byProj.get(p.id) ?? [] }))
-  }, [backlog, projectId, search, projects])
+    // Показываем ВСЕ проекты — выбранный подсвечивается, остальные приглушаются
+    // (клик по плитке фильтрует календарь, но плитки не прячем).
+    return projects.map(p => ({ id: p.id, name: p.name, items: byProj.get(p.id) ?? [] }))
+  }, [backlog, search, projects])
 
   const monthStr = format(cursor, 'yyyy-MM')
   const cells = useMemo(() => buildCells(monthStr), [monthStr])
@@ -296,24 +303,28 @@ export default function SmmPage() {
           <div className="relative">
             <button onClick={() => setFilterOpen(o => !o)}
               className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300">
-              {projectId && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: projColor(projectId) }} />}
-              {projects.find(p => p.id === projectId)?.name || 'Все проекты'}
+              {selProjects.size === 1 && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: projColor([...selProjects][0]) }} />}
+              {selProjects.size === 0
+                ? 'Все проекты'
+                : selProjects.size === 1
+                  ? (projects.find(p => p.id === [...selProjects][0])?.name || '1 проект')
+                  : `${selProjects.size} проектов`}
               <ChevronDown size={14} className="text-gray-400" />
             </button>
             {filterOpen && (
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setFilterOpen(false)} />
                 <div className="absolute left-0 top-full mt-1 z-40 w-56 max-h-72 overflow-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg p-1">
-                  <button onClick={() => { setProjectId(undefined); setFilterOpen(false) }}
-                    className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (!projectId ? 'font-semibold' : '')}>
-                    Все проекты {!projectId && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
+                  <button onClick={() => clearProjects()}
+                    className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (selProjects.size === 0 ? 'font-semibold' : '')}>
+                    Все проекты {selProjects.size === 0 && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
                   </button>
                   {projects.map(p => (
-                    <button key={p.id} onClick={() => { setProjectId(p.id); setFilterOpen(false) }}
-                      className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (projectId === p.id ? 'font-semibold' : '')}>
+                    <button key={p.id} onClick={() => toggleProject(p.id)}
+                      className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (selProjects.has(p.id) ? 'font-semibold' : '')}>
                       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: projColor(p.id) }} />
                       <span className="truncate">{p.name}</span>
-                      {projectId === p.id && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
+                      {selProjects.has(p.id) && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
                     </button>
                   ))}
                 </div>
@@ -342,10 +353,11 @@ export default function SmmPage() {
         <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
       ) : view === 'stories' ? (
         <StoriesTab projects={projects} cells={cells} byProject={byProject} today={today} monthLabel={monthTitle(monthStr)}
-          activeId={projectId} onPick={id => setProjectId(projectId === id ? undefined : id)} />
+          activeIds={selProjects} onPick={toggleProject} />
       ) : (
         <>
-          <BacklogPanel groups={backlogGroups} onDragStart={onDragStartEv} onDrop={onDropBacklog}
+          <BacklogPanel groups={backlogGroups} activeIds={selProjects} onPick={toggleProject}
+            onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
           {view === 'month' ? (
             <MonthView cells={cells} byDate={mainByDate} today={today}
@@ -505,9 +517,9 @@ function TimeGridView({ days, events, onOpen, onDragStart, onDropDate, dragOverK
 }
 
 // ─── ТАБ «СТОРИСЫ» — мини-календари по проектам ────────────────────────
-function StoriesTab({ projects, cells, byProject, today, monthLabel, activeId, onPick }: {
+function StoriesTab({ projects, cells, byProject, today, monthLabel, activeIds, onPick }: {
   projects: { id: string; name: string }[]; cells: Cell[]; byProject: Map<string, Map<string, Ev[]>>
-  today: string; monthLabel: string; activeId?: string; onPick: (id: string) => void
+  today: string; monthLabel: string; activeIds: Set<string>; onPick: (id: string) => void
 }) {
   const EMPTY: Map<string, Ev[]> = new Map()
   return (
@@ -523,7 +535,7 @@ function StoriesTab({ projects, cells, byProject, today, monthLabel, activeId, o
       <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {projects.map(p => (
           <MiniCalendar key={p.id} name={p.name} cells={cells} dayMap={byProject.get(p.id) ?? EMPTY} today={today}
-            active={activeId === p.id} onClick={() => onPick(p.id)} />
+            active={activeIds.has(p.id)} onClick={() => onPick(p.id)} />
         ))}
       </div>
     </div>
@@ -531,9 +543,9 @@ function StoriesTab({ projects, cells, byProject, today, monthLabel, activeId, o
 }
 
 // ─── панель «Не запланировано» ─────────────────────────────────────────
-function BacklogPanel({ groups, onDragStart, onDrop, over, setOver }: {
-  groups: { id: string; name: string; items: Ev[] }[]; onDragStart: (e: Ev) => void
-  onDrop: () => void; over: boolean; setOver: (v: boolean) => void
+function BacklogPanel({ groups, activeIds, onPick, onDragStart, onDrop, over, setOver }: {
+  groups: { id: string; name: string; items: Ev[] }[]; activeIds: Set<string>; onPick: (id: string) => void
+  onDragStart: (e: Ev) => void; onDrop: () => void; over: boolean; setOver: (v: boolean) => void
 }) {
   return (
     <div
@@ -553,14 +565,17 @@ function BacklogPanel({ groups, onDragStart, onDrop, over, setOver }: {
         style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
         {groups.map(g => {
           const c = projColor(g.id)
+          const active = activeIds.has(g.id)
+          const dim = activeIds.size > 0 && !active
           return (
-            <div key={g.id} className="rounded-lg p-1.5"
-              style={{ border: `1px solid color-mix(in srgb, ${c} 40%, transparent)`, background: `color-mix(in srgb, ${c} 8%, transparent)` }}>
-              <div className="flex items-center gap-1.5 text-[11.5px] font-semibold mb-1.5" style={{ color: c }}>
+            <div key={g.id} className={'rounded-lg p-1.5 transition-opacity ' + (dim ? 'opacity-35 hover:opacity-100' : '')}
+              style={{ border: `1px solid color-mix(in srgb, ${c} ${active ? 85 : 40}%, transparent)`, background: `color-mix(in srgb, ${c} ${active ? 14 : 8}%, transparent)` }}>
+              <button type="button" onClick={() => onPick(g.id)} title={active ? 'Убрать из фильтра' : 'Добавить в фильтр (можно несколько)'}
+                className="w-full flex items-center gap-1.5 text-[11.5px] font-semibold mb-1.5 cursor-pointer" style={{ color: c }}>
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c }} />
-                <span className="truncate">{g.name}</span>
+                <span className="truncate text-left">{g.name}</span>
                 <span className="ml-auto text-[11px] text-gray-400 font-medium">{g.items.length}</span>
-              </div>
+              </button>
               <div className="flex flex-wrap gap-1 min-h-[20px]">
                 {g.items.length === 0
                   ? <span className="text-[11px] text-gray-400/60">—</span>
