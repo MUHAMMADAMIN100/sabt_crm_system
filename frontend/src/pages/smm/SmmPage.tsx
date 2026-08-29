@@ -155,7 +155,7 @@ export default function SmmPage() {
   // переезжает на дату (и уходит из «Не запланировано»), фоновый запрос лишь
   // сохраняет. Никакого рефетча/затемнения; при ошибке — откат.
   const moveMut = useMutation({
-    mutationFn: ({ ev, dateStr }: { ev: Ev; dateStr: string }) =>
+    mutationFn: ({ ev, dateStr }: { ev: Ev; dateStr: string | null }) =>
       ev.kind === 'publication'
         ? workflowApi.moveContentItem({ projectId: ev.projectId, itemId: ev.itemId!, publishDate: dateStr })
         : workflowApi.updateShootSession(ev.shootId!, { date: dateStr }),
@@ -166,8 +166,10 @@ export default function SmmPage() {
       qc.setQueryData<CalData>(key, old => {
         if (!old) return old
         const events = old.events.filter(e => e.id !== ev.id)
-        events.push({ ...ev, date: dateStr })
-        return { ...old, events, backlog: old.backlog.filter(b => b.id !== ev.id) }
+        const backlog = old.backlog.filter(b => b.id !== ev.id)
+        if (dateStr) events.push({ ...ev, date: dateStr })          // на дату
+        else backlog.push({ ...ev, date: undefined })               // обратно в корзину
+        return { ...old, events, backlog }
       })
       return { prev, key }
     },
@@ -186,6 +188,16 @@ export default function SmmPage() {
     const refId = e.kind === 'publication' ? e.itemId : e.shootId
     if (!refId) return
     moveMut.mutate({ ev: e, dateStr })
+  }
+  // Сброс события ИЗ календаря в корзину — убираем дату (возврат в «Не запланировано»).
+  const onDropBacklog = () => {
+    const e = dragRef.current
+    dragRef.current = null
+    setDragOverKey(null)
+    if (!e || !e.date) return
+    const refId = e.kind === 'publication' ? e.itemId : e.shootId
+    if (!refId) return
+    moveMut.mutate({ ev: e, dateStr: null })
   }
 
   // Основной вид: проект + поиск + без сторис (сторис — в отдельном табе).
@@ -310,7 +322,8 @@ export default function SmmPage() {
           activeId={projectId} onPick={id => setProjectId(projectId === id ? undefined : id)} />
       ) : (
         <>
-          <BacklogPanel groups={backlogGroups} onDragStart={onDragStartEv} />
+          <BacklogPanel groups={backlogGroups} onDragStart={onDragStartEv} onDrop={onDropBacklog}
+            over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
           {view === 'month' ? (
             <MonthView cells={cells} byDate={mainByDate} today={today}
               onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
@@ -494,11 +507,20 @@ function StoriesTab({ projects, cells, byProject, today, monthLabel, activeId, o
 }
 
 // ─── панель «Не запланировано» ─────────────────────────────────────────
-function BacklogPanel({ groups, onDragStart }: { groups: { id: string; name: string; items: Ev[] }[]; onDragStart: (e: Ev) => void }) {
+function BacklogPanel({ groups, onDragStart, onDrop, over, setOver }: {
+  groups: { id: string; name: string; items: Ev[] }[]; onDragStart: (e: Ev) => void
+  onDrop: () => void; over: boolean; setOver: (v: boolean) => void
+}) {
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/40 p-2.5">
+    <div
+      onDragOver={e => { e.preventDefault(); if (!over) setOver(true) }}
+      onDragLeave={() => setOver(false)}
+      onDrop={() => { setOver(false); onDrop() }}
+      className={'rounded-xl border p-2.5 transition ' + (over
+        ? 'border-gray-400 dark:border-gray-500 bg-gray-100/50 dark:bg-gray-800/50'
+        : 'border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/40')}>
       <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-2">
-        <Inbox size={13} /> Не запланировано — перетащите на дату
+        <Inbox size={13} /> Не запланировано — перетащите на дату <span className="normal-case font-medium text-gray-400/70">(или сюда, чтобы снять дату)</span>
       </div>
       {groups.length === 0 ? (
         <div className="text-[12.5px] text-gray-400 px-1 py-2">Нет SMM-проектов.</div>
