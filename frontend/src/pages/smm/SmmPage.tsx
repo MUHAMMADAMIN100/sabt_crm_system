@@ -337,7 +337,8 @@ export default function SmmPage() {
 
       {detail && (
         <EventModal e={detail} marking={markMut.isPending} onClose={() => setDetail(null)}
-          onMark={done => markMut.mutate({ ev: detail, done })} />
+          onMark={done => markMut.mutate({ ev: detail, done })}
+          onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }} />
       )}
     </div>
   )
@@ -635,7 +636,7 @@ function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
 }
 
-function EventModal({ e, onClose, onMark, marking }: { e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean }) {
+function EventModal({ e, onClose, onMark, marking, onUnschedule }: { e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void }) {
   const isShoot = e.kind === 'shoot'
   const type = e.contentType || 'other'
   const done = isDone(e)
@@ -659,21 +660,29 @@ function EventModal({ e, onClose, onMark, marking }: { e: Ev; onClose: () => voi
           {!isShoot && e.assigneeName && <Row k="Ответственный" v={e.assigneeName} />}
           {!isShoot && <Row k="Статус" v={done ? 'Сделано' : (STATUS_LABEL[e.status || 'planned'] || e.status || 'В работе')} />}
         </div>
-        {isShoot ? (
-          <p className="text-xs text-gray-400 text-center">Съёмка запланирована.</p>
-        ) : !e.taskId ? (
-          <p className="text-xs text-gray-400 text-center">Статус этого элемента меняется на «Доске проектов».</p>
-        ) : done ? (
-          <button disabled={marking} onClick={() => onMark(false)}
-            className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">
-            <RotateCcw size={15} /> Вернуть в работу
-          </button>
-        ) : (
-          <button disabled={marking} onClick={() => onMark(true)}
-            className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#3f7a58] text-white py-2.5 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
-            <Check size={15} /> Отметить сделанным
-          </button>
-        )}
+        <div className="space-y-2">
+          {e.date && (
+            <button onClick={onUnschedule}
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+              <Inbox size={15} /> Вернуть в «Не запланировано»
+            </button>
+          )}
+          {isShoot ? (
+            <p className="text-xs text-gray-400 text-center">Съёмка запланирована.</p>
+          ) : !e.taskId ? (
+            <p className="text-xs text-gray-400 text-center">Статус этого элемента меняется на «Доске проектов».</p>
+          ) : done ? (
+            <button disabled={marking} onClick={() => onMark(false)}
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">
+              <RotateCcw size={15} /> Вернуть в работу
+            </button>
+          ) : (
+            <button disabled={marking} onClick={() => onMark(true)}
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#3f7a58] text-white py-2.5 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
+              <Check size={15} /> Отметить сделанным
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
