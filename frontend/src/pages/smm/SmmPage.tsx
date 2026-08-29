@@ -77,6 +77,19 @@ function catOf(e: Ev): Cat {
   return 'post'
 }
 
+// ─── фильтр по типу в шапке: Reels · Макет · Одноразовые задачи ─────────
+// «Одноразовые задачи» = всё, что относится к проекту «Одноразовые съёмки».
+type FKind = 'reel' | 'design' | 'oneoff'
+const FKINDS: FKind[] = ['reel', 'design', 'oneoff']
+const FKIND_LABEL: Record<FKind, string> = { reel: 'Reels', design: 'Макет', oneoff: 'Одноразовые задачи' }
+const FKIND_ICON: Record<FKind, any> = { reel: Film, design: ImageIcon, oneoff: Camera }
+const ONEOFF_RE = /одноразов/i
+function matchesFKind(e: Ev, k: FKind): boolean {
+  if (k === 'oneoff') return ONEOFF_RE.test(e.projectName || '')
+  if (k === 'reel') return e.kind === 'publication' && (e.contentType === 'reel' || e.contentType === 'video')
+  return e.kind === 'publication' && e.contentType === 'design'
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────
 function monthTitle(ym: string): string {
   const [y, m] = ym.split('-').map(Number)
@@ -138,7 +151,14 @@ export default function SmmPage() {
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
   })
-  const clearProjects = () => setSelProjects(new Set())
+  // Фильтр по типу в шапке (пусто = все типы).
+  const [selTypes, setSelTypes] = useState<Set<FKind>>(new Set())
+  const toggleType = (k: FKind) => setSelTypes(prev => {
+    const next = new Set(prev)
+    if (next.has(k)) next.delete(k); else next.add(k)
+    return next
+  })
+  const clearTypes = () => setSelTypes(new Set())
 
   const { from, to } = useMemo(() => {
     if (view === 'week') return { from: iso(startOfWeek(cursor, { weekStartsOn: 1 })), to: iso(endOfWeek(cursor, { weekStartsOn: 1 })) }
@@ -233,9 +253,10 @@ export default function SmmPage() {
   // Основной вид: проект + поиск + без сторис (сторис — в отдельном табе).
   const mainEvents = useMemo(() => allEvents.filter(e =>
     (selProjects.size === 0 || selProjects.has(e.projectId))
+    && (selTypes.size === 0 || FKINDS.some(k => selTypes.has(k) && matchesFKind(e, k)))
     && matchSearch(e, search)
     && !(e.kind === 'publication' && e.contentType === 'story')
-  ), [allEvents, selProjects, search])
+  ), [allEvents, selProjects, selTypes, search])
 
   const mainByDate = useMemo(() => {
     const map = new Map<string, Ev[]>()
@@ -303,30 +324,32 @@ export default function SmmPage() {
           <div className="relative">
             <button onClick={() => setFilterOpen(o => !o)}
               className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300">
-              {selProjects.size === 1 && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: projColor([...selProjects][0]) }} />}
-              {selProjects.size === 0
-                ? 'Все проекты'
-                : selProjects.size === 1
-                  ? (projects.find(p => p.id === [...selProjects][0])?.name || '1 проект')
-                  : `${selProjects.size} проектов`}
+              {selTypes.size === 0
+                ? 'Все типы'
+                : selTypes.size === 1
+                  ? FKIND_LABEL[[...selTypes][0]]
+                  : `${selTypes.size} типа`}
               <ChevronDown size={14} className="text-gray-400" />
             </button>
             {filterOpen && (
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setFilterOpen(false)} />
-                <div className="absolute left-0 top-full mt-1 z-40 w-56 max-h-72 overflow-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg p-1">
-                  <button onClick={() => clearProjects()}
-                    className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (selProjects.size === 0 ? 'font-semibold' : '')}>
-                    Все проекты {selProjects.size === 0 && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
+                <div className="absolute left-0 top-full mt-1 z-40 w-56 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg p-1">
+                  <button onClick={() => clearTypes()}
+                    className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (selTypes.size === 0 ? 'font-semibold' : '')}>
+                    Все типы {selTypes.size === 0 && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
                   </button>
-                  {projects.map(p => (
-                    <button key={p.id} onClick={() => toggleProject(p.id)}
-                      className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (selProjects.has(p.id) ? 'font-semibold' : '')}>
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: projColor(p.id) }} />
-                      <span className="truncate">{p.name}</span>
-                      {selProjects.has(p.id) && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
-                    </button>
-                  ))}
+                  {FKINDS.map(k => {
+                    const Ic = FKIND_ICON[k]
+                    return (
+                      <button key={k} onClick={() => toggleType(k)}
+                        className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (selTypes.has(k) ? 'font-semibold' : '')}>
+                        <Ic size={14} className="text-gray-400 shrink-0" />
+                        <span className="truncate">{FKIND_LABEL[k]}</span>
+                        {selTypes.has(k) && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
+                      </button>
+                    )
+                  })}
                 </div>
               </>
             )}
