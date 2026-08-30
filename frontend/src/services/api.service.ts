@@ -71,6 +71,9 @@ export const projectsApi = {
   // Архив историй сторисмейкера (не настоящий архив проекта).
   setStoriesArchived: (id: string, archived: boolean) =>
     api.patch(`/projects/${id}/stories-archive`, { archived }).then(r => r.data),
+  // День старта месячного цикла SMM-проекта (1..31, null — сбросить).
+  setSmmCycle: (id: string, day: number | null) =>
+    api.patch(`/projects/${id}/smm-cycle`, { day }).then(r => r.data),
   sendPaymentRequest: (id: string, message?: string) =>
     api.post(`/projects/${id}/send-payment-request`, { message }).then(r => r.data),
   payments: (id: string) => api.get(`/projects/${id}/payments`).then(r => r.data),

@@ -1775,6 +1775,40 @@ export class ProjectsService implements OnModuleInit {
     return { id, storiesArchived: archived };
   }
 
+  /** День старта месячного цикла SMM-проекта (1..31) — цикл сбрасывается
+   *  каждый месяц, у каждого проекта свой день. Хранится в smmData (merge,
+   *  без миграции). Календарь производства подсвечивает текущий цикл. */
+  async setSmmCycleDay(id: string, day: number | null, user?: { id: string; role: string; name?: string }) {
+    const project = await this.repo.findOne({ where: { id } });
+    if (!project) throw new NotFoundException('Project not found');
+    if (project.projectType !== 'SMM') {
+      throw new BadRequestException('Цикл применим только к SMM-проектам');
+    }
+    let normalized: number | null = null;
+    if (day != null) {
+      const n = Math.trunc(Number(day));
+      if (!Number.isFinite(n) || n < 1 || n > 31) {
+        throw new BadRequestException('День цикла должен быть от 1 до 31');
+      }
+      normalized = n;
+    }
+    const smmData = { ...(project.smmData || {}) };
+    if (normalized == null) delete smmData.cycleStartDay;
+    else smmData.cycleStartDay = normalized;
+    await this.repo.update(id, { smmData });
+    await this.activityLog.log({
+      userId: user?.id,
+      userName: user?.name,
+      action: ActivityAction.PROJECT_UPDATE,
+      entity: 'project',
+      entityId: id,
+      entityName: project.name,
+      details: { cycleStartDay: normalized },
+    });
+    this.gateway.broadcast('projects:changed', { projectId: id });
+    return { id, cycleStartDay: normalized };
+  }
+
   async archive(id: string, user?: { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
     // smm_director может архивировать ТОЛЬКО SMM-проекты (его область).

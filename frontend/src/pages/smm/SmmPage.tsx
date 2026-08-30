@@ -21,7 +21,7 @@ type Ev = {
 
 /** «Сделано» для публикации: опубликовано ИЛИ связанная задача выполнена. */
 const isDone = (e: Ev) => e.status === 'published' || e.taskStatus === 'done'
-type Proj = { id: string; name: string; startDate?: string | null; endDate?: string | null }
+type Proj = { id: string; name: string; startDate?: string | null; endDate?: string | null; cycleStartDay?: number | null }
 type CalData = { from: string; to: string; events: Ev[]; projects: Proj[]; backlog: Ev[] }
 type View = 'month' | 'week' | 'day' | 'stories'
 
@@ -200,18 +200,17 @@ export default function SmmPage() {
     onError: () => toast.error('Не удалось обновить'),
   })
 
-  // Настройки проекта — сроки работы (начало / конец). Открывается по шестерёнке
-  // на плитке «Не запланировано», сохраняет в project.startDate/endDate.
+  // Настройки проекта — день старта месячного цикла. Открывается по шестерёнке
+  // на плитке «Не запланировано», сохраняет в project.smmData.cycleStartDay.
   const [projSettings, setProjSettings] = useState<Proj | null>(null)
   const openProjSettings = (id: string) => {
     const p = projects.find(x => x.id === id)
     if (p) setProjSettings(p)
   }
-  const datesMut = useMutation({
-    mutationFn: ({ id, startDate, endDate }: { id: string; startDate: string | null; endDate: string | null }) =>
-      projectsApi.update(id, { startDate, endDate }),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Сроки проекта сохранены'); setProjSettings(null) },
-    onError: () => toast.error('Не удалось сохранить сроки'),
+  const cycleMut = useMutation({
+    mutationFn: ({ id, day }: { id: string; day: number | null }) => projectsApi.setSmmCycle(id, day),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Цикл проекта сохранён'); setProjSettings(null) },
+    onError: () => toast.error('Не удалось сохранить цикл'),
   })
 
   const dragRef = useRef<Ev | null>(null)
@@ -283,16 +282,13 @@ export default function SmmPage() {
     return map
   }, [mainEvents])
 
-  // Периоды выбранных проектов (начало → конец) — лента на месячном календаре.
-  // Показываем только для выбранных проектов, у которых заданы обе даты.
-  const periods = useMemo(() => {
-    const out: { id: string; name: string; color: string; start: string; end: string }[] = []
+  // Месячные циклы выбранных проектов — лента на календаре. Показываем только
+  // для выбранных проектов, у которых задан день старта цикла.
+  const cycles = useMemo(() => {
+    const out: { id: string; name: string; color: string; anchor: number }[] = []
     for (const p of projects) {
-      if (!selProjects.has(p.id) || !p.startDate || !p.endDate) continue
-      const start = String(p.startDate).slice(0, 10)
-      const end = String(p.endDate).slice(0, 10)
-      if (start > end) continue
-      out.push({ id: p.id, name: p.name, color: projColor(p.id), start, end })
+      if (!selProjects.has(p.id) || !p.cycleStartDay) continue
+      out.push({ id: p.id, name: p.name, color: projColor(p.id), anchor: p.cycleStartDay })
     }
     return out
   }, [projects, selProjects])
@@ -413,7 +409,7 @@ export default function SmmPage() {
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
           {view === 'month' ? (
-            <MonthView cells={cells} byDate={mainByDate} today={today} periods={periods}
+            <MonthView cells={cells} byDate={mainByDate} today={today} cycles={cycles}
               onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
               dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           ) : (
@@ -430,51 +426,52 @@ export default function SmmPage() {
       )}
 
       {projSettings && (
-        <ProjectDatesModal p={projSettings} saving={datesMut.isPending}
+        <ProjectCycleModal p={projSettings} saving={cycleMut.isPending}
           onClose={() => setProjSettings(null)}
-          onSave={(startDate, endDate) => datesMut.mutate({ id: projSettings.id, startDate, endDate })} />
+          onSave={day => cycleMut.mutate({ id: projSettings.id, day })} />
       )}
     </div>
   )
 }
 
-// ─── окно «Сроки проекта» — диапазон (начало → конец) одним календарём ──
-function ProjectDatesModal({ p, saving, onClose, onSave }: {
-  p: Proj; saving: boolean; onClose: () => void; onSave: (startDate: string | null, endDate: string | null) => void
+// ─── окно «Цикл проекта» — день старта месячного цикла (1..31) ──────────
+function ProjectCycleModal({ p, saving, onClose, onSave }: {
+  p: Proj; saving: boolean; onClose: () => void; onSave: (day: number | null) => void
 }) {
-  const [start, setStart] = useState<string | null>(p.startDate ? String(p.startDate).slice(0, 10) : null)
-  const [end, setEnd] = useState<string | null>(p.endDate ? String(p.endDate).slice(0, 10) : null)
+  const [day, setDay] = useState<number | null>(p.cycleStartDay ?? null)
   const accent = projColor(p.id)
-  const fmtRu = (s: string | null) => s ? new Date(s + 'T00:00:00').toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-  // Какое поле выбираем следующим кликом — для подсветки чипа.
-  const next: 's' | 'e' = !start || (!!start && !!end) ? 's' : 'e'
+  const hint = day == null
+    ? 'Цикл не задан — на календаре период не подсвечивается.'
+    : day === 1
+      ? 'Цикл: с 1-го по конец каждого месяца.'
+      : `Цикл: с ${day}-го по ${day - 1}-е следующего месяца (сдвигается каждый месяц).`
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 mb-1">
           <span style={projFill(p.id)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold">
-            <CalendarRange size={12} /> Сроки проекта
+            <CalendarRange size={12} /> Цикл проекта
           </span>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
-        <h3 className="text-lg font-bold mb-3">{p.name}</h3>
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          {([['Начало', start, 's'], ['Конец', end, 'e']] as const).map(([label, val, kind]) => (
-            <div key={kind} className={'rounded-lg border px-2.5 py-1.5 transition ' + (next === kind ? 'border-transparent' : 'border-gray-200 dark:border-gray-700')}
-              style={next === kind ? { borderColor: accent, background: `color-mix(in srgb, ${accent} 8%, transparent)` } : undefined}>
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</div>
-              <div className="text-[13px] font-semibold">{fmtRu(val)}</div>
-            </div>
-          ))}
+        <h3 className="text-lg font-bold">{p.name}</h3>
+        <p className="text-xs text-gray-500 mb-3 mt-1">День, с которого каждый месяц начинается новый цикл (норма публикаций обнуляется).</p>
+        <div className="grid grid-cols-7 gap-1">
+          {Array.from({ length: 31 }, (_, i) => i + 1).map(n => {
+            const on = day === n
+            return (
+              <button key={n} type="button" onClick={() => setDay(on ? null : n)}
+                className={'h-9 grid place-items-center rounded-full text-[13px] transition ' + (on ? 'font-bold text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800')}
+                style={on ? { background: accent } : undefined}>{n}</button>
+            )
+          })}
         </div>
-        <RangeCalendar start={start} end={end} accent={accent}
-          onChange={(s, e) => { setStart(s); setEnd(e) }} />
+        <div className="mt-3 text-[12.5px] font-medium" style={day != null ? { color: accent } : undefined}>{hint}</div>
         <div className="flex items-center justify-between gap-2 mt-4">
-          <button onClick={() => { setStart(null); setEnd(null) }}
-            className="text-xs font-medium text-gray-400 hover:text-gray-600">Очистить</button>
+          <button onClick={() => setDay(null)} className="text-xs font-medium text-gray-400 hover:text-gray-600">Сбросить</button>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="text-sm font-semibold px-3 py-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">Отмена</button>
-            <button disabled={saving} onClick={() => onSave(start, end)}
+            <button disabled={saving} onClick={() => onSave(day)}
               className="flex items-center gap-1.5 rounded-lg bg-[#3f7a58] text-white px-4 py-2 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
               <Check size={15} /> Сохранить
             </button>
@@ -485,80 +482,23 @@ function ProjectDatesModal({ p, saving, onClose, onSave }: {
   )
 }
 
-// ─── range-календарь: один клик — начало, второй — конец, диапазон в цвете
-function RangeCalendar({ start, end, accent, onChange }: {
-  start: string | null; end: string | null; accent: string
-  onChange: (start: string | null, end: string | null) => void
-}) {
-  const parse = (s: string | null) => (s ? new Date(s + 'T00:00:00') : null)
-  const s = parse(start), e = parse(end)
-  const [cursor, setCursor] = useState<Date>(() => s ?? new Date())
-  const isoOf = (d: Date) => format(d, 'yyyy-MM-dd')
-  const gridStart = startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 })
-  const days = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i))
-  const today = new Date()
-  const lo = s && e ? (s <= e ? s : e) : s
-  const hi = s && e ? (s <= e ? e : s) : null
-  const click = (d: Date) => {
-    if (!s || (s && e)) onChange(isoOf(d), null)          // старт заново
-    else if (d < s) onChange(isoOf(d), start)             // кликнули раньше начала → новое начало
-    else onChange(start, isoOf(d))                        // конец
-  }
-  const monLabel = cursor.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
-  const nav = 'w-7 h-7 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[13px] font-semibold capitalize">{monLabel}</span>
-        <div className="flex gap-0.5">
-          <button onClick={() => setCursor(addMonths(cursor, -1))} className={nav}><ChevronLeft size={16} /></button>
-          <button onClick={() => setCursor(addMonths(cursor, 1))} className={nav}><ChevronRight size={16} /></button>
-        </div>
-      </div>
-      <div className="grid grid-cols-7 mb-1">
-        {DOW.map((d, i) => (
-          <span key={d} className={'text-center text-[10px] font-semibold uppercase ' + (i >= 5 ? 'text-gray-400/70' : 'text-gray-400')}>{d}</span>
-        ))}
-      </div>
-      <div className="grid grid-cols-7">
-        {days.map(d => {
-          const out = d.getMonth() !== cursor.getMonth()
-          const inRange = !!(lo && hi && d >= lo && d <= hi)
-          const isLo = !!(lo && isSameDay(d, lo))
-          const isHi = !!(hi && isSameDay(d, hi))
-          const endpoint = !!((s && isSameDay(d, s)) || (e && isSameDay(d, e)))
-          const isToday = isSameDay(d, today)
-          const band = inRange ? {
-            background: `color-mix(in srgb, ${accent} 16%, transparent)`,
-            borderTopLeftRadius: isLo ? 999 : 0, borderBottomLeftRadius: isLo ? 999 : 0,
-            borderTopRightRadius: isHi ? 999 : 0, borderBottomRightRadius: isHi ? 999 : 0,
-          } : undefined
-          return (
-            <button key={isoOf(d)} type="button" onClick={() => click(d)}
-              className="relative h-9 flex items-center justify-center" style={band}>
-              <span className={'relative z-10 w-[30px] h-[30px] grid place-items-center rounded-full text-[13px] '
-                + (out && !endpoint ? 'text-gray-400/50 ' : '')
-                + (endpoint ? 'font-bold text-white ' : (isToday ? 'font-semibold ' : ''))
-                + (!endpoint ? 'hover:bg-gray-100 dark:hover:bg-gray-800 ' : '')}
-                style={endpoint ? { background: accent } : (isToday ? { color: accent } : undefined)}>
-                {d.getDate()}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200 dark:border-gray-800">
-        <button type="button" onClick={() => onChange(null, null)} className="text-[12.5px] font-medium text-gray-400 hover:text-gray-600">Удалить</button>
-        <button type="button" onClick={() => setCursor(new Date())} className="text-[12.5px] font-medium text-gray-400 hover:text-gray-600">Сегодня</button>
-      </div>
-    </div>
-  )
+// ─── МЕСЯЦ ─────────────────────────────────────────────────────────────
+// Метки дня в месячном цикле: isStart — день старта цикла (округление слева),
+// isEnd — последний день цикла = день перед следующим стартом (округление справа).
+function cycleMarks(iso: string, anchor: number): { isStart: boolean; isEnd: boolean } {
+  const d = new Date(iso + 'T00:00:00')
+  const y = d.getFullYear(), m = d.getMonth(), day = d.getDate()
+  const dim = (yy: number, mm: number) => new Date(yy, mm + 1, 0).getDate()
+  const anchorThis = Math.min(anchor, dim(y, m))
+  if (day < anchorThis) return { isStart: false, isEnd: day === anchorThis - 1 }
+  const nextAnchor = Math.min(anchor, dim(y, m + 1))
+  const end = new Date(y, m + 1, nextAnchor); end.setDate(end.getDate() - 1)
+  return { isStart: day === anchorThis, isEnd: isSameDay(d, end) }
 }
 
-// ─── МЕСЯЦ ─────────────────────────────────────────────────────────────
-function MonthView({ cells, byDate, today, periods, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
+function MonthView({ cells, byDate, today, cycles, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
   cells: Cell[]; byDate: Map<string, Ev[]>; today: string
-  periods: { id: string; name: string; color: string; start: string; end: string }[]
+  cycles: { id: string; name: string; color: string; anchor: number }[]
   onOpen: (e: Ev) => void; onDragStart: (e: Ev) => void; onDropDate: (d: string) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
@@ -573,7 +513,6 @@ function MonthView({ cells, byDate, today, periods, onOpen, onDragStart, onDropD
         {cells.map((c, i) => {
           const evs = c.iso ? (byDate.get(c.iso) ?? []) : []
           const isToday = c.iso === today
-          const covering = c.iso ? periods.filter(p => c.iso! >= p.start && c.iso! <= p.end) : []
           return (
             <div key={i}
               onDragOver={c.iso ? (ev => { ev.preventDefault(); if (dragOverKey !== c.iso) setDragOverKey(c.iso) }) : undefined}
@@ -583,16 +522,15 @@ function MonthView({ cells, byDate, today, periods, onOpen, onDragStart, onDropD
                 + ((i + 1) % 7 === 0 ? 'border-r-0 ' : '')
                 + (c.iso && dragOverKey === c.iso ? 'ring-1 ring-inset ring-gray-400 ' : '')
                 + (!c.inMonth ? 'bg-gray-50/40 dark:bg-black/20' : isToday ? 'bg-[#eb5757]/[0.06]' : (i % 7 >= 5 ? 'bg-gray-50/50 dark:bg-white/[0.015]' : ''))}>
-              {covering.length > 0 && (
+              {c.iso && cycles.length > 0 && (
                 <div className="-mx-1 -mt-1 mb-0.5 flex flex-col gap-[2px]">
-                  {covering.map(p => {
-                    const isStart = c.iso === p.start
-                    const isEnd = c.iso === p.end
+                  {cycles.map(cy => {
+                    const { isStart, isEnd } = cycleMarks(c.iso!, cy.anchor)
                     return (
-                      <div key={p.id} title={`${p.name}: ${p.start} → ${p.end}`}
+                      <div key={cy.id} title={`${cy.name} · цикл с ${cy.anchor}-го числа`}
                         className="h-[4px]"
                         style={{
-                          background: p.color,
+                          background: cy.color,
                           marginLeft: isStart ? 4 : 0, marginRight: isEnd ? 4 : 0,
                           borderTopLeftRadius: isStart ? 999 : 0, borderBottomLeftRadius: isStart ? 999 : 0,
                           borderTopRightRadius: isEnd ? 999 : 0, borderBottomRightRadius: isEnd ? 999 : 0,
@@ -774,7 +712,7 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
                   <span className="truncate text-left">{g.name}</span>
                 </button>
                 <span className="text-[11px] text-gray-400 font-medium shrink-0">{g.items.length}</span>
-                <button type="button" onClick={() => onSettings(g.id)} title="Настройки проекта — сроки работы"
+                <button type="button" onClick={() => onSettings(g.id)} title="Настройки проекта — день старта цикла"
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 shrink-0">
                   <Settings size={13} />
                 </button>

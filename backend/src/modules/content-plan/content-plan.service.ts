@@ -288,7 +288,12 @@ export class ContentPlanService {
     const dOnly = (v: any): string | null =>
       !v ? null : (typeof v === 'string' ? v.slice(0, 10) : new Date(v).toISOString().slice(0, 10));
     const projects = active
-      .map(p => ({ id: p.id, name: p.name, startDate: dOnly(p.startDate), endDate: dOnly(p.endDate) }))
+      .map(p => ({
+        id: p.id, name: p.name,
+        startDate: dOnly(p.startDate), endDate: dOnly(p.endDate),
+        cycleStartDay: (p.smmData && Number.isFinite(Number(p.smmData.cycleStartDay)))
+          ? Number(p.smmData.cycleStartDay) : null,
+      }))
       .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
     const ids = active.map(p => p.id);
     if (!ids.length) return { from: f, to: t, events: [], projects, backlog: [] };
