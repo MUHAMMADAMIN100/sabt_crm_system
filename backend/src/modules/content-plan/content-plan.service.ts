@@ -232,29 +232,41 @@ export class ContentPlanService {
     return after;
   }
 
-  /** Умный календарь: догенерировать заготовки контента под норму цикла.
-   *  Добиваем число НЕзапланированных (без даты) рилсов/постов до нормы —
-   *  они появляются в «Не запланировано», откуда их тащат на даты. Если уже
-   *  достаточно — ничего не создаём (не дублируем). */
+  /** Умный календарь: привести контент под норму цикла. СУММАРНО за текущий
+   *  цикл (незапланированные + поставленные на даты В ОКНЕ цикла) держим ровно
+   *  норму: лишние удаляем, недостающие создаём как незапланированные. Так
+   *  «в корзине + в календаре» всегда не больше нормы. */
   async smartGenerateStubs(projectId: string, reels: number, posts: number) {
     if (!projectId) return { ok: true };
     const norm = (v: any) => Math.max(0, Math.min(999, Math.trunc(Number(v) || 0)));
-    await this.reconcileStub(projectId, ContentItemType.REEL, 'Рилс', norm(reels));
-    await this.reconcileStub(projectId, ContentItemType.POST, 'Пост', norm(posts));
+    const project = await this.repo.manager.getRepository(Project).findOne({ where: { id: projectId } }).catch(() => null);
+    const anchor = Number(project?.smmData?.cycleStartDay);
+    const win = (Number.isFinite(anchor) && anchor >= 1) ? this.currentCycleBounds(anchor) : null;
+    await this.reconcileStub(projectId, ContentItemType.REEL, 'Рилс', norm(reels), win);
+    await this.reconcileStub(projectId, ContentItemType.POST, 'Пост', norm(posts), win);
     return { ok: true };
   }
 
-  /** Довести число НЕзапланированных авто-заготовок этого типа ровно до нормы:
-   *  лишние удаляем, недостающие создаём. Трогаем только авто-заготовки
-   *  (topic вида «Рилс N» / «Пост N») и только без даты — реальный контент и
-   *  уже поставленные на дату карточки не затрагиваем. */
-  private async reconcileStub(projectId: string, type: ContentItemType, label: string, norm: number) {
+  /** Довести суммарное число авто-заготовок этого типа за цикл ровно до нормы.
+   *  Считаем: без даты ИЛИ с датой в окне цикла [win.start, win.end]. Лишние
+   *  удаляем (сначала незапланированные, потом лишние в календаре), недостающие
+   *  создаём как незапланированные. Трогаем только авто-заготовки («Рилс N» /
+   *  «Пост N») — реальный контент не затрагиваем. */
+  private async reconcileStub(projectId: string, type: ContentItemType, label: string, norm: number, win: { start: string; end: string } | null) {
+    const params: any[] = [projectId, String(type), label];
+    let dateCond = `"publishDate" IS NULL`;
+    if (win) {
+      params.push(win.start, win.end);
+      dateCond = `("publishDate" IS NULL OR ("publishDate"::date >= $4::date AND "publishDate"::date <= $5::date))`;
+    }
+    // Порядок: сначала оставляем поставленные на дату (в календаре), лишние
+    // удаляем начиная с незапланированных.
     const auto: any[] = await this.repo.manager.query(
       `SELECT id FROM content_plan_items
-       WHERE "projectId" = $1 AND "contentType"::text = $2 AND "publishDate" IS NULL
-         AND topic ~ ('^' || $3 || ' [0-9]+$')
-       ORDER BY id`,
-      [projectId, String(type), label],
+       WHERE "projectId" = $1 AND "contentType"::text = $2
+         AND topic ~ ('^' || $3 || ' [0-9]+$') AND ${dateCond}
+       ORDER BY ("publishDate" IS NULL), id`,
+      params,
     ).catch(() => []);
     if (auto.length > norm) {
       const del = auto.slice(norm).map((r: any) => r.id);
@@ -325,32 +337,21 @@ export class ContentPlanService {
    *  «Доски проектов» (workflow_cards, kind='kp') — только для проектов, где
    *  своих элементов ещё нет. После копирования системы независимы: правки в
    *  Умном календаре не трогают Доску и наоборот. */
-  private async seedSmartStoreFromBoard(ids: string[]): Promise<void> {
-    if (!ids.length) return;
-    const existing: any[] = await this.repo.manager.query(
-      `SELECT DISTINCT "projectId" FROM content_plan_items WHERE "projectId" = ANY($1::uuid[])`,
-      [ids],
-    ).catch(() => []);
-    const have = new Set(existing.map(r => r.projectId));
-    const toSeed = ids.filter(id => !have.has(id));
-    if (!toSeed.length) return;
-    const kp: any[] = await this.repo.manager.query(
-      `SELECT wc."projectId" AS "projectId", it->>'itemKind' AS "itemKind",
-              it->>'title' AS title, NULLIF(it->>'publishDate', '') AS "publishDate"
-       FROM workflow_cards wc, jsonb_array_elements(COALESCE(wc.items, '[]'::jsonb)) it
-       WHERE wc.kind = 'kp' AND wc."projectId" = ANY($1::uuid[])`,
-      [toSeed],
-    ).catch(() => []);
-    if (!kp.length) return;
-    const rows = kp.map(k => this.repo.create({
-      projectId: k.projectId,
-      contentType: k.itemKind === 'reel' ? ContentItemType.REEL : ContentItemType.POST,
-      topic: (k.title && String(k.title).trim()) || 'Без названия',
-      publishDate: k.publishDate ? new Date(k.publishDate) : null,
-      status: ContentPlanStatus.PLANNED,
-    }));
-    await this.repo.save(rows)
-      .catch((e: any) => this.logger.warn(`seed smart store failed: ${e?.message || e}`));
+  /** Границы ТЕКУЩЕГО цикла (в котором сегодня) по дню старта anchor. */
+  private currentCycleBounds(anchor: number): { start: string; end: string } {
+    const today = new Date();
+    const dim = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
+    const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
+    const anchorThis = Math.min(anchor, dim(y, m));
+    let sy = y, sm = m;
+    if (d < anchorThis) { sm -= 1; if (sm < 0) { sm = 11; sy -= 1; } }
+    const sAnchor = Math.min(anchor, dim(sy, sm));
+    const start = new Date(sy, sm, sAnchor);
+    const nAnchor = Math.min(anchor, dim(start.getFullYear(), start.getMonth() + 1));
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, nAnchor);
+    end.setDate(end.getDate() - 1);
+    const iso = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    return { start: iso(start), end: iso(end) };
   }
 
   /**
@@ -386,9 +387,8 @@ export class ContentPlanService {
     if (!ids.length) return { from: f, to: t, events: [], projects, backlog: [] };
 
     // Умный календарь работает на СВОЁМ хранилище (content_plan_items),
-    // отдельном от «Доски проектов» (workflow_cards). При первом открытии
-    // проекта разово копируем контент с Доски — дальше системы независимы.
-    await this.seedSmartStoreFromBoard(ids);
+    // отдельном от «Доски проектов». Контент управляется НОРМОЙ цикла
+    // (генерируется при сохранении цикла), Доска не копируется.
 
     // Публикации — из собственного хранилища (content_plan_items), по publishDate.
     const pubs: any[] = await this.repo.manager.query(
