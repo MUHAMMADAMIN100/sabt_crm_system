@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, IsNull } from 'typeorm';
 import {
   ContentPlanItem,
   ContentPlanStatus,
@@ -230,6 +230,25 @@ export class ContentPlanService {
     }
     this.emitTasksChanged(after.projectId);
     return after;
+  }
+
+  /** Умный календарь: догенерировать заготовки контента под норму цикла.
+   *  Добиваем число НЕзапланированных (без даты) рилсов/постов до нормы —
+   *  они появляются в «Не запланировано», откуда их тащат на даты. Если уже
+   *  достаточно — ничего не создаём (не дублируем). */
+  async smartGenerateStubs(projectId: string, reels: number, posts: number) {
+    if (!projectId) return { ok: true, created: 0 };
+    const norm = (v: any) => Math.max(0, Math.min(999, Math.trunc(Number(v) || 0)));
+    const r = norm(reels), p = norm(posts);
+    const [haveR, haveP] = await Promise.all([
+      this.repo.count({ where: { projectId, contentType: ContentItemType.REEL, publishDate: IsNull() } }),
+      this.repo.count({ where: { projectId, contentType: ContentItemType.POST, publishDate: IsNull() } }),
+    ]);
+    const rows: ContentPlanItem[] = [];
+    for (let i = haveR; i < r; i++) rows.push(this.repo.create({ projectId, contentType: ContentItemType.REEL, topic: `Рилс ${i + 1}`, status: ContentPlanStatus.PLANNED }));
+    for (let i = haveP; i < p; i++) rows.push(this.repo.create({ projectId, contentType: ContentItemType.POST, topic: `Пост ${i + 1}`, status: ContentPlanStatus.PLANNED }));
+    if (rows.length) await this.repo.save(rows);
+    return { ok: true, created: rows.length };
   }
 
   /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) БЕЗ

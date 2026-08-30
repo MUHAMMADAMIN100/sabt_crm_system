@@ -57,6 +57,14 @@ export class ContentPlanController {
     return this.service.smmCalendar(from, to);
   }
 
+  /** Умный календарь: догенерировать заготовки под норму цикла (рилсы/посты)
+   *  в «Не запланировано». Только руководящие роли SMM. */
+  @Post('smart-generate')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
+  smartGenerate(@Body() body: { projectId: string; reels?: number; posts?: number }) {
+    return this.service.smartGenerateStubs(body?.projectId, body?.reels ?? 0, body?.posts ?? 0);
+  }
+
   /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) без
    *  побочных эффектов. Объявлено ДО ':id'. Только руководящие роли SMM. */
   @Patch('smart-item/:id')

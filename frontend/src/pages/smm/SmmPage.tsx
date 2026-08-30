@@ -206,8 +206,11 @@ export default function SmmPage() {
     if (p) setProjSettings(p)
   }
   const cycleMut = useMutation({
-    mutationFn: ({ id, day, normReels, normPosts }: { id: string; day: number | null; normReels: number | null; normPosts: number | null }) =>
-      projectsApi.setSmmCycle(id, { day, normReels, normPosts }),
+    mutationFn: async ({ id, day, normReels, normPosts }: { id: string; day: number | null; normReels: number | null; normPosts: number | null }) => {
+      await projectsApi.setSmmCycle(id, { day, normReels, normPosts })
+      // Догенерировать заготовки под норму в «Не запланировано».
+      await contentPlanApi.smartGenerate({ projectId: id, reels: normReels ?? 0, posts: normPosts ?? 0 })
+    },
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Цикл проекта сохранён'); setProjSettings(null) },
     onError: () => toast.error('Не удалось сохранить цикл'),
   })
@@ -284,10 +287,12 @@ export default function SmmPage() {
   // Месячные циклы выбранных проектов — лента на календаре. Показываем только
   // для выбранных проектов, у которых задан день старта цикла.
   const cycles = useMemo(() => {
-    const out: { id: string; name: string; color: string; anchor: number }[] = []
+    const today = new Date()
+    const out: { id: string; name: string; color: string; start: string; end: string }[] = []
     for (const p of projects) {
       if (!selProjects.has(p.id) || !p.cycleStartDay) continue
-      out.push({ id: p.id, name: p.name, color: projColor(p.id), anchor: p.cycleStartDay })
+      const { start, end } = currentCycleBounds(today, p.cycleStartDay)
+      out.push({ id: p.id, name: p.name, color: projColor(p.id), start, end })
     }
     return out
   }, [projects, selProjects])
@@ -521,22 +526,26 @@ function ProjectCycleModal({ p, saving, onClose, onSave }: {
 }
 
 // ─── МЕСЯЦ ─────────────────────────────────────────────────────────────
-// Метки дня в месячном цикле: isStart — день старта цикла (округление слева),
-// isEnd — последний день цикла = день перед следующим стартом (округление справа).
-function cycleMarks(iso: string, anchor: number): { isStart: boolean; isEnd: boolean } {
-  const d = new Date(iso + 'T00:00:00')
-  const y = d.getFullYear(), m = d.getMonth(), day = d.getDate()
-  const dim = (yy: number, mm: number) => new Date(yy, mm + 1, 0).getDate()
+// Границы ТЕКУЩЕГО цикла (в котором находится today): [старт, конец] по дню
+// старта anchor. Напр. anchor=10, today=30 авг → 10 авг … 9 сен. Только этот
+// цикл подсвечивается — не прошлый и не будущий.
+function currentCycleBounds(today: Date, anchor: number): { start: string; end: string } {
+  const dim = (y: number, m: number) => new Date(y, m + 1, 0).getDate()
+  const y = today.getFullYear(), m = today.getMonth(), d = today.getDate()
   const anchorThis = Math.min(anchor, dim(y, m))
-  if (day < anchorThis) return { isStart: false, isEnd: day === anchorThis - 1 }
-  const nextAnchor = Math.min(anchor, dim(y, m + 1))
-  const end = new Date(y, m + 1, nextAnchor); end.setDate(end.getDate() - 1)
-  return { isStart: day === anchorThis, isEnd: isSameDay(d, end) }
+  let sy = y, sm = m
+  if (d < anchorThis) { sm -= 1; if (sm < 0) { sm = 11; sy -= 1 } }
+  const sAnchor = Math.min(anchor, dim(sy, sm))
+  const start = new Date(sy, sm, sAnchor)
+  const nAnchor = Math.min(anchor, dim(start.getFullYear(), start.getMonth() + 1))
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, nAnchor)
+  end.setDate(end.getDate() - 1)
+  return { start: iso(start), end: iso(end) }
 }
 
 function MonthView({ cells, byDate, today, cycles, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
   cells: Cell[]; byDate: Map<string, Ev[]>; today: string
-  cycles: { id: string; name: string; color: string; anchor: number }[]
+  cycles: { id: string; name: string; color: string; start: string; end: string }[]
   onOpen: (e: Ev) => void; onDragStart: (e: Ev) => void; onDropDate: (d: string) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
@@ -560,12 +569,13 @@ function MonthView({ cells, byDate, today, cycles, onOpen, onDragStart, onDropDa
                 + ((i + 1) % 7 === 0 ? 'border-r-0 ' : '')
                 + (c.iso && dragOverKey === c.iso ? 'ring-1 ring-inset ring-gray-400 ' : '')
                 + (!c.inMonth ? 'bg-gray-50/40 dark:bg-black/20' : isToday ? 'bg-[#eb5757]/[0.06]' : (i % 7 >= 5 ? 'bg-gray-50/50 dark:bg-white/[0.015]' : ''))}>
-              {c.iso && cycles.length > 0 && (
+              {c.iso && cycles.some(cy => c.iso! >= cy.start && c.iso! <= cy.end) && (
                 <div className="-mx-1 -mt-1 mb-0.5 flex flex-col gap-[2px]">
-                  {cycles.map(cy => {
-                    const { isStart, isEnd } = cycleMarks(c.iso!, cy.anchor)
+                  {cycles.filter(cy => c.iso! >= cy.start && c.iso! <= cy.end).map(cy => {
+                    const isStart = c.iso === cy.start
+                    const isEnd = c.iso === cy.end
                     return (
-                      <div key={cy.id} title={`${cy.name} · цикл с ${cy.anchor}-го числа`}
+                      <div key={cy.id} title={`${cy.name} · текущий цикл ${cy.start} → ${cy.end}`}
                         className="h-[4px]"
                         style={{
                           background: cy.color,
