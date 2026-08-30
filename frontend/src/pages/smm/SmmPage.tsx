@@ -283,6 +283,20 @@ export default function SmmPage() {
     return map
   }, [mainEvents])
 
+  // Периоды выбранных проектов (начало → конец) — лента на месячном календаре.
+  // Показываем только для выбранных проектов, у которых заданы обе даты.
+  const periods = useMemo(() => {
+    const out: { id: string; name: string; color: string; start: string; end: string }[] = []
+    for (const p of projects) {
+      if (!selProjects.has(p.id) || !p.startDate || !p.endDate) continue
+      const start = String(p.startDate).slice(0, 10)
+      const end = String(p.endDate).slice(0, 10)
+      if (start > end) continue
+      out.push({ id: p.id, name: p.name, color: projColor(p.id), start, end })
+    }
+    return out
+  }, [projects, selProjects])
+
   // Таб «Сторисы»: мини-календари по проекту → дате (все события, в т.ч. сторис).
   const byProject = useMemo(() => {
     const m = new Map<string, Map<string, Ev[]>>()
@@ -399,7 +413,7 @@ export default function SmmPage() {
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
           {view === 'month' ? (
-            <MonthView cells={cells} byDate={mainByDate} today={today}
+            <MonthView cells={cells} byDate={mainByDate} today={today} periods={periods}
               onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
               dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           ) : (
@@ -542,8 +556,9 @@ function RangeCalendar({ start, end, accent, onChange }: {
 }
 
 // ─── МЕСЯЦ ─────────────────────────────────────────────────────────────
-function MonthView({ cells, byDate, today, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
+function MonthView({ cells, byDate, today, periods, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
   cells: Cell[]; byDate: Map<string, Ev[]>; today: string
+  periods: { id: string; name: string; color: string; start: string; end: string }[]
   onOpen: (e: Ev) => void; onDragStart: (e: Ev) => void; onDropDate: (d: string) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
@@ -558,6 +573,7 @@ function MonthView({ cells, byDate, today, onOpen, onDragStart, onDropDate, drag
         {cells.map((c, i) => {
           const evs = c.iso ? (byDate.get(c.iso) ?? []) : []
           const isToday = c.iso === today
+          const covering = c.iso ? periods.filter(p => c.iso! >= p.start && c.iso! <= p.end) : []
           return (
             <div key={i}
               onDragOver={c.iso ? (ev => { ev.preventDefault(); if (dragOverKey !== c.iso) setDragOverKey(c.iso) }) : undefined}
@@ -567,6 +583,24 @@ function MonthView({ cells, byDate, today, onOpen, onDragStart, onDropDate, drag
                 + ((i + 1) % 7 === 0 ? 'border-r-0 ' : '')
                 + (c.iso && dragOverKey === c.iso ? 'ring-1 ring-inset ring-gray-400 ' : '')
                 + (!c.inMonth ? 'bg-gray-50/40 dark:bg-black/20' : isToday ? 'bg-[#eb5757]/[0.06]' : (i % 7 >= 5 ? 'bg-gray-50/50 dark:bg-white/[0.015]' : ''))}>
+              {covering.length > 0 && (
+                <div className="-mx-1 -mt-1 mb-0.5 flex flex-col gap-[2px]">
+                  {covering.map(p => {
+                    const isStart = c.iso === p.start
+                    const isEnd = c.iso === p.end
+                    return (
+                      <div key={p.id} title={`${p.name}: ${p.start} → ${p.end}`}
+                        className="h-[4px]"
+                        style={{
+                          background: p.color,
+                          marginLeft: isStart ? 4 : 0, marginRight: isEnd ? 4 : 0,
+                          borderTopLeftRadius: isStart ? 999 : 0, borderBottomLeftRadius: isStart ? 999 : 0,
+                          borderTopRightRadius: isEnd ? 999 : 0, borderBottomRightRadius: isEnd ? 999 : 0,
+                        }} />
+                    )
+                  })}
+                </div>
+              )}
               <span className={'text-[12px] font-semibold self-end px-1 ' + (isToday ? 'bg-[#eb5757] text-white rounded-full w-[20px] h-[20px] grid place-items-center' : c.inMonth ? 'text-gray-500 dark:text-gray-400' : 'text-gray-300 dark:text-gray-600')}>{c.label}</span>
               {evs.slice(0, MAX_PER_DAY).map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
               {evs.length > MAX_PER_DAY && <span className="text-[11px] text-gray-400 px-1">+{evs.length - MAX_PER_DAY}</span>}
