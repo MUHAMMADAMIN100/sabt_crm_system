@@ -424,13 +424,16 @@ export default function SmmPage() {
   )
 }
 
-// ─── окно «Настройки проекта» — сроки работы (начало / конец) ──────────
+// ─── окно «Сроки проекта» — диапазон (начало → конец) одним календарём ──
 function ProjectDatesModal({ p, saving, onClose, onSave }: {
   p: Proj; saving: boolean; onClose: () => void; onSave: (startDate: string | null, endDate: string | null) => void
 }) {
-  const [start, setStart] = useState(p.startDate ? String(p.startDate).slice(0, 10) : '')
-  const [end, setEnd] = useState(p.endDate ? String(p.endDate).slice(0, 10) : '')
-  const invalid = !!start && !!end && end < start
+  const [start, setStart] = useState<string | null>(p.startDate ? String(p.startDate).slice(0, 10) : null)
+  const [end, setEnd] = useState<string | null>(p.endDate ? String(p.endDate).slice(0, 10) : null)
+  const accent = projColor(p.id)
+  const fmtRu = (s: string | null) => s ? new Date(s + 'T00:00:00').toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+  // Какое поле выбираем следующим кликом — для подсветки чипа.
+  const next: 's' | 'e' = !start || (!!start && !!end) ? 's' : 'e'
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
@@ -440,31 +443,99 @@ function ProjectDatesModal({ p, saving, onClose, onSave }: {
           </span>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
-        <h3 className="text-lg font-bold mb-4">{p.name}</h3>
-        <div className="space-y-3">
-          <label className="block">
-            <span className="text-xs font-medium text-gray-500">Начало работы</span>
-            <input type="date" value={start} max={end || undefined} onChange={e => setStart(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400" />
-          </label>
-          <label className="block">
-            <span className="text-xs font-medium text-gray-500">Конец проекта</span>
-            <input type="date" value={end} min={start || undefined} onChange={e => setEnd(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400" />
-          </label>
-          {invalid && <p className="text-xs text-red-500">Конец не может быть раньше начала.</p>}
+        <h3 className="text-lg font-bold mb-3">{p.name}</h3>
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          {([['Начало', start, 's'], ['Конец', end, 'e']] as const).map(([label, val, kind]) => (
+            <div key={kind} className={'rounded-lg border px-2.5 py-1.5 transition ' + (next === kind ? 'border-transparent' : 'border-gray-200 dark:border-gray-700')}
+              style={next === kind ? { borderColor: accent, background: `color-mix(in srgb, ${accent} 8%, transparent)` } : undefined}>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</div>
+              <div className="text-[13px] font-semibold">{fmtRu(val)}</div>
+            </div>
+          ))}
         </div>
-        <div className="flex items-center justify-between gap-2 mt-5">
-          <button onClick={() => { setStart(''); setEnd('') }}
+        <RangeCalendar start={start} end={end} accent={accent}
+          onChange={(s, e) => { setStart(s); setEnd(e) }} />
+        <div className="flex items-center justify-between gap-2 mt-4">
+          <button onClick={() => { setStart(null); setEnd(null) }}
             className="text-xs font-medium text-gray-400 hover:text-gray-600">Очистить</button>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="text-sm font-semibold px-3 py-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">Отмена</button>
-            <button disabled={saving || invalid} onClick={() => onSave(start || null, end || null)}
+            <button disabled={saving} onClick={() => onSave(start, end)}
               className="flex items-center gap-1.5 rounded-lg bg-[#3f7a58] text-white px-4 py-2 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
               <Check size={15} /> Сохранить
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── range-календарь: один клик — начало, второй — конец, диапазон в цвете
+function RangeCalendar({ start, end, accent, onChange }: {
+  start: string | null; end: string | null; accent: string
+  onChange: (start: string | null, end: string | null) => void
+}) {
+  const parse = (s: string | null) => (s ? new Date(s + 'T00:00:00') : null)
+  const s = parse(start), e = parse(end)
+  const [cursor, setCursor] = useState<Date>(() => s ?? new Date())
+  const isoOf = (d: Date) => format(d, 'yyyy-MM-dd')
+  const gridStart = startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 })
+  const days = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i))
+  const today = new Date()
+  const lo = s && e ? (s <= e ? s : e) : s
+  const hi = s && e ? (s <= e ? e : s) : null
+  const click = (d: Date) => {
+    if (!s || (s && e)) onChange(isoOf(d), null)          // старт заново
+    else if (d < s) onChange(isoOf(d), start)             // кликнули раньше начала → новое начало
+    else onChange(start, isoOf(d))                        // конец
+  }
+  const monLabel = cursor.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+  const nav = 'w-7 h-7 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[13px] font-semibold capitalize">{monLabel}</span>
+        <div className="flex gap-0.5">
+          <button onClick={() => setCursor(addMonths(cursor, -1))} className={nav}><ChevronLeft size={16} /></button>
+          <button onClick={() => setCursor(addMonths(cursor, 1))} className={nav}><ChevronRight size={16} /></button>
+        </div>
+      </div>
+      <div className="grid grid-cols-7 mb-1">
+        {DOW.map((d, i) => (
+          <span key={d} className={'text-center text-[10px] font-semibold uppercase ' + (i >= 5 ? 'text-gray-400/70' : 'text-gray-400')}>{d}</span>
+        ))}
+      </div>
+      <div className="grid grid-cols-7">
+        {days.map(d => {
+          const out = d.getMonth() !== cursor.getMonth()
+          const inRange = !!(lo && hi && d >= lo && d <= hi)
+          const isLo = !!(lo && isSameDay(d, lo))
+          const isHi = !!(hi && isSameDay(d, hi))
+          const endpoint = !!((s && isSameDay(d, s)) || (e && isSameDay(d, e)))
+          const isToday = isSameDay(d, today)
+          const band = inRange ? {
+            background: `color-mix(in srgb, ${accent} 16%, transparent)`,
+            borderTopLeftRadius: isLo ? 999 : 0, borderBottomLeftRadius: isLo ? 999 : 0,
+            borderTopRightRadius: isHi ? 999 : 0, borderBottomRightRadius: isHi ? 999 : 0,
+          } : undefined
+          return (
+            <button key={isoOf(d)} type="button" onClick={() => click(d)}
+              className="relative h-9 flex items-center justify-center" style={band}>
+              <span className={'relative z-10 w-[30px] h-[30px] grid place-items-center rounded-full text-[13px] '
+                + (out && !endpoint ? 'text-gray-400/50 ' : '')
+                + (endpoint ? 'font-bold text-white ' : (isToday ? 'font-semibold ' : ''))
+                + (!endpoint ? 'hover:bg-gray-100 dark:hover:bg-gray-800 ' : '')}
+                style={endpoint ? { background: accent } : (isToday ? { color: accent } : undefined)}>
+                {d.getDate()}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200 dark:border-gray-800">
+        <button type="button" onClick={() => onChange(null, null)} className="text-[12.5px] font-medium text-gray-400 hover:text-gray-600">Удалить</button>
+        <button type="button" onClick={() => setCursor(new Date())} className="text-[12.5px] font-medium text-gray-400 hover:text-gray-600">Сегодня</button>
       </div>
     </div>
   )
