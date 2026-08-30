@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, IsNull } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import {
   ContentPlanItem,
   ContentPlanStatus,
@@ -237,18 +237,41 @@ export class ContentPlanService {
    *  они появляются в «Не запланировано», откуда их тащат на даты. Если уже
    *  достаточно — ничего не создаём (не дублируем). */
   async smartGenerateStubs(projectId: string, reels: number, posts: number) {
-    if (!projectId) return { ok: true, created: 0 };
+    if (!projectId) return { ok: true };
     const norm = (v: any) => Math.max(0, Math.min(999, Math.trunc(Number(v) || 0)));
-    const r = norm(reels), p = norm(posts);
-    const [haveR, haveP] = await Promise.all([
-      this.repo.count({ where: { projectId, contentType: ContentItemType.REEL, publishDate: IsNull() } }),
-      this.repo.count({ where: { projectId, contentType: ContentItemType.POST, publishDate: IsNull() } }),
-    ]);
-    const rows: ContentPlanItem[] = [];
-    for (let i = haveR; i < r; i++) rows.push(this.repo.create({ projectId, contentType: ContentItemType.REEL, topic: `Рилс ${i + 1}`, status: ContentPlanStatus.PLANNED }));
-    for (let i = haveP; i < p; i++) rows.push(this.repo.create({ projectId, contentType: ContentItemType.POST, topic: `Пост ${i + 1}`, status: ContentPlanStatus.PLANNED }));
-    if (rows.length) await this.repo.save(rows);
-    return { ok: true, created: rows.length };
+    await this.reconcileStub(projectId, ContentItemType.REEL, 'Рилс', norm(reels));
+    await this.reconcileStub(projectId, ContentItemType.POST, 'Пост', norm(posts));
+    return { ok: true };
+  }
+
+  /** Довести число НЕзапланированных авто-заготовок этого типа ровно до нормы:
+   *  лишние удаляем, недостающие создаём. Трогаем только авто-заготовки
+   *  (topic вида «Рилс N» / «Пост N») и только без даты — реальный контент и
+   *  уже поставленные на дату карточки не затрагиваем. */
+  private async reconcileStub(projectId: string, type: ContentItemType, label: string, norm: number) {
+    const auto: any[] = await this.repo.manager.query(
+      `SELECT id FROM content_plan_items
+       WHERE "projectId" = $1 AND "contentType"::text = $2 AND "publishDate" IS NULL
+         AND topic ~ ('^' || $3 || ' [0-9]+$')
+       ORDER BY id`,
+      [projectId, String(type), label],
+    ).catch(() => []);
+    if (auto.length > norm) {
+      const del = auto.slice(norm).map((r: any) => r.id);
+      if (del.length) await this.repo.delete(del).catch(() => {});
+    } else if (auto.length < norm) {
+      const rows: ContentPlanItem[] = [];
+      for (let i = auto.length; i < norm; i++) rows.push(this.repo.create({ projectId, contentType: type, topic: `${label} ${i + 1}`, status: ContentPlanStatus.PLANNED }));
+      if (rows.length) await this.repo.save(rows).catch(() => {});
+    }
+  }
+
+  /** Умный календарь: полностью очистить контент проекта (для сброса теста).
+   *  Удаляет ВСЕ элементы content_plan_items проекта. Доску не затрагивает. */
+  async smartClearProject(projectId: string) {
+    if (!projectId) return { ok: true, deleted: 0 };
+    const res = await this.repo.delete({ projectId }).catch(() => ({ affected: 0 } as any));
+    return { ok: true, deleted: res?.affected ?? 0 };
   }
 
   /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) БЕЗ
@@ -330,51 +353,6 @@ export class ContentPlanService {
       .catch((e: any) => this.logger.warn(`seed smart store failed: ${e?.message || e}`));
   }
 
-  /** Границы ТЕКУЩЕГО цикла (в котором сегодня) по дню старта anchor. */
-  private currentCycleBounds(anchor: number): { start: string; end: string } {
-    const today = new Date();
-    const dim = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
-    const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
-    const anchorThis = Math.min(anchor, dim(y, m));
-    let sy = y, sm = m;
-    if (d < anchorThis) { sm -= 1; if (sm < 0) { sm = 11; sy -= 1; } }
-    const sAnchor = Math.min(anchor, dim(sy, sm));
-    const start = new Date(sy, sm, sAnchor);
-    const nAnchor = Math.min(anchor, dim(start.getFullYear(), start.getMonth() + 1));
-    const end = new Date(start.getFullYear(), start.getMonth() + 1, nAnchor);
-    end.setDate(end.getDate() - 1);
-    const iso = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-    return { start: iso(start), end: iso(end) };
-  }
-
-  /** Догенерировать заготовки под норму ТЕКУЩЕГО цикла: считаем рилсы/посты
-   *  этого цикла (по дате в окне цикла) + незапланированные и добиваем до
-   *  нормы. В новом цикле счётчик обнуляется → создаются свежие заготовки. */
-  private async ensureCycleNorm(projects: Project[]): Promise<void> {
-    for (const p of projects) {
-      const anchor = Number(p.smmData?.cycleStartDay);
-      const normReels = Math.trunc(Number(p.smmData?.normReels)) || 0;
-      const normPosts = Math.trunc(Number(p.smmData?.normPosts)) || 0;
-      if (!Number.isFinite(anchor) || anchor < 1 || (normReels <= 0 && normPosts <= 0)) continue;
-      const { start, end } = this.currentCycleBounds(anchor);
-      const counts: any[] = await this.repo.manager.query(
-        `SELECT "contentType" AS t, count(*)::int AS c
-         FROM content_plan_items
-         WHERE "projectId" = $1
-           AND ("publishDate" IS NULL OR ("publishDate"::date >= $2::date AND "publishDate"::date <= $3::date))
-         GROUP BY "contentType"`,
-        [p.id, start, end],
-      ).catch(() => []);
-      const byType = new Map(counts.map((r: any) => [r.t, Number(r.c)]));
-      const haveR = byType.get('reel') || 0;
-      const haveP = byType.get('post') || 0;
-      const rows: ContentPlanItem[] = [];
-      for (let i = haveR; i < normReels; i++) rows.push(this.repo.create({ projectId: p.id, contentType: ContentItemType.REEL, topic: `Рилс ${i + 1}`, status: ContentPlanStatus.PLANNED }));
-      for (let i = haveP; i < normPosts; i++) rows.push(this.repo.create({ projectId: p.id, contentType: ContentItemType.POST, topic: `Пост ${i + 1}`, status: ContentPlanStatus.PLANNED }));
-      if (rows.length) await this.repo.save(rows).catch((e: any) => this.logger.warn(`ensureCycleNorm failed: ${e?.message || e}`));
-    }
-  }
-
   /**
    * Календарь производства SMM за месяц: что и когда ПУБЛИКОВАТЬ (из контент-
    * плана, по publishDate) и что и когда СНИМАТЬ (из shoot_sessions, по date).
@@ -411,8 +389,6 @@ export class ContentPlanService {
     // отдельном от «Доски проектов» (workflow_cards). При первом открытии
     // проекта разово копируем контент с Доски — дальше системы независимы.
     await this.seedSmartStoreFromBoard(ids);
-    // Догенерировать заготовки под норму текущего цикла (в «Не запланировано»).
-    await this.ensureCycleNorm(active);
 
     // Публикации — из собственного хранилища (content_plan_items), по publishDate.
     const pubs: any[] = await this.repo.manager.query(

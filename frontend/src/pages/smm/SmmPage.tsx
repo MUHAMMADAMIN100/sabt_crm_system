@@ -206,11 +206,18 @@ export default function SmmPage() {
     if (p) setProjSettings(p)
   }
   const cycleMut = useMutation({
-    mutationFn: ({ id, day, normReels, normPosts }: { id: string; day: number | null; normReels: number | null; normPosts: number | null }) =>
-      projectsApi.setSmmCycle(id, { day, normReels, normPosts }),
-    // Заготовки под норму догенерирует бэкенд при обновлении календаря (ensureCycleNorm).
+    mutationFn: async ({ id, day, normReels, normPosts }: { id: string; day: number | null; normReels: number | null; normPosts: number | null }) => {
+      await projectsApi.setSmmCycle(id, { day, normReels, normPosts })
+      // Довести незапланированные заготовки ровно до нормы (только при сохранении).
+      await contentPlanApi.smartGenerate({ projectId: id, reels: normReels ?? 0, posts: normPosts ?? 0 })
+    },
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Цикл проекта сохранён'); setProjSettings(null) },
     onError: () => toast.error('Не удалось сохранить цикл'),
+  })
+  const clearMut = useMutation({
+    mutationFn: (id: string) => contentPlanApi.smartClear(id),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Контент проекта очищен') },
+    onError: () => toast.error('Не удалось очистить'),
   })
 
   const dragRef = useRef<Ev | null>(null)
@@ -285,15 +292,17 @@ export default function SmmPage() {
   // Месячные циклы выбранных проектов — лента на календаре. Показываем только
   // для выбранных проектов, у которых задан день старта цикла.
   const cycles = useMemo(() => {
-    const today = new Date()
+    // Цикл открытого месяца (по его середине) — виден один чёткий цикл того
+    // месяца, что смотрим, а не «весь календарь».
+    const ref = new Date(cursor.getFullYear(), cursor.getMonth(), 15)
     const out: { id: string; name: string; color: string; start: string; end: string }[] = []
     for (const p of projects) {
       if (!selProjects.has(p.id) || !p.cycleStartDay) continue
-      const { start, end } = currentCycleBounds(today, p.cycleStartDay)
+      const { start, end } = cycleBoundsFor(ref, p.cycleStartDay)
       out.push({ id: p.id, name: p.name, color: projColor(p.id), start, end })
     }
     return out
-  }, [projects, selProjects])
+  }, [projects, selProjects, cursor])
 
   // Норма за цикл — сколько рилсов/постов нужно (для выбранных проектов).
   const normLines = useMemo(() =>
@@ -449,18 +458,20 @@ export default function SmmPage() {
       )}
 
       {projSettings && (
-        <ProjectCycleModal p={projSettings} saving={cycleMut.isPending}
+        <ProjectCycleModal p={projSettings} saving={cycleMut.isPending} clearing={clearMut.isPending}
           onClose={() => setProjSettings(null)}
-          onSave={(day, normReels, normPosts) => cycleMut.mutate({ id: projSettings.id, day, normReels, normPosts })} />
+          onSave={(day, normReels, normPosts) => cycleMut.mutate({ id: projSettings.id, day, normReels, normPosts })}
+          onClear={() => clearMut.mutate(projSettings.id)} />
       )}
     </div>
   )
 }
 
 // ─── окно «Цикл проекта» — день старта цикла (1..31) + норма (рилсы/посты) ─
-function ProjectCycleModal({ p, saving, onClose, onSave }: {
-  p: Proj; saving: boolean; onClose: () => void
+function ProjectCycleModal({ p, saving, clearing, onClose, onSave, onClear }: {
+  p: Proj; saving: boolean; clearing: boolean; onClose: () => void
   onSave: (day: number | null, normReels: number | null, normPosts: number | null) => void
+  onClear: () => void
 }) {
   const [day, setDay] = useState<number | null>(p.cycleStartDay ?? null)
   const [reels, setReels] = useState<number>(p.normReels ?? 0)
@@ -508,7 +519,11 @@ function ProjectCycleModal({ p, saving, onClose, onSave }: {
             </div>
           ))}
         </div>
-        <div className="flex items-center justify-between gap-2 mt-5">
+        <button disabled={clearing} onClick={() => { if (window.confirm(`Удалить весь контент проекта «${p.name}» из Умного календаря? Доску это не затронет.`)) onClear() }}
+          className="mt-4 text-xs font-medium text-red-500/80 hover:text-red-500 disabled:opacity-60">
+          Очистить контент проекта
+        </button>
+        <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
           <button onClick={() => { setDay(null); setReels(0); setPosts(0) }} className="text-xs font-medium text-gray-400 hover:text-gray-600">Сбросить</button>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="text-sm font-semibold px-3 py-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">Отмена</button>
@@ -524,12 +539,12 @@ function ProjectCycleModal({ p, saving, onClose, onSave }: {
 }
 
 // ─── МЕСЯЦ ─────────────────────────────────────────────────────────────
-// Границы ТЕКУЩЕГО цикла (в котором находится today): [старт, конец] по дню
-// старта anchor. Напр. anchor=10, today=30 авг → 10 авг … 9 сен. Только этот
-// цикл подсвечивается — не прошлый и не будущий.
-function currentCycleBounds(today: Date, anchor: number): { start: string; end: string } {
+// Границы цикла, в который попадает опорная дата ref, по дню старта anchor.
+// Напр. anchor=10, ref=15 сен → 10 сен … 9 окт. Подсвечивается один цикл того
+// месяца, что открыт — не «весь календарь».
+function cycleBoundsFor(ref: Date, anchor: number): { start: string; end: string } {
   const dim = (y: number, m: number) => new Date(y, m + 1, 0).getDate()
-  const y = today.getFullYear(), m = today.getMonth(), d = today.getDate()
+  const y = ref.getFullYear(), m = ref.getMonth(), d = ref.getDate()
   const anchorThis = Math.min(anchor, dim(y, m))
   let sy = y, sm = m
   if (d < anchorThis) { sm -= 1; if (sm < 0) { sm = 11; sy -= 1 } }

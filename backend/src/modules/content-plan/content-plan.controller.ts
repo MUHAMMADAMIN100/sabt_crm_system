@@ -65,6 +65,13 @@ export class ContentPlanController {
     return this.service.smartGenerateStubs(body?.projectId, body?.reels ?? 0, body?.posts ?? 0);
   }
 
+  /** Умный календарь: полностью очистить контент проекта (сброс теста). */
+  @Post('smart-clear')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
+  smartClear(@Body() body: { projectId: string }) {
+    return this.service.smartClearProject(body?.projectId);
+  }
+
   /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) без
    *  побочных эффектов. Объявлено ДО ':id'. Только руководящие роли SMM. */
   @Patch('smart-item/:id')
