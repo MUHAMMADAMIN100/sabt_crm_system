@@ -292,9 +292,9 @@ export default function SmmPage() {
   // Месячные циклы выбранных проектов — лента на календаре. Показываем только
   // для выбранных проектов, у которых задан день старта цикла.
   const cycles = useMemo(() => {
-    // Цикл открытого месяца (по его середине) — виден один чёткий цикл того
-    // месяца, что смотрим, а не «весь календарь».
-    const ref = new Date(cursor.getFullYear(), cursor.getMonth(), 15)
+    // ТЕКУЩИЙ цикл — тот, в котором находится сегодня. Один цикл во всех
+    // месяцах (его дни), остальное не подсвечивается. Двигается сам с датой.
+    const ref = new Date()
     const out: { id: string; name: string; color: string; start: string; end: string }[] = []
     for (const p of projects) {
       if (!selProjects.has(p.id) || !p.cycleStartDay) continue
@@ -302,7 +302,7 @@ export default function SmmPage() {
       out.push({ id: p.id, name: p.name, color: projColor(p.id), start, end })
     }
     return out
-  }, [projects, selProjects, cursor])
+  }, [projects, selProjects])
 
   // Норма за цикл — сколько рилсов/постов нужно (для выбранных проектов).
   const normLines = useMemo(() =>
