@@ -206,11 +206,9 @@ export default function SmmPage() {
     if (p) setProjSettings(p)
   }
   const cycleMut = useMutation({
-    mutationFn: async ({ id, day, normReels, normPosts }: { id: string; day: number | null; normReels: number | null; normPosts: number | null }) => {
-      await projectsApi.setSmmCycle(id, { day, normReels, normPosts })
-      // Догенерировать заготовки под норму в «Не запланировано».
-      await contentPlanApi.smartGenerate({ projectId: id, reels: normReels ?? 0, posts: normPosts ?? 0 })
-    },
+    mutationFn: ({ id, day, normReels, normPosts }: { id: string; day: number | null; normReels: number | null; normPosts: number | null }) =>
+      projectsApi.setSmmCycle(id, { day, normReels, normPosts }),
+    // Заготовки под норму догенерирует бэкенд при обновлении календаря (ensureCycleNorm).
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Цикл проекта сохранён'); setProjSettings(null) },
     onError: () => toast.error('Не удалось сохранить цикл'),
   })
