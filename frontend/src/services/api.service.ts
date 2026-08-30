@@ -71,9 +71,10 @@ export const projectsApi = {
   // Архив историй сторисмейкера (не настоящий архив проекта).
   setStoriesArchived: (id: string, archived: boolean) =>
     api.patch(`/projects/${id}/stories-archive`, { archived }).then(r => r.data),
-  // День старта месячного цикла SMM-проекта (1..31, null — сбросить).
-  setSmmCycle: (id: string, day: number | null) =>
-    api.patch(`/projects/${id}/smm-cycle`, { day }).then(r => r.data),
+  // Настройки месячного цикла SMM-проекта (Умный календарь): день старта +
+  // норма за цикл (рилсы/посты). null у поля — сбросить.
+  setSmmCycle: (id: string, data: { day?: number | null; normReels?: number | null; normPosts?: number | null }) =>
+    api.patch(`/projects/${id}/smm-cycle`, data).then(r => r.data),
   sendPaymentRequest: (id: string, message?: string) =>
     api.post(`/projects/${id}/send-payment-request`, { message }).then(r => r.data),
   payments: (id: string) => api.get(`/projects/${id}/payments`).then(r => r.data),
@@ -334,6 +335,9 @@ export const contentPlanApi = {
   get: (id: string) => api.get(`/content-plan/${id}`).then(r => r.data),
   create: (data: any) => api.post('/content-plan', data).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/content-plan/${id}`, data).then(r => r.data),
+  // Умный календарь: перенос даты / статус без побочных эффектов (не Доска).
+  smartUpdate: (id: string, data: { publishDate?: string | null; status?: string }) =>
+    api.patch(`/content-plan/smart-item/${id}`, data).then(r => r.data),
   remove: (id: string) => api.delete(`/content-plan/${id}`).then(r => r.data),
   planFact: (projectId: string) => api.get(`/content-plan/plan-fact/${projectId}`).then(r => r.data),
   // Календарь производства SMM за диапазон дат: публикации + съёмки (раздел СММ).

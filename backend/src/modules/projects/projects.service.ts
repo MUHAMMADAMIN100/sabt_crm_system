@@ -1775,26 +1775,40 @@ export class ProjectsService implements OnModuleInit {
     return { id, storiesArchived: archived };
   }
 
-  /** День старта месячного цикла SMM-проекта (1..31) — цикл сбрасывается
-   *  каждый месяц, у каждого проекта свой день. Хранится в smmData (merge,
-   *  без миграции). Календарь производства подсвечивает текущий цикл. */
-  async setSmmCycleDay(id: string, day: number | null, user?: { id: string; role: string; name?: string }) {
+  /** Настройки месячного цикла SMM-проекта (Умный календарь): день старта
+   *  цикла (1..31) + норма за цикл (рилсы/посты). Цикл сбрасывается каждый
+   *  месяц. Хранится в smmData (merge, без миграции), отдельно от тарифа/Доски. */
+  async setSmmCycle(
+    id: string,
+    dto: { day?: number | null; normReels?: number | null; normPosts?: number | null },
+    user?: { id: string; role: string; name?: string },
+  ) {
     const project = await this.repo.findOne({ where: { id } });
     if (!project) throw new NotFoundException('Project not found');
     if (project.projectType !== 'SMM') {
       throw new BadRequestException('Цикл применим только к SMM-проектам');
     }
-    let normalized: number | null = null;
-    if (day != null) {
-      const n = Math.trunc(Number(day));
-      if (!Number.isFinite(n) || n < 1 || n > 31) {
-        throw new BadRequestException('День цикла должен быть от 1 до 31');
+    const dayInRange = (v: any, lo: number, hi: number): number | null => {
+      if (v == null) return null;
+      const n = Math.trunc(Number(v));
+      if (!Number.isFinite(n) || n < lo || n > hi) {
+        throw new BadRequestException(`Значение должно быть от ${lo} до ${hi}`);
       }
-      normalized = n;
-    }
+      return n;
+    };
     const smmData = { ...(project.smmData || {}) };
-    if (normalized == null) delete smmData.cycleStartDay;
-    else smmData.cycleStartDay = normalized;
+    if ('day' in dto) {
+      const d = dayInRange(dto.day, 1, 31);
+      if (d == null) delete smmData.cycleStartDay; else smmData.cycleStartDay = d;
+    }
+    if ('normReels' in dto) {
+      const n = dayInRange(dto.normReels, 0, 999);
+      if (n == null) delete smmData.normReels; else smmData.normReels = n;
+    }
+    if ('normPosts' in dto) {
+      const n = dayInRange(dto.normPosts, 0, 999);
+      if (n == null) delete smmData.normPosts; else smmData.normPosts = n;
+    }
     await this.repo.update(id, { smmData });
     await this.activityLog.log({
       userId: user?.id,
@@ -1803,10 +1817,15 @@ export class ProjectsService implements OnModuleInit {
       entity: 'project',
       entityId: id,
       entityName: project.name,
-      details: { cycleStartDay: normalized },
+      details: { smmCycle: { cycleStartDay: smmData.cycleStartDay ?? null, normReels: smmData.normReels ?? null, normPosts: smmData.normPosts ?? null } },
     });
     this.gateway.broadcast('projects:changed', { projectId: id });
-    return { id, cycleStartDay: normalized };
+    return {
+      id,
+      cycleStartDay: smmData.cycleStartDay ?? null,
+      normReels: smmData.normReels ?? null,
+      normPosts: smmData.normPosts ?? null,
+    };
   }
 
   async archive(id: string, user?: { id: string; role: string; name?: string }) {

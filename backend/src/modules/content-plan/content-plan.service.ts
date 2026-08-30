@@ -232,6 +232,17 @@ export class ContentPlanService {
     return after;
   }
 
+  /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) БЕЗ
+   *  синхронизации задач и прочих побочных эффектов старой системы —
+   *  это отдельный контур, не связанный с «Доской проектов» и канбаном. */
+  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus }) {
+    const set: Partial<ContentPlanItem> = {};
+    if ('publishDate' in patch) set.publishDate = patch.publishDate ? new Date(patch.publishDate) : null;
+    if ('status' in patch && patch.status) set.status = patch.status;
+    if (Object.keys(set).length) await this.repo.update(id, set);
+    return { ok: true };
+  }
+
   async remove(id: string) {
     const item = await this.findOne(id);
     // Удаляем связанную задачу (если ещё жива).
@@ -268,6 +279,38 @@ export class ContentPlanService {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dushanbe' }).slice(0, 7);
   }
 
+  /** Разовое наполнение хранилища Умного календаря (content_plan_items) из
+   *  «Доски проектов» (workflow_cards, kind='kp') — только для проектов, где
+   *  своих элементов ещё нет. После копирования системы независимы: правки в
+   *  Умном календаре не трогают Доску и наоборот. */
+  private async seedSmartStoreFromBoard(ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    const existing: any[] = await this.repo.manager.query(
+      `SELECT DISTINCT "projectId" FROM content_plan_items WHERE "projectId" = ANY($1::uuid[])`,
+      [ids],
+    ).catch(() => []);
+    const have = new Set(existing.map(r => r.projectId));
+    const toSeed = ids.filter(id => !have.has(id));
+    if (!toSeed.length) return;
+    const kp: any[] = await this.repo.manager.query(
+      `SELECT wc."projectId" AS "projectId", it->>'itemKind' AS "itemKind",
+              it->>'title' AS title, NULLIF(it->>'publishDate', '') AS "publishDate"
+       FROM workflow_cards wc, jsonb_array_elements(COALESCE(wc.items, '[]'::jsonb)) it
+       WHERE wc.kind = 'kp' AND wc."projectId" = ANY($1::uuid[])`,
+      [toSeed],
+    ).catch(() => []);
+    if (!kp.length) return;
+    const rows = kp.map(k => this.repo.create({
+      projectId: k.projectId,
+      contentType: k.itemKind === 'reel' ? ContentItemType.REEL : ContentItemType.POST,
+      topic: (k.title && String(k.title).trim()) || 'Без названия',
+      publishDate: k.publishDate ? new Date(k.publishDate) : null,
+      status: ContentPlanStatus.PLANNED,
+    }));
+    await this.repo.save(rows)
+      .catch((e: any) => this.logger.warn(`seed smart store failed: ${e?.message || e}`));
+  }
+
   /**
    * Календарь производства SMM за месяц: что и когда ПУБЛИКОВАТЬ (из контент-
    * плана, по publishDate) и что и когда СНИМАТЬ (из shoot_sessions, по date).
@@ -287,28 +330,35 @@ export class ContentPlanService {
     // Даты проекта (начало работы / конец) — для окна «Настройки проекта».
     const dOnly = (v: any): string | null =>
       !v ? null : (typeof v === 'string' ? v.slice(0, 10) : new Date(v).toISOString().slice(0, 10));
+    const num = (v: any): number | null => (Number.isFinite(Number(v)) ? Number(v) : null);
     const projects = active
       .map(p => ({
         id: p.id, name: p.name,
         startDate: dOnly(p.startDate), endDate: dOnly(p.endDate),
-        cycleStartDay: (p.smmData && Number.isFinite(Number(p.smmData.cycleStartDay)))
-          ? Number(p.smmData.cycleStartDay) : null,
+        cycleStartDay: p.smmData ? num(p.smmData.cycleStartDay) : null,
+        normReels: p.smmData ? num(p.smmData.normReels) : null,
+        normPosts: p.smmData ? num(p.smmData.normPosts) : null,
       }))
       .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
     const ids = active.map(p => p.id);
     if (!ids.length) return { from: f, to: t, events: [], projects, backlog: [] };
 
-    // Публикации — из «Доски проектов»: элементы карточки контент-плана
-    // (kind='kp'), у каждого своя publishDate. Это и есть реальные рилсы/макеты.
+    // Умный календарь работает на СВОЁМ хранилище (content_plan_items),
+    // отдельном от «Доски проектов» (workflow_cards). При первом открытии
+    // проекта разово копируем контент с Доски — дальше системы независимы.
+    await this.seedSmartStoreFromBoard(ids);
+
+    // Публикации — из собственного хранилища (content_plan_items), по publishDate.
     const pubs: any[] = await this.repo.manager.query(
-      `SELECT wc."projectId" AS "projectId", it->>'id' AS "itemId",
-              it->>'itemKind' AS "itemKind", it->>'title' AS title,
-              it->>'assigneeName' AS "assigneeName",
-              to_char((it->>'publishDate')::date, 'YYYY-MM-DD') AS date
-       FROM workflow_cards wc, jsonb_array_elements(COALESCE(wc.items, '[]'::jsonb)) it
-       WHERE wc.kind = 'kp' AND wc."projectId" = ANY($1::uuid[])
-         AND NULLIF(it->>'publishDate', '') IS NOT NULL
-         AND (it->>'publishDate')::date >= ($2)::date AND (it->>'publishDate')::date <= ($3)::date`,
+      `SELECT ci."projectId" AS "projectId", ci.id AS "itemId",
+              ci."contentType" AS "itemKind", ci.topic AS title,
+              ci.status AS status, ci."taskId" AS "taskId",
+              to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
+       FROM content_plan_items ci
+       WHERE ci."projectId" = ANY($1::uuid[])
+         AND ci."contentType" <> 'story'
+         AND ci."publishDate" IS NOT NULL
+         AND ci."publishDate"::date >= ($2)::date AND ci."publishDate"::date <= ($3)::date`,
       [ids, f, t],
     ).catch((e: any) => { this.logger.warn(`smmCalendar pubs failed: ${e?.message || e}`); return []; });
 
@@ -346,7 +396,7 @@ export class ContentPlanService {
         id: `item:${p.itemId}`, itemId: p.itemId, kind: 'publication', date: p.date,
         projectId: p.projectId, projectName: nameById.get(p.projectId) || '',
         contentType: p.itemKind === 'reel' ? 'reel' : 'design',
-        topic: p.title || null, assigneeName: p.assigneeName || null,
+        topic: p.title || null, status: p.status || undefined, taskId: p.taskId || null,
       })),
       ...storyRows.map(s => ({
         id: `story:${s.projectId}:${s.date}`, kind: 'publication', date: s.date,
@@ -358,11 +408,11 @@ export class ContentPlanService {
     // «Не запланировано» — контент без даты публикации и съёмки без даты
     // (их перетаскивают на календарь из панели сверху). Диапазон не важен.
     const bpubs: any[] = await this.repo.manager.query(
-      `SELECT wc."projectId" AS "projectId", it->>'id' AS "itemId",
-              it->>'itemKind' AS "itemKind", it->>'title' AS title
-       FROM workflow_cards wc, jsonb_array_elements(COALESCE(wc.items, '[]'::jsonb)) it
-       WHERE wc.kind = 'kp' AND wc."projectId" = ANY($1::uuid[])
-         AND NULLIF(it->>'publishDate', '') IS NULL`,
+      `SELECT ci."projectId" AS "projectId", ci.id AS "itemId",
+              ci."contentType" AS "itemKind", ci.topic AS title
+       FROM content_plan_items ci
+       WHERE ci."projectId" = ANY($1::uuid[])
+         AND ci."contentType" <> 'story' AND ci."publishDate" IS NULL`,
       [ids],
     ).catch((e: any) => { this.logger.warn(`smmCalendar backlog pubs failed: ${e?.message || e}`); return []; });
     const bshoots: any[] = await this.repo.manager.query(

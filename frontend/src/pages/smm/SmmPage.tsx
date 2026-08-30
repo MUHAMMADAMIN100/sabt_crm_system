@@ -9,7 +9,7 @@ import {
 } from 'date-fns'
 import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { contentPlanApi, workflowApi, tasksApi, projectsApi } from '@/services/api.service'
+import { contentPlanApi, workflowApi, projectsApi } from '@/services/api.service'
 
 type Ev = {
   id: string; itemId?: string; shootId?: string; kind: 'shoot' | 'publication'; date: string
@@ -21,7 +21,7 @@ type Ev = {
 
 /** «Сделано» для публикации: опубликовано ИЛИ связанная задача выполнена. */
 const isDone = (e: Ev) => e.status === 'published' || e.taskStatus === 'done'
-type Proj = { id: string; name: string; startDate?: string | null; endDate?: string | null; cycleStartDay?: number | null }
+type Proj = { id: string; name: string; startDate?: string | null; endDate?: string | null; cycleStartDay?: number | null; normReels?: number | null; normPosts?: number | null }
 type CalData = { from: string; to: string; events: Ev[]; projects: Proj[]; backlog: Ev[] }
 type View = 'month' | 'week' | 'day' | 'stories'
 
@@ -193,9 +193,7 @@ export default function SmmPage() {
   const [detail, setDetail] = useState<Ev | null>(null)
   const markMut = useMutation({
     mutationFn: ({ ev, done }: { ev: Ev; done: boolean }) =>
-      ev.taskId
-        ? tasksApi.update(ev.taskId, { status: done ? 'done' : 'in_progress' })
-        : contentPlanApi.update(ev.itemId!, { status: done ? 'published' : 'planned' }),
+      contentPlanApi.smartUpdate(ev.itemId!, { status: done ? 'published' : 'planned' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Обновлено'); setDetail(null) },
     onError: () => toast.error('Не удалось обновить'),
   })
@@ -208,7 +206,8 @@ export default function SmmPage() {
     if (p) setProjSettings(p)
   }
   const cycleMut = useMutation({
-    mutationFn: ({ id, day }: { id: string; day: number | null }) => projectsApi.setSmmCycle(id, day),
+    mutationFn: ({ id, day, normReels, normPosts }: { id: string; day: number | null; normReels: number | null; normPosts: number | null }) =>
+      projectsApi.setSmmCycle(id, { day, normReels, normPosts }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Цикл проекта сохранён'); setProjSettings(null) },
     onError: () => toast.error('Не удалось сохранить цикл'),
   })
@@ -221,7 +220,7 @@ export default function SmmPage() {
   const moveMut = useMutation({
     mutationFn: ({ ev, dateStr }: { ev: Ev; dateStr: string | null }) =>
       ev.kind === 'publication'
-        ? workflowApi.moveContentItem({ projectId: ev.projectId, itemId: ev.itemId!, publishDate: dateStr })
+        ? contentPlanApi.smartUpdate(ev.itemId!, { publishDate: dateStr })   // своё хранилище, без побочных эффектов
         : workflowApi.updateShootSession(ev.shootId!, { date: dateStr }),
     onMutate: async ({ ev, dateStr }) => {
       const key = ['smm-calendar', from, to]
@@ -292,6 +291,13 @@ export default function SmmPage() {
     }
     return out
   }, [projects, selProjects])
+
+  // Норма за цикл — сколько рилсов/постов нужно (для выбранных проектов).
+  const normLines = useMemo(() =>
+    projects
+      .filter(p => selProjects.has(p.id) && ((p.normReels ?? 0) > 0 || (p.normPosts ?? 0) > 0))
+      .map(p => ({ id: p.id, name: p.name, color: projColor(p.id), reels: p.normReels ?? 0, posts: p.normPosts ?? 0 })),
+  [projects, selProjects])
 
   // Таб «Сторисы»: мини-календари по проекту → дате (все события, в т.ч. сторис).
   const byProject = useMemo(() => {
@@ -408,6 +414,20 @@ export default function SmmPage() {
             onSettings={openProjSettings}
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
+          {normLines.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/40 px-3.5 py-2.5">
+              {normLines.map(n => (
+                <div key={n.id} className="flex items-center gap-2 text-[12.5px]">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: n.color }} />
+                  <span className="font-semibold">{n.name}</span>
+                  <span className="text-gray-400">нужно за цикл:</span>
+                  <span className="inline-flex items-center gap-1 font-semibold" style={{ color: n.color }}><Film size={13} /> {n.reels}</span>
+                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                  <span className="inline-flex items-center gap-1 font-semibold" style={{ color: n.color }}><ImageIcon size={13} /> {n.posts}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {view === 'month' ? (
             <MonthView cells={cells} byDate={mainByDate} today={today} cycles={cycles}
               onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
@@ -428,23 +448,27 @@ export default function SmmPage() {
       {projSettings && (
         <ProjectCycleModal p={projSettings} saving={cycleMut.isPending}
           onClose={() => setProjSettings(null)}
-          onSave={day => cycleMut.mutate({ id: projSettings.id, day })} />
+          onSave={(day, normReels, normPosts) => cycleMut.mutate({ id: projSettings.id, day, normReels, normPosts })} />
       )}
     </div>
   )
 }
 
-// ─── окно «Цикл проекта» — день старта месячного цикла (1..31) ──────────
+// ─── окно «Цикл проекта» — день старта цикла (1..31) + норма (рилсы/посты) ─
 function ProjectCycleModal({ p, saving, onClose, onSave }: {
-  p: Proj; saving: boolean; onClose: () => void; onSave: (day: number | null) => void
+  p: Proj; saving: boolean; onClose: () => void
+  onSave: (day: number | null, normReels: number | null, normPosts: number | null) => void
 }) {
   const [day, setDay] = useState<number | null>(p.cycleStartDay ?? null)
+  const [reels, setReels] = useState<number>(p.normReels ?? 0)
+  const [posts, setPosts] = useState<number>(p.normPosts ?? 0)
   const accent = projColor(p.id)
   const hint = day == null
     ? 'Цикл не задан — на календаре период не подсвечивается.'
     : day === 1
       ? 'Цикл: с 1-го по конец каждого месяца.'
       : `Цикл: с ${day}-го по ${day - 1}-е следующего месяца (сдвигается каждый месяц).`
+  const clamp = (n: number) => Math.max(0, Math.min(999, Math.trunc(n) || 0))
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
@@ -455,23 +479,37 @@ function ProjectCycleModal({ p, saving, onClose, onSave }: {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
         <h3 className="text-lg font-bold">{p.name}</h3>
-        <p className="text-xs text-gray-500 mb-3 mt-1">День, с которого каждый месяц начинается новый цикл (норма публикаций обнуляется).</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5 mt-3">День старта цикла</p>
         <div className="grid grid-cols-7 gap-1">
           {Array.from({ length: 31 }, (_, i) => i + 1).map(n => {
             const on = day === n
             return (
               <button key={n} type="button" onClick={() => setDay(on ? null : n)}
-                className={'h-9 grid place-items-center rounded-full text-[13px] transition ' + (on ? 'font-bold text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800')}
+                className={'h-8 grid place-items-center rounded-full text-[13px] transition ' + (on ? 'font-bold text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800')}
                 style={on ? { background: accent } : undefined}>{n}</button>
             )
           })}
         </div>
-        <div className="mt-3 text-[12.5px] font-medium" style={day != null ? { color: accent } : undefined}>{hint}</div>
-        <div className="flex items-center justify-between gap-2 mt-4">
-          <button onClick={() => setDay(null)} className="text-xs font-medium text-gray-400 hover:text-gray-600">Сбросить</button>
+        <div className="mt-2 text-[12px] font-medium" style={day != null ? { color: accent } : undefined}>{hint}</div>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5 mt-4">Норма за цикл</p>
+        <div className="grid grid-cols-2 gap-2.5">
+          {([['Рилсы', reels, setReels], ['Посты', posts, setPosts]] as const).map(([label, val, set]) => (
+            <div key={label}>
+              <label className="block text-xs text-gray-500 mb-1">{label}</label>
+              <div className="flex items-center rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <button type="button" onClick={() => set(clamp(val - 1))} className="w-8 h-9 grid place-items-center text-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">−</button>
+                <input type="number" min={0} value={val} onChange={e => set(clamp(Number(e.target.value)))}
+                  className="flex-1 w-full text-center text-[15px] font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                <button type="button" onClick={() => set(clamp(val + 1))} className="w-8 h-9 grid place-items-center text-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">+</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between gap-2 mt-5">
+          <button onClick={() => { setDay(null); setReels(0); setPosts(0) }} className="text-xs font-medium text-gray-400 hover:text-gray-600">Сбросить</button>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="text-sm font-semibold px-3 py-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">Отмена</button>
-            <button disabled={saving} onClick={() => onSave(day)}
+            <button disabled={saving} onClick={() => onSave(day, reels || null, posts || null)}
               className="flex items-center gap-1.5 rounded-lg bg-[#3f7a58] text-white px-4 py-2 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
               <Check size={15} /> Сохранить
             </button>
@@ -848,8 +886,6 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule }: { e: Ev; onCl
           )}
           {isShoot ? (
             <p className="text-xs text-gray-400 text-center">Съёмка запланирована.</p>
-          ) : !e.taskId ? (
-            <p className="text-xs text-gray-400 text-center">Статус этого элемента меняется на «Доске проектов».</p>
           ) : done ? (
             <button disabled={marking} onClick={() => onMark(false)}
               className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">

@@ -57,6 +57,14 @@ export class ContentPlanController {
     return this.service.smmCalendar(from, to);
   }
 
+  /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) без
+   *  побочных эффектов. Объявлено ДО ':id'. Только руководящие роли SMM. */
+  @Patch('smart-item/:id')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
+  smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus }) {
+    return this.service.smartUpdateItem(id, body || {});
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 

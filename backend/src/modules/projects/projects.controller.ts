@@ -68,12 +68,16 @@ export class ProjectsController {
     return this.service.setStoriesArchived(id, dto.archived, req.user);
   }
 
-  /** День старта месячного цикла SMM-проекта (1..31), null — сбросить.
-   *  Календарь производства подсвечивает текущий цикл проекта. */
+  /** Настройки месячного цикла SMM-проекта (Умный календарь): день старта
+   *  (1..31) + норма за цикл (рилсы/посты). null у поля — сбросить его. */
   @Patch(':id/smm-cycle')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
-  setSmmCycle(@Param('id') id: string, @Body() body: { day?: number | null }, @Request() req) {
-    return this.service.setSmmCycleDay(id, body?.day ?? null, req.user);
+  setSmmCycle(
+    @Param('id') id: string,
+    @Body() body: { day?: number | null; normReels?: number | null; normPosts?: number | null },
+    @Request() req,
+  ) {
+    return this.service.setSmmCycle(id, body || {}, req.user);
   }
 
   /** Архив/восстановление — по гранту projects.archive: нативные роли те же,
