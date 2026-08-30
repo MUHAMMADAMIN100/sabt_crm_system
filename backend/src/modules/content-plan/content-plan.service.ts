@@ -284,8 +284,11 @@ export class ContentPlanService {
     const all = await projectRepo.find({ where: { projectType: 'SMM' } });
     const active = all.filter(p => String(p.status) !== 'archived');
     const nameById = new Map(active.map(p => [p.id, p.name] as const));
+    // Даты проекта (начало работы / конец) — для окна «Настройки проекта».
+    const dOnly = (v: any): string | null =>
+      !v ? null : (typeof v === 'string' ? v.slice(0, 10) : new Date(v).toISOString().slice(0, 10));
     const projects = active
-      .map(p => ({ id: p.id, name: p.name }))
+      .map(p => ({ id: p.id, name: p.name, startDate: dOnly(p.startDate), endDate: dOnly(p.endDate) }))
       .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
     const ids = active.map(p => p.id);
     if (!ids.length) return { from: f, to: t, events: [], projects, backlog: [] };

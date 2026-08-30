@@ -7,9 +7,9 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { contentPlanApi, workflowApi, tasksApi } from '@/services/api.service'
+import { contentPlanApi, workflowApi, tasksApi, projectsApi } from '@/services/api.service'
 
 type Ev = {
   id: string; itemId?: string; shootId?: string; kind: 'shoot' | 'publication'; date: string
@@ -21,7 +21,8 @@ type Ev = {
 
 /** «Сделано» для публикации: опубликовано ИЛИ связанная задача выполнена. */
 const isDone = (e: Ev) => e.status === 'published' || e.taskStatus === 'done'
-type CalData = { from: string; to: string; events: Ev[]; projects: { id: string; name: string }[]; backlog: Ev[] }
+type Proj = { id: string; name: string; startDate?: string | null; endDate?: string | null }
+type CalData = { from: string; to: string; events: Ev[]; projects: Proj[]; backlog: Ev[] }
 type View = 'month' | 'week' | 'day' | 'stories'
 
 // ─── мягкая палитра (Notion-стиль), адаптивная к теме ─────────────────
@@ -197,6 +198,20 @@ export default function SmmPage() {
         : contentPlanApi.update(ev.itemId!, { status: done ? 'published' : 'planned' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Обновлено'); setDetail(null) },
     onError: () => toast.error('Не удалось обновить'),
+  })
+
+  // Настройки проекта — сроки работы (начало / конец). Открывается по шестерёнке
+  // на плитке «Не запланировано», сохраняет в project.startDate/endDate.
+  const [projSettings, setProjSettings] = useState<Proj | null>(null)
+  const openProjSettings = (id: string) => {
+    const p = projects.find(x => x.id === id)
+    if (p) setProjSettings(p)
+  }
+  const datesMut = useMutation({
+    mutationFn: ({ id, startDate, endDate }: { id: string; startDate: string | null; endDate: string | null }) =>
+      projectsApi.update(id, { startDate, endDate }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Сроки проекта сохранены'); setProjSettings(null) },
+    onError: () => toast.error('Не удалось сохранить сроки'),
   })
 
   const dragRef = useRef<Ev | null>(null)
@@ -380,6 +395,7 @@ export default function SmmPage() {
       ) : (
         <>
           <BacklogPanel groups={backlogGroups} activeIds={selProjects} onPick={toggleProject}
+            onSettings={openProjSettings}
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
           {view === 'month' ? (
@@ -398,6 +414,58 @@ export default function SmmPage() {
           onMark={done => markMut.mutate({ ev: detail, done })}
           onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }} />
       )}
+
+      {projSettings && (
+        <ProjectDatesModal p={projSettings} saving={datesMut.isPending}
+          onClose={() => setProjSettings(null)}
+          onSave={(startDate, endDate) => datesMut.mutate({ id: projSettings.id, startDate, endDate })} />
+      )}
+    </div>
+  )
+}
+
+// ─── окно «Настройки проекта» — сроки работы (начало / конец) ──────────
+function ProjectDatesModal({ p, saving, onClose, onSave }: {
+  p: Proj; saving: boolean; onClose: () => void; onSave: (startDate: string | null, endDate: string | null) => void
+}) {
+  const [start, setStart] = useState(p.startDate ? String(p.startDate).slice(0, 10) : '')
+  const [end, setEnd] = useState(p.endDate ? String(p.endDate).slice(0, 10) : '')
+  const invalid = !!start && !!end && end < start
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <span style={projFill(p.id)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold">
+            <CalendarRange size={12} /> Сроки проекта
+          </span>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <h3 className="text-lg font-bold mb-4">{p.name}</h3>
+        <div className="space-y-3">
+          <label className="block">
+            <span className="text-xs font-medium text-gray-500">Начало работы</span>
+            <input type="date" value={start} max={end || undefined} onChange={e => setStart(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-gray-500">Конец проекта</span>
+            <input type="date" value={end} min={start || undefined} onChange={e => setEnd(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-gray-400" />
+          </label>
+          {invalid && <p className="text-xs text-red-500">Конец не может быть раньше начала.</p>}
+        </div>
+        <div className="flex items-center justify-between gap-2 mt-5">
+          <button onClick={() => { setStart(''); setEnd('') }}
+            className="text-xs font-medium text-gray-400 hover:text-gray-600">Очистить</button>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="text-sm font-semibold px-3 py-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">Отмена</button>
+            <button disabled={saving || invalid} onClick={() => onSave(start || null, end || null)}
+              className="flex items-center gap-1.5 rounded-lg bg-[#3f7a58] text-white px-4 py-2 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
+              <Check size={15} /> Сохранить
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -566,8 +634,9 @@ function StoriesTab({ projects, cells, byProject, today, monthLabel, activeIds, 
 }
 
 // ─── панель «Не запланировано» ─────────────────────────────────────────
-function BacklogPanel({ groups, activeIds, onPick, onDragStart, onDrop, over, setOver }: {
+function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDrop, over, setOver }: {
   groups: { id: string; name: string; items: Ev[] }[]; activeIds: Set<string>; onPick: (id: string) => void
+  onSettings: (id: string) => void
   onDragStart: (e: Ev) => void; onDrop: () => void; over: boolean; setOver: (v: boolean) => void
 }) {
   return (
@@ -593,12 +662,18 @@ function BacklogPanel({ groups, activeIds, onPick, onDragStart, onDrop, over, se
           return (
             <div key={g.id} className={'rounded-lg p-1.5 transition-opacity ' + (dim ? 'opacity-35 hover:opacity-100' : '')}
               style={{ border: `1px solid color-mix(in srgb, ${c} ${active ? 85 : 40}%, transparent)`, background: `color-mix(in srgb, ${c} ${active ? 14 : 8}%, transparent)` }}>
-              <button type="button" onClick={() => onPick(g.id)} title={active ? 'Убрать из фильтра' : 'Добавить в фильтр (можно несколько)'}
-                className="w-full flex items-center gap-1.5 text-[11.5px] font-semibold mb-1.5 cursor-pointer" style={{ color: c }}>
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c }} />
-                <span className="truncate text-left">{g.name}</span>
-                <span className="ml-auto text-[11px] text-gray-400 font-medium">{g.items.length}</span>
-              </button>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <button type="button" onClick={() => onPick(g.id)} title={active ? 'Убрать из фильтра' : 'Добавить в фильтр (можно несколько)'}
+                  className="flex items-center gap-1.5 min-w-0 flex-1 text-[11.5px] font-semibold cursor-pointer" style={{ color: c }}>
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c }} />
+                  <span className="truncate text-left">{g.name}</span>
+                </button>
+                <span className="text-[11px] text-gray-400 font-medium shrink-0">{g.items.length}</span>
+                <button type="button" onClick={() => onSettings(g.id)} title="Настройки проекта — сроки работы"
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 shrink-0">
+                  <Settings size={13} />
+                </button>
+              </div>
               <div className="flex flex-wrap gap-1 min-h-[20px]">
                 {g.items.length === 0
                   ? <span className="text-[11px] text-gray-400/60">—</span>
