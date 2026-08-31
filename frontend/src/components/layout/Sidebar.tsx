@@ -8,7 +8,7 @@ import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, UserPlus,
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
-  Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal, MoreHorizontal,
+  Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal, MoreHorizontal, CalendarRange,
   Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck, LineChart, Megaphone,
   Activity,
 } from 'lucide-react'
@@ -26,6 +26,11 @@ const FINANCE_SUBNAV = [
   { to: '/finance/settings', label: 'Настройки', icon: SlidersHorizontal },
 ]
 
+/** Подпункты раздела «СММ». Пока один — Умный календарь; остальные добавим. */
+const SMM_SUBNAV = [
+  { to: '/smm', label: 'Умный календарь', icon: CalendarRange, exact: true },
+]
+
 interface SidebarProps { open: boolean; onClose: () => void }
 
 /** Тёмный сайдбар в корпоративном стиле (по референсу GRANT CHINA, но с
@@ -39,6 +44,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const location = useLocation()
   const financeActive = location.pathname === '/finance' || location.pathname.startsWith('/finance/')
   const [financeOpen, setFinanceOpen] = useState(financeActive)
+  const smmActive = location.pathname === '/smm' || location.pathname.startsWith('/smm/')
+  const [smmOpen, setSmmOpen] = useState(smmActive)
   // «Ещё» — свёрнутая нижняя группа навбара (только у основателя).
   const [moreOpen, setMoreOpen] = useState(false)
 
@@ -261,6 +268,74 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                                 isActive
                                   ? 'border-white/15 bg-white/[.15]'
                                   : 'border-white/[.06] bg-white/[.035] group-hover/finance:border-white/10 group-hover/finance:bg-white/[.07]',
+                              )}>
+                                <sub.icon size={14} strokeWidth={1.75} />
+                              </span>
+                              <span className="truncate">{sub.label}</span>
+                            </>}
+                          </NavLink>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              )
+            }
+            // «СММ» — раскрывающийся раздел с подпунктами (первый — Умный календарь).
+            if (item.to === '/smm') {
+              return (
+                <li key={item.to}>
+                  <button
+                    type="button"
+                    onClick={() => (open ? setSmmOpen(v => !v) : handleNavClick())}
+                    className={clsx(
+                      'group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                      smmActive
+                        ? 'bg-[#696bdc] text-white shadow-sm'
+                        : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
+                      !open && 'lg:justify-center lg:px-2',
+                    )}
+                    title={!open ? item.label : undefined}
+                  >
+                    <span className={clsx(
+                      'grid h-7 w-7 shrink-0 place-items-center rounded-[9px] border transition-colors',
+                      smmActive ? 'border-white/15 bg-white/[.12]' : 'border-white/[.07] bg-white/[.04]',
+                    )}>
+                      <item.icon size={15} strokeWidth={1.8} />
+                    </span>
+                    <span className={clsx(
+                      'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
+                      open ? 'max-w-[200px] opacity-100' : 'max-w-0 opacity-0',
+                    )}>
+                      {item.label}
+                    </span>
+                    {open && (
+                      <ChevronDown size={15} className={clsx('ml-auto shrink-0 transition-transform', smmOpen && 'rotate-180')} />
+                    )}
+                  </button>
+                  {open && smmOpen && (
+                    <ul className="mt-1 ml-3 pl-3 border-l border-white/10 space-y-0.5">
+                      {SMM_SUBNAV.map(sub => (
+                        <li key={sub.to}>
+                          <NavLink
+                            to={sub.to}
+                            end={sub.exact}
+                            onClick={handleNavClick}
+                            className={({ isActive }) =>
+                              clsx(
+                                'group/smm flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors',
+                                isActive
+                                  ? 'bg-[#8385ff]/90 text-white'
+                                  : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
+                              )
+                            }
+                          >
+                            {({ isActive }) => <>
+                              <span className={clsx(
+                                'grid h-7 w-7 shrink-0 place-items-center rounded-[9px] border transition-colors',
+                                isActive
+                                  ? 'border-white/15 bg-white/[.15]'
+                                  : 'border-white/[.06] bg-white/[.035] group-hover/smm:border-white/10 group-hover/smm:bg-white/[.07]',
                               )}>
                                 <sub.icon size={14} strokeWidth={1.75} />
                               </span>
