@@ -2,7 +2,7 @@
 // Месяц / Неделя / День + таб «Сторисы» (мини-календари по проектам). Публикации
 // (зелёные) и съёмки (янтарные, со временем). Статус публикации: опубликовано —
 // ярко + галочка, нет — бледно. Drag-перенос на другой день.
-import { useMemo, useState, useRef, Fragment, type ReactNode, type DragEvent as RDragEvent } from 'react'
+import { useMemo, useState, useRef, useEffect, Fragment, type ReactNode, type DragEvent as RDragEvent } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
@@ -250,12 +250,30 @@ export default function SmmPage() {
     },
     onSettled: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }) },
   })
-  const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null) }
+  // Окно текущего цикла проекта — за его пределы перетаскивать нельзя.
+  // null — у проекта нет цикла, ограничения нет.
+  const [dragRange, setDragRange] = useState<{ start: string; end: string } | null>(null)
+  const projCycle = (projectId: string): { start: string; end: string } | null => {
+    const p = projects.find(x => x.id === projectId)
+    if (!p?.cycleStartDay) return null
+    return cycleBoundsFor(new Date(), p.cycleStartDay)
+  }
+  // Сбрасываем подсветку ограничения по окончании любого перетаскивания.
+  useEffect(() => {
+    const clear = () => setDragRange(null)
+    document.addEventListener('dragend', clear)
+    return () => document.removeEventListener('dragend', clear)
+  }, [])
+
+  const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null); setDragRange(projCycle(e.projectId)) }
   const onDropDate = (dateStr: string) => {
     const e = dragRef.current
     dragRef.current = null
-    setDragOverKey(null)
+    setDragOverKey(null); setDragRange(null)
     if (!e || e.date === dateStr) return
+    // Только внутри текущего цикла проекта (если он задан).
+    const range = projCycle(e.projectId)
+    if (range && (dateStr < range.start || dateStr > range.end)) return
     const refId = e.kind === 'publication' ? e.itemId : e.shootId
     if (!refId) return
     moveMut.mutate({ ev: e, dateStr })
@@ -264,7 +282,7 @@ export default function SmmPage() {
   const onDropBacklog = () => {
     const e = dragRef.current
     dragRef.current = null
-    setDragOverKey(null)
+    setDragOverKey(null); setDragRange(null)
     if (!e || !e.date) return
     const refId = e.kind === 'publication' ? e.itemId : e.shootId
     if (!refId) return
@@ -441,11 +459,11 @@ export default function SmmPage() {
             </div>
           )}
           {view === 'month' ? (
-            <MonthView cells={cells} byDate={mainByDate} today={today} cycles={cycles}
+            <MonthView cells={cells} byDate={mainByDate} today={today} cycles={cycles} dragRange={dragRange}
               onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
               dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           ) : (
-            <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail}
+            <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail} dragRange={dragRange}
               onDragStart={onDragStartEv} onDropDate={onDropDate} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           )}
         </>
@@ -556,9 +574,10 @@ function cycleBoundsFor(ref: Date, anchor: number): { start: string; end: string
   return { start: iso(start), end: iso(end) }
 }
 
-function MonthView({ cells, byDate, today, cycles, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
+function MonthView({ cells, byDate, today, cycles, dragRange, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
   cells: Cell[]; byDate: Map<string, Ev[]>; today: string
   cycles: { id: string; name: string; color: string; start: string; end: string }[]
+  dragRange: { start: string; end: string } | null
   onOpen: (e: Ev) => void; onDragStart: (e: Ev) => void; onDropDate: (d: string) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
@@ -573,13 +592,18 @@ function MonthView({ cells, byDate, today, cycles, onOpen, onDragStart, onDropDa
         {cells.map((c, i) => {
           const evs = c.iso ? (byDate.get(c.iso) ?? []) : []
           const isToday = c.iso === today
+          // Во время перетаскивания с ограничением цикла — ячейки вне окна
+          // не принимают drop (не preventDefault) и приглушаются.
+          const blocked = !!(dragRange && c.iso && (c.iso < dragRange.start || c.iso > dragRange.end))
+          const droppable = !!c.iso && !blocked
           return (
             <div key={i}
-              onDragOver={c.iso ? (ev => { ev.preventDefault(); if (dragOverKey !== c.iso) setDragOverKey(c.iso) }) : undefined}
-              onDragLeave={c.iso ? (() => setDragOverKey(dragOverKey === c.iso ? null : dragOverKey)) : undefined}
-              onDrop={c.iso ? (() => onDropDate(c.iso!)) : undefined}
+              onDragOver={droppable ? (ev => { ev.preventDefault(); if (dragOverKey !== c.iso) setDragOverKey(c.iso) }) : undefined}
+              onDragLeave={droppable ? (() => setDragOverKey(dragOverKey === c.iso ? null : dragOverKey)) : undefined}
+              onDrop={droppable ? (() => onDropDate(c.iso!)) : undefined}
               className={'min-h-[92px] border-b border-r border-gray-100 dark:border-gray-800/80 p-1 flex flex-col gap-0.5 '
                 + ((i + 1) % 7 === 0 ? 'border-r-0 ' : '')
+                + (blocked ? 'opacity-40 ' : '')
                 + (c.iso && dragOverKey === c.iso ? 'ring-1 ring-inset ring-gray-400 ' : '')
                 + (!c.inMonth ? 'bg-gray-50/40 dark:bg-black/20' : isToday ? 'bg-[#eb5757]/[0.06]' : (i % 7 >= 5 ? 'bg-gray-50/50 dark:bg-white/[0.015]' : ''))}>
               {c.iso && cycles.some(cy => c.iso! >= cy.start && c.iso! <= cy.end) && (
@@ -612,14 +636,17 @@ function MonthView({ cells, byDate, today, cycles, onOpen, onDragStart, onDropDa
 }
 
 // ─── НЕДЕЛЯ / ДЕНЬ ─────────────────────────────────────────────────────
-function TimeGridView({ days, events, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
+function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
   days: Date[]; events: Ev[]; onOpen: (e: Ev) => void
+  dragRange: { start: string; end: string } | null
   onDragStart: (e: Ev) => void; onDropDate: (dateStr: string) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
   const now = new Date()
   const dayKey = (d: Date) => format(d, 'yyyy-MM-dd')
-  const dropProps = (d: Date) => ({
+  // Вне окна цикла (при перетаскивании) день не принимает drop.
+  const dayBlocked = (d: Date) => !!(dragRange && (dayKey(d) < dragRange.start || dayKey(d) > dragRange.end))
+  const dropProps = (d: Date) => dayBlocked(d) ? {} : ({
     onDragOver: (ev: RDragEvent) => { ev.preventDefault(); if (dragOverKey !== dayKey(d)) setDragOverKey(dayKey(d)) },
     onDrop: () => onDropDate(dayKey(d)),
   })
