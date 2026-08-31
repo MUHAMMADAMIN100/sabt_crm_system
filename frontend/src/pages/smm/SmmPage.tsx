@@ -331,7 +331,7 @@ export default function SmmPage() {
     for (const b of filtered) { if (!byProj.has(b.projectId)) byProj.set(b.projectId, []); byProj.get(b.projectId)!.push(b) }
     // Показываем ВСЕ проекты — выбранный подсвечивается, остальные приглушаются
     // (клик по плитке фильтрует календарь, но плитки не прячем).
-    return projects.map(p => ({ id: p.id, name: p.name, items: byProj.get(p.id) ?? [] }))
+    return projects.map(p => ({ id: p.id, name: p.name, items: byProj.get(p.id) ?? [], norm: (p.normReels ?? 0) + (p.normPosts ?? 0) }))
   }, [backlog, search, projects])
 
   const monthStr = format(cursor, 'yyyy-MM')
@@ -739,7 +739,7 @@ function StoriesTab({ projects, cells, byProject, today, monthLabel, activeIds, 
 
 // ─── панель «Не запланировано» ─────────────────────────────────────────
 function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDrop, over, setOver }: {
-  groups: { id: string; name: string; items: Ev[] }[]; activeIds: Set<string>; onPick: (id: string) => void
+  groups: { id: string; name: string; items: Ev[]; norm: number }[]; activeIds: Set<string>; onPick: (id: string) => void
   onSettings: (id: string) => void
   onDragStart: (e: Ev) => void; onDrop: () => void; over: boolean; setOver: (v: boolean) => void
 }) {
@@ -772,7 +772,10 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c }} />
                   <span className="truncate text-left">{g.name}</span>
                 </button>
-                <span className="text-[11px] text-gray-400 font-medium shrink-0">{g.items.length}</span>
+                <span className="text-[11px] text-gray-400 font-medium shrink-0 tabular-nums"
+                  title={g.norm > 0 ? `Всего за цикл ${g.norm} · в корзине ${g.items.length}` : undefined}>
+                  {g.norm > 0 ? `${g.norm}/${g.items.length}` : g.items.length}
+                </span>
                 <button type="button" onClick={() => onSettings(g.id)} title="Настройки проекта — день старта цикла"
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 shrink-0">
                   <Settings size={13} />
