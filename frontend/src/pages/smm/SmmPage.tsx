@@ -322,13 +322,6 @@ export default function SmmPage() {
     return out
   }, [projects, selProjects])
 
-  // Норма за цикл — сколько рилсов/постов нужно (для выбранных проектов).
-  const normLines = useMemo(() =>
-    projects
-      .filter(p => selProjects.has(p.id) && ((p.normReels ?? 0) > 0 || (p.normPosts ?? 0) > 0))
-      .map(p => ({ id: p.id, name: p.name, color: projColor(p.id), reels: p.normReels ?? 0, posts: p.normPosts ?? 0 })),
-  [projects, selProjects])
-
   // Таб «Сторисы»: мини-календари по проекту → дате (все события, в т.ч. сторис).
   const byProject = useMemo(() => {
     const m = new Map<string, Map<string, Ev[]>>()
@@ -444,20 +437,6 @@ export default function SmmPage() {
             onSettings={openProjSettings}
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
-          {normLines.length > 0 && (
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/40 px-3.5 py-2.5">
-              {normLines.map(n => (
-                <div key={n.id} className="flex items-center gap-2 text-[12.5px]">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: n.color }} />
-                  <span className="font-semibold">{n.name}</span>
-                  <span className="text-gray-400">нужно за цикл:</span>
-                  <span className="inline-flex items-center gap-1 font-semibold" style={{ color: n.color }}><Film size={13} /> {n.reels}</span>
-                  <span className="text-gray-300 dark:text-gray-600">·</span>
-                  <span className="inline-flex items-center gap-1 font-semibold" style={{ color: n.color }}><ImageIcon size={13} /> {n.posts}</span>
-                </div>
-              ))}
-            </div>
-          )}
           {view === 'month' ? (
             <MonthView cells={cells} byDate={mainByDate} today={today} cycles={cycles} dragRange={dragRange}
               onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
