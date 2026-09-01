@@ -179,9 +179,14 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(e);
     }
-    return [...map.entries()].sort((a, b) =>
-      (a[0] === 'Без категории' ? 1 : 0) - (b[0] === 'Без категории' ? 1 : 0)
-      || a[0].localeCompare(b[0], 'ru'));
+    const salarySum = (list: any[]) => list.reduce((s, e) => s + (Number(e.salary) || 0), 0);
+    // Отделы — по суммарной ЗП по убыванию; «Без категории» всегда в конце.
+    return [...map.entries()].sort((a, b) => {
+      const aUn = a[0] === 'Без категории' ? 1 : 0;
+      const bUn = b[0] === 'Без категории' ? 1 : 0;
+      if (aUn !== bUn) return aUn - bUn;
+      return salarySum(b[1]) - salarySum(a[1]);
+    });
   }, [rows]);
   const knownCategories = useMemo(
     () => [...new Set(rows.map((e) => (e.category ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru')),
