@@ -279,7 +279,9 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
         <button className="btn primary" onClick={() => setEmpFor('new')}><FinIcon name="plus" size={16} /> Сотрудник</button>
       </div>
 
-      {groups.map(([cat, list]) => {
+      {groups.map(([cat, listRaw]) => {
+        // Сортируем сотрудников по ЗП — с самой высокой сверху.
+        const list = [...listRaw].sort((a, b) => (Number(b.salary) || 0) - (Number(a.salary) || 0));
         const sum = (f: (e: any) => number) => list.reduce((s, e) => s + (f(e) || 0), 0);
         return (
           <div key={cat}>
@@ -287,14 +289,25 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
               <div className="section-title" style={{ margin: '18px 0 10px' }}>{cat} · {list.length} чел.</div>
             )}
             <div className="table-wrap fin-wide-table">
-              <table>
+              <table style={{ tableLayout: 'fixed', width: '100%' }}>
+                <colgroup>
+                  <col style={{ width: 240 }} />{/* ФИО */}
+                  <col style={{ width: 200 }} />{/* Должность */}
+                  <col style={{ width: 140 }} />{/* Дата приёма */}
+                  <col style={{ width: 104 }} />{/* ЗП */}
+                  <col style={{ width: 112 }} />{/* Аванс */}
+                  <col style={{ width: 104 }} />{/* Бонус */}
+                  <col style={{ width: 104 }} />{/* Штраф */}
+                  <col style={{ width: 176 }} />{/* Статус */}
+                  <col style={{ width: 56 }} />{/* ред. */}
+                </colgroup>
                 <thead>
                   <tr>
-                    <th style={{ minWidth: 160 }}>ФИО</th><th>Должность</th><th>Дата приёма</th>
-                    <th className="num" style={{ width: 96 }}>ЗП</th><th className="num" style={{ width: 100 }}>Аванс</th>
-                    <th className="num" style={{ width: 100 }}>Бонус</th>
-                    <th className="num" style={{ width: 100 }}>Штраф</th>
-                    <th style={{ minWidth: 150 }}>Статус</th><th style={{ width: 60 }} />
+                    <th>ФИО</th><th>Должность</th><th>Дата приёма</th>
+                    <th className="num">ЗП</th><th className="num">Аванс</th>
+                    <th className="num">Бонус</th>
+                    <th className="num">Штраф</th>
+                    <th>Статус</th><th />
                   </tr>
                 </thead>
                 <tbody>
