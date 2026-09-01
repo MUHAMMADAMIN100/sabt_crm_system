@@ -7,7 +7,8 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, workflowApi, projectsApi } from '@/services/api.service'
 
@@ -141,6 +142,7 @@ const VIEWS: { k: View; label: string }[] = [
 
 // ═══════════════════════════════════════════════════════════════════════
 export default function SmmPage() {
+  const navigate = useNavigate()
   const [view, setView] = useState<View>('month')
   const [cursor, setCursor] = useState(new Date())
   // Фильтр по проектам — множественный выбор (пусто = все проекты).
@@ -458,17 +460,18 @@ export default function SmmPage() {
         <ProjectCycleModal p={projSettings} saving={cycleMut.isPending} clearing={clearMut.isPending}
           onClose={() => setProjSettings(null)}
           onSave={(day, normReels, normPosts) => cycleMut.mutate({ id: projSettings.id, day, normReels, normPosts })}
-          onClear={() => clearMut.mutate(projSettings.id)} />
+          onClear={() => clearMut.mutate(projSettings.id)}
+          onOpen={() => navigate(`/smm/projects/${projSettings.id}`)} />
       )}
     </div>
   )
 }
 
 // ─── окно «Цикл проекта» — день старта цикла (1..31) + норма (рилсы/посты) ─
-function ProjectCycleModal({ p, saving, clearing, onClose, onSave, onClear }: {
+function ProjectCycleModal({ p, saving, clearing, onClose, onSave, onClear, onOpen }: {
   p: Proj; saving: boolean; clearing: boolean; onClose: () => void
   onSave: (day: number | null, normReels: number | null, normPosts: number | null) => void
-  onClear: () => void
+  onClear: () => void; onOpen: () => void
 }) {
   const [day, setDay] = useState<number | null>(p.cycleStartDay ?? null)
   const [reels, setReels] = useState<number>(p.normReels ?? 0)
@@ -490,6 +493,10 @@ function ProjectCycleModal({ p, saving, clearing, onClose, onSave, onClear }: {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
         <h3 className="text-lg font-bold">{p.name}</h3>
+        <button type="button" onClick={onOpen}
+          className="mt-2.5 w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
+          <ExternalLink size={15} /> Открыть проект
+        </button>
         <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5 mt-3">День старта цикла</p>
         <div className="grid grid-cols-7 gap-1">
           {Array.from({ length: 31 }, (_, i) => i + 1).map(n => {
