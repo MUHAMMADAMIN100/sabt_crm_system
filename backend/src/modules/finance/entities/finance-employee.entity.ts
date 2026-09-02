@@ -38,12 +38,18 @@ export class FinanceEmployee {
   @Column({ type: 'jsonb', nullable: true })
   fines: Record<string, number> | null;
 
+  /** Отпускные/нерабочие по месяцам: { '2026-08': 1000 }. Удержание —
+   *  вычитается из «к выплате» (отпуск/невыходы за счёт сотрудника). */
+  @Column({ type: 'jsonb', nullable: true })
+  vacations: Record<string, number> | null;
+
   /** Снапшоты выплаченных месяцев: { '2026-07': { salary, bonus, advance,
    *  fine, paid, paidAt } }. Выплаченный месяц ЗАМОРОЖЕН — любые будущие
    *  правки оклада/бонусов/авансов его не меняют (месяцы независимы). */
   @Column({ type: 'jsonb', nullable: true })
   salarySnapshots: Record<string, {
     salary: number; bonus: number; advance: number; fine: number;
+    vacation?: number;
     paid: number; paidAt: string;
     /** v2: paid уже включает авансы и остальные операции месяца. */
     paidIncludesAdvance?: boolean;

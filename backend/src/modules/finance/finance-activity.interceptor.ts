@@ -25,6 +25,7 @@ const LABELS: Array<{ re: RegExp; method?: string; label: string }> = [
   { re: /\/employees\/[^/]+\/bonus$/, label: 'Изменил бонус сотрудника' },
   { re: /\/employees\/[^/]+\/advance$/, label: 'Изменил аванс сотрудника' },
   { re: /\/employees\/[^/]+\/fine$/, label: 'Изменил штраф сотрудника' },
+  { re: /\/employees\/[^/]+\/vacation$/, label: 'Изменил отпускные/удержание сотрудника' },
   { re: /\/employees\/[^/]+$/, method: 'PATCH', label: 'Изменил сотрудника (ЗП)' },
   { re: /\/employees\/[^/]+$/, method: 'DELETE', label: 'Уволил сотрудника (ЗП)' },
   { re: /\/employees$/, method: 'POST', label: 'Добавил сотрудника (ЗП)' },
@@ -125,7 +126,7 @@ export class FinanceActivityInterceptor implements NestInterceptor {
   private normalizeSnapshot(req: any, entity: Record<string, any> | null): Record<string, any> | null {
     if (!entity) return null;
     const url = String(req?.originalUrl || req?.url || '');
-    const monthField = url.includes('/advance') ? 'advances' : url.includes('/bonus') ? 'bonuses' : url.includes('/fine') ? 'fines' : null;
+    const monthField = url.includes('/advance') ? 'advances' : url.includes('/bonus') ? 'bonuses' : url.includes('/fine') ? 'fines' : url.includes('/vacation') ? 'vacations' : null;
     if (monthField) {
       const ym = req?.body?.ym;
       return { id: entity.id, name: entity.name, ym, amount: Number(entity[monthField]?.[ym] ?? 0) };

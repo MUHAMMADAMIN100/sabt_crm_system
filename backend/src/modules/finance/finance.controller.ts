@@ -205,6 +205,7 @@ export class FinanceController {
   @Post('employees/:id/advance') setEmployeeAdvance(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeAdvance(id, dto); }
   /** Штраф за месяц (вычитается из «к выплате»; 0 — снять). */
   @Post('employees/:id/fine') setEmployeeFine(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeFine(id, dto); }
+  @Post('employees/:id/vacation') setEmployeeVacation(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeVacation(id, dto); }
   /** Текущий workflow-период и последний открытый период ведомости. */
   @Get('salary/period') salaryPeriod(@Query('ym') ym?: string) {
     return this.service.salaryPeriodState(ym);

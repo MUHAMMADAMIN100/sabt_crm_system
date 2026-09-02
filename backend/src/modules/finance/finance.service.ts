@@ -152,6 +152,11 @@ function fineOf(e: { fines?: Record<string, number> | null }, ym: string): numbe
   return r2(Number((e.fines || {})[ym]) || 0);
 }
 
+/** Отпускные/нерабочие за месяц — удержание, вычитается из «к выплате». */
+function vacationOf(e: { vacations?: Record<string, number> | null }, ym: string): number {
+  return r2(Number((e.vacations || {})[ym]) || 0);
+}
+
 /** Снапшот выплаченного месяца (месяц заморожен, правки его не меняют). */
 function snapOf(e: { salarySnapshots?: Record<string, any> | null }, ym: string) {
   return (e.salarySnapshots || {})[ym] || null;
@@ -320,6 +325,7 @@ export class FinanceService implements OnModuleInit {
     // Помесячные авансы/штрафы + снапшоты выплаченных месяцев (месяцы независимы).
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "advances" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "fines" jsonb`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "vacations" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salarySnapshots" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salaryHistory" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "legacyPayrollHistory" jsonb`);
@@ -1547,7 +1553,7 @@ export class FinanceService implements OnModuleInit {
         salaryBonAcc += r2(Number(snap.bonus) || 0);
         continue;
       }
-      const due = r2(Math.max(0, salaryForMonth(e, ym) + bon - fineOf(e, ym)));
+      const due = r2(Math.max(0, salaryForMonth(e, ym) + bon - fineOf(e, ym) - vacationOf(e, ym)));
       salaryPlanAcc += due;
       salaryToPayAcc += Math.max(0, due - paid);
       salaryAdvAcc += adv; salaryBonAcc += bon;
@@ -2079,7 +2085,8 @@ export class FinanceService implements OnModuleInit {
       const adv = r2(txs.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
       const bon = r2(txs.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
       const fine = fineOf(e, ym);
-      const due = r2(Math.max(0, salaryForMonth(e, ym) + bon - fine));
+      const vacation = vacationOf(e, ym);
+      const due = r2(Math.max(0, salaryForMonth(e, ym) + bon - fine - vacation));
       const toPay = r2(Math.max(0, due - paid));
       salaryAdvances += adv; salaryBonuses += bon; salaryFines += fine; salaryToPayAgg += toPay;
       const gross = r2(salaryForMonth(e, ym) + bon);
@@ -2156,6 +2163,7 @@ export class FinanceService implements OnModuleInit {
             salaryHistory: e.salaryHistory || {},
             salary: salaryForMonth(e, ym), advance: r2(Number(snap.advance) || 0),
             bonus: r2(Number(snap.bonus) || 0), fine: r2(Number(snap.fine) || 0),
+            vacation: r2(Number(snap.vacation) || 0),
             status: e.status, paid, toPay: 0,
             frozen: true, paidAt: snap.paidAt ?? null,
           };
@@ -2164,15 +2172,16 @@ export class FinanceService implements OnModuleInit {
         const advance = advPaidOf(e.id); // уже выдано (входит в paid)
         const bonus = bonPaidOf(e.id);   // уже выдано (входит в paid)
         const fine = fineOf(e, ym);      // удерживается при финальной выплате
+        const vacation = vacationOf(e, ym); // отпуск/невыходы — тоже удержание
         return {
           id: e.id, name: e.name, role: e.role, category: e.category ?? null,
           hireDate: e.hireDate, terminationDate: e.terminationDate,
           salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {},
-          advance, bonus, fine, status: e.status, paid,
-          // Обязательство месяца = оклад + выданные бонусы − штраф; аванс и
-          // бонус уже внутри «выплачено», поэтому остаток = оклад − штраф −
-          // (финальные выплаты + авансы).
-          toPay: r2(Math.max(0, salaryForMonth(e, ym) + bonus - fine - paid)),
+          advance, bonus, fine, vacation, status: e.status, paid,
+          // Обязательство месяца = оклад + выданные бонусы − штраф − отпускные;
+          // аванс и бонус уже внутри «выплачено», поэтому остаток =
+          // оклад − штраф − отпускные − (финальные выплаты + авансы).
+          toPay: r2(Math.max(0, salaryForMonth(e, ym) + bonus - fine - vacation - paid)),
           frozen: false, paidAt: null,
         };
       });
@@ -2180,13 +2189,14 @@ export class FinanceService implements OnModuleInit {
       const advances = r2(rows.reduce((s, e) => s + Number(e.advance), 0));
       const bonuses = r2(rows.reduce((s, e) => s + Number(e.bonus), 0));
       const fines = r2(rows.reduce((s, e) => s + Number(e.fine || 0), 0));
+      const vacations = r2(rows.reduce((s, e) => s + Number((e as any).vacation || 0), 0));
       const paid = r2(rows.reduce((s, e) => s + Number(e.paid), 0));
       // Все выплачены → фронт автоматически показывает следующий месяц.
       const allPaid = rows.length > 0 && rows.every(r => r.frozen || r.toPay <= 0);
       return {
         kind: 'salary',
         period,
-        cards: { fund, advances, bonuses, fines, paid, toPay: r2(rows.reduce((s, e) => s + Number(e.toPay), 0)) },
+        cards: { fund, advances, bonuses, fines, vacations, paid, toPay: r2(rows.reduce((s, e) => s + Number(e.toPay), 0)) },
         rows,
         allPaid,
         // Полный набор полей: модалка редактирования открывается и из этой
@@ -2708,13 +2718,14 @@ export class FinanceService implements OnModuleInit {
     // — установленная ставка salaryHistory за расчётный месяц.
     const salary = salaryForMonth(e, ym);
     const fine = snap ? r2(Number(snap.fine) || 0) : fineOf(e, ym);
+    const vacation = snap ? r2(Number(snap.vacation) || 0) : vacationOf(e, ym);
     // Аванс/бонус уже выданы операциями (входят в paid): обязательство =
-    // оклад + бонусы − штраф.
-    const due = r2(Math.max(0, salary + bonus - fine));
+    // оклад + бонусы − штраф − отпускные.
+    const due = r2(Math.max(0, salary + bonus - fine - vacation));
     const map = { ...(e.salarySnapshots || {}) };
     if (due > 0 && paid >= due - 0.005) {
       map[ym] = {
-        salary, bonus, advance, fine, paid,
+        salary, bonus, advance, fine, vacation, paid,
         paidAt: snap?.paidAt || todayISO(),
         paidIncludesAdvance: true,
       };
@@ -3929,7 +3940,8 @@ export class FinanceService implements OnModuleInit {
           ? r2(Number(snapshot.bonus) || 0)
           : txBonus > 0 ? txBonus : bonusOf(e, ym);
         const fine = snapshot ? r2(Number(snapshot.fine) || 0) : fineOf(e, ym);
-        const accrued = r2(Math.max(0, salary + bonus - fine));
+        const vacation = snapshot ? r2(Number(snapshot.vacation) || 0) : vacationOf(e, ym);
+        const accrued = r2(Math.max(0, salary + bonus - fine - vacation));
         // В старых снимках paid мог означать финальную выплату БЕЗ ранее
         // выданного аванса; в новых — уже всю сумму. Журнал и version-флаг
         // различают обе формы, не удваивая аванс и не скрывая переплату.
@@ -3953,7 +3965,7 @@ export class FinanceService implements OnModuleInit {
           totalPaid - advance - txSalary - txBonus,
         ));
         return {
-          ym, salary, advance, bonus, fine,
+          ym, salary, advance, bonus, fine, vacation,
           accrued,
           paidByOperations,
           finalPayment: txSalary,
@@ -3969,7 +3981,7 @@ export class FinanceService implements OnModuleInit {
         };
       });
 
-    const periodSum = (key: 'salary' | 'advance' | 'bonus' | 'fine' | 'accrued') =>
+    const periodSum = (key: 'salary' | 'advance' | 'bonus' | 'fine' | 'vacation' | 'accrued') =>
       r2(periods.reduce((s, period) => s + Number(period[key]), 0));
     return {
       employeeId: id,
@@ -3982,6 +3994,7 @@ export class FinanceService implements OnModuleInit {
         advance: periodSum('advance'),
         bonus: periodSum('bonus'),
         fine: periodSum('fine'),
+        vacation: periodSum('vacation'),
         salary: periodSum('salary'),
         accrued: periodSum('accrued'),
         paidByOperations: r2(rows.reduce((s, r) => s + r.amount, 0)),
@@ -4000,8 +4013,13 @@ export class FinanceService implements OnModuleInit {
     return this.setEmployeeMonthField(id, 'fines', dto, 'Штраф');
   }
 
+  /** Отпускные/нерабочие за месяц — удержание, вычитается из «к выплате». */
+  async setEmployeeVacation(id: string, dto: { ym?: string; amount?: any }) {
+    return this.setEmployeeMonthField(id, 'vacations', dto, 'Отпускные');
+  }
+
   private async setEmployeeMonthField(
-    id: string, field: 'bonuses' | 'advances' | 'fines',
+    id: string, field: 'bonuses' | 'advances' | 'fines' | 'vacations',
     dto: { ym?: string; amount?: any }, label: string,
   ) {
     const e = await this.empRepo.findOne({ where: { id } });

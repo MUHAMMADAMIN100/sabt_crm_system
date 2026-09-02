@@ -275,7 +275,8 @@ export class FinanceScheduler {
         .filter(t => (t.comment || '').trim().toLowerCase().startsWith('бонус'))
         .reduce((s, t) => s + Number(t.amount), 0);
       const fine = Number((e.fines || {})[ym]) || 0;
-      const due = Math.max(0, salaryForFinanceMonth(e, ym) + bonus - fine);
+      const vacation = Number((e.vacations || {})[ym]) || 0;
+      const due = Math.max(0, salaryForFinanceMonth(e, ym) + bonus - fine - vacation);
       toPay += Math.max(0, due - paidE);
     }
     toPay = Math.round(toPay * 100) / 100;

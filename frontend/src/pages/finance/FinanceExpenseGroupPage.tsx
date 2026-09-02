@@ -146,7 +146,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   });
   const { data: fullEmployees } = useQuery({ queryKey: ['finref', 'employees'], queryFn: () => financeApi.employees() });
   const [payFor, setPayFor] = useState<any | null>(null);
-  const [payoutFor, setPayoutFor] = useState<{ row: any; kind: 'advance' | 'bonus' } | null>(null);
+  const [payoutFor, setPayoutFor] = useState<{ row: any; kind: 'advance' | 'bonus'; amount?: number } | null>(null);
   const [empFor, setEmpFor] = useState<any | 'new' | null>(null);
   const [showFired, setShowFired] = useState(false);
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
@@ -237,8 +237,8 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   }
 
   function exportCsv() {
-    const header = ['Сотрудник', 'Группа', 'Должность', 'Оклад', 'Бонус', 'Аванс', 'Штраф', 'Выплачено', 'К выплате'];
-    const body = rows.map((e) => [e.name, e.category, e.role, e.salary, e.bonus, e.advance, e.fine ?? 0, e.paid, e.toPay]);
+    const header = ['Сотрудник', 'Группа', 'Должность', 'Оклад', 'Бонус', 'Аванс', 'Штраф', 'Отпускные', 'Выплачено', 'К выплате'];
+    const body = rows.map((e) => [e.name, e.category, e.role, e.salary, e.bonus, e.advance, e.fine ?? 0, e.vacation ?? 0, e.paid, e.toPay]);
     downloadCsv(`salary-${ym}.csv`, [header, ...body]);
   }
 
@@ -368,20 +368,23 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                           <td colSpan={8}>
                             <div className="fin-emp-month">
                               <div className="fin-emp-month-head">
-                                <b>{e.name}</b><span className="muted" style={{ textTransform: 'capitalize' }}>· {monthLabel(ym, true)}</span>
+                                <span style={{ textTransform: 'capitalize' }}>{monthLabel(ym, true)}</span>
+                                {!isPaid && <span>К выплате <b>{money(e.toPay)}</b></span>}
                                 <div className="grow" />
                                 <button className="btn sm" onClick={(ev) => { ev.stopPropagation(); navigate(`/finance/salary/${e.id}`, { state: { name: e.name } }); }}>
                                   Детальная информация <FinIcon name="arrowRight" size={15} />
                                 </button>
                               </div>
-                              <div className="fin-emp-month-grid">
-                                <div><span className="l">Оклад</span><span className="v">{money(e.salary)}</span></div>
-                                <div><span className="l">Аванс выдан</span><span className="v">{Number(e.advance) ? money(e.advance) : '—'}</span></div>
-                                <div><span className="l">Бонус</span><span className="v">{Number(e.bonus) ? money(e.bonus) : '—'}</span></div>
-                                <div><span className="l">Штраф</span><span className="v" style={Number(e.fine) ? { color: 'var(--red)' } : undefined}>{Number(e.fine) ? money(e.fine) : '—'}</span></div>
-                                <div className="acc"><span className="l">К выплате</span><span className="v">{money(e.toPay)}</span></div>
-                                <div><span className="l">Статус</span><span className="v" style={{ color: isPaid ? 'var(--green)' : undefined }}>{isPaid ? 'Выплачено' : 'К выплате'}</span></div>
-                              </div>
+                              {isPaid ? (
+                                <p className="mini muted" style={{ margin: 0 }}>Месяц выплачен и зафиксирован — правки недоступны.</p>
+                              ) : (
+                                <div className="fin-emp-month-form">
+                                  <IssueField label="Аванс" current={Number(e.advance) || 0} onIssue={(amt) => setPayoutFor({ row: e, kind: 'advance', amount: amt })} />
+                                  <IssueField label="Бонус" current={Number(e.bonus) || 0} onIssue={(amt) => setPayoutFor({ row: e, kind: 'bonus', amount: amt })} />
+                                  <DeductionField row={e} ym={ym} field="fine" label="Штраф" />
+                                  <DeductionField row={e} ym={ym} field="vacation" label="Отпускные / нерабочие" />
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -474,9 +477,53 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
       )}
 
       {payFor && <SalaryPayModal row={payFor} ym={ym} onClose={() => setPayFor(null)} />}
-      {payoutFor && <PayoutModal row={payoutFor.row} kind={payoutFor.kind} ym={ym} onClose={() => setPayoutFor(null)} />}
+      {payoutFor && <PayoutModal row={payoutFor.row} kind={payoutFor.kind} ym={ym} defaultAmount={payoutFor.amount} onClose={() => setPayoutFor(null)} />}
       {empFor && <EmployeeFormModal employee={empFor === 'new' ? undefined : empFor} categories={knownCategories} onClose={() => setEmpFor(null)} />}
     </>
+  );
+}
+
+/** Поле «выдать» аванс/бонус в развороте: вводишь сумму → «→» открывает
+ *  окно выдачи (счёт/дата/подтверждение), т.к. это реальное списание денег. */
+function IssueField({ label, current, onIssue }: { label: string; current: number; onIssue: (amount: number) => void }) {
+  const [v, setV] = useState('');
+  const go = () => { const n = Math.max(0, parseFloat(v.replace(',', '.')) || 0); if (n > 0) { onIssue(n); setV(''); } };
+  return (
+    <label className="fld">
+      <span>{label}{current > 0 ? ` · выдано ${money(current)}` : ''}</span>
+      <div className="in">
+        <input inputMode="decimal" placeholder="сумма" value={v} onChange={(e) => setV(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } }} />
+        <button type="button" className="issue" title="Выдать — откроется выбор счёта" onClick={go}><FinIcon name="arrowRight" size={15} /></button>
+      </div>
+    </label>
+  );
+}
+
+/** Поле-удержание (штраф / отпускные): вводишь число — сохраняется сразу,
+ *  счёт не трогает, уменьшает «к выплате». */
+function DeductionField({ row, ym, field, label }: { row: any; ym: string; field: 'fine' | 'vacation'; label: string }) {
+  const qc = useQueryClient();
+  const value = Number(row[field]) || 0;
+  const save = async (raw: string) => {
+    const v = Math.max(0, parseFloat(raw.replace(',', '.')) || 0);
+    if (v === value) return;
+    try {
+      if (field === 'fine') await financeApi.setEmployeeFine(row.id, { ym, amount: v });
+      else await financeApi.setEmployeeVacation(row.id, { ym, amount: v });
+      invalidateFinance(qc);
+    } catch (err) { toast.error(apiErr(err)); }
+  };
+  return (
+    <label className="fld">
+      <span>{label}</span>
+      <div className="in">
+        <input key={`${row.id}-${ym}-${field}-${value}`} inputMode="decimal" placeholder="—"
+          defaultValue={value || ''} style={value ? { color: 'var(--red)' } : undefined}
+          onBlur={(e) => save(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }} />
+      </div>
+    </label>
   );
 }
 
@@ -540,12 +587,12 @@ function MonthAmountCell({ row, ym, field, onPayout }: {
 /** Выдача аванса/бонуса: создаёт расходную операцию СРАЗУ (деньги выходят
  *  со счёта в момент выдачи). Комментарий «Аванс»/«Бонус» — по нему колонка
  *  и математика узнают тип выплаты. */
-function PayoutModal({ row, kind, ym, onClose }: { row: any; kind: 'advance' | 'bonus'; ym: string; onClose: () => void }) {
+function PayoutModal({ row, kind, ym, defaultAmount, onClose }: { row: any; kind: 'advance' | 'bonus'; ym: string; defaultAmount?: number; onClose: () => void }) {
   useModalKeys(onClose);
   const qc = useQueryClient();
   const accounts = useFinAccounts();
   const categories = useFinCategories();
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(defaultAmount && defaultAmount > 0 ? String(defaultAmount) : '');
   // Дата платежа — реальная (по умолчанию сегодня), месяц начисления — из таблицы.
   const [date, setDate] = useState(todayISO());
   const [salaryYm, setSalaryYm] = useState(ym);
