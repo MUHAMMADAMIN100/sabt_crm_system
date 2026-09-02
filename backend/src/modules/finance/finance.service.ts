@@ -158,7 +158,7 @@ function vacationOf(e: { vacations?: Record<string, number> | null }, ym: string
   return r2(Number((e.vacations || {})[ym]) || 0);
 }
 
-type DeductionEntry = { id: string; date: string; amount: number; note?: string | null };
+type DeductionEntry = { id: string; date: string; amount: number; note?: string | null; dateFrom?: string | null; dateTo?: string | null };
 
 /** Журнал удержания (штраф/отпускные) за месяц. Если журнала нет, а старое
  *  число (fines[ym]/vacations[ym]) есть — показываем его одной legacy-записью
@@ -170,12 +170,16 @@ function readDeductionEntries(
   const stored = (e[entriesField] || {})[ym];
   if (Array.isArray(stored) && stored.length) {
     return stored
-      .map((x: any) => ({ id: String(x.id), date: String(x.date).slice(0, 10), amount: r2(Number(x.amount) || 0), note: x.note ?? null }))
+      .map((x: any) => ({
+        id: String(x.id), date: String(x.date).slice(0, 10), amount: r2(Number(x.amount) || 0), note: x.note ?? null,
+        dateFrom: x.dateFrom ? String(x.dateFrom).slice(0, 10) : null,
+        dateTo: x.dateTo ? String(x.dateTo).slice(0, 10) : null,
+      }))
       .filter(x => x.amount > 0)
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }
   const scalar = r2(Number((e[scalarField] || {})[ym]) || 0);
-  if (scalar > 0) return [{ id: `legacy-${ym}`, date: `${ym}-01`, amount: scalar, note: null }];
+  if (scalar > 0) return [{ id: `legacy-${ym}`, date: `${ym}-01`, amount: scalar, note: null, dateFrom: null, dateTo: null }];
   return [];
 }
 
@@ -4090,7 +4094,12 @@ export class FinanceService implements OnModuleInit {
     // materialize: legacy-число превращаем в реальную запись, затем применяем.
     let list = readDeductionEntries(e as any, entriesField, scalarField, ym);
     list = apply([...list])
-      .map(x => ({ id: String(x.id), date: String(x.date).slice(0, 10), amount: r2(Number(x.amount) || 0), note: (x.note ?? '').toString().trim() || null }))
+      .map(x => ({
+        id: String(x.id), date: String(x.date).slice(0, 10), amount: r2(Number(x.amount) || 0),
+        note: (x.note ?? '').toString().trim() || null,
+        dateFrom: x.dateFrom ? String(x.dateFrom).slice(0, 10) : null,
+        dateTo: x.dateTo ? String(x.dateTo).slice(0, 10) : null,
+      }))
       .filter(x => x.amount > 0);
     const emap = { ...((e as any)[entriesField] || {}) };
     if (list.length) emap[ym] = list; else delete emap[ym];
@@ -4103,12 +4112,16 @@ export class FinanceService implements OnModuleInit {
     return this.empRepo.save(e);
   }
 
-  async addEmployeeDeduction(id: string, dto: { kind: 'fine' | 'vacation'; ym?: string; amount?: any; date?: string; note?: string }) {
+  async addEmployeeDeduction(id: string, dto: { kind: 'fine' | 'vacation'; ym?: string; amount?: any; date?: string; dateFrom?: string; dateTo?: string; note?: string }) {
     const amount = r2(Number(dto.amount) || 0);
     if (amount <= 0) throw new BadRequestException('Сумма должна быть больше нуля');
+    // Отпускные/нерабочие задаются периодом «от–до»; штраф — одной датой.
+    const from = dto.dateFrom ? dto.dateFrom.slice(0, 10) : null;
+    const to = dto.dateTo ? dto.dateTo.slice(0, 10) : null;
+    if (from && to && to < from) throw new BadRequestException('«Дата до» раньше «даты от»');
     const entry: DeductionEntry = {
-      id: randomUUID(), date: (dto.date || todayISO()).slice(0, 10), amount,
-      note: (dto.note || '').trim() || null,
+      id: randomUUID(), date: (from || dto.date || todayISO()).slice(0, 10), amount,
+      note: (dto.note || '').trim() || null, dateFrom: from, dateTo: to,
     };
     return this.mutateDeduction(id, dto.kind, dto.ym, list => [...list, entry]);
   }

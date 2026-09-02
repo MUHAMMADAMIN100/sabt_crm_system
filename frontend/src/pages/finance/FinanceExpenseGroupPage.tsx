@@ -392,7 +392,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                                   <IssueField label="Аванс" kind="advance" row={e} ym={ym} total={Number(e.advance) || 0} entries={e.advanceEntries || []} accounts={accounts} onIssue={(amt) => setPayoutFor({ row: e, kind: 'advance', amount: amt })} />
                                   <IssueField label="Бонус" kind="bonus" row={e} ym={ym} total={Number(e.bonus) || 0} entries={e.bonusEntries || []} accounts={accounts} onIssue={(amt) => setPayoutFor({ row: e, kind: 'bonus', amount: amt })} />
                                   <DeductionField row={e} ym={ym} field="fine" label="Штраф" total={Number(e.fine) || 0} entries={e.fineEntries || []} />
-                                  <DeductionField row={e} ym={ym} field="vacation" label="Отпускные / нерабочие" total={Number(e.vacation) || 0} entries={e.vacationEntries || []} />
+                                  <VacationField row={e} ym={ym} total={Number(e.vacation) || 0} entries={e.vacationEntries || []} />
                                 </div>
                               )}
                             </div>
@@ -508,6 +508,22 @@ function stripMarker(c?: string | null): string {
   return c ? c.replace(/^(Аванс|Бонус|Зарплата)\s*(—\s*)?/, '').trim() : '';
 }
 
+/** Метка даты записи: период «1 – 7 сен» для отпускных, иначе одна дата. */
+function entryDateLabel(e: any): string {
+  if (e.dateFrom && e.dateTo) {
+    return e.dateFrom === e.dateTo ? shortDay(e.dateFrom) : `${shortDay(e.dateFrom)} – ${shortDay(e.dateTo)}`;
+  }
+  return shortDay(e.date);
+}
+
+/** Полный период записи для деталей: «1 сентября – 7 сентября 2026». */
+function fullRange(e: any): string {
+  if (e.dateFrom && e.dateTo) {
+    return e.dateFrom === e.dateTo ? formatDate(e.dateFrom) : `${formatDate(e.dateFrom)} – ${formatDate(e.dateTo)}`;
+  }
+  return formatDate(e.date);
+}
+
 /** Точечный оптимистичный патч зарплатного кэша: меняем одну строку через
  *  mutate(), пересчитываем её «к выплате» и все сводные карточки. */
 function patchSalaryRow(qc: any, ym: string, rowId: string, mutate: (r: any) => any) {
@@ -542,7 +558,7 @@ function HistoryEntry({ entry, deduction, cancelTitle, onCancel, children }: {
     <div className={open ? 'fin-log-entry open' : 'fin-log-entry'}>
       <div className="fin-log-item" onClick={() => setOpen((o) => !o)}>
         <FinIcon name="chevronRight" size={13} className="chev" />
-        <span className="d">{shortDay(entry.date)}</span>
+        <span className="d">{entryDateLabel(entry)}</span>
         <span className={deduction ? 'a red' : 'a'}>{money(entry.amount)}</span>
         <button type="button" className="x" title={cancelTitle}
           onClick={(ev) => { ev.stopPropagation(); onCancel(); }}><FinIcon name="close" size={13} /></button>
@@ -672,6 +688,99 @@ function DeductionField({ row, ym, field, label, total, entries }: {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Поле «Отпускные / нерабочие»: каждая запись — период «от–до» с суммой
+ *  удержания (кнопка открывает окно с датами и суммой). Ниже — журнал
+ *  периодов: «1 – 7 сен · 1000 с.» · ✕; клик раскрывает даты и комментарий. */
+function VacationField({ row, ym, total, entries }: { row: any; ym: string; total: number; entries: any[] }) {
+  const qc = useQueryClient();
+  const [modal, setModal] = useState(false);
+
+  const remove = async (entry: any) => {
+    patchSalaryRow(qc, ym, row.id, (r) => {
+      r.vacationEntries = (r.vacationEntries || []).filter((x: any) => x.id !== entry.id);
+      r.vacation = r2((r.vacationEntries || []).reduce((s: number, x: any) => s + (Number(x.amount) || 0), 0));
+      return r;
+    });
+    try { await financeApi.removeEmployeeDeduction(row.id, entry.id, { kind: 'vacation', ym }); invalidateFinance(qc); }
+    catch (err) { toast.error(apiErr(err)); invalidateFinance(qc); }
+  };
+
+  const saveNote = async (entry: any, note: string) => {
+    if ((entry.note || '') === note) return;
+    patchSalaryRow(qc, ym, row.id, (r) => {
+      r.vacationEntries = (r.vacationEntries || []).map((x: any) => x.id === entry.id ? { ...x, note } : x);
+      return r;
+    });
+    try { await financeApi.updateEmployeeDeduction(row.id, entry.id, { kind: 'vacation', ym, note }); invalidateFinance(qc); }
+    catch (err) { toast.error(apiErr(err)); invalidateFinance(qc); }
+  };
+
+  return (
+    <div className="fld">
+      <div className="cap"><span className="lbl">Отпускные / нерабочие</span>{total > 0 && <span className="tot red">{money(total)}</span>}</div>
+      <button type="button" className="fin-vac-add" onClick={() => setModal(true)}><FinIcon name="plus" size={14} /> Добавить период</button>
+      {entries.length > 0 && (
+        <div className="fin-log">
+          {entries.map((entry) => (
+            <HistoryEntry key={entry.id} entry={entry} deduction cancelTitle="Удалить период" onCancel={() => remove(entry)}>
+              {(entry.dateFrom || entry.dateTo) && <div className="dline"><span className="val">{fullRange(entry)}</span></div>}
+              <div className="dline"><NoteInput entry={entry} onSave={saveNote} /></div>
+            </HistoryEntry>
+          ))}
+        </div>
+      )}
+      {modal && <VacationModal row={row} ym={ym} onClose={() => setModal(false)} />}
+    </div>
+  );
+}
+
+/** Окно добавления периода нерабочих: даты «от–до» + сумма удержания. */
+function VacationModal({ row, ym, onClose }: { row: any; ym: string; onClose: () => void }) {
+  useModalKeys(onClose);
+  const qc = useQueryClient();
+  const [from, setFrom] = useState(`${ym}-01`);
+  const [to, setTo] = useState(`${ym}-01`);
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const amt = parseFloat(amount.replace(',', '.'));
+  const valid = amt > 0 && !!from && !!to && from <= to;
+
+  const save = async () => {
+    if (!valid) return;
+    const entry = { id: `tmp-${Date.now()}`, date: from, dateFrom: from, dateTo: to, amount: amt, note: note.trim() || null };
+    patchSalaryRow(qc, ym, row.id, (r) => {
+      r.vacationEntries = [...(r.vacationEntries || []), entry];
+      r.vacation = r2(r.vacationEntries.reduce((s: number, x: any) => s + (Number(x.amount) || 0), 0));
+      return r;
+    });
+    onClose();
+    try { await financeApi.addEmployeeDeduction(row.id, { kind: 'vacation', ym, amount: amt, dateFrom: from, dateTo: to, note: note.trim() || undefined }); invalidateFinance(qc); }
+    catch (err) { toast.error(apiErr(err)); invalidateFinance(qc); }
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <div className="modal-head"><h3>Период нерабочих · {row.name}</h3><button className="btn ghost sm" onClick={onClose}><FinIcon name="close" size={16} /></button></div>
+        <div className="modal-body">
+          <div className="form-grid">
+            <div className="field"><label>Дата от</label><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+            <div className="field"><label>Дата до</label><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+          </div>
+          <div className="field"><label>Сумма удержания, сомони</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="за нерабочие дни" /></div>
+          <div className="field"><label>Комментарий</label><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="необязательно — например «отпуск за свой счёт»" /></div>
+          {from && to && from > to && <p className="mini neg" style={{ margin: 0 }}>«Дата до» раньше «даты от».</p>}
+          <p className="mini muted" style={{ margin: 0 }}>Удержание за нерабочие дни периода — уменьшает «к выплате». Счёт не затрагивается.</p>
+        </div>
+        <div className="modal-foot">
+          <button className="btn ghost" onClick={onClose}>Отмена</button>
+          <button className="btn primary" disabled={!valid} onClick={save}>Добавить</button>
+        </div>
+      </div>
     </div>
   );
 }

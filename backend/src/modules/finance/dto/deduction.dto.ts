@@ -15,6 +15,12 @@ export class AddDeductionDto {
   @ApiPropertyOptional({ example: '2026-09-02' }) @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/)
   date?: string;
 
+  @ApiPropertyOptional({ example: '2026-09-01', description: 'Отпускные: начало периода' }) @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ example: '2026-09-07', description: 'Отпускные: конец периода' }) @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dateTo?: string;
+
   @ApiPropertyOptional({ example: 'опоздание' }) @IsOptional() @IsString() @MaxLength(300)
   note?: string;
 }

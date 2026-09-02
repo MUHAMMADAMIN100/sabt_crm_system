@@ -46,11 +46,12 @@ export class FinanceEmployee {
   /** Журнал штрафов по месяцам: { '2026-08': [{ id, date, amount, note }] }.
    *  Источник истины для суммы штрафа месяца (fines[ym] = Σ записей). */
   @Column({ type: 'jsonb', nullable: true })
-  fineEntries: Record<string, Array<{ id: string; date: string; amount: number; note?: string | null }>> | null;
+  fineEntries: Record<string, Array<{ id: string; date: string; amount: number; note?: string | null; dateFrom?: string | null; dateTo?: string | null }>> | null;
 
-  /** Журнал отпускных/нерабочих по месяцам (аналогично fineEntries). */
+  /** Журнал отпускных/нерабочих по месяцам: каждая запись — период «от–до»
+   *  с суммой удержания: { '2026-08': [{ id, date, dateFrom, dateTo, amount, note }] }. */
   @Column({ type: 'jsonb', nullable: true })
-  vacationEntries: Record<string, Array<{ id: string; date: string; amount: number; note?: string | null }>> | null;
+  vacationEntries: Record<string, Array<{ id: string; date: string; amount: number; note?: string | null; dateFrom?: string | null; dateTo?: string | null }>> | null;
 
   /** Снапшоты выплаченных месяцев: { '2026-07': { salary, bonus, advance,
    *  fine, paid, paidAt } }. Выплаченный месяц ЗАМОРОЖЕН — любые будущие

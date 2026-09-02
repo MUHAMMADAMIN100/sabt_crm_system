@@ -435,7 +435,7 @@ export const financeApi = {
   setEmployeeFine: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/fine`, data).then(r => r.data),
   setEmployeeVacation: (id: string, data: { ym: string; amount: number }) => api.post(`/finance/employees/${id}/vacation`, data).then(r => r.data),
   // Журнал удержаний (штраф/отпускные): запись с датой/суммой/комментарием.
-  addEmployeeDeduction: (id: string, data: { kind: 'fine' | 'vacation'; ym: string; amount: number; date?: string; note?: string }) => api.post(`/finance/employees/${id}/deduction`, data).then(r => r.data),
+  addEmployeeDeduction: (id: string, data: { kind: 'fine' | 'vacation'; ym: string; amount: number; date?: string; dateFrom?: string; dateTo?: string; note?: string }) => api.post(`/finance/employees/${id}/deduction`, data).then(r => r.data),
   updateEmployeeDeduction: (id: string, entryId: string, data: { kind: 'fine' | 'vacation'; ym: string; note?: string }) => api.patch(`/finance/employees/${id}/deduction/${entryId}`, data).then(r => r.data),
   removeEmployeeDeduction: (id: string, entryId: string, params: { kind: 'fine' | 'vacation'; ym: string }) => api.delete(`/finance/employees/${id}/deduction/${entryId}`, { params }).then(r => r.data),
   salaryPeriod: (ym?: string) => api.get('/finance/salary/period', { params: ym ? { ym } : undefined }).then(r => r.data),
