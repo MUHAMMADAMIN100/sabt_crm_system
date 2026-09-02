@@ -492,9 +492,11 @@ function IssueField({ label, current, onIssue }: { label: string; current: numbe
     <label className="fld">
       <span>{label}{current > 0 ? ` · выдано ${money(current)}` : ''}</span>
       <div className="in">
-        <input inputMode="decimal" placeholder="сумма" value={v} onChange={(e) => setV(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } }} />
-        <button type="button" className="issue" title="Выдать — откроется выбор счёта" onClick={go}><FinIcon name="arrowRight" size={15} /></button>
+        <input inputMode="decimal" placeholder="—" value={v}
+          title="Введите сумму — откроется выдача (счёт/дата)"
+          onChange={(e) => setV(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); } }}
+          onBlur={go} />
       </div>
     </label>
   );
@@ -508,11 +510,38 @@ function DeductionField({ row, ym, field, label }: { row: any; ym: string; field
   const save = async (raw: string) => {
     const v = Math.max(0, parseFloat(raw.replace(',', '.')) || 0);
     if (v === value) return;
+    const key = ['finance', 'expenseDetail', 'salary', ym];
+    // Оптимистично: сразу правим строку + «к выплате» + сводку в кэше, чтобы
+    // изменение было видно мгновенно, не дожидаясь рефетча.
+    await qc.cancelQueries({ queryKey: key });
+    const prev = qc.getQueryData<any>(key);
+    qc.setQueryData<any>(key, (old: any) => {
+      if (!old?.rows) return old;
+      const rows = old.rows.map((r: any) => {
+        if (r.id !== row.id) return r;
+        const nr = { ...r, [field]: v };
+        if (!nr.frozen) {
+          const t = (Number(nr.salary) || 0) + (Number(nr.bonus) || 0) - (Number(nr.fine) || 0) - (Number(nr.vacation) || 0) - (Number(nr.paid) || 0);
+          nr.toPay = Math.round(Math.max(0, t) * 100) / 100;
+        }
+        return nr;
+      });
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const cards = { ...(old.cards || {}),
+        fines: r2(rows.reduce((s: number, r: any) => s + (Number(r.fine) || 0), 0)),
+        vacations: r2(rows.reduce((s: number, r: any) => s + (Number(r.vacation) || 0), 0)),
+        toPay: r2(rows.reduce((s: number, r: any) => s + (Number(r.toPay) || 0), 0)),
+      };
+      return { ...old, rows, cards };
+    });
     try {
       if (field === 'fine') await financeApi.setEmployeeFine(row.id, { ym, amount: v });
       else await financeApi.setEmployeeVacation(row.id, { ym, amount: v });
-      invalidateFinance(qc);
-    } catch (err) { toast.error(apiErr(err)); }
+      invalidateFinance(qc); // фоновая сверка с сервером
+    } catch (err) {
+      qc.setQueryData(key, prev); // откат
+      toast.error(apiErr(err));
+    }
   };
   return (
     <label className="fld">
