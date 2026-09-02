@@ -707,17 +707,18 @@
 .fin-salary-employee-row textarea { cursor: text; }
 
 .fin-root .fin-salary-employee-row.expanded > td {
-  background: color-mix(in srgb, var(--accent-soft) 56%, var(--surface));
-  border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 82%, var(--surface));
+  border-bottom-color: transparent;
 }
 .fin-root .fin-wide-table .fin-salary-employee-row.expanded > td:first-child {
-  background: color-mix(in srgb, var(--accent-soft) 56%, var(--surface));
+  background: color-mix(in srgb, var(--accent-soft) 82%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--accent), 1px 0 0 var(--border);
 }
 .fin-root .fin-employee-history-row > td,
 .fin-root .fin-wide-table .fin-employee-history-row > td:first-child {
   position: static !important; left: auto !important; z-index: auto !important;
-  padding: 0 !important; background: var(--surface-2) !important;
-  box-shadow: inset 0 -1px 0 var(--border) !important;
+  padding: 0 8px 8px !important; background: var(--surface) !important;
+  box-shadow: none !important;
 }
 .fin-employee-history {
   display: grid; gap: 14px; min-width: 720px; padding: 18px 20px 22px;
@@ -1303,9 +1304,7 @@
 .fin-root tbody tr:hover > td,
 .fin-root .fin-wide-table tbody tr:hover > td:first-child { background: var(--surface-hover); }
 .fin-root tbody tr.fin-tx-openable.expanded > td,
-.fin-root .fin-wide-table tbody tr.fin-tx-openable.expanded > td:first-child,
-.fin-root .fin-salary-employee-row.expanded > td,
-.fin-root .fin-wide-table .fin-salary-employee-row.expanded > td:first-child {
+.fin-root .fin-wide-table tbody tr.fin-tx-openable.expanded > td:first-child {
   background: var(--surface-selected);
   border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--border));
 }
@@ -2246,7 +2245,13 @@
 .fin-root .cards.grid-balances .stat .value { padding-left: 0; }
 
 /* ── Разворот строки сотрудника: месяц + поля ──────────────────────── */
-.fin-root .fin-emp-month { padding: 14px 16px; }
+.fin-root .fin-emp-month {
+  padding: 16px 18px 18px;
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--surface));
+  border-left: 3px solid var(--accent);
+  border-radius: 0 0 12px 12px;
+  box-shadow: inset 0 8px 12px -10px color-mix(in srgb, var(--accent) 50%, transparent);
+}
 .fin-root .fin-emp-month-head { display: flex; align-items: center; gap: 14px; margin-bottom: 13px; font-size: 13px; color: var(--muted); }
 .fin-root .fin-emp-month-head .grow { flex: 1; }
 .fin-root .fin-emp-month-head b { color: var(--accent); font-variant-numeric: tabular-nums; margin-left: 5px; }
