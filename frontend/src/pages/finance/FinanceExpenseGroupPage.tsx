@@ -2,7 +2,7 @@
 // порт fin-webrand/src/pages/ExpenseGroup.tsx (ТЗ 4.2–4.5).
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
@@ -150,6 +150,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   const [empFor, setEmpFor] = useState<any | 'new' | null>(null);
   const [showFired, setShowFired] = useState(false);
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
+  const navigate = useNavigate();
   const historyYm = useRef(ym);
   const historyFocusTarget = useRef<string | null>(null);
 
@@ -251,7 +252,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
         </div>
         <div className="card stat"><div className="label">Авансы (выдано)</div><div className="value">{money(cards.advances)}</div></div>
         <div className="card stat"><div className="label">Выплачено за месяц</div><div className="value pos">{money(cards.paid)}</div></div>
-        <div className="card stat"><div className="label">К выплате за месяц</div><div className="value neg">{money(cards.toPay)}</div><div className="sub">фонд + бонусы − штрафы − выплачено</div></div>
+        <div className="card stat"><div className="label">К выплате за месяц</div><div className="value neg">{money(cards.toPay)}</div></div>
       </div>
 
       <div className="toolbar">
@@ -288,27 +289,34 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
         // Сортируем сотрудников по ЗП — с самой высокой сверху.
         const list = [...listRaw].sort((a, b) => (Number(b.salary) || 0) - (Number(a.salary) || 0));
         const sum = (f: (e: any) => number) => list.reduce((s, e) => s + (f(e) || 0), 0);
+        const isPaidRow = (e: any) => {
+          const g = Math.round(((Number(e.salary) || 0) + (Number(e.bonus) || 0)) * 100) / 100;
+          return e.frozen || (g > 0 && Number(e.toPay) <= 0.005);
+        };
+        const paidCount = list.filter(isPaidRow).length;
         return (
           <div key={cat}>
             {!(groups.length === 1 && cat === 'Без категории') && (
-              <div className="section-title" style={{ margin: '18px 0 10px' }}>{cat} · {list.length} чел.</div>
+              <div className="section-title" style={{ margin: '18px 0 10px', display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span>{cat} · {list.length} чел.</span>
+                <span className="mini muted nowrap" style={{ marginLeft: 'auto' }}>{paidCount} / {list.length} выплачено</span>
+              </div>
             )}
             <div className="table-wrap fin-wide-table">
               <table style={{ tableLayout: 'fixed', width: '100%' }}>
                 <colgroup>
-                  <col style={{ width: 240 }} />{/* ФИО */}
-                  <col style={{ width: 200 }} />{/* Должность */}
-                  <col style={{ width: 140 }} />{/* Дата приёма */}
-                  <col style={{ width: 104 }} />{/* ЗП */}
+                  <col style={{ width: 260 }} />{/* ФИО */}
+                  <col style={{ width: 220 }} />{/* Должность */}
+                  <col style={{ width: 108 }} />{/* ЗП */}
                   <col style={{ width: 112 }} />{/* Аванс */}
-                  <col style={{ width: 104 }} />{/* Бонус */}
-                  <col style={{ width: 104 }} />{/* Штраф */}
+                  <col style={{ width: 108 }} />{/* Бонус */}
+                  <col style={{ width: 108 }} />{/* Штраф */}
                   <col style={{ width: 176 }} />{/* Статус */}
                   <col style={{ width: 56 }} />{/* ред. */}
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>ФИО</th><th>Должность</th><th>Дата приёма</th>
+                    <th>ФИО</th><th>Должность</th>
                     <th className="num">ЗП</th><th className="num">Аванс</th>
                     <th className="num">Бонус</th>
                     <th className="num">Штраф</th>
@@ -344,11 +352,10 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                           <b className="fin-employee-name">{e.name}</b>
                         </td>
                         <td className="muted">{e.role ?? '—'}</td>
-                        <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
                         <td className="num">{money(e.salary)}</td>
-                        <td className="num"><MonthAmountCell row={e} ym={ym} field="advance" onPayout={() => setPayoutFor({ row: e, kind: 'advance' })} /></td>
-                        <td className="num"><MonthAmountCell row={e} ym={ym} field="bonus" onPayout={() => setPayoutFor({ row: e, kind: 'bonus' })} /></td>
-                        <td className="num"><MonthAmountCell row={e} ym={ym} field="fine" /></td>
+                        <td className="num">{Number(e.advance) ? money(e.advance) : <span className="muted">—</span>}</td>
+                        <td className="num">{Number(e.bonus) ? money(e.bonus) : <span className="muted">—</span>}</td>
+                        <td className="num">{Number(e.fine) ? <span style={{ color: 'var(--red)' }}>{money(e.fine)}</span> : <span className="muted">—</span>}</td>
                         <td>
                           {isPaid
                             ? <span className="flex"><span className="badge ok" title={e.paidAt ? `Выплачено ${formatDate(e.paidAt)} — месяц зафиксирован` : 'Месяц закрыт'}><FinIcon name="check" size={13} /> выплачено</span><button className="btn ghost sm" title="Отменить выплату" onClick={() => cancelSalaryMonth(e)}><FinIcon name="undo" size={15} /></button></span>
@@ -358,9 +365,24 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                       </tr>
                       {historyOpen && (
                         <tr className="fin-employee-history-row">
-                          <td colSpan={9}>
-                            <EmployeeSalaryHistory employeeId={e.id} name={e.name}
-                              onClose={() => closeEmployeeHistory(e.id)} />
+                          <td colSpan={8}>
+                            <div className="fin-emp-month">
+                              <div className="fin-emp-month-head">
+                                <b>{e.name}</b><span className="muted" style={{ textTransform: 'capitalize' }}>· {monthLabel(ym, true)}</span>
+                                <div className="grow" />
+                                <button className="btn sm" onClick={(ev) => { ev.stopPropagation(); navigate(`/finance/salary/${e.id}`, { state: { name: e.name } }); }}>
+                                  Детальная информация <FinIcon name="arrowRight" size={15} />
+                                </button>
+                              </div>
+                              <div className="fin-emp-month-grid">
+                                <div><span className="l">Оклад</span><span className="v">{money(e.salary)}</span></div>
+                                <div><span className="l">Аванс выдан</span><span className="v">{Number(e.advance) ? money(e.advance) : '—'}</span></div>
+                                <div><span className="l">Бонус</span><span className="v">{Number(e.bonus) ? money(e.bonus) : '—'}</span></div>
+                                <div><span className="l">Штраф</span><span className="v" style={Number(e.fine) ? { color: 'var(--red)' } : undefined}>{Number(e.fine) ? money(e.fine) : '—'}</span></div>
+                                <div className="acc"><span className="l">К выплате</span><span className="v">{money(e.toPay)}</span></div>
+                                <div><span className="l">Статус</span><span className="v" style={{ color: isPaid ? 'var(--green)' : undefined }}>{isPaid ? 'Выплачено' : 'К выплате'}</span></div>
+                              </div>
+                            </div>
                           </td>
                         </tr>
                       )}
@@ -370,11 +392,9 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={3}><b>Итого · {cat}</b></td>
+                    <td colSpan={2}><b>Итого · {cat}</b></td>
                     <td className="num"><b>{money(sum(e => Number(e.salary)))}</b></td>
-                    <td className="num"><b>{money(sum(e => Number(e.advance)))}</b></td>
-                    <td className="num"><b>{money(sum(e => Number(e.bonus)))}</b></td>
-                    <td className="num"><b>{money(sum(e => Number(e.fine)))}</b></td>
+                    <td className="num" /><td className="num" /><td className="num" />
                     <td colSpan={2} className="num nowrap">к выплате <b>{money(sum(e => Number(e.toPay)))}</b></td>
                   </tr>
                 </tfoot>

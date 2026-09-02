@@ -2244,3 +2244,14 @@
 
 
 .fin-root .cards.grid-balances .stat .value { padding-left: 0; }
+
+/* ── Разворот строки сотрудника: сводка текущего месяца ────────────── */
+.fin-root .fin-emp-month { padding: 14px 16px; }
+.fin-root .fin-emp-month-head { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; font-size: 14px; color: var(--text); }
+.fin-root .fin-emp-month-head .grow { flex: 1; }
+.fin-root .fin-emp-month-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }
+.fin-root .fin-emp-month-grid > div { background: var(--surface); padding: 10px 14px; display: flex; flex-direction: column; gap: 5px; }
+.fin-root .fin-emp-month-grid .l { font-size: 11px; font-weight: 600; color: var(--muted); }
+.fin-root .fin-emp-month-grid .v { font-size: 15px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.fin-root .fin-emp-month-grid > div.acc { background: var(--accent-soft); }
+.fin-root .fin-emp-month-grid > div.acc .v { color: var(--accent); }

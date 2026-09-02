@@ -87,6 +87,7 @@ const FinanceInventoryPage    = lazy(() => import('@/pages/finance/FinanceInvent
 const FinanceActivityPage     = lazy(() => import('@/pages/finance/FinanceActivityPage'))
 const OrganizerDirectoryPage  = lazy(() => import('@/pages/organizer/OrganizerDirectoryPage'))
 const FinanceSettingsPage     = lazy(() => import('@/pages/finance/FinanceSettingsPage'))
+const EmployeeSalaryPage      = lazy(() => import('@/pages/finance/EmployeeSalaryPage'))
 const PublicBriefPage   = lazy(() => import('@/pages/public/PublicBriefPage'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -178,6 +179,7 @@ export default function App() {
           <Route path="finance/income/:direction" element={<RoleGuard><FinanceIncomeGroupPage /></RoleGuard>} />
           <Route path="finance/expense" element={<RoleGuard><FinanceExpensePage /></RoleGuard>} />
           <Route path="finance/expense/:kind" element={<RoleGuard><FinanceExpenseGroupPage /></RoleGuard>} />
+          <Route path="finance/salary/:id" element={<RoleGuard><EmployeeSalaryPage /></RoleGuard>} />
           <Route path="finance/planning" element={<RoleGuard><FinancePlanningPage /></RoleGuard>} />
           <Route path="finance/transactions" element={<RoleGuard><FinanceTransactionsPage /></RoleGuard>} />
           <Route path="finance/inventory" element={<RoleGuard><FinanceInventoryPage /></RoleGuard>} />
