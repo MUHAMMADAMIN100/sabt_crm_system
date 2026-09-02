@@ -30,6 +30,12 @@ function isSalaryRowControl(target: EventTarget | null) {
   return target instanceof Element && target.closest(SALARY_ROW_CONTROL_SELECTOR) !== null;
 }
 
+/** ФИО в ведомости — только фамилия и имя (первые два слова); отчество убираем. */
+function shortName(name?: string) {
+  const parts = String(name ?? '').trim().split(/\s+/).filter(Boolean);
+  return parts.length ? parts.slice(0, 2).join(' ') : (name ?? '');
+}
+
 export default function FinanceExpenseGroupPage() {
   const { kind } = useParams<{ kind: string }>();
   const location = useLocation();
@@ -305,12 +311,13 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
             <div className="table-wrap fin-wide-table">
               <table style={{ tableLayout: 'fixed', width: '100%' }}>
                 <colgroup>
-                  <col style={{ width: '25%' }} />{/* ФИО */}
-                  <col style={{ width: '19%' }} />{/* Должность */}
-                  <col style={{ width: '9%' }} />{/* ЗП */}
-                  <col style={{ width: '9%' }} />{/* Аванс */}
-                  <col style={{ width: '9%' }} />{/* Бонус */}
-                  <col style={{ width: '9%' }} />{/* Штраф */}
+                  <col style={{ width: '22%' }} />{/* ФИО */}
+                  <col style={{ width: '16%' }} />{/* Должность */}
+                  <col style={{ width: '8%' }} />{/* ЗП */}
+                  <col style={{ width: '8%' }} />{/* Аванс */}
+                  <col style={{ width: '8%' }} />{/* Бонус */}
+                  <col style={{ width: '8%' }} />{/* Штраф */}
+                  <col style={{ width: '10%' }} />{/* Отпускные */}
                   <col style={{ width: '16%' }} />{/* Статус */}
                   <col style={{ width: '4%' }} />{/* ред. */}
                 </colgroup>
@@ -320,6 +327,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                     <th className="num">ЗП</th><th className="num">Аванс</th>
                     <th className="num">Бонус</th>
                     <th className="num">Штраф</th>
+                    <th className="num">Отпускные</th>
                     <th>Статус</th><th />
                   </tr>
                 </thead>
@@ -349,13 +357,14 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                         onKeyDown={(event) => toggleEmployeeHistoryFromKeyboard(event, e.id)}
                       >
                         <td>
-                          <b className="fin-employee-name">{e.name}</b>
+                          <b className="fin-employee-name" title={e.name}>{shortName(e.name)}</b>
                         </td>
                         <td className="muted">{e.role ?? '—'}</td>
                         <td className="num">{money(e.salary)}</td>
                         <td className="num">{Number(e.advance) ? money(e.advance) : <span className="muted">—</span>}</td>
                         <td className="num">{Number(e.bonus) ? money(e.bonus) : <span className="muted">—</span>}</td>
                         <td className="num">{Number(e.fine) ? <span style={{ color: 'var(--red)' }}>{money(e.fine)}</span> : <span className="muted">—</span>}</td>
+                        <td className="num">{Number(e.vacation) ? <span style={{ color: 'var(--red)' }}>{money(e.vacation)}</span> : <span className="muted">—</span>}</td>
                         <td>
                           {isPaid
                             ? <span className="flex"><span className="badge ok" title={e.paidAt ? `Выплачено ${formatDate(e.paidAt)} — месяц зафиксирован` : 'Месяц закрыт'}><FinIcon name="check" size={13} /> выплачено</span><button className="btn ghost sm" title="Отменить выплату" onClick={() => cancelSalaryMonth(e)}><FinIcon name="undo" size={15} /></button></span>
@@ -365,7 +374,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                       </tr>
                       {historyOpen && (
                         <tr className="fin-employee-history-row">
-                          <td colSpan={8}>
+                          <td colSpan={9}>
                             <div className="fin-emp-month">
                               <div className="fin-emp-month-head">
                                 <span style={{ textTransform: 'capitalize' }}>{monthLabel(ym, true)}</span>
@@ -397,7 +406,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                   <tr>
                     <td colSpan={2}><b>Итого · {cat}</b></td>
                     <td className="num"><b>{money(sum(e => Number(e.salary)))}</b></td>
-                    <td className="num" /><td className="num" /><td className="num" />
+                    <td className="num" /><td className="num" /><td className="num" /><td className="num" />
                     <td colSpan={2} className="num nowrap">к выплате <b>{money(sum(e => Number(e.toPay)))}</b></td>
                   </tr>
                 </tfoot>
@@ -452,7 +461,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                       onKeyDown={(event) => toggleEmployeeHistoryFromKeyboard(event, e.id)}
                     >
                       <td>
-                        <b className="fin-employee-name">{e.name}</b>
+                        <b className="fin-employee-name" title={e.name}>{shortName(e.name)}</b>
                       </td>
                       <td className="muted">{e.role ?? '—'}</td>
                       <td className="muted nowrap">{e.hireDate ? formatDate(e.hireDate) : '—'}</td>
@@ -493,33 +502,32 @@ function IssueField({ label, current, onIssue }: { label: string; current: numbe
       <span>{label}{current > 0 ? ` · выдано ${money(current)}` : ''}</span>
       <div className="in">
         <input inputMode="decimal" placeholder="—" value={v}
-          title="Введите сумму — откроется выдача (счёт/дата)"
           onChange={(e) => setV(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); } }}
-          onBlur={go} />
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } }} />
+        <button type="button" className="issue" title="Выдать — откроется выбор счёта" onClick={go}><FinIcon name="arrowRight" size={15} /></button>
       </div>
     </label>
   );
 }
 
-/** Поле-удержание (штраф / отпускные): вводишь число — сохраняется сразу,
- *  счёт не трогает, уменьшает «к выплате». */
+/** Поле-удержание (штраф / отпускные): вводишь число — счёт не трогает,
+ *  уменьшает «к выплате». Пока печатаешь, строка, «к выплате» и сводка
+ *  пересчитываются калькулятором мгновенно; на blur/Enter — сохранение. */
 function DeductionField({ row, ym, field, label }: { row: any; ym: string; field: 'fine' | 'vacation'; label: string }) {
   const qc = useQueryClient();
-  const value = Number(row[field]) || 0;
-  const save = async (raw: string) => {
-    const v = Math.max(0, parseFloat(raw.replace(',', '.')) || 0);
-    if (v === value) return;
-    const key = ['finance', 'expenseDetail', 'salary', ym];
-    // Оптимистично: сразу правим строку + «к выплате» + сводку в кэше, чтобы
-    // изменение было видно мгновенно, не дожидаясь рефетча.
-    await qc.cancelQueries({ queryKey: key });
-    const prev = qc.getQueryData<any>(key);
+  const key = ['finance', 'expenseDetail', 'salary', ym];
+  const initial = Number(row[field]) || 0;
+  const [v, setV] = useState(initial ? String(initial) : '');
+  const num = Math.max(0, parseFloat(v.replace(',', '.')) || 0);
+
+  // Живой пересчёт: правим строку + «к выплате» + сводку прямо в кэше,
+  // без обращения к серверу — чтобы цифры менялись, пока печатаешь.
+  const applyLive = (val: number) => {
     qc.setQueryData<any>(key, (old: any) => {
       if (!old?.rows) return old;
       const rows = old.rows.map((r: any) => {
         if (r.id !== row.id) return r;
-        const nr = { ...r, [field]: v };
+        const nr = { ...r, [field]: val };
         if (!nr.frozen) {
           const t = (Number(nr.salary) || 0) + (Number(nr.bonus) || 0) - (Number(nr.fine) || 0) - (Number(nr.vacation) || 0) - (Number(nr.paid) || 0);
           nr.toPay = Math.round(Math.max(0, t) * 100) / 100;
@@ -534,22 +542,28 @@ function DeductionField({ row, ym, field, label }: { row: any; ym: string; field
       };
       return { ...old, rows, cards };
     });
+  };
+
+  const persist = async () => {
+    if (num === initial) return;
     try {
-      if (field === 'fine') await financeApi.setEmployeeFine(row.id, { ym, amount: v });
-      else await financeApi.setEmployeeVacation(row.id, { ym, amount: v });
+      if (field === 'fine') await financeApi.setEmployeeFine(row.id, { ym, amount: num });
+      else await financeApi.setEmployeeVacation(row.id, { ym, amount: num });
       invalidateFinance(qc); // фоновая сверка с сервером
     } catch (err) {
-      qc.setQueryData(key, prev); // откат
       toast.error(apiErr(err));
+      invalidateFinance(qc); // откат к серверным данным
     }
   };
+
   return (
     <label className="fld">
       <span>{label}</span>
       <div className="in">
-        <input key={`${row.id}-${ym}-${field}-${value}`} inputMode="decimal" placeholder="—"
-          defaultValue={value || ''} style={value ? { color: 'var(--red)' } : undefined}
-          onBlur={(e) => save(e.target.value)}
+        <input inputMode="decimal" placeholder="—" value={v}
+          style={num > 0 ? { color: 'var(--red)' } : undefined}
+          onChange={(e) => { setV(e.target.value); applyLive(Math.max(0, parseFloat(e.target.value.replace(',', '.')) || 0)); }}
+          onBlur={persist}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }} />
       </div>
     </label>
