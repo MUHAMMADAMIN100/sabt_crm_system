@@ -305,14 +305,14 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
             <div className="table-wrap fin-wide-table">
               <table style={{ tableLayout: 'fixed', width: '100%' }}>
                 <colgroup>
-                  <col style={{ width: 260 }} />{/* ФИО */}
-                  <col style={{ width: 220 }} />{/* Должность */}
-                  <col style={{ width: 108 }} />{/* ЗП */}
-                  <col style={{ width: 112 }} />{/* Аванс */}
-                  <col style={{ width: 108 }} />{/* Бонус */}
-                  <col style={{ width: 108 }} />{/* Штраф */}
-                  <col style={{ width: 176 }} />{/* Статус */}
-                  <col style={{ width: 56 }} />{/* ред. */}
+                  <col style={{ width: '25%' }} />{/* ФИО */}
+                  <col style={{ width: '19%' }} />{/* Должность */}
+                  <col style={{ width: '9%' }} />{/* ЗП */}
+                  <col style={{ width: '9%' }} />{/* Аванс */}
+                  <col style={{ width: '9%' }} />{/* Бонус */}
+                  <col style={{ width: '9%' }} />{/* Штраф */}
+                  <col style={{ width: '16%' }} />{/* Статус */}
+                  <col style={{ width: '4%' }} />{/* ред. */}
                 </colgroup>
                 <thead>
                   <tr>
