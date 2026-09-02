@@ -151,6 +151,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
     queryFn: () => financeApi.expenseDetail('salary', ym),
   });
   const { data: fullEmployees } = useQuery({ queryKey: ['finref', 'employees'], queryFn: () => financeApi.employees() });
+  const accounts = useFinAccounts();
   const [payFor, setPayFor] = useState<any | null>(null);
   const [payoutFor, setPayoutFor] = useState<{ row: any; kind: 'advance' | 'bonus'; amount?: number } | null>(null);
   const [empFor, setEmpFor] = useState<any | 'new' | null>(null);
@@ -388,10 +389,10 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                                 <p className="mini muted" style={{ margin: 0 }}>Месяц выплачен и зафиксирован — правки недоступны.</p>
                               ) : (
                                 <div className="fin-emp-month-form">
-                                  <IssueField label="Аванс" current={Number(e.advance) || 0} onIssue={(amt) => setPayoutFor({ row: e, kind: 'advance', amount: amt })} />
-                                  <IssueField label="Бонус" current={Number(e.bonus) || 0} onIssue={(amt) => setPayoutFor({ row: e, kind: 'bonus', amount: amt })} />
-                                  <DeductionField row={e} ym={ym} field="fine" label="Штраф" />
-                                  <DeductionField row={e} ym={ym} field="vacation" label="Отпускные / нерабочие" />
+                                  <IssueField label="Аванс" kind="advance" row={e} ym={ym} total={Number(e.advance) || 0} entries={e.advanceEntries || []} accounts={accounts} onIssue={(amt) => setPayoutFor({ row: e, kind: 'advance', amount: amt })} />
+                                  <IssueField label="Бонус" kind="bonus" row={e} ym={ym} total={Number(e.bonus) || 0} entries={e.bonusEntries || []} accounts={accounts} onIssue={(amt) => setPayoutFor({ row: e, kind: 'bonus', amount: amt })} />
+                                  <DeductionField row={e} ym={ym} field="fine" label="Штраф" total={Number(e.fine) || 0} entries={e.fineEntries || []} />
+                                  <DeductionField row={e} ym={ym} field="vacation" label="Отпускные / нерабочие" total={Number(e.vacation) || 0} entries={e.vacationEntries || []} />
                                 </div>
                               )}
                             </div>
@@ -492,81 +493,186 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   );
 }
 
-/** Поле «выдать» аванс/бонус в развороте: вводишь сумму → «→» открывает
- *  окно выдачи (счёт/дата/подтверждение), т.к. это реальное списание денег. */
-function IssueField({ label, current, onIssue }: { label: string; current: number; onIssue: (amount: number) => void }) {
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Короткая дата записи: «2 сен». */
+function shortDay(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso.length === 10 ? iso + 'T00:00:00' : iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace(/\.$/, '');
+}
+
+/** Комментарий операции без маркера типа («Аванс — X» → «X»). */
+function stripMarker(c?: string | null): string {
+  return c ? c.replace(/^(Аванс|Бонус|Зарплата)\s*(—\s*)?/, '').trim() : '';
+}
+
+/** Точечный оптимистичный патч зарплатного кэша: меняем одну строку через
+ *  mutate(), пересчитываем её «к выплате» и все сводные карточки. */
+function patchSalaryRow(qc: any, ym: string, rowId: string, mutate: (r: any) => any) {
+  const key = ['finance', 'expenseDetail', 'salary', ym];
+  qc.setQueryData(key, (old: any) => {
+    if (!old?.rows) return old;
+    const rows = old.rows.map((r: any) => {
+      if (r.id !== rowId) return r;
+      const nr = mutate({ ...r });
+      if (!nr.frozen) {
+        const t = (Number(nr.salary) || 0) + (Number(nr.bonus) || 0) - (Number(nr.fine) || 0) - (Number(nr.vacation) || 0) - (Number(nr.paid) || 0);
+        nr.toPay = r2(Math.max(0, t));
+      }
+      return nr;
+    });
+    const sum = (f: (r: any) => number) => r2(rows.reduce((s: number, r: any) => s + (Number(f(r)) || 0), 0));
+    const cards = { ...(old.cards || {}),
+      fund: sum((r) => r.salary), advances: sum((r) => r.advance), bonuses: sum((r) => r.bonus),
+      fines: sum((r) => r.fine), vacations: sum((r) => r.vacation), paid: sum((r) => r.paid), toPay: sum((r) => r.toPay),
+    };
+    return { ...old, rows, cards };
+  });
+}
+
+/** Одна запись истории столбца: строка «дата · сумма · ✕» + раскрываемые
+ *  по клику детали (счёт/комментарий). */
+function HistoryEntry({ entry, deduction, cancelTitle, onCancel, children }: {
+  entry: any; deduction?: boolean; cancelTitle: string; onCancel: () => void; children?: any;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={open ? 'fin-log-entry open' : 'fin-log-entry'}>
+      <div className="fin-log-item" onClick={() => setOpen((o) => !o)}>
+        <FinIcon name="chevronRight" size={13} className="chev" />
+        <span className="d">{shortDay(entry.date)}</span>
+        <span className={deduction ? 'a red' : 'a'}>{money(entry.amount)}</span>
+        <button type="button" className="x" title={cancelTitle}
+          onClick={(ev) => { ev.stopPropagation(); onCancel(); }}><FinIcon name="close" size={13} /></button>
+      </div>
+      {open && <div className="fin-log-detail">{children}</div>}
+    </div>
+  );
+}
+
+/** Поле комментария к записи удержания — сохраняется на blur/Enter. */
+function NoteInput({ entry, onSave }: { entry: any; onSave: (entry: any, note: string) => void }) {
+  const [v, setV] = useState(entry.note || '');
+  return (
+    <input className="cin" placeholder="комментарий — за что" value={v}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => onSave(entry, v.trim())}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }} />
+  );
+}
+
+/** Поле «выдать» аванс/бонус: сумма → «→» открывает окно выдачи (счёт/дата).
+ *  Ниже — журнал операций месяца: дата · сумма · ✕ (отмена = возврат на счёт);
+ *  клик по записи раскрывает счёт и комментарий. */
+function IssueField({ label, kind, row, ym, total, entries, accounts, onIssue }: {
+  label: string; kind: 'advance' | 'bonus'; row: any; ym: string; total: number;
+  entries: any[]; accounts: any[]; onIssue: (amount: number) => void;
+}) {
+  const qc = useQueryClient();
   const [v, setV] = useState('');
   const go = () => { const n = Math.max(0, parseFloat(v.replace(',', '.')) || 0); if (n > 0) { onIssue(n); setV(''); } };
+  const accName = (id: string) => accounts.find((a) => a.id === id)?.name || 'счёт';
+  const listKey = kind === 'advance' ? 'advanceEntries' : 'bonusEntries';
+
+  const cancel = async (entry: any) => {
+    patchSalaryRow(qc, ym, row.id, (r) => {
+      r[listKey] = (r[listKey] || []).filter((x: any) => x.id !== entry.id);
+      r[kind] = r2((r[listKey] || []).reduce((s: number, x: any) => s + (Number(x.amount) || 0), 0));
+      r.paid = r2((Number(r.paid) || 0) - (Number(entry.amount) || 0));
+      return r;
+    });
+    try { await financeApi.removeTransaction(entry.id); invalidateFinance(qc); }
+    catch (err) { toast.error(apiErr(err)); invalidateFinance(qc); }
+  };
+
   return (
-    <label className="fld">
-      <span>{label}{current > 0 ? ` · выдано ${money(current)}` : ''}</span>
+    <div className="fld">
+      <div className="cap"><span className="lbl">{label}</span>{total > 0 && <span className="tot">{money(total)}</span>}</div>
       <div className="in">
         <input inputMode="decimal" placeholder="—" value={v}
           onChange={(e) => setV(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } }} />
         <button type="button" className="issue" title="Выдать — откроется выбор счёта" onClick={go}><FinIcon name="arrowRight" size={15} /></button>
       </div>
-    </label>
+      {entries.length > 0 && (
+        <div className="fin-log">
+          {entries.map((entry) => (
+            <HistoryEntry key={entry.id} entry={entry} cancelTitle="Отменить операцию — вернуть деньги на счёт" onCancel={() => cancel(entry)}>
+              <div className="dline"><span className="val">{accName(entry.accountId)}</span></div>
+              {stripMarker(entry.comment) && <div className="dline"><span className="val">{stripMarker(entry.comment)}</span></div>}
+            </HistoryEntry>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-/** Поле-удержание (штраф / отпускные): вводишь число — счёт не трогает,
- *  уменьшает «к выплате». Пока печатаешь, строка, «к выплате» и сводка
- *  пересчитываются калькулятором мгновенно; на blur/Enter — сохранение. */
-function DeductionField({ row, ym, field, label }: { row: any; ym: string; field: 'fine' | 'vacation'; label: string }) {
+/** Поле-удержание (штраф / отпускные): сумма → «→»/Enter добавляет запись
+ *  с сегодняшней датой (счёт не трогает). Ниже — журнал: дата · сумма · ✕;
+ *  клик раскрывает комментарий (можно оставить/поправить). */
+function DeductionField({ row, ym, field, label, total, entries }: {
+  row: any; ym: string; field: 'fine' | 'vacation'; label: string; total: number; entries: any[];
+}) {
   const qc = useQueryClient();
-  const key = ['finance', 'expenseDetail', 'salary', ym];
-  const initial = Number(row[field]) || 0;
-  const [v, setV] = useState(initial ? String(initial) : '');
-  const num = Math.max(0, parseFloat(v.replace(',', '.')) || 0);
+  const [v, setV] = useState('');
+  const listKey = field === 'fine' ? 'fineEntries' : 'vacationEntries';
 
-  // Живой пересчёт: правим строку + «к выплате» + сводку прямо в кэше,
-  // без обращения к серверу — чтобы цифры менялись, пока печатаешь.
-  const applyLive = (val: number) => {
-    qc.setQueryData<any>(key, (old: any) => {
-      if (!old?.rows) return old;
-      const rows = old.rows.map((r: any) => {
-        if (r.id !== row.id) return r;
-        const nr = { ...r, [field]: val };
-        if (!nr.frozen) {
-          const t = (Number(nr.salary) || 0) + (Number(nr.bonus) || 0) - (Number(nr.fine) || 0) - (Number(nr.vacation) || 0) - (Number(nr.paid) || 0);
-          nr.toPay = Math.round(Math.max(0, t) * 100) / 100;
-        }
-        return nr;
-      });
-      const r2 = (n: number) => Math.round(n * 100) / 100;
-      const cards = { ...(old.cards || {}),
-        fines: r2(rows.reduce((s: number, r: any) => s + (Number(r.fine) || 0), 0)),
-        vacations: r2(rows.reduce((s: number, r: any) => s + (Number(r.vacation) || 0), 0)),
-        toPay: r2(rows.reduce((s: number, r: any) => s + (Number(r.toPay) || 0), 0)),
-      };
-      return { ...old, rows, cards };
+  const add = async () => {
+    const n = Math.max(0, parseFloat(v.replace(',', '.')) || 0);
+    if (!(n > 0)) return;
+    setV('');
+    const entry = { id: `tmp-${Date.now()}`, date: todayISO(), amount: n, note: null };
+    patchSalaryRow(qc, ym, row.id, (r) => {
+      r[listKey] = [...(r[listKey] || []), entry];
+      r[field] = r2(r[listKey].reduce((s: number, x: any) => s + (Number(x.amount) || 0), 0));
+      return r;
     });
+    try { await financeApi.addEmployeeDeduction(row.id, { kind: field, ym, amount: n }); invalidateFinance(qc); }
+    catch (err) { toast.error(apiErr(err)); invalidateFinance(qc); }
   };
 
-  const persist = async () => {
-    if (num === initial) return;
-    try {
-      if (field === 'fine') await financeApi.setEmployeeFine(row.id, { ym, amount: num });
-      else await financeApi.setEmployeeVacation(row.id, { ym, amount: num });
-      invalidateFinance(qc); // фоновая сверка с сервером
-    } catch (err) {
-      toast.error(apiErr(err));
-      invalidateFinance(qc); // откат к серверным данным
-    }
+  const remove = async (entry: any) => {
+    patchSalaryRow(qc, ym, row.id, (r) => {
+      r[listKey] = (r[listKey] || []).filter((x: any) => x.id !== entry.id);
+      r[field] = r2((r[listKey] || []).reduce((s: number, x: any) => s + (Number(x.amount) || 0), 0));
+      return r;
+    });
+    try { await financeApi.removeEmployeeDeduction(row.id, entry.id, { kind: field, ym }); invalidateFinance(qc); }
+    catch (err) { toast.error(apiErr(err)); invalidateFinance(qc); }
+  };
+
+  const saveNote = async (entry: any, note: string) => {
+    if ((entry.note || '') === note) return;
+    patchSalaryRow(qc, ym, row.id, (r) => {
+      r[listKey] = (r[listKey] || []).map((x: any) => x.id === entry.id ? { ...x, note } : x);
+      return r;
+    });
+    try { await financeApi.updateEmployeeDeduction(row.id, entry.id, { kind: field, ym, note }); invalidateFinance(qc); }
+    catch (err) { toast.error(apiErr(err)); invalidateFinance(qc); }
   };
 
   return (
-    <label className="fld">
-      <span>{label}</span>
+    <div className="fld">
+      <div className="cap"><span className="lbl">{label}</span>{total > 0 && <span className="tot red">{money(total)}</span>}</div>
       <div className="in">
         <input inputMode="decimal" placeholder="—" value={v}
-          style={num > 0 ? { color: 'var(--red)' } : undefined}
-          onChange={(e) => { setV(e.target.value); applyLive(Math.max(0, parseFloat(e.target.value.replace(',', '.')) || 0)); }}
-          onBlur={persist}
-          onKeyDown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }} />
+          onChange={(e) => setV(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} />
+        <button type="button" className="issue" title="Добавить удержание" onClick={add}><FinIcon name="arrowRight" size={15} /></button>
       </div>
-    </label>
+      {entries.length > 0 && (
+        <div className="fin-log">
+          {entries.map((entry) => (
+            <HistoryEntry key={entry.id} entry={entry} deduction cancelTitle="Удалить запись" onCancel={() => remove(entry)}>
+              <div className="dline"><NoteInput entry={entry} onSave={saveNote} /></div>
+            </HistoryEntry>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

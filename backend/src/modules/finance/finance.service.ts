@@ -4,6 +4,7 @@ import {
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, DataSource, EntityManager } from 'typeorm';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { FinanceTransaction, FinanceTxType, FinanceTxStatus } from './finance-transaction.entity';
@@ -155,6 +156,27 @@ function fineOf(e: { fines?: Record<string, number> | null }, ym: string): numbe
 /** Отпускные/нерабочие за месяц — удержание, вычитается из «к выплате». */
 function vacationOf(e: { vacations?: Record<string, number> | null }, ym: string): number {
   return r2(Number((e.vacations || {})[ym]) || 0);
+}
+
+type DeductionEntry = { id: string; date: string; amount: number; note?: string | null };
+
+/** Журнал удержания (штраф/отпускные) за месяц. Если журнала нет, а старое
+ *  число (fines[ym]/vacations[ym]) есть — показываем его одной legacy-записью
+ *  со стабильным id, чтобы её можно было удалить/дополнить как обычную. */
+function readDeductionEntries(
+  e: any, entriesField: 'fineEntries' | 'vacationEntries',
+  scalarField: 'fines' | 'vacations', ym: string,
+): DeductionEntry[] {
+  const stored = (e[entriesField] || {})[ym];
+  if (Array.isArray(stored) && stored.length) {
+    return stored
+      .map((x: any) => ({ id: String(x.id), date: String(x.date).slice(0, 10), amount: r2(Number(x.amount) || 0), note: x.note ?? null }))
+      .filter(x => x.amount > 0)
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }
+  const scalar = r2(Number((e[scalarField] || {})[ym]) || 0);
+  if (scalar > 0) return [{ id: `legacy-${ym}`, date: `${ym}-01`, amount: scalar, note: null }];
+  return [];
 }
 
 /** Снапшот выплаченного месяца (месяц заморожен, правки его не меняют). */
@@ -326,6 +348,8 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "advances" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "fines" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "vacations" jsonb`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "fineEntries" jsonb`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "vacationEntries" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salarySnapshots" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salaryHistory" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "legacyPayrollHistory" jsonb`);
@@ -2173,11 +2197,22 @@ export class FinanceService implements OnModuleInit {
         const bonus = bonPaidOf(e.id);   // уже выдано (входит в paid)
         const fine = fineOf(e, ym);      // удерживается при финальной выплате
         const vacation = vacationOf(e, ym); // отпуск/невыходы — тоже удержание
+        // История по столбцам разворота: аванс/бонус — реальные операции
+        // (счёт/комментарий/дата, отмена = removeTransaction), штраф/отпускные —
+        // записи журнала удержаний.
+        const txEntries = (pred: (t: FinanceTransaction) => boolean) => salaryTx
+          .filter(t => t.employeeId === e.id && pred(t))
+          .map(t => ({ id: t.id, date: (t.date || '').slice(0, 10), amount: r2(Number(t.amount) || 0), accountId: t.accountId ?? null, comment: t.comment ?? null, salaryYm: t.salaryYm ?? null }))
+          .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
         return {
           id: e.id, name: e.name, role: e.role, category: e.category ?? null,
           hireDate: e.hireDate, terminationDate: e.terminationDate,
           salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {},
           advance, bonus, fine, vacation, status: e.status, paid,
+          advanceEntries: txEntries(isAdvanceTx),
+          bonusEntries: txEntries(isBonusTx),
+          fineEntries: readDeductionEntries(e as any, 'fineEntries', 'fines', ym),
+          vacationEntries: readDeductionEntries(e as any, 'vacationEntries', 'vacations', ym),
           // Обязательство месяца = оклад + выданные бонусы − штраф − отпускные;
           // аванс и бонус уже внутри «выплачено», поэтому остаток =
           // оклад − штраф − отпускные − (финальные выплаты + авансы).
@@ -4035,6 +4070,56 @@ export class FinanceService implements OnModuleInit {
     else delete map[ym];
     (e as any)[field] = Object.keys(map).length ? map : null;
     return this.empRepo.save(e);
+  }
+
+  // ── Журнал удержаний (штраф/отпускные) с датами и комментарием ──────────
+  // Записи — источник истины; скалярную сумму месяца (fines[ym]/vacations[ym])
+  // держим синхронной (= Σ записей), поэтому вся зарплатная математика,
+  // читающая fineOf/vacationOf, продолжает работать без изменений.
+  private async mutateDeduction(
+    id: string, kind: 'fine' | 'vacation', ymRaw: string | undefined,
+    apply: (list: DeductionEntry[]) => DeductionEntry[],
+  ) {
+    const e = await this.empRepo.findOne({ where: { id } });
+    if (!e) throw new NotFoundException('Сотрудник не найден');
+    const ym = ymRaw || currentYm();
+    await this.assertPayrollPeriodOpen(ym);
+    if (snapOf(e, ym)) throw new BadRequestException('Месяц уже выплачен и зафиксирован — правки недоступны');
+    const entriesField = kind === 'fine' ? 'fineEntries' : 'vacationEntries';
+    const scalarField = kind === 'fine' ? 'fines' : 'vacations';
+    // materialize: legacy-число превращаем в реальную запись, затем применяем.
+    let list = readDeductionEntries(e as any, entriesField, scalarField, ym);
+    list = apply([...list])
+      .map(x => ({ id: String(x.id), date: String(x.date).slice(0, 10), amount: r2(Number(x.amount) || 0), note: (x.note ?? '').toString().trim() || null }))
+      .filter(x => x.amount > 0);
+    const emap = { ...((e as any)[entriesField] || {}) };
+    if (list.length) emap[ym] = list; else delete emap[ym];
+    (e as any)[entriesField] = Object.keys(emap).length ? emap : null;
+    // синхронизируем скалярную сумму месяца
+    const sum = r2(list.reduce((s, x) => s + x.amount, 0));
+    const smap = { ...((e as any)[scalarField] || {}) };
+    if (sum > 0) smap[ym] = sum; else delete smap[ym];
+    (e as any)[scalarField] = Object.keys(smap).length ? smap : null;
+    return this.empRepo.save(e);
+  }
+
+  async addEmployeeDeduction(id: string, dto: { kind: 'fine' | 'vacation'; ym?: string; amount?: any; date?: string; note?: string }) {
+    const amount = r2(Number(dto.amount) || 0);
+    if (amount <= 0) throw new BadRequestException('Сумма должна быть больше нуля');
+    const entry: DeductionEntry = {
+      id: randomUUID(), date: (dto.date || todayISO()).slice(0, 10), amount,
+      note: (dto.note || '').trim() || null,
+    };
+    return this.mutateDeduction(id, dto.kind, dto.ym, list => [...list, entry]);
+  }
+
+  async removeEmployeeDeduction(id: string, entryId: string, dto: { kind: 'fine' | 'vacation'; ym?: string }) {
+    return this.mutateDeduction(id, dto.kind, dto.ym, list => list.filter(x => x.id !== entryId));
+  }
+
+  async updateEmployeeDeductionNote(id: string, entryId: string, dto: { kind: 'fine' | 'vacation'; ym?: string; note?: string }) {
+    const note = (dto.note || '').trim() || null;
+    return this.mutateDeduction(id, dto.kind, dto.ym, list => list.map(x => x.id === entryId ? { ...x, note } : x));
   }
 
   // Подписки/аренда

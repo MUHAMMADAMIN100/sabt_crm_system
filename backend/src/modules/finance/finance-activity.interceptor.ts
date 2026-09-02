@@ -26,6 +26,7 @@ const LABELS: Array<{ re: RegExp; method?: string; label: string }> = [
   { re: /\/employees\/[^/]+\/advance$/, label: 'Изменил аванс сотрудника' },
   { re: /\/employees\/[^/]+\/fine$/, label: 'Изменил штраф сотрудника' },
   { re: /\/employees\/[^/]+\/vacation$/, label: 'Изменил отпускные/удержание сотрудника' },
+  { re: /\/employees\/[^/]+\/deduction(?:\/[^/]+)?$/, label: 'Изменил удержания сотрудника (штраф/отпускные)' },
   { re: /\/employees\/[^/]+$/, method: 'PATCH', label: 'Изменил сотрудника (ЗП)' },
   { re: /\/employees\/[^/]+$/, method: 'DELETE', label: 'Уволил сотрудника (ЗП)' },
   { re: /\/employees$/, method: 'POST', label: 'Добавил сотрудника (ЗП)' },

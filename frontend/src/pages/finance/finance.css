@@ -2263,3 +2263,29 @@
 .fin-root .fin-emp-month-form .in input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); padding: 9px 12px; font-size: 14px; font-weight: 700; outline: none; text-align: right; font-variant-numeric: tabular-nums; }
 .fin-root .fin-emp-month-form .in .issue { border: 0; background: var(--accent-soft); color: var(--accent); padding: 0 11px; cursor: pointer; display: grid; place-items: center; }
 .fin-root .fin-emp-month-form .in .issue:hover { filter: brightness(1.1); }
+
+/* Заголовок поля: подпись слева, итог столбца справа */
+.fin-root .fin-emp-month-form .fld .cap { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.fin-root .fin-emp-month-form .fld .cap .lbl { font-size: 11px; font-weight: 600; color: var(--muted); }
+.fin-root .fin-emp-month-form .fld .cap .tot { font-size: 12.5px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.fin-root .fin-emp-month-form .fld .cap .tot.red { color: var(--red); }
+
+/* Журнал операций/удержаний под полем — плашки с раскрытием деталей */
+.fin-root .fin-log { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.fin-root .fin-log-entry { border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2, var(--surface)); overflow: hidden; }
+.fin-root .fin-log-entry:hover { border-color: var(--line2, var(--border)); }
+.fin-root .fin-log-entry.open { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.fin-root .fin-log-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 12.5px; cursor: pointer; user-select: none; }
+.fin-root .fin-log-item .chev { color: var(--muted); flex: 0 0 auto; transition: transform .15s ease; }
+.fin-root .fin-log-entry.open .fin-log-item .chev { transform: rotate(90deg); color: var(--accent); }
+.fin-root .fin-log-item .d { color: var(--muted); white-space: nowrap; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.fin-root .fin-log-item .a { margin-left: auto; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.fin-root .fin-log-item .a.red { color: var(--red); }
+.fin-root .fin-log-item .x { border: 0; background: transparent; color: var(--muted); cursor: pointer; width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; flex: 0 0 auto; margin-right: -4px; }
+.fin-root .fin-log-item .x:hover { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
+.fin-root .fin-log-detail { padding: 4px 12px 10px 14px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.fin-root .fin-log-detail .dline { display: flex; padding: 6px 0; font-size: 12.5px; }
+.fin-root .fin-log-detail .dline + .dline { border-top: 1px dashed color-mix(in srgb, var(--line2, var(--border)) 55%, transparent); }
+.fin-root .fin-log-detail .dline .val { color: var(--text); font-weight: 600; line-height: 1.4; word-break: break-word; }
+.fin-root .fin-log-detail .cin { flex: 1; min-width: 0; border: 1px solid var(--line2, var(--border)); border-radius: 7px; background: var(--surface); color: var(--text); padding: 7px 10px; font-size: 12.5px; outline: none; }
+.fin-root .fin-log-detail .cin:focus { border-color: var(--accent); }

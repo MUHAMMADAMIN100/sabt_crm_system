@@ -21,6 +21,7 @@ import { UpdateProjectDto } from './dto/update-project.dto';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { SetEmployeeBonusDto } from './dto/set-employee-bonus.dto';
+import { AddDeductionDto, UpdateDeductionNoteDto, RemoveDeductionQueryDto } from './dto/deduction.dto';
 import { CreateAssetDto, UpdateAssetDto } from './dto/asset.dto';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
@@ -206,6 +207,10 @@ export class FinanceController {
   /** Штраф за месяц (вычитается из «к выплате»; 0 — снять). */
   @Post('employees/:id/fine') setEmployeeFine(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeFine(id, dto); }
   @Post('employees/:id/vacation') setEmployeeVacation(@Param('id') id: string, @Body() dto: SetEmployeeBonusDto) { return this.service.setEmployeeVacation(id, dto); }
+  /** Журнал удержаний (kind: fine|vacation) — запись с датой/суммой/комментарием. */
+  @Post('employees/:id/deduction') addDeduction(@Param('id') id: string, @Body() dto: AddDeductionDto) { return this.service.addEmployeeDeduction(id, dto); }
+  @Patch('employees/:id/deduction/:entryId') updateDeduction(@Param('id') id: string, @Param('entryId') entryId: string, @Body() dto: UpdateDeductionNoteDto) { return this.service.updateEmployeeDeductionNote(id, entryId, dto); }
+  @Delete('employees/:id/deduction/:entryId') removeDeduction(@Param('id') id: string, @Param('entryId') entryId: string, @Query() q: RemoveDeductionQueryDto) { return this.service.removeEmployeeDeduction(id, entryId, q); }
   /** Текущий workflow-период и последний открытый период ведомости. */
   @Get('salary/period') salaryPeriod(@Query('ym') ym?: string) {
     return this.service.salaryPeriodState(ym);

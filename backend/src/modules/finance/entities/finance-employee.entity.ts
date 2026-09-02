@@ -43,6 +43,15 @@ export class FinanceEmployee {
   @Column({ type: 'jsonb', nullable: true })
   vacations: Record<string, number> | null;
 
+  /** Журнал штрафов по месяцам: { '2026-08': [{ id, date, amount, note }] }.
+   *  Источник истины для суммы штрафа месяца (fines[ym] = Σ записей). */
+  @Column({ type: 'jsonb', nullable: true })
+  fineEntries: Record<string, Array<{ id: string; date: string; amount: number; note?: string | null }>> | null;
+
+  /** Журнал отпускных/нерабочих по месяцам (аналогично fineEntries). */
+  @Column({ type: 'jsonb', nullable: true })
+  vacationEntries: Record<string, Array<{ id: string; date: string; amount: number; note?: string | null }>> | null;
+
   /** Снапшоты выплаченных месяцев: { '2026-07': { salary, bonus, advance,
    *  fine, paid, paidAt } }. Выплаченный месяц ЗАМОРОЖЕН — любые будущие
    *  правки оклада/бонусов/авансов его не меняют (месяцы независимы). */
