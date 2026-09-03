@@ -2270,6 +2270,9 @@
 .fin-root .fin-emp-month-form .fld .cap .tot { font-size: 12.5px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .fin-root .fin-emp-month-form .fld .cap .tot.red { color: var(--red); }
 
+/* Должность в зарплатной ведомости — мельче и компактнее, чтобы освободить место. */
+.fin-root .fin-role-cell { font-size: 12px; letter-spacing: -0.1px; padding-left: 0; }
+
 /* Кнопка «Добавить период» (отпускные/нерабочие) */
 .fin-root .fin-emp-month-form .fin-vac-add { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; border: 1px dashed var(--line2, var(--border)); border-radius: 9px; background: transparent; color: var(--accent); padding: 9px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .fin-root .fin-emp-month-form .fin-vac-add:hover { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }

@@ -312,14 +312,15 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
             <div className="table-wrap fin-wide-table">
               <table style={{ tableLayout: 'fixed', width: '100%' }}>
                 <colgroup>
-                  <col style={{ width: '22%' }} />{/* ФИО */}
-                  <col style={{ width: '16%' }} />{/* Должность */}
+                  <col style={{ width: '20%' }} />{/* ФИО */}
+                  <col style={{ width: '13%' }} />{/* Должность */}
                   <col style={{ width: '8%' }} />{/* ЗП */}
                   <col style={{ width: '8%' }} />{/* Аванс */}
                   <col style={{ width: '8%' }} />{/* Бонус */}
                   <col style={{ width: '8%' }} />{/* Штраф */}
-                  <col style={{ width: '10%' }} />{/* Отпускные */}
-                  <col style={{ width: '16%' }} />{/* Статус */}
+                  <col style={{ width: '9%' }} />{/* Отпускные */}
+                  <col style={{ width: '10%' }} />{/* К выплате */}
+                  <col style={{ width: '12%' }} />{/* Статус */}
                   <col style={{ width: '4%' }} />{/* ред. */}
                 </colgroup>
                 <thead>
@@ -329,6 +330,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                     <th className="num">Бонус</th>
                     <th className="num">Штраф</th>
                     <th className="num">Отпускные</th>
+                    <th className="num">К выплате</th>
                     <th>Статус</th><th />
                   </tr>
                 </thead>
@@ -360,12 +362,13 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                         <td>
                           <b className="fin-employee-name" title={e.name}>{shortName(e.name)}</b>
                         </td>
-                        <td className="muted">{e.role ?? '—'}</td>
+                        <td className="muted fin-role-cell">{e.role ?? '—'}</td>
                         <td className="num">{money(e.salary)}</td>
                         <td className="num">{Number(e.advance) ? money(e.advance) : <span className="muted">—</span>}</td>
                         <td className="num">{Number(e.bonus) ? money(e.bonus) : <span className="muted">—</span>}</td>
                         <td className="num">{Number(e.fine) ? <span style={{ color: 'var(--red)' }}>{money(e.fine)}</span> : <span className="muted">—</span>}</td>
                         <td className="num">{Number(e.vacation) ? <span style={{ color: 'var(--red)' }}>{money(e.vacation)}</span> : <span className="muted">—</span>}</td>
+                        <td className="num">{isPaid ? <span className="muted">—</span> : <b style={{ color: 'var(--accent)' }}>{money(e.toPay)}</b>}</td>
                         <td>
                           {isPaid
                             ? <span className="flex"><span className="badge ok" title={e.paidAt ? `Выплачено ${formatDate(e.paidAt)} — месяц зафиксирован` : 'Месяц закрыт'}><FinIcon name="check" size={13} /> выплачено</span><button className="btn ghost sm" title="Отменить выплату" onClick={() => cancelSalaryMonth(e)}><FinIcon name="undo" size={15} /></button></span>
@@ -375,7 +378,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                       </tr>
                       {historyOpen && (
                         <tr className="fin-employee-history-row">
-                          <td colSpan={9}>
+                          <td colSpan={10}>
                             <div className="fin-emp-month">
                               <div className="fin-emp-month-head">
                                 <span style={{ textTransform: 'capitalize' }}>{monthLabel(ym, true)}</span>
@@ -408,7 +411,8 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                     <td colSpan={2}><b>Итого · {cat}</b></td>
                     <td className="num"><b>{money(sum(e => Number(e.salary)))}</b></td>
                     <td className="num" /><td className="num" /><td className="num" /><td className="num" />
-                    <td colSpan={2} className="num nowrap">к выплате <b>{money(sum(e => Number(e.toPay)))}</b></td>
+                    <td className="num"><b style={{ color: 'var(--accent)' }}>{money(sum(e => Number(e.toPay)))}</b></td>
+                    <td colSpan={2} />
                   </tr>
                 </tfoot>
               </table>
