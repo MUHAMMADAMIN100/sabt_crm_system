@@ -390,7 +390,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                               ) : (
                                 <div className="fin-emp-month-form">
                                   <IssueField label="Аванс" kind="advance" row={e} ym={ym} total={Number(e.advance) || 0} entries={e.advanceEntries || []} accounts={accounts} onIssue={(amt) => setPayoutFor({ row: e, kind: 'advance', amount: amt })} />
-                                  <IssueField label="Бонус" kind="bonus" row={e} ym={ym} total={Number(e.bonus) || 0} entries={e.bonusEntries || []} accounts={accounts} onIssue={(amt) => setPayoutFor({ row: e, kind: 'bonus', amount: amt })} />
+                                  <DeductionField row={e} ym={ym} field="bonus" label="Бонус" total={Number(e.bonus) || 0} entries={e.bonusEntries || []} />
                                   <DeductionField row={e} ym={ym} field="fine" label="Штраф" total={Number(e.fine) || 0} entries={e.fineEntries || []} />
                                   <VacationField row={e} ym={ym} total={Number(e.vacation) || 0} entries={e.vacationEntries || []} />
                                 </div>
@@ -629,15 +629,17 @@ function IssueField({ label, kind, row, ym, total, entries, accounts, onIssue }:
   );
 }
 
-/** Поле-удержание (штраф / отпускные): сумма → «→»/Enter добавляет запись
- *  с сегодняшней датой (счёт не трогает). Ниже — журнал: дата · сумма · ✕;
- *  клик раскрывает комментарий (можно оставить/поправить). */
+/** Поле-журнал суммы (штраф/отпускные — удержания в минус; бонус — накопительный
+ *  в плюс): сумма → «→»/Enter добавляет запись с сегодняшней датой (счёт не
+ *  трогает, бонус выдаётся вместе с зарплатой). Ниже — журнал: дата · сумма · ✕;
+ *  клик раскрывает комментарий. «К выплате» пересчитывается мгновенно. */
 function DeductionField({ row, ym, field, label, total, entries }: {
-  row: any; ym: string; field: 'fine' | 'vacation'; label: string; total: number; entries: any[];
+  row: any; ym: string; field: 'fine' | 'vacation' | 'bonus'; label: string; total: number; entries: any[];
 }) {
   const qc = useQueryClient();
   const [v, setV] = useState('');
-  const listKey = field === 'fine' ? 'fineEntries' : 'vacationEntries';
+  const isBonus = field === 'bonus';
+  const listKey = field === 'fine' ? 'fineEntries' : field === 'vacation' ? 'vacationEntries' : 'bonusEntries';
 
   const add = async () => {
     const n = Math.max(0, parseFloat(v.replace(',', '.')) || 0);
@@ -675,17 +677,17 @@ function DeductionField({ row, ym, field, label, total, entries }: {
 
   return (
     <div className="fld">
-      <div className="cap"><span className="lbl">{label}</span>{total > 0 && <span className="tot red">{money(total)}</span>}</div>
+      <div className="cap"><span className="lbl">{label}</span>{total > 0 && <span className={isBonus ? 'tot' : 'tot red'}>{money(total)}</span>}</div>
       <div className="in">
         <input inputMode="decimal" placeholder="—" value={v}
           onChange={(e) => setV(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} />
-        <button type="button" className="issue" title="Добавить удержание" onClick={add}><FinIcon name="arrowRight" size={15} /></button>
+        <button type="button" className="issue" title={isBonus ? 'Добавить бонус' : 'Добавить удержание'} onClick={add}><FinIcon name="arrowRight" size={15} /></button>
       </div>
       {entries.length > 0 && (
         <div className="fin-log">
           {entries.map((entry) => (
-            <HistoryEntry key={entry.id} entry={entry} deduction cancelTitle="Удалить запись" onCancel={() => remove(entry)}>
+            <HistoryEntry key={entry.id} entry={entry} deduction={!isBonus} cancelTitle="Удалить запись" onCancel={() => remove(entry)}>
               <div className="dline"><NoteInput entry={entry} onSave={saveNote} /></div>
             </HistoryEntry>
           ))}

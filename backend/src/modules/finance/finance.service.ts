@@ -164,8 +164,8 @@ type DeductionEntry = { id: string; date: string; amount: number; note?: string 
  *  число (fines[ym]/vacations[ym]) есть — показываем его одной legacy-записью
  *  со стабильным id, чтобы её можно было удалить/дополнить как обычную. */
 function readDeductionEntries(
-  e: any, entriesField: 'fineEntries' | 'vacationEntries',
-  scalarField: 'fines' | 'vacations', ym: string,
+  e: any, entriesField: 'fineEntries' | 'vacationEntries' | 'bonusEntries',
+  scalarField: 'fines' | 'vacations' | 'bonuses', ym: string,
 ): DeductionEntry[] {
   const stored = (e[entriesField] || {})[ym];
   if (Array.isArray(stored) && stored.length) {
@@ -354,6 +354,7 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "vacations" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "fineEntries" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "vacationEntries" jsonb`);
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "bonusEntries" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salarySnapshots" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salaryHistory" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "legacyPayrollHistory" jsonb`);
@@ -1573,7 +1574,6 @@ export class FinanceService implements OnModuleInit {
       const txs = salaryAccrualTx.filter(t => t.employeeId === e.id);
       const paid = r2(txs.reduce((s, t) => s + Number(t.amount), 0));
       const adv = r2(txs.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
-      const bon = r2(txs.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
       const snap = snapOf(e, ym);
       if (snap) {
         salaryPlanAcc += recordedSalarySnapshotPaid(snap, paid, adv);
@@ -1581,9 +1581,12 @@ export class FinanceService implements OnModuleInit {
         salaryBonAcc += r2(Number(snap.bonus) || 0);
         continue;
       }
+      // Бонус накопительный (bonusOf), в «выплачено» бонус-операции не входят.
+      const bon = bonusOf(e, ym);
+      const paidNoBonus = r2(txs.filter(t => !isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
       const due = r2(Math.max(0, salaryForMonth(e, ym) + bon - fineOf(e, ym) - vacationOf(e, ym)));
       salaryPlanAcc += due;
-      salaryToPayAcc += Math.max(0, due - paid);
+      salaryToPayAcc += Math.max(0, due - paidNoBonus);
       salaryAdvAcc += adv; salaryBonAcc += bon;
     }
     const salaryToPay = r2(salaryToPayAcc);
@@ -2109,9 +2112,10 @@ export class FinanceService implements OnModuleInit {
         continue;
       }
       const txs = salarySummaryTx.filter(t => t.employeeId === e.id);
-      const paid = r2(txs.reduce((s, t) => s + Number(t.amount), 0));
       const adv = r2(txs.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
-      const bon = r2(txs.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
+      // Бонус накопительный (bonusOf); «выплачено» — без бонус-операций.
+      const bon = bonusOf(e, ym);
+      const paid = r2(txs.filter(t => !isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
       const fine = fineOf(e, ym);
       const vacation = vacationOf(e, ym);
       const due = r2(Math.max(0, salaryForMonth(e, ym) + bon - fine - vacation));
@@ -2171,10 +2175,11 @@ export class FinanceService implements OnModuleInit {
       // дате: выплата за июнь 10 июля попадает в июньскую таблицу.
       const salaryTx = await this.salaryTxForMonth(ym);
       const paidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id).reduce((s, t) => s + Number(t.amount), 0));
-      // Авансы и бонусы ВЫДАЮТСЯ СРАЗУ отдельными операциями — колонки
-      // показывают фактически выданное за месяц (по комментарию операции).
+      // Бонус НАКОПИТЕЛЬНЫЙ (выдаётся с зарплатой) — операциями «Бонус» не
+      // создаётся, поэтому в «выплачено» открытого месяца их НЕ считаем.
+      const paidNoBonusOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && !isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
+      // Аванс выдаётся сразу отдельной операцией — колонка показывает выданное.
       const advPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isAdvanceTx(t)).reduce((s, t) => s + Number(t.amount), 0));
-      const bonPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
       const activeEmps = emps.filter(e => workedInFinanceMonth(e, ym));
       const rows = activeEmps.map(e => {
         // Снапшот фиксирует выплаты и корректировки месяца, но не является
@@ -2196,14 +2201,13 @@ export class FinanceService implements OnModuleInit {
             frozen: true, paidAt: snap.paidAt ?? null,
           };
         }
-        const paid = paidOf(e.id);
+        const paid = paidNoBonusOf(e.id); // аванс + финальная ЗП (без бонус-операций)
         const advance = advPaidOf(e.id); // уже выдано (входит в paid)
-        const bonus = bonPaidOf(e.id);   // уже выдано (входит в paid)
+        const bonus = bonusOf(e, ym);    // НАКОПИТЕЛЬНЫЙ — прибавляется к «к выплате»
         const fine = fineOf(e, ym);      // удерживается при финальной выплате
         const vacation = vacationOf(e, ym); // отпуск/невыходы — тоже удержание
-        // История по столбцам разворота: аванс/бонус — реальные операции
-        // (счёт/комментарий/дата, отмена = removeTransaction), штраф/отпускные —
-        // записи журнала удержаний.
+        // История столбца «Аванс» — реальные операции (счёт/дата, отмена =
+        // removeTransaction); бонус/штраф/отпускные — записи журнала.
         const txEntries = (pred: (t: FinanceTransaction) => boolean) => salaryTx
           .filter(t => t.employeeId === e.id && pred(t))
           .map(t => ({ id: t.id, date: (t.date || '').slice(0, 10), amount: r2(Number(t.amount) || 0), accountId: t.accountId ?? null, comment: t.comment ?? null, salaryYm: t.salaryYm ?? null }))
@@ -2214,7 +2218,7 @@ export class FinanceService implements OnModuleInit {
           salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {},
           advance, bonus, fine, vacation, status: e.status, paid,
           advanceEntries: txEntries(isAdvanceTx),
-          bonusEntries: txEntries(isBonusTx),
+          bonusEntries: readDeductionEntries(e as any, 'bonusEntries', 'bonuses', ym),
           fineEntries: readDeductionEntries(e as any, 'fineEntries', 'fines', ym),
           vacationEntries: readDeductionEntries(e as any, 'vacationEntries', 'vacations', ym),
           // Обязательство месяца = оклад + выданные бонусы − штраф − отпускные;
@@ -2503,13 +2507,10 @@ export class FinanceService implements OnModuleInit {
         if (snapOf(employee, salaryYm)) continue;
         const empSalaryTx = postedTxs.filter(t => t.type === FinanceTxType.EXPENSE && t.employeeId === employee.id &&
           (t.salaryYm || salaryPeriodForDate(t.date)) === salaryYm);
-        const exactPaid = this.sum(empSalaryTx);
-        // Обязательство = оклад + ВЫДАННЫЕ бонусы − штраф (как в ведомости):
-        // выплаченный бонус входит в exactPaid и самокомпенсируется. Раньше брали
-        // bonusOf (jsonb, который не заполняется), поэтому выплаченный бонус
-        // ошибочно занижал базовую ЗП в прогнозе.
-        const bonusesPaid = this.sum(empSalaryTx.filter(isBonusTx));
-        const due = Math.max(0, salaryForMonth(employee, salaryYm) + bonusesPaid - fineOf(employee, salaryYm));
+        // Бонус накопительный (bonusOf) — операциями не выдаётся, поэтому в
+        // «выплачено» бонус-операции (если остались старые) не считаем.
+        const exactPaid = this.sum(empSalaryTx.filter(t => !isBonusTx(t)));
+        const due = Math.max(0, salaryForMonth(employee, salaryYm) + bonusOf(employee, salaryYm) - fineOf(employee, salaryYm) - vacationOf(employee, salaryYm));
         let amount = Math.max(0, due - exactPaid);
         const covered = Math.min(amount, unlinkedSalaryPaid);
         amount -= covered;
@@ -2749,13 +2750,15 @@ export class FinanceService implements OnModuleInit {
     if (!e) return;
     // Операции месяца НАЧИСЛЕНИЯ (по salaryYm, с fallback на дату для старых).
     const monthExp = await this.salaryTxForMonth(ym, employeeId);
-    const paid = r2(monthExp.reduce((s, t) => s + Number(t.amount), 0));
+    // Бонус накопительный (выдаётся с зарплатой) — бонус-операции в «выплачено»
+    // не считаем; сумма бонуса берётся из журнала (bonusOf).
+    const paid = r2(monthExp.filter(t => !isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
     const advance = r2(monthExp.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
-    const bonus = r2(monthExp.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
     const snap = snapOf(e, ym);
     // Оклад не восстанавливаем из старого снапшота: его единственный источник
     // — установленная ставка salaryHistory за расчётный месяц.
     const salary = salaryForMonth(e, ym);
+    const bonus = snap ? r2(Number(snap.bonus) || 0) : bonusOf(e, ym);
     const fine = snap ? r2(Number(snap.fine) || 0) : fineOf(e, ym);
     const vacation = snap ? r2(Number(snap.vacation) || 0) : vacationOf(e, ym);
     // Аванс/бонус уже выданы операциями (входят в paid): обязательство =
@@ -3707,23 +3710,25 @@ export class FinanceService implements OnModuleInit {
     for (const e of emps) {
       if (!workedInFinanceMonth(e, ym) || snapOf(e, ym)) continue;
       const employeeTx = monthExp.filter(t => t.employeeId === e.id);
-      const paid = r2(employeeTx.reduce((s, t) => s + Number(t.amount), 0));
+      // Бонус накопительный (выдаётся с зарплатой) — бонус-операции в «выплачено»
+      // не считаем; финальная выплата ЗП уже включает бонус.
+      const paid = r2(employeeTx.filter(t => !isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
       const paidAdvance = r2(employeeTx.filter(isAdvanceTx).reduce((s, t) => s + Number(t.amount), 0));
-      const paidBonus = r2(employeeTx.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
+      const bonus = bonusOf(e, ym);
       const salary = salaryForMonth(e, ym);
       const fine = fineOf(e, ym);
       const vacation = vacationOf(e, ym);
       // Обязательство месяца = оклад + бонусы − штраф − отпускные (как в
       // expenseDetail/refreshSalarySnapshot). Отпускные тоже удержание, иначе
       // при неоплачиваемом отпуске UI показывает «выплачено», а закрыть нельзя.
-      const due = r2(Math.max(0, salary + paidBonus - fine - vacation));
+      const due = r2(Math.max(0, salary + bonus - fine - vacation));
       if (paid < due - 0.005) {
         skipped++;
         continue;
       }
       const map = { ...(e.salarySnapshots || {}) };
       map[ym] = {
-        salary, bonus: paidBonus || bonusOf(e, ym),
+        salary, bonus,
         advance: paidAdvance || advanceOf(e, ym), fine, vacation,
         paid, paidAt: todayISO(), paidIncludesAdvance: true,
       };
@@ -3847,8 +3852,10 @@ export class FinanceService implements OnModuleInit {
     return { rows: decorated, total: totalRow?.[0]?.count ?? 0 };
   }
 
+  /** Бонус за месяц (итог одним числом) — накопительный, идёт ЧЕРЕЗ журнал
+   *  (скаляр bonuses[ym] = Σ записей), прибавляется к «к выплате». */
   async setEmployeeBonus(id: string, dto: { ym?: string; amount?: any }) {
-    return this.setEmployeeMonthField(id, 'bonuses', dto, 'Бонус');
+    return this.setDeductionTotal(id, 'bonus', dto, 'Бонус');
   }
 
   /** История оклада и выплат сотруднику: аванс/бонус/зарплата — что, когда,
@@ -3990,9 +3997,11 @@ export class FinanceService implements OnModuleInit {
         const advance = snapshot
           ? r2(Number(snapshot.advance) || 0)
           : txAdvance > 0 ? txAdvance : advanceOf(e, ym);
+        // Бонус накопительный: для открытого месяца берём журнал (bonusOf),
+        // а не выданные операции.
         const bonus = snapshot
           ? r2(Number(snapshot.bonus) || 0)
-          : txBonus > 0 ? txBonus : bonusOf(e, ym);
+          : bonusOf(e, ym);
         const fine = snapshot ? r2(Number(snapshot.fine) || 0) : fineOf(e, ym);
         const vacation = snapshot ? r2(Number(snapshot.vacation) || 0) : vacationOf(e, ym);
         const accrued = r2(Math.max(0, salary + bonus - fine - vacation));
@@ -4076,7 +4085,7 @@ export class FinanceService implements OnModuleInit {
   /** Задать ИТОГ удержания за месяц одним числом: заменяет журнал месяца одной
    *  записью (или очищает при 0). Так скаляр = Σ записей — источник истины один. */
   private async setDeductionTotal(
-    id: string, kind: 'fine' | 'vacation', dto: { ym?: string; amount?: any }, label: string,
+    id: string, kind: 'fine' | 'vacation' | 'bonus', dto: { ym?: string; amount?: any }, label: string,
   ) {
     const amount = r2(Number(dto.amount) || 0);
     if (amount < 0) throw new BadRequestException(`${label} не может быть отрицательным`);
@@ -4087,7 +4096,7 @@ export class FinanceService implements OnModuleInit {
   }
 
   private async setEmployeeMonthField(
-    id: string, field: 'bonuses' | 'advances',
+    id: string, field: 'advances',
     dto: { ym?: string; amount?: any }, label: string,
   ) {
     // Блокировка строки на время read-modify-write — иначе два параллельных
@@ -4115,7 +4124,7 @@ export class FinanceService implements OnModuleInit {
   // держим синхронной (= Σ записей), поэтому вся зарплатная математика,
   // читающая fineOf/vacationOf, продолжает работать без изменений.
   private async mutateDeduction(
-    id: string, kind: 'fine' | 'vacation', ymRaw: string | undefined,
+    id: string, kind: 'fine' | 'vacation' | 'bonus', ymRaw: string | undefined,
     apply: (list: DeductionEntry[]) => DeductionEntry[],
   ) {
     // Блокировка строки: read-modify-write журнала без гонок (два параллельных
@@ -4127,8 +4136,8 @@ export class FinanceService implements OnModuleInit {
       const ym = ymRaw || currentYm();
       await this.assertPayrollPeriodOpen(ym, em);
       if (snapOf(e, ym)) throw new BadRequestException('Месяц уже выплачен и зафиксирован — правки недоступны');
-      const entriesField = kind === 'fine' ? 'fineEntries' : 'vacationEntries';
-      const scalarField = kind === 'fine' ? 'fines' : 'vacations';
+      const entriesField = kind === 'fine' ? 'fineEntries' : kind === 'vacation' ? 'vacationEntries' : 'bonusEntries';
+      const scalarField = kind === 'fine' ? 'fines' : kind === 'vacation' ? 'vacations' : 'bonuses';
       // materialize: legacy-число превращаем в реальную запись, затем применяем.
       let list = readDeductionEntries(e as any, entriesField, scalarField, ym);
       list = apply([...list])
@@ -4151,7 +4160,7 @@ export class FinanceService implements OnModuleInit {
     });
   }
 
-  async addEmployeeDeduction(id: string, dto: { kind: 'fine' | 'vacation'; ym?: string; amount?: any; date?: string; dateFrom?: string; dateTo?: string; note?: string }) {
+  async addEmployeeDeduction(id: string, dto: { kind: 'fine' | 'vacation' | 'bonus'; ym?: string; amount?: any; date?: string; dateFrom?: string; dateTo?: string; note?: string }) {
     const amount = r2(Number(dto.amount) || 0);
     if (amount <= 0) throw new BadRequestException('Сумма должна быть больше нуля');
     // Отпускные/нерабочие задаются периодом «от–до»; штраф — одной датой.
@@ -4168,11 +4177,11 @@ export class FinanceService implements OnModuleInit {
     return this.mutateDeduction(id, dto.kind, dto.ym, list => [...list, entry]);
   }
 
-  async removeEmployeeDeduction(id: string, entryId: string, dto: { kind: 'fine' | 'vacation'; ym?: string }) {
+  async removeEmployeeDeduction(id: string, entryId: string, dto: { kind: 'fine' | 'vacation' | 'bonus'; ym?: string }) {
     return this.mutateDeduction(id, dto.kind, dto.ym, list => list.filter(x => x.id !== entryId));
   }
 
-  async updateEmployeeDeductionNote(id: string, entryId: string, dto: { kind: 'fine' | 'vacation'; ym?: string; note?: string }) {
+  async updateEmployeeDeductionNote(id: string, entryId: string, dto: { kind: 'fine' | 'vacation' | 'bonus'; ym?: string; note?: string }) {
     const note = (dto.note || '').trim() || null;
     return this.mutateDeduction(id, dto.kind, dto.ym, list => list.map(x => x.id === entryId ? { ...x, note } : x));
   }

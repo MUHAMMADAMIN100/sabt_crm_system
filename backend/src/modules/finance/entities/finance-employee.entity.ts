@@ -87,10 +87,15 @@ export class FinanceEmployee {
   @Column({ type: 'jsonb', nullable: true })
   employmentHistory: Array<{ hireDate: string; terminationDate: string }> | null;
 
-  /** Бонусы по месяцам: { '2026-07': 500 }. Задаются вручную в зарплатной
-   *  ведомости; входят в «к выплате», выплата создаёт расход как и оклад. */
+  /** Бонусы по месяцам: { '2026-07': 500 }. НАКОПИТЕЛЬНЫЕ: прибавляются к
+   *  «к выплате» и выдаются вместе с зарплатой (bonuses[ym] = Σ bonusEntries). */
   @Column({ type: 'jsonb', nullable: true })
   bonuses: Record<string, number> | null;
+
+  /** Журнал бонусов по месяцам: { '2026-08': [{ id, date, amount, note }] } —
+   *  источник истины для суммы бонуса месяца (bonuses[ym] = Σ записей). */
+  @Column({ type: 'jsonb', nullable: true })
+  bonusEntries: Record<string, Array<{ id: string; date: string; amount: number; note?: string | null; dateFrom?: string | null; dateTo?: string | null }>> | null;
 
   /** active — учитывается в фонде ЗП; fired — нет. Legacy 'inactive' трактуем как fired. */
   @Column({ type: 'varchar', length: 16, default: 'active' })

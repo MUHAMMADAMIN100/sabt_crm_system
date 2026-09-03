@@ -3,8 +3,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /** Запись удержания (штраф / отпускные) за месяц — журнал с датой и суммой. */
 export class AddDeductionDto {
-  @ApiProperty({ example: 'fine', enum: ['fine', 'vacation'] }) @IsIn(['fine', 'vacation'])
-  kind!: 'fine' | 'vacation';
+  @ApiProperty({ example: 'fine', enum: ['fine', 'vacation'] }) @IsIn(['fine', 'vacation', 'bonus'])
+  kind!: 'fine' | 'vacation' | 'bonus';
 
   @ApiPropertyOptional({ example: '2026-07' }) @IsOptional() @IsString() @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
   ym?: string;
@@ -27,8 +27,8 @@ export class AddDeductionDto {
 
 /** Обновление комментария у записи удержания. */
 export class UpdateDeductionNoteDto {
-  @ApiProperty({ example: 'fine', enum: ['fine', 'vacation'] }) @IsIn(['fine', 'vacation'])
-  kind!: 'fine' | 'vacation';
+  @ApiProperty({ example: 'fine', enum: ['fine', 'vacation'] }) @IsIn(['fine', 'vacation', 'bonus'])
+  kind!: 'fine' | 'vacation' | 'bonus';
 
   @ApiPropertyOptional({ example: '2026-07' }) @IsOptional() @IsString() @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
   ym?: string;
@@ -39,8 +39,8 @@ export class UpdateDeductionNoteDto {
 
 /** Удаление записи удержания (kind/ym в query). */
 export class RemoveDeductionQueryDto {
-  @ApiProperty({ example: 'fine', enum: ['fine', 'vacation'] }) @IsIn(['fine', 'vacation'])
-  kind!: 'fine' | 'vacation';
+  @ApiProperty({ example: 'fine', enum: ['fine', 'vacation'] }) @IsIn(['fine', 'vacation', 'bonus'])
+  kind!: 'fine' | 'vacation' | 'bonus';
 
   @ApiPropertyOptional({ example: '2026-07' }) @IsOptional() @IsString() @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
   ym?: string;

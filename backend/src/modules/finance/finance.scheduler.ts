@@ -267,13 +267,11 @@ export class FinanceScheduler {
     for (const e of emps) {
       if ((e.salarySnapshots || {})[ym]) continue;
       const empTx = monthTx.filter(t => t.employeeId === e.id);
-      const paidE = empTx.reduce((s, t) => s + Number(t.amount), 0);
-      // Бонус для обязательства берём из ОПЕРАЦИЙ (комментарий «Бонус»), как
-      // зарплатная таблица: бонус уже входит в paidE, поэтому должен входить и
-      // в due, иначе выданный бонус занижал бы «к выплате» (или гасил напоминание).
-      const bonus = empTx
-        .filter(t => (t.comment || '').trim().toLowerCase().startsWith('бонус'))
-        .reduce((s, t) => s + Number(t.amount), 0);
+      // Бонус НАКОПИТЕЛЬНЫЙ (выдаётся с зарплатой) — берём из журнала (bonuses),
+      // а бонус-операции в «выплачено» не считаем (как в зарплатной таблице).
+      const isBonusTx = (t: any) => (t.comment || '').trim().toLowerCase().startsWith('бонус');
+      const paidE = empTx.filter(t => !isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0);
+      const bonus = Number((e.bonuses || {})[ym]) || 0;
       const fine = Number((e.fines || {})[ym]) || 0;
       const vacation = Number((e.vacations || {})[ym]) || 0;
       const due = Math.max(0, salaryForFinanceMonth(e, ym) + bonus - fine - vacation);
