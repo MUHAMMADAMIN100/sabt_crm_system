@@ -12,13 +12,13 @@ export class AddDeductionDto {
   @ApiProperty({ example: 300 }) @IsNumber() @Min(0)
   amount!: number;
 
-  @ApiPropertyOptional({ example: '2026-09-02' }) @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @ApiPropertyOptional({ example: '2026-09-02' }) @IsOptional() @IsString() @Matches(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/)
   date?: string;
 
-  @ApiPropertyOptional({ example: '2026-09-01', description: 'Отпускные: начало периода' }) @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @ApiPropertyOptional({ example: '2026-09-01', description: 'Отпускные: начало периода' }) @IsOptional() @IsString() @Matches(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/)
   dateFrom?: string;
 
-  @ApiPropertyOptional({ example: '2026-09-07', description: 'Отпускные: конец периода' }) @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @ApiPropertyOptional({ example: '2026-09-07', description: 'Отпускные: конец периода' }) @IsOptional() @IsString() @Matches(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/)
   dateTo?: string;
 
   @ApiPropertyOptional({ example: 'опоздание' }) @IsOptional() @IsString() @MaxLength(300)

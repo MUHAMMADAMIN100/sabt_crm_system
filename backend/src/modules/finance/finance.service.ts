@@ -2839,6 +2839,17 @@ export class FinanceService implements OnModuleInit {
     if (t.employeeId) salaryPeriods.add(t.salaryYm ?? ymOf(t.date));
     if (next.employeeId) salaryPeriods.add(next.salaryYm ?? salaryPeriodForDate(next.date));
     for (const ym of salaryPeriods) await this.assertPayrollPeriodOpen(ym);
+    // Помимо глобального периода уважаем per-employee заморозку (снапшот
+    // выплаченного месяца): править зарплатную операцию замороженного месяца
+    // нельзя — иначе через журнал операций можно молча изменить «неизменяемые»
+    // данные. Снапшот создаётся при полной выплате даже при открытом периоде.
+    const frozenChecks: Array<[string, string]> = [];
+    if (t.employeeId) frozenChecks.push([t.employeeId, t.salaryYm ?? ymOf(t.date)]);
+    if (next.employeeId) frozenChecks.push([next.employeeId, next.salaryYm ?? salaryPeriodForDate(next.date)]);
+    for (const [empId, ym] of frozenChecks) {
+      const emp = await this.empRepo.findOne({ where: { id: empId } });
+      if (emp && snapOf(emp, ym)) throw new BadRequestException('Месяц у сотрудника уже выплачен и зафиксирован — операцию нельзя изменить (сначала переоткройте период)');
+    }
     await this.txRepo.update(id, patch);
     await this.syncSmmPartLink(id);
     // Правка выплаты ЗП (сумма/дата/сотрудник) — пересчитать снапшоты
@@ -3701,7 +3712,11 @@ export class FinanceService implements OnModuleInit {
       const paidBonus = r2(employeeTx.filter(isBonusTx).reduce((s, t) => s + Number(t.amount), 0));
       const salary = salaryForMonth(e, ym);
       const fine = fineOf(e, ym);
-      const due = r2(Math.max(0, salary + paidBonus - fine));
+      const vacation = vacationOf(e, ym);
+      // Обязательство месяца = оклад + бонусы − штраф − отпускные (как в
+      // expenseDetail/refreshSalarySnapshot). Отпускные тоже удержание, иначе
+      // при неоплачиваемом отпуске UI показывает «выплачено», а закрыть нельзя.
+      const due = r2(Math.max(0, salary + paidBonus - fine - vacation));
       if (paid < due - 0.005) {
         skipped++;
         continue;
@@ -3709,7 +3724,7 @@ export class FinanceService implements OnModuleInit {
       const map = { ...(e.salarySnapshots || {}) };
       map[ym] = {
         salary, bonus: paidBonus || bonusOf(e, ym),
-        advance: paidAdvance || advanceOf(e, ym), fine,
+        advance: paidAdvance || advanceOf(e, ym), fine, vacation,
         paid, paidAt: todayISO(), paidIncludesAdvance: true,
       };
       e.salarySnapshots = map;
@@ -4047,33 +4062,52 @@ export class FinanceService implements OnModuleInit {
     return this.setEmployeeMonthField(id, 'advances', dto, 'Аванс');
   }
 
-  /** Штраф за месяц — вычитается из «к выплате». */
+  /** Штраф за месяц (итог одним числом) — идёт ЧЕРЕЗ журнал удержаний, чтобы
+   *  скаляр и записи не расходились. Вычитается из «к выплате». */
   async setEmployeeFine(id: string, dto: { ym?: string; amount?: any }) {
-    return this.setEmployeeMonthField(id, 'fines', dto, 'Штраф');
+    return this.setDeductionTotal(id, 'fine', dto, 'Штраф');
   }
 
-  /** Отпускные/нерабочие за месяц — удержание, вычитается из «к выплате». */
+  /** Отпускные/нерабочие за месяц (итог одним числом) — тоже через журнал. */
   async setEmployeeVacation(id: string, dto: { ym?: string; amount?: any }) {
-    return this.setEmployeeMonthField(id, 'vacations', dto, 'Отпускные');
+    return this.setDeductionTotal(id, 'vacation', dto, 'Отпускные');
+  }
+
+  /** Задать ИТОГ удержания за месяц одним числом: заменяет журнал месяца одной
+   *  записью (или очищает при 0). Так скаляр = Σ записей — источник истины один. */
+  private async setDeductionTotal(
+    id: string, kind: 'fine' | 'vacation', dto: { ym?: string; amount?: any }, label: string,
+  ) {
+    const amount = r2(Number(dto.amount) || 0);
+    if (amount < 0) throw new BadRequestException(`${label} не может быть отрицательным`);
+    const ym = dto.ym || currentYm();
+    return this.mutateDeduction(id, kind, ym, () => amount > 0
+      ? [{ id: randomUUID(), date: `${ym}-01`, amount, note: null, dateFrom: null, dateTo: null }]
+      : []);
   }
 
   private async setEmployeeMonthField(
-    id: string, field: 'bonuses' | 'advances' | 'fines' | 'vacations',
+    id: string, field: 'bonuses' | 'advances',
     dto: { ym?: string; amount?: any }, label: string,
   ) {
-    const e = await this.empRepo.findOne({ where: { id } });
-    if (!e) throw new NotFoundException('Сотрудник не найден');
-    const ym = dto.ym || currentYm();
-    await this.assertPayrollPeriodOpen(ym);
-    // Выплаченный месяц заморожен — менять его суммы нельзя (месяцы независимы).
-    if (snapOf(e, ym)) throw new BadRequestException('Месяц уже выплачен и зафиксирован — правки недоступны');
-    const amount = r2(Number(dto.amount) || 0);
-    if (amount < 0) throw new BadRequestException(`${label} не может быть отрицательным`);
-    const map = { ...((e as any)[field] || {}) };
-    if (amount > 0) map[ym] = amount;
-    else delete map[ym];
-    (e as any)[field] = Object.keys(map).length ? map : null;
-    return this.empRepo.save(e);
+    // Блокировка строки на время read-modify-write — иначе два параллельных
+    // изменения одного сотрудника перезапишут друг друга (lost update).
+    return this.ds.transaction(async (em) => {
+      const repo = em.getRepository(FinanceEmployee);
+      const e = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!e) throw new NotFoundException('Сотрудник не найден');
+      const ym = dto.ym || currentYm();
+      await this.assertPayrollPeriodOpen(ym, em);
+      // Выплаченный месяц заморожен — менять его суммы нельзя (месяцы независимы).
+      if (snapOf(e, ym)) throw new BadRequestException('Месяц уже выплачен и зафиксирован — правки недоступны');
+      const amount = r2(Number(dto.amount) || 0);
+      if (amount < 0) throw new BadRequestException(`${label} не может быть отрицательным`);
+      const map = { ...((e as any)[field] || {}) };
+      if (amount > 0) map[ym] = amount;
+      else delete map[ym];
+      (e as any)[field] = Object.keys(map).length ? map : null;
+      return repo.save(e);
+    });
   }
 
   // ── Журнал удержаний (штраф/отпускные) с датами и комментарием ──────────
@@ -4084,40 +4118,48 @@ export class FinanceService implements OnModuleInit {
     id: string, kind: 'fine' | 'vacation', ymRaw: string | undefined,
     apply: (list: DeductionEntry[]) => DeductionEntry[],
   ) {
-    const e = await this.empRepo.findOne({ where: { id } });
-    if (!e) throw new NotFoundException('Сотрудник не найден');
-    const ym = ymRaw || currentYm();
-    await this.assertPayrollPeriodOpen(ym);
-    if (snapOf(e, ym)) throw new BadRequestException('Месяц уже выплачен и зафиксирован — правки недоступны');
-    const entriesField = kind === 'fine' ? 'fineEntries' : 'vacationEntries';
-    const scalarField = kind === 'fine' ? 'fines' : 'vacations';
-    // materialize: legacy-число превращаем в реальную запись, затем применяем.
-    let list = readDeductionEntries(e as any, entriesField, scalarField, ym);
-    list = apply([...list])
-      .map(x => ({
-        id: String(x.id), date: String(x.date).slice(0, 10), amount: r2(Number(x.amount) || 0),
-        note: (x.note ?? '').toString().trim() || null,
-        dateFrom: x.dateFrom ? String(x.dateFrom).slice(0, 10) : null,
-        dateTo: x.dateTo ? String(x.dateTo).slice(0, 10) : null,
-      }))
-      .filter(x => x.amount > 0);
-    const emap = { ...((e as any)[entriesField] || {}) };
-    if (list.length) emap[ym] = list; else delete emap[ym];
-    (e as any)[entriesField] = Object.keys(emap).length ? emap : null;
-    // синхронизируем скалярную сумму месяца
-    const sum = r2(list.reduce((s, x) => s + x.amount, 0));
-    const smap = { ...((e as any)[scalarField] || {}) };
-    if (sum > 0) smap[ym] = sum; else delete smap[ym];
-    (e as any)[scalarField] = Object.keys(smap).length ? smap : null;
-    return this.empRepo.save(e);
+    // Блокировка строки: read-modify-write журнала без гонок (два параллельных
+    // изменения одного сотрудника не затрут друг друга — lost update).
+    return this.ds.transaction(async (em) => {
+      const repo = em.getRepository(FinanceEmployee);
+      const e = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!e) throw new NotFoundException('Сотрудник не найден');
+      const ym = ymRaw || currentYm();
+      await this.assertPayrollPeriodOpen(ym, em);
+      if (snapOf(e, ym)) throw new BadRequestException('Месяц уже выплачен и зафиксирован — правки недоступны');
+      const entriesField = kind === 'fine' ? 'fineEntries' : 'vacationEntries';
+      const scalarField = kind === 'fine' ? 'fines' : 'vacations';
+      // materialize: legacy-число превращаем в реальную запись, затем применяем.
+      let list = readDeductionEntries(e as any, entriesField, scalarField, ym);
+      list = apply([...list])
+        .map(x => ({
+          id: String(x.id), date: String(x.date).slice(0, 10), amount: r2(Number(x.amount) || 0),
+          note: (x.note ?? '').toString().trim() || null,
+          dateFrom: x.dateFrom ? String(x.dateFrom).slice(0, 10) : null,
+          dateTo: x.dateTo ? String(x.dateTo).slice(0, 10) : null,
+        }))
+        .filter(x => x.amount > 0);
+      const emap = { ...((e as any)[entriesField] || {}) };
+      if (list.length) emap[ym] = list; else delete emap[ym];
+      (e as any)[entriesField] = Object.keys(emap).length ? emap : null;
+      // синхронизируем скалярную сумму месяца
+      const sum = r2(list.reduce((s, x) => s + x.amount, 0));
+      const smap = { ...((e as any)[scalarField] || {}) };
+      if (sum > 0) smap[ym] = sum; else delete smap[ym];
+      (e as any)[scalarField] = Object.keys(smap).length ? smap : null;
+      return repo.save(e);
+    });
   }
 
   async addEmployeeDeduction(id: string, dto: { kind: 'fine' | 'vacation'; ym?: string; amount?: any; date?: string; dateFrom?: string; dateTo?: string; note?: string }) {
     const amount = r2(Number(dto.amount) || 0);
     if (amount <= 0) throw new BadRequestException('Сумма должна быть больше нуля');
     // Отпускные/нерабочие задаются периодом «от–до»; штраф — одной датой.
-    const from = dto.dateFrom ? dto.dateFrom.slice(0, 10) : null;
-    const to = dto.dateTo ? dto.dateTo.slice(0, 10) : null;
+    // Если прислали только одну границу — период считаем однодневным.
+    const rawFrom = dto.dateFrom ? dto.dateFrom.slice(0, 10) : null;
+    const rawTo = dto.dateTo ? dto.dateTo.slice(0, 10) : null;
+    const from = rawFrom || rawTo;
+    const to = rawTo || rawFrom;
     if (from && to && to < from) throw new BadRequestException('«Дата до» раньше «даты от»');
     const entry: DeductionEntry = {
       id: randomUUID(), date: (from || dto.date || todayISO()).slice(0, 10), amount,

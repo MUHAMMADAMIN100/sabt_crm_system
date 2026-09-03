@@ -528,6 +528,9 @@ function fullRange(e: any): string {
  *  mutate(), пересчитываем её «к выплате» и все сводные карточки. */
 function patchSalaryRow(qc: any, ym: string, rowId: string, mutate: (r: any) => any) {
   const key = ['finance', 'expenseDetail', 'salary', ym];
+  // Отменяем незавершённый рефетч, чтобы он не пришёл ПОСЛЕ и не перетёр
+  // оптимистичную правку (гонка при быстрых последовательных изменениях).
+  void qc.cancelQueries({ queryKey: key });
   qc.setQueryData(key, (old: any) => {
     if (!old?.rows) return old;
     const rows = old.rows.map((r: any) => {
@@ -782,63 +785,6 @@ function VacationModal({ row, ym, onClose }: { row: any; ym: string; onClose: ()
         </div>
       </div>
     </div>
-  );
-}
-
-/** Ячейка месяца в зарплатной таблице.
- *  Штраф — число (удерживается при финальной выплате, правится инлайн).
- *  Аванс/бонус — ФАКТИЧЕСКИЕ выдачи: деньги списываются со счёта сразу
- *  отдельной операцией («+» открывает мини-форму выдачи); в ячейке — сумма
- *  выданного за месяц. Выплаченный месяц заморожен — только чтение. */
-function MonthAmountCell({ row, ym, field, onPayout }: {
-  row: any; ym: string; field: 'advance' | 'bonus' | 'fine'; onPayout?: () => void;
-}) {
-  const qc = useQueryClient();
-  const value = Number(row[field]) || 0;
-  if (row.frozen) {
-    return <span className={field === 'fine' && value ? 'neg' : 'muted'} title="Месяц выплачен и зафиксирован">{value ? money(value) : '—'}</span>;
-  }
-  if (field === 'fine') {
-    return (
-      <input
-        key={`${row.id}-${ym}-fine-${value}`}
-        className="cell-input" inputMode="decimal" placeholder="—"
-        style={{ textAlign: 'right', minWidth: 70, ...(value ? { color: 'var(--red, #dc2626)' } : {}) }}
-        defaultValue={value ? value : ''}
-        title="Штраф за этот месяц — удерживается при финальной выплате ЗП"
-        onBlur={async (e) => {
-          const v = Math.max(0, parseFloat(e.target.value.replace(',', '.')) || 0);
-          if (v === value) return;
-          try {
-            await financeApi.setEmployeeFine(row.id, { ym, amount: v });
-            invalidateFinance(qc);
-          } catch (err) { toast.error(apiErr(err)); }
-        }}
-      />
-    );
-  }
-  const label = field === 'advance' ? 'Выдать аванс' : 'Выплатить бонус';
-  async function removeIssued() {
-    const word = field === 'advance' ? 'авансы' : 'бонусы';
-    if (!(await finConfirm(`Удалить ${word} за этот месяц у «${row.name}»? Операции удалятся из журнала, деньги вернутся на счёт.`, { confirmLabel: 'Удалить', danger: true }))) return;
-    try {
-      // Сюда попадаем только для advance/bonus (у 'fine' — ранний return выше).
-      await financeApi.removeMonthExpenses({ ym, employeeId: row.id, kind: field as 'advance' | 'bonus' });
-      invalidateFinance(qc);
-    } catch (err) { toast.error(apiErr(err)); }
-  }
-  return (
-    <span className="flex" style={{ justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
-      {value ? <span>{money(value)}</span> : <span className="muted">—</span>}
-      {value > 0 && (
-        <button className="btn ghost sm" title={`Удалить ${field === 'advance' ? 'авансы' : 'бонусы'} за месяц`} onClick={removeIssued}>
-          <FinIcon name="close" size={13} />
-        </button>
-      )}
-      <button className="btn ghost sm" title={`${label} — операция спишется со счёта сразу`} onClick={onPayout}>
-        <FinIcon name="plus" size={13} />
-      </button>
-    </span>
   );
 }
 
