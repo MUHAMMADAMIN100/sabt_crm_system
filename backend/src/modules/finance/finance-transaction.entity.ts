@@ -71,6 +71,11 @@ export class FinanceTransaction {
   @Column({ type: 'uuid', nullable: true })
   employeeId: string | null;
 
+  /** Кому выданы / от кого получены деньги (сотрудник) — ИНФОРМАЦИОННО,
+   *  НЕ зарплата: на расчёт «к выплате» не влияет (в отличие от employeeId). */
+  @Column({ type: 'uuid', nullable: true })
+  recipientId: string | null;
+
   /** Долг (для погашений). */
   @Column({ type: 'uuid', nullable: true })
   debtId: string | null;

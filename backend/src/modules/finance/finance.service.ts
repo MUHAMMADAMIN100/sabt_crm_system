@@ -449,6 +449,7 @@ export class FinanceService implements OnModuleInit {
     // Месяц начисления ЗП. Старые строки намеренно не переписываем: все
     // зарплатные выборки поддерживают fallback на месяц фактической даты.
     await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "salaryYm" varchar(7)`);
+    await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "recipientId" uuid`);
     await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS source varchar(32)`);
     await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "externalId" varchar(100)`);
     await run(`ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS "affectsBalance" boolean NOT NULL DEFAULT true`);
@@ -2615,6 +2616,7 @@ export class FinanceService implements OnModuleInit {
       const cat = t.categoryId ? m.cat.get(t.categoryId) : null;
       const project = t.projectId ? m.proj.get(t.projectId) : null;
       const employee = t.employeeId ? m.emp.get(t.employeeId) : null;
+      const recipient = (t as any).recipientId ? m.emp.get((t as any).recipientId) : null;
       const debt = t.debtId ? m.debt.get(t.debtId) : null;
       const subscription = t.subscriptionId ? m.sub.get(t.subscriptionId) : null;
       return {
@@ -2634,6 +2636,7 @@ export class FinanceService implements OnModuleInit {
         projectDirection: project?.direction ?? null, projectTariff: project ? Number(project.tariff) : null,
         employeeId: t.employeeId, employeeName: employee?.name ?? null,
         employeeRole: employee?.role ?? null, employeeCategory: employee?.category ?? null,
+        recipientId: (t as any).recipientId ?? null, recipientName: recipient?.name ?? null,
         debtId: t.debtId, debtName: debt?.name ?? null,
         debtCounterparty: debt?.counterparty ?? null,
         subscriptionId: t.subscriptionId, subscriptionName: subscription?.name ?? null,
@@ -2719,7 +2722,11 @@ export class FinanceService implements OnModuleInit {
       if (dto.categoryId) base.category = (await this.catRepo.findOne({ where: { id: dto.categoryId } }))?.name ?? null;
       // Проект — и для дохода, и для обычного расхода (чтобы видеть траты по
       // проекту внутри него). Для ЗП/долга фронт проект не шлёт.
-      if (type === FinanceTxType.INCOME || type === FinanceTxType.EXPENSE) base.projectId = dto.projectId ?? null;
+      if (type === FinanceTxType.INCOME || type === FinanceTxType.EXPENSE) {
+        base.projectId = dto.projectId ?? null;
+        // Кому выдано / от кого получено (сотрудник) — ИНФОРМАЦИОННО, не зарплата.
+        base.recipientId = dto.recipientId ?? null;
+      }
       if (type === FinanceTxType.EXPENSE) {
         base.employeeId = dto.employeeId ?? null;
         base.debtId = dto.debtId ?? null;
@@ -2802,7 +2809,7 @@ export class FinanceService implements OnModuleInit {
       if (!Number.isFinite(a) || a <= 0) throw new BadRequestException('Сумма должна быть больше нуля');
     }
     const patch: any = {};
-    for (const k of ['amount', 'date', 'comment', 'categoryId', 'accountId', 'fromAccountId', 'toAccountId', 'projectId', 'employeeId', 'debtId', 'subscriptionId', 'type', 'salaryYm']) {
+    for (const k of ['amount', 'date', 'comment', 'categoryId', 'accountId', 'fromAccountId', 'toAccountId', 'projectId', 'employeeId', 'recipientId', 'debtId', 'subscriptionId', 'type', 'salaryYm']) {
       if (dto[k] !== undefined) patch[k] = dto[k];
     }
     // Смена типа чистит неприменимые поля (§5.11): перевод/накопление используют

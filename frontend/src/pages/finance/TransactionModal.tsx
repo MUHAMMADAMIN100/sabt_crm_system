@@ -38,6 +38,8 @@ export default function TransactionModal({ initial, initialType, initialDate, on
   );
   const [projectId, setProjectId] = useState<string>(initial?.projectId ?? '');
   const [employeeId, setEmployeeId] = useState<string>(initial?.employeeId ?? '');
+  // Кому выдано / от кого (сотрудник) — информационно, не зарплата.
+  const [recipientId, setRecipientId] = useState<string>(initial?.recipientId ?? '');
   const [debtId, setDebtId] = useState<string>(initial?.debtId ?? '');
   const [salaryYm, setSalaryYm] = useState<string>(
     initial?.salaryYm || String(initial?.date ?? '').slice(0, 7) || currentYm(),
@@ -70,9 +72,10 @@ export default function TransactionModal({ initial, initialType, initialDate, on
       || categoryId !== (initial.categoryId ?? '') || accountFrom !== ((['transfer', 'saving'].includes(initial.type) ? initial.fromAccountId : initial.type === 'expense' ? initial.accountId : '') ?? '')
       || accountTo !== ((['transfer', 'saving'].includes(initial.type) ? (initial.toAccountId ?? initial.accountId) : initial.type !== 'expense' ? initial.accountId : '') ?? '')
       || projectId !== (initial.projectId ?? '') || employeeId !== (initial.employeeId ?? '')
+      || recipientId !== (initial.recipientId ?? '')
       || debtId !== (initial.debtId ?? '') || salaryYm !== (initial.salaryYm || String(initial.date ?? '').slice(0, 7) || currentYm())
       || comment !== (initial.comment ?? '')
-    : !!(amount || categoryId || accountFrom || accountTo || projectId || employeeId || debtId || comment);
+    : !!(amount || categoryId || accountFrom || accountTo || projectId || employeeId || recipientId || debtId || comment);
 
   async function requestClose() {
     if (!dirty || await finConfirm('Закрыть форму? Несохранённые изменения будут потеряны.', {
@@ -117,6 +120,7 @@ export default function TransactionModal({ initial, initialType, initialDate, on
       comment: comment.trim() || empty,
       categoryId: needCategory ? categoryId || empty : empty,
       projectId: showProject ? projectId || empty : empty,
+      recipientId: showProject ? recipientId || empty : empty,
       employeeId: salaryExpense ? employeeId : empty,
       salaryYm: salaryExpense ? salaryYm : empty,
       debtId: debtExpense ? debtId : empty,
@@ -217,6 +221,14 @@ export default function TransactionModal({ initial, initialType, initialDate, on
               <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
                 <option value="">— не привязан —</option>
                 {projects.filter((p: any) => !p.archived || p.id === projectId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          )}
+          {showProject && (
+            <div className="field"><label>{type === 'income' ? 'От кого — сотрудник (необязательно)' : 'Кому выдано — сотрудник (необязательно)'}</label>
+              <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
+                <option value="">— не выбран —</option>
+                {employees.map((em: any) => <option key={em.id} value={em.id}>{em.name}</option>)}
               </select>
             </div>
           )}

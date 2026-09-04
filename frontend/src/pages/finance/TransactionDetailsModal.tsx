@@ -99,6 +99,7 @@ export default function TransactionDetailsPanel({ transaction: t, id, onClose, o
         {flowFromValue && flowFromValue !== contextValue && <Detail label={flowFromLabel} value={flowFromValue} />}
         {flowToValue && flowToValue !== contextValue && <Detail label={flowToLabel} value={flowToValue} />}
         <Detail label="Тип / категория" value={`${TYPE_LABEL[t.type] || t.type} · ${t.categoryName || (paired ? TYPE_LABEL[t.type] : 'Без категории')}`} />
+        {t.recipientId && <Detail label={t.type === 'income' ? 'От кого (сотрудник)' : 'Кому выдано (сотрудник)'} value={t.recipientName || 'Сотрудник'} />}
         {t.employeeId && <Detail label="Месяц начисления" value={monthLabel(t.salaryYm || String(t.date).slice(0, 7), true)} />}
         <Detail label="Тариф проекта" value={t.projectTariff != null ? money(t.projectTariff) : null} />
         <Detail label="Способ оплаты" value={t.paymentMethod} />

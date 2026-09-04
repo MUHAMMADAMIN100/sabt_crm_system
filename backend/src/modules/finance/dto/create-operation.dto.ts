@@ -43,6 +43,10 @@ export class CreateOperationDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID()
   employeeId?: string;
 
+  /** Кому выдано / от кого получено (сотрудник) — информационно, не зарплата. */
+  @ApiPropertyOptional() @IsOptional() @IsUUID()
+  recipientId?: string;
+
   @ApiPropertyOptional() @IsOptional() @IsUUID()
   debtId?: string;
 
