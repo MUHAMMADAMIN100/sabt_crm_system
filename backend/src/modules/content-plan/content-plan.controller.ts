@@ -76,7 +76,7 @@ export class ContentPlanController {
    *  побочных эффектов. Объявлено ДО ':id'. Только руководящие роли SMM. */
   @Patch('smart-item/:id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
-  smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus }) {
+  smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null }) {
     return this.service.smartUpdateItem(id, body || {});
   }
 

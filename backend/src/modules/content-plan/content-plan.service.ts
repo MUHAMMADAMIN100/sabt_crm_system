@@ -289,9 +289,11 @@ export class ContentPlanService {
   /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) БЕЗ
    *  синхронизации задач и прочих побочных эффектов старой системы —
    *  это отдельный контур, не связанный с «Доской проектов» и канбаном. */
-  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus }) {
+  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null }) {
     const set: Partial<ContentPlanItem> = {};
     if ('publishDate' in patch) set.publishDate = patch.publishDate ? new Date(patch.publishDate) : null;
+    // Время съёмки 'HH:MM' (или null — «Весь день»). tz-безопасно, отдельно от даты.
+    if ('publishTime' in patch) set.publishTime = (typeof patch.publishTime === 'string' && /^\d{2}:\d{2}$/.test(patch.publishTime)) ? patch.publishTime : null;
     if ('status' in patch && patch.status) set.status = patch.status;
     if (Object.keys(set).length) await this.repo.update(id, set);
     return { ok: true };
@@ -395,6 +397,7 @@ export class ContentPlanService {
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId",
               ci."contentType" AS "itemKind", ci.topic AS title,
               ci.status AS status, ci."taskId" AS "taskId",
+              ci."publishTime" AS time,
               to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
        FROM content_plan_items ci
        WHERE ci."projectId" = ANY($1::uuid[])
@@ -439,6 +442,7 @@ export class ContentPlanService {
         projectId: p.projectId, projectName: nameById.get(p.projectId) || '',
         contentType: p.itemKind === 'reel' ? 'reel' : 'design',
         topic: p.title || null, status: p.status || undefined, taskId: p.taskId || null,
+        time: p.time || null,   // время съёмки ('HH:MM') — для часовой сетки недели
       })),
       ...storyRows.map(s => ({
         id: `story:${s.projectId}:${s.date}`, kind: 'publication', date: s.date,

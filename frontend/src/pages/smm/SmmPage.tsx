@@ -228,11 +228,12 @@ export default function SmmPage() {
   // переезжает на дату (и уходит из «Не запланировано»), фоновый запрос лишь
   // сохраняет. Никакого рефетча/затемнения; при ошибке — откат.
   const moveMut = useMutation({
-    mutationFn: ({ ev, dateStr }: { ev: Ev; dateStr: string | null }) =>
+    // time: undefined — не трогаем время; string — ставим час; null — снимаем (всё-день).
+    mutationFn: ({ ev, dateStr, time }: { ev: Ev; dateStr: string | null; time?: string | null }) =>
       ev.kind === 'publication'
-        ? contentPlanApi.smartUpdate(ev.itemId!, { publishDate: dateStr })   // своё хранилище, без побочных эффектов
-        : workflowApi.updateShootSession(ev.shootId!, { date: dateStr }),
-    onMutate: async ({ ev, dateStr }) => {
+        ? contentPlanApi.smartUpdate(ev.itemId!, { publishDate: dateStr, ...(time !== undefined ? { publishTime: time } : {}) })
+        : workflowApi.updateShootSession(ev.shootId!, { date: dateStr, ...(time !== undefined ? { time } : {}) }),
+    onMutate: async ({ ev, dateStr, time }) => {
       const key = ['smm-calendar', from, to]
       await qc.cancelQueries({ queryKey: key })
       const prev = qc.getQueryData<CalData>(key)
@@ -240,8 +241,8 @@ export default function SmmPage() {
         if (!old) return old
         const events = old.events.filter(e => e.id !== ev.id)
         const backlog = old.backlog.filter(b => b.id !== ev.id)
-        if (dateStr) events.push({ ...ev, date: dateStr })          // на дату
-        else backlog.push({ ...ev, date: undefined })               // обратно в корзину
+        if (dateStr) events.push({ ...ev, date: dateStr, ...(time !== undefined ? { time } : {}) })  // на дату (+час)
+        else backlog.push({ ...ev, date: undefined, time: null })   // обратно в корзину
         return { ...old, events, backlog }
       })
       return { prev, key }
@@ -268,17 +269,32 @@ export default function SmmPage() {
   }, [])
 
   const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null); setDragRange(projCycle(e.projectId)) }
+  // Перенос на день (всё-день) — снимаем время (публикация возвращается наверх).
   const onDropDate = (dateStr: string) => {
     const e = dragRef.current
     dragRef.current = null
     setDragOverKey(null); setDragRange(null)
-    if (!e || e.date === dateStr) return
+    if (!e) return
+    if (e.date === dateStr && !e.time) return
     // Только внутри текущего цикла проекта (если он задан).
     const range = projCycle(e.projectId)
     if (range && (dateStr < range.start || dateStr > range.end)) return
     const refId = e.kind === 'publication' ? e.itemId : e.shootId
     if (!refId) return
-    moveMut.mutate({ ev: e, dateStr })
+    moveMut.mutate({ ev: e, dateStr, time: null })
+  }
+  // Перенос в часовой слот — ставим время съёмки на этот день.
+  const onDropTime = (dateStr: string, time: string) => {
+    const e = dragRef.current
+    dragRef.current = null
+    setDragOverKey(null); setDragRange(null)
+    if (!e) return
+    if (e.date === dateStr && e.time === time) return
+    const range = projCycle(e.projectId)
+    if (range && (dateStr < range.start || dateStr > range.end)) return
+    const refId = e.kind === 'publication' ? e.itemId : e.shootId
+    if (!refId) return
+    moveMut.mutate({ ev: e, dateStr, time })
   }
   // Сброс события ИЗ календаря в корзину — убираем дату (возврат в «Не запланировано»).
   const onDropBacklog = () => {
@@ -445,7 +461,7 @@ export default function SmmPage() {
               dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           ) : (
             <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail} dragRange={dragRange}
-              onDragStart={onDragStartEv} onDropDate={onDropDate} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
+              onDragStart={onDragStartEv} onDropDate={onDropDate} onDropTime={onDropTime} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           )}
         </>
       )}
@@ -622,32 +638,48 @@ function MonthView({ cells, byDate, today, cycles, dragRange, onOpen, onDragStar
 }
 
 // ─── НЕДЕЛЯ / ДЕНЬ ─────────────────────────────────────────────────────
-function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
+function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate, onDropTime, dragOverKey, setDragOverKey }: {
   days: Date[]; events: Ev[]; onOpen: (e: Ev) => void
   dragRange: { start: string; end: string } | null
   onDragStart: (e: Ev) => void; onDropDate: (dateStr: string) => void
+  onDropTime: (dateStr: string, time: string) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
   const now = new Date()
   const dayKey = (d: Date) => format(d, 'yyyy-MM-dd')
+  // Подсветка конкретного слота под курсором + подсказка времени.
+  const [hover, setHover] = useState<{ key: string; h: number; min: number } | null>(null)
+  useEffect(() => {
+    const clear = () => setHover(null)
+    document.addEventListener('dragend', clear); document.addEventListener('drop', clear)
+    return () => { document.removeEventListener('dragend', clear); document.removeEventListener('drop', clear) }
+  }, [])
   // Вне окна цикла (при перетаскивании) день не принимает drop.
   const dayBlocked = (d: Date) => !!(dragRange && (dayKey(d) < dragRange.start || dayKey(d) > dragRange.end))
   const dropProps = (d: Date) => dayBlocked(d) ? {} : ({
     onDragOver: (ev: RDragEvent) => { ev.preventDefault(); if (dragOverKey !== dayKey(d)) setDragOverKey(dayKey(d)) },
     onDrop: () => onDropDate(dayKey(d)),
   })
+  // Минуты по позиции курсора внутри часовой ячейки (шаг 15 мин, 0..45).
+  const minsFromY = (ev: RDragEvent) => {
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect()
+    const offY = Math.max(0, Math.min(HOUR_PX, ev.clientY - rect.top))
+    return Math.min(45, Math.max(0, Math.round((offY / HOUR_PX) * 4) * 15))
+  }
+  const timeDropProps = (d: Date, h: number) => dayBlocked(d) ? {} : ({
+    onDragOver: (ev: RDragEvent) => { ev.preventDefault(); const min = minsFromY(ev); setHover(cur => (cur && cur.key === dayKey(d) && cur.h === h && cur.min === min) ? cur : { key: dayKey(d), h, min }) },
+    onDrop: (ev: RDragEvent) => { const min = minsFromY(ev); setHover(null); onDropTime(dayKey(d), `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`) },
+  })
 
-  const timed = events.filter(e => e.kind === 'shoot' && parseTime(e.time))
-  const hs = timed.map(e => parseTime(e.time)!.h)
-  const startHour = Math.max(6, Math.min(8, ...(hs.length ? hs : [8])))
-  const endHour = Math.min(23, Math.max(21, ...(hs.length ? hs.map(h => h + 2) : [21])))
+  // Съёмки в сетке — любые события со временем (публикации, поставленные на час, и shoot-сессии).
+  const timed = events.filter(e => parseTime(e.time))
+  const startHour = 8, endHour = 23
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i)
-
   const nowVisible = days.some(d => isSameDay(d, now)) && now.getHours() >= startHour && now.getHours() <= endHour
   const nowTop = (now.getHours() - startHour + now.getMinutes() / 60) * HOUR_PX
 
-  const allDayFor = (d: Date) => events.filter(e => e.date === dayKey(d) && !(e.kind === 'shoot' && parseTime(e.time)))
-  const shootsFor = (d: Date, h: number) => timed.filter(e => e.date === dayKey(d) && parseTime(e.time)!.h === h)
+  const allDayFor = (d: Date) => events.filter(e => e.date === dayKey(d) && !parseTime(e.time))
+  const timedFor = (d: Date, h: number) => timed.filter(e => e.date === dayKey(d) && parseTime(e.time)!.h === h)
   const cols = `54px repeat(${days.length}, minmax(0,1fr))`
 
   return (
@@ -684,24 +716,30 @@ function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate
 
       {/* time grid */}
       <div className="overflow-y-auto" style={{ maxHeight: 600 }}>
-        <div className="relative grid" style={{ gridTemplateColumns: cols, gridTemplateRows: `repeat(${hours.length}, ${HOUR_PX}px)` }}>
+        <div className="relative grid" style={{ gridTemplateColumns: cols, gridTemplateRows: `repeat(${hours.length}, ${HOUR_PX}px)`, paddingTop: 10 }}>
           {hours.map((h, hi) => (
             <Fragment key={h}>
               <div className="text-[11px] text-gray-400 text-right pr-2 relative -top-[7px]" style={{ gridColumn: 1, gridRow: hi + 1 }}>{String(h).padStart(2, '0')}:00</div>
               {days.map((d, di) => {
-                const over = dragOverKey === dayKey(d)
+                const glow = !!(hover && hover.key === dayKey(d) && hover.h === h)
                 return (
-                  <div key={`${h}-${dayKey(d)}`} {...dropProps(d)}
-                    className={'border-l border-t border-gray-100 dark:border-gray-800/70 relative ' + (over ? 'bg-gray-100/40 dark:bg-gray-800/30' : '')}
-                    style={{ gridColumn: di + 2, gridRow: hi + 1 }}>
-                    {shootsFor(d, h).map(s => {
+                  <div key={`${h}-${dayKey(d)}`} {...timeDropProps(d, h)}
+                    className={'border-l border-t border-gray-100 dark:border-gray-800/70 relative transition-shadow ' + (glow ? 'rounded-md z-[3]' : '')}
+                    style={{ gridColumn: di + 2, gridRow: hi + 1, ...(glow ? { boxShadow: 'inset 0 0 0 2px #8b7bf0, 0 0 12px rgba(139,123,240,.45)', background: 'rgba(139,123,240,.08)' } : {}) }}>
+                    {glow && (
+                      <div className="absolute left-1/2 z-[6] px-2 py-0.5 rounded-md text-[11px] font-bold text-white pointer-events-none whitespace-nowrap"
+                        style={{ top: (hover!.min / 60) * HOUR_PX, transform: 'translate(-50%,-120%)', background: '#8b7bf0', boxShadow: '0 4px 12px rgba(0,0,0,.4)' }}>
+                        {String(h).padStart(2, '0')}:{String(hover!.min).padStart(2, '0')}
+                      </div>
+                    )}
+                    {timedFor(d, h).map(s => {
                       const mm = parseTime(s.time)!.m
                       return (
-                        <div key={s.id} onClick={() => onOpen(s)} draggable={!!s.shootId} onDragStart={() => onDragStart(s)}
+                        <div key={s.id} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)} onDragStart={() => onDragStart(s)}
                           className="absolute left-0.5 right-0.5 rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
                           style={{ top: (mm / 60) * HOUR_PX, height: HOUR_PX * 1.4, ...projFill(s.projectId) }}>
                           <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
-                          <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time}{s.location ? ` · ${s.location}` : ''}</div>
+                          <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time} · 🎬 Команда видеографов{s.location ? ` · ${s.location}` : ''}</div>
                         </div>
                       )
                     })}
@@ -712,8 +750,8 @@ function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate
           ))}
           {nowVisible && (
             <>
-              <div className="absolute z-10 pointer-events-none" style={{ top: nowTop, left: 54, right: 0, height: 1.5, background: '#eb5757' }} />
-              <div className="absolute z-20 text-[11px] font-semibold" style={{ top: nowTop, left: 6, transform: 'translateY(-50%)', color: '#eb5757' }}>
+              <div className="absolute z-10 pointer-events-none" style={{ top: nowTop + 10, left: 54, right: 0, height: 1.5, background: '#eb5757' }} />
+              <div className="absolute z-20 text-[11px] font-semibold" style={{ top: nowTop + 10, left: 6, transform: 'translateY(-50%)', color: '#eb5757' }}>
                 {now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
               </div>
             </>

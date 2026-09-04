@@ -70,6 +70,11 @@ export class ContentPlanItem {
   @Column({ type: 'timestamp', nullable: true })
   publishDate: Date;
 
+  /** Время съёмки в умном СММ-календаре ('HH:MM') — отдельно от Доски проектов
+   *  и tz-безопасно. null = элемент в «Весь день» (без часа). */
+  @Column({ type: 'varchar', length: 5, nullable: true })
+  publishTime: string | null;
+
   /** Исполнитель — SMM-специалист / дизайнер. */
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'assigneeId' })
