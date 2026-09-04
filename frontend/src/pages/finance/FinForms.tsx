@@ -369,16 +369,19 @@ export function DebtFormModal({ debt, onClose }: { debt?: FinDebt; onClose: () =
   const [totalAmount, setTotalAmount] = useState(debt != null ? String(debt.totalAmount ?? '') : '');
   const [monthlyPayment, setMonthlyPayment] = useState(debt?.monthlyPayment ? String(debt.monthlyPayment) : '');
   const [paidBefore, setPaidBefore] = useState(String(debt?.paidBefore ?? 0));
+  const [dueDay, setDueDay] = useState((debt as any)?.dueDay != null ? String((debt as any).dueDay) : '');
   const [busy, setBusy] = useState(false);
 
   async function save() {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
+      const dd = parseInt(dueDay, 10);
       const p = {
         name: name.trim(), counterparty: counterparty.trim() || null,
         totalAmount: num(totalAmount), monthlyPayment: num(monthlyPayment) || null,
         paidBefore: num(paidBefore),
+        dueDay: dd >= 1 && dd <= 31 ? dd : null,
       };
       if (isEdit) await financeApi.updateDebt(debt.id, p);
       else await financeApi.createDebt(p);
@@ -418,6 +421,11 @@ export function DebtFormModal({ debt, onClose }: { debt?: FinDebt; onClose: () =
       <div className="form-grid">
         <div className="field"><label>Сумма долга</label><input inputMode="decimal" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} /></div>
         <div className="field"><label>Погашено до старта</label><input inputMode="decimal" value={paidBefore} onChange={(e) => setPaidBefore(e.target.value)} /></div>
+      </div>
+      <div className="field">
+        <label>День оплаты в месяц</label>
+        <input inputMode="numeric" value={dueDay} onChange={(e) => setDueDay(e.target.value.replace(/\D/g, '').slice(0, 2))} placeholder="10" />
+        <p className="mini muted" style={{ margin: '5px 0 0' }}>В этот день каждый месяц платёж встаёт в календарь планирования (1–31; по умолчанию 10-е).</p>
       </div>
     </FinModal>
   );

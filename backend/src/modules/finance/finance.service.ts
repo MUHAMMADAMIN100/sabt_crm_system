@@ -387,6 +387,7 @@ export class FinanceService implements OnModuleInit {
     // без этих ALTER'ов любые SELECT/INSERT по ним падают и рушат сид целиком.
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "position" int NOT NULL DEFAULT 0`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "position" int NOT NULL DEFAULT 0`);
+    await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "dueDay" int`);
     // Отметки «оплачено без операции» по месяцам (см. FinanceSubscription.paidMarks).
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "paidMarks" jsonb`);
     // День оплаты подписки/аренды — для напоминаний.
@@ -3385,14 +3386,15 @@ export class FinanceService implements OnModuleInit {
     let remaining = r2(Math.max(0, Number(debt.totalAmount) - Number(debt.paidBefore) - receivedSum));
 
     const news: FinancePlannedPayment[] = [];
+    // День планового погашения — из настройки долга (1..31); по умолчанию 10-е.
+    const dueDay = this.normDueDay(debt.dueDay) ?? 10;
     let ym = currentYm();
     let guard = 0;
     while (remaining > 0 && guard < 240) {
       guard++;
       if (!receivedMonths.has(ym)) {
         const amount = r2(Math.min(monthly, remaining));
-        // Долги гасим 10-го числа — фиксированный день выплаты (как зарплата).
-        news.push(this.ppRepo.create({ debtId, ym, partNo: 1, amount, status: 'expected', auto: false, dueDate: dueDateForMonth(ym, 10) }));
+        news.push(this.ppRepo.create({ debtId, ym, partNo: 1, amount, status: 'expected', auto: false, dueDate: dueDateForMonth(ym, dueDay) }));
         remaining = r2(remaining - amount);
       }
       ym = shiftYm(ym, 1);
@@ -4266,7 +4268,8 @@ export class FinanceService implements OnModuleInit {
     const position = await this.debtRepo.count();
     const d = await this.debtRepo.save(this.debtRepo.create({
       name: dto.name.trim(), counterparty: dto.counterparty ?? null, totalAmount: Number(dto.totalAmount) || 0,
-      monthlyPayment: Number(dto.monthlyPayment) || 0, paidBefore: Number(dto.paidBefore) || 0, note: dto.note ?? null, position,
+      monthlyPayment: Number(dto.monthlyPayment) || 0, paidBefore: Number(dto.paidBefore) || 0, note: dto.note ?? null,
+      dueDay: this.normDueDay(dto.dueDay), position,
     }));
     await this.regenerateDebtSchedule(d.id);
     return d;
@@ -4279,6 +4282,7 @@ export class FinanceService implements OnModuleInit {
     if (dto.totalAmount !== undefined) d.totalAmount = Number(dto.totalAmount) || 0;
     if (dto.paidBefore !== undefined) d.paidBefore = Number(dto.paidBefore) || 0;
     if (dto.monthlyPayment !== undefined) d.monthlyPayment = Number(dto.monthlyPayment) || 0;
+    if (dto.dueDay !== undefined) d.dueDay = this.normDueDay(dto.dueDay);
     if (dto.note !== undefined) d.note = dto.note;
     const saved = await this.debtRepo.save(d);
     await this.regenerateDebtSchedule(id);

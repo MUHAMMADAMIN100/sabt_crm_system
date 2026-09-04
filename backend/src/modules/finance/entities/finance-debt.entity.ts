@@ -26,6 +26,11 @@ export class FinanceDebt {
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   monthlyPayment: number;
 
+  /** День месяца для планового погашения (1..31). null → 10-е по умолчанию.
+   *  Определяет дату в денежном календаре планирования. */
+  @Column({ type: 'int', nullable: true })
+  dueDay: number | null;
+
   @Column({ type: 'text', nullable: true })
   note: string | null;
 

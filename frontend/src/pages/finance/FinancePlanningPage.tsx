@@ -203,8 +203,12 @@ export default function FinancePlanningPage() {
             { label: 'Направление', value: proj ? (DIR_LABEL[proj.direction] || proj.direction) : null },
           ]) });
       } else if (p.debtId) {
-        if (!date) date = `${calYm}-10`; // долги — 10-го числа
         const debt = debtById.get(p.debtId);
+        if (!date) {
+          // День платежа долга — из настройки долга (по умолчанию 10-е).
+          const dday = Math.min(Number(debt?.dueDay) || 10, lastDay);
+          date = `${calYm}-${String(dday).padStart(2, '0')}`;
+        }
         items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'expense', status: 'completed', done,
           comment: debtNameById.get(p.debtId) || 'Погашение долга',
           details: detailList([
@@ -212,6 +216,7 @@ export default function FinancePlanningPage() {
             { label: 'Кому', value: debt?.counterparty },
             { label: 'Остаток долга', value: debt?.remaining != null ? money(Number(debt.remaining)) : null },
             { label: 'Платёж/мес', value: debt?.monthlyPayment ? money(Number(debt.monthlyPayment)) : null },
+            { label: 'День оплаты', value: `${Number(debt?.dueDay) || 10}-го` },
           ]) });
       }
     }
