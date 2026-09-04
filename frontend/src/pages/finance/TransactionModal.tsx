@@ -228,7 +228,7 @@ export default function TransactionModal({ initial, initialType, initialDate, on
             <div className="field"><label>{type === 'income' ? 'От кого — сотрудник (необязательно)' : 'Кому выдано — сотрудник (необязательно)'}</label>
               <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
                 <option value="">— не выбран —</option>
-                {employees.map((em: any) => <option key={em.id} value={em.id}>{em.name}</option>)}
+                {employees.filter((em: any) => em.status === 'active' || em.id === recipientId).map((em: any) => <option key={em.id} value={em.id}>{em.name}</option>)}
               </select>
             </div>
           )}
