@@ -71,6 +71,7 @@ export interface FinDebt {
   monthlyPayment?: number;
   paidBefore?: number;
   remaining?: number;
+  dueDay?: number | null;
   note?: string | null;
 }
 
@@ -123,6 +124,8 @@ export interface FinTx {
   employeeName?: string | null;
   employeeRole?: string | null;
   employeeCategory?: string | null;
+  recipientId?: string | null;
+  recipientName?: string | null;
   salaryYm?: string | null;
   debtId?: string | null;
   debtName?: string | null;

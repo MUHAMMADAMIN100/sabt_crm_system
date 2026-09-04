@@ -369,7 +369,7 @@ export function DebtFormModal({ debt, onClose }: { debt?: FinDebt; onClose: () =
   const [totalAmount, setTotalAmount] = useState(debt != null ? String(debt.totalAmount ?? '') : '');
   const [monthlyPayment, setMonthlyPayment] = useState(debt?.monthlyPayment ? String(debt.monthlyPayment) : '');
   const [paidBefore, setPaidBefore] = useState(String(debt?.paidBefore ?? 0));
-  const [dueDay, setDueDay] = useState((debt as any)?.dueDay != null ? String((debt as any).dueDay) : '');
+  const [dueDay, setDueDay] = useState(debt?.dueDay != null ? String(debt.dueDay) : '');
   const [busy, setBusy] = useState(false);
 
   async function save() {
