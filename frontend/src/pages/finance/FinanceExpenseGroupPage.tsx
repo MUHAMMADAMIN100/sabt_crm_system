@@ -389,7 +389,15 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                                 </button>
                               </div>
                               {isPaid ? (
-                                <p className="mini muted" style={{ margin: 0 }}>Месяц выплачен и зафиксирован — правки недоступны.</p>
+                                <>
+                                  <p className="mini muted" style={{ margin: '0 0 12px' }}>Месяц выплачен и зафиксирован — правки недоступны, история только для просмотра.</p>
+                                  <div className="fin-emp-month-form">
+                                    <ReadonlyField label="Аванс" kind="advance" total={Number(e.advance) || 0} entries={e.advanceEntries || []} accounts={accounts} />
+                                    <ReadonlyField label="Бонус" total={Number(e.bonus) || 0} entries={e.bonusEntries || []} />
+                                    <ReadonlyField label="Штраф" total={Number(e.fine) || 0} entries={e.fineEntries || []} deduction />
+                                    <ReadonlyField label="Отпускные / нерабочие" total={Number(e.vacation) || 0} entries={e.vacationEntries || []} deduction />
+                                  </div>
+                                </>
                               ) : (
                                 <div className="fin-emp-month-form">
                                   <IssueField label="Аванс" kind="advance" row={e} ym={ym} total={Number(e.advance) || 0} entries={e.advanceEntries || []} accounts={accounts} onIssue={(amt) => setPayoutFor({ row: e, kind: 'advance', amount: amt })} />
@@ -556,9 +564,9 @@ function patchSalaryRow(qc: any, ym: string, rowId: string, mutate: (r: any) => 
 }
 
 /** Одна запись истории столбца: строка «дата · сумма · ✕» + раскрываемые
- *  по клику детали (счёт/комментарий). */
-function HistoryEntry({ entry, deduction, cancelTitle, onCancel, children }: {
-  entry: any; deduction?: boolean; cancelTitle: string; onCancel: () => void; children?: any;
+ *  по клику детали (счёт/комментарий). readOnly — без ✕ (замороженный месяц). */
+function HistoryEntry({ entry, deduction, cancelTitle, onCancel, readOnly, children }: {
+  entry: any; deduction?: boolean; cancelTitle?: string; onCancel?: () => void; readOnly?: boolean; children?: any;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -567,10 +575,46 @@ function HistoryEntry({ entry, deduction, cancelTitle, onCancel, children }: {
         <FinIcon name="chevronRight" size={13} className="chev" />
         <span className="d">{entryDateLabel(entry)}</span>
         <span className={deduction ? 'a red' : 'a'}>{money(entry.amount)}</span>
-        <button type="button" className="x" title={cancelTitle}
-          onClick={(ev) => { ev.stopPropagation(); onCancel(); }}><FinIcon name="close" size={13} /></button>
+        {!readOnly && <button type="button" className="x" title={cancelTitle}
+          onClick={(ev) => { ev.stopPropagation(); onCancel?.(); }}><FinIcon name="close" size={13} /></button>}
       </div>
       {open && <div className="fin-log-detail">{children}</div>}
+    </div>
+  );
+}
+
+/** Поле-история столбца ТОЛЬКО ДЛЯ ЧТЕНИЯ (выплаченный/замороженный месяц):
+ *  метка + итог + список записей без ✕ и без ввода. kind='advance' → детали
+ *  со счётом/комментарием, иначе — период (отпускные) и комментарий. */
+function ReadonlyField({ label, total, entries, deduction, kind, accounts }: {
+  label: string; total: number; entries: any[]; deduction?: boolean; kind?: 'advance'; accounts?: any[];
+}) {
+  if (!(total > 0) && !(entries && entries.length)) return null;
+  const accName = (id: string) => (accounts || []).find((a) => a.id === id)?.name || 'счёт';
+  return (
+    <div className="fld">
+      <div className="cap"><span className="lbl">{label}</span>{total > 0 && <span className={deduction ? 'tot red' : 'tot'}>{money(total)}</span>}</div>
+      {entries && entries.length > 0 ? (
+        <div className="fin-log">
+          {entries.map((entry) => (
+            <HistoryEntry key={entry.id} entry={entry} deduction={deduction} readOnly>
+              {kind === 'advance' ? (
+                <>
+                  <div className="dline"><span className="val">{accName(entry.accountId)}</span></div>
+                  {stripMarker(entry.comment) && <div className="dline"><span className="val">{stripMarker(entry.comment)}</span></div>}
+                </>
+              ) : (
+                <>
+                  {(entry.dateFrom || entry.dateTo) && <div className="dline"><span className="val">{fullRange(entry)}</span></div>}
+                  {entry.note && <div className="dline"><span className="val">{entry.note}</span></div>}
+                </>
+              )}
+            </HistoryEntry>
+          ))}
+        </div>
+      ) : (
+        <div className="mini muted" style={{ padding: '4px 2px' }}>—</div>
+      )}
     </div>
   );
 }

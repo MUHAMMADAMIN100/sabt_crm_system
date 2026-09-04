@@ -2186,10 +2186,24 @@ export class FinanceService implements OnModuleInit {
         // источником оклада: старые версии могли записать туда аванс/остаток.
         // Ставку всегда берём из salaryHistory соответствующего периода.
         const snap = snapOf(e, ym);
+        // История столбцов доступна и для ЗАМОРОЖЕННОГО месяца — только для
+        // чтения, чтобы после выплаты можно было посмотреть, что было.
+        // Аванс — реальные операции (счёт/дата); бонус/штраф/отпускные — журнал.
+        const txEntries = (pred: (t: FinanceTransaction) => boolean) => salaryTx
+          .filter(t => t.employeeId === e.id && pred(t))
+          .map(t => ({ id: t.id, date: (t.date || '').slice(0, 10), amount: r2(Number(t.amount) || 0), accountId: t.accountId ?? null, comment: t.comment ?? null, salaryYm: t.salaryYm ?? null }))
+          .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+        const advanceEntries = txEntries(isAdvanceTx);
+        const bonusJournal = readDeductionEntries(e as any, 'bonusEntries', 'bonuses', ym);
+        const fineEntries = readDeductionEntries(e as any, 'fineEntries', 'fines', ym);
+        const vacationEntries = readDeductionEntries(e as any, 'vacationEntries', 'vacations', ym);
         if (snap) {
           const operationPaid = paidOf(e.id);
           const operationAdvance = advPaidOf(e.id);
           const paid = recordedSalarySnapshotPaid(snap, operationPaid, operationAdvance);
+          // Старые замороженные месяцы: бонус был операцией — если журнал пуст,
+          // показываем бонус-операции (для чтения истории).
+          const bonusEntries = bonusJournal.length ? bonusJournal : txEntries(isBonusTx);
           return {
             id: e.id, name: e.name, role: e.role, category: e.category ?? null,
             hireDate: e.hireDate, terminationDate: e.terminationDate,
@@ -2199,6 +2213,7 @@ export class FinanceService implements OnModuleInit {
             vacation: r2(Number(snap.vacation) || 0),
             status: e.status, paid, toPay: 0,
             frozen: true, paidAt: snap.paidAt ?? null,
+            advanceEntries, bonusEntries, fineEntries, vacationEntries,
           };
         }
         const paid = paidNoBonusOf(e.id); // аванс + финальная ЗП (без бонус-операций)
@@ -2206,21 +2221,15 @@ export class FinanceService implements OnModuleInit {
         const bonus = bonusOf(e, ym);    // НАКОПИТЕЛЬНЫЙ — прибавляется к «к выплате»
         const fine = fineOf(e, ym);      // удерживается при финальной выплате
         const vacation = vacationOf(e, ym); // отпуск/невыходы — тоже удержание
-        // История столбца «Аванс» — реальные операции (счёт/дата, отмена =
-        // removeTransaction); бонус/штраф/отпускные — записи журнала.
-        const txEntries = (pred: (t: FinanceTransaction) => boolean) => salaryTx
-          .filter(t => t.employeeId === e.id && pred(t))
-          .map(t => ({ id: t.id, date: (t.date || '').slice(0, 10), amount: r2(Number(t.amount) || 0), accountId: t.accountId ?? null, comment: t.comment ?? null, salaryYm: t.salaryYm ?? null }))
-          .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
         return {
           id: e.id, name: e.name, role: e.role, category: e.category ?? null,
           hireDate: e.hireDate, terminationDate: e.terminationDate,
           salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {},
           advance, bonus, fine, vacation, status: e.status, paid,
-          advanceEntries: txEntries(isAdvanceTx),
-          bonusEntries: readDeductionEntries(e as any, 'bonusEntries', 'bonuses', ym),
-          fineEntries: readDeductionEntries(e as any, 'fineEntries', 'fines', ym),
-          vacationEntries: readDeductionEntries(e as any, 'vacationEntries', 'vacations', ym),
+          advanceEntries,
+          bonusEntries: bonusJournal,
+          fineEntries,
+          vacationEntries,
           // Обязательство месяца = оклад + выданные бонусы − штраф − отпускные;
           // аванс и бонус уже внутри «выплачено», поэтому остаток =
           // оклад − штраф − отпускные − (финальные выплаты + авансы).
