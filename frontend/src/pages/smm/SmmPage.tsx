@@ -682,9 +682,6 @@ function MonthView({ cells, byDate, today, cycles, dragRange, onOpen, onDragStar
   onOpen: (e: Ev) => void; onDragStart: (e: Ev) => void; onDropDate: (d: string) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
-  // Раскрытые дни: клик по «ещё N» показывает ВСЕ события дня (как в календаре транзакций).
-  const [openDays, setOpenDays] = useState<Record<string, boolean>>({})
-  const toggleDay = (iso: string) => setOpenDays(o => ({ ...o, [iso]: !o[iso] }))
   return (
     <div className="border-t border-gray-200 dark:border-gray-800">
       <div className="grid grid-cols-7">
@@ -695,9 +692,6 @@ function MonthView({ cells, byDate, today, cycles, dragRange, onOpen, onDragStar
       <div className="grid grid-cols-7">
         {cells.map((c, i) => {
           const evs = c.iso ? (byDate.get(c.iso) ?? []) : []
-          const open = c.iso ? !!openDays[c.iso] : false
-          const collapsible = evs.length > MAX_PER_DAY
-          const visible = collapsible && !open ? evs.slice(0, MAX_PER_DAY) : evs
           const isToday = c.iso === today
           // Во время перетаскивания с ограничением цикла — ячейки вне окна
           // не принимают drop (не preventDefault) и приглушаются.
@@ -732,13 +726,7 @@ function MonthView({ cells, byDate, today, cycles, dragRange, onOpen, onDragStar
                 </div>
               )}
               <span className={'text-[12px] font-semibold self-end px-1 ' + (isToday ? 'bg-[#eb5757] text-white rounded-full w-[20px] h-[20px] grid place-items-center' : c.inMonth ? 'text-gray-500 dark:text-gray-400' : 'text-gray-300 dark:text-gray-600')}>{c.label}</span>
-              {visible.map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
-              {collapsible && (
-                <button type="button" onClick={() => toggleDay(c.iso!)}
-                  className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 px-1 text-left font-medium">
-                  {open ? 'свернуть' : `ещё ${evs.length - MAX_PER_DAY}`}
-                </button>
-              )}
+              {evs.map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
             </div>
           )
         })}
