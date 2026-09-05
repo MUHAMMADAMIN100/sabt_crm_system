@@ -339,7 +339,14 @@ export default function SmmPage() {
       if (!map.has(e.date)) map.set(e.date, [])
       map.get(e.date)!.push(e)
     }
-    for (const arr of map.values()) arr.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'shoot' ? -1 : 1))
+    // Порядок как в недельном виде: сперва «весь день» (без времени), затем по времени.
+    // При равном времени съёмка идёт раньше публикации.
+    const tmin = (e: Ev) => { const t = parseTime(e.time); return t ? t.h * 60 + t.m : -1 }
+    for (const arr of map.values()) arr.sort((a, b) => {
+      const d = tmin(a) - tmin(b)
+      if (d) return d
+      return a.kind === b.kind ? 0 : a.kind === 'shoot' ? -1 : 1
+    })
     return map
   }, [mainEvents])
 
