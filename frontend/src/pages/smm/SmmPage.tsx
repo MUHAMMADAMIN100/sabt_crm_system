@@ -339,9 +339,9 @@ export default function SmmPage() {
       if (!map.has(e.date)) map.set(e.date, [])
       map.get(e.date)!.push(e)
     }
-    // Порядок как в недельном виде: сперва «весь день» (без времени), затем по времени.
+    // Порядок: сперва события со временем (по возрастанию), затем «весь день» (без времени) — в конце дня.
     // При равном времени съёмка идёт раньше публикации.
-    const tmin = (e: Ev) => { const t = parseTime(e.time); return t ? t.h * 60 + t.m : -1 }
+    const tmin = (e: Ev) => { const t = parseTime(e.time); return t ? t.h * 60 + t.m : 9999 }
     for (const arr of map.values()) arr.sort((a, b) => {
       const d = tmin(a) - tmin(b)
       if (d) return d
