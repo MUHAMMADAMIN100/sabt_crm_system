@@ -172,12 +172,11 @@ export default function SmmPage() {
   const clearTypes = () => setSelTypes(new Set())
 
   const { from, to } = useMemo(() => {
-    if (view === 'week') return { from: iso(startOfWeek(cursor, { weekStartsOn: 1 })), to: iso(endOfWeek(cursor, { weekStartsOn: 1 })) }
     if (view === 'day') return { from: iso(cursor), to: iso(cursor) }
     if (view === 'stories') return { from: iso(startOfMonth(cursor)), to: iso(endOfMonth(cursor)) }
-    // Месяц — непрерывная лента: грузим ШИРОКОЕ окно ±1 год (по году курсора). Ключ меняется редко
-    // (только при переходе через год), поэтому задачи есть сразу во ВСЕХ месяцах ленты, без подзагрузки
-    // на каждый месяц — иначе они «выскакивают» и лента прыгает.
+    // Месяц И неделя — непрерывные ленты: грузим ШИРОКОЕ окно ±1 год (по году курсора). Ключ меняется
+    // редко (только при переходе через год), поэтому задачи есть сразу во всей ленте, без подзагрузки
+    // на каждый месяц/неделю — иначе они «выскакивают» и лента прыгает.
     const y = cursor.getFullYear()
     return { from: iso(new Date(y - 1, 0, 1)), to: iso(new Date(y + 1, 11, 31)) }
   }, [view, cursor])
@@ -494,6 +493,12 @@ export default function SmmPage() {
               byDate={mainByDate} today={today} cycles={cycles} dragRange={dragRange}
               onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
               onVisibleMonth={ym => setCursor(c => format(c, 'yyyy-MM') === ym ? c : ymToDate(ym))}
+              dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
+          ) : view === 'week' ? (
+            <WeekScrollView initialDay={cursor} commandDay={cursor} commandSeq={scrollSeq}
+              events={mainEvents} dragRange={dragRange} dragDuration={dragDuration}
+              onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate} onDropTime={onDropTime}
+              onVisibleDay={d => setCursor(c => isSameDay(c, d) ? c : d)}
               dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           ) : (
             <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail} dragRange={dragRange} dragDuration={dragDuration}
@@ -1081,6 +1086,250 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
             </>
           )}
       </div>
+    </div>
+  )
+}
+
+// ─── НЕДЕЛЯ — ГОРИЗОНТАЛЬНАЯ бесконечная лента дней ────────────────────
+// Часы фиксированы слева (sticky), дни идут колонками вправо, скролл вбок листает недели непрерывно.
+function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange, dragDuration, onOpen, onDragStart, onDropDate, onDropTime, onVisibleDay, dragOverKey, setDragOverKey }: {
+  initialDay: Date; commandDay: Date; commandSeq: number
+  events: Ev[]
+  dragRange: { start: string; end: string } | null
+  dragDuration: number
+  onOpen: (e: Ev) => void; onDragStart: (e: Ev) => void; onDropDate: (dateStr: string) => void
+  onDropTime: (dateStr: string, time: string) => void; onVisibleDay: (d: Date) => void
+  dragOverKey: string | null; setDragOverKey: (k: string | null) => void
+}) {
+  const now = new Date()
+  const dayKey = (d: Date) => format(d, 'yyyy-MM-dd')
+  const mondayOf = (d: Date) => startOfWeek(d, { weekStartsOn: 1 })
+  const startHour = 8, endHour = 23
+  const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i)
+  const HEADER_H = 46, ALLDAY_H = 40, COL_W = 150, GUT_W = 54, PAD = 10
+  const TODAY_TINT = 'rgba(235,87,87,0.06)'
+  const nowTop = (now.getHours() - startHour + now.getMinutes() / 60) * HOUR_PX
+
+  const [hover, setHover] = useState<{ key: string; h: number; min: number } | null>(null)
+  const rangeDays = (center: Date, before = 21, after = 42) => {
+    const start = addDays(mondayOf(center), -before)
+    return Array.from({ length: before + after + 1 }, (_, i) => addDays(start, i))
+  }
+  const [days, setDays] = useState<Date[]>(() => rangeDays(initialDay))
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const hoursTopRef = useRef<HTMLDivElement>(null) // маркер начала часов (startHour:00) — база для времени при drop
+  const grabOffsetRef = useRef(0)
+  const prependRef = useRef(0) // сколько колонок добавлено слева (для компенсации scrollLeft; ширина фикс.)
+  const visibleRef = useRef(dayKey(mondayOf(initialDay)))
+  const lastReported = useRef(visibleRef.current)
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const tickingRef = useRef(false)
+  const returnRef = useRef<null | 'left' | 'right'>(null)
+  const [returnBtn, setReturnBtn] = useState<null | 'left' | 'right'>(null)
+  const pendingScroll = useRef<string | null>(dayKey(mondayOf(initialDay)))
+
+  useEffect(() => {
+    const clear = () => { setHover(null); grabOffsetRef.current = 0 }
+    document.addEventListener('dragend', clear); document.addEventListener('drop', clear)
+    return () => { document.removeEventListener('dragend', clear); document.removeEventListener('drop', clear) }
+  }, [])
+
+  const dayBlocked = (d: Date) => !!(dragRange && (dayKey(d) < dragRange.start || dayKey(d) > dragRange.end))
+  const dropProps = (d: Date) => dayBlocked(d) ? {} : ({
+    onDragOver: (ev: RDragEvent) => { ev.preventDefault(); if (dragOverKey !== dayKey(d)) setDragOverKey(dayKey(d)) },
+    onDrop: () => onDropDate(dayKey(d)),
+  })
+  // Время по ВЕРХУ карточки (с учётом захвата), снап 30 мин. День — из колонки под курсором.
+  const cardTopTime = (ev: RDragEvent): { h: number; min: number } => {
+    const g = hoursTopRef.current
+    if (!g) return { h: startHour, min: 0 }
+    const rel = Math.max(0, (ev.clientY - grabOffsetRef.current) - g.getBoundingClientRect().top)
+    const slot = Math.max(0, Math.min((endHour - startHour) * 2, Math.round((rel / HOUR_PX) * 2)))
+    const abs = startHour * 60 + slot * 30
+    return { h: Math.floor(abs / 60), min: abs % 60 }
+  }
+  const timeDropProps = (d: Date) => dayBlocked(d) ? {} : ({
+    onDragOver: (ev: RDragEvent) => { ev.preventDefault(); const { h, min } = cardTopTime(ev); setHover(cur => (cur && cur.key === dayKey(d) && cur.h === h && cur.min === min) ? cur : { key: dayKey(d), h, min }) },
+    onDrop: (ev: RDragEvent) => { const { h, min } = cardTopTime(ev); setHover(null); onDropTime(dayKey(d), `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`) },
+  })
+
+  const timed = events.filter(e => parseTime(e.time))
+  const allDayFor = (d: Date) => events.filter(e => e.date === dayKey(d) && !parseTime(e.time))
+  const timedFor = (d: Date, h: number) => timed.filter(e => e.date === dayKey(d) && parseTime(e.time)!.h === h)
+  const layoutFor = (d: Date) => {
+    const key = dayKey(d)
+    const dayEvs = timed.filter(e => e.date === key).map(e => { const t = parseTime(e.time)!; const start = t.h * 60 + t.m; return { id: e.id, start, end: start + (e.durationMin || DEFAULT_DUR) } })
+    return layoutDayEvents(dayEvs)
+  }
+
+  const scrollToPending = () => {
+    const k = pendingScroll.current
+    if (!k) return
+    const el = scrollRef.current
+    const t = el?.querySelector(`[data-day="${k}"]`) as HTMLElement | null
+    if (el && t) { el.scrollLeft = Math.max(0, t.offsetLeft - GUT_W); pendingScroll.current = null }
+  }
+  // Добавили колонки слева → компенсируем scrollLeft (ширина колонки фикс.), чтобы лента не прыгала.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (prependRef.current) { el.scrollLeft += prependRef.current * COL_W; prependRef.current = 0 }
+    scrollToPending()
+  }, [days])
+  useLayoutEffect(() => { scrollToPending() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => clearTimeout(settleTimer.current), [])
+
+  // Навигация (стрелки / «Сегодня») — прокрутка к нужной неделе.
+  useEffect(() => {
+    if (commandSeq === 0) return
+    const k = dayKey(mondayOf(commandDay))
+    pendingScroll.current = k
+    visibleRef.current = k; lastReported.current = k
+    setDays(ds => ds.some(d => dayKey(d) === k) ? ds : rangeDays(commandDay))
+    scrollToPending()
+  }, [commandSeq]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handle = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const T = 700, BATCH = 14
+    if (el.scrollLeft <= T) {
+      prependRef.current += BATCH
+      setDays(ds => [...Array.from({ length: BATCH }, (_, i) => addDays(ds[0], -(BATCH - i))), ...ds])
+    } else if (el.scrollLeft + el.clientWidth >= el.scrollWidth - T) {
+      setDays(ds => [...ds, ...Array.from({ length: BATCH }, (_, i) => addDays(ds[ds.length - 1], i + 1))])
+    }
+    // видимая неделя = понедельник первой видимой колонки (левый край после жёлоба)
+    const x = el.scrollLeft + GUT_W + 4
+    let leftDay = visibleRef.current
+    for (const c of Array.from(el.querySelectorAll('[data-day]')) as HTMLElement[]) {
+      if (c.offsetLeft <= x) leftDay = c.dataset.day as string
+    }
+    const [ly, lm, ld] = leftDay.split('-').map(Number)
+    const cur = dayKey(mondayOf(new Date(ly, lm - 1, ld)))
+    visibleRef.current = cur
+    // Кнопка «Сегодня» — если сегодня вне видимой области.
+    const todayK = dayKey(now)
+    const todayEl = el.querySelector(`[data-day="${todayK}"]`) as HTMLElement | null
+    let want: null | 'left' | 'right' = null
+    if (todayEl) {
+      if (todayEl.offsetLeft + COL_W < el.scrollLeft + GUT_W) want = 'left'
+      else if (todayEl.offsetLeft > el.scrollLeft + el.clientWidth) want = 'right'
+    } else want = dayKey(days[0]) > todayK ? 'left' : 'right'
+    if (want !== returnRef.current) { returnRef.current = want; setReturnBtn(want) }
+    if (cur !== lastReported.current) {
+      clearTimeout(settleTimer.current)
+      const [y, m, dd] = cur.split('-').map(Number)
+      settleTimer.current = setTimeout(() => { lastReported.current = cur; onVisibleDay(new Date(y, m - 1, dd)) }, 120)
+    }
+  }
+  const onScroll = () => {
+    if (tickingRef.current) return
+    tickingRef.current = true
+    requestAnimationFrame(() => { tickingRef.current = false; handle() })
+  }
+  const goToToday = () => {
+    const k = dayKey(mondayOf(now))
+    pendingScroll.current = k
+    setDays(ds => ds.some(d => dayKey(d) === k) ? ds : rangeDays(now))
+    scrollToPending()
+  }
+
+  return (
+    <div className="relative">
+      <div ref={scrollRef} onScroll={onScroll}
+        className="relative border-t border-gray-200 dark:border-gray-800 overflow-auto"
+        style={{ maxHeight: 640, overflowAnchor: 'none' }}>
+        <div className="flex" style={{ width: 'max-content' }}>
+          {/* ЖЁЛОБ ЧАСОВ — фиксирован слева */}
+          <div className="sticky left-0 z-30 bg-surface-100 dark:bg-surface-900 border-r border-gray-200 dark:border-gray-800" style={{ flex: `0 0 ${GUT_W}px` }}>
+            <div className="sticky top-0 z-40 bg-surface-100 dark:bg-surface-900 border-b border-gray-200 dark:border-gray-800" style={{ height: HEADER_H + ALLDAY_H }}>
+              <div className="text-[10px] text-gray-400 flex items-center px-2" style={{ height: HEADER_H }}>GMT+5</div>
+              <div className="text-[10px] text-gray-400 text-right pr-2 pt-1" style={{ height: ALLDAY_H }}>Весь день</div>
+            </div>
+            <div style={{ paddingTop: PAD }}>
+              <div ref={hoursTopRef} />
+              {hours.map(h => (
+                <div key={h} className="text-[11px] text-gray-400 text-right pr-2 relative -top-[7px]" style={{ height: HOUR_PX }}>{String(h).padStart(2, '0')}:00</div>
+              ))}
+            </div>
+          </div>
+
+          {/* КОЛОНКИ ДНЕЙ */}
+          {days.map(d => {
+            const key = dayKey(d)
+            const isToday = isSameDay(d, now)
+            const blocked = dayBlocked(d)
+            const lay = layoutFor(d)
+            const nowHere = isToday && now.getHours() >= startHour && now.getHours() <= endHour
+            return (
+              <div key={key} data-day={key} className="border-r border-gray-100 dark:border-gray-800/80 shrink-0"
+                style={{ width: COL_W, background: isToday ? TODAY_TINT : undefined }}>
+                {/* header */}
+                <div className={'sticky top-0 z-20 bg-surface-100 dark:bg-surface-900 border-b border-gray-100 dark:border-gray-800/80 px-1 flex items-center justify-center gap-1.5 transition-opacity ' + (blocked ? 'opacity-40' : '')}
+                  style={{ height: HEADER_H }}>
+                  <span className={'text-[11px] ' + (isToday ? 'text-[#eb5757] font-medium' : 'text-gray-400')}>{d.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
+                  {isToday
+                    ? <span className="inline-grid place-items-center w-[22px] h-[22px] rounded-full bg-[#eb5757] text-white text-[13px] font-semibold">{d.getDate()}</span>
+                    : <span className="text-[15px] font-semibold text-gray-500 dark:text-gray-300">{d.getDate()}</span>}
+                  {d.getDate() === 1 && <span className="text-[9px] font-bold text-[#eb5757] uppercase">{d.toLocaleDateString('ru-RU', { month: 'short' })}</span>}
+                </div>
+                {/* all-day */}
+                <div {...dropProps(d)}
+                  className={'sticky z-10 bg-surface-100 dark:bg-surface-900 border-b border-gray-200 dark:border-gray-800 p-1 flex flex-col gap-1 overflow-y-auto transition-opacity ' + (dragOverKey === key ? 'ring-1 ring-inset ring-gray-400 ' : '') + (blocked ? 'opacity-40' : '')}
+                  style={{ top: HEADER_H, height: ALLDAY_H }}>
+                  {allDayFor(d).map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
+                </div>
+                {/* сетка часов */}
+                <div className={'relative transition-opacity ' + (blocked ? 'opacity-40' : '')} style={{ paddingTop: PAD }}>
+                  {hours.map(h => {
+                    const glow = !!(hover && hover.key === key && hover.h === h)
+                    return (
+                      <div key={h} {...timeDropProps(d)} className="border-t border-gray-100 dark:border-gray-800/70 relative" style={{ height: HOUR_PX }}>
+                        <div className="absolute left-0 right-0 border-t border-dashed border-gray-100 dark:border-gray-800/50 pointer-events-none" style={{ top: HOUR_PX / 2 }} />
+                        {glow && (<>
+                          <div className="absolute left-0.5 right-0.5 rounded-md pointer-events-none z-[3]" style={{ top: (hover!.min / 60) * HOUR_PX + 1, height: Math.max(HOUR_PX / 2, (dragDuration / 60) * HOUR_PX) - 2, boxShadow: 'inset 0 0 0 2px #8b7bf0, 0 0 12px rgba(139,123,240,.45)', background: 'rgba(139,123,240,.10)' }} />
+                          <div className="absolute left-1/2 z-[6] px-2 py-0.5 rounded-md text-[11px] font-bold text-white pointer-events-none whitespace-nowrap" style={{ top: (hover!.min / 60) * HOUR_PX, transform: 'translate(-50%,-120%)', background: '#8b7bf0', boxShadow: '0 4px 12px rgba(0,0,0,.4)' }}>
+                            {String(h).padStart(2, '0')}:{String(hover!.min).padStart(2, '0')}–{addMinToTime(`${String(h).padStart(2, '0')}:${String(hover!.min).padStart(2, '0')}`, dragDuration)} · {fmtDur(dragDuration)}
+                          </div>
+                        </>)}
+                        {timedFor(d, h).map(s => {
+                          const mm = parseTime(s.time)!.m
+                          const l = lay.get(s.id) ?? { lane: 0, cols: 1 }
+                          const leftPct = (l.lane / l.cols) * 100, widthPct = 100 / l.cols
+                          const dur = s.durationMin || DEFAULT_DUR
+                          return (
+                            <div key={s.id} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
+                              onDragStart={(ev) => { grabOffsetRef.current = (ev.nativeEvent as DragEvent).offsetY || 0; onDragStart(s) }}
+                              className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
+                              style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId), boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)` }}>
+                              <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
+                              <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time}–{addMinToTime(s.time!, dur)} · 🎬{s.location ? ` ${s.location}` : ''}</div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+                  {nowHere && (<>
+                    <div className="absolute left-0 right-0 z-[7] pointer-events-none" style={{ top: nowTop + PAD, height: 2, background: '#eb5757', borderRadius: 2 }} />
+                    <div className="absolute z-[8] pointer-events-none" style={{ top: nowTop + PAD, left: 0, width: 8, height: 8, borderRadius: 999, background: '#eb5757', transform: 'translate(-50%,-50%)' }} />
+                  </>)}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      {returnBtn && (
+        <button onClick={goToToday}
+          className="absolute bottom-3 z-30 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-semibold text-white bg-[#eb5757] shadow-lg hover:brightness-110 transition"
+          style={returnBtn === 'left' ? { left: 12 } : { right: 12 }}>
+          {returnBtn === 'left' ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+          Сегодня
+        </button>
+      )}
     </div>
   )
 }
