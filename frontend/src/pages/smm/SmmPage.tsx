@@ -174,7 +174,12 @@ export default function SmmPage() {
   const { from, to } = useMemo(() => {
     if (view === 'week') return { from: iso(startOfWeek(cursor, { weekStartsOn: 1 })), to: iso(endOfWeek(cursor, { weekStartsOn: 1 })) }
     if (view === 'day') return { from: iso(cursor), to: iso(cursor) }
-    return { from: iso(startOfMonth(cursor)), to: iso(endOfMonth(cursor)) } // month + stories
+    if (view === 'stories') return { from: iso(startOfMonth(cursor)), to: iso(endOfMonth(cursor)) }
+    // Месяц — непрерывная лента: грузим ШИРОКОЕ окно ±1 год (по году курсора). Ключ меняется редко
+    // (только при переходе через год), поэтому задачи есть сразу во ВСЕХ месяцах ленты, без подзагрузки
+    // на каждый месяц — иначе они «выскакивают» и лента прыгает.
+    const y = cursor.getFullYear()
+    return { from: iso(new Date(y - 1, 0, 1)), to: iso(new Date(y + 1, 11, 31)) }
   }, [view, cursor])
 
   const { data, isLoading } = useQuery<CalData>({
@@ -698,7 +703,7 @@ function DayCell({ d, evs, isToday, blocked, droppable, cycles, onOpen, onDragSt
       onDragOver={droppable ? (ev => { ev.preventDefault(); if (dragOverKey !== dISO) setDragOverKey(dISO) }) : undefined}
       onDragLeave={droppable ? (() => setDragOverKey(dragOverKey === dISO ? null : dragOverKey)) : undefined}
       onDrop={droppable ? (() => onDropDate(dISO)) : undefined}
-      className={'min-h-[92px] border-b border-r border-gray-100 dark:border-gray-800/80 last:border-r-0 p-1 flex flex-col gap-0.5 transition-opacity duration-300 '
+      className={'min-h-[148px] border-b border-r border-gray-100 dark:border-gray-800/80 last:border-r-0 p-1 flex flex-col gap-0.5 transition-opacity duration-300 '
         + (blocked ? 'opacity-40 ' : '')
         + (dragOverKey === dISO ? 'ring-1 ring-inset ring-gray-400 ' : '')
         + (isToday ? 'bg-[#eb5757]/[0.06]' : weekend ? 'bg-gray-50/50 dark:bg-white/[0.015]' : '')}>
@@ -1186,7 +1191,7 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   return (
     <span onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
           style={projFill(e.projectId)}
-          className={'flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[11.5px] font-medium truncate transition hover:brightness-110 ' + (done ? 'opacity-45 ' : '') + grab}
+          className={'flex items-center gap-1 rounded px-1.5 py-[2px] text-[11px] font-medium leading-tight truncate transition hover:brightness-110 ' + (done ? 'opacity-45 ' : '') + grab}
           title={e.kind === 'shoot'
             ? `Съёмка · ${e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`
             : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
