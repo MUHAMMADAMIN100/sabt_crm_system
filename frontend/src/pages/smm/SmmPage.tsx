@@ -17,8 +17,12 @@ type Ev = {
   projectId: string; projectName: string
   title?: string; time?: string | null; location?: string | null; note?: string | null
   contentType?: string; topic?: string | null; status?: string; assigneeName?: string | null
-  taskId?: string | null; taskStatus?: string | null
+  taskId?: string | null; taskStatus?: string | null; durationMin?: number | null
 }
+const DEFAULT_DUR = 60 // длительность съёмки по умолчанию (мин)
+const DUR_OPTIONS = [30, 60, 90, 120, 180] // варианты длительности в модалке
+const fmtDur = (m: number) => m % 60 === 0 ? `${m / 60}ч` : m < 60 ? `${m}м` : `${Math.floor(m / 60)}ч ${m % 60}м`
+const addMinToTime = (t: string, add: number) => { const p = /^(\d{1,2}):(\d{2})/.exec(t); if (!p) return t; const tot = +p[1] * 60 + +p[2] + add; return `${String(Math.floor(tot / 60) % 24).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')}` }
 
 /** «Сделано» для публикации: опубликовано ИЛИ связанная задача выполнена. */
 const isDone = (e: Ev) => e.status === 'published' || e.taskStatus === 'done'
@@ -199,6 +203,19 @@ export default function SmmPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Обновлено'); setDetail(null) },
     onError: () => toast.error('Не удалось обновить'),
   })
+  // Длительность съёмки: оптимистично меняем в кэше — карточка сразу меняет высоту.
+  const durMut = useMutation({
+    mutationFn: ({ itemId, min }: { itemId: string; min: number }) => contentPlanApi.smartUpdate(itemId, { durationMin: min }),
+    onMutate: async ({ itemId, min }) => {
+      const key = ['smm-calendar', from, to]
+      await qc.cancelQueries({ queryKey: key })
+      const prev = qc.getQueryData<CalData>(key)
+      qc.setQueryData<CalData>(key, old => old ? { ...old, events: old.events.map(e => e.itemId === itemId ? { ...e, durationMin: min } : e) } : old)
+      return { prev, key }
+    },
+    onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev); toast.error('Не удалось изменить длительность') },
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }) },
+  })
 
   // Настройки проекта — день старта месячного цикла. Открывается по шестерёнке
   // на плитке «Не запланировано», сохраняет в project.smmData.cycleStartDay.
@@ -256,6 +273,7 @@ export default function SmmPage() {
   // Окно текущего цикла проекта — за его пределы перетаскивать нельзя.
   // null — у проекта нет цикла, ограничения нет.
   const [dragRange, setDragRange] = useState<{ start: string; end: string } | null>(null)
+  const [dragDuration, setDragDuration] = useState<number>(DEFAULT_DUR) // длительность перетаскиваемой задачи
   const projCycle = (projectId: string): { start: string; end: string } | null => {
     const p = projects.find(x => x.id === projectId)
     if (!p?.cycleStartDay) return null
@@ -268,7 +286,7 @@ export default function SmmPage() {
     return () => document.removeEventListener('dragend', clear)
   }, [])
 
-  const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null); setDragRange(projCycle(e.projectId)) }
+  const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null); setDragRange(projCycle(e.projectId)); setDragDuration(e.durationMin || DEFAULT_DUR) }
   // Перенос на день (всё-день) — снимаем время (публикация возвращается наверх).
   const onDropDate = (dateStr: string) => {
     const e = dragRef.current
@@ -460,7 +478,7 @@ export default function SmmPage() {
               onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
               dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           ) : (
-            <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail} dragRange={dragRange}
+            <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail} dragRange={dragRange} dragDuration={dragDuration}
               onDragStart={onDragStartEv} onDropDate={onDropDate} onDropTime={onDropTime} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           )}
         </>
@@ -469,6 +487,7 @@ export default function SmmPage() {
       {detail && (
         <EventModal e={detail} marking={markMut.isPending} onClose={() => setDetail(null)}
           onMark={done => markMut.mutate({ ev: detail, done })}
+          onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
           onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }} />
       )}
 
@@ -722,9 +741,10 @@ function MonthView({ cells, byDate, today, cycles, dragRange, onOpen, onDragStar
 }
 
 // ─── НЕДЕЛЯ / ДЕНЬ ─────────────────────────────────────────────────────
-function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate, onDropTime, dragOverKey, setDragOverKey }: {
+function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragStart, onDropDate, onDropTime, dragOverKey, setDragOverKey }: {
   days: Date[]; events: Ev[]; onOpen: (e: Ev) => void
   dragRange: { start: string; end: string } | null
+  dragDuration: number
   onDragStart: (e: Ev) => void; onDropDate: (dateStr: string) => void
   onDropTime: (dateStr: string, time: string) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
@@ -768,11 +788,10 @@ function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate
   const timedFor = (d: Date, h: number) => timed.filter(e => e.date === dayKey(d) && parseTime(e.time)!.h === h)
   const cols = `54px repeat(${days.length}, minmax(0,1fr))`
   // Раскладка пересекающихся событий по дням (дорожки → делят ширину дня).
-  const DUR_MIN = HOUR_PX * 1.4 / HOUR_PX * 60 // высота карточки ≈ 1.4 часа
   const layouts = new Map<string, Map<string, { lane: number; cols: number }>>()
   for (const d of days) {
     const key = dayKey(d)
-    const dayEvs = timed.filter(e => e.date === key).map(e => { const t = parseTime(e.time)!; const start = t.h * 60 + t.m; return { id: e.id, start, end: start + DUR_MIN } })
+    const dayEvs = timed.filter(e => e.date === key).map(e => { const t = parseTime(e.time)!; const start = t.h * 60 + t.m; return { id: e.id, start, end: start + (e.durationMin || DEFAULT_DUR) } })
     layouts.set(key, layoutDayEvents(dayEvs))
   }
 
@@ -830,14 +849,14 @@ function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate
                     style={{ gridColumn: di + 2, gridRow: hi + 1 }}>
                     {/* линия получаса — час делится на два 30-мин окошка */}
                     <div className="absolute left-0 right-0 border-t border-dashed border-gray-100 dark:border-gray-800/50 pointer-events-none" style={{ top: HOUR_PX / 2 }} />
-                    {/* подсветка конкретного 30-мин слота под курсором */}
+                    {/* подсветка на ВСЮ длительность задачи (сколько слотов займёт) */}
                     {glow && (
                       <>
                         <div className="absolute left-0.5 right-0.5 rounded-md pointer-events-none z-[3]"
-                          style={{ top: (hover!.min / 60) * HOUR_PX + 1, height: HOUR_PX / 2 - 2, boxShadow: 'inset 0 0 0 2px #8b7bf0, 0 0 12px rgba(139,123,240,.45)', background: 'rgba(139,123,240,.10)' }} />
+                          style={{ top: (hover!.min / 60) * HOUR_PX + 1, height: Math.max(HOUR_PX / 2, (dragDuration / 60) * HOUR_PX) - 2, boxShadow: 'inset 0 0 0 2px #8b7bf0, 0 0 12px rgba(139,123,240,.45)', background: 'rgba(139,123,240,.10)' }} />
                         <div className="absolute left-1/2 z-[6] px-2 py-0.5 rounded-md text-[11px] font-bold text-white pointer-events-none whitespace-nowrap"
                           style={{ top: (hover!.min / 60) * HOUR_PX, transform: 'translate(-50%,-120%)', background: '#8b7bf0', boxShadow: '0 4px 12px rgba(0,0,0,.4)' }}>
-                          {String(h).padStart(2, '0')}:{String(hover!.min).padStart(2, '0')}
+                          {String(h).padStart(2, '0')}:{String(hover!.min).padStart(2, '0')}–{addMinToTime(`${String(h).padStart(2, '0')}:${String(hover!.min).padStart(2, '0')}`, dragDuration)} · {fmtDur(dragDuration)}
                         </div>
                       </>
                     )}
@@ -847,12 +866,13 @@ function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate
                       const lay = layouts.get(dayKey(d))?.get(s.id) ?? { lane: 0, cols: 1 }
                       const leftPct = (lay.lane / lay.cols) * 100
                       const widthPct = 100 / lay.cols
+                      const dur = s.durationMin || DEFAULT_DUR // высота карточки = длительность
                       return (
                         <div key={s.id} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)} onDragStart={() => onDragStart(s)}
                           className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
-                          style={{ top: (mm / 60) * HOUR_PX, height: HOUR_PX * 1.4, left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId) }}>
+                          style={{ top: (mm / 60) * HOUR_PX, height: Math.max(22, (dur / 60) * HOUR_PX), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId) }}>
                           <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
-                          <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time} · 🎬 Команда видеографов{s.location ? ` · ${s.location}` : ''}</div>
+                          <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time}–{addMinToTime(s.time!, dur)} · 🎬 Команда видеографов{s.location ? ` · ${s.location}` : ''}</div>
                         </div>
                       )
                     })}
@@ -1044,7 +1064,7 @@ function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
 }
 
-function EventModal({ e, onClose, onMark, marking, onUnschedule }: { e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void }) {
+function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration }: { e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void; onDuration?: (min: number) => void }) {
   const isShoot = e.kind === 'shoot'
   const type = e.contentType || 'other'
   const done = isDone(e)
@@ -1068,6 +1088,22 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule }: { e: Ev; onCl
           {!isShoot && e.assigneeName && <Row k="Ответственный" v={e.assigneeName} />}
           {!isShoot && <Row k="Статус" v={done ? 'Сделано' : (STATUS_LABEL[e.status || 'planned'] || e.status || 'В работе')} />}
         </div>
+        {!isShoot && onDuration && (
+          <div className="mb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5">Длительность съёмки</p>
+            <div className="flex flex-wrap gap-1.5">
+              {DUR_OPTIONS.map(m => {
+                const on = (e.durationMin || DEFAULT_DUR) === m
+                return (
+                  <button key={m} type="button" onClick={() => onDuration(m)}
+                    className={'text-[12px] font-semibold px-2.5 py-1 rounded-lg border transition ' + (on ? 'text-white' : 'text-gray-500 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800')}
+                    style={on ? { background: projColor(e.projectId), borderColor: projColor(e.projectId) } : undefined}>{fmtDur(m)}</button>
+                )
+              })}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1.5">Столько времени займёт карточка на календаре и подсветка при перетаскивании.</p>
+          </div>
+        )}
         <div className="space-y-2">
           {e.date && (
             <button onClick={onUnschedule}

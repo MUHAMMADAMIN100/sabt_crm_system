@@ -289,11 +289,13 @@ export class ContentPlanService {
   /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) БЕЗ
    *  синхронизации задач и прочих побочных эффектов старой системы —
    *  это отдельный контур, не связанный с «Доской проектов» и канбаном. */
-  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null }) {
+  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null }) {
     const set: Partial<ContentPlanItem> = {};
     if ('publishDate' in patch) set.publishDate = patch.publishDate ? new Date(patch.publishDate) : null;
     // Время съёмки 'HH:MM' (или null — «Весь день»). tz-безопасно, отдельно от даты.
     if ('publishTime' in patch) set.publishTime = (typeof patch.publishTime === 'string' && /^\d{2}:\d{2}$/.test(patch.publishTime)) ? patch.publishTime : null;
+    // Длительность в минутах (15..600) или null.
+    if ('durationMin' in patch) { const d = Math.trunc(Number(patch.durationMin)); set.durationMin = Number.isFinite(d) && d >= 15 && d <= 600 ? d : null; }
     if ('status' in patch && patch.status) set.status = patch.status;
     if (Object.keys(set).length) await this.repo.update(id, set);
     return { ok: true };
@@ -398,7 +400,7 @@ export class ContentPlanService {
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId",
               ci."contentType" AS "itemKind", ci.topic AS title,
               ci.status AS status, ci."taskId" AS "taskId",
-              ci."publishTime" AS time,
+              ci."publishTime" AS time, ci."durationMin" AS "durationMin",
               to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
        FROM content_plan_items ci
        WHERE ci."projectId" = ANY($1::uuid[])
@@ -444,6 +446,7 @@ export class ContentPlanService {
         contentType: p.itemKind === 'reel' ? 'reel' : 'design',
         topic: p.title || null, status: p.status || undefined, taskId: p.taskId || null,
         time: p.time || null,   // время съёмки ('HH:MM') — для часовой сетки недели
+        durationMin: Number(p.durationMin) > 0 ? Number(p.durationMin) : null, // длительность (мин)
       })),
       ...storyRows.map(s => ({
         id: `story:${s.projectId}:${s.date}`, kind: 'publication', date: s.date,

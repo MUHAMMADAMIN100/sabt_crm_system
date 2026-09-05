@@ -336,7 +336,7 @@ export const contentPlanApi = {
   create: (data: any) => api.post('/content-plan', data).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/content-plan/${id}`, data).then(r => r.data),
   // Умный календарь: перенос даты / статус без побочных эффектов (не Доска).
-  smartUpdate: (id: string, data: { publishDate?: string | null; status?: string; publishTime?: string | null }) =>
+  smartUpdate: (id: string, data: { publishDate?: string | null; status?: string; publishTime?: string | null; durationMin?: number | null }) =>
     api.patch(`/content-plan/smart-item/${id}`, data).then(r => r.data),
   // Умный календарь: догенерировать заготовки под норму цикла (рилсы/посты).
   smartGenerate: (data: { projectId: string; reels: number; posts: number }) =>

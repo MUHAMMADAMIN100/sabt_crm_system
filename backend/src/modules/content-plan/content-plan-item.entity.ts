@@ -75,6 +75,11 @@ export class ContentPlanItem {
   @Column({ type: 'varchar', length: 5, nullable: true })
   publishTime: string | null;
 
+  /** Длительность съёмки в минутах (умный календарь) — высота карточки и
+   *  превью-подсветки при перетаскивании. null = по умолчанию 60 мин. */
+  @Column({ type: 'int', nullable: true })
+  durationMin: number | null;
+
   /** Исполнитель — SMM-специалист / дизайнер. */
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'assigneeId' })
