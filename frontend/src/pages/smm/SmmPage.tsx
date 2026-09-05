@@ -800,6 +800,8 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i)
   const nowVisible = days.some(d => isSameDay(d, now)) && now.getHours() >= startHour && now.getHours() <= endHour
   const nowTop = (now.getHours() - startHour + now.getMinutes() / 60) * HOUR_PX
+  const todayIdx = days.findIndex(d => isSameDay(d, now)) // индекс колонки «сегодня» (−1, если недели нет сегодня)
+  const TODAY_TINT = 'rgba(235,87,87,0.06)' // лёгкая заливка колонки текущего дня (V4)
 
   const allDayFor = (d: Date) => events.filter(e => e.date === dayKey(d) && !parseTime(e.time))
   const timedFor = (d: Date, h: number) => timed.filter(e => e.date === dayKey(d) && parseTime(e.time)!.h === h)
@@ -822,9 +824,12 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
         {days.map(d => {
           const isToday = isSameDay(d, now)
           return (
-            <div key={dayKey(d)} className={'px-2 py-2 text-center border-l border-gray-100 dark:border-gray-800/80 transition-opacity ' + (dayBlocked(d) ? 'opacity-40' : '')}>
-              <span className="text-[11px] text-gray-400 mr-1.5">{d.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
-              <span className={'text-[15px] font-semibold ' + (isToday ? 'text-[#eb5757]' : 'text-gray-500 dark:text-gray-300')}>{d.getDate()}</span>
+            <div key={dayKey(d)} className={'px-2 py-2 text-center border-l border-gray-100 dark:border-gray-800/80 transition-opacity ' + (dayBlocked(d) ? 'opacity-40' : '')}
+              style={isToday ? { background: TODAY_TINT } : undefined}>
+              <span className={'text-[11px] mr-1.5 ' + (isToday ? 'text-[#eb5757] font-medium' : 'text-gray-400')}>{d.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
+              {isToday
+                ? <span className="inline-grid place-items-center align-middle w-[22px] h-[22px] rounded-full bg-[#eb5757] text-white text-[13px] font-semibold">{d.getDate()}</span>
+                : <span className="text-[15px] font-semibold text-gray-500 dark:text-gray-300">{d.getDate()}</span>}
             </div>
           )
         })}
@@ -839,8 +844,10 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
           const open = !!openDays[dayKey(d)]
           const collapsible = items.length > MAX_PER_DAY
           const visible = collapsible && !open ? items.slice(0, MAX_PER_DAY) : items
+          const isToday = isSameDay(d, now)
           return (
             <div key={dayKey(d)} {...dropProps(d)}
+              style={isToday ? { background: TODAY_TINT } : undefined}
               className={'border-l border-gray-100 dark:border-gray-800/80 p-1 flex flex-col gap-1 min-h-[34px] transition-opacity ' + (over ? 'ring-1 ring-inset ring-gray-400 ' : '') + (dayBlocked(d) ? 'opacity-40' : '')}>
               {visible.map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
               {collapsible && (
@@ -857,6 +864,10 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
 
       {/* сетка времени — скроллится внутри общего контейнера, поэтому её колонки совпадают с шапкой */}
       <div ref={gridRef} className="relative grid" style={{ gridTemplateColumns: cols, gridTemplateRows: `repeat(${hours.length}, ${HOUR_PX}px)`, paddingTop: 10 }}>
+          {/* V4 — заливка колонки текущего дня на всю высоту (позади ячеек, не мешает drop) */}
+          {todayIdx >= 0 && (
+            <div className="pointer-events-none" style={{ gridColumn: todayIdx + 2, gridRow: `1 / ${hours.length + 1}`, background: TODAY_TINT }} />
+          )}
           {hours.map((h, hi) => (
             <Fragment key={h}>
               <div className="text-[11px] text-gray-400 text-right pr-2 relative -top-[7px]" style={{ gridColumn: 1, gridRow: hi + 1 }}>{String(h).padStart(2, '0')}:00</div>
@@ -901,10 +912,13 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
               })}
             </Fragment>
           ))}
-          {nowVisible && (
+          {nowVisible && todayIdx >= 0 && (
             <>
-              <div className="absolute z-10 pointer-events-none" style={{ top: nowTop + 10, left: 54, right: 0, height: 1.5, background: '#eb5757' }} />
-              {/* Красная «таблетка» с фоном — перекрывает метку часа, если время рядом с ним. */}
+              {/* линия текущего времени — только в колонке «сегодня» */}
+              <div className="absolute z-[7] pointer-events-none" style={{ top: nowTop + 10, left: `calc(54px + ${todayIdx} * (100% - 54px) / ${days.length})`, width: `calc((100% - 54px) / ${days.length})`, height: 2, background: '#eb5757', borderRadius: 2 }} />
+              {/* точка на левом крае колонки */}
+              <div className="absolute z-[8] pointer-events-none" style={{ top: nowTop + 10, left: `calc(54px + ${todayIdx} * (100% - 54px) / ${days.length})`, width: 8, height: 8, borderRadius: 999, background: '#eb5757', transform: 'translate(-50%,-50%)' }} />
+              {/* Красная «таблетка» со временем в левом жёлобе — перекрывает метку часа, если время рядом с ним. */}
               <div className="absolute z-20 text-[10px] font-bold px-1 rounded pointer-events-none" style={{ top: nowTop + 10, left: 3, transform: 'translateY(-50%)', color: '#fff', background: '#eb5757' }}>
                 {now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
               </div>
