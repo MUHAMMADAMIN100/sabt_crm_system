@@ -674,11 +674,10 @@ function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate
     onDragOver: (ev: RDragEvent) => { ev.preventDefault(); if (dragOverKey !== dayKey(d)) setDragOverKey(dayKey(d)) },
     onDrop: () => onDropDate(dayKey(d)),
   })
-  // Минуты по позиции курсора внутри часовой ячейки (шаг 15 мин, 0..45).
+  // Только 30-минутные слоты: верхняя половина часа → :00, нижняя → :30.
   const minsFromY = (ev: RDragEvent) => {
     const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect()
-    const offY = Math.max(0, Math.min(HOUR_PX, ev.clientY - rect.top))
-    return Math.min(45, Math.max(0, Math.round((offY / HOUR_PX) * 4) * 15))
+    return (ev.clientY - rect.top) < HOUR_PX / 2 ? 0 : 30
   }
   const timeDropProps = (d: Date, h: number) => dayBlocked(d) ? {} : ({
     onDragOver: (ev: RDragEvent) => { ev.preventDefault(); const min = minsFromY(ev); setHover(cur => (cur && cur.key === dayKey(d) && cur.h === h && cur.min === min) ? cur : { key: dayKey(d), h, min }) },
@@ -746,13 +745,20 @@ function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate
                 const glow = !!(hover && hover.key === dayKey(d) && hover.h === h)
                 return (
                   <div key={`${h}-${dayKey(d)}`} {...timeDropProps(d, h)}
-                    className={'border-l border-t border-gray-100 dark:border-gray-800/70 relative transition-shadow ' + (glow ? 'rounded-md z-[3]' : '')}
-                    style={{ gridColumn: di + 2, gridRow: hi + 1, ...(glow ? { boxShadow: 'inset 0 0 0 2px #8b7bf0, 0 0 12px rgba(139,123,240,.45)', background: 'rgba(139,123,240,.08)' } : {}) }}>
+                    className="border-l border-t border-gray-100 dark:border-gray-800/70 relative"
+                    style={{ gridColumn: di + 2, gridRow: hi + 1 }}>
+                    {/* линия получаса — час делится на два 30-мин окошка */}
+                    <div className="absolute left-0 right-0 border-t border-dashed border-gray-100 dark:border-gray-800/50 pointer-events-none" style={{ top: HOUR_PX / 2 }} />
+                    {/* подсветка конкретного 30-мин слота под курсором */}
                     {glow && (
-                      <div className="absolute left-1/2 z-[6] px-2 py-0.5 rounded-md text-[11px] font-bold text-white pointer-events-none whitespace-nowrap"
-                        style={{ top: (hover!.min / 60) * HOUR_PX, transform: 'translate(-50%,-120%)', background: '#8b7bf0', boxShadow: '0 4px 12px rgba(0,0,0,.4)' }}>
-                        {String(h).padStart(2, '0')}:{String(hover!.min).padStart(2, '0')}
-                      </div>
+                      <>
+                        <div className="absolute left-0.5 right-0.5 rounded-md pointer-events-none z-[3]"
+                          style={{ top: (hover!.min / 60) * HOUR_PX + 1, height: HOUR_PX / 2 - 2, boxShadow: 'inset 0 0 0 2px #8b7bf0, 0 0 12px rgba(139,123,240,.45)', background: 'rgba(139,123,240,.10)' }} />
+                        <div className="absolute left-1/2 z-[6] px-2 py-0.5 rounded-md text-[11px] font-bold text-white pointer-events-none whitespace-nowrap"
+                          style={{ top: (hover!.min / 60) * HOUR_PX, transform: 'translate(-50%,-120%)', background: '#8b7bf0', boxShadow: '0 4px 12px rgba(0,0,0,.4)' }}>
+                          {String(h).padStart(2, '0')}:{String(hover!.min).padStart(2, '0')}
+                        </div>
+                      </>
                     )}
                     {timedFor(d, h).map(s => {
                       const mm = parseTime(s.time)!.m
