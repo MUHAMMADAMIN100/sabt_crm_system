@@ -139,9 +139,8 @@ function buildCells(ym: string): Cell[] {
 
 const DOW = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const MAX_PER_DAY = 4
-// 'yyyy-MM' ↔ Date (1-е число) и сдвиг на N месяцев — для непрерывного скролла месяцев.
+// 'yyyy-MM' → Date (1-е число) — для непрерывного скролла месяцев.
 const ymToDate = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1) }
-const shiftYm = (ym: string, delta: number) => format(addMonths(ymToDate(ym), delta), 'yyyy-MM')
 const HOUR_PX = 50
 const VIEWS: { k: View; label: string }[] = [
   { k: 'month', label: 'Месяц' }, { k: 'week', label: 'Неделя' }, { k: 'day', label: 'День' }, { k: 'stories', label: 'Сторисы' },
@@ -682,63 +681,60 @@ function fmtCycleShort(w: { start: string; end: string }): string {
   return `${s.getDate()} ${_MON_SHORT[s.getMonth()]} → ${e.getDate()} ${_MON_SHORT[e.getMonth()]}`
 }
 
-// Сетка одного месяца (без шапки дней недели — она общая в MonthScrollView).
-function MonthGrid({ cells, byDate, today, cycles, dragRange, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
-  cells: Cell[]; byDate: Map<string, Ev[]>; today: string
+// Одна дневная клетка непрерывной недельной ленты. Начало месяца (1-е число) помечается
+// коротким названием месяца в клетке — так месяцы «связаны» без дублей дней на стыке.
+function DayCell({ d, evs, isToday, blocked, droppable, cycles, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
+  d: Date; evs: Ev[]; isToday: boolean; blocked: boolean; droppable: boolean
   cycles: { id: string; name: string; color: string; start: string; end: string }[]
-  dragRange: { start: string; end: string } | null
-  onOpen: (e: Ev) => void; onDragStart: (e: Ev) => void; onDropDate: (d: string) => void
+  onOpen: (e: Ev) => void; onDragStart: (e: Ev) => void; onDropDate: (dateStr: string) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
+  const dISO = iso(d)
+  const isFirst = d.getDate() === 1
+  const weekend = d.getDay() === 0 || d.getDay() === 6
+  const covering = cycles.filter(cy => dISO >= cy.start && dISO <= cy.end)
   return (
-      <div className="grid grid-cols-7">
-        {cells.map((c, i) => {
-          const evs = c.iso ? (byDate.get(c.iso) ?? []) : []
-          const isToday = c.iso === today
-          // Во время перетаскивания с ограничением цикла — ячейки вне окна
-          // не принимают drop (не preventDefault) и приглушаются.
-          const blocked = !!(dragRange && c.iso && (c.iso < dragRange.start || c.iso > dragRange.end))
-          const droppable = !!c.iso && !blocked
-          return (
-            <div key={i}
-              onDragOver={droppable ? (ev => { ev.preventDefault(); if (dragOverKey !== c.iso) setDragOverKey(c.iso) }) : undefined}
-              onDragLeave={droppable ? (() => setDragOverKey(dragOverKey === c.iso ? null : dragOverKey)) : undefined}
-              onDrop={droppable ? (() => onDropDate(c.iso!)) : undefined}
-              className={'min-h-[92px] border-b border-r border-gray-100 dark:border-gray-800/80 p-1 flex flex-col gap-0.5 '
-                + ((i + 1) % 7 === 0 ? 'border-r-0 ' : '')
-                + (blocked ? 'opacity-40 ' : '')
-                + (c.iso && dragOverKey === c.iso ? 'ring-1 ring-inset ring-gray-400 ' : '')
-                + (!c.inMonth ? 'bg-gray-50/40 dark:bg-black/20' : isToday ? 'bg-[#eb5757]/[0.06]' : (i % 7 >= 5 ? 'bg-gray-50/50 dark:bg-white/[0.015]' : ''))}>
-              {c.iso && cycles.some(cy => c.iso! >= cy.start && c.iso! <= cy.end) && (
-                <div className="-mx-1 -mt-1 mb-0.5 flex flex-col gap-[2px]">
-                  {cycles.filter(cy => c.iso! >= cy.start && c.iso! <= cy.end).map(cy => {
-                    const isStart = c.iso === cy.start
-                    const isEnd = c.iso === cy.end
-                    return (
-                      <div key={cy.id} title={`${cy.name} · текущий цикл ${cy.start} → ${cy.end}`}
-                        className="h-[4px]"
-                        style={{
-                          background: cy.color,
-                          marginLeft: isStart ? 4 : 0, marginRight: isEnd ? 4 : 0,
-                          borderTopLeftRadius: isStart ? 999 : 0, borderBottomLeftRadius: isStart ? 999 : 0,
-                          borderTopRightRadius: isEnd ? 999 : 0, borderBottomRightRadius: isEnd ? 999 : 0,
-                        }} />
-                    )
-                  })}
-                </div>
-              )}
-              <span className={'text-[12px] font-semibold self-end px-1 ' + (isToday ? 'bg-[#eb5757] text-white rounded-full w-[20px] h-[20px] grid place-items-center' : c.inMonth ? 'text-gray-500 dark:text-gray-400' : 'text-gray-300 dark:text-gray-600')}>{c.label}</span>
-              {evs.map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
-            </div>
-          )
-        })}
+    <div
+      onDragOver={droppable ? (ev => { ev.preventDefault(); if (dragOverKey !== dISO) setDragOverKey(dISO) }) : undefined}
+      onDragLeave={droppable ? (() => setDragOverKey(dragOverKey === dISO ? null : dragOverKey)) : undefined}
+      onDrop={droppable ? (() => onDropDate(dISO)) : undefined}
+      className={'min-h-[92px] border-b border-r border-gray-100 dark:border-gray-800/80 last:border-r-0 p-1 flex flex-col gap-0.5 '
+        + (blocked ? 'opacity-40 ' : '')
+        + (dragOverKey === dISO ? 'ring-1 ring-inset ring-gray-400 ' : '')
+        + (isToday ? 'bg-[#eb5757]/[0.06]' : isFirst ? 'bg-gray-50/60 dark:bg-white/[0.025]' : weekend ? 'bg-gray-50/50 dark:bg-white/[0.015]' : '')}>
+      {covering.length > 0 && (
+        <div className="-mx-1 -mt-1 mb-0.5 flex flex-col gap-[2px]">
+          {covering.map(cy => {
+            const isStart = dISO === cy.start
+            const isEnd = dISO === cy.end
+            return (
+              <div key={cy.id} title={`${cy.name} · текущий цикл ${cy.start} → ${cy.end}`}
+                className="h-[4px]"
+                style={{
+                  background: cy.color,
+                  marginLeft: isStart ? 4 : 0, marginRight: isEnd ? 4 : 0,
+                  borderTopLeftRadius: isStart ? 999 : 0, borderBottomLeftRadius: isStart ? 999 : 0,
+                  borderTopRightRadius: isEnd ? 999 : 0, borderBottomRightRadius: isEnd ? 999 : 0,
+                }} />
+            )
+          })}
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-1">
+        {isFirst
+          ? <span className="text-[11px] font-bold text-[#eb5757] capitalize truncate px-0.5">{d.toLocaleDateString('ru-RU', { month: 'short' })}</span>
+          : <span />}
+        <span className={'text-[12px] font-semibold px-1 shrink-0 ' + (isToday ? 'bg-[#eb5757] text-white rounded-full w-[20px] h-[20px] grid place-items-center' : 'text-gray-500 dark:text-gray-400')}>{d.getDate()}</span>
       </div>
+      {evs.map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
+    </div>
   )
 }
 
-// Непрерывный (Notion-style) месячный вид: месяцы лентой, бесконечный скролл вверх/вниз.
-// Заголовок вверху страницы меняется на видимый месяц (onVisibleMonth); стрелки/«Сегодня»
-// прокручивают к нужному месяцу через commandSeq.
+// Непрерывный (Notion-style) месячный вид: НЕПРЕРЫВНАЯ лента недель — без разбивки на отдельные
+// месяцы и без дублей дней на стыке (последняя неделя сентября и первая неделя октября — одна
+// непрерывная лента). Начало месяца помечается в клетке 1-го числа. Заголовок вверху меняется
+// на видимый месяц; стрелки/«Сегодня» прокручивают к нужному месяцу через commandSeq.
 function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today, cycles, dragRange, onOpen, onDragStart, onDropDate, onVisibleMonth, dragOverKey, setDragOverKey }: {
   initialMonth: string; commandMonth: string; commandSeq: number
   byDate: Map<string, Ev[]>; today: string
@@ -749,23 +745,25 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const headerRef = useRef<HTMLDivElement>(null) // липкая шапка дней недели — её высоту вычитаем при прокрутке к месяцу
-  const [months, setMonths] = useState<string[]>(() => [shiftYm(initialMonth, -1), initialMonth, shiftYm(initialMonth, 1)])
-  const prependHRef = useRef<number | null>(null) // scrollHeight до добавления месяца сверху (компенсация прыжка)
+  const headerRef = useRef<HTMLDivElement>(null) // липкая шапка дней недели — её высоту вычитаем при прокрутке
+  const mondayOf = (d: Date) => startOfWeek(d, { weekStartsOn: 1 })
+  const rangeAround = (mon: Date, before = 3, after = 8) => Array.from({ length: before + after + 1 }, (_, i) => addDays(mon, (i - before) * 7))
+  const [weeks, setWeeks] = useState<Date[]>(() => rangeAround(mondayOf(ymToDate(initialMonth))))
+  const prependHRef = useRef<number | null>(null) // scrollHeight до добавления недель сверху (компенсация прыжка)
   const visibleRef = useRef(initialMonth)
   const tickingRef = useRef(false)
-  const pendingScroll = useRef<string | null>(initialMonth) // месяц, к которому нужно прокрутиться (маунт/навигация)
+  const pendingScroll = useRef<string | null>(iso(mondayOf(ymToDate(initialMonth)))) // ISO понедельника недели, к которой прокрутиться
 
-  // Прокрутить к отложенному месяцу, если его блок уже в DOM.
+  // Прокрутить к отложенной неделе, если её строка уже в DOM.
   const scrollToPending = () => {
-    const m = pendingScroll.current
-    if (!m) return
+    const wk = pendingScroll.current
+    if (!wk) return
     const el = scrollRef.current
-    const t = el?.querySelector(`[data-ym="${m}"]`) as HTMLElement | null
-    if (el && t) { el.scrollTop = Math.max(0, t.offsetTop - (headerRef.current?.offsetHeight ?? 0)); visibleRef.current = m; pendingScroll.current = null }
+    const t = el?.querySelector(`[data-week="${wk}"]`) as HTMLElement | null
+    if (el && t) { el.scrollTop = Math.max(0, t.offsetTop - (headerRef.current?.offsetHeight ?? 0)); pendingScroll.current = null }
   }
 
-  // После любой смены списка месяцев: компенсируем прыжок при добавлении сверху + выполняем отложенную прокрутку.
+  // После любой смены списка недель: компенсируем прыжок при добавлении сверху + отложенная прокрутка.
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -774,17 +772,19 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
       prependHRef.current = null
     }
     scrollToPending()
-  }, [months])
+  }, [weeks])
 
-  // Маунт — прокрутка к initialMonth (pendingScroll уже = initialMonth).
+  // Маунт — прокрутка к initialMonth.
   useLayoutEffect(() => { scrollToPending() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Внешняя навигация (стрелки / «Сегодня») — прокрутка к commandMonth.
+  // Внешняя навигация (стрелки / «Сегодня») — прокрутка к неделе нужного месяца.
   useEffect(() => {
     if (commandSeq === 0) return
-    pendingScroll.current = commandMonth
-    setMonths(ms => ms.includes(commandMonth) ? ms : [shiftYm(commandMonth, -1), commandMonth, shiftYm(commandMonth, 1)])
-    scrollToPending() // если месяц уже в списке — прокрутится сразу; иначе сработает layout-effect выше
+    const targetMon = mondayOf(ymToDate(commandMonth))
+    const wkIso = iso(targetMon)
+    pendingScroll.current = wkIso
+    setWeeks(ws => ws.some(w => iso(w) === wkIso) ? ws : rangeAround(targetMon))
+    scrollToPending() // если неделя уже в списке — прокрутится сразу; иначе сработает layout-effect выше
   }, [commandSeq]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handle = () => {
@@ -793,14 +793,14 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
     const T = 400
     if (el.scrollTop <= T) {
       prependHRef.current = el.scrollHeight
-      setMonths(ms => [shiftYm(ms[0], -1), ...ms])
+      setWeeks(ws => [addDays(ws[0], -7), ...ws])
     } else if (el.scrollTop + el.clientHeight >= el.scrollHeight - T) {
-      setMonths(ms => [...ms, shiftYm(ms[ms.length - 1], 1)])
+      setWeeks(ws => [...ws, addDays(ws[ws.length - 1], 7)])
     }
-    // текущий видимый месяц = последний блок, чей верх ушёл под шапку.
+    // видимый месяц = месяц «четверга» верхней видимой недели (ISO-правило — по нему листается заголовок).
     let cur = visibleRef.current
-    for (const b of Array.from(el.querySelectorAll('[data-ym]')) as HTMLElement[]) {
-      if (b.offsetTop - el.scrollTop <= 80) cur = b.dataset.ym as string
+    for (const w of Array.from(el.querySelectorAll('[data-week]')) as HTMLElement[]) {
+      if (w.offsetTop - el.scrollTop <= 80) cur = w.dataset.month as string
     }
     if (cur && cur !== visibleRef.current) { visibleRef.current = cur; onVisibleMonth(cur) }
   }
@@ -820,14 +820,25 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
           <div key={d} className={'px-2 py-2 text-[11px] font-semibold uppercase tracking-wide border-b border-gray-200 dark:border-gray-800 ' + (i >= 5 ? 'text-gray-400/70' : 'text-gray-400')}>{d}</div>
         ))}
       </div>
-      {months.map(m => (
-        <div key={m} data-ym={m}>
-          <div className="px-2.5 py-1.5 text-[12px] font-bold text-gray-500 dark:text-gray-300 border-b border-gray-100 dark:border-gray-800/70 bg-gray-50/70 dark:bg-white/[0.02]">{monthTitle(m)}</div>
-          <MonthGrid cells={buildCells(m)} byDate={byDate} today={today} cycles={cycles} dragRange={dragRange}
-            onOpen={onOpen} onDragStart={onDragStart} onDropDate={onDropDate}
-            dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
-        </div>
-      ))}
+      {weeks.map(w => {
+        const wkIso = iso(w)
+        const month = format(addDays(w, 3), 'yyyy-MM') // «главный» месяц недели = месяц её четверга
+        const days = Array.from({ length: 7 }, (_, i) => addDays(w, i))
+        return (
+          <div key={wkIso} data-week={wkIso} data-month={month} className="grid grid-cols-7">
+            {days.map(d => {
+              const dISO = iso(d)
+              const blocked = !!(dragRange && (dISO < dragRange.start || dISO > dragRange.end))
+              return (
+                <DayCell key={dISO} d={d} evs={byDate.get(dISO) ?? []} isToday={dISO === today}
+                  blocked={blocked} droppable={!blocked} cycles={cycles}
+                  onOpen={onOpen} onDragStart={onDragStart} onDropDate={onDropDate}
+                  dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
+              )
+            })}
+          </div>
+        )
+      })}
     </div>
   )
 }
