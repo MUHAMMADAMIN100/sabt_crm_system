@@ -2,7 +2,7 @@
 // Месяц / Неделя / День + таб «Сторисы» (мини-календари по проектам). Публикации
 // (зелёные) и съёмки (янтарные, со временем). Статус публикации: опубликовано —
 // ярко + галочка, нет — бледно. Drag-перенос на другой день.
-import { useMemo, useState, useRef, useEffect, Fragment, type ReactNode, type DragEvent as RDragEvent } from 'react'
+import { useMemo, useState, useRef, useEffect, useLayoutEffect, Fragment, type ReactNode, type DragEvent as RDragEvent } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
@@ -139,6 +139,9 @@ function buildCells(ym: string): Cell[] {
 
 const DOW = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const MAX_PER_DAY = 4
+// 'yyyy-MM' ↔ Date (1-е число) и сдвиг на N месяцев — для непрерывного скролла месяцев.
+const ymToDate = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1) }
+const shiftYm = (ym: string, delta: number) => format(addMonths(ymToDate(ym), delta), 'yyyy-MM')
 const HOUR_PX = 50
 const VIEWS: { k: View; label: string }[] = [
   { k: 'month', label: 'Месяц' }, { k: 'week', label: 'Неделя' }, { k: 'day', label: 'День' }, { k: 'stories', label: 'Сторисы' },
@@ -149,6 +152,8 @@ export default function SmmPage() {
   const navigate = useNavigate()
   const [view, setView] = useState<View>('month')
   const [cursor, setCursor] = useState(new Date())
+  // Счётчик явной навигации (стрелки/«Сегодня») — по нему непрерывный месячный вид прокручивается к месяцу.
+  const [scrollSeq, setScrollSeq] = useState(0)
   // Фильтр по проектам — множественный выбор (пусто = все проекты).
   const [selProjects, setSelProjects] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
@@ -461,10 +466,10 @@ export default function SmmPage() {
               </button>
             ))}
           </div>
-          <button onClick={() => setCursor(new Date())} className="text-[13px] font-semibold px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Сегодня</button>
+          <button onClick={() => { setCursor(new Date()); setScrollSeq(s => s + 1) }} className="text-[13px] font-semibold px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Сегодня</button>
           <div className="flex items-center gap-0.5">
-            <button onClick={() => step(-1)} className="w-8 h-8 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ChevronLeft size={17} /></button>
-            <button onClick={() => step(1)} className="w-8 h-8 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ChevronRight size={17} /></button>
+            <button onClick={() => { step(-1); setScrollSeq(s => s + 1) }} className="w-8 h-8 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ChevronLeft size={17} /></button>
+            <button onClick={() => { step(1); setScrollSeq(s => s + 1) }} className="w-8 h-8 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ChevronRight size={17} /></button>
           </div>
         </div>
       </header>
@@ -481,8 +486,10 @@ export default function SmmPage() {
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
           {view === 'month' ? (
-            <MonthView cells={cells} byDate={mainByDate} today={today} cycles={cycles} dragRange={dragRange}
+            <MonthScrollView initialMonth={monthStr} commandMonth={monthStr} commandSeq={scrollSeq}
+              byDate={mainByDate} today={today} cycles={cycles} dragRange={dragRange}
               onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
+              onVisibleMonth={ym => setCursor(c => format(c, 'yyyy-MM') === ym ? c : ymToDate(ym))}
               dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           ) : (
             <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail} dragRange={dragRange} dragDuration={dragDuration}
@@ -675,7 +682,8 @@ function fmtCycleShort(w: { start: string; end: string }): string {
   return `${s.getDate()} ${_MON_SHORT[s.getMonth()]} → ${e.getDate()} ${_MON_SHORT[e.getMonth()]}`
 }
 
-function MonthView({ cells, byDate, today, cycles, dragRange, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
+// Сетка одного месяца (без шапки дней недели — она общая в MonthScrollView).
+function MonthGrid({ cells, byDate, today, cycles, dragRange, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {
   cells: Cell[]; byDate: Map<string, Ev[]>; today: string
   cycles: { id: string; name: string; color: string; start: string; end: string }[]
   dragRange: { start: string; end: string } | null
@@ -683,12 +691,6 @@ function MonthView({ cells, byDate, today, cycles, dragRange, onOpen, onDragStar
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
   return (
-    <div className="border-t border-gray-200 dark:border-gray-800">
-      <div className="grid grid-cols-7">
-        {DOW.map((d, i) => (
-          <div key={d} className={'px-2 py-2 text-[11px] font-semibold uppercase tracking-wide border-b border-gray-200 dark:border-gray-800 ' + (i >= 5 ? 'text-gray-400/70' : 'text-gray-400')}>{d}</div>
-        ))}
-      </div>
       <div className="grid grid-cols-7">
         {cells.map((c, i) => {
           const evs = c.iso ? (byDate.get(c.iso) ?? []) : []
@@ -731,6 +733,101 @@ function MonthView({ cells, byDate, today, cycles, dragRange, onOpen, onDragStar
           )
         })}
       </div>
+  )
+}
+
+// Непрерывный (Notion-style) месячный вид: месяцы лентой, бесконечный скролл вверх/вниз.
+// Заголовок вверху страницы меняется на видимый месяц (onVisibleMonth); стрелки/«Сегодня»
+// прокручивают к нужному месяцу через commandSeq.
+function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today, cycles, dragRange, onOpen, onDragStart, onDropDate, onVisibleMonth, dragOverKey, setDragOverKey }: {
+  initialMonth: string; commandMonth: string; commandSeq: number
+  byDate: Map<string, Ev[]>; today: string
+  cycles: { id: string; name: string; color: string; start: string; end: string }[]
+  dragRange: { start: string; end: string } | null
+  onOpen: (e: Ev) => void; onDragStart: (e: Ev) => void; onDropDate: (d: string) => void
+  onVisibleMonth: (ym: string) => void
+  dragOverKey: string | null; setDragOverKey: (k: string | null) => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null) // липкая шапка дней недели — её высоту вычитаем при прокрутке к месяцу
+  const [months, setMonths] = useState<string[]>(() => [shiftYm(initialMonth, -1), initialMonth, shiftYm(initialMonth, 1)])
+  const prependHRef = useRef<number | null>(null) // scrollHeight до добавления месяца сверху (компенсация прыжка)
+  const visibleRef = useRef(initialMonth)
+  const tickingRef = useRef(false)
+  const pendingScroll = useRef<string | null>(initialMonth) // месяц, к которому нужно прокрутиться (маунт/навигация)
+
+  // Прокрутить к отложенному месяцу, если его блок уже в DOM.
+  const scrollToPending = () => {
+    const m = pendingScroll.current
+    if (!m) return
+    const el = scrollRef.current
+    const t = el?.querySelector(`[data-ym="${m}"]`) as HTMLElement | null
+    if (el && t) { el.scrollTop = Math.max(0, t.offsetTop - (headerRef.current?.offsetHeight ?? 0)); visibleRef.current = m; pendingScroll.current = null }
+  }
+
+  // После любой смены списка месяцев: компенсируем прыжок при добавлении сверху + выполняем отложенную прокрутку.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (prependHRef.current != null) {
+      el.scrollTop += el.scrollHeight - prependHRef.current
+      prependHRef.current = null
+    }
+    scrollToPending()
+  }, [months])
+
+  // Маунт — прокрутка к initialMonth (pendingScroll уже = initialMonth).
+  useLayoutEffect(() => { scrollToPending() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Внешняя навигация (стрелки / «Сегодня») — прокрутка к commandMonth.
+  useEffect(() => {
+    if (commandSeq === 0) return
+    pendingScroll.current = commandMonth
+    setMonths(ms => ms.includes(commandMonth) ? ms : [shiftYm(commandMonth, -1), commandMonth, shiftYm(commandMonth, 1)])
+    scrollToPending() // если месяц уже в списке — прокрутится сразу; иначе сработает layout-effect выше
+  }, [commandSeq]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handle = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const T = 400
+    if (el.scrollTop <= T) {
+      prependHRef.current = el.scrollHeight
+      setMonths(ms => [shiftYm(ms[0], -1), ...ms])
+    } else if (el.scrollTop + el.clientHeight >= el.scrollHeight - T) {
+      setMonths(ms => [...ms, shiftYm(ms[ms.length - 1], 1)])
+    }
+    // текущий видимый месяц = последний блок, чей верх ушёл под шапку.
+    let cur = visibleRef.current
+    for (const b of Array.from(el.querySelectorAll('[data-ym]')) as HTMLElement[]) {
+      if (b.offsetTop - el.scrollTop <= 80) cur = b.dataset.ym as string
+    }
+    if (cur && cur !== visibleRef.current) { visibleRef.current = cur; onVisibleMonth(cur) }
+  }
+  const onScroll = () => {
+    if (tickingRef.current) return
+    tickingRef.current = true
+    requestAnimationFrame(() => { tickingRef.current = false; handle() })
+  }
+
+  return (
+    <div ref={scrollRef} onScroll={onScroll}
+      className="relative border-t border-gray-200 dark:border-gray-800 overflow-y-auto"
+      style={{ maxHeight: 'calc(100vh - 300px)' }}>
+      {/* общая шапка дней недели — липкая сверху */}
+      <div ref={headerRef} className="grid grid-cols-7 sticky top-0 z-20 bg-surface-100 dark:bg-surface-900">
+        {DOW.map((d, i) => (
+          <div key={d} className={'px-2 py-2 text-[11px] font-semibold uppercase tracking-wide border-b border-gray-200 dark:border-gray-800 ' + (i >= 5 ? 'text-gray-400/70' : 'text-gray-400')}>{d}</div>
+        ))}
+      </div>
+      {months.map(m => (
+        <div key={m} data-ym={m}>
+          <div className="px-2.5 py-1.5 text-[12px] font-bold text-gray-500 dark:text-gray-300 border-b border-gray-100 dark:border-gray-800/70 bg-gray-50/70 dark:bg-white/[0.02]">{monthTitle(m)}</div>
+          <MonthGrid cells={buildCells(m)} byDate={byDate} today={today} cycles={cycles} dragRange={dragRange}
+            onOpen={onOpen} onDragStart={onDragStart} onDropDate={onDropDate}
+            dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
+        </div>
+      ))}
     </div>
   )
 }
@@ -957,9 +1054,6 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
       className={'rounded-xl border p-2.5 transition ' + (over
         ? 'border-gray-400 dark:border-gray-500 bg-gray-100/50 dark:bg-gray-800/50'
         : 'border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/40')}>
-      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-2">
-        <Inbox size={13} /> Не запланировано — перетащите на дату <span className="normal-case font-medium text-gray-400/70">(или сюда, чтобы снять дату)</span>
-      </div>
       {groups.length === 0 ? (
         <div className="text-[12.5px] text-gray-400 px-1 py-2">Нет SMM-проектов.</div>
       ) : (
