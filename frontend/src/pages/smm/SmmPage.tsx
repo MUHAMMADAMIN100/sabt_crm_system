@@ -620,6 +620,29 @@ function activeCycle(day: number, anchorIso: string | null | undefined, ref: Dat
   if (anchorIso && /^\d{4}-\d{2}-\d{2}$/.test(anchorIso) && iso(ref) < anchorIso) return cycleBoundsFor(new Date(anchorIso + 'T00:00:00'), day)
   return cycleBoundsFor(ref, day)
 }
+// Раскладка пересекающихся по времени событий дня по «дорожкам» (Google-стиль):
+// кластер взаимно пересекающихся делит ширину дня поровну (lane / cols).
+function layoutDayEvents(evs: { id: string; start: number; end: number }[]): Map<string, { lane: number; cols: number }> {
+  const sorted = [...evs].sort((a, b) => a.start - b.start || a.end - b.end)
+  const res = new Map<string, { lane: number; cols: number }>()
+  let cluster: { id: string; lane: number }[] = []
+  let laneEnds: number[] = []
+  let clusterEnd = -1
+  const flush = () => {
+    const cols = laneEnds.length || 1
+    for (const c of cluster) res.set(c.id, { lane: c.lane, cols })
+    cluster = []; laneEnds = []; clusterEnd = -1
+  }
+  for (const e of sorted) {
+    if (cluster.length && e.start >= clusterEnd) flush()  // разрыв — новый кластер
+    let lane = laneEnds.findIndex(end => end <= e.start)
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(e.end) } else laneEnds[lane] = e.end
+    cluster.push({ id: e.id, lane })
+    clusterEnd = Math.max(clusterEnd, e.end)
+  }
+  flush()
+  return res
+}
 const _MON_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 function fmtCycleShort(w: { start: string; end: string }): string {
   const s = new Date(w.start + 'T00:00:00'), e = new Date(w.end + 'T00:00:00')
@@ -744,6 +767,14 @@ function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate
   const allDayFor = (d: Date) => events.filter(e => e.date === dayKey(d) && !parseTime(e.time))
   const timedFor = (d: Date, h: number) => timed.filter(e => e.date === dayKey(d) && parseTime(e.time)!.h === h)
   const cols = `54px repeat(${days.length}, minmax(0,1fr))`
+  // Раскладка пересекающихся событий по дням (дорожки → делят ширину дня).
+  const DUR_MIN = HOUR_PX * 1.4 / HOUR_PX * 60 // высота карточки ≈ 1.4 часа
+  const layouts = new Map<string, Map<string, { lane: number; cols: number }>>()
+  for (const d of days) {
+    const key = dayKey(d)
+    const dayEvs = timed.filter(e => e.date === key).map(e => { const t = parseTime(e.time)!; const start = t.h * 60 + t.m; return { id: e.id, start, end: start + DUR_MIN } })
+    layouts.set(key, layoutDayEvents(dayEvs))
+  }
 
   return (
     <div className="border-t border-gray-200 dark:border-gray-800">
@@ -812,10 +843,14 @@ function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate
                     )}
                     {timedFor(d, h).map(s => {
                       const mm = parseTime(s.time)!.m
+                      // Пересекающиеся события делят ширину дня (дорожки).
+                      const lay = layouts.get(dayKey(d))?.get(s.id) ?? { lane: 0, cols: 1 }
+                      const leftPct = (lay.lane / lay.cols) * 100
+                      const widthPct = 100 / lay.cols
                       return (
                         <div key={s.id} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)} onDragStart={() => onDragStart(s)}
-                          className="absolute left-0.5 right-0.5 rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
-                          style={{ top: (mm / 60) * HOUR_PX, height: HOUR_PX * 1.4, ...projFill(s.projectId) }}>
+                          className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
+                          style={{ top: (mm / 60) * HOUR_PX, height: HOUR_PX * 1.4, left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId) }}>
                           <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
                           <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time} · 🎬 Команда видеографов{s.location ? ` · ${s.location}` : ''}</div>
                         </div>
