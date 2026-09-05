@@ -806,7 +806,9 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
   }
 
   return (
-    <div className="border-t border-gray-200 dark:border-gray-800">
+    <div className="border-t border-gray-200 dark:border-gray-800 overflow-y-auto" style={{ maxHeight: 640 }}>
+      {/* шапка + «Весь день» — липкие сверху; общий скролл с сеткой ⇒ колонки одной ширины, линии ровные */}
+      <div className="sticky top-0 z-30 bg-surface-100 dark:bg-surface-900">
       {/* headers */}
       <div className="grid border-b border-gray-100 dark:border-gray-800/80" style={{ gridTemplateColumns: cols }}>
         <div className="text-[10px] text-gray-400 flex items-center px-2">GMT+5</div>
@@ -844,10 +846,10 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
           )
         })}
       </div>
+      </div>
 
-      {/* time grid */}
-      <div className="overflow-y-auto" style={{ maxHeight: 600 }}>
-        <div ref={gridRef} className="relative grid" style={{ gridTemplateColumns: cols, gridTemplateRows: `repeat(${hours.length}, ${HOUR_PX}px)`, paddingTop: 10 }}>
+      {/* сетка времени — скроллится внутри общего контейнера, поэтому её колонки совпадают с шапкой */}
+      <div ref={gridRef} className="relative grid" style={{ gridTemplateColumns: cols, gridTemplateRows: `repeat(${hours.length}, ${HOUR_PX}px)`, paddingTop: 10 }}>
           {hours.map((h, hi) => (
             <Fragment key={h}>
               <div className="text-[11px] text-gray-400 text-right pr-2 relative -top-[7px]" style={{ gridColumn: 1, gridRow: hi + 1 }}>{String(h).padStart(2, '0')}:00</div>
@@ -901,7 +903,6 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
               </div>
             </>
           )}
-        </div>
       </div>
     </div>
   )
