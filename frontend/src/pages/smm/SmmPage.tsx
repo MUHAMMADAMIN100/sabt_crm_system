@@ -1262,10 +1262,12 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
             const isToday = isSameDay(d, now)
             const blocked = dayBlocked(d)
             const lay = layoutFor(d)
+            const weekend = d.getDay() === 0 || d.getDay() === 6 // сб/вс — слегка выделяем колонку (как в Notion)
             const nowHere = isToday && now.getHours() >= startHour && now.getHours() <= endHour
             return (
-              <div key={key} data-day={key} className="border-r border-gray-100 dark:border-gray-800/80 shrink-0"
-                style={{ width: COL_W, background: isToday ? TODAY_TINT : undefined }}>
+              <div key={key} data-day={key}
+                className={'border-r border-gray-100 dark:border-gray-800/80 shrink-0 ' + (!isToday && weekend ? 'bg-gray-100/60 dark:bg-white/[0.025]' : '')}
+                style={{ width: COL_W, ...(isToday ? { background: TODAY_TINT } : {}) }}>
                 {/* header */}
                 <div className={'sticky top-0 z-20 bg-surface-100 dark:bg-surface-900 border-b border-gray-100 dark:border-gray-800/80 px-1 flex items-center justify-center gap-1.5 transition-opacity ' + (blocked ? 'opacity-40' : '')}
                   style={{ height: HEADER_H }}>
