@@ -756,8 +756,12 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
   // Раскрытые дни в строке «Весь день» (клик «ещё N» показывает все события).
   const [openDays, setOpenDays] = useState<Record<string, boolean>>({})
   const toggleDay = (k: string) => setOpenDays(o => ({ ...o, [k]: !o[k] }))
+  // Сетка (для отсчёта позиции) и смещение захвата: где ВНУТРИ карточки схватили —
+  // чтобы drop считался по ВЕРХУ карточки (её корпусу), а не по курсору мыши.
+  const gridRef = useRef<HTMLDivElement>(null)
+  const grabOffsetRef = useRef(0)
   useEffect(() => {
-    const clear = () => setHover(null)
+    const clear = () => { setHover(null); grabOffsetRef.current = 0 }
     document.addEventListener('dragend', clear); document.addEventListener('drop', clear)
     return () => { document.removeEventListener('dragend', clear); document.removeEventListener('drop', clear) }
   }, [])
@@ -767,14 +771,20 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
     onDragOver: (ev: RDragEvent) => { ev.preventDefault(); if (dragOverKey !== dayKey(d)) setDragOverKey(dayKey(d)) },
     onDrop: () => onDropDate(dayKey(d)),
   })
-  // Только 30-минутные слоты: верхняя половина часа → :00, нижняя → :30.
-  const minsFromY = (ev: RDragEvent) => {
-    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect()
-    return (ev.clientY - rect.top) < HOUR_PX / 2 ? 0 : 30
+  // Время по ВЕРХУ карточки относительно сетки (учитывая, за какое место схватили),
+  // снап к 30 мин. День берётся из ячейки под курсором.
+  const cardTopTime = (ev: RDragEvent): { h: number; min: number } => {
+    const g = gridRef.current
+    if (!g) return { h: startHour, min: 0 }
+    const gTop = g.getBoundingClientRect().top + 10 // +10 = paddingTop сетки (начало startHour:00)
+    const rel = Math.max(0, (ev.clientY - grabOffsetRef.current) - gTop)
+    const slot = Math.max(0, Math.min((endHour - startHour) * 2, Math.round((rel / HOUR_PX) * 2)))
+    const abs = startHour * 60 + slot * 30
+    return { h: Math.floor(abs / 60), min: abs % 60 }
   }
-  const timeDropProps = (d: Date, h: number) => dayBlocked(d) ? {} : ({
-    onDragOver: (ev: RDragEvent) => { ev.preventDefault(); const min = minsFromY(ev); setHover(cur => (cur && cur.key === dayKey(d) && cur.h === h && cur.min === min) ? cur : { key: dayKey(d), h, min }) },
-    onDrop: (ev: RDragEvent) => { const min = minsFromY(ev); setHover(null); onDropTime(dayKey(d), `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`) },
+  const timeDropProps = (d: Date) => dayBlocked(d) ? {} : ({
+    onDragOver: (ev: RDragEvent) => { ev.preventDefault(); const { h, min } = cardTopTime(ev); setHover(cur => (cur && cur.key === dayKey(d) && cur.h === h && cur.min === min) ? cur : { key: dayKey(d), h, min }) },
+    onDrop: (ev: RDragEvent) => { const { h, min } = cardTopTime(ev); setHover(null); onDropTime(dayKey(d), `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`) },
   })
 
   // Съёмки в сетке — любые события со временем (публикации, поставленные на час, и shoot-сессии).
@@ -837,14 +847,14 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
 
       {/* time grid */}
       <div className="overflow-y-auto" style={{ maxHeight: 600 }}>
-        <div className="relative grid" style={{ gridTemplateColumns: cols, gridTemplateRows: `repeat(${hours.length}, ${HOUR_PX}px)`, paddingTop: 10 }}>
+        <div ref={gridRef} className="relative grid" style={{ gridTemplateColumns: cols, gridTemplateRows: `repeat(${hours.length}, ${HOUR_PX}px)`, paddingTop: 10 }}>
           {hours.map((h, hi) => (
             <Fragment key={h}>
               <div className="text-[11px] text-gray-400 text-right pr-2 relative -top-[7px]" style={{ gridColumn: 1, gridRow: hi + 1 }}>{String(h).padStart(2, '0')}:00</div>
               {days.map((d, di) => {
                 const glow = !!(hover && hover.key === dayKey(d) && hover.h === h)
                 return (
-                  <div key={`${h}-${dayKey(d)}`} {...timeDropProps(d, h)}
+                  <div key={`${h}-${dayKey(d)}`} {...timeDropProps(d)}
                     className="border-l border-t border-gray-100 dark:border-gray-800/70 relative"
                     style={{ gridColumn: di + 2, gridRow: hi + 1 }}>
                     {/* линия получаса — час делится на два 30-мин окошка */}
@@ -868,7 +878,8 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
                       const widthPct = 100 / lay.cols
                       const dur = s.durationMin || DEFAULT_DUR // высота карточки = длительность
                       return (
-                        <div key={s.id} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)} onDragStart={() => onDragStart(s)}
+                        <div key={s.id} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
+                          onDragStart={(ev) => { grabOffsetRef.current = (ev.nativeEvent as DragEvent).offsetY || 0; onDragStart(s) }}
                           className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
                           style={{ top: (mm / 60) * HOUR_PX, height: Math.max(22, (dur / 60) * HOUR_PX), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId) }}>
                           <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
