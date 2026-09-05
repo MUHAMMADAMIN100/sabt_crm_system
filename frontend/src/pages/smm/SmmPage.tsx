@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, ChevronDown, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, workflowApi, projectsApi } from '@/services/api.service'
@@ -694,14 +694,14 @@ function DayCell({ d, evs, isToday, blocked, droppable, cycles, onOpen, onDragSt
   const weekend = d.getDay() === 0 || d.getDay() === 6
   const covering = cycles.filter(cy => dISO >= cy.start && dISO <= cy.end)
   return (
-    <div
+    <div data-daymonth={dISO.slice(0, 7)}
       onDragOver={droppable ? (ev => { ev.preventDefault(); if (dragOverKey !== dISO) setDragOverKey(dISO) }) : undefined}
       onDragLeave={droppable ? (() => setDragOverKey(dragOverKey === dISO ? null : dragOverKey)) : undefined}
       onDrop={droppable ? (() => onDropDate(dISO)) : undefined}
-      className={'min-h-[92px] border-b border-r border-gray-100 dark:border-gray-800/80 last:border-r-0 p-1 flex flex-col gap-0.5 '
+      className={'min-h-[92px] border-b border-r border-gray-100 dark:border-gray-800/80 last:border-r-0 p-1 flex flex-col gap-0.5 transition-opacity '
         + (blocked ? 'opacity-40 ' : '')
         + (dragOverKey === dISO ? 'ring-1 ring-inset ring-gray-400 ' : '')
-        + (isToday ? 'bg-[#eb5757]/[0.06]' : isFirst ? 'bg-gray-50/60 dark:bg-white/[0.025]' : weekend ? 'bg-gray-50/50 dark:bg-white/[0.015]' : '')}>
+        + (isToday ? 'bg-[#eb5757]/[0.06]' : weekend ? 'bg-gray-50/50 dark:bg-white/[0.015]' : '')}>
       {covering.length > 0 && (
         <div className="-mx-1 -mt-1 mb-0.5 flex flex-col gap-[2px]">
           {covering.map(cy => {
@@ -722,7 +722,7 @@ function DayCell({ d, evs, isToday, blocked, droppable, cycles, onOpen, onDragSt
       )}
       <div className="flex items-center justify-between gap-1">
         {isFirst
-          ? <span className="text-[11px] font-bold text-[#eb5757] capitalize truncate px-0.5">{d.toLocaleDateString('ru-RU', { month: 'short' })}</span>
+          ? <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 capitalize truncate px-0.5">{d.toLocaleDateString('ru-RU', { month: 'short' })}</span>
           : <span />}
         <span className={'text-[12px] font-semibold px-1 shrink-0 ' + (isToday ? 'bg-[#eb5757] text-white rounded-full w-[20px] h-[20px] grid place-items-center' : 'text-gray-500 dark:text-gray-400')}>{d.getDate()}</span>
       </div>
@@ -757,6 +757,9 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
   const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const tickingRef = useRef(false)
   const pendingScroll = useRef<string | null>(iso(mondayOf(ymToDate(initialMonth)))) // ISO понедельника недели, к которой прокрутиться
+  const dimmedMonthRef = useRef<string | null>(null) // месяц «в фокусе» (остальные приглушены)
+  const returnRef = useRef<null | 'up' | 'down'>(null)
+  const [returnBtn, setReturnBtn] = useState<null | 'up' | 'down'>(null) // кнопка «вернуться к сегодня» + направление стрелки
 
   // Прокрутить к отложенной неделе, если её строка уже в DOM.
   const scrollToPending = () => {
@@ -765,6 +768,24 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
     const el = scrollRef.current
     const t = el?.querySelector(`[data-week="${wk}"]`) as HTMLElement | null
     if (el && t) { el.scrollTop = Math.max(0, t.offsetTop - (headerRef.current?.offsetHeight ?? 0)); pendingScroll.current = null }
+  }
+
+  // Приглушаем дни НЕ активного месяца (фокус на месяце, к которому проскроллили) — прямыми стилями,
+  // без ре-рендера (иначе лента дёргается). Обновляем только при смене активного месяца.
+  const applyDim = (month: string) => {
+    if (dimmedMonthRef.current === month) return
+    dimmedMonthRef.current = month
+    scrollRef.current?.querySelectorAll('[data-daymonth]').forEach(c => {
+      (c as HTMLElement).style.opacity = (c as HTMLElement).dataset.daymonth === month ? '' : '0.35'
+    })
+  }
+
+  // Прокрутка к сегодняшней неделе (кнопка «вернуться»).
+  const goToToday = () => {
+    const mon = mondayOf(new Date())
+    pendingScroll.current = iso(mon)
+    setWeeks(ws => ws.some(w => iso(w) === iso(mon)) ? ws : rangeAround(mon))
+    scrollToPending()
   }
 
   // После любой смены списка недель: компенсируем прыжок при добавлении сверху + отложенная прокрутка.
@@ -776,6 +797,7 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
       prependHRef.current = null
     }
     scrollToPending()
+    dimmedMonthRef.current = null; applyDim(visibleRef.current) // приглушить и вновь добавленные недели
   }, [weeks])
 
   // Маунт — прокрутка к initialMonth.
@@ -812,6 +834,11 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
       if (w.offsetTop - el.scrollTop <= 80) cur = w.dataset.month as string
     }
     visibleRef.current = cur
+    if (cur) applyDim(cur) // фокус на активном месяце (прямые стили, без ре-рендера)
+    // Кнопка «вернуться к сегодня»: стрелка вниз, если сегодня ниже; вверх, если выше. Прячем на текущем месяце.
+    const todayM = today.slice(0, 7)
+    const want: null | 'up' | 'down' = !cur || cur === todayM ? null : (cur < todayM ? 'down' : 'up')
+    if (want !== returnRef.current) { returnRef.current = want; setReturnBtn(want) }
     if (cur && cur !== lastReported.current) {
       clearTimeout(settleTimer.current)
       settleTimer.current = setTimeout(() => { lastReported.current = cur; onVisibleMonth(cur) }, 120)
@@ -824,34 +851,44 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
   }
 
   return (
-    <div ref={scrollRef} onScroll={onScroll}
-      className="relative border-t border-gray-200 dark:border-gray-800 overflow-y-auto"
-      style={{ maxHeight: 'calc(100vh - 300px)' }}>
-      {/* общая шапка дней недели — липкая сверху */}
-      <div ref={headerRef} className="grid grid-cols-7 sticky top-0 z-20 bg-surface-100 dark:bg-surface-900">
-        {DOW.map((d, i) => (
-          <div key={d} className={'px-2 py-2 text-[11px] font-semibold uppercase tracking-wide border-b border-gray-200 dark:border-gray-800 ' + (i >= 5 ? 'text-gray-400/70' : 'text-gray-400')}>{d}</div>
-        ))}
+    <div className="relative">
+      <div ref={scrollRef} onScroll={onScroll}
+        className="relative border-t border-gray-200 dark:border-gray-800 overflow-y-auto"
+        style={{ maxHeight: 'calc(100vh - 300px)' }}>
+        {/* общая шапка дней недели — липкая сверху */}
+        <div ref={headerRef} className="grid grid-cols-7 sticky top-0 z-20 bg-surface-100 dark:bg-surface-900">
+          {DOW.map((d, i) => (
+            <div key={d} className={'px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide border-b border-gray-200 dark:border-gray-800 ' + (i >= 5 ? 'text-gray-400/70' : 'text-gray-400')}>{d}</div>
+          ))}
+        </div>
+        {weeks.map(w => {
+          const wkIso = iso(w)
+          const month = format(addDays(w, 3), 'yyyy-MM') // «главный» месяц недели = месяц её четверга
+          const days = Array.from({ length: 7 }, (_, i) => addDays(w, i))
+          return (
+            <div key={wkIso} data-week={wkIso} data-month={month} className="grid grid-cols-7">
+              {days.map(d => {
+                const dISO = iso(d)
+                const blocked = !!(dragRange && (dISO < dragRange.start || dISO > dragRange.end))
+                return (
+                  <DayCell key={dISO} d={d} evs={byDate.get(dISO) ?? []} isToday={dISO === today}
+                    blocked={blocked} droppable={!blocked} cycles={cycles}
+                    onOpen={onOpen} onDragStart={onDragStart} onDropDate={onDropDate}
+                    dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
+                )
+              })}
+            </div>
+          )
+        })}
       </div>
-      {weeks.map(w => {
-        const wkIso = iso(w)
-        const month = format(addDays(w, 3), 'yyyy-MM') // «главный» месяц недели = месяц её четверга
-        const days = Array.from({ length: 7 }, (_, i) => addDays(w, i))
-        return (
-          <div key={wkIso} data-week={wkIso} data-month={month} className="grid grid-cols-7">
-            {days.map(d => {
-              const dISO = iso(d)
-              const blocked = !!(dragRange && (dISO < dragRange.start || dISO > dragRange.end))
-              return (
-                <DayCell key={dISO} d={d} evs={byDate.get(dISO) ?? []} isToday={dISO === today}
-                  blocked={blocked} droppable={!blocked} cycles={cycles}
-                  onOpen={onOpen} onDragStart={onDragStart} onDropDate={onDropDate}
-                  dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
-              )
-            })}
-          </div>
-        )
-      })}
+      {/* Плавающая кнопка «вернуться к сегодня» — видна, когда проскроллил в другой месяц. */}
+      {returnBtn && (
+        <button onClick={goToToday}
+          className="absolute left-1/2 -translate-x-1/2 bottom-3 z-30 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-semibold text-white bg-[#eb5757] shadow-lg hover:brightness-110 transition">
+          {returnBtn === 'up' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          Сегодня
+        </button>
+      )}
     </div>
   )
 }
