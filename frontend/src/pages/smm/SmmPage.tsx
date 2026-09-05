@@ -698,7 +698,7 @@ function DayCell({ d, evs, isToday, blocked, droppable, cycles, onOpen, onDragSt
       onDragOver={droppable ? (ev => { ev.preventDefault(); if (dragOverKey !== dISO) setDragOverKey(dISO) }) : undefined}
       onDragLeave={droppable ? (() => setDragOverKey(dragOverKey === dISO ? null : dragOverKey)) : undefined}
       onDrop={droppable ? (() => onDropDate(dISO)) : undefined}
-      className={'min-h-[92px] border-b border-r border-gray-100 dark:border-gray-800/80 last:border-r-0 p-1 flex flex-col gap-0.5 transition-opacity '
+      className={'min-h-[92px] border-b border-r border-gray-100 dark:border-gray-800/80 last:border-r-0 p-1 flex flex-col gap-0.5 transition-opacity duration-300 '
         + (blocked ? 'opacity-40 ' : '')
         + (dragOverKey === dISO ? 'ring-1 ring-inset ring-gray-400 ' : '')
         + (isToday ? 'bg-[#eb5757]/[0.06]' : weekend ? 'bg-gray-50/50 dark:bg-white/[0.015]' : '')}>
@@ -747,9 +747,9 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
   const scrollRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null) // липкая шапка дней недели — её высоту вычитаем при прокрутке
   const mondayOf = (d: Date) => startOfWeek(d, { weekStartsOn: 1 })
-  // Сразу предзагружаем большой запас недель (~9 мес. назад / ~11 вперёд), чтобы при обычном скролле
-  // НИЧЕГО не подгружалось на лету — иначе контент «выскакивает» и лента дёргается.
-  const rangeAround = (mon: Date, before = 36, after = 44) => Array.from({ length: before + after + 1 }, (_, i) => addDays(mon, (i - before) * 7))
+  // Сразу предзагружаем БОЛЬШОЙ запас недель (~7 мес. назад / ~13 вперёд), чтобы при обычном скролле
+  // ничего не подгружалось на лету — иначе контент «выскакивает» и лента дёргается.
+  const rangeAround = (mon: Date, before = 32, after = 56) => Array.from({ length: before + after + 1 }, (_, i) => addDays(mon, (i - before) * 7))
   const [weeks, setWeeks] = useState<Date[]>(() => rangeAround(mondayOf(ymToDate(initialMonth))))
   const prependHRef = useRef<number | null>(null) // scrollHeight до добавления недель сверху (компенсация прыжка)
   const visibleRef = useRef(initialMonth)
@@ -776,7 +776,7 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
     if (dimmedMonthRef.current === month) return
     dimmedMonthRef.current = month
     scrollRef.current?.querySelectorAll('[data-daymonth]').forEach(c => {
-      (c as HTMLElement).style.opacity = (c as HTMLElement).dataset.daymonth === month ? '' : '0.35'
+      (c as HTMLElement).style.opacity = (c as HTMLElement).dataset.daymonth === month ? '' : '0.5'
     })
   }
 
@@ -827,12 +827,17 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
     } else if (el.scrollTop + el.clientHeight >= el.scrollHeight - T) {
       setWeeks(ws => [...ws, ...Array.from({ length: BATCH }, (_, i) => addDays(ws[ws.length - 1], (i + 1) * 7))])
     }
-    // видимый месяц = месяц «четверга» верхней видимой недели. Сообщаем родителю ПОСЛЕ остановки скролла
-    // (дебаунс 120мс) — иначе перерисовка заголовка дёргает всю ленту во время прокрутки.
-    let cur = visibleRef.current
+    // активный месяц = тот, что занимает БОЛЬШУЮ часть видимой области (как в Notion — фокус
+    // переключается, когда новый месяц становится преобладающим, а не когда старый полностью ушёл).
+    const hh = headerRef.current?.offsetHeight ?? 0
+    const vTop = el.scrollTop + hh, vBot = el.scrollTop + el.clientHeight
+    const area: Record<string, number> = {}
     for (const w of Array.from(el.querySelectorAll('[data-week]')) as HTMLElement[]) {
-      if (w.offsetTop - el.scrollTop <= 80) cur = w.dataset.month as string
+      const vis = Math.min(w.offsetTop + w.offsetHeight, vBot) - Math.max(w.offsetTop, vTop)
+      if (vis > 0) { const m = w.dataset.month as string; area[m] = (area[m] || 0) + vis }
     }
+    let cur = visibleRef.current, best = -1
+    for (const m in area) { if (area[m] > best) { best = area[m]; cur = m } }
     visibleRef.current = cur
     if (cur) applyDim(cur) // фокус на активном месяце (прямые стили, без ре-рендера)
     // Кнопка «вернуться к сегодня»: стрелка вниз, если сегодня ниже; вверх, если выше. Прячем на текущем месяце.
@@ -854,7 +859,7 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
     <div className="relative">
       <div ref={scrollRef} onScroll={onScroll}
         className="relative border-t border-gray-200 dark:border-gray-800 overflow-y-auto"
-        style={{ maxHeight: 'calc(100vh - 300px)' }}>
+        style={{ maxHeight: 'calc(100vh - 300px)', overflowAnchor: 'none' }}>
         {/* общая шапка дней недели — липкая сверху */}
         <div ref={headerRef} className="grid grid-cols-7 sticky top-0 z-20 bg-surface-100 dark:bg-surface-900">
           {DOW.map((d, i) => (
