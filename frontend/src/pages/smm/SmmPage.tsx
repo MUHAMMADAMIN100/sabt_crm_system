@@ -813,7 +813,7 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
         {days.map(d => {
           const isToday = isSameDay(d, now)
           return (
-            <div key={dayKey(d)} className="px-2 py-2 text-center border-l border-gray-100 dark:border-gray-800/80">
+            <div key={dayKey(d)} className={'px-2 py-2 text-center border-l border-gray-100 dark:border-gray-800/80 transition-opacity ' + (dayBlocked(d) ? 'opacity-40' : '')}>
               <span className="text-[11px] text-gray-400 mr-1.5">{d.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
               <span className={'text-[15px] font-semibold ' + (isToday ? 'text-[#eb5757]' : 'text-gray-500 dark:text-gray-300')}>{d.getDate()}</span>
             </div>
@@ -832,7 +832,7 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
           const visible = collapsible && !open ? items.slice(0, MAX_PER_DAY) : items
           return (
             <div key={dayKey(d)} {...dropProps(d)}
-              className={'border-l border-gray-100 dark:border-gray-800/80 p-1 flex flex-col gap-1 min-h-[34px] ' + (over ? 'ring-1 ring-inset ring-gray-400' : '')}>
+              className={'border-l border-gray-100 dark:border-gray-800/80 p-1 flex flex-col gap-1 min-h-[34px] transition-opacity ' + (over ? 'ring-1 ring-inset ring-gray-400 ' : '') + (dayBlocked(d) ? 'opacity-40' : '')}>
               {visible.map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
               {collapsible && (
                 <button type="button" onClick={() => toggleDay(dayKey(d))}
@@ -855,7 +855,7 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
                 const glow = !!(hover && hover.key === dayKey(d) && hover.h === h)
                 return (
                   <div key={`${h}-${dayKey(d)}`} {...timeDropProps(d)}
-                    className="border-l border-t border-gray-100 dark:border-gray-800/70 relative"
+                    className={'border-l border-t border-gray-100 dark:border-gray-800/70 relative transition-opacity ' + (dayBlocked(d) ? 'opacity-40' : '')}
                     style={{ gridColumn: di + 2, gridRow: hi + 1 }}>
                     {/* линия получаса — час делится на два 30-мин окошка */}
                     <div className="absolute left-0 right-0 border-t border-dashed border-gray-100 dark:border-gray-800/50 pointer-events-none" style={{ top: HOUR_PX / 2 }} />
