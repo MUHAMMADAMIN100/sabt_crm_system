@@ -22,7 +22,7 @@ type Ev = {
 
 /** «Сделано» для публикации: опубликовано ИЛИ связанная задача выполнена. */
 const isDone = (e: Ev) => e.status === 'published' || e.taskStatus === 'done'
-type Proj = { id: string; name: string; startDate?: string | null; endDate?: string | null; cycleStartDay?: number | null; normReels?: number | null; normPosts?: number | null }
+type Proj = { id: string; name: string; startDate?: string | null; endDate?: string | null; cycleStartDay?: number | null; cycleAnchor?: string | null; normReels?: number | null; normPosts?: number | null }
 type CalData = { from: string; to: string; events: Ev[]; projects: Proj[]; backlog: Ev[] }
 type View = 'month' | 'week' | 'day' | 'stories'
 
@@ -208,8 +208,8 @@ export default function SmmPage() {
     if (p) setProjSettings(p)
   }
   const cycleMut = useMutation({
-    mutationFn: async ({ id, day, normReels, normPosts }: { id: string; day: number | null; normReels: number | null; normPosts: number | null }) => {
-      await projectsApi.setSmmCycle(id, { day, normReels, normPosts })
+    mutationFn: async ({ id, day, normReels, normPosts, anchor }: { id: string; day: number | null; normReels: number | null; normPosts: number | null; anchor: string | null }) => {
+      await projectsApi.setSmmCycle(id, { day, normReels, normPosts, anchor })
       // Довести незапланированные заготовки ровно до нормы (только при сохранении).
       await contentPlanApi.smartGenerate({ projectId: id, reels: normReels ?? 0, posts: normPosts ?? 0 })
     },
@@ -259,7 +259,7 @@ export default function SmmPage() {
   const projCycle = (projectId: string): { start: string; end: string } | null => {
     const p = projects.find(x => x.id === projectId)
     if (!p?.cycleStartDay) return null
-    return cycleBoundsFor(new Date(), p.cycleStartDay)
+    return activeCycle(p.cycleStartDay, p.cycleAnchor, new Date())
   }
   // Сбрасываем подсветку ограничения по окончании любого перетаскивания.
   useEffect(() => {
@@ -334,7 +334,7 @@ export default function SmmPage() {
     const out: { id: string; name: string; color: string; start: string; end: string }[] = []
     for (const p of projects) {
       if (!selProjects.has(p.id) || !p.cycleStartDay) continue
-      const { start, end } = cycleBoundsFor(ref, p.cycleStartDay)
+      const { start, end } = activeCycle(p.cycleStartDay, p.cycleAnchor, ref)
       out.push({ id: p.id, name: p.name, color: projColor(p.id), start, end })
     }
     return out
@@ -475,7 +475,7 @@ export default function SmmPage() {
       {projSettings && (
         <ProjectCycleModal p={projSettings} saving={cycleMut.isPending} clearing={clearMut.isPending}
           onClose={() => setProjSettings(null)}
-          onSave={(day, normReels, normPosts) => cycleMut.mutate({ id: projSettings.id, day, normReels, normPosts })}
+          onSave={(day, normReels, normPosts, anchor) => cycleMut.mutate({ id: projSettings.id, day, normReels, normPosts, anchor })}
           onClear={() => clearMut.mutate(projSettings.id)}
           onOpen={() => navigate(`/smm/projects/${projSettings.id}`)} />
       )}
@@ -486,13 +486,23 @@ export default function SmmPage() {
 // ─── окно «Цикл проекта» — день старта цикла (1..31) + норма (рилсы/посты) ─
 function ProjectCycleModal({ p, saving, clearing, onClose, onSave, onClear, onOpen }: {
   p: Proj; saving: boolean; clearing: boolean; onClose: () => void
-  onSave: (day: number | null, normReels: number | null, normPosts: number | null) => void
+  onSave: (day: number | null, normReels: number | null, normPosts: number | null, anchor: string | null) => void
   onClear: () => void; onOpen: () => void
 }) {
   const [day, setDay] = useState<number | null>(p.cycleStartDay ?? null)
   const [reels, setReels] = useState<number>(p.normReels ?? 0)
   const [posts, setPosts] = useState<number>(p.normPosts ?? 0)
   const accent = projColor(p.id)
+  // Начало цикла: этот месяц (0) или прошлый (1). Дефолт — этот месяц; если у
+  // проекта уже сохранён якорь прошлого месяца, показываем его выбранным.
+  const todayRef = new Date()
+  const initLast = p.cycleStartDay != null ? cycleAnchorIso(p.cycleStartDay, todayRef, 1) : null
+  const [anchorBack, setAnchorBack] = useState<0 | 1>(p.cycleAnchor && p.cycleAnchor === initLast ? 1 : 0)
+  const thisAnchor = day != null ? cycleAnchorIso(day, todayRef, 0) : null
+  const lastAnchor = day != null ? cycleAnchorIso(day, todayRef, 1) : null
+  const thisWin = thisAnchor ? cycleBoundsFor(new Date(thisAnchor + 'T00:00:00'), day!) : null
+  const lastWin = lastAnchor ? cycleBoundsFor(new Date(lastAnchor + 'T00:00:00'), day!) : null
+  const chosenAnchor = day == null ? null : (anchorBack === 0 ? thisAnchor : lastAnchor)
   const hint = day == null
     ? 'Цикл не задан — на календаре период не подсвечивается.'
     : day === 1
@@ -525,6 +535,29 @@ function ProjectCycleModal({ p, saving, clearing, onClose, onSave, onClear, onOp
           })}
         </div>
         <div className="mt-2 text-[12px] font-medium" style={day != null ? { color: accent } : undefined}>{hint}</div>
+        {day != null && (
+          <>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5 mt-4">Начало цикла</p>
+            <div className="flex flex-col gap-1.5">
+              {([[0, thisWin, 'Этот месяц'], [1, lastWin, 'Прошлый месяц']] as const).map(([back, win, label]) => {
+                const on = anchorBack === back
+                return (
+                  <button key={back} type="button" onClick={() => setAnchorBack(back)}
+                    className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition"
+                    style={on ? { borderColor: accent, background: accent + '14' } : { borderColor: 'rgba(120,120,130,0.28)' }}>
+                    <span className="flex items-center gap-2">
+                      <span className="w-3.5 h-3.5 rounded-full border-2 grid place-items-center shrink-0" style={{ borderColor: on ? accent : '#9ca3af' }}>
+                        {on && <span className="w-1.5 h-1.5 rounded-full" style={{ background: accent }} />}
+                      </span>
+                      <span className="text-[13px] font-medium">{label}</span>
+                    </span>
+                    <span className="text-[12px] text-gray-500 dark:text-gray-400 font-medium">{win && fmtCycleShort(win)}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )}
         <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5 mt-4">Норма за цикл</p>
         <div className="grid grid-cols-2 gap-2.5">
           {([['Рилсы', reels, setReels], ['Посты', posts, setPosts]] as const).map(([label, val, set]) => (
@@ -547,7 +580,7 @@ function ProjectCycleModal({ p, saving, clearing, onClose, onSave, onClear, onOp
           <button onClick={() => { setDay(null); setReels(0); setPosts(0) }} className="text-xs font-medium text-gray-400 hover:text-gray-600">Сбросить</button>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="text-sm font-semibold px-3 py-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">Отмена</button>
-            <button disabled={saving} onClick={() => onSave(day, reels || null, posts || null)}
+            <button disabled={saving} onClick={() => onSave(day, reels || null, posts || null, chosenAnchor)}
               className="flex items-center gap-1.5 rounded-lg bg-[#3f7a58] text-white px-4 py-2 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
               <Check size={15} /> Сохранить
             </button>
@@ -574,6 +607,23 @@ function cycleBoundsFor(ref: Date, anchor: number): { start: string; end: string
   const end = new Date(start.getFullYear(), start.getMonth() + 1, nAnchor)
   end.setDate(end.getDate() - 1)
   return { start: iso(start), end: iso(end) }
+}
+// ISO даты дня-старта в месяце ref со сдвигом monthsBack (0 = этот, 1 = прошлый).
+function cycleAnchorIso(day: number, ref: Date, monthsBack = 0): string {
+  const d = new Date(ref.getFullYear(), ref.getMonth() - monthsBack, 1)
+  const dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+  return iso(new Date(d.getFullYear(), d.getMonth(), Math.min(day, dim)))
+}
+// Активный цикл: если есть якорь и сегодня раньше него — цикл от якоря
+// (планируем предстоящий); иначе — цикл, содержащий сегодня.
+function activeCycle(day: number, anchorIso: string | null | undefined, ref: Date): { start: string; end: string } {
+  if (anchorIso && /^\d{4}-\d{2}-\d{2}$/.test(anchorIso) && iso(ref) < anchorIso) return cycleBoundsFor(new Date(anchorIso + 'T00:00:00'), day)
+  return cycleBoundsFor(ref, day)
+}
+const _MON_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+function fmtCycleShort(w: { start: string; end: string }): string {
+  const s = new Date(w.start + 'T00:00:00'), e = new Date(w.end + 'T00:00:00')
+  return `${s.getDate()} ${_MON_SHORT[s.getMonth()]} → ${e.getDate()} ${_MON_SHORT[e.getMonth()]}`
 }
 
 function MonthView({ cells, byDate, today, cycles, dragRange, onOpen, onDragStart, onDropDate, dragOverKey, setDragOverKey }: {

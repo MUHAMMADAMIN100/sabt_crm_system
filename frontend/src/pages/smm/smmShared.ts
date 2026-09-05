@@ -38,6 +38,26 @@ export function cycleBoundsFor(ref: Date, anchor: number): { start: string; end:
   return { start: iso(start), end: iso(end) }
 }
 
+/** ISO даты дня-старта цикла в месяце ref со сдвигом monthsBack
+ *  (0 = этот месяц, 1 = прошлый). День клампится к длине месяца. */
+export function cycleAnchorIso(day: number, ref: Date, monthsBack = 0): string {
+  const d = new Date(ref.getFullYear(), ref.getMonth() - monthsBack, 1)
+  const dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+  const dd = Math.min(day, dim)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(dd).padStart(2, '0')}`
+}
+
+/** Активный цикл проекта. Если задан якорь и сегодня РАНЬШЕ него — берём цикл,
+ *  начинающийся с якоря (планируем предстоящий цикл); иначе — цикл, содержащий
+ *  сегодня (сам сдвигается помесячно). Без якоря — старое поведение. */
+export function activeCycle(day: number, anchorIso: string | null | undefined, ref: Date): { start: string; end: string } {
+  const iso = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}-${String(ref.getDate()).padStart(2, '0')}`
+  if (anchorIso && /^\d{4}-\d{2}-\d{2}$/.test(anchorIso) && iso < anchorIso) {
+    return cycleBoundsFor(new Date(anchorIso + 'T00:00:00'), day)
+  }
+  return cycleBoundsFor(ref, day)
+}
+
 const MON = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
 export function fmtCycleRange(startIso: string, endIso: string): string {
   const s = new Date(startIso + 'T00:00:00'), e = new Date(endIso + 'T00:00:00')

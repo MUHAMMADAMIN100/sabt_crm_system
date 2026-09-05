@@ -381,6 +381,7 @@ export class ContentPlanService {
         id: p.id, name: p.name,
         startDate: dOnly(p.startDate), endDate: dOnly(p.endDate),
         cycleStartDay: p.smmData ? num(p.smmData.cycleStartDay) : null,
+        cycleAnchor: p.smmData && typeof p.smmData.cycleAnchor === 'string' ? p.smmData.cycleAnchor : null,
         normReels: p.smmData ? num(p.smmData.normReels) : null,
         normPosts: p.smmData ? num(p.smmData.normPosts) : null,
       }))

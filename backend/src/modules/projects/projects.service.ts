@@ -1780,7 +1780,7 @@ export class ProjectsService implements OnModuleInit {
    *  месяц. Хранится в smmData (merge, без миграции), отдельно от тарифа/Доски. */
   async setSmmCycle(
     id: string,
-    dto: { day?: number | null; normReels?: number | null; normPosts?: number | null },
+    dto: { day?: number | null; normReels?: number | null; normPosts?: number | null; anchor?: string | null },
     user?: { id: string; role: string; name?: string },
   ) {
     const project = await this.repo.findOne({ where: { id } });
@@ -1799,7 +1799,13 @@ export class ProjectsService implements OnModuleInit {
     const smmData = { ...(project.smmData || {}) };
     if ('day' in dto) {
       const d = dayInRange(dto.day, 1, 31);
-      if (d == null) delete smmData.cycleStartDay; else smmData.cycleStartDay = d;
+      if (d == null) { delete smmData.cycleStartDay; delete smmData.cycleAnchor; } else smmData.cycleStartDay = d;
+    }
+    // Якорь активного цикла (дата старта, 'YYYY-MM-DD') — выбор пользователя
+    // «этот месяц / прошлый месяц». null — авто (цикл, содержащий сегодня).
+    if ('anchor' in dto) {
+      const a = dto.anchor;
+      if (a && /^\d{4}-\d{2}-\d{2}$/.test(a)) smmData.cycleAnchor = a; else delete smmData.cycleAnchor;
     }
     if ('normReels' in dto) {
       const n = dayInRange(dto.normReels, 0, 999);
@@ -1823,6 +1829,7 @@ export class ProjectsService implements OnModuleInit {
     return {
       id,
       cycleStartDay: smmData.cycleStartDay ?? null,
+      cycleAnchor: smmData.cycleAnchor ?? null,
       normReels: smmData.normReels ?? null,
       normPosts: smmData.normPosts ?? null,
     };

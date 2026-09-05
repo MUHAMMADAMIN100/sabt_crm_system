@@ -73,7 +73,7 @@ export const projectsApi = {
     api.patch(`/projects/${id}/stories-archive`, { archived }).then(r => r.data),
   // Настройки месячного цикла SMM-проекта (Умный календарь): день старта +
   // норма за цикл (рилсы/посты). null у поля — сбросить.
-  setSmmCycle: (id: string, data: { day?: number | null; normReels?: number | null; normPosts?: number | null }) =>
+  setSmmCycle: (id: string, data: { day?: number | null; normReels?: number | null; normPosts?: number | null; anchor?: string | null }) =>
     api.patch(`/projects/${id}/smm-cycle`, data).then(r => r.data),
   sendPaymentRequest: (id: string, message?: string) =>
     api.post(`/projects/${id}/send-payment-request`, { message }).then(r => r.data),
