@@ -1,13 +1,13 @@
 import { useState, useEffect, Suspense } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
-import Header from './Header'
 import { PageLoader } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
 import { useSocket } from '@/hooks/useSocket'
 import KpiCelebrationWatcher from '@/hooks/useKpiCelebrationWatcher'
 import StampCelebration from '@/components/tasks/StampCelebration'
 import { authApi } from '@/services/api.service'
+import { Menu } from 'lucide-react'
 import clsx from 'clsx'
 
 /** Брендированный «пульсирующий S» лоадер при переходе между route'ами.
@@ -107,7 +107,7 @@ export default function Layout() {
         />
       )}
 
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} onToggle={() => setSidebarOpen(o => !o)} />
 
       <div
         className={clsx(
@@ -116,7 +116,16 @@ export default function Layout() {
           sidebarOpen ? 'ml-0 lg:ml-[260px]' : 'ml-0 lg:ml-[72px]',
         )}
       >
-        <Header onMenuClick={() => setSidebarOpen(o => !o)} />
+        {/* Мобильная кнопка открытия меню (в десктопе сайдбар всегда виден; верхней панели больше нет) */}
+        {!sidebarOpen && (
+          <button
+            onClick={() => setSidebarOpen(true)}
+            title="Меню"
+            className="fixed top-2 left-2 z-30 lg:hidden p-2 rounded-lg bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 shadow-md text-surface-600 dark:text-surface-300"
+          >
+            <Menu size={18} />
+          </button>
+        )}
         <main className={clsx('flex-1 overflow-y-auto p-4 lg:p-6', financeRoute && 'finance-workspace min-w-0 overflow-x-hidden')}>
           {/* key on pathname so each navigation re-triggers the animation */}
           <div

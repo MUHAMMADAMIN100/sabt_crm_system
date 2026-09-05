@@ -8,7 +8,7 @@ import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
   FileText, BarChart3, Archive, X, Sparkles, Contact, Tag, ShieldAlert, UserPlus,
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
-  Wallet, ChevronDown, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal, MoreHorizontal, CalendarRange,
+  Wallet, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal, MoreHorizontal, CalendarRange,
   Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck, LineChart, Megaphone,
   Activity,
 } from 'lucide-react'
@@ -32,13 +32,13 @@ const SMM_SUBNAV = [
   { to: '/smm/projects', label: 'Проекты', icon: FolderKanban },
 ]
 
-interface SidebarProps { open: boolean; onClose: () => void }
+interface SidebarProps { open: boolean; onClose: () => void; onToggle: () => void }
 
 /** Тёмный сайдбар в корпоративном стиле (по референсу GRANT CHINA, но с
  *  нашим indigo акцентом вместо красного). Фон #0f0f12, белый текст,
  *  активный пункт — сплошная заливка primary, без декоративных точек.
  *  Пользовательский блок внизу — компактный, с быстрыми действиями. */
-export default function Sidebar({ open, onClose }: SidebarProps) {
+export default function Sidebar({ open, onClose, onToggle }: SidebarProps) {
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
   const { t } = useTranslation()
@@ -421,6 +421,23 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               </div>
             )}
           </div>
+          {/* Свернуть/развернуть меню — заменяет кнопку из убранной верхней панели */}
+          <button
+            onClick={onToggle}
+            title={!open ? 'Развернуть меню' : undefined}
+            className={clsx(
+              'mt-2 w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium bg-white/[0.05] hover:bg-white/10 text-[rgb(var(--sidebar-fg-dim))] hover:text-[rgb(var(--sidebar-fg))] transition-colors',
+              !open && 'lg:justify-center lg:px-2',
+            )}
+          >
+            {open ? <ChevronLeft size={18} className="shrink-0" /> : <ChevronRight size={18} className="shrink-0" />}
+            <span className={clsx(
+              'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
+              open ? 'max-w-[200px] opacity-100' : 'max-w-0 opacity-0',
+            )}>
+              Свернуть меню
+            </span>
+          </button>
         </div>
       )}
     </aside>

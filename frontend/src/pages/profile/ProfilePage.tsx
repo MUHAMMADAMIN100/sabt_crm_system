@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth.store'
-import { authApi, projectsApi, usersApi } from '@/services/api.service'
+import { authApi, projectsApi, usersApi, notificationsApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
 import { Avatar, ProgressBar, StatusBadge } from '@/components/ui'
-import { User, Mail, Briefcase, Key, Clock, FolderKanban, CalendarDays, Camera } from 'lucide-react'
+import { User, Mail, Briefcase, Key, Clock, FolderKanban, CalendarDays, Camera, Bell, Globe, Check } from 'lucide-react'
 import { getUserPositionLabel } from '@/lib/permissions'
 import { useForm } from 'react-hook-form'
-import { format } from 'date-fns'
-import { Link } from 'react-router-dom'
+import { format, formatDistanceToNow } from 'date-fns'
+import { ru } from 'date-fns/locale'
+import { Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import TwoFactorSection from '@/components/profile/TwoFactorSection'
 import ThemeEditorSection from '@/components/profile/ThemeEditorSection'
@@ -20,9 +21,33 @@ export default function ProfilePage() {
   const fetchMe = useAuthStore(s => s.fetchMe)
   const [changingPass, setChangingPass] = useState(false)
   const { register, handleSubmit, reset } = useForm()
-  const { t } = useTranslation()
+  const { t, locale, setLocale } = useTranslation()
+  const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
+
+  // Уведомления и язык — переехали сюда с убранной верхней панели.
+  const { data: allNotifications } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => notificationsApi.list(),
+    refetchInterval: 30000,
+  })
+  const notifList: any[] = allNotifications ?? []
+  const unreadCount = notifList.filter((n: any) => !n.isRead).length
+  const markReadMut = useMutation({
+    mutationFn: (id: string) => notificationsApi.markRead(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['notifications'] }); qc.invalidateQueries({ queryKey: ['unread-count'] }) },
+  })
+  const markAllReadMut = useMutation({
+    mutationFn: () => notificationsApi.markAllRead(),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['notifications'] }); qc.invalidateQueries({ queryKey: ['unread-count'] }) },
+  })
+  const onNotifClick = (n: any) => { if (!n.isRead) markReadMut.mutate(n.id); if (n.link) navigate(n.link) }
+  const languages = [
+    { code: 'ru', name: 'Русский' },
+    { code: 'en', name: 'English' },
+    { code: 'tj', name: 'Тоҷикӣ' },
+  ]
 
   const uploadAvatarMut = useMutation({
     mutationFn: (file: File) => usersApi.uploadMyAvatar(file),
@@ -239,6 +264,60 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+
+      {/* Уведомления — переехали с убранной верхней панели */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Bell size={16} className="text-primary-600 dark:text-primary-400" />
+            <h3 className="section-title">Уведомления</h3>
+            {unreadCount > 0 && (
+              <span className="badge bg-red-500 text-white text-[10px]">{unreadCount > 99 ? '99+' : unreadCount} новых</span>
+            )}
+          </div>
+          {unreadCount > 0 && (
+            <button onClick={() => markAllReadMut.mutate()} className="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+              <Check size={12} /> Прочитать все
+            </button>
+          )}
+        </div>
+        {notifList.length === 0 ? (
+          <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-4">Нет уведомлений</p>
+        ) : (
+          <div className="space-y-1">
+            {notifList.slice(0, 8).map((n: any) => (
+              <button key={n.id} onClick={() => onNotifClick(n)}
+                className="w-full text-left flex items-start gap-2 p-2.5 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors">
+                <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${n.isRead ? 'bg-transparent' : 'bg-primary-500'}`} />
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm leading-snug ${n.isRead ? 'text-surface-600 dark:text-surface-300' : 'font-medium text-surface-900 dark:text-surface-100'}`}>{n.title}</p>
+                  {n.message && <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5 line-clamp-2">{n.message}</p>}
+                  <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-1">{n.createdAt ? formatDistanceToNow(new Date(n.createdAt), { addSuffix: true, locale: ru }) : ''}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+        <Link to="/notifications" className="block mt-2 text-center text-sm text-primary-600 dark:text-primary-400 hover:underline">Все уведомления →</Link>
+      </div>
+
+      {/* Язык интерфейса — переехал с убранной верхней панели */}
+      <div className="card">
+        <div className="flex items-center gap-2 mb-4">
+          <Globe size={16} className="text-primary-600 dark:text-primary-400" />
+          <h3 className="section-title">Язык интерфейса</h3>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {languages.map(l => (
+            <button key={l.code} onClick={() => setLocale(l.code as any)}
+              className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-colors ${locale === l.code
+                ? 'bg-primary-600 border-primary-600 text-white'
+                : 'bg-surface-50 dark:bg-surface-700/50 border-surface-200 dark:border-surface-700 text-surface-700 dark:text-surface-300 hover:border-primary-400'}`}>
+              {l.name}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Персональная тема интерфейса (5-цветный редактор) */}
       <ThemeEditorSection />
