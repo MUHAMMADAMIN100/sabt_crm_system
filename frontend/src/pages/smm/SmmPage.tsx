@@ -829,7 +829,8 @@ function TimeGridView({ days, events, dragRange, onOpen, onDragStart, onDropDate
           {nowVisible && (
             <>
               <div className="absolute z-10 pointer-events-none" style={{ top: nowTop + 10, left: 54, right: 0, height: 1.5, background: '#eb5757' }} />
-              <div className="absolute z-20 text-[11px] font-semibold" style={{ top: nowTop + 10, left: 6, transform: 'translateY(-50%)', color: '#eb5757' }}>
+              {/* Красная «таблетка» с фоном — перекрывает метку часа, если время рядом с ним. */}
+              <div className="absolute z-20 text-[10px] font-bold px-1 rounded pointer-events-none" style={{ top: nowTop + 10, left: 3, transform: 'translateY(-50%)', color: '#fff', background: '#eb5757' }}>
                 {now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
               </div>
             </>
