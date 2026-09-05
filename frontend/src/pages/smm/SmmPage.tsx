@@ -747,10 +747,14 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
   const scrollRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null) // липкая шапка дней недели — её высоту вычитаем при прокрутке
   const mondayOf = (d: Date) => startOfWeek(d, { weekStartsOn: 1 })
-  const rangeAround = (mon: Date, before = 3, after = 8) => Array.from({ length: before + after + 1 }, (_, i) => addDays(mon, (i - before) * 7))
+  // Сразу предзагружаем большой запас недель (~9 мес. назад / ~11 вперёд), чтобы при обычном скролле
+  // НИЧЕГО не подгружалось на лету — иначе контент «выскакивает» и лента дёргается.
+  const rangeAround = (mon: Date, before = 36, after = 44) => Array.from({ length: before + after + 1 }, (_, i) => addDays(mon, (i - before) * 7))
   const [weeks, setWeeks] = useState<Date[]>(() => rangeAround(mondayOf(ymToDate(initialMonth))))
   const prependHRef = useRef<number | null>(null) // scrollHeight до добавления недель сверху (компенсация прыжка)
   const visibleRef = useRef(initialMonth)
+  const lastReported = useRef(initialMonth) // последний месяц, о котором сообщили родителю (для дебаунса заголовка)
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const tickingRef = useRef(false)
   const pendingScroll = useRef<string | null>(iso(mondayOf(ymToDate(initialMonth)))) // ISO понедельника недели, к которой прокрутиться
 
@@ -777,12 +781,16 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
   // Маунт — прокрутка к initialMonth.
   useLayoutEffect(() => { scrollToPending() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Чистка таймера дебаунса при размонтировании.
+  useEffect(() => () => clearTimeout(settleTimer.current), [])
+
   // Внешняя навигация (стрелки / «Сегодня») — прокрутка к неделе нужного месяца.
   useEffect(() => {
     if (commandSeq === 0) return
     const targetMon = mondayOf(ymToDate(commandMonth))
     const wkIso = iso(targetMon)
     pendingScroll.current = wkIso
+    visibleRef.current = commandMonth; lastReported.current = commandMonth // чтобы прокрутка не «сообщала» месяц заново
     setWeeks(ws => ws.some(w => iso(w) === wkIso) ? ws : rangeAround(targetMon))
     scrollToPending() // если неделя уже в списке — прокрутится сразу; иначе сработает layout-effect выше
   }, [commandSeq]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -790,19 +798,24 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
   const handle = () => {
     const el = scrollRef.current
     if (!el) return
-    const T = 400
+    const T = 800, BATCH = 26 // догружаем только у самого края и сразу большим пакетом (редко, без «шторма» подгрузок)
     if (el.scrollTop <= T) {
       prependHRef.current = el.scrollHeight
-      setWeeks(ws => [addDays(ws[0], -7), ...ws])
+      setWeeks(ws => [...Array.from({ length: BATCH }, (_, i) => addDays(ws[0], -(BATCH - i) * 7)), ...ws])
     } else if (el.scrollTop + el.clientHeight >= el.scrollHeight - T) {
-      setWeeks(ws => [...ws, addDays(ws[ws.length - 1], 7)])
+      setWeeks(ws => [...ws, ...Array.from({ length: BATCH }, (_, i) => addDays(ws[ws.length - 1], (i + 1) * 7))])
     }
-    // видимый месяц = месяц «четверга» верхней видимой недели (ISO-правило — по нему листается заголовок).
+    // видимый месяц = месяц «четверга» верхней видимой недели. Сообщаем родителю ПОСЛЕ остановки скролла
+    // (дебаунс 120мс) — иначе перерисовка заголовка дёргает всю ленту во время прокрутки.
     let cur = visibleRef.current
     for (const w of Array.from(el.querySelectorAll('[data-week]')) as HTMLElement[]) {
       if (w.offsetTop - el.scrollTop <= 80) cur = w.dataset.month as string
     }
-    if (cur && cur !== visibleRef.current) { visibleRef.current = cur; onVisibleMonth(cur) }
+    visibleRef.current = cur
+    if (cur && cur !== lastReported.current) {
+      clearTimeout(settleTimer.current)
+      settleTimer.current = setTimeout(() => { lastReported.current = cur; onVisibleMonth(cur) }, 120)
+    }
   }
   const onScroll = () => {
     if (tickingRef.current) return
