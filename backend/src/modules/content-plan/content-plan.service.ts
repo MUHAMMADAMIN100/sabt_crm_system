@@ -116,20 +116,30 @@ export class ContentPlanService {
     }
   }
 
-  /** Авто-съёмка под рилс: если это рилс с датой публикации и у него ещё нет съёмки —
-   *  создаём Съёмку (content_plan_item со shootForItemId) на день раньше (X−1). Съёмка
-   *  дальше двигается независимо (не пересоздаём/не двигаем, если уже есть). */
+  /** Авто-съёмка под рилс. При перетаскивании рилса (или его создании с датой):
+   *  — съёмки вообще нет (её удалили) → создаём заново на X−1;
+   *  — съёмка есть НА ДАТЕ → не трогаем (двигается независимо от рилса);
+   *  — съёмка есть, но БЕЗ даты (её сняли в «Не запланировано») → возвращаем на X−1
+   *    (пользователь «передумал» и перетащил рилс → съёмка снова появляется). */
   private async ensureShootForReel(reel: ContentPlanItem | null): Promise<void> {
     if (!reel) return;
     if (reel.shootForItemId) return;                      // сама съёмка — не плодим съёмку под съёмку
     if (reel.contentType !== ContentItemType.REEL) return; // только под рилсы
     if (!reel.publishDate) return;                         // без даты рилса съёмку не ставим
     try {
-      const exists = await this.repo.count({ where: { shootForItemId: reel.id } });
-      if (exists > 0) return;                              // съёмка уже есть — не двигаем
       const shootDate = new Date(reel.publishDate);
       shootDate.setDate(shootDate.getDate() - 1);          // X−1
-      await this.repo.save(this.repo.create({
+      const shoot = await this.repo.findOne({ where: { shootForItemId: reel.id } });
+      if (shoot) {
+        if (shoot.publishDate) return;                     // съёмка на дате — не двигаем
+        await this.repo.update(shoot.id, {                 // была снята с даты — возвращаем на X−1
+          publishDate: shootDate,
+          publishTime: reel.publishTime ?? null,
+          status: ContentPlanStatus.PLANNED,
+        });
+        return;
+      }
+      await this.repo.save(this.repo.create({              // съёмки нет — создаём
         projectId: reel.projectId,
         contentType: reel.contentType,                     // тип reel, но shootForItemId делает её съёмкой
         topic: 'Съёмка',
@@ -327,8 +337,8 @@ export class ContentPlanService {
     if ('durationMin' in patch) { const d = Math.trunc(Number(patch.durationMin)); set.durationMin = Number.isFinite(d) && d >= 15 && d <= 600 ? d : null; }
     if ('status' in patch && patch.status) set.status = patch.status;
     if (Object.keys(set).length) await this.repo.update(id, set);
-    // Авто-съёмка: если это рилс и у него теперь есть дата — создаём съёмку (если её ещё нет).
-    // Если рилс просто переносят — съёмка уже есть и НЕ двигается (остаётся на месте).
+    // Авто-съёмка при переносе рилса: если съёмки нет (удалили) или она без даты (сняли) —
+    // создаём/возвращаем на X−1. Если съёмка на дате — НЕ двигаем (остаётся на месте).
     const item = await this.repo.findOne({ where: { id } });
     await this.ensureShootForReel(item);
     return { ok: true };
