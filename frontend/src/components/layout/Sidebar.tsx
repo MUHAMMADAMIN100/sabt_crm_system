@@ -154,7 +154,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={clsx(
-        'fixed left-0 top-0 z-30 flex flex-col h-full',
+        'fixed left-0 top-0 z-40 flex flex-col h-full',
         'transition-[width] duration-200 ease-out',
         // Фон сайдбара — отдельная переменная из роли «Фон» (НЕ «Текст»):
         // всегда тёмная панель, смена цвета текста её не трогает.
