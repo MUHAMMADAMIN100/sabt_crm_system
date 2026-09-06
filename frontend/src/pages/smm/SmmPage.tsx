@@ -302,7 +302,9 @@ export default function SmmPage() {
     return () => document.removeEventListener('dragend', clear)
   }, [])
 
-  const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null); setDragRange(projCycle(e.projectId)); setDragDuration(e.durationMin || DEFAULT_DUR) }
+  // Съёмку (подготовку) можно ставить в любой день — цикл проекта её не ограничивает (в отличие от публикаций).
+  const cycleFor = (e: Ev) => (e.kind === 'shoot' ? null : projCycle(e.projectId))
+  const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null); setDragRange(cycleFor(e)); setDragDuration(e.durationMin || DEFAULT_DUR) }
   // Перенос на день (всё-день) — снимаем время (публикация возвращается наверх).
   const onDropDate = (dateStr: string) => {
     const e = dragRef.current
@@ -310,8 +312,8 @@ export default function SmmPage() {
     setDragOverKey(null); setDragRange(null)
     if (!e) return
     if (e.date === dateStr && !e.time) return
-    // Только внутри текущего цикла проекта (если он задан).
-    const range = projCycle(e.projectId)
+    // Публикации — только внутри цикла проекта; съёмки — куда угодно.
+    const range = cycleFor(e)
     if (range && (dateStr < range.start || dateStr > range.end)) return
     const refId = e.itemId ?? e.shootId
     if (!refId) return
@@ -324,7 +326,7 @@ export default function SmmPage() {
     setDragOverKey(null); setDragRange(null)
     if (!e) return
     if (e.date === dateStr && e.time === time) return
-    const range = projCycle(e.projectId)
+    const range = cycleFor(e)
     if (range && (dateStr < range.start || dateStr > range.end)) return
     const refId = e.itemId ?? e.shootId
     if (!refId) return
