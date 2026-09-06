@@ -22,6 +22,10 @@ const fmtDate = (v?: string | null) => v ? new Date(v + 'T00:00:00').toLocaleDat
 const inp = 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-gray-400 dark:focus:border-gray-500'
 const card = 'rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5'
 const secLabel = 'text-[11px] font-bold uppercase tracking-wider text-gray-400'
+// Строка фиксированной высоты: поле редактирования встаёт РОВНО на место значения — при входе
+// в «Изменить» раскладка не сдвигается (высота карточки постоянна).
+const fRow = 'flex items-center justify-between gap-3 h-[46px] border-b border-gray-100 dark:border-gray-800 last:border-0'
+const editIn = 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg h-8 px-2.5 text-sm outline-none focus:border-gray-400 dark:focus:border-gray-500'
 
 function Row({ k, v }: { k: string; v: ReactNode }) {
   return (
@@ -167,35 +171,27 @@ export default function SmmProjectPage() {
               <h2 className={secLabel}>Цикл и норма</h2>
               {cycEditing ? editActions(saveCycle, () => setCycEditing(false)) : editBtn(false, () => setCycEditing(true))}
             </div>
-            {cycEditing ? (
-              <div className="space-y-3">
-                <label className="flex items-center justify-between gap-3"><span className="text-sm text-gray-500">День старта цикла</span>
-                  <input type="number" min={1} max={31} value={cycDraft.day} onChange={e => setCycDraft(d => ({ ...d, day: e.target.value }))} className={inp + ' w-20 text-center'} /></label>
-                <label className="flex items-center justify-between gap-3"><span className="text-sm text-gray-500 inline-flex items-center gap-1.5"><Film size={14} /> Рилсы за цикл</span>
-                  <input type="number" min={0} value={cycDraft.reels} onChange={e => setCycDraft(d => ({ ...d, reels: e.target.value }))} className={inp + ' w-20 text-center'} /></label>
-                <label className="flex items-center justify-between gap-3"><span className="text-sm text-gray-500 inline-flex items-center gap-1.5"><ImageIcon size={14} /> Посты за цикл</span>
-                  <input type="number" min={0} value={cycDraft.posts} onChange={e => setCycDraft(d => ({ ...d, posts: e.target.value }))} className={inp + ' w-20 text-center'} /></label>
-                <label className="flex items-center justify-between gap-3"><span className="text-sm text-gray-500">Сторис в месяц</span>
-                  <input type="number" min={0} value={cycDraft.spm} onChange={e => setCycDraft(d => ({ ...d, spm: e.target.value }))} placeholder="напр. 90" className={inp + ' w-20 text-center'} /></label>
-                <p className="text-[11.5px] text-gray-400">{perDayHint > 0 ? `Распределится равномерно: ≈ ${perDayHint}/день. По этой норме красятся дни на «Сторисы».` : 'Не задано — статус сторис не считается.'}</p>
+            <div>
+              <div className={fRow}><span className="text-sm text-gray-500">День старта цикла</span>
+                {cycEditing
+                  ? <input type="number" min={1} max={31} value={cycDraft.day} onChange={e => setCycDraft(d => ({ ...d, day: e.target.value }))} className={editIn + ' w-16 text-center'} />
+                  : <span className="text-sm font-semibold text-right">{p.cycleStartDay ? `${p.cycleStartDay}-е число` : '—'}</span>}
               </div>
-            ) : (
-              <div>
-                <Row k="День старта цикла" v={p.cycleStartDay ? `${p.cycleStartDay}-е число` : '—'} />
-                <Row k="Текущий цикл" v={cycle ? fmtCycleRange(cycle.start, cycle.end) : '—'} />
-                <Row k="Норма за цикл" v={norm > 0
-                  ? <span className="inline-flex items-center gap-3" style={{ color }}>
-                      <span className="inline-flex items-center gap-1"><Film size={15} /> {p.normReels ?? 0}</span>
-                      <span className="inline-flex items-center gap-1"><ImageIcon size={15} /> {p.normPosts ?? 0}</span>
-                    </span>
-                  : '—'} />
-                <Row k="Сторис в месяц" v={p.storiesPerMonth != null && p.storiesPerMonth > 0
-                  ? <span>{p.storiesPerMonth} <span className="text-gray-400 font-medium text-[12.5px]">· ≈ {Math.max(1, Math.round(p.storiesPerMonth / daysInMonth))}/день</span></span>
-                  : '—'} />
-                <Row k="Запланировано в календаре" v={norm > 0 ? `${placed} из ${norm}` : '—'} />
-                <Row k="Осталось в «Не запланировано»" v={left} />
+              <div className={fRow}><span className="text-sm text-gray-500">Текущий цикл</span>
+                <span className="text-sm font-semibold text-right">{cycle ? fmtCycleRange(cycle.start, cycle.end) : '—'}</span></div>
+              <div className={fRow}><span className="text-sm text-gray-500">Норма за цикл</span>
+                {cycEditing
+                  ? <span className="flex items-center gap-2 text-gray-500"><Film size={14} /><input type="number" min={0} value={cycDraft.reels} onChange={e => setCycDraft(d => ({ ...d, reels: e.target.value }))} className={editIn + ' w-14 text-center'} /><ImageIcon size={14} /><input type="number" min={0} value={cycDraft.posts} onChange={e => setCycDraft(d => ({ ...d, posts: e.target.value }))} className={editIn + ' w-14 text-center'} /></span>
+                  : <span className="inline-flex items-center gap-3 text-sm font-semibold" style={{ color }}><span className="inline-flex items-center gap-1"><Film size={15} /> {p.normReels ?? 0}</span><span className="inline-flex items-center gap-1"><ImageIcon size={15} /> {p.normPosts ?? 0}</span></span>}
               </div>
-            )}
+              <div className={fRow}><span className="text-sm text-gray-500">Сторис в месяц</span>
+                {cycEditing
+                  ? <span className="flex items-center gap-2"><input type="number" min={0} value={cycDraft.spm} onChange={e => setCycDraft(d => ({ ...d, spm: e.target.value }))} placeholder="90" className={editIn + ' w-16 text-center'} /><span className="text-gray-400 text-[12.5px] whitespace-nowrap">· ≈ {perDayHint > 0 ? perDayHint : '—'}/день</span></span>
+                  : <span className="text-sm font-semibold text-right">{p.storiesPerMonth != null && p.storiesPerMonth > 0 ? <>{p.storiesPerMonth} <span className="text-gray-400 font-medium text-[12.5px]">· ≈ {Math.max(1, Math.round(p.storiesPerMonth / daysInMonth))}/день</span></> : '—'}</span>}
+              </div>
+              <div className={fRow}><span className="text-sm text-gray-500">Запланировано в календаре</span><span className="text-sm font-semibold text-right">{norm > 0 ? `${placed} из ${norm}` : '—'}</span></div>
+              <div className={fRow}><span className="text-sm text-gray-500">Осталось в «Не запланировано»</span><span className="text-sm font-semibold text-right">{left}</span></div>
+            </div>
           </div>
 
           {/* О клиенте */}
@@ -204,34 +200,29 @@ export default function SmmProjectPage() {
               <h2 className={secLabel}>О клиенте</h2>
               {cliEditing ? editActions(saveClient, () => setCliEditing(false)) : editBtn(false, () => setCliEditing(true))}
             </div>
-            {cliEditing ? (
-              <div className="space-y-3">
-                <label className="block"><span className="text-xs text-gray-500">Владелец бизнеса</span>
-                  <input value={draft.ownerName} onChange={e => setDraft(d => ({ ...d, ownerName: e.target.value }))} placeholder="Имя" className={inp + ' w-full mt-1'} /></label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="block"><span className="text-xs text-gray-500">Значимый день</span>
-                    <input type="date" value={draft.keyDate} onChange={e => setDraft(d => ({ ...d, keyDate: e.target.value }))} className={inp + ' w-full mt-1'} /></label>
-                  <label className="block"><span className="text-xs text-gray-500">Комментарий к дню</span>
-                    <input value={draft.keyDateNote} onChange={e => setDraft(d => ({ ...d, keyDateNote: e.target.value }))} placeholder="Напр. День рождения" className={inp + ' w-full mt-1'} /></label>
-                </div>
-                <label className="block"><span className="text-xs text-gray-500">Сотрудничаем с</span>
-                  <input type="date" value={draft.collabSince} onChange={e => setDraft(d => ({ ...d, collabSince: e.target.value }))} className={inp + ' w-full mt-1'} /></label>
-                <label className="block"><span className="text-xs text-gray-500">Предпочтения</span>
-                  <textarea value={draft.preferences} onChange={e => setDraft(d => ({ ...d, preferences: e.target.value }))} rows={4} placeholder="Тон, что любят/не любят, правила согласования…" className={inp + ' w-full mt-1 resize-y leading-relaxed'} /></label>
+            <div>
+              <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Владелец бизнеса</span>
+                {cliEditing
+                  ? <input value={draft.ownerName} onChange={e => setDraft(d => ({ ...d, ownerName: e.target.value }))} placeholder="Имя" className={editIn + ' w-52 text-right'} />
+                  : <span className="text-sm font-semibold text-right">{profile?.ownerName || '—'}</span>}
               </div>
-            ) : (
-              <div>
-                <Row k="Владелец бизнеса" v={profile?.ownerName || '—'} />
-                <Row k="Значимый день" v={profile?.keyDate
-                  ? <span className="inline-flex items-center gap-1.5"><Gift size={14} style={{ color }} />{fmtDate(profile.keyDate)}{profile.keyDateNote ? ` · ${profile.keyDateNote}` : ''}</span>
-                  : '—'} />
-                <Row k="Сотрудничаем с" v={fmtDate(profile?.collabSince)} />
-                <div className="py-2.5">
-                  <p className="text-sm text-gray-500 mb-1.5">Предпочтения</p>
-                  {profile?.preferences ? <p className="text-sm leading-relaxed whitespace-pre-wrap">{profile.preferences}</p> : <p className="text-sm text-gray-400">—</p>}
-                </div>
+              <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Значимый день</span>
+                {cliEditing
+                  ? <span className="flex items-center gap-2 flex-1 min-w-0 justify-end"><input type="date" value={draft.keyDate} onChange={e => setDraft(d => ({ ...d, keyDate: e.target.value }))} className={editIn + ' w-[140px] shrink-0'} /><input value={draft.keyDateNote} onChange={e => setDraft(d => ({ ...d, keyDateNote: e.target.value }))} placeholder="Комментарий" className={editIn + ' flex-1 min-w-0'} /></span>
+                  : <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-right">{profile?.keyDate ? <><Gift size={14} style={{ color }} />{fmtDate(profile.keyDate)}{profile.keyDateNote ? ` · ${profile.keyDateNote}` : ''}</> : '—'}</span>}
               </div>
-            )}
+              <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Сотрудничаем с</span>
+                {cliEditing
+                  ? <input type="date" value={draft.collabSince} onChange={e => setDraft(d => ({ ...d, collabSince: e.target.value }))} className={editIn + ' w-[150px]'} />
+                  : <span className="text-sm font-semibold text-right">{fmtDate(profile?.collabSince)}</span>}
+              </div>
+              <div className="h-[112px] pt-2.5 flex flex-col gap-1.5">
+                <span className="text-sm text-gray-500">Предпочтения</span>
+                {cliEditing
+                  ? <textarea value={draft.preferences} onChange={e => setDraft(d => ({ ...d, preferences: e.target.value }))} placeholder="Тон, что любят/не любят, правила согласования…" className={inp + ' flex-1 w-full resize-none leading-relaxed'} />
+                  : (profile?.preferences ? <p className="flex-1 overflow-auto text-sm leading-relaxed whitespace-pre-wrap">{profile.preferences}</p> : <p className="flex-1 text-sm text-gray-400">—</p>)}
+              </div>
+            </div>
           </div>
         </div>
 
