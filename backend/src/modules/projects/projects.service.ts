@@ -1843,20 +1843,30 @@ export class ProjectsService implements OnModuleInit {
   }
 
   /** Профиль клиента SMM-проекта (владелец, значимый день, начало сотрудничества,
-   *  предпочтения, история подписчиков по месяцам). Всё хранится в smmData. */
+   *  предпочтения) + помесячные метрики (подписчики, охват, вовлечённость, заявки). В smmData. */
   private normSmmProfile(smmData: any) {
-    const raw = Array.isArray(smmData?.followers) ? smmData.followers : [];
-    const followers = raw
-      .filter((f: any) => f && /^\d{4}-\d{2}$/.test(f.ym) && Number.isFinite(Number(f.value)))
-      .map((f: any) => ({ ym: String(f.ym), value: Math.trunc(Number(f.value)) }))
-      .sort((a: any, b: any) => (a.ym < b.ym ? -1 : 1));
+    const numOr = (v: any): number | null => { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n >= 0 ? n : null; };
+    let metrics: any[];
+    if (Array.isArray(smmData?.metrics)) {
+      metrics = smmData.metrics
+        .filter((m: any) => m && /^\d{4}-\d{2}$/.test(m.ym))
+        .map((m: any) => ({ ym: String(m.ym), subs: numOr(m.subs), reach: numOr(m.reach), eng: numOr(m.eng), leads: numOr(m.leads) }))
+        .sort((a: any, b: any) => (a.ym < b.ym ? -1 : 1));
+    } else {
+      // Легаси: старое поле followers → подписчики (subs).
+      const raw = Array.isArray(smmData?.followers) ? smmData.followers : [];
+      metrics = raw
+        .filter((f: any) => f && /^\d{4}-\d{2}$/.test(f.ym) && Number.isFinite(Number(f.value)))
+        .map((f: any) => ({ ym: String(f.ym), subs: Math.trunc(Number(f.value)), reach: null, eng: null, leads: null }))
+        .sort((a: any, b: any) => (a.ym < b.ym ? -1 : 1));
+    }
     return {
       ownerName: smmData?.ownerName ?? null,
       keyDate: smmData?.keyDate ?? null,
       keyDateNote: smmData?.keyDateNote ?? null,
       collabSince: smmData?.collabSince ?? null,
       preferences: smmData?.preferences ?? null,
-      followers,
+      metrics,
     };
   }
 
@@ -1868,7 +1878,7 @@ export class ProjectsService implements OnModuleInit {
 
   async setSmmProfile(
     id: string,
-    dto: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[] },
+    dto: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; metrics?: any[]; followers?: { ym: string; value: number }[] },
     user?: { id: string; role: string; name?: string },
   ) {
     const project = await this.repo.findOne({ where: { id } });
@@ -1883,7 +1893,25 @@ export class ProjectsService implements OnModuleInit {
     if ('keyDateNote' in dto) setOrDel('keyDateNote', str(dto.keyDateNote, 500));
     if ('collabSince' in dto) setOrDel('collabSince', dateOr(dto.collabSince));
     if ('preferences' in dto) setOrDel('preferences', str(dto.preferences, 4000));
-    if ('followers' in dto) {
+    // Помесячные метрики: подписчики/охват/вовлечённость/заявки. Дедуп по ym, сортировка, cap 240.
+    if ('metrics' in dto) {
+      const arr = Array.isArray(dto.metrics) ? dto.metrics : [];
+      const byYm = new Map<string, any>();
+      for (const m of arr) {
+        if (m && /^\d{4}-\d{2}$/.test(String(m.ym))) {
+          const clean: any = { ym: String(m.ym) };
+          for (const k of ['subs', 'reach', 'eng', 'leads']) {
+            const n = Math.trunc(Number((m as any)[k]));
+            if (Number.isFinite(n) && n >= 0 && n <= 1_000_000_000_000) clean[k] = n;
+          }
+          byYm.set(clean.ym, clean);
+        }
+      }
+      const metrics = [...byYm.values()].sort((a, b) => (a.ym < b.ym ? -1 : 1)).slice(-240);
+      if (metrics.length) smmData.metrics = metrics; else delete (smmData as any).metrics;
+      delete (smmData as any).followers; // мигрировали на metrics
+    } else if ('followers' in dto) {
+      // Легаси-совместимость (старый фронт в переходный период).
       const arr = Array.isArray(dto.followers) ? dto.followers : [];
       const byYm = new Map<string, number>();
       for (const f of arr) {

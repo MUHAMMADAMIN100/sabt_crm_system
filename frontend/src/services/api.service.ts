@@ -77,7 +77,7 @@ export const projectsApi = {
     api.patch(`/projects/${id}/smm-cycle`, data).then(r => r.data),
   // Профиль клиента SMM-проекта: владелец, значимый день, начало сотрудничества, предпочтения, история подписчиков.
   getSmmProfile: (id: string) => api.get(`/projects/${id}/smm-profile`).then(r => r.data),
-  setSmmProfile: (id: string, data: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[] }) =>
+  setSmmProfile: (id: string, data: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; metrics?: { ym: string; subs?: number | null; reach?: number | null; eng?: number | null; leads?: number | null }[] }) =>
     api.patch(`/projects/${id}/smm-profile`, data).then(r => r.data),
   sendPaymentRequest: (id: string, message?: string) =>
     api.post(`/projects/${id}/send-payment-request`, { message }).then(r => r.data),

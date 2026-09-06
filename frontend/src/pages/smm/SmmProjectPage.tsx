@@ -1,47 +1,47 @@
 import { useMemo, useState, useEffect, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, ChevronLeft, Film, Image as ImageIcon, Pencil, Check, Plus, TrendingUp, TrendingDown, Gift } from 'lucide-react'
+import { Loader2, ChevronLeft, Film, Image as ImageIcon, Pencil, Check, Plus, TrendingUp, TrendingDown, Gift, FileText, X, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, type SmmProj } from './smmShared'
 
-type Ev = { projectId: string }
-type CalData = { projects: SmmProj[]; backlog: Ev[] }
-type Follower = { ym: string; value: number }
-type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNote: string | null; collabSince: string | null; preferences: string | null; followers: Follower[] }
+type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
+type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
+type MKey = 'subs' | 'reach' | 'eng' | 'leads'
+type MPoint = { ym: string; subs: number | null; reach: number | null; eng: number | null; leads: number | null }
+type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNote: string | null; collabSince: string | null; preferences: string | null; metrics: MPoint[] }
 
-// Кто может редактировать: SMM и владелец/руководство.
 const EDIT_ROLES = ['founder', 'co_founder', 'admin', 'smm_director', 'smm_specialist']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
+const METRICS: { key: MKey; label: string; color: string }[] = [
+  { key: 'subs', label: 'Подписчики', color: '#10b981' },
+  { key: 'reach', label: 'Охват', color: '#3b82f6' },
+  { key: 'eng', label: 'Вовлечённость', color: '#8b5cf6' },
+  { key: 'leads', label: 'Заявки', color: '#e0a63a' },
+]
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const fmtNum = (n: number) => n.toLocaleString('ru-RU')
 const mLabel = (ym: string) => { const [y, m] = ym.split('-'); return `${MONTHS[+m - 1] ?? ''} ${y}` }
+const mShort = (ym: string) => (MONTHS[+ym.split('-')[1] - 1] ?? '').slice(0, 3)
 const fmtDate = (v?: string | null) => v ? new Date(v + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'
 const inp = 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-gray-400 dark:focus:border-gray-500'
 const card = 'rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5'
 const secLabel = 'text-[11px] font-bold uppercase tracking-wider text-gray-400'
-// Строка фиксированной высоты: поле редактирования встаёт РОВНО на место значения — при входе
-// в «Изменить» раскладка не сдвигается (высота карточки постоянна).
 const fRow = 'flex items-center justify-between gap-3 h-[46px] border-b border-gray-100 dark:border-gray-800 last:border-0'
 const editIn = 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg h-8 px-2.5 text-sm outline-none focus:border-gray-400 dark:focus:border-gray-500'
 
-function Row({ k, v }: { k: string; v: ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-2.5 border-b border-gray-100 dark:border-gray-800 last:border-0">
-      <span className="text-sm text-gray-500">{k}</span>
-      <span className="text-sm font-semibold text-right">{v}</span>
-    </div>
-  )
-}
-// Крупный график подписчиков: сетка + значения по оси + подписи месяцев + точки + тултип при наведении.
-function SubsChart({ data }: { data: Follower[] }) {
+// Универсальный график метрики: сетка + оси + подписи месяцев + точки + тултип (в интерактиве).
+function MetricChart({ data, color, w = 480, h = 190, axes = true, interactive = true }: {
+  data: { ym: string; value: number }[]; color: string; w?: number; h?: number; axes?: boolean; interactive?: boolean
+}) {
   const [hi, setHi] = useState<number | null>(null)
-  const svgRef = useRef<SVGSVGElement>(null)
-  if (data.length < 2) return <div className="h-[188px] flex items-center justify-center text-sm text-gray-400">Добавь ещё месяц — построю график роста</div>
-  const W = 460, H = 188, pl = 46, pr = 14, pt = 16, pb = 30
-  const iw = W - pl - pr, ih = H - pt - pb
+  const ref = useRef<SVGSVGElement>(null)
+  if (data.length < 2) return <div style={{ height: h }} className="flex items-center justify-center text-sm text-gray-400">Мало данных — добавь ещё месяц</div>
+  const pl = axes ? 46 : 8, pr = axes ? 14 : 8, pt = axes ? 16 : 8, pb = axes ? 28 : 8
+  const iw = w - pl - pr, ih = h - pt - pb
   const vals = data.map(d => d.value)
   let mn = Math.min(...vals), mx = Math.max(...vals)
   if (mn === mx) { mn -= 1; mx += 1 }
@@ -52,24 +52,23 @@ function SubsChart({ data }: { data: Follower[] }) {
   const area = `${line} L ${X(data.length - 1).toFixed(1)} ${(pt + ih).toFixed(1)} L ${X(0).toFixed(1)} ${(pt + ih).toFixed(1)} Z`
   const gv = [0, 0.5, 1].map(t => Math.round(mn + (mx - mn) * t))
   const step = Math.max(1, Math.ceil(data.length / 7))
-  const mShort = (ym: string) => MONTHS[+ym.split('-')[1] - 1].slice(0, 3)
-  const onMove = (e: { clientX: number }) => { const r = svgRef.current!.getBoundingClientRect(); const px = (e.clientX - r.left) / r.width * W; setHi(Math.max(0, Math.min(data.length - 1, Math.round((px - pl) / (iw / (data.length - 1)))))) }
-  const cur = hi ?? data.length - 1
+  const cur = interactive ? (hi ?? data.length - 1) : data.length - 1
+  const onMove = interactive ? (e: { clientX: number }) => { const r = ref.current!.getBoundingClientRect(); const px = (e.clientX - r.left) / r.width * w; setHi(Math.max(0, Math.min(data.length - 1, Math.round((px - pl) / (iw / (data.length - 1)))))) } : undefined
   return (
-    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full text-gray-400 dark:text-gray-500 select-none touch-none" onMouseMove={onMove} onMouseLeave={() => setHi(null)}>
-      {gv.map((tv, i) => { const yy = Y(tv); return (
+    <svg ref={ref} viewBox={`0 0 ${w} ${h}`} className="w-full text-gray-400 dark:text-gray-500 select-none touch-none" onMouseMove={onMove} onMouseLeave={interactive ? () => setHi(null) : undefined}>
+      {axes && gv.map((tv, i) => { const yy = Y(tv); return (
         <g key={i}>
-          <line x1={pl} y1={yy} x2={W - pr} y2={yy} stroke="currentColor" strokeOpacity="0.14" />
+          <line x1={pl} y1={yy} x2={w - pr} y2={yy} stroke="currentColor" strokeOpacity="0.14" />
           <text x={pl - 8} y={yy + 3} textAnchor="end" fontSize="10" fill="currentColor">{fmtNum(tv)}</text>
         </g>
       ) })}
-      <path d={area} fill="rgba(16,185,129,.13)" />
-      <path d={line} fill="none" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      {data.map((d, i) => (i % step === 0 || i === data.length - 1)
-        ? <text key={i} x={X(i)} y={H - 9} textAnchor="middle" fontSize="10" fill="currentColor">{mShort(d.ym)}</text> : null)}
-      {data.map((d, i) => <circle key={i} cx={X(i)} cy={Y(d.value)} r={i === cur ? 4 : 2.4} fill="#10b981" />)}
-      {hi != null && (() => {
-        const d = data[hi], hx = X(hi), hy = Y(d.value), tw = 96, tx = Math.max(2, Math.min(W - tw - 2, hx - tw / 2)), ty = Math.max(2, hy - 46)
+      <path d={area} fill={color + '22'} />
+      <path d={line} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      {axes && data.map((d, i) => (i % step === 0 || i === data.length - 1)
+        ? <text key={i} x={X(i)} y={h - 9} textAnchor="middle" fontSize="10" fill="currentColor">{mShort(d.ym)}</text> : null)}
+      {data.map((d, i) => <circle key={i} cx={X(i)} cy={Y(d.value)} r={i === cur ? 4 : 2.4} fill={color} />)}
+      {interactive && hi != null && (() => {
+        const d = data[hi], hx = X(hi), hy = Y(d.value), tw = 104, tx = Math.max(2, Math.min(w - tw - 2, hx - tw / 2)), ty = Math.max(2, hy - 46)
         return (
           <g>
             <line x1={hx} y1={pt} x2={hx} y2={pt + ih} stroke="currentColor" strokeOpacity="0.28" strokeDasharray="3 3" />
@@ -93,6 +92,8 @@ export default function SmmProjectPage() {
   const from = iso(new Date(now.getFullYear(), now.getMonth(), 1))
   const to = iso(new Date(now.getFullYear(), now.getMonth() + 1, 0))
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+  const monthPref = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const monthTitle = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`
   const { data, isLoading } = useQuery<CalData>({ queryKey: ['smm-calendar', from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to }) })
   const { data: profile } = useQuery<SmmProfile>({ queryKey: ['smm-profile', id], queryFn: () => projectsApi.getSmmProfile(id!), enabled: !!id })
 
@@ -109,6 +110,7 @@ export default function SmmProjectPage() {
 
   const projects = data?.projects ?? []
   const backlog = data?.backlog ?? []
+  const events = data?.events ?? []
   const info = useMemo(() => {
     assignProjectColors(projects.map(p => p.id))
     const p = projects.find(x => x.id === id)
@@ -133,24 +135,9 @@ export default function SmmProjectPage() {
   }, [p, cycEditing])
   const perDayHint = (() => { const m = parseInt(cycDraft.spm, 10); return Number.isFinite(m) && m > 0 ? Math.max(1, Math.round(m / daysInMonth)) : 0 })()
   const saveCycle = () => {
-    const numOrNull = (s: string) => { const n = parseInt(s, 10); return Number.isFinite(n) ? n : null }
-    cycleMut.mutate({ day: numOrNull(cycDraft.day), normReels: numOrNull(cycDraft.reels) ?? 0, normPosts: numOrNull(cycDraft.posts) ?? 0, storiesPerMonth: numOrNull(cycDraft.spm) })
+    const nn = (s: string) => { const n = parseInt(s, 10); return Number.isFinite(n) ? n : null }
+    cycleMut.mutate({ day: nn(cycDraft.day), normReels: nn(cycDraft.reels) ?? 0, normPosts: nn(cycDraft.posts) ?? 0, storiesPerMonth: nn(cycDraft.spm) })
     setCycEditing(false)
-  }
-
-  // ── Подписчики ──
-  const followers = profile?.followers ?? []
-  const last = followers[followers.length - 1]
-  const prev = followers[followers.length - 2]
-  const delta = last && prev ? last.value - prev.value : null
-  const [addYm, setAddYm] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
-  const [addVal, setAddVal] = useState('')
-  const addFollowers = () => {
-    const v = parseInt(addVal, 10)
-    if (!/^\d{4}-\d{2}$/.test(addYm) || !Number.isFinite(v)) return
-    const map = new Map(followers.map(f => [f.ym, f.value])); map.set(addYm, v)
-    const next = [...map.entries()].map(([ym, value]) => ({ ym, value })).sort((a, b) => a.ym < b.ym ? -1 : 1)
-    saveMut.mutate({ followers: next }); setAddVal('')
   }
 
   // ── О клиенте (редактирование) ──
@@ -167,6 +154,27 @@ export default function SmmProjectPage() {
     setCliEditing(false)
   }
 
+  // ── Метрики ──
+  const metrics = profile?.metrics ?? []
+  const [selM, setSelM] = useState<MKey>('subs')
+  const [addYm, setAddYm] = useState(monthPref)
+  const [addV, setAddV] = useState<Record<MKey, string>>({ subs: '', reach: '', eng: '', leads: '' })
+  const series = (k: MKey) => metrics.map(m => ({ ym: m.ym, value: m[k] })).filter(x => x.value != null) as { ym: string; value: number }[]
+  const latest = (k: MKey) => { const s = series(k); const a = s[s.length - 1], b = s[s.length - 2]; return { cur: a ? a.value : null, prev: b ? b.value : null, ym: a ? a.ym : null } }
+  const addMetrics = () => {
+    if (!/^\d{4}-\d{2}$/.test(addYm)) return
+    const g = (s: string) => { const v = parseInt(s, 10); return Number.isFinite(v) ? v : undefined }
+    const map = new Map<string, MPoint>(metrics.map(m => [m.ym, { ...m }]))
+    const row = map.get(addYm) ?? { ym: addYm, subs: null, reach: null, eng: null, leads: null }
+    ;(['subs', 'reach', 'eng', 'leads'] as MKey[]).forEach(k => { const v = g(addV[k]); if (v !== undefined) row[k] = v })
+    map.set(addYm, row)
+    saveMut.mutate({ metrics: [...map.values()].sort((a, b) => a.ym < b.ym ? -1 : 1) })
+    setAddV({ subs: '', reach: '', eng: '', leads: '' })
+  }
+
+  // ── Отчёт ──
+  const [reportOpen, setReportOpen] = useState(false)
+
   if (isLoading) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
   if (!info || !p) return (
     <div className="space-y-4">
@@ -176,7 +184,38 @@ export default function SmmProjectPage() {
   )
 
   const { color, norm, left, placed, cycle } = info
-  const editBtn = (editing: boolean, onEdit: () => void) => canEdit ? (
+
+  // Выполнение плана (из событий календаря этого месяца).
+  const myEv = events.filter(e => e.projectId === p.id)
+  const isPub = (e: Ev) => e.kind === 'publication'
+  const done = (e: Ev) => e.status === 'published'
+  const reelsDone = myEv.filter(e => isPub(e) && (e.contentType === 'reel' || e.contentType === 'video') && done(e)).length
+  const postsDone = myEv.filter(e => isPub(e) && e.contentType === 'design' && done(e)).length
+  const storyByDate = new Map<string, number>()
+  myEv.filter(e => isPub(e) && e.contentType === 'story').forEach(e => { if (e.date) storyByDate.set(e.date, (storyByDate.get(e.date) ?? 0) + (e.count ?? 0)) })
+  const storiesTotal = [...storyByDate.values()].reduce((a, b) => a + b, 0)
+  const reelsNorm = p.normReels ?? 0, postsNorm = p.normPosts ?? 0
+  const spm = p.storiesPerMonth ?? null
+  const dayTarget = spm != null ? (spm > 0 ? Math.max(1, Math.round(spm / daysInMonth)) : 0) : (p.storiesPerDay ?? 3)
+  let discG = 0, discY = 0, discR = 0
+  if (dayTarget > 0) {
+    const todayStr = iso(now)
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ds = `${monthPref}-${String(d).padStart(2, '0')}`
+      if (ds > todayStr) break
+      const actual = storyByDate.get(ds) ?? 0
+      if (actual >= dayTarget) discG++
+      else if (actual > 0) discY++
+      else if (ds < todayStr) discR++
+    }
+  }
+  const pct = (a: number, b: number) => b > 0 ? Math.min(100, Math.round(a / b * 100)) : 0
+
+  const selMeta = METRICS.find(m => m.key === selM)!
+  const selLatest = latest(selM)
+  const selDelta = selLatest.cur != null && selLatest.prev != null ? selLatest.cur - selLatest.prev : null
+
+  const editBtn = (onEdit: () => void) => canEdit ? (
     <button onClick={onEdit} className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"><Pencil size={13} /> Изменить</button>
   ) : null
   const editActions = (onSave: () => void, onCancel: () => void) => (
@@ -188,7 +227,10 @@ export default function SmmProjectPage() {
 
   return (
     <div className="space-y-5">
-      <Link to="/smm/projects" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <Link to="/smm/projects" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
+        <button onClick={() => setReportOpen(true)} className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl bg-[#e0a63a] text-gray-900 hover:brightness-105"><FileText size={16} /> Получить отчёт</button>
+      </div>
       <div className="flex items-center gap-3">
         <span className="w-4 h-4 rounded-full shrink-0" style={{ background: color }} />
         <h1 className="text-2xl font-bold tracking-tight">{p.name}</h1>
@@ -201,7 +243,7 @@ export default function SmmProjectPage() {
           <div className={card}>
             <div className="flex items-center justify-between gap-2 mb-3">
               <h2 className={secLabel}>Цикл и норма</h2>
-              {cycEditing ? editActions(saveCycle, () => setCycEditing(false)) : editBtn(false, () => setCycEditing(true))}
+              {cycEditing ? editActions(saveCycle, () => setCycEditing(false)) : editBtn(() => setCycEditing(true))}
             </div>
             <div>
               <div className={fRow}><span className="text-sm text-gray-500">День старта цикла</span>
@@ -226,11 +268,25 @@ export default function SmmProjectPage() {
             </div>
           </div>
 
+          {/* Выполнение плана */}
+          <div className={card}>
+            <h2 className={secLabel + ' mb-3'}>Выполнение плана · {monthTitle}</h2>
+            <div className="space-y-3">
+              <PlanBar icon={<Film size={14} />} label="Рилсы" done={reelsDone} total={reelsNorm} color="#10b981" />
+              <PlanBar icon={<ImageIcon size={14} />} label="Посты" done={postsDone} total={postsNorm} color="#3b82f6" />
+              <div>
+                <div className="flex justify-between text-sm mb-1.5"><span className="text-gray-500 inline-flex items-center gap-1.5">📸 Сторис за месяц</span><span className="font-bold tabular-nums">{storiesTotal}{spm ? ` / ${spm}` : ''}</span></div>
+                <div className="h-[7px] rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct(storiesTotal, spm ?? storiesTotal)}%`, background: '#8b5cf6' }} /></div>
+                {dayTarget > 0 && <div className="flex gap-3 mt-2 text-[12px] font-semibold"><span className="text-emerald-600">🟢 {discG}</span><span className="text-amber-500">🟡 {discY}</span><span className="text-red-500">🔴 {discR}</span><span className="text-gray-400 font-normal">дней</span></div>}
+              </div>
+            </div>
+          </div>
+
           {/* О клиенте */}
           <div className={card}>
             <div className="flex items-center justify-between gap-2 mb-3">
               <h2 className={secLabel}>О клиенте</h2>
-              {cliEditing ? editActions(saveClient, () => setCliEditing(false)) : editBtn(false, () => setCliEditing(true))}
+              {cliEditing ? editActions(saveClient, () => setCliEditing(false)) : editBtn(() => setCliEditing(true))}
             </div>
             <div>
               <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Владелец бизнеса</span>
@@ -258,49 +314,123 @@ export default function SmmProjectPage() {
           </div>
         </div>
 
-        {/* ПРАВО — графики */}
+        {/* ПРАВО — метрики */}
         <div className="space-y-4">
           <div className={card}>
-            <h2 className={secLabel + ' mb-2'}>Подписчики · история по месяцам</h2>
+            <h2 className={secLabel + ' mb-3'}>Метрики · история по месяцам</h2>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {METRICS.map(m => (
+                <button key={m.key} onClick={() => setSelM(m.key)}
+                  className={'inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-lg px-3 py-1.5 border transition ' + (selM === m.key ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}>
+                  <span className="w-2 h-2 rounded-full" style={{ background: m.color }} />{m.label}
+                </button>
+              ))}
+            </div>
             <div className="flex items-end gap-3 flex-wrap">
-              <span className="text-4xl font-extrabold tracking-tight tabular-nums leading-none">{last ? fmtNum(last.value) : '—'}</span>
-              {delta != null && (
-                <span className={'inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg mb-0.5 ' + (delta >= 0 ? 'text-emerald-600 bg-emerald-500/10' : 'text-red-500 bg-red-500/10')}>
-                  {delta >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                  {(delta >= 0 ? '+' : '−') + fmtNum(Math.abs(delta))}{prev && prev.value ? ` · ${(delta / prev.value * 100).toFixed(1)}%` : ''}
+              <span className="text-4xl font-extrabold tabular-nums leading-none" style={{ color: selMeta.color }}>{selLatest.cur != null ? fmtNum(selLatest.cur) : '—'}</span>
+              {selDelta != null && (
+                <span className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg mb-0.5"
+                  style={selDelta >= 0 ? { color: selMeta.color, background: selMeta.color + '22' } : { color: '#ef4444', background: '#ef444422' }}>
+                  {selDelta >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                  {(selDelta >= 0 ? '+' : '−') + fmtNum(Math.abs(selDelta))}{selLatest.prev ? ` · ${(selDelta / selLatest.prev * 100).toFixed(1)}%` : ''}
                 </span>
               )}
-              <span className="ml-auto self-end text-xs text-gray-400">{last ? `на ${mLabel(last.ym)}` : 'нет данных'}</span>
+              <span className="ml-auto self-end text-xs text-gray-400">{selLatest.ym ? `${selMeta.label} · на ${mLabel(selLatest.ym)}` : 'нет данных'}</span>
             </div>
-            <div className="mt-3"><SubsChart data={followers} /></div>
+            <div className="mt-3"><MetricChart data={series(selM)} color={selMeta.color} /></div>
 
-            {followers.length > 0 && (
-              <div className="mt-4 border-t border-gray-100 dark:border-gray-800 max-h-72 overflow-y-auto">
-                {[...followers].reverse().map((f, i, arr) => {
-                  const pr = arr[i + 1]; const d = pr ? f.value - pr.value : null
-                  return (
-                    <div key={f.ym} className="grid grid-cols-[1fr_auto_64px] items-center gap-3 py-2 text-sm border-b border-gray-50 dark:border-gray-800/60 last:border-0">
-                      <span className="text-gray-500 capitalize">{mLabel(f.ym)}</span>
-                      <span className="font-bold tabular-nums text-right">{fmtNum(f.value)}</span>
-                      <span className={'text-xs font-semibold tabular-nums text-right ' + (d == null ? 'text-gray-300 dark:text-gray-600' : d > 0 ? 'text-emerald-600' : d < 0 ? 'text-red-500' : 'text-gray-400')}>
-                        {d == null ? '—' : (d > 0 ? '+' : '') + fmtNum(d)}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+            <div className="grid grid-cols-4 gap-2 mt-4">
+              {METRICS.map(m => {
+                const l = latest(m.key); const d = l.cur != null && l.prev != null ? l.cur - l.prev : null
+                return (
+                  <button key={m.key} onClick={() => setSelM(m.key)}
+                    className={'text-left rounded-xl px-2.5 py-2 border transition ' + (selM === m.key ? 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60' : 'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700')}>
+                    <span className="flex items-center gap-1.5 text-[10.5px] text-gray-500"><span className="w-1.5 h-1.5 rounded-full" style={{ background: m.color }} />{m.label}</span>
+                    <span className="block text-[15px] font-extrabold tabular-nums mt-0.5">{l.cur != null ? fmtNum(l.cur) : '—'}</span>
+                    {d != null && <span className={'block text-[10.5px] font-bold ' + (d >= 0 ? 'text-emerald-600' : 'text-red-500')}>{(d >= 0 ? '+' : '−') + fmtNum(Math.abs(d))}</span>}
+                  </button>
+                )
+              })}
+            </div>
 
             {canEdit && (
-              <div className="flex gap-2 mt-4">
-                <input type="month" value={addYm} onChange={e => setAddYm(e.target.value)} className={inp + ' w-[140px]'} />
-                <input type="number" inputMode="numeric" placeholder="Подписчиков" value={addVal} onChange={e => setAddVal(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addFollowers() }} className={inp + ' flex-1 min-w-0'} />
-                <button onClick={addFollowers} disabled={saveMut.isPending} className="inline-flex items-center gap-1 px-4 rounded-lg bg-[#3f7a58] text-white text-sm font-semibold hover:brightness-110 disabled:opacity-60"><Plus size={15} /> Записать</button>
+              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+                <input type="month" value={addYm} onChange={e => setAddYm(e.target.value)} className={inp + ' w-full mb-2'} />
+                <div className="grid grid-cols-2 gap-2">
+                  {METRICS.map(m => (
+                    <input key={m.key} type="number" inputMode="numeric" placeholder={m.label} value={addV[m.key]} onChange={e => setAddV(v => ({ ...v, [m.key]: e.target.value }))} className={inp + ' w-full'} />
+                  ))}
+                </div>
+                <button onClick={addMetrics} disabled={saveMut.isPending} className="w-full mt-2 inline-flex items-center justify-center gap-1 py-2.5 rounded-lg bg-[#3f7a58] text-white text-sm font-semibold hover:brightness-110 disabled:opacity-60"><Plus size={15} /> Записать за месяц</button>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* Отчёт — печатная страница для клиента */}
+      {reportOpen && createPortal(
+        <div id="smmrep">
+          <style>{`@media print{ body>*:not(#smmrep){display:none!important} #smmrep .rov{position:static!important;background:#fff!important;padding:0!important;display:block!important;overflow:visible!important} #smmrep .rdoc{box-shadow:none!important;border:0!important;max-width:100%!important;border-radius:0!important} #smmrep .noprint{display:none!important} @page{margin:12mm} }`}</style>
+          <div className="rov fixed inset-0 z-[60] bg-black/60 overflow-auto flex justify-center py-8 px-4" onClick={e => { if (e.target === e.currentTarget) setReportOpen(false) }}>
+            <div className="rdoc bg-white text-gray-900 rounded-2xl w-full max-w-3xl p-8 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-extrabold flex items-center gap-2"><span className="w-3.5 h-3.5 rounded-full" style={{ background: color }} />Отчёт · {p.name}</h3>
+                  <p className="text-xs text-gray-500 mt-1">{monthTitle} · сформировано {fmtDate(iso(now))}</p>
+                </div>
+                <button onClick={() => setReportOpen(false)} className="noprint text-gray-400 hover:text-gray-700"><X size={20} /></button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
+                {METRICS.map(m => {
+                  const l = latest(m.key); const d = l.cur != null && l.prev != null ? l.cur - l.prev : null
+                  return (
+                    <div key={m.key} className="rounded-xl border border-gray-200 p-3">
+                      <span className="flex items-center gap-1.5 text-[11px] text-gray-500"><span className="w-2 h-2 rounded-full" style={{ background: m.color }} />{m.label}</span>
+                      <span className="block text-[22px] font-extrabold tabular-nums mt-1">{l.cur != null ? fmtNum(l.cur) : '—'}</span>
+                      {d != null && <span className={'block text-[11px] font-bold ' + (d >= 0 ? 'text-emerald-600' : 'text-red-500')}>{(d >= 0 ? '+' : '−') + fmtNum(Math.abs(d))} за месяц</span>}
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                {METRICS.map(m => (
+                  <div key={m.key} className="rounded-xl border border-gray-200 p-3 text-gray-500">
+                    <div className="text-[11px] flex items-center gap-1.5 mb-1"><span className="w-2 h-2 rounded-full" style={{ background: m.color }} />{m.label}</div>
+                    <MetricChart data={series(m.key)} color={m.color} w={320} h={96} axes={false} interactive={false} />
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-xl border border-gray-200 p-4 mt-4 text-sm text-gray-700">
+                <b className="text-gray-900">Выполнение плана ({monthTitle}):</b> рилсы {reelsDone}/{reelsNorm}, посты {postsDone}/{postsNorm}, сторис {storiesTotal}{spm ? `/${spm}` : ''} за месяц{dayTarget > 0 ? ` · дисциплина 🟢 ${discG} · 🟡 ${discY} · 🔴 ${discR}` : ''}.
+              </div>
+              {(profile?.ownerName || profile?.collabSince || profile?.preferences) && (
+                <div className="rounded-xl border border-gray-200 p-4 mt-3 text-sm text-gray-700">
+                  <b className="text-gray-900">Клиент:</b> {profile?.ownerName || '—'}{profile?.collabSince ? ` · сотрудничаем с ${fmtDate(profile.collabSince)}` : ''}{profile?.preferences ? ` · ${profile.preferences}` : ''}
+                </div>
+              )}
+
+              <div className="noprint flex justify-end mt-5">
+                <button onClick={() => window.print()} className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl bg-[#e0a63a] text-gray-900 hover:brightness-105"><Printer size={16} /> Печать / Сохранить PDF</button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
+  )
+}
+
+function PlanBar({ icon, label, done, total, color }: { icon: ReactNode; label: string; done: number; total: number; color: string }) {
+  const pct = total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0
+  return (
+    <div>
+      <div className="flex justify-between text-sm mb-1.5"><span className="text-gray-500 inline-flex items-center gap-1.5">{icon} {label}</span><span className="font-bold tabular-nums">{done} / {total}</span></div>
+      <div className="h-[7px] rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} /></div>
     </div>
   )
 }
