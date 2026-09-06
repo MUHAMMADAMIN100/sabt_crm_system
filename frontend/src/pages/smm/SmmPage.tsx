@@ -854,10 +854,8 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
     const todayM = today.slice(0, 7)
     const want: null | 'up' | 'down' = !cur || cur === todayM ? null : (cur < todayM ? 'down' : 'up')
     if (want !== returnRef.current) { returnRef.current = want; setReturnBtn(want) }
-    if (cur && cur !== lastReported.current) {
-      clearTimeout(settleTimer.current)
-      settleTimer.current = setTimeout(() => { lastReported.current = cur; onVisibleMonth(cur) }, 120)
-    }
+    // Заголовок меняется МГНОВЕННО при пересечении месяца (без дебаунса).
+    if (cur && cur !== lastReported.current) { lastReported.current = cur; onVisibleMonth(cur) }
   }
   const onScroll = () => {
     if (tickingRef.current) return
@@ -1218,10 +1216,11 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
       else if (todayEl.offsetLeft > el.scrollLeft + el.clientWidth) want = 'right'
     } else want = dayKey(days[0]) > todayK ? 'left' : 'right'
     if (want !== returnRef.current) { returnRef.current = want; setReturnBtn(want) }
+    // Заголовок недели меняется МГНОВЕННО при смене недели (без дебаунса).
     if (cur !== lastReported.current) {
-      clearTimeout(settleTimer.current)
+      lastReported.current = cur
       const [y, m, dd] = cur.split('-').map(Number)
-      settleTimer.current = setTimeout(() => { lastReported.current = cur; onVisibleDay(new Date(y, m - 1, dd)) }, 120)
+      onVisibleDay(new Date(y, m - 1, dd))
     }
   }
   const onScroll = () => {
