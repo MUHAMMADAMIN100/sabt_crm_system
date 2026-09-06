@@ -1156,12 +1156,27 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
 
   const timed = events.filter(e => parseTime(e.time))
   const allDayFor = (d: Date) => events.filter(e => e.date === dayKey(d) && !parseTime(e.time))
-  // Строка «Весь день» (Вариант A): по умолчанию до MAX_AD задач + «ещё N»; клик разворачивает всю строку.
+  // Строка «Весь день» (Вариант A): высота подстраивается под ВИДИМЫЕ дни (visMax) — при скролле
+  // вбок растёт/уменьшается; до MAX_AD задач + «ещё N» при переполнении; клик разворачивает всю строку.
   const [allDayOpen, setAllDayOpen] = useState(false)
-  const MAX_AD = 3, AD_ROW = 21, AD_CAP = 8
-  const maxAllDay = days.reduce((m, d) => Math.max(m, allDayFor(d).length), 0)
-  const adRows = allDayOpen ? Math.min(maxAllDay, AD_CAP) + 1 : (maxAllDay > MAX_AD ? MAX_AD + 1 : maxAllDay) // +1 ряд под кнопку «свернуть»
-  const alldayH = Math.max(28, adRows * AD_ROW + 6)
+  const [visMax, setVisMax] = useState(0)
+  const visMaxRef = useRef(0)
+  const MAX_AD = 4, AD_ROW = 21, AD_CAP = 8
+  // Кол-во событий «весь день» по дате (для быстрого подсчёта видимого максимума при скролле).
+  const adCountMap = new Map<string, number>()
+  for (const e of events) if (!parseTime(e.time)) adCountMap.set(e.date, (adCountMap.get(e.date) || 0) + 1)
+  const recomputeVisMax = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const vLeft = el.scrollLeft + GUT_W, vRight = el.scrollLeft + el.clientWidth
+    let m = 0
+    for (const c of Array.from(el.querySelectorAll('[data-day]')) as HTMLElement[]) {
+      if (c.offsetLeft + COL_W > vLeft && c.offsetLeft < vRight) m = Math.max(m, adCountMap.get(c.dataset.day as string) || 0)
+    }
+    if (m !== visMaxRef.current) { visMaxRef.current = m; setVisMax(m) }
+  }
+  const adRows = allDayOpen ? Math.min(visMax, AD_CAP) + 1 : (visMax > MAX_AD ? MAX_AD + 1 : visMax) // +1 ряд под кнопку «свернуть»
+  const alldayH = Math.max(26, adRows * AD_ROW + 6)
   const timedFor = (d: Date, h: number) => timed.filter(e => e.date === dayKey(d) && parseTime(e.time)!.h === h)
   const layoutFor = (d: Date) => {
     const key = dayKey(d)
@@ -1182,8 +1197,11 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
     if (!el) return
     if (prependRef.current) { el.scrollLeft += prependRef.current * COL_W; prependRef.current = 0 }
     scrollToPending()
+    recomputeVisMax()
   }, [days])
   useLayoutEffect(() => { scrollToPending() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // Высота строки «Весь день» под видимые дни — пересчёт при смене данных.
+  useLayoutEffect(() => { recomputeVisMax() }, [events]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => clearTimeout(settleTimer.current), [])
 
   // Навигация (стрелки / «Сегодня») — прокрутка к нужной неделе.
@@ -1230,6 +1248,7 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
       const [y, m, dd] = cur.split('-').map(Number)
       onVisibleDay(new Date(y, m - 1, dd))
     }
+    recomputeVisMax() // высота «Весь день» под видимые сейчас дни
   }
   const onScroll = () => {
     if (tickingRef.current) return
@@ -1253,7 +1272,7 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
           <div className="sticky left-0 z-30 bg-surface-100 dark:bg-surface-900 border-r border-gray-200 dark:border-gray-800" style={{ flex: `0 0 ${GUT_W}px` }}>
             <div className="sticky top-0 z-40 bg-surface-100 dark:bg-surface-900 border-b border-gray-200 dark:border-gray-800" style={{ height: HEADER_H + alldayH }}>
               <div className="text-[10px] text-gray-400 flex items-center px-2" style={{ height: HEADER_H }}>GMT+5</div>
-              {maxAllDay > MAX_AD ? (
+              {visMax > MAX_AD ? (
                 <button type="button" onClick={() => setAllDayOpen(o => !o)}
                   className="w-full text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex items-start justify-end gap-0.5 pr-1.5 pt-1 transition-colors" style={{ height: alldayH }}>
                   Весь день <ChevronDown size={11} className={'mt-[1px] transition-transform ' + (allDayOpen ? 'rotate-180' : '')} />
