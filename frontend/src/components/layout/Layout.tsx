@@ -62,7 +62,8 @@ function useSessionHeartbeat(authMarker: string | null) {
 }
 
 export default function Layout() {
-  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 993)
+  // По умолчанию сайдбар свёрнут (разворачивается по наведению мышью). На мобильном false = скрыт.
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const fetchMe = useAuthStore(s => s.fetchMe)
   // authenticated — флаг локального состояния. JWT теперь в httpOnly cookie,
   // фронт его не видит. Socket / heartbeat пускаем когда юзер залогинен.
@@ -85,12 +86,10 @@ export default function Layout() {
     if (window.innerWidth < 993) setSidebarOpen(false)
   }, [location.pathname])
 
-  // Handle resize: auto-open on desktop, auto-close on mobile/tablet
+  // На мобильном/планшете закрываем сайдбар при ресайзе. На десктопе НЕ разворачиваем автоматически —
+  // он остаётся свёрнутым (разворот по наведению), иначе наведение после загрузки не срабатывает.
   useEffect(() => {
-    const onResize = () => {
-      if (window.innerWidth >= 993) setSidebarOpen(true)
-      else setSidebarOpen(false)
-    }
+    const onResize = () => { if (window.innerWidth < 993) setSidebarOpen(false) }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
