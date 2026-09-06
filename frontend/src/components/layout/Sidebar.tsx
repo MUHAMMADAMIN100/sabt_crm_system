@@ -29,6 +29,7 @@ const FINANCE_SUBNAV = [
 /** Подпункты раздела «СММ». */
 const SMM_SUBNAV = [
   { to: '/smm', label: 'Умный календарь', icon: CalendarRange, exact: true },
+  { to: '/smm/stories', label: 'Сторисы', icon: ImageIcon },
   { to: '/smm/projects', label: 'Проекты', icon: FolderKanban },
 ]
 

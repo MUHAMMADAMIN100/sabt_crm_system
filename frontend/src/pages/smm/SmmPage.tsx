@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, workflowApi, projectsApi } from '@/services/api.service'
 
-type Ev = {
+export type Ev = {
   id: string; itemId?: string; shootId?: string; kind: 'shoot' | 'publication'; date: string
   projectId: string; projectName: string
   title?: string; time?: string | null; location?: string | null; note?: string | null
@@ -44,7 +44,7 @@ const PROJ_COLORS = ['#e0865a', '#d9b74a', '#a7c14f', '#5fbd80', '#3fb6a0', '#4a
 // проектов цвета гарантированно разные (пока их не больше длины палитры),
 // а не «по хешу», где случались совпадения. Реестр заполняет assignProjectColors.
 const _projColorMap = new Map<string, string>()
-function assignProjectColors(ids: string[]): void {
+export function assignProjectColors(ids: string[]): void {
   const uniq = [...new Set(ids.map(String))].sort()
   _projColorMap.clear()
   uniq.forEach((id, i) => _projColorMap.set(id, PROJ_COLORS[i % PROJ_COLORS.length]))
@@ -97,7 +97,7 @@ function matchesFKind(e: Ev, k: FKind): boolean {
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────
-function monthTitle(ym: string): string {
+export function monthTitle(ym: string): string {
   const [y, m] = ym.split('-').map(Number)
   const s = new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
   return s.charAt(0).toUpperCase() + s.slice(1)
@@ -121,7 +121,7 @@ function matchSearch(e: Ev, q: string): boolean {
 }
 
 type Cell = { label: number; inMonth: boolean; iso: string | null }
-function buildCells(ym: string): Cell[] {
+export function buildCells(ym: string): Cell[] {
   const [y, m] = ym.split('-').map(Number)
   const startWeekday = (new Date(y, m - 1, 1).getDay() + 6) % 7
   const daysInMonth = new Date(y, m, 0).getDate()
@@ -143,7 +143,7 @@ const MAX_PER_DAY = 4
 const ymToDate = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1) }
 const HOUR_PX = 50
 const VIEWS: { k: View; label: string }[] = [
-  { k: 'month', label: 'Месяц' }, { k: 'week', label: 'Неделя' }, { k: 'day', label: 'День' }, { k: 'stories', label: 'Сторисы' },
+  { k: 'month', label: 'Месяц' }, { k: 'week', label: 'Неделя' }, { k: 'day', label: 'День' },
 ]
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -481,9 +481,6 @@ export default function SmmPage() {
 
       {isLoading ? (
         <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
-      ) : view === 'stories' ? (
-        <StoriesTab projects={projects} cells={cells} byProject={byProject} today={today} monthLabel={monthTitle(monthStr)}
-          activeIds={selProjects} onPick={toggleProject} />
       ) : (
         <>
           <BacklogPanel groups={backlogGroups} activeIds={selProjects} onPick={toggleProject}
@@ -1381,7 +1378,7 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
 }
 
 // ─── ТАБ «СТОРИСЫ» — мини-календари по проектам ────────────────────────
-function StoriesTab({ projects, cells, byProject, today, monthLabel, activeIds, onPick }: {
+export function StoriesTab({ projects, cells, byProject, today, monthLabel, activeIds, onPick }: {
   projects: { id: string; name: string }[]; cells: Cell[]; byProject: Map<string, Map<string, Ev[]>>
   today: string; monthLabel: string; activeIds: Set<string>; onPick: (id: string) => void
 }) {
