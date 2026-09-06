@@ -1540,7 +1540,7 @@ function BacklogCard({ e, onDragStart }: { e: Ev; onDragStart: (e: Ev) => void }
 
 // ─── компоненты ────────────────────────────────────────────────────────
 function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void; onDragStart?: (e: Ev) => void }) {
-  const canDrag = e.kind === 'publication' ? !!e.itemId : !!e.shootId
+  const canDrag = !!(e.itemId || e.shootId) // авто-съёмки — content_plan_item (itemId), ручные — shoot_sessions (shootId)
   const grab = canDrag ? ' cursor-grab active:cursor-grabbing' : ' cursor-pointer'
   const type = e.contentType || 'other'
   const Ic = e.kind === 'shoot' ? Camera : (TYPE_ICON[type] || AlignLeft)
