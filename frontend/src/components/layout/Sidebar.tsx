@@ -38,11 +38,15 @@ interface SidebarProps { open: boolean; onClose: () => void; onToggle: () => voi
  *  нашим indigo акцентом вместо красного). Фон #0f0f12, белый текст,
  *  активный пункт — сплошная заливка primary, без декоративных точек.
  *  Пользовательский блок внизу — компактный, с быстрыми действиями. */
-export default function Sidebar({ open, onClose, onToggle }: SidebarProps) {
+export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: SidebarProps) {
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
   const { t } = useTranslation()
   const location = useLocation()
+  // Наведение временно разворачивает свёрнутый сайдбар (накрывает контент, не сдвигая его),
+  // уход мышью — сворачивает обратно. Если закреплён открытым (pinnedOpen) — всегда развёрнут.
+  const [hovered, setHovered] = useState(false)
+  const open = pinnedOpen || hovered
   const financeActive = location.pathname === '/finance' || location.pathname.startsWith('/finance/')
   const [financeOpen, setFinanceOpen] = useState(financeActive)
   const smmActive = location.pathname === '/smm' || location.pathname.startsWith('/smm/')
@@ -147,8 +151,11 @@ export default function Sidebar({ open, onClose, onToggle }: SidebarProps) {
 
   return (
     <aside
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       className={clsx(
         'fixed left-0 top-0 z-30 flex flex-col h-full',
+        'transition-[width] duration-200 ease-out',
         // Фон сайдбара — отдельная переменная из роли «Фон» (НЕ «Текст»):
         // всегда тёмная панель, смена цвета текста её не трогает.
         'bg-[rgb(var(--sidebar-bg))] text-surface-200',
