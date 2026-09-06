@@ -1106,7 +1106,7 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
   const mondayOf = (d: Date) => startOfWeek(d, { weekStartsOn: 1 })
   const startHour = 8, endHour = 23
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i)
-  const HEADER_H = 46, ALLDAY_H = 40, COL_W = 150, GUT_W = 54, PAD = 10
+  const HEADER_H = 46, COL_W = 150, GUT_W = 54, PAD = 10
   const TODAY_TINT = 'rgba(235,87,87,0.06)'
   const nowTop = (now.getHours() - startHour + now.getMinutes() / 60) * HOUR_PX
 
@@ -1156,6 +1156,12 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
 
   const timed = events.filter(e => parseTime(e.time))
   const allDayFor = (d: Date) => events.filter(e => e.date === dayKey(d) && !parseTime(e.time))
+  // Строка «Весь день» (Вариант A): по умолчанию до MAX_AD задач + «ещё N»; клик разворачивает всю строку.
+  const [allDayOpen, setAllDayOpen] = useState(false)
+  const MAX_AD = 3, AD_ROW = 21, AD_CAP = 8
+  const maxAllDay = days.reduce((m, d) => Math.max(m, allDayFor(d).length), 0)
+  const adRows = allDayOpen ? Math.min(maxAllDay, AD_CAP) : (maxAllDay > MAX_AD ? MAX_AD + 1 : maxAllDay)
+  const alldayH = Math.max(28, adRows * AD_ROW + 6)
   const timedFor = (d: Date, h: number) => timed.filter(e => e.date === dayKey(d) && parseTime(e.time)!.h === h)
   const layoutFor = (d: Date) => {
     const key = dayKey(d)
@@ -1245,9 +1251,16 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
         <div className="flex" style={{ width: 'max-content' }}>
           {/* ЖЁЛОБ ЧАСОВ — фиксирован слева */}
           <div className="sticky left-0 z-30 bg-surface-100 dark:bg-surface-900 border-r border-gray-200 dark:border-gray-800" style={{ flex: `0 0 ${GUT_W}px` }}>
-            <div className="sticky top-0 z-40 bg-surface-100 dark:bg-surface-900 border-b border-gray-200 dark:border-gray-800" style={{ height: HEADER_H + ALLDAY_H }}>
+            <div className="sticky top-0 z-40 bg-surface-100 dark:bg-surface-900 border-b border-gray-200 dark:border-gray-800" style={{ height: HEADER_H + alldayH }}>
               <div className="text-[10px] text-gray-400 flex items-center px-2" style={{ height: HEADER_H }}>GMT+5</div>
-              <div className="text-[10px] text-gray-400 text-right pr-2 pt-1" style={{ height: ALLDAY_H }}>Весь день</div>
+              {maxAllDay > MAX_AD ? (
+                <button type="button" onClick={() => setAllDayOpen(o => !o)}
+                  className="w-full text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex items-start justify-end gap-0.5 pr-1.5 pt-1 transition-colors" style={{ height: alldayH }}>
+                  Весь день <ChevronDown size={11} className={'mt-[1px] transition-transform ' + (allDayOpen ? 'rotate-180' : '')} />
+                </button>
+              ) : (
+                <div className="text-[10px] text-gray-400 text-right pr-2 pt-1" style={{ height: alldayH }}>Весь день</div>
+              )}
             </div>
             <div style={{ paddingTop: PAD }}>
               <div ref={hoursTopRef} />
@@ -1265,6 +1278,9 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
             const lay = layoutFor(d)
             const weekend = d.getDay() === 0 || d.getDay() === 6 // сб/вс — слегка выделяем колонку (как в Notion)
             const nowHere = isToday && now.getHours() >= startHour && now.getHours() <= endHour
+            const adItems = allDayFor(d)
+            const adVisible = allDayOpen || adItems.length <= MAX_AD ? adItems : adItems.slice(0, MAX_AD)
+            const adHidden = adItems.length - adVisible.length
             return (
               <div key={key} data-day={key}
                 className={'border-r border-gray-100 dark:border-gray-800/80 shrink-0 ' + (!isToday && weekend ? 'bg-gray-100/60 dark:bg-white/[0.025]' : '')}
@@ -1281,8 +1297,12 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
                 {/* all-day */}
                 <div {...dropProps(d)}
                   className={'sticky z-10 bg-surface-100 dark:bg-surface-900 border-b border-gray-200 dark:border-gray-800 p-1 flex flex-col gap-1 overflow-y-auto transition-opacity ' + (dragOverKey === key ? 'ring-1 ring-inset ring-gray-400 ' : '') + (blocked ? 'opacity-40' : '')}
-                  style={{ top: HEADER_H, height: ALLDAY_H }}>
-                  {allDayFor(d).map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
+                  style={{ top: HEADER_H, height: alldayH }}>
+                  {adVisible.map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
+                  {adHidden > 0 && (
+                    <button type="button" onClick={() => setAllDayOpen(true)}
+                      className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-left px-0.5 shrink-0">ещё {adHidden}</button>
+                  )}
                 </div>
                 {/* сетка часов */}
                 <div className={'relative transition-opacity ' + (blocked ? 'opacity-40' : '')} style={{ paddingTop: PAD }}>
