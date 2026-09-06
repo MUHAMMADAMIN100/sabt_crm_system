@@ -415,9 +415,11 @@ export default function SmmPage() {
   }, [view, cursor])
 
   return (
-    <div className="space-y-3">
+    // Календарные виды: страница на всю высоту (flex-колонка) — календарь растягивается на всё
+    // свободное место, чтобы при сворачивании бэклога снизу не оставалось пустоты. Сторисы — обычный поток.
+    <div className={view === 'stories' ? 'space-y-3' : 'flex flex-col gap-3 h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)] min-h-0'}>
       {/* ── шапка ── */}
-      <header className="flex items-center justify-between gap-3 flex-wrap">
+      <header className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-2.5 flex-wrap">
           <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
           <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-700 px-2.5 py-1.5">
@@ -864,10 +866,10 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
   }
 
   return (
-    <div className="relative">
+    <div className="relative flex-1 min-h-0">
       <div ref={scrollRef} onScroll={onScroll}
-        className="relative border-t border-gray-200 dark:border-gray-800 overflow-y-auto"
-        style={{ maxHeight: 'calc(100vh - 300px)', overflowAnchor: 'none' }}>
+        className="relative border-t border-gray-200 dark:border-gray-800 overflow-y-auto h-full"
+        style={{ overflowAnchor: 'none' }}>
         {/* общая шапка дней недели — липкая сверху */}
         <div ref={headerRef} className="grid grid-cols-7 sticky top-0 z-20 bg-surface-100 dark:bg-surface-900">
           {DOW.map((d, i) => (
@@ -974,7 +976,7 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
   }
 
   return (
-    <div className="border-t border-gray-200 dark:border-gray-800 overflow-y-auto" style={{ maxHeight: 640 }}>
+    <div className="border-t border-gray-200 dark:border-gray-800 overflow-y-auto flex-1 min-h-0">
       {/* шапка + «Весь день» — липкие сверху; общий скролл с сеткой ⇒ колонки одной ширины, линии ровные */}
       <div className="sticky top-0 z-30 bg-surface-100 dark:bg-surface-900">
       {/* headers */}
@@ -1236,10 +1238,10 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
   }
 
   return (
-    <div className="relative">
+    <div className="relative flex-1 min-h-0">
       <div ref={scrollRef} onScroll={onScroll}
-        className="relative border-t border-gray-200 dark:border-gray-800 overflow-auto"
-        style={{ maxHeight: 640, overflowAnchor: 'none' }}>
+        className="relative border-t border-gray-200 dark:border-gray-800 overflow-auto h-full"
+        style={{ overflowAnchor: 'none' }}>
         <div className="flex" style={{ width: 'max-content' }}>
           {/* ЖЁЛОБ ЧАСОВ — фиксирован слева */}
           <div className="sticky left-0 z-30 bg-surface-100 dark:bg-surface-900 border-r border-gray-200 dark:border-gray-800" style={{ flex: `0 0 ${GUT_W}px` }}>
@@ -1376,7 +1378,7 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
       onDragOver={e => { e.preventDefault(); if (!over) setOver(true) }}
       onDragLeave={() => setOver(false)}
       onDrop={() => { setOver(false); onDrop() }}
-      className={'rounded-xl border px-2.5 py-1.5 transition ' + (over
+      className={'rounded-xl border px-2.5 py-1.5 transition shrink-0 ' + (over
         ? 'border-gray-400 dark:border-gray-500 bg-gray-100/50 dark:bg-gray-800/50'
         : 'border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/40')}>
       {/* Заголовок-переключатель: клик сворачивает/разворачивает панель */}
