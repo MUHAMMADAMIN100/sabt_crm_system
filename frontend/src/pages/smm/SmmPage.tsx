@@ -771,6 +771,46 @@ function DayCell({ d, evs, isToday, blocked, droppable, cycles, onOpen, onDragSt
   )
 }
 
+// Умная линия-связка: соединяет производную Съёмку (data-ev="shoot-of-<reelId>") с её Рилсом
+// (data-ev="<reelId>") кривой цвета проекта. SVG лежит в контенте скролла (координаты контента),
+// поэтому линии едут вместе с сеткой; перерисовка на каждый рендер + при скролле/ресайзе.
+function EventLinks({ scrollRef }: { scrollRef: { current: HTMLDivElement | null } }) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const draw = () => {
+    const cont = scrollRef.current, svg = svgRef.current
+    if (!cont || !svg) return
+    const cr = cont.getBoundingClientRect()
+    svg.setAttribute('width', String(cont.scrollWidth))
+    svg.setAttribute('height', String(cont.scrollHeight))
+    const byId = new Map<string, HTMLElement>()
+    cont.querySelectorAll<HTMLElement>('[data-ev]').forEach(el => byId.set(el.dataset.ev as string, el))
+    let out = ''
+    byId.forEach((shoot, id) => {
+      if (!id.startsWith('shoot-of-')) return
+      const reel = byId.get(id.slice('shoot-of-'.length))
+      if (!reel) return
+      const sr = shoot.getBoundingClientRect(), rr = reel.getBoundingClientRect()
+      const sx = sr.right - cr.left + cont.scrollLeft, sy = sr.top - cr.top + cont.scrollTop + sr.height / 2
+      const rx = rr.left - cr.left + cont.scrollLeft, ry = rr.top - cr.top + cont.scrollTop + rr.height / 2
+      const col = projColor(shoot.dataset.proj || '')
+      const mx = (sx + rx) / 2
+      out += `<path d="M ${sx.toFixed(1)} ${sy.toFixed(1)} C ${mx.toFixed(1)} ${sy.toFixed(1)}, ${mx.toFixed(1)} ${ry.toFixed(1)}, ${rx.toFixed(1)} ${ry.toFixed(1)}" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round" opacity="0.8"/><circle cx="${rx.toFixed(1)}" cy="${ry.toFixed(1)}" r="3" fill="${col}"/>`
+    })
+    svg.innerHTML = out
+  }
+  useLayoutEffect(() => { draw() }) // после каждого рендера (данные/раскладка)
+  useEffect(() => {
+    const cont = scrollRef.current
+    if (!cont) return
+    let raf = 0
+    const on = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw) }
+    cont.addEventListener('scroll', on, { passive: true })
+    window.addEventListener('resize', on)
+    return () => { cont.removeEventListener('scroll', on); window.removeEventListener('resize', on); cancelAnimationFrame(raf) }
+  }, [scrollRef]) // eslint-disable-line react-hooks/exhaustive-deps
+  return <svg ref={svgRef} className="absolute top-0 left-0 pointer-events-none z-[6]" />
+}
+
 // Непрерывный (Notion-style) месячный вид: НЕПРЕРЫВНАЯ лента недель — без разбивки на отдельные
 // месяцы и без дублей дней на стыке (последняя неделя сентября и первая неделя октября — одна
 // непрерывная лента). Начало месяца помечается в клетке 1-го числа. Заголовок вверху меняется
@@ -923,6 +963,7 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
             </div>
           )
         })}
+        <EventLinks scrollRef={scrollRef} />
       </div>
       {/* Плавающая кнопка «вернуться к сегодня» — видна, когда проскроллил в другой месяц. */}
       {returnBtn && (
@@ -1087,10 +1128,10 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
                       const widthPct = 100 / lay.cols
                       const dur = s.durationMin || DEFAULT_DUR // высота карточки = длительность
                       return (
-                        <div key={s.id} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
+                        <div key={s.id} data-ev={s.id} data-proj={s.projectId} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
                           onDragStart={(ev) => { grabOffsetRef.current = (ev.nativeEvent as DragEvent).offsetY || 0; onDragStart(s) }}
                           className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
-                          style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId), boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)` }}>
+                          style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId), boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.derived ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
                           <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
                           <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time}–{addMinToTime(s.time!, dur)} · 🎬 Команда видеографов{s.location ? ` · ${s.location}` : ''}</div>
                         </div>
@@ -1374,10 +1415,10 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
                           const leftPct = (l.lane / l.cols) * 100, widthPct = 100 / l.cols
                           const dur = s.durationMin || DEFAULT_DUR
                           return (
-                            <div key={s.id} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
+                            <div key={s.id} data-ev={s.id} data-proj={s.projectId} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
                               onDragStart={(ev) => { grabOffsetRef.current = (ev.nativeEvent as DragEvent).offsetY || 0; onDragStart(s) }}
                               className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
-                              style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId), boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)` }}>
+                              style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId), boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.derived ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
                               <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
                               <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time}–{addMinToTime(s.time!, dur)} · 🎬{s.location ? ` ${s.location}` : ''}</div>
                             </div>
@@ -1395,6 +1436,7 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
             )
           })}
         </div>
+        <EventLinks scrollRef={scrollRef} />
       </div>
       {returnBtn && (
         <button onClick={goToToday}
@@ -1524,9 +1566,9 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const done = e.kind === 'publication' && isDone(e)
   const label = e.kind === 'shoot' ? (e.projectName || e.title || 'Съёмка') : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`
   return (
-    <span onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
-          style={projFill(e.projectId)}
-          className={'flex items-center gap-1 rounded px-1.5 py-[2px] text-[11px] font-medium leading-tight truncate transition hover:brightness-110 ' + (done ? 'opacity-45 ' : '') + grab}
+    <span data-ev={e.id} data-proj={e.projectId} onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
+          style={{ ...projFill(e.projectId), ...(e.derived ? { outline: `1px dashed ${projColor(e.projectId)}`, outlineOffset: '-1px' } : {}) }}
+          className={'flex items-center gap-1 rounded px-1.5 py-[2px] text-[11px] font-medium leading-tight truncate transition hover:brightness-110 ' + (done ? 'opacity-45 ' : '') + (e.derived ? 'opacity-85 ' : '') + grab}
           title={e.kind === 'shoot'
             ? `Съёмка · ${e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`
             : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
