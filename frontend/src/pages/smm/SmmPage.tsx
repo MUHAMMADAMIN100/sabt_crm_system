@@ -3,6 +3,7 @@
 // (зелёные) и съёмки (янтарные, со временем). Статус публикации: опубликовано —
 // ярко + галочка, нет — бледно. Drag-перенос на другой день.
 import { useMemo, useState, useRef, useEffect, useLayoutEffect, createContext, useContext, Fragment, type ReactNode, type DragEvent as RDragEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
@@ -587,7 +588,12 @@ function ProjectCycleModal({ p, saving, clearing, onClose, onSave, onClear, onOp
       ? 'Цикл: с 1-го по конец каждого месяца.'
       : `Цикл: с ${day}-го по ${day - 1}-е следующего месяца (сдвигается каждый месяц).`
   const clamp = (n: number) => Math.max(0, Math.min(999, Math.trunc(n) || 0))
-  return (
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 mb-1">
@@ -665,7 +671,8 @@ function ProjectCycleModal({ p, saving, clearing, onClose, onSave, onClear, onOp
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -1702,7 +1709,13 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration }: {
   const type = e.contentType || 'other'
   const done = isDone(e)
   const Ic = isShoot ? Camera : (TYPE_ICON[type] || AlignLeft)
-  return (
+  // Закрытие по Esc; портал в body — backdrop на весь вьюпорт (иначе fixed обрезается трансформ-предком).
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 mb-3">
@@ -1759,7 +1772,8 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration }: {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
