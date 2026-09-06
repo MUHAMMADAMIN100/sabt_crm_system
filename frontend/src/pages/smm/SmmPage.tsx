@@ -11,6 +11,7 @@ import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, 
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, workflowApi, projectsApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 
 export type Ev = {
   id: string; itemId?: string; shootId?: string; kind: 'shoot' | 'publication'; date: string
@@ -18,6 +19,8 @@ export type Ev = {
   title?: string; time?: string | null; location?: string | null; note?: string | null
   contentType?: string; topic?: string | null; status?: string; assigneeName?: string | null
   taskId?: string | null; taskStatus?: string | null; durationMin?: number | null
+  // Производная съёмка (авто под рилс): reelId — id рилса, к которому она относится (для линии-связки).
+  derived?: boolean; reelId?: string
 }
 const DEFAULT_DUR = 60 // длительность съёмки по умолчанию (мин)
 const DUR_OPTIONS = [30, 60, 90, 120, 180] // варианты длительности в модалке
@@ -149,6 +152,10 @@ const VIEWS: { k: View; label: string }[] = [
 // ═══════════════════════════════════════════════════════════════════════
 export default function SmmPage() {
   const navigate = useNavigate()
+  const user = useAuthStore(s => s.user)
+  // Съёмки видят видеографы всегда; остальные — только когда выбран проект (фильтр по плитке).
+  const isVideographer = ['videographer', 'video_director', 'video_editor'].includes(user?.role ?? '')
+    || ['videographer', 'video_director', 'video_editor'].includes((user as any)?.secondaryRole ?? '')
   const [view, setView] = useState<View>('month')
   const [cursor, setCursor] = useState(new Date())
   // Счётчик явной навигации (стрелки/«Сегодня») — по нему непрерывный месячный вид прокручивается к месяцу.
@@ -205,6 +212,7 @@ export default function SmmPage() {
 
   const qc = useQueryClient()
   const [detail, setDetail] = useState<Ev | null>(null)
+  const openDetail = (e: Ev) => { if (!e.derived) setDetail(e) } // производные съёмки не открывают модалку
   const markMut = useMutation({
     mutationFn: ({ ev, done }: { ev: Ev; done: boolean }) =>
       contentPlanApi.smartUpdate(ev.itemId!, { status: done ? 'published' : 'planned' }),
@@ -333,13 +341,36 @@ export default function SmmPage() {
     moveMut.mutate({ ev: e, dateStr: null })
   }
 
-  // Основной вид: проект + поиск + без сторис (сторис — в отдельном табе).
-  const mainEvents = useMemo(() => allEvents.filter(e =>
-    (selProjects.size === 0 || selProjects.has(e.projectId))
-    && (selTypes.size === 0 || FKINDS.some(k => selTypes.has(k) && matchesFKind(e, k)))
-    && matchSearch(e, search)
-    && !(e.kind === 'publication' && e.contentType === 'story')
-  ), [allEvents, selProjects, selTypes, search])
+  // Производные съёмки: под каждый Рилс — Съёмка на день раньше (X−1), того же проекта и времени,
+  // связанная с рилсом (reelId → линия-связка). Автоматически едет за рилсом и исчезает при удалении.
+  const derivedShoots = useMemo(() => {
+    const out: Ev[] = []
+    for (const e of allEvents) {
+      const isReel = e.kind === 'publication' && (e.contentType === 'reel' || e.contentType === 'video')
+      if (!isReel || !e.date) continue
+      out.push({
+        id: `shoot-of-${e.id}`, kind: 'shoot',
+        date: iso(addDays(new Date(e.date + 'T00:00:00'), -1)),
+        time: e.time ?? null, durationMin: e.durationMin ?? DEFAULT_DUR,
+        projectId: e.projectId, projectName: e.projectName,
+        title: `Съёмка · ${e.projectName}`, derived: true, reelId: e.id,
+      })
+    }
+    return out
+  }, [allEvents])
+
+  // Основной вид: проект + поиск + без сторис (сторис — в отдельном табе) + производные съёмки
+  // (видны видеографам всегда, остальным — только при выбранном проекте).
+  const mainEvents = useMemo(() => {
+    const real = allEvents.filter(e =>
+      (selProjects.size === 0 || selProjects.has(e.projectId))
+      && (selTypes.size === 0 || FKINDS.some(k => selTypes.has(k) && matchesFKind(e, k)))
+      && matchSearch(e, search)
+      && !(e.kind === 'publication' && e.contentType === 'story')
+    )
+    const shoots = derivedShoots.filter(s => (isVideographer || selProjects.has(s.projectId)) && matchSearch(s, search))
+    return [...real, ...shoots]
+  }, [allEvents, derivedShoots, selProjects, selTypes, search, isVideographer])
 
   const mainByDate = useMemo(() => {
     const map = new Map<string, Ev[]>()
@@ -490,17 +521,17 @@ export default function SmmPage() {
           {view === 'month' ? (
             <MonthScrollView initialMonth={monthStr} commandMonth={monthStr} commandSeq={scrollSeq}
               byDate={mainByDate} today={today} cycles={cycles} dragRange={dragRange}
-              onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
+              onOpen={openDetail} onDragStart={onDragStartEv} onDropDate={onDropDate}
               onVisibleMonth={ym => setCursor(c => format(c, 'yyyy-MM') === ym ? c : ymToDate(ym))}
               dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           ) : view === 'week' ? (
             <WeekScrollView initialDay={cursor} commandDay={cursor} commandSeq={scrollSeq}
               events={mainEvents} dragRange={dragRange} dragDuration={dragDuration}
-              onOpen={setDetail} onDragStart={onDragStartEv} onDropDate={onDropDate} onDropTime={onDropTime}
+              onOpen={openDetail} onDragStart={onDragStartEv} onDropDate={onDropDate} onDropTime={onDropTime}
               onVisibleDay={d => setCursor(c => isSameDay(c, d) ? c : d)}
               dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           ) : (
-            <TimeGridView days={weekDays} events={mainEvents} onOpen={setDetail} dragRange={dragRange} dragDuration={dragDuration}
+            <TimeGridView days={weekDays} events={mainEvents} onOpen={openDetail} dragRange={dragRange} dragDuration={dragDuration}
               onDragStart={onDragStartEv} onDropDate={onDropDate} onDropTime={onDropTime} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           )}
         </>
