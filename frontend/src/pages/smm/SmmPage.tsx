@@ -1367,18 +1367,30 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
   onSettings: (id: string) => void
   onDragStart: (e: Ev) => void; onDrop: () => void; over: boolean; setOver: (v: boolean) => void
 }) {
+  // Панель сворачивается в одну строку-кнопку, чтобы отдать место календарю (запоминаем выбор).
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem('smmBacklogOpen') === '1' } catch { return false } })
+  const total = groups.reduce((s, g) => s + g.items.length, 0)
+  const toggle = () => setOpen(o => { const n = !o; try { localStorage.setItem('smmBacklogOpen', n ? '1' : '0') } catch { /* ignore */ } return n })
   return (
     <div
       onDragOver={e => { e.preventDefault(); if (!over) setOver(true) }}
       onDragLeave={() => setOver(false)}
       onDrop={() => { setOver(false); onDrop() }}
-      className={'rounded-xl border p-2.5 transition ' + (over
+      className={'rounded-xl border px-2.5 py-1.5 transition ' + (over
         ? 'border-gray-400 dark:border-gray-500 bg-gray-100/50 dark:bg-gray-800/50'
         : 'border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/40')}>
-      {groups.length === 0 ? (
+      {/* Заголовок-переключатель: клик сворачивает/разворачивает панель */}
+      <button type="button" onClick={toggle}
+        className="w-full flex items-center gap-2 py-1 text-[11px] font-bold uppercase tracking-wide text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+        <Inbox size={13} className="shrink-0" />
+        <span>Не запланировано</span>
+        {total > 0 && <span className="text-gray-400/70 font-semibold normal-case">· {total}</span>}
+        <ChevronDown size={14} className={'ml-auto shrink-0 transition-transform ' + (open ? 'rotate-180' : '')} />
+      </button>
+      {open && (groups.length === 0 ? (
         <div className="text-[12.5px] text-gray-400 px-1 py-2">Нет SMM-проектов.</div>
       ) : (
-      <div className="grid gap-2 max-h-[176px] overflow-y-auto pr-0.5"
+      <div className="grid gap-2 max-h-[176px] overflow-y-auto pr-0.5 mt-1.5"
         style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
         {groups.map(g => {
           const c = projColor(g.id)
@@ -1411,7 +1423,7 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
           )
         })}
       </div>
-      )}
+      ))}
     </div>
   )
 }
