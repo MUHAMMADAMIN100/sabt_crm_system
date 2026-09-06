@@ -753,10 +753,45 @@ function DayCell({ d, evs, isToday, blocked, droppable, cycles, onOpen, onDragSt
   )
 }
 
-// Умная линия-связка: соединяет Съёмку (data-reel="<id рилса-события>") с её Рилсом (data-ev)
-// кривой цвета проекта. SVG лежит в контенте скролла (координаты контента),
-// поэтому линии едут вместе с сеткой; перерисовка на каждый рендер + при скролле/ресайзе.
-function EventLinks({ scrollRef }: { scrollRef: { current: HTMLDivElement | null } }) {
+// Умная линия-связка съёмка↔рилс. Плавная кривая цвета проекта. Умный маршрут:
+//  • концы — по ДВУМ ближайшим смотрящим друг на друга сторонам (не жёстко правый→левый);
+//  • параллельные связки на близкой высоте раскладываются по «дорожкам» (не сливаются);
+//  • координаты контента (линии едут с сеткой), z поднимается над полосой «весь день» в неделе.
+type LinkRect = { l: number; t: number; r: number; b: number; cx: number; cy: number }
+type Anch = { x: number; y: number; nx: number; ny: number; side: 'h' | 'v' }
+function rectAnchors(R: LinkRect): Anch[] {
+  return [
+    { x: R.l, y: R.cy, nx: -1, ny: 0, side: 'h' },
+    { x: R.r, y: R.cy, nx: 1, ny: 0, side: 'h' },
+    { x: R.cx, y: R.t, nx: 0, ny: -1, side: 'v' },
+    { x: R.cx, y: R.b, nx: 0, ny: 1, side: 'v' },
+  ]
+}
+// Ближайшая пара сторон: минимум расстояния с бонусом за нормали, смотрящие навстречу.
+function nearestPair(A: LinkRect, B: LinkRect): { a: Anch; b: Anch } {
+  let best: { a: Anch; b: Anch; score: number } | null = null
+  for (const a of rectAnchors(A)) for (const b of rectAnchors(B)) {
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1
+    const facing = (a.nx * dx + a.ny * dy) / d + (b.nx * -dx + b.ny * -dy) / d
+    const score = d - facing * 70
+    if (!best || score < best.score) best = { a: { ...a }, b: { ...b }, score }
+  }
+  return best!
+}
+// Смещение конца вдоль его стороны — разводит параллельные связки по дорожкам.
+function nudgeAnchor(p: Anch, R: LinkRect, off: number) {
+  if (p.side === 'h') p.y = Math.max(R.t + 8, Math.min(R.b - 8, p.y + off))
+  else p.x = Math.max(R.l + 10, Math.min(R.r - 10, p.x + off))
+}
+function curvePath(a: Anch, b: Anch, col: string): string {
+  const d = Math.hypot(b.x - a.x, b.y - a.y)
+  const k = Math.max(26, Math.min(130, d * 0.42)) // вынос управляющих точек вдоль нормали
+  const c1x = a.x + a.nx * k, c1y = a.y + a.ny * k, c2x = b.x + b.nx * k, c2y = b.y + b.ny * k
+  const f = (n: number) => n.toFixed(1)
+  return `<path d="M ${f(a.x)} ${f(a.y)} C ${f(c1x)} ${f(c1y)}, ${f(c2x)} ${f(c2y)}, ${f(b.x)} ${f(b.y)}" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round" opacity="0.85"/>`
+    + `<circle cx="${f(a.x)}" cy="${f(a.y)}" r="2.6" fill="${col}"/><circle cx="${f(b.x)}" cy="${f(b.y)}" r="3" fill="${col}"/>`
+}
+function EventLinks({ scrollRef, z = 6 }: { scrollRef: { current: HTMLDivElement | null }; z?: number }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const draw = () => {
     const cont = scrollRef.current, svg = svgRef.current
@@ -764,20 +799,30 @@ function EventLinks({ scrollRef }: { scrollRef: { current: HTMLDivElement | null
     const cr = cont.getBoundingClientRect()
     svg.setAttribute('width', String(cont.scrollWidth))
     svg.setAttribute('height', String(cont.scrollHeight))
+    const toRect = (r: DOMRect): LinkRect => {
+      const l = r.left - cr.left + cont.scrollLeft, t = r.top - cr.top + cont.scrollTop
+      return { l, t, r: l + r.width, b: t + r.height, cx: l + r.width / 2, cy: t + r.height / 2 }
+    }
     const byId = new Map<string, HTMLElement>()
     cont.querySelectorAll<HTMLElement>('[data-ev]').forEach(el => byId.set(el.dataset.ev as string, el))
-    let out = ''
+    const links: { A: LinkRect; B: LinkRect; a: Anch; b: Anch; col: string; lane?: number }[] = []
     cont.querySelectorAll<HTMLElement>('[data-reel]').forEach(shoot => {
       const reel = byId.get(shoot.dataset.reel as string) // связь съёмка → её рилс
       if (!reel) return
-      const sr = shoot.getBoundingClientRect(), rr = reel.getBoundingClientRect()
-      const sx = sr.right - cr.left + cont.scrollLeft, sy = sr.top - cr.top + cont.scrollTop + sr.height / 2
-      const rx = rr.left - cr.left + cont.scrollLeft, ry = rr.top - cr.top + cont.scrollTop + rr.height / 2
-      const col = projColor(shoot.dataset.proj || '')
-      const mx = (sx + rx) / 2
-      out += `<path d="M ${sx.toFixed(1)} ${sy.toFixed(1)} C ${mx.toFixed(1)} ${sy.toFixed(1)}, ${mx.toFixed(1)} ${ry.toFixed(1)}, ${rx.toFixed(1)} ${ry.toFixed(1)}" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round" opacity="0.8"/><circle cx="${rx.toFixed(1)}" cy="${ry.toFixed(1)}" r="3" fill="${col}"/>`
+      const A = toRect(shoot.getBoundingClientRect()), B = toRect(reel.getBoundingClientRect())
+      const np = nearestPair(A, B)
+      links.push({ A, B, a: np.a, b: np.b, col: projColor(shoot.dataset.proj || '') })
     })
-    svg.innerHTML = out
+    // Дорожки: группируем по высоте середины связки, внутри группы симметрично разводим.
+    const buckets = new Map<number, typeof links>()
+    links.forEach(L => {
+      const key = Math.round(((L.a.y + L.b.y) / 2) / 26)
+      const arr = buckets.get(key)
+      if (arr) arr.push(L); else buckets.set(key, [L])
+    })
+    buckets.forEach(g => { const n = g.length; g.forEach((L, i) => { L.lane = i - (n - 1) / 2 }) })
+    links.forEach(L => { const off = (L.lane || 0) * 13; nudgeAnchor(L.a, L.A, off); nudgeAnchor(L.b, L.B, off) })
+    svg.innerHTML = links.map(L => curvePath(L.a, L.b, L.col)).join('')
   }
   useLayoutEffect(() => { draw() }) // после каждого рендера (данные/раскладка)
   useEffect(() => {
@@ -789,7 +834,7 @@ function EventLinks({ scrollRef }: { scrollRef: { current: HTMLDivElement | null
     window.addEventListener('resize', on)
     return () => { cont.removeEventListener('scroll', on); window.removeEventListener('resize', on); cancelAnimationFrame(raf) }
   }, [scrollRef]) // eslint-disable-line react-hooks/exhaustive-deps
-  return <svg ref={svgRef} className="absolute top-0 left-0 pointer-events-none z-[6]" />
+  return <svg ref={svgRef} className="absolute top-0 left-0 pointer-events-none" style={{ zIndex: z, overflow: 'visible' }} />
 }
 
 // Непрерывный (Notion-style) месячный вид: НЕПРЕРЫВНАЯ лента недель — без разбивки на отдельные
@@ -1417,7 +1462,7 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
             )
           })}
         </div>
-        <EventLinks scrollRef={scrollRef} />
+        <EventLinks scrollRef={scrollRef} z={15} />
       </div>
       {returnBtn && (
         <button onClick={goToToday}
