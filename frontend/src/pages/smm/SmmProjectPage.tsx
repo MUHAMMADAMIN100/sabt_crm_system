@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, type ReactNode } from 'react'
+import { useMemo, useState, useEffect, useRef, type ReactNode } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, ChevronLeft, Film, Image as ImageIcon, Pencil, Check, Plus, TrendingUp, TrendingDown, Gift } from 'lucide-react'
@@ -35,18 +35,50 @@ function Row({ k, v }: { k: string; v: ReactNode }) {
     </div>
   )
 }
-function Spark({ vals }: { vals: number[] }) {
-  if (vals.length < 2) return null
-  const W = 148, H = 40, pad = 4
-  const mn = Math.min(...vals), mx = Math.max(...vals), rng = mx - mn || 1
-  const pts = vals.map((v, i) => [pad + i * (W - 2 * pad) / (vals.length - 1), H - pad - (v - mn) / rng * (H - 2 * pad)] as const)
-  const d = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ')
-  const area = `${d} L ${pts[pts.length - 1][0].toFixed(1)} ${H} L ${pts[0][0].toFixed(1)} ${H} Z`
+// Крупный график подписчиков: сетка + значения по оси + подписи месяцев + точки + тултип при наведении.
+function SubsChart({ data }: { data: Follower[] }) {
+  const [hi, setHi] = useState<number | null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+  if (data.length < 2) return <div className="h-[188px] flex items-center justify-center text-sm text-gray-400">Добавь ещё месяц — построю график роста</div>
+  const W = 460, H = 188, pl = 46, pr = 14, pt = 16, pb = 30
+  const iw = W - pl - pr, ih = H - pt - pb
+  const vals = data.map(d => d.value)
+  let mn = Math.min(...vals), mx = Math.max(...vals)
+  if (mn === mx) { mn -= 1; mx += 1 }
+  const rp = (mx - mn) * 0.14; mn = Math.floor(mn - rp); mx = Math.ceil(mx + rp)
+  const X = (i: number) => pl + i * iw / (data.length - 1)
+  const Y = (v: number) => pt + ih - (v - mn) / (mx - mn) * ih
+  const line = data.map((d, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(d.value).toFixed(1)}`).join(' ')
+  const area = `${line} L ${X(data.length - 1).toFixed(1)} ${(pt + ih).toFixed(1)} L ${X(0).toFixed(1)} ${(pt + ih).toFixed(1)} Z`
+  const gv = [0, 0.5, 1].map(t => Math.round(mn + (mx - mn) * t))
+  const step = Math.max(1, Math.ceil(data.length / 7))
+  const mShort = (ym: string) => MONTHS[+ym.split('-')[1] - 1].slice(0, 3)
+  const onMove = (e: { clientX: number }) => { const r = svgRef.current!.getBoundingClientRect(); const px = (e.clientX - r.left) / r.width * W; setHi(Math.max(0, Math.min(data.length - 1, Math.round((px - pl) / (iw / (data.length - 1)))))) }
+  const cur = hi ?? data.length - 1
   return (
-    <svg width={W} height={H} className="shrink-0">
-      <path d={area} fill="rgba(16,185,129,.14)" />
-      <path d={d} fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={pts[pts.length - 1][0]} cy={pts[pts.length - 1][1]} r="3" fill="#10b981" />
+    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full text-gray-400 dark:text-gray-500 select-none touch-none" onMouseMove={onMove} onMouseLeave={() => setHi(null)}>
+      {gv.map((tv, i) => { const yy = Y(tv); return (
+        <g key={i}>
+          <line x1={pl} y1={yy} x2={W - pr} y2={yy} stroke="currentColor" strokeOpacity="0.14" />
+          <text x={pl - 8} y={yy + 3} textAnchor="end" fontSize="10" fill="currentColor">{fmtNum(tv)}</text>
+        </g>
+      ) })}
+      <path d={area} fill="rgba(16,185,129,.13)" />
+      <path d={line} fill="none" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      {data.map((d, i) => (i % step === 0 || i === data.length - 1)
+        ? <text key={i} x={X(i)} y={H - 9} textAnchor="middle" fontSize="10" fill="currentColor">{mShort(d.ym)}</text> : null)}
+      {data.map((d, i) => <circle key={i} cx={X(i)} cy={Y(d.value)} r={i === cur ? 4 : 2.4} fill="#10b981" />)}
+      {hi != null && (() => {
+        const d = data[hi], hx = X(hi), hy = Y(d.value), tw = 96, tx = Math.max(2, Math.min(W - tw - 2, hx - tw / 2)), ty = Math.max(2, hy - 46)
+        return (
+          <g>
+            <line x1={hx} y1={pt} x2={hx} y2={pt + ih} stroke="currentColor" strokeOpacity="0.28" strokeDasharray="3 3" />
+            <rect x={tx} y={ty} width={tw} height={36} rx="7" fill="#111827" stroke="#374151" />
+            <text x={tx + tw / 2} y={ty + 14} textAnchor="middle" fontSize="10.5" fill="#9ca3af">{mShort(d.ym)} {d.ym.split('-')[0]}</text>
+            <text x={tx + tw / 2} y={ty + 28} textAnchor="middle" fontSize="13" fontWeight="700" fill="#fff">{fmtNum(d.value)}</text>
+          </g>
+        )
+      })()}
     </svg>
   )
 }
@@ -229,8 +261,8 @@ export default function SmmProjectPage() {
         {/* ПРАВО — графики */}
         <div className="space-y-4">
           <div className={card}>
-            <h2 className={secLabel + ' mb-3'}>Подписчики · история по месяцам</h2>
-            <div className="flex items-end gap-4 flex-wrap">
+            <h2 className={secLabel + ' mb-2'}>Подписчики · история по месяцам</h2>
+            <div className="flex items-end gap-3 flex-wrap">
               <span className="text-4xl font-extrabold tracking-tight tabular-nums leading-none">{last ? fmtNum(last.value) : '—'}</span>
               {delta != null && (
                 <span className={'inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg mb-0.5 ' + (delta >= 0 ? 'text-emerald-600 bg-emerald-500/10' : 'text-red-500 bg-red-500/10')}>
@@ -238,9 +270,9 @@ export default function SmmProjectPage() {
                   {(delta >= 0 ? '+' : '−') + fmtNum(Math.abs(delta))}{prev && prev.value ? ` · ${(delta / prev.value * 100).toFixed(1)}%` : ''}
                 </span>
               )}
-              <div className="ml-auto"><Spark vals={followers.slice(-10).map(f => f.value)} /></div>
+              <span className="ml-auto self-end text-xs text-gray-400">{last ? `на ${mLabel(last.ym)}` : 'нет данных'}</span>
             </div>
-            <p className="text-xs text-gray-400 mt-2">{last ? `на ${mLabel(last.ym)}` : 'нет данных'}</p>
+            <div className="mt-3"><SubsChart data={followers} /></div>
 
             {followers.length > 0 && (
               <div className="mt-4 border-t border-gray-100 dark:border-gray-800 max-h-72 overflow-y-auto">
