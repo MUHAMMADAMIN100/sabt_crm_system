@@ -1160,7 +1160,7 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
   const [allDayOpen, setAllDayOpen] = useState(false)
   const MAX_AD = 3, AD_ROW = 21, AD_CAP = 8
   const maxAllDay = days.reduce((m, d) => Math.max(m, allDayFor(d).length), 0)
-  const adRows = allDayOpen ? Math.min(maxAllDay, AD_CAP) : (maxAllDay > MAX_AD ? MAX_AD + 1 : maxAllDay)
+  const adRows = allDayOpen ? Math.min(maxAllDay, AD_CAP) + 1 : (maxAllDay > MAX_AD ? MAX_AD + 1 : maxAllDay) // +1 ряд под кнопку «свернуть»
   const alldayH = Math.max(28, adRows * AD_ROW + 6)
   const timedFor = (d: Date, h: number) => timed.filter(e => e.date === dayKey(d) && parseTime(e.time)!.h === h)
   const layoutFor = (d: Date) => {
@@ -1302,6 +1302,10 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
                   {adHidden > 0 && (
                     <button type="button" onClick={() => setAllDayOpen(true)}
                       className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-left px-0.5 shrink-0">ещё {adHidden}</button>
+                  )}
+                  {allDayOpen && adItems.length > MAX_AD && (
+                    <button type="button" onClick={() => setAllDayOpen(false)}
+                      className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-left px-0.5 shrink-0">свернуть</button>
                   )}
                 </div>
                 {/* сетка часов */}
