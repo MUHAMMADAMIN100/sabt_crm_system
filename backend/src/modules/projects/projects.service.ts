@@ -1780,7 +1780,7 @@ export class ProjectsService implements OnModuleInit {
    *  месяц. Хранится в smmData (merge, без миграции), отдельно от тарифа/Доски. */
   async setSmmCycle(
     id: string,
-    dto: { day?: number | null; normReels?: number | null; normPosts?: number | null; anchor?: string | null },
+    dto: { day?: number | null; normReels?: number | null; normPosts?: number | null; anchor?: string | null; storiesPerMonth?: number | null },
     user?: { id: string; role: string; name?: string },
   ) {
     const project = await this.repo.findOne({ where: { id } });
@@ -1815,6 +1815,12 @@ export class ProjectsService implements OnModuleInit {
       const n = dayInRange(dto.normPosts, 0, 999);
       if (n == null) delete smmData.normPosts; else smmData.normPosts = n;
     }
+    // Сторис в месяц (норма). Дневную норму (для KPI и раскраски дней) выводим = месяц/30.
+    if ('storiesPerMonth' in dto) {
+      const m = dayInRange(dto.storiesPerMonth, 0, 9999);
+      if (m == null) { delete smmData.storiesPerMonth; delete smmData.storiesPerDay; }
+      else { smmData.storiesPerMonth = m; smmData.storiesPerDay = m > 0 ? Math.max(1, Math.round(m / 30)) : 0; }
+    }
     await this.repo.update(id, { smmData });
     await this.activityLog.log({
       userId: user?.id,
@@ -1823,7 +1829,7 @@ export class ProjectsService implements OnModuleInit {
       entity: 'project',
       entityId: id,
       entityName: project.name,
-      details: { smmCycle: { cycleStartDay: smmData.cycleStartDay ?? null, normReels: smmData.normReels ?? null, normPosts: smmData.normPosts ?? null } },
+      details: { smmCycle: { cycleStartDay: smmData.cycleStartDay ?? null, normReels: smmData.normReels ?? null, normPosts: smmData.normPosts ?? null, storiesPerMonth: smmData.storiesPerMonth ?? null } },
     });
     this.gateway.broadcast('projects:changed', { projectId: id });
     return {
@@ -1832,6 +1838,7 @@ export class ProjectsService implements OnModuleInit {
       cycleAnchor: smmData.cycleAnchor ?? null,
       normReels: smmData.normReels ?? null,
       normPosts: smmData.normPosts ?? null,
+      storiesPerMonth: smmData.storiesPerMonth ?? null,
     };
   }
 

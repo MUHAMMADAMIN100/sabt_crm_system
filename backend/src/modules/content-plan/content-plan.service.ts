@@ -431,7 +431,9 @@ export class ContentPlanService {
         cycleAnchor: p.smmData && typeof p.smmData.cycleAnchor === 'string' ? p.smmData.cycleAnchor : null,
         normReels: p.smmData ? num(p.smmData.normReels) : null,
         normPosts: p.smmData ? num(p.smmData.normPosts) : null,
-        // Для страницы «Сторисы»: дневная норма сторис (цель) и дата, с которой проект ждёт сторис.
+        // Для страницы «Сторисы»: месячная норма сторис (равномерно делится на дни) + дневная (KPI),
+        // и дата, с которой проект ждёт сторис.
+        storiesPerMonth: p.smmData ? num((p.smmData as any).storiesPerMonth) : null,
         storiesPerDay: p.smmData ? num((p.smmData as any).storiesPerDay) : null,
         since: dOnly((p as any).createdAt),
       }))

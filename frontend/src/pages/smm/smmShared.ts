@@ -67,5 +67,6 @@ export function fmtCycleRange(startIso: string, endIso: string): string {
 export type SmmProj = {
   id: string; name: string
   cycleStartDay?: number | null; normReels?: number | null; normPosts?: number | null
+  storiesPerMonth?: number | null; storiesPerDay?: number | null
   startDate?: string | null; endDate?: string | null
 }

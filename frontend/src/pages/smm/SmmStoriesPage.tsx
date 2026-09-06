@@ -9,8 +9,8 @@ import { contentPlanApi } from '@/services/api.service'
 import { StoriesTab, buildCells, monthTitle, assignProjectColors, type Ev, type SDay } from './SmmPage'
 
 const iso = (d: Date) => format(d, 'yyyy-MM-dd')
-// Проект со страницы «Сторисы»: дневная норма сторис (цель) + окно, когда проект ждёт сторис.
-type StoryProj = { id: string; name: string; storiesPerDay?: number | null; since?: string | null; endDate?: string | null }
+// Проект со страницы «Сторисы»: месячная/дневная норма сторис (цель) + окно, когда проект ждёт сторис.
+type StoryProj = { id: string; name: string; storiesPerMonth?: number | null; storiesPerDay?: number | null; since?: string | null; endDate?: string | null }
 // Фактически опубликовано за день (поле count с бэка; фолбэк — парсинг «Сторис ×N» из topic).
 const storyCount = (e: Ev): number => {
   if (typeof e.count === 'number') return e.count
@@ -61,9 +61,13 @@ export default function SmmStoriesPage() {
   // done — норма достигнута; partial — что-то есть, но меньше нормы; none — плановый день без сторис.
   const statusByProject = useMemo(() => {
     const inMonthDates = cells.filter(c => c.inMonth && c.iso).map(c => c.iso as string)
+    const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate()
     const res = new Map<string, Map<string, SDay>>()
     for (const p of projects) {
-      const target = p.storiesPerDay ?? 3
+      // Цель на день: месячная норма делится равномерно на дни месяца; иначе дневная норма (по умолч. 3).
+      const target = p.storiesPerMonth != null
+        ? (p.storiesPerMonth > 0 ? Math.max(1, Math.round(p.storiesPerMonth / daysInMonth)) : 0)
+        : (p.storiesPerDay ?? 3)
       const dm = new Map<string, SDay>()
       if (target > 0) {
         const actual = actualByProject.get(p.id) ?? new Map<string, number>()
@@ -80,7 +84,7 @@ export default function SmmStoriesPage() {
       res.set(p.id, dm)
     }
     return res
-  }, [projects, actualByProject, cells, today])
+  }, [projects, actualByProject, cells, today, cursor])
 
   return (
     <div className="space-y-3">

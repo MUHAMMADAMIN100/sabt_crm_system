@@ -74,7 +74,7 @@ export class ProjectsController {
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
   setSmmCycle(
     @Param('id') id: string,
-    @Body() body: { day?: number | null; normReels?: number | null; normPosts?: number | null },
+    @Body() body: { day?: number | null; normReels?: number | null; normPosts?: number | null; storiesPerMonth?: number | null },
     @Request() req,
   ) {
     return this.service.setSmmCycle(id, body || {}, req.user);
