@@ -116,6 +116,34 @@ export class ContentPlanService {
     }
   }
 
+  /** Авто-съёмка под рилс: если это рилс с датой публикации и у него ещё нет съёмки —
+   *  создаём Съёмку (content_plan_item со shootForItemId) на день раньше (X−1). Съёмка
+   *  дальше двигается независимо (не пересоздаём/не двигаем, если уже есть). */
+  private async ensureShootForReel(reel: ContentPlanItem | null): Promise<void> {
+    if (!reel) return;
+    if (reel.shootForItemId) return;                      // сама съёмка — не плодим съёмку под съёмку
+    if (reel.contentType !== ContentItemType.REEL) return; // только под рилсы
+    if (!reel.publishDate) return;                         // без даты рилса съёмку не ставим
+    try {
+      const exists = await this.repo.count({ where: { shootForItemId: reel.id } });
+      if (exists > 0) return;                              // съёмка уже есть — не двигаем
+      const shootDate = new Date(reel.publishDate);
+      shootDate.setDate(shootDate.getDate() - 1);          // X−1
+      await this.repo.save(this.repo.create({
+        projectId: reel.projectId,
+        contentType: reel.contentType,                     // тип reel, но shootForItemId делает её съёмкой
+        topic: 'Съёмка',
+        shootForItemId: reel.id,
+        publishDate: shootDate,
+        publishTime: reel.publishTime ?? null,
+        durationMin: reel.durationMin ?? null,
+        status: ContentPlanStatus.PLANNED,
+      }));
+    } catch (e) {
+      this.logger.warn(`ensureShootForReel failed for ${reel.id}: ${(e as Error).message}`);
+    }
+  }
+
   async findAll(f: ContentPlanFilters = {}) {
     const qb = this.repo.createQueryBuilder('c')
       .leftJoinAndSelect('c.assignee', 'assignee')
@@ -184,6 +212,7 @@ export class ContentPlanService {
       await this.repo.update(saved.id, { taskId });
     }
     if (taskId) this.emitTasksChanged(saved.projectId);
+    await this.ensureShootForReel(saved); // авто-съёмка под рилс (если рилс с датой)
     return saved;
   }
 
@@ -298,6 +327,10 @@ export class ContentPlanService {
     if ('durationMin' in patch) { const d = Math.trunc(Number(patch.durationMin)); set.durationMin = Number.isFinite(d) && d >= 15 && d <= 600 ? d : null; }
     if ('status' in patch && patch.status) set.status = patch.status;
     if (Object.keys(set).length) await this.repo.update(id, set);
+    // Авто-съёмка: если это рилс и у него теперь есть дата — создаём съёмку (если её ещё нет).
+    // Если рилс просто переносят — съёмка уже есть и НЕ двигается (остаётся на месте).
+    const item = await this.repo.findOne({ where: { id } });
+    await this.ensureShootForReel(item);
     return { ok: true };
   }
 
@@ -305,6 +338,8 @@ export class ContentPlanService {
     const item = await this.findOne(id);
     // Удаляем связанную задачу (если ещё жива).
     await this.removeTaskForItem(item);
+    // Каскад: удаляем авто-съёмку этого рилса (если есть).
+    await this.repo.delete({ shootForItemId: id });
     await this.repo.remove(item);
     if (item.taskId) this.emitTasksChanged(item.projectId);
     return { message: 'Content plan item deleted' };
@@ -405,10 +440,25 @@ export class ContentPlanService {
        FROM content_plan_items ci
        WHERE ci."projectId" = ANY($1::uuid[])
          AND ci."contentType" <> 'story'
+         AND ci."shootForItemId" IS NULL
          AND ci."publishDate" IS NOT NULL
          AND ci."publishDate"::date >= ($2)::date AND ci."publishDate"::date <= ($3)::date`,
       [ids, f, t],
     ).catch((e: any) => { this.logger.warn(`smmCalendar pubs failed: ${e?.message || e}`); return []; });
+
+    // Авто-съёмки под рилсы — тоже content_plan_items, но со shootForItemId (= id рилса).
+    // Отдельны от рилсов; двигаются независимо. reelId нужен для линии-связки на фронте.
+    const shootItems: any[] = await this.repo.manager.query(
+      `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId",
+              ci."publishTime" AS time, ci."durationMin" AS "durationMin",
+              to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
+       FROM content_plan_items ci
+       WHERE ci."projectId" = ANY($1::uuid[])
+         AND ci."shootForItemId" IS NOT NULL
+         AND ci."publishDate" IS NOT NULL
+         AND ci."publishDate"::date >= ($2)::date AND ci."publishDate"::date <= ($3)::date`,
+      [ids, f, t],
+    ).catch((e: any) => { this.logger.warn(`smmCalendar shootItems failed: ${e?.message || e}`); return []; });
 
     // Съёмки — из shoot_sessions.
     const shoots: any[] = await this.repo.manager.query(
@@ -448,6 +498,13 @@ export class ContentPlanService {
         time: p.time || null,   // время съёмки ('HH:MM') — для часовой сетки недели
         durationMin: Number(p.durationMin) > 0 ? Number(p.durationMin) : null, // длительность (мин)
       })),
+      ...shootItems.map(s => ({
+        id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot', date: s.date,
+        projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
+        title: 'Съёмка', time: s.time || null,
+        durationMin: Number(s.durationMin) > 0 ? Number(s.durationMin) : null,
+        reelId: s.reelId, // связь с рилсом → линия-связка на фронте
+      })),
       ...storyRows.map(s => ({
         id: `story:${s.projectId}:${s.date}`, kind: 'publication', date: s.date,
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
@@ -462,9 +519,16 @@ export class ContentPlanService {
               ci."contentType" AS "itemKind", ci.topic AS title
        FROM content_plan_items ci
        WHERE ci."projectId" = ANY($1::uuid[])
-         AND ci."contentType" <> 'story' AND ci."publishDate" IS NULL`,
+         AND ci."contentType" <> 'story' AND ci."shootForItemId" IS NULL AND ci."publishDate" IS NULL`,
       [ids],
     ).catch((e: any) => { this.logger.warn(`smmCalendar backlog pubs failed: ${e?.message || e}`); return []; });
+    // Несплан­ированные авто-съёмки (сняли с даты) — тоже в «Не запланировано».
+    const bshootItems: any[] = await this.repo.manager.query(
+      `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId"
+       FROM content_plan_items ci
+       WHERE ci."projectId" = ANY($1::uuid[]) AND ci."shootForItemId" IS NOT NULL AND ci."publishDate" IS NULL`,
+      [ids],
+    ).catch((e: any) => { this.logger.warn(`smmCalendar backlog shootItems failed: ${e?.message || e}`); return []; });
     const bshoots: any[] = await this.repo.manager.query(
       `SELECT s.id, s."projectId" AS "projectId", s.title, s.location
        FROM shoot_sessions s
@@ -483,6 +547,11 @@ export class ContentPlanService {
         id: `shoot:${s.id}`, shootId: s.id, kind: 'shoot',
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
         title: s.title || 'Съёмка', location: s.location || null,
+      })),
+      ...bshootItems.map(s => ({
+        id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot',
+        projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
+        title: 'Съёмка', reelId: s.reelId,
       })),
     ];
 

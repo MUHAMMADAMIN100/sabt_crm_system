@@ -121,6 +121,12 @@ export class ContentPlanItem {
   @Column({ type: 'uuid', nullable: true })
   taskId: string;
 
+  /** Если задано — эта позиция является авто-СЪЁМКОЙ для рилса с этим id (связь + признак съёмки
+   *  в умном календаре). Съёмка двигается независимо от рилса, но удаляется вместе с ним. */
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  shootForItemId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

@@ -212,7 +212,7 @@ export default function SmmPage() {
 
   const qc = useQueryClient()
   const [detail, setDetail] = useState<Ev | null>(null)
-  const openDetail = (e: Ev) => { if (!e.derived) setDetail(e) } // производные съёмки не открывают модалку
+  const openDetail = (e: Ev) => setDetail(e) // съёмки теперь реальные позиции — открываются как обычно
   const markMut = useMutation({
     mutationFn: ({ ev, done }: { ev: Ev; done: boolean }) =>
       contentPlanApi.smartUpdate(ev.itemId!, { status: done ? 'published' : 'planned' }),
@@ -263,8 +263,8 @@ export default function SmmPage() {
   const moveMut = useMutation({
     // time: undefined — не трогаем время; string — ставим час; null — снимаем (всё-день).
     mutationFn: ({ ev, dateStr, time }: { ev: Ev; dateStr: string | null; time?: string | null }) =>
-      ev.kind === 'publication'
-        ? contentPlanApi.smartUpdate(ev.itemId!, { publishDate: dateStr, ...(time !== undefined ? { publishTime: time } : {}) })
+      ev.itemId
+        ? contentPlanApi.smartUpdate(ev.itemId, { publishDate: dateStr, ...(time !== undefined ? { publishTime: time } : {}) })
         : workflowApi.updateShootSession(ev.shootId!, { date: dateStr, ...(time !== undefined ? { time } : {}) }),
     onMutate: async ({ ev, dateStr, time }) => {
       const key = ['smm-calendar', from, to]
@@ -313,7 +313,7 @@ export default function SmmPage() {
     // Только внутри текущего цикла проекта (если он задан).
     const range = projCycle(e.projectId)
     if (range && (dateStr < range.start || dateStr > range.end)) return
-    const refId = e.kind === 'publication' ? e.itemId : e.shootId
+    const refId = e.itemId ?? e.shootId
     if (!refId) return
     moveMut.mutate({ ev: e, dateStr, time: null })
   }
@@ -326,7 +326,7 @@ export default function SmmPage() {
     if (e.date === dateStr && e.time === time) return
     const range = projCycle(e.projectId)
     if (range && (dateStr < range.start || dateStr > range.end)) return
-    const refId = e.kind === 'publication' ? e.itemId : e.shootId
+    const refId = e.itemId ?? e.shootId
     if (!refId) return
     moveMut.mutate({ ev: e, dateStr, time })
   }
@@ -336,41 +336,21 @@ export default function SmmPage() {
     dragRef.current = null
     setDragOverKey(null); setDragRange(null)
     if (!e || !e.date) return
-    const refId = e.kind === 'publication' ? e.itemId : e.shootId
+    const refId = e.itemId ?? e.shootId
     if (!refId) return
     moveMut.mutate({ ev: e, dateStr: null })
   }
 
-  // Производные съёмки: под каждый Рилс — Съёмка на день раньше (X−1), того же проекта и времени,
-  // связанная с рилсом (reelId → линия-связка). Автоматически едет за рилсом и исчезает при удалении.
-  const derivedShoots = useMemo(() => {
-    const out: Ev[] = []
-    for (const e of allEvents) {
-      const isReel = e.kind === 'publication' && (e.contentType === 'reel' || e.contentType === 'video')
-      if (!isReel || !e.date) continue
-      out.push({
-        id: `shoot-of-${e.id}`, kind: 'shoot',
-        date: iso(addDays(new Date(e.date + 'T00:00:00'), -1)),
-        time: e.time ?? null, durationMin: e.durationMin ?? DEFAULT_DUR,
-        projectId: e.projectId, projectName: e.projectName,
-        title: `Съёмка · ${e.projectName}`, derived: true, reelId: e.id,
-      })
-    }
-    return out
-  }, [allEvents])
-
-  // Основной вид: проект + поиск + без сторис (сторис — в отдельном табе) + производные съёмки
-  // (видны видеографам всегда, остальным — только при выбранном проекте).
-  const mainEvents = useMemo(() => {
-    const real = allEvents.filter(e =>
-      (selProjects.size === 0 || selProjects.has(e.projectId))
+  // Основной вид: проект + поиск + без сторис. Авто-съёмки (kind='shoot' со связью reelId — приходят
+  // с бэкенда отдельными позициями) видят видеографы всегда, остальные — только при выбранном проекте.
+  // Съёмка — реальная позиция контент-плана, двигается независимо от рилса.
+  const mainEvents = useMemo(() => allEvents.filter(e => {
+    if (e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId)) return false
+    return (selProjects.size === 0 || selProjects.has(e.projectId))
       && (selTypes.size === 0 || FKINDS.some(k => selTypes.has(k) && matchesFKind(e, k)))
       && matchSearch(e, search)
       && !(e.kind === 'publication' && e.contentType === 'story')
-    )
-    const shoots = derivedShoots.filter(s => (isVideographer || selProjects.has(s.projectId)) && matchSearch(s, search))
-    return [...real, ...shoots]
-  }, [allEvents, derivedShoots, selProjects, selTypes, search, isVideographer])
+  }), [allEvents, selProjects, selTypes, search, isVideographer])
 
   const mainByDate = useMemo(() => {
     const map = new Map<string, Ev[]>()
@@ -771,8 +751,8 @@ function DayCell({ d, evs, isToday, blocked, droppable, cycles, onOpen, onDragSt
   )
 }
 
-// Умная линия-связка: соединяет производную Съёмку (data-ev="shoot-of-<reelId>") с её Рилсом
-// (data-ev="<reelId>") кривой цвета проекта. SVG лежит в контенте скролла (координаты контента),
+// Умная линия-связка: соединяет Съёмку (data-reel="<id рилса-события>") с её Рилсом (data-ev)
+// кривой цвета проекта. SVG лежит в контенте скролла (координаты контента),
 // поэтому линии едут вместе с сеткой; перерисовка на каждый рендер + при скролле/ресайзе.
 function EventLinks({ scrollRef }: { scrollRef: { current: HTMLDivElement | null } }) {
   const svgRef = useRef<SVGSVGElement>(null)
@@ -785,9 +765,8 @@ function EventLinks({ scrollRef }: { scrollRef: { current: HTMLDivElement | null
     const byId = new Map<string, HTMLElement>()
     cont.querySelectorAll<HTMLElement>('[data-ev]').forEach(el => byId.set(el.dataset.ev as string, el))
     let out = ''
-    byId.forEach((shoot, id) => {
-      if (!id.startsWith('shoot-of-')) return
-      const reel = byId.get(id.slice('shoot-of-'.length))
+    cont.querySelectorAll<HTMLElement>('[data-reel]').forEach(shoot => {
+      const reel = byId.get(shoot.dataset.reel as string) // связь съёмка → её рилс
       if (!reel) return
       const sr = shoot.getBoundingClientRect(), rr = reel.getBoundingClientRect()
       const sx = sr.right - cr.left + cont.scrollLeft, sy = sr.top - cr.top + cont.scrollTop + sr.height / 2
@@ -1128,10 +1107,10 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
                       const widthPct = 100 / lay.cols
                       const dur = s.durationMin || DEFAULT_DUR // высота карточки = длительность
                       return (
-                        <div key={s.id} data-ev={s.id} data-proj={s.projectId} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
+                        <div key={s.id} data-ev={s.id} data-proj={s.projectId} data-reel={s.reelId ? `item:${s.reelId}` : undefined} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
                           onDragStart={(ev) => { grabOffsetRef.current = (ev.nativeEvent as DragEvent).offsetY || 0; onDragStart(s) }}
                           className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
-                          style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId), boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.derived ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
+                          style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId), boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.reelId ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
                           <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
                           <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time}–{addMinToTime(s.time!, dur)} · 🎬 Команда видеографов{s.location ? ` · ${s.location}` : ''}</div>
                         </div>
@@ -1415,10 +1394,10 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
                           const leftPct = (l.lane / l.cols) * 100, widthPct = 100 / l.cols
                           const dur = s.durationMin || DEFAULT_DUR
                           return (
-                            <div key={s.id} data-ev={s.id} data-proj={s.projectId} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
+                            <div key={s.id} data-ev={s.id} data-proj={s.projectId} data-reel={s.reelId ? `item:${s.reelId}` : undefined} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
                               onDragStart={(ev) => { grabOffsetRef.current = (ev.nativeEvent as DragEvent).offsetY || 0; onDragStart(s) }}
                               className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
-                              style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId), boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.derived ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
+                              style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId), boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.reelId ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
                               <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
                               <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time}–{addMinToTime(s.time!, dur)} · 🎬{s.location ? ` ${s.location}` : ''}</div>
                             </div>
@@ -1566,9 +1545,9 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const done = e.kind === 'publication' && isDone(e)
   const label = e.kind === 'shoot' ? (e.projectName || e.title || 'Съёмка') : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`
   return (
-    <span data-ev={e.id} data-proj={e.projectId} onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
-          style={{ ...projFill(e.projectId), ...(e.derived ? { outline: `1px dashed ${projColor(e.projectId)}`, outlineOffset: '-1px' } : {}) }}
-          className={'flex items-center gap-1 rounded px-1.5 py-[2px] text-[11px] font-medium leading-tight truncate transition hover:brightness-110 ' + (done ? 'opacity-45 ' : '') + (e.derived ? 'opacity-85 ' : '') + grab}
+    <span data-ev={e.id} data-proj={e.projectId} data-reel={e.reelId ? `item:${e.reelId}` : undefined} onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
+          style={{ ...projFill(e.projectId), ...(e.reelId ? { outline: `1px dashed ${projColor(e.projectId)}`, outlineOffset: '-1px' } : {}) }}
+          className={'flex items-center gap-1 rounded px-1.5 py-[2px] text-[11px] font-medium leading-tight truncate transition hover:brightness-110 ' + (done ? 'opacity-45 ' : '') + (e.reelId ? 'opacity-85 ' : '') + grab}
           title={e.kind === 'shoot'
             ? `Съёмка · ${e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`
             : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
