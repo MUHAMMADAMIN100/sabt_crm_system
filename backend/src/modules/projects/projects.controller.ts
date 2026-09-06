@@ -80,6 +80,24 @@ export class ProjectsController {
     return this.service.setSmmCycle(id, body || {}, req.user);
   }
 
+  /** Профиль клиента SMM-проекта: владелец, значимый день (дата + коммент),
+   *  начало сотрудничества, предпочтения, история подписчиков по месяцам. */
+  @Get(':id/smm-profile')
+  getSmmProfile(@Param('id') id: string) {
+    return this.service.getSmmProfile(id);
+  }
+
+  /** Редактируют только SMM и владелец/руководство. */
+  @Patch(':id/smm-profile')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  setSmmProfile(
+    @Param('id') id: string,
+    @Body() body: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[] },
+    @Request() req,
+  ) {
+    return this.service.setSmmProfile(id, body || {}, req.user);
+  }
+
   /** Архив/восстановление — по гранту projects.archive: нативные роли те же,
    *  что раньше в @Roles, плюс персональная выдача через «Доступы
    *  сотрудников» (области ролей сужаются в сервисе). */

@@ -75,6 +75,10 @@ export const projectsApi = {
   // норма за цикл (рилсы/посты). null у поля — сбросить.
   setSmmCycle: (id: string, data: { day?: number | null; normReels?: number | null; normPosts?: number | null; anchor?: string | null }) =>
     api.patch(`/projects/${id}/smm-cycle`, data).then(r => r.data),
+  // Профиль клиента SMM-проекта: владелец, значимый день, начало сотрудничества, предпочтения, история подписчиков.
+  getSmmProfile: (id: string) => api.get(`/projects/${id}/smm-profile`).then(r => r.data),
+  setSmmProfile: (id: string, data: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[] }) =>
+    api.patch(`/projects/${id}/smm-profile`, data).then(r => r.data),
   sendPaymentRequest: (id: string, message?: string) =>
     api.post(`/projects/${id}/send-payment-request`, { message }).then(r => r.data),
   payments: (id: string) => api.get(`/projects/${id}/payments`).then(r => r.data),

@@ -1835,6 +1835,68 @@ export class ProjectsService implements OnModuleInit {
     };
   }
 
+  /** Профиль клиента SMM-проекта (владелец, значимый день, начало сотрудничества,
+   *  предпочтения, история подписчиков по месяцам). Всё хранится в smmData. */
+  private normSmmProfile(smmData: any) {
+    const raw = Array.isArray(smmData?.followers) ? smmData.followers : [];
+    const followers = raw
+      .filter((f: any) => f && /^\d{4}-\d{2}$/.test(f.ym) && Number.isFinite(Number(f.value)))
+      .map((f: any) => ({ ym: String(f.ym), value: Math.trunc(Number(f.value)) }))
+      .sort((a: any, b: any) => (a.ym < b.ym ? -1 : 1));
+    return {
+      ownerName: smmData?.ownerName ?? null,
+      keyDate: smmData?.keyDate ?? null,
+      keyDateNote: smmData?.keyDateNote ?? null,
+      collabSince: smmData?.collabSince ?? null,
+      preferences: smmData?.preferences ?? null,
+      followers,
+    };
+  }
+
+  async getSmmProfile(id: string) {
+    const project = await this.repo.findOne({ where: { id } });
+    if (!project) throw new NotFoundException('Project not found');
+    return this.normSmmProfile(project.smmData || {});
+  }
+
+  async setSmmProfile(
+    id: string,
+    dto: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[] },
+    user?: { id: string; role: string; name?: string },
+  ) {
+    const project = await this.repo.findOne({ where: { id } });
+    if (!project) throw new NotFoundException('Project not found');
+    if (project.projectType !== 'SMM') throw new BadRequestException('Профиль применим только к SMM-проектам');
+    const smmData = { ...(project.smmData || {}) };
+    const str = (v: any, max: number): string | null => { if (v == null) return null; const s = String(v).trim(); return s ? s.slice(0, max) : null; };
+    const dateOr = (v: any): string | null => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : null;
+    const setOrDel = (key: string, val: any) => { if (val == null) delete (smmData as any)[key]; else (smmData as any)[key] = val; };
+    if ('ownerName' in dto) setOrDel('ownerName', str(dto.ownerName, 200));
+    if ('keyDate' in dto) setOrDel('keyDate', dateOr(dto.keyDate));
+    if ('keyDateNote' in dto) setOrDel('keyDateNote', str(dto.keyDateNote, 500));
+    if ('collabSince' in dto) setOrDel('collabSince', dateOr(dto.collabSince));
+    if ('preferences' in dto) setOrDel('preferences', str(dto.preferences, 4000));
+    if ('followers' in dto) {
+      const arr = Array.isArray(dto.followers) ? dto.followers : [];
+      const byYm = new Map<string, number>();
+      for (const f of arr) {
+        if (f && /^\d{4}-\d{2}$/.test(String(f.ym))) {
+          const n = Math.trunc(Number(f.value));
+          if (Number.isFinite(n) && n >= 0 && n <= 1_000_000_000) byYm.set(String(f.ym), n);
+        }
+      }
+      const followers = [...byYm.entries()].map(([ym, value]) => ({ ym, value })).sort((a, b) => (a.ym < b.ym ? -1 : 1)).slice(-240);
+      if (followers.length) smmData.followers = followers; else delete (smmData as any).followers;
+    }
+    await this.repo.update(id, { smmData });
+    await this.activityLog.log({
+      userId: user?.id, userName: user?.name, action: ActivityAction.PROJECT_UPDATE,
+      entity: 'project', entityId: id, entityName: project.name, details: { smmProfile: true },
+    });
+    this.gateway.broadcast('projects:changed', { projectId: id });
+    return this.normSmmProfile(smmData);
+  }
+
   async archive(id: string, user?: { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
     // smm_director может архивировать ТОЛЬКО SMM-проекты (его область).
