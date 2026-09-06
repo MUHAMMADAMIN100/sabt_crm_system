@@ -2,12 +2,12 @@
 // Месяц / Неделя / День + таб «Сторисы» (мини-календари по проектам). Публикации
 // (зелёные) и съёмки (янтарные, со временем). Статус публикации: опубликовано —
 // ярко + галочка, нет — бледно. Drag-перенос на другой день.
-import { useMemo, useState, useRef, useEffect, useLayoutEffect, Fragment, type ReactNode, type DragEvent as RDragEvent } from 'react'
+import { useMemo, useState, useRef, useEffect, useLayoutEffect, createContext, useContext, Fragment, type ReactNode, type DragEvent as RDragEvent } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, workflowApi, projectsApi } from '@/services/api.service'
@@ -86,18 +86,24 @@ function catOf(e: Ev): Cat {
   return 'post'
 }
 
-// ─── фильтр по типу в шапке: Reels · Макет · Одноразовые задачи ─────────
+// ─── фильтр по типу в шапке: Reels · Макет · Съёмка · Одноразовые задачи ──
 // «Одноразовые задачи» = всё, что относится к проекту «Одноразовые съёмки».
-type FKind = 'reel' | 'design' | 'oneoff'
-const FKINDS: FKind[] = ['reel', 'design', 'oneoff']
-const FKIND_LABEL: Record<FKind, string> = { reel: 'Reels', design: 'Макет', oneoff: 'Одноразовые задачи' }
-const FKIND_ICON: Record<FKind, any> = { reel: Film, design: ImageIcon, oneoff: Camera }
+type FKind = 'reel' | 'design' | 'shoot' | 'oneoff'
+const FKINDS: FKind[] = ['reel', 'design', 'shoot', 'oneoff']
+const FKIND_LABEL: Record<FKind, string> = { reel: 'Reels', design: 'Макет', shoot: 'Съёмка', oneoff: 'Одноразовые задачи' }
+const FKIND_ICON: Record<FKind, any> = { reel: Film, design: ImageIcon, shoot: Camera, oneoff: CheckSquare }
 const ONEOFF_RE = /одноразов/i
 function matchesFKind(e: Ev, k: FKind): boolean {
   if (k === 'oneoff') return ONEOFF_RE.test(e.projectName || '')
   if (k === 'reel') return e.kind === 'publication' && (e.contentType === 'reel' || e.contentType === 'video')
+  if (k === 'shoot') return e.kind === 'shoot'
   return e.kind === 'publication' && e.contentType === 'design'
 }
+
+// Контекст выделения: клик по событию подсвечивает его пару (съёмка↔рилс) и линию,
+// остальное гасится; двойной клик открывает карточку. reel = id рилс-события активной пары.
+type SelState = { ids: Set<string>; reel: string | null; onSelect: (e: Ev | null) => void }
+const SelCtx = createContext<SelState>({ ids: new Set(), reel: null, onSelect: () => {} })
 
 // ─── helpers ──────────────────────────────────────────────────────────
 export function monthTitle(ym: string): string {
@@ -212,7 +218,22 @@ export default function SmmPage() {
 
   const qc = useQueryClient()
   const [detail, setDetail] = useState<Ev | null>(null)
-  const openDetail = (e: Ev) => setDetail(e) // съёмки теперь реальные позиции — открываются как обычно
+  const openDetail = (e: Ev) => setDetail(e) // двойной клик — карточка (съёмки тоже открываются как обычно)
+  // Выделение: клик по событию → подсветить его пару (съёмка↔рилс) + линию, остальное приглушить.
+  const [sel, setSel] = useState<string | null>(null)
+  const onSelect = (e: Ev | null) => setSel(e ? e.id : null)
+  const selInfo = useMemo<{ ids: Set<string>; reel: string | null }>(() => {
+    const e0 = sel ? allEvents.find(x => x.id === sel) : null
+    if (!e0) return { ids: new Set(), reel: null }
+    const ids = new Set<string>([e0.id])
+    let reel: string | null = null
+    if (e0.kind === 'shoot' && e0.reelId) { reel = `item:${e0.reelId}`; ids.add(reel) }        // клик по съёмке → её рилс
+    else if (e0.kind === 'publication' && e0.itemId) {                                          // клик по рилсу → его съёмка
+      const shoot = allEvents.find(x => x.kind === 'shoot' && x.reelId === e0.itemId)
+      if (shoot) { ids.add(shoot.id); reel = e0.id }
+    }
+    return { ids, reel }
+  }, [sel, allEvents])
   const markMut = useMutation({
     mutationFn: ({ ev, done }: { ev: Ev; done: boolean }) =>
       contentPlanApi.smartUpdate(ev.itemId!, { status: done ? 'published' : 'planned' }),
@@ -347,7 +368,8 @@ export default function SmmPage() {
   // с бэкенда отдельными позициями) видят видеографы всегда, остальные — только при выбранном проекте.
   // Съёмка — реальная позиция контент-плана, двигается независимо от рилса.
   const mainEvents = useMemo(() => allEvents.filter(e => {
-    if (e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId)) return false
+    // Съёмки по умолчанию видят видеографы или при выбранном проекте; либо явно выбран фильтр «Съёмка».
+    if (e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId) && !selTypes.has('shoot')) return false
     return (selProjects.size === 0 || selProjects.has(e.projectId))
       && (selTypes.size === 0 || FKINDS.some(k => selTypes.has(k) && matchesFKind(e, k)))
       && matchSearch(e, search)
@@ -500,6 +522,7 @@ export default function SmmPage() {
             onSettings={openProjSettings}
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
+          <SelCtx.Provider value={{ ids: selInfo.ids, reel: selInfo.reel, onSelect }}>
           {view === 'month' ? (
             <MonthScrollView initialMonth={monthStr} commandMonth={monthStr} commandSeq={scrollSeq}
               byDate={mainByDate} today={today} cycles={cycles} dragRange={dragRange}
@@ -516,6 +539,7 @@ export default function SmmPage() {
             <TimeGridView days={weekDays} events={mainEvents} onOpen={openDetail} dragRange={dragRange} dragDuration={dragDuration}
               onDragStart={onDragStartEv} onDropDate={onDropDate} onDropTime={onDropTime} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           )}
+          </SelCtx.Provider>
         </>
       )}
 
@@ -783,16 +807,18 @@ function nudgeAnchor(p: Anch, R: LinkRect, off: number) {
   if (p.side === 'h') p.y = Math.max(R.t + 8, Math.min(R.b - 8, p.y + off))
   else p.x = Math.max(R.l + 10, Math.min(R.r - 10, p.x + off))
 }
-function curvePath(a: Anch, b: Anch, col: string): string {
+function curvePath(a: Anch, b: Anch, col: string, op: number, w: number): string {
   const d = Math.hypot(b.x - a.x, b.y - a.y)
   const k = Math.max(26, Math.min(130, d * 0.42)) // вынос управляющих точек вдоль нормали
   const c1x = a.x + a.nx * k, c1y = a.y + a.ny * k, c2x = b.x + b.nx * k, c2y = b.y + b.ny * k
   const f = (n: number) => n.toFixed(1)
-  return `<path d="M ${f(a.x)} ${f(a.y)} C ${f(c1x)} ${f(c1y)}, ${f(c2x)} ${f(c2y)}, ${f(b.x)} ${f(b.y)}" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round" opacity="0.85"/>`
-    + `<circle cx="${f(a.x)}" cy="${f(a.y)}" r="2.6" fill="${col}"/><circle cx="${f(b.x)}" cy="${f(b.y)}" r="3" fill="${col}"/>`
+  return `<path d="M ${f(a.x)} ${f(a.y)} C ${f(c1x)} ${f(c1y)}, ${f(c2x)} ${f(c2y)}, ${f(b.x)} ${f(b.y)}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" opacity="${op}"/>`
+    + `<circle cx="${f(a.x)}" cy="${f(a.y)}" r="${(w * 1.3).toFixed(1)}" fill="${col}" opacity="${op}"/><circle cx="${f(b.x)}" cy="${f(b.y)}" r="${(w * 1.5).toFixed(1)}" fill="${col}" opacity="${op}"/>`
 }
 function EventLinks({ scrollRef, z = 6 }: { scrollRef: { current: HTMLDivElement | null }; z?: number }) {
   const svgRef = useRef<SVGSVGElement>(null)
+  const sel = useContext(SelCtx)
+  const activeRef = useRef<string | null>(sel.reel); activeRef.current = sel.reel // активная пара (id рилс-события) — без stale-замыкания в scroll-хендлере
   const draw = () => {
     const cont = scrollRef.current, svg = svgRef.current
     if (!cont || !svg) return
@@ -805,13 +831,14 @@ function EventLinks({ scrollRef, z = 6 }: { scrollRef: { current: HTMLDivElement
     }
     const byId = new Map<string, HTMLElement>()
     cont.querySelectorAll<HTMLElement>('[data-ev]').forEach(el => byId.set(el.dataset.ev as string, el))
-    const links: { A: LinkRect; B: LinkRect; a: Anch; b: Anch; col: string; lane?: number }[] = []
+    const links: { A: LinkRect; B: LinkRect; a: Anch; b: Anch; col: string; reelKey: string; lane?: number }[] = []
     cont.querySelectorAll<HTMLElement>('[data-reel]').forEach(shoot => {
-      const reel = byId.get(shoot.dataset.reel as string) // связь съёмка → её рилс
+      const reelKey = shoot.dataset.reel as string
+      const reel = byId.get(reelKey) // связь съёмка → её рилс
       if (!reel) return
       const A = toRect(shoot.getBoundingClientRect()), B = toRect(reel.getBoundingClientRect())
       const np = nearestPair(A, B)
-      links.push({ A, B, a: np.a, b: np.b, col: projColor(shoot.dataset.proj || '') })
+      links.push({ A, B, a: np.a, b: np.b, col: projColor(shoot.dataset.proj || ''), reelKey })
     })
     // Дорожки: группируем по высоте середины связки, внутри группы симметрично разводим.
     const buckets = new Map<number, typeof links>()
@@ -822,7 +849,13 @@ function EventLinks({ scrollRef, z = 6 }: { scrollRef: { current: HTMLDivElement
     })
     buckets.forEach(g => { const n = g.length; g.forEach((L, i) => { L.lane = i - (n - 1) / 2 }) })
     links.forEach(L => { const off = (L.lane || 0) * 13; nudgeAnchor(L.a, L.A, off); nudgeAnchor(L.b, L.B, off) })
-    svg.innerHTML = links.map(L => curvePath(L.a, L.b, L.col)).join('')
+    const act = activeRef.current // выделена пара → её линия ярче, остальные приглушены
+    svg.innerHTML = links.map(L => {
+      const isActive = !!act && L.reelKey === act
+      const op = !act ? 0.85 : (isActive ? 0.95 : 0.12)
+      const w = !act ? 2 : (isActive ? 2.4 : 1.5)
+      return curvePath(L.a, L.b, L.col, op, w)
+    }).join('')
   }
   useLayoutEffect(() => { draw() }) // после каждого рендера (данные/раскладка)
   useEffect(() => {
@@ -850,6 +883,7 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
   onVisibleMonth: (ym: string) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
+  const sel = useContext(SelCtx)
   const scrollRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null) // липкая шапка дней недели — её высоту вычитаем при прокрутке
   const mondayOf = (d: Date) => startOfWeek(d, { weekStartsOn: 1 })
@@ -961,7 +995,7 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
 
   return (
     <div className="relative flex-1 min-h-0">
-      <div ref={scrollRef} onScroll={onScroll}
+      <div ref={scrollRef} onScroll={onScroll} onClick={() => sel.onSelect(null)}
         className="relative border-t border-gray-200 dark:border-gray-800 overflow-y-auto h-full"
         style={{ overflowAnchor: 'none' }}>
         {/* общая шапка дней недели — липкая сверху */}
@@ -1012,6 +1046,7 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
   onDropTime: (dateStr: string, time: string) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
+  const sel = useContext(SelCtx)
   const now = new Date()
   const dayKey = (d: Date) => format(d, 'yyyy-MM-dd')
   // Подсветка конкретного слота под курсором + подсказка времени.
@@ -1071,7 +1106,7 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
   }
 
   return (
-    <div className="border-t border-gray-200 dark:border-gray-800 overflow-y-auto flex-1 min-h-0">
+    <div className="border-t border-gray-200 dark:border-gray-800 overflow-y-auto flex-1 min-h-0" onClick={() => sel.onSelect(null)}>
       {/* шапка + «Весь день» — липкие сверху; общий скролл с сеткой ⇒ колонки одной ширины, линии ровные */}
       <div className="sticky top-0 z-30 bg-surface-100 dark:bg-surface-900">
       {/* headers */}
@@ -1154,10 +1189,11 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
                       const widthPct = 100 / lay.cols
                       const dur = s.durationMin || DEFAULT_DUR // высота карточки = длительность
                       return (
-                        <div key={s.id} data-ev={s.id} data-proj={s.projectId} data-reel={s.reelId ? `item:${s.reelId}` : undefined} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
+                        <div key={s.id} data-ev={s.id} data-proj={s.projectId} data-reel={s.reelId ? `item:${s.reelId}` : undefined}
+                          onClick={ev => { ev.stopPropagation(); sel.onSelect(s) }} onDoubleClick={ev => { ev.stopPropagation(); onOpen(s) }} draggable={!!(s.itemId || s.shootId)}
                           onDragStart={(ev) => { grabOffsetRef.current = (ev.nativeEvent as DragEvent).offsetY || 0; onDragStart(s) }}
                           className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
-                          style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId), boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.reelId ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
+                          style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, opacity: (sel.ids.size > 0 && !sel.ids.has(s.id)) ? 0.24 : 1, ...projFill(s.projectId), boxShadow: sel.ids.has(s.id) ? `inset 0 0 0 2px ${projColor(s.projectId)}, 0 2px 8px rgba(0,0,0,.5)` : `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.reelId ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
                           <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
                           <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time}–{addMinToTime(s.time!, dur)} · 🎬 Команда видеографов{s.location ? ` · ${s.location}` : ''}</div>
                         </div>
@@ -1196,6 +1232,7 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
   onDropTime: (dateStr: string, time: string) => void; onVisibleDay: (d: Date) => void
   dragOverKey: string | null; setDragOverKey: (k: string | null) => void
 }) {
+  const sel = useContext(SelCtx)
   const now = new Date()
   const dayKey = (d: Date) => format(d, 'yyyy-MM-dd')
   const mondayOf = (d: Date) => startOfWeek(d, { weekStartsOn: 1 })
@@ -1359,7 +1396,7 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
 
   return (
     <div className="relative flex-1 min-h-0">
-      <div ref={scrollRef} onScroll={onScroll}
+      <div ref={scrollRef} onScroll={onScroll} onClick={() => sel.onSelect(null)}
         className="relative border-t border-gray-200 dark:border-gray-800 overflow-auto h-full"
         style={{ overflowAnchor: 'none' }}>
         <div className="flex" style={{ width: 'max-content' }}>
@@ -1440,11 +1477,13 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
                           const l = lay.get(s.id) ?? { lane: 0, cols: 1 }
                           const leftPct = (l.lane / l.cols) * 100, widthPct = 100 / l.cols
                           const dur = s.durationMin || DEFAULT_DUR
+                          const on = sel.ids.has(s.id), dim = sel.ids.size > 0 && !on
                           return (
-                            <div key={s.id} data-ev={s.id} data-proj={s.projectId} data-reel={s.reelId ? `item:${s.reelId}` : undefined} onClick={() => onOpen(s)} draggable={!!(s.itemId || s.shootId)}
+                            <div key={s.id} data-ev={s.id} data-proj={s.projectId} data-reel={s.reelId ? `item:${s.reelId}` : undefined}
+                              onClick={ev => { ev.stopPropagation(); sel.onSelect(s) }} onDoubleClick={ev => { ev.stopPropagation(); onOpen(s) }} draggable={!!(s.itemId || s.shootId)}
                               onDragStart={(ev) => { grabOffsetRef.current = (ev.nativeEvent as DragEvent).offsetY || 0; onDragStart(s) }}
                               className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
-                              style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, ...projFill(s.projectId), boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.reelId ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
+                              style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, opacity: dim ? 0.24 : 1, ...projFill(s.projectId), boxShadow: on ? `inset 0 0 0 2px ${projColor(s.projectId)}, 0 2px 8px rgba(0,0,0,.5)` : `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.reelId ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
                               <div className="flex items-center gap-1 text-[12px] font-medium leading-tight"><Camera size={11} className="shrink-0" /><span className="truncate">{s.projectName || s.title}</span></div>
                               <div className="text-[11px] opacity-75 truncate mt-0.5">{s.time}–{addMinToTime(s.time!, dur)} · 🎬{s.location ? ` ${s.location}` : ''}</div>
                             </div>
@@ -1585,16 +1624,21 @@ function BacklogCard({ e, onDragStart }: { e: Ev; onDragStart: (e: Ev) => void }
 
 // ─── компоненты ────────────────────────────────────────────────────────
 function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void; onDragStart?: (e: Ev) => void }) {
+  const sel = useContext(SelCtx)
+  const on = sel.ids.has(e.id), dim = sel.ids.size > 0 && !on
   const canDrag = !!(e.itemId || e.shootId) // авто-съёмки — content_plan_item (itemId), ручные — shoot_sessions (shootId)
   const grab = canDrag ? ' cursor-grab active:cursor-grabbing' : ' cursor-pointer'
   const type = e.contentType || 'other'
   const Ic = e.kind === 'shoot' ? Camera : (TYPE_ICON[type] || AlignLeft)
   const done = e.kind === 'publication' && isDone(e)
   const label = e.kind === 'shoot' ? (e.projectName || e.title || 'Съёмка') : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`
+  const op = dim ? 0.24 : on ? 1 : (done ? 0.45 : (e.reelId ? 0.85 : 1)) // выделенное — всегда полное; гашение перекрывает всё
   return (
-    <span data-ev={e.id} data-proj={e.projectId} data-reel={e.reelId ? `item:${e.reelId}` : undefined} onClick={() => onOpen?.(e)} draggable={canDrag} onDragStart={() => onDragStart?.(e)}
-          style={{ ...projFill(e.projectId), ...(e.reelId ? { outline: `1px dashed ${projColor(e.projectId)}`, outlineOffset: '-1px' } : {}) }}
-          className={'flex items-center gap-1 rounded px-1.5 py-[2px] text-[11px] font-medium leading-tight truncate transition hover:brightness-110 ' + (done ? 'opacity-45 ' : '') + (e.reelId ? 'opacity-85 ' : '') + grab}
+    <span data-ev={e.id} data-proj={e.projectId} data-reel={e.reelId ? `item:${e.reelId}` : undefined}
+          onClick={ev => { ev.stopPropagation(); sel.onSelect(e) }} onDoubleClick={ev => { ev.stopPropagation(); onOpen?.(e) }}
+          draggable={canDrag} onDragStart={() => onDragStart?.(e)}
+          style={{ opacity: op, ...projFill(e.projectId), ...(e.reelId ? { outline: `1px dashed ${projColor(e.projectId)}`, outlineOffset: '-1px' } : {}), ...(on ? { boxShadow: `inset 0 0 0 1.5px ${projColor(e.projectId)}` } : {}) }}
+          className={'flex items-center gap-1 rounded px-1.5 py-[2px] text-[11px] font-medium leading-tight truncate transition hover:brightness-110 ' + grab}
           title={e.kind === 'shoot'
             ? `Съёмка · ${e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`
             : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
