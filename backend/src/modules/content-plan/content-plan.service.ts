@@ -431,6 +431,9 @@ export class ContentPlanService {
         cycleAnchor: p.smmData && typeof p.smmData.cycleAnchor === 'string' ? p.smmData.cycleAnchor : null,
         normReels: p.smmData ? num(p.smmData.normReels) : null,
         normPosts: p.smmData ? num(p.smmData.normPosts) : null,
+        // Для страницы «Сторисы»: дневная норма сторис (цель) и дата, с которой проект ждёт сторис.
+        storiesPerDay: p.smmData ? num((p.smmData as any).storiesPerDay) : null,
+        since: dOnly((p as any).createdAt),
       }))
       .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
     const ids = active.map(p => p.id);
@@ -519,6 +522,7 @@ export class ContentPlanService {
         id: `story:${s.projectId}:${s.date}`, kind: 'publication', date: s.date,
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
         contentType: 'story', topic: `Сторис ×${s.cnt}`, status: 'published',
+        count: Number(s.cnt) || 0, // фактически опубликовано за день (для заливки статуса на странице «Сторисы»)
       })),
     ];
 

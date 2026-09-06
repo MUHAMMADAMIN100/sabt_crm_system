@@ -20,9 +20,14 @@ export type Ev = {
   title?: string; time?: string | null; location?: string | null; note?: string | null
   contentType?: string; topic?: string | null; status?: string; assigneeName?: string | null
   taskId?: string | null; taskStatus?: string | null; durationMin?: number | null
+  count?: number // фактически опубликовано за день (сторис) — для заливки статуса на странице «Сторисы»
   // Производная съёмка (авто под рилс): reelId — id рилса, к которому она относится (для линии-связки).
   derived?: boolean; reelId?: string
 }
+// Статус дня по сторис на странице «Сторисы»: сделано (цель достигнута) / частично / не сделано.
+export type SDay = 'done' | 'partial' | 'none'
+const SDAY_COLOR: Record<SDay, string> = { done: '#4bc98a', partial: '#e8b04b', none: '#eb5b5b' }
+const SDAY_LABEL: Record<SDay, string> = { done: 'сделано', partial: 'частично', none: 'не сделано' }
 const DEFAULT_DUR = 60 // длительность съёмки по умолчанию (мин)
 const DUR_OPTIONS = [30, 60, 90, 120, 180] // варианты длительности в модалке
 const fmtDur = (m: number) => m % 60 === 0 ? `${m / 60}ч` : m < 60 ? `${m}м` : `${Math.floor(m / 60)}ч ${m % 60}м`
@@ -72,21 +77,6 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 // ─── категории для точек (таб «Сторисы») ──────────────────────────────
-type Cat = 'shoot' | 'reel' | 'design' | 'story' | 'post'
-const CAT_ORDER: Cat[] = ['shoot', 'reel', 'design', 'story', 'post']
-const CAT_DOT: Record<Cat, string> = {
-  shoot: 'bg-amber-500', reel: 'bg-emerald-500', design: 'bg-violet-500', story: 'bg-sky-500', post: 'bg-blue-500',
-}
-const CAT_LABEL: Record<Cat, string> = { shoot: 'Съёмка', reel: 'Reel', design: 'Макет', story: 'Сторис', post: 'Пост' }
-function catOf(e: Ev): Cat {
-  if (e.kind === 'shoot') return 'shoot'
-  const t = e.contentType
-  if (t === 'reel' || t === 'video') return 'reel'
-  if (t === 'design') return 'design'
-  if (t === 'story') return 'story'
-  return 'post'
-}
-
 // ─── фильтр по типу в шапке: Reels · Макет · Съёмка · Одноразовые задачи ──
 // «Одноразовые задачи» = всё, что относится к проекту «Одноразовые съёмки».
 type FKind = 'reel' | 'design' | 'shoot' | 'oneoff'
@@ -408,18 +398,6 @@ export default function SmmPage() {
     }
     return out
   }, [projects, selProjects])
-
-  // Таб «Сторисы»: мини-календари по проекту → дате (все события, в т.ч. сторис).
-  const byProject = useMemo(() => {
-    const m = new Map<string, Map<string, Ev[]>>()
-    for (const e of allEvents) {
-      if (!m.has(e.projectId)) m.set(e.projectId, new Map())
-      const dm = m.get(e.projectId)!
-      if (!dm.has(e.date)) dm.set(e.date, [])
-      dm.get(e.date)!.push(e)
-    }
-    return m
-  }, [allEvents])
 
   // «Не запланировано» — ЯЧЕЙКА НА КАЖДЫЙ проект (даже пустую показываем),
   // внутри — карточки без даты (минус уже брошенные, с учётом поиска).
@@ -1522,25 +1500,27 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
   )
 }
 
-// ─── ТАБ «СТОРИСЫ» — мини-календари по проектам ────────────────────────
-export function StoriesTab({ projects, cells, byProject, today, monthLabel, activeIds, onPick }: {
-  projects: { id: string; name: string }[]; cells: Cell[]; byProject: Map<string, Map<string, Ev[]>>
+// ─── СТРАНИЦА «СТОРИСЫ» — мини-календари по проектам, дни в цвет статуса ─
+export function StoriesTab({ projects, cells, statusByProject, today, monthLabel, activeIds, onPick }: {
+  projects: { id: string; name: string }[]; cells: Cell[]; statusByProject: Map<string, Map<string, SDay>>
   today: string; monthLabel: string; activeIds: Set<string>; onPick: (id: string) => void
 }) {
-  const EMPTY: Map<string, Ev[]> = new Map()
+  const EMPTY: Map<string, SDay> = new Map()
   return (
     <div>
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-        <h2 className="text-[13px] font-semibold text-gray-500">По проектам · {monthLabel}</h2>
+        <h2 className="text-[13px] font-semibold text-gray-500">Готовность сторис · {monthLabel}</h2>
         <div className="flex flex-wrap gap-3 text-[11px] text-gray-500">
-          {CAT_ORDER.map(cat => (
-            <span key={cat} className="inline-flex items-center gap-1"><span className={'w-2 h-2 rounded-full ' + CAT_DOT[cat]} />{CAT_LABEL[cat]}</span>
+          {(['done', 'partial', 'none'] as SDay[]).map(s => (
+            <span key={s} className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: SDAY_COLOR[s] }} />{SDAY_LABEL[s]}
+            </span>
           ))}
         </div>
       </div>
       <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {projects.map(p => (
-          <MiniCalendar key={p.id} name={p.name} cells={cells} dayMap={byProject.get(p.id) ?? EMPTY} today={today}
+          <MiniCalendar key={p.id} name={p.name} cells={cells} statusMap={statusByProject.get(p.id) ?? EMPTY} today={today}
             active={activeIds.has(p.id)} onClick={() => onPick(p.id)} />
         ))}
       </div>
@@ -1656,21 +1636,23 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   )
 }
 
-function MiniCalendar({ name, cells, dayMap, today, active, onClick }: {
-  name: string; cells: Cell[]; dayMap: Map<string, Ev[]>; today: string; active?: boolean; onClick?: () => void
+// Мини-календарь проекта на странице «Сторисы»: день красится по статусу сторис (Вариант B —
+// насыщенная заливка + число в цвет). Точки убраны. statusMap: дата → статус (только «плановые» дни).
+function MiniCalendar({ name, cells, statusMap, today, active, onClick }: {
+  name: string; cells: Cell[]; statusMap: Map<string, SDay>; today: string; active?: boolean; onClick?: () => void
 }) {
-  const counts: Record<Cat, number> = { shoot: 0, reel: 0, design: 0, story: 0, post: 0 }
-  for (const evs of dayMap.values()) for (const e of evs) counts[catOf(e)]++
+  const counts: Record<SDay, number> = { done: 0, partial: 0, none: 0 }
+  statusMap.forEach(v => { counts[v]++ })
   return (
     <div role="button" tabIndex={0} onClick={onClick}
       className={'text-left rounded-xl border p-2.5 transition cursor-pointer '
         + (active ? 'border-gray-400 dark:border-gray-500' : 'border-gray-200 dark:border-gray-800 hover:border-gray-300')}>
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <span className="text-[13px] font-semibold truncate">{name}</span>
-        <span className="flex gap-1.5 text-[10px] font-bold tabular-nums shrink-0">
-          {CAT_ORDER.filter(cat => counts[cat] > 0).map(cat => (
-            <span key={cat} className="inline-flex items-center gap-0.5 text-gray-500 dark:text-gray-400">
-              <span className={'w-1.5 h-1.5 rounded-full ' + CAT_DOT[cat]} />{counts[cat]}
+        <span className="flex gap-2 text-[10px] font-bold tabular-nums shrink-0">
+          {(['done', 'partial', 'none'] as SDay[]).filter(s => counts[s] > 0).map(s => (
+            <span key={s} className="inline-flex items-center gap-1" style={{ color: SDAY_COLOR[s] }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: SDAY_COLOR[s] }} />{counts[s]}
             </span>
           ))}
         </span>
@@ -1678,15 +1660,16 @@ function MiniCalendar({ name, cells, dayMap, today, active, onClick }: {
       <div className="grid grid-cols-7 gap-0.5">
         {DOW.map(d => <span key={d} className="text-[9px] text-gray-300 dark:text-gray-600 text-center">{d[0]}</span>)}
         {cells.map((c, i) => {
-          const evs = c.iso ? (dayMap.get(c.iso) ?? []) : []
-          const cats = new Set<Cat>(evs.map(catOf))
+          const st = c.iso ? statusMap.get(c.iso) : undefined
           const isToday = c.iso === today
+          const col = st ? SDAY_COLOR[st] : null
           return (
-            <div key={i} className={'h-[36px] rounded flex flex-col items-center pt-1 ' + (c.inMonth ? '' : 'opacity-30 ') + (isToday ? 'bg-gray-200/60 dark:bg-gray-700/40' : '')}>
-              <span className={'text-[10px] leading-none ' + (isToday ? 'font-bold text-gray-600 dark:text-gray-200' : 'text-gray-400')}>{c.label}</span>
-              <span className="flex gap-0.5 mt-1 flex-wrap justify-center max-w-[34px]">
-                {CAT_ORDER.filter(cat => cats.has(cat)).map(cat => <span key={cat} className={'w-1.5 h-1.5 rounded-full ' + CAT_DOT[cat]} />)}
-              </span>
+            <div key={i} title={st ? SDAY_LABEL[st] : undefined}
+              className={'h-[34px] rounded-md flex items-center justify-center ' + (c.inMonth ? '' : 'opacity-30')}
+              style={col
+                ? { background: `color-mix(in srgb, ${col} 42%, transparent)`, boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${col} 72%, transparent)` }
+                : (isToday ? { boxShadow: 'inset 0 0 0 1.5px rgba(150,155,170,.45)' } : undefined)}>
+              <span className={'text-[11px] leading-none ' + (col ? 'font-bold text-white' : (isToday ? 'font-bold text-gray-600 dark:text-gray-200' : 'text-gray-400'))}>{c.label}</span>
             </div>
           )
         })}

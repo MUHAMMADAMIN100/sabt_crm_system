@@ -6,9 +6,17 @@ import { addMonths, startOfMonth, endOfMonth, format } from 'date-fns'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { contentPlanApi } from '@/services/api.service'
-import { StoriesTab, buildCells, monthTitle, assignProjectColors, type Ev } from './SmmPage'
+import { StoriesTab, buildCells, monthTitle, assignProjectColors, type Ev, type SDay } from './SmmPage'
 
 const iso = (d: Date) => format(d, 'yyyy-MM-dd')
+// Проект со страницы «Сторисы»: дневная норма сторис (цель) + окно, когда проект ждёт сторис.
+type StoryProj = { id: string; name: string; storiesPerDay?: number | null; since?: string | null; endDate?: string | null }
+// Фактически опубликовано за день (поле count с бэка; фолбэк — парсинг «Сторис ×N» из topic).
+const storyCount = (e: Ev): number => {
+  if (typeof e.count === 'number') return e.count
+  const m = /×\s*(\d+)/.exec(e.topic || '')
+  return m ? Number(m[1]) : 0
+}
 
 export default function SmmStoriesPage() {
   const navigate = useNavigate()
@@ -23,7 +31,7 @@ export default function SmmStoriesPage() {
     placeholderData: keepPreviousData,
   })
   const allEvents: Ev[] = data?.events ?? []
-  const projects = (data?.projects ?? []) as { id: string; name: string }[]
+  const projects = (data?.projects ?? []) as StoryProj[]
   const today = new Date().toLocaleDateString('en-CA')
 
   // Цвета проектов — тот же модульный map, что и в календаре (единые цвета).
@@ -35,19 +43,44 @@ export default function SmmStoriesPage() {
   }, [projects, allEvents])
   useMemo(() => assignProjectColors(projIds), [projIds.join(',')])
 
-  // Проект → дата → события (для точек в мини-календарях).
-  const byProject = useMemo(() => {
-    const m = new Map<string, Map<string, Ev[]>>()
+  const cells = useMemo(() => buildCells(monthStr), [monthStr])
+
+  // Факт: проект → дата → сколько сторис опубликовано (только сторис, остальные типы игнорируем).
+  const actualByProject = useMemo(() => {
+    const m = new Map<string, Map<string, number>>()
     for (const e of allEvents) {
+      if (!(e.kind === 'publication' && e.contentType === 'story')) continue
       if (!m.has(e.projectId)) m.set(e.projectId, new Map())
       const dm = m.get(e.projectId)!
-      if (!dm.has(e.date)) dm.set(e.date, [])
-      dm.get(e.date)!.push(e)
+      dm.set(e.date, (dm.get(e.date) ?? 0) + storyCount(e))
     }
     return m
   }, [allEvents])
 
-  const cells = useMemo(() => buildCells(monthStr), [monthStr])
+  // Статус дня: факт vs дневная норма (storiesPerDay, по умолч. 3) в окне [создан проекта .. сегодня].
+  // done — норма достигнута; partial — что-то есть, но меньше нормы; none — плановый день без сторис.
+  const statusByProject = useMemo(() => {
+    const inMonthDates = cells.filter(c => c.inMonth && c.iso).map(c => c.iso as string)
+    const res = new Map<string, Map<string, SDay>>()
+    for (const p of projects) {
+      const target = p.storiesPerDay ?? 3
+      const dm = new Map<string, SDay>()
+      if (target > 0) {
+        const actual = actualByProject.get(p.id) ?? new Map<string, number>()
+        for (const date of inMonthDates) {
+          if (date > today) continue                       // будущее — не оцениваем
+          if (p.since && date < p.since) continue          // до появления проекта в системе
+          if (p.endDate && date > p.endDate) continue      // после завершения проекта
+          const n = actual.get(date) ?? 0
+          if (n >= target) dm.set(date, 'done')
+          else if (n > 0) dm.set(date, 'partial')
+          else if (date < today) dm.set(date, 'none')      // прошедший плановый день без сторис; сегодня не «красним»
+        }
+      }
+      res.set(p.id, dm)
+    }
+    return res
+  }, [projects, actualByProject, cells, today])
 
   return (
     <div className="space-y-3">
@@ -68,7 +101,7 @@ export default function SmmStoriesPage() {
         <StoriesTab
           projects={projects.map(p => ({ id: p.id, name: p.name }))}
           cells={cells}
-          byProject={byProject}
+          statusByProject={statusByProject}
           today={today}
           monthLabel={monthTitle(monthStr)}
           activeIds={new Set<string>()}
