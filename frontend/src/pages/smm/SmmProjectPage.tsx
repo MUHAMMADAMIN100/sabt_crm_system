@@ -82,6 +82,23 @@ function MetricChart({ data, color, w = 480, h = 190, axes = true, interactive =
   )
 }
 
+// Логотип WeBrand (инлайн SVG) — для печатного отчёта клиенту.
+function WeBrandLogo({ height = 30 }: { height?: number }) {
+  return (
+    <svg viewBox="0 0 436 91" style={{ height, width: 'auto', display: 'block' }} fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="WeBrand">
+      <path d="M85.0763 88.0513C84.5342 89.1439 83.4189 89.8351 82.198 89.8351H59.4197C57.6552 89.8351 56.221 88.4137 56.2073 86.6516L55.9534 53.9781C55.9265 50.516 51.1865 49.5454 49.7977 52.7177L34.3901 87.912C33.8787 89.0802 32.7233 89.8351 31.4468 89.8351H8.60091C6.90704 89.8351 5.50421 88.5215 5.39516 86.8332L0.00680036 3.41496C-0.112659 1.56558 1.35701 0 3.21255 0H25.689C27.4752 0 28.9184 1.45526 28.9012 3.23916L28.5494 39.8903C28.5161 43.3528 33.2393 44.405 34.6825 41.2567L52.7359 1.87283C53.259 0.731737 54.4002 0 55.6568 0H70.5118C72.253 0 73.6772 1.38542 73.7231 3.12383L74.6975 40.0335C74.7887 43.4882 79.5327 44.3769 80.8711 41.19L97.3446 1.96733C97.8451 0.775492 99.0128 0 100.307 0H123.59C125.973 0 127.527 2.50048 126.469 4.63306L85.0763 88.0513Z" fill="url(#wb0)" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M142.514 89.8349C124.864 89.8349 112.645 80.9501 112.645 64.7753C112.645 47.2335 125.996 32.0838 145.117 32.0838C158.694 32.0838 170.687 40.399 170.687 57.1434C170.687 59.7735 170.354 62.6824 169.961 64.8947C169.708 66.3162 168.441 67.2812 166.995 67.2812H132.898C132.835 67.2812 132.784 67.3322 132.784 67.3951C132.784 68.1925 136.065 74.2296 143.985 74.2296C146.769 74.2296 149.886 73.7997 152.412 73.0326C154.312 72.4558 156.629 73.1329 157.469 74.9305L160.898 82.2741C161.579 83.7328 161.079 85.4868 159.633 86.1974C154.454 88.7427 148.15 89.8349 142.514 89.8349ZM134.708 54.2958H152.697V53.954C152.697 52.3593 150.774 47.6891 144.325 47.6891C138.894 47.6891 135.386 51.9037 134.708 54.2958Z" fill="url(#wb1)" />
+      <path d="M157.788 25.6672C164.912 25.6672 170.687 19.9214 170.687 12.8336C170.687 5.74579 164.912 0 157.788 0C150.665 0 144.89 5.74579 144.89 12.8336C144.89 19.9214 150.665 25.6672 157.788 25.6672Z" fill="url(#wb2)" />
+      <path d="M204.824 73.1159C206.351 75.0025 209.406 75.9907 211.562 75.9907C215.963 75.9907 219.647 72.9363 219.647 67.4563C219.647 62.0662 215.963 59.0118 211.562 59.0118C209.406 59.0118 206.351 60.0899 204.824 61.9764V73.1159ZM204.824 89.1964H188.654V29.2764H204.824V50.3877C208.238 46.2553 212.64 44.7281 217.041 44.7281C227.732 44.7281 236.176 53.0827 236.176 67.4563C236.176 82.3689 227.552 90.2744 217.041 90.2744C212.64 90.2744 208.507 88.7472 204.824 84.6148V89.1964ZM259.237 89.1964H243.067V45.8061H259.237V50.5673C261.932 47.4231 267.592 44.5484 272.533 44.5484V60C271.724 59.7305 270.377 59.5508 268.85 59.5508C265.436 59.5508 261.034 60.4492 259.237 62.6052V89.1964ZM320.204 89.1964H304.033V85.064C301.608 88.1184 296.308 90.2744 290.917 90.2744C284.449 90.2744 276.005 85.8725 276.005 75.9907C276.005 65.2105 284.449 62.1561 290.917 62.1561C296.577 62.1561 301.698 63.9528 304.033 66.9173V62.4256C304.033 59.3712 301.249 57.0355 295.948 57.0355C291.906 57.0355 287.324 58.6525 283.91 61.2577L278.43 51.286C284.27 46.6146 292.355 44.7281 298.913 44.7281C309.693 44.7281 320.204 48.5011 320.204 62.9646V89.1964ZM297.655 79.7637C300.171 79.7637 302.955 78.9552 304.033 77.428V75.0025C302.955 73.4753 300.171 72.6668 297.655 72.6668C294.96 72.6668 291.996 73.5651 291.996 76.2602C291.996 78.9552 294.96 79.7637 297.655 79.7637ZM375.595 89.1964H359.425V65.2105C359.425 60.7187 357 59.0118 353.137 59.0118C349.453 59.0118 347.567 60.8984 346.219 62.4256V89.1964H330.049V45.8061H346.219V50.747C348.735 47.8723 353.496 44.7281 361.132 44.7281C371.194 44.7281 375.595 50.8368 375.595 58.383V89.1964ZM430.073 89.1964H413.903V84.6148C410.22 88.7472 406.087 90.2744 401.686 90.2744C391.175 90.2744 382.551 82.3689 382.551 67.4563C382.551 53.0827 390.995 44.7281 401.686 44.7281C406.087 44.7281 410.489 46.2553 413.903 50.3877V29.2764H430.073V89.1964ZM407.165 75.9907C409.321 75.9907 412.376 74.9126 413.903 73.0261V61.8866C412.376 60 409.321 59.0118 407.165 59.0118C402.764 59.0118 399.08 62.0662 399.08 67.4563C399.08 72.8464 402.764 75.9907 407.165 75.9907Z" fill="#0D131F" />
+      <defs>
+        <linearGradient id="wb0" x1="87.592" y1="0" x2="85.3489" y2="89.8352" gradientUnits="userSpaceOnUse"><stop stopColor="#3068D8" /><stop offset="1" stopColor="#275ACF" /></linearGradient>
+        <linearGradient id="wb1" x1="87.592" y1="0" x2="85.3489" y2="89.8352" gradientUnits="userSpaceOnUse"><stop stopColor="#3068D8" /><stop offset="1" stopColor="#275ACF" /></linearGradient>
+        <linearGradient id="wb2" x1="87.592" y1="0" x2="85.3489" y2="89.8352" gradientUnits="userSpaceOnUse"><stop stopColor="#3068D8" /><stop offset="1" stopColor="#275ACF" /></linearGradient>
+      </defs>
+    </svg>
+  )
+}
+
 export default function SmmProjectPage() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
@@ -211,6 +228,19 @@ export default function SmmProjectPage() {
   }
   const pct = (a: number, b: number) => b > 0 ? Math.min(100, Math.round(a / b * 100)) : 0
 
+  // Печать отчёта: имя PDF-файла = WeBrand-(проект) - дата-дата (через document.title перед print).
+  const dmy = (isoStr: string) => { const [y, m, d] = isoStr.split('-'); return `${d}.${m}.${y}` }
+  const rangeStart = cycle ? cycle.start : from, rangeEnd = cycle ? cycle.end : to
+  const reportFile = `WeBrand-${p.name.replace(/[\\/:*?"<>|]+/g, '').trim()} - ${dmy(rangeStart)}-${dmy(rangeEnd)}`
+  const printReport = () => {
+    const prev = document.title
+    document.title = reportFile
+    const restore = () => { document.title = prev; window.removeEventListener('afterprint', restore) }
+    window.addEventListener('afterprint', restore)
+    window.print()
+    setTimeout(restore, 1500)
+  }
+
   const selMeta = METRICS.find(m => m.key === selM)!
   const selLatest = latest(selM)
   const selDelta = selLatest.cur != null && selLatest.prev != null ? selLatest.cur - selLatest.prev : null
@@ -229,7 +259,7 @@ export default function SmmProjectPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Link to="/smm/projects" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
-        <button onClick={() => setReportOpen(true)} className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl bg-[#e0a63a] text-gray-900 hover:brightness-105"><FileText size={16} /> Получить отчёт</button>
+        <button onClick={() => setReportOpen(true)} className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl bg-[#3068D8] text-white hover:brightness-110"><FileText size={16} /> Получить отчёт</button>
       </div>
       <div className="flex items-center gap-3">
         <span className="w-4 h-4 rounded-full shrink-0" style={{ background: color }} />
@@ -372,49 +402,69 @@ export default function SmmProjectPage() {
       {reportOpen && createPortal(
         <div id="smmrep">
           <style>{`@media print{ body>*:not(#smmrep){display:none!important} #smmrep .rov{position:static!important;background:#fff!important;padding:0!important;display:block!important;overflow:visible!important} #smmrep .rdoc{box-shadow:none!important;border:0!important;max-width:100%!important;border-radius:0!important} #smmrep .noprint{display:none!important} @page{margin:12mm} }`}</style>
-          <div className="rov fixed inset-0 z-[60] bg-black/60 overflow-auto flex justify-center py-8 px-4" onClick={e => { if (e.target === e.currentTarget) setReportOpen(false) }}>
-            <div className="rdoc bg-white text-gray-900 rounded-2xl w-full max-w-3xl p-8 shadow-2xl">
-              <div className="flex items-start justify-between gap-3">
+          <div className="rov fixed inset-0 z-[60] bg-black/70 overflow-auto flex justify-center py-8 px-4" onClick={e => { if (e.target === e.currentTarget) setReportOpen(false) }}>
+            <div className="rdoc relative bg-white text-gray-900 rounded-2xl w-full max-w-3xl p-9 shadow-2xl">
+              <button onClick={() => setReportOpen(false)} className="noprint absolute top-4 right-4 text-gray-300 hover:text-gray-600"><X size={20} /></button>
+
+              {/* Шапка: логотип WeBrand + проект/период */}
+              <div className="flex items-end justify-between gap-4 pb-5 border-b-2 border-gray-100">
                 <div>
-                  <h3 className="text-xl font-extrabold flex items-center gap-2"><span className="w-3.5 h-3.5 rounded-full" style={{ background: color }} />Отчёт · {p.name}</h3>
-                  <p className="text-xs text-gray-500 mt-1">{monthTitle} · сформировано {fmtDate(iso(now))}</p>
+                  <WeBrandLogo height={30} />
+                  <p className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-[#3068D8] mt-3">Отчёт по проекту</p>
                 </div>
-                <button onClick={() => setReportOpen(false)} className="noprint text-gray-400 hover:text-gray-700"><X size={20} /></button>
+                <div className="text-right">
+                  <h3 className="text-lg font-extrabold flex items-center gap-2 justify-end"><span className="w-3 h-3 rounded-full" style={{ background: color }} />{p.name}</h3>
+                  <p className="text-xs text-gray-500 mt-1">{cycle ? fmtCycleRange(cycle.start, cycle.end) : monthTitle}</p>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
+              {/* KPI */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
                 {METRICS.map(m => {
                   const l = latest(m.key); const d = l.cur != null && l.prev != null ? l.cur - l.prev : null
                   return (
-                    <div key={m.key} className="rounded-xl border border-gray-200 p-3">
-                      <span className="flex items-center gap-1.5 text-[11px] text-gray-500"><span className="w-2 h-2 rounded-full" style={{ background: m.color }} />{m.label}</span>
-                      <span className="block text-[22px] font-extrabold tabular-nums mt-1">{l.cur != null ? fmtNum(l.cur) : '—'}</span>
-                      {d != null && <span className={'block text-[11px] font-bold ' + (d >= 0 ? 'text-emerald-600' : 'text-red-500')}>{(d >= 0 ? '+' : '−') + fmtNum(Math.abs(d))} за месяц</span>}
+                    <div key={m.key} className="relative rounded-xl border border-gray-200 p-3.5 pl-4 overflow-hidden">
+                      <span className="absolute left-0 top-0 bottom-0 w-1" style={{ background: m.color }} />
+                      <span className="text-[11px] text-gray-500 font-medium">{m.label}</span>
+                      <span className="block text-[23px] font-extrabold tabular-nums mt-1 leading-none">{l.cur != null ? fmtNum(l.cur) : '—'}</span>
+                      {d != null
+                        ? <span className={'inline-flex items-center gap-0.5 text-[11px] font-bold mt-1.5 ' + (d >= 0 ? 'text-emerald-600' : 'text-red-500')}>{d >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{(d >= 0 ? '+' : '−') + fmtNum(Math.abs(d))} за месяц</span>
+                        : <span className="block text-[11px] text-gray-300 mt-1.5">нет сравнения</span>}
                     </div>
                   )
                 })}
               </div>
 
+              {/* Графики */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
                 {METRICS.map(m => (
-                  <div key={m.key} className="rounded-xl border border-gray-200 p-3 text-gray-500">
-                    <div className="text-[11px] flex items-center gap-1.5 mb-1"><span className="w-2 h-2 rounded-full" style={{ background: m.color }} />{m.label}</div>
+                  <div key={m.key} className="rounded-xl border border-gray-200 p-3.5 text-gray-500">
+                    <div className="text-[11px] font-semibold flex items-center gap-1.5 mb-1.5 text-gray-600"><span className="w-2 h-2 rounded-full" style={{ background: m.color }} />{m.label}</div>
                     <MetricChart data={series(m.key)} color={m.color} w={320} h={96} axes={false} interactive={false} />
                   </div>
                 ))}
               </div>
 
-              <div className="rounded-xl border border-gray-200 p-4 mt-4 text-sm text-gray-700">
-                <b className="text-gray-900">Выполнение плана ({monthTitle}):</b> рилсы {reelsDone}/{reelsNorm}, посты {postsDone}/{postsNorm}, сторис {storiesTotal}{spm ? `/${spm}` : ''} за месяц{dayTarget > 0 ? ` · дисциплина 🟢 ${discG} · 🟡 ${discY} · 🔴 ${discR}` : ''}.
+              {/* Выполнение плана */}
+              <div className="rounded-xl border border-gray-200 p-4 mt-4">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-2">Выполнение плана · {monthTitle}</p>
+                <p className="text-sm text-gray-700">🎬 Рилсы <b className="text-gray-900">{reelsDone}/{reelsNorm}</b> · 🖼 Посты <b className="text-gray-900">{postsDone}/{postsNorm}</b> · 📸 Сторис <b className="text-gray-900">{storiesTotal}{spm ? `/${spm}` : ''}</b> за месяц{dayTarget > 0 ? <> · дисциплина <span className="text-emerald-600 font-semibold">🟢 {discG}</span> <span className="text-amber-500 font-semibold">🟡 {discY}</span> <span className="text-red-500 font-semibold">🔴 {discR}</span></> : ''}</p>
               </div>
               {(profile?.ownerName || profile?.collabSince || profile?.preferences) && (
-                <div className="rounded-xl border border-gray-200 p-4 mt-3 text-sm text-gray-700">
-                  <b className="text-gray-900">Клиент:</b> {profile?.ownerName || '—'}{profile?.collabSince ? ` · сотрудничаем с ${fmtDate(profile.collabSince)}` : ''}{profile?.preferences ? ` · ${profile.preferences}` : ''}
+                <div className="rounded-xl border border-gray-200 p-4 mt-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-2">Клиент</p>
+                  <p className="text-sm text-gray-700">{profile?.ownerName || '—'}{profile?.collabSince ? ` · сотрудничаем с ${fmtDate(profile.collabSince)}` : ''}{profile?.preferences ? <> · <span className="text-gray-600">{profile.preferences}</span></> : ''}</p>
                 </div>
               )}
 
+              {/* Подвал */}
+              <div className="flex items-center justify-between gap-3 mt-6 pt-4 border-t border-gray-100 text-[11px] text-gray-400">
+                <span className="font-semibold text-gray-500">WeBrand — digital-агентство</span>
+                <span>Сформировано {fmtDate(iso(now))}</span>
+              </div>
+
               <div className="noprint flex justify-end mt-5">
-                <button onClick={() => window.print()} className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl bg-[#e0a63a] text-gray-900 hover:brightness-105"><Printer size={16} /> Печать / Сохранить PDF</button>
+                <button onClick={printReport} className="inline-flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-xl bg-[#3068D8] text-white hover:brightness-110"><Printer size={16} /> Печать / Сохранить PDF</button>
               </div>
             </div>
           </div>
