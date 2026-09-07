@@ -18,6 +18,8 @@ export class CreateProjectDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() projectType?: string;
   @ApiProperty({ required: false }) @IsOptional() smmData?: Record<string, any>;
   @ApiProperty({ required: false }) @IsOptional() clientInfo?: Record<string, any>;
+  /** Разрешить создать SMM-проект без тарифа (новый упрощённый поток SMM-проектов). */
+  @ApiProperty({ required: false }) @IsOptional() @IsBoolean() allowNoTariff?: boolean;
 
   // ─── Tariff & billing (Wave 2) ─────────────────────────────────────
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() tariffId?: string;

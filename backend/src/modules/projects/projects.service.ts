@@ -1146,9 +1146,10 @@ export class ProjectsService implements OnModuleInit {
     // SMM-проект без тарифа не создаётся: все тарифы действуют 1 месяц,
     // от тарифа считаются лимиты/финансы. Старые проекты без тарифа
     // остаются как есть — проверка только на создание.
-    if (dto.projectType === 'SMM' && !dto.tariffId) {
+    if (dto.projectType === 'SMM' && !dto.tariffId && !dto.allowNoTariff) {
       throw new BadRequestException('Выберите SMM-тариф — без него проект не создаётся');
     }
+    delete (dto as any).allowNoTariff; // служебный флаг, не поле проекта
     // Менеджер продаж может создавать проекты только своего направления.
     const createSegment = getSalesSegment(userRole);
     if (createSegment && !createSegment.projectTypes.includes(dto.projectType as string)) {

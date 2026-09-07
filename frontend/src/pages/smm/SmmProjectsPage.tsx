@@ -50,7 +50,7 @@ export default function SmmProjectsPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-bold tracking-tight">Проекты</h1>
         {canCreate && (
-          <button onClick={() => navigate('/projects', { state: { openCreate: true } })}
+          <button onClick={() => navigate('/smm/projects/new')}
             className="btn-primary inline-flex items-center gap-1.5">
             <Plus size={16} /> Добавить проект
           </button>
