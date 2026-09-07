@@ -149,7 +149,7 @@ const VIEWS: { k: View; label: string }[] = [
 ]
 
 // ═══════════════════════════════════════════════════════════════════════
-export default function SmmPage() {
+export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: string } = {}) {
   const navigate = useNavigate()
   const user = useAuthStore(s => s.user)
   // Съёмки видят видеографы всегда; остальные — только когда выбран проект (фильтр по плитке).
@@ -160,7 +160,9 @@ export default function SmmPage() {
   // Счётчик явной навигации (стрелки/«Сегодня») — по нему непрерывный месячный вид прокручивается к месяцу.
   const [scrollSeq, setScrollSeq] = useState(0)
   // Фильтр по проектам — множественный выбор (пусто = все проекты).
-  const [selProjects, setSelProjects] = useState<Set<string>>(new Set())
+  // Во встроенном режиме (страница проекта) сразу выбираем этот проект — чтобы
+  // показывались подсветка цикла и его съёмки.
+  const [selProjects, setSelProjects] = useState<Set<string>>(() => embeddedProjectId ? new Set([embeddedProjectId]) : new Set())
   const [search, setSearch] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const toggleProject = (id: string) => setSelProjects(prev => {
@@ -193,9 +195,10 @@ export default function SmmPage() {
     placeholderData: keepPreviousData,
   })
 
-  const allEvents = data?.events ?? []
-  const projects = data?.projects ?? []
-  const backlog = data?.backlog ?? []
+  // Встроенный режим: показываем только выбранный проект (ограничиваем данные у истока).
+  const allEvents = (data?.events ?? []).filter(e => !embeddedProjectId || e.projectId === embeddedProjectId)
+  const projects = (data?.projects ?? []).filter(p => !embeddedProjectId || p.id === embeddedProjectId)
+  const backlog = (data?.backlog ?? []).filter(b => !embeddedProjectId || b.projectId === embeddedProjectId)
   const today = todayIso()
 
   // Назначаем каждому проекту свой цвет по индексу — все id из проектов,
@@ -448,7 +451,7 @@ export default function SmmPage() {
   return (
     // Календарные виды: страница на всю высоту (flex-колонка) — календарь растягивается на всё
     // свободное место, чтобы при сворачивании бэклога снизу не оставалось пустоты. Сторисы — обычный поток.
-    <div className={view === 'stories' ? 'space-y-3' : 'flex flex-col gap-3 h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)] min-h-0'}>
+    <div className={view === 'stories' ? 'space-y-3' : ('flex flex-col gap-3 min-h-0 ' + (embeddedProjectId ? 'h-[calc(100vh-15rem)] min-h-[540px]' : 'h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)]'))}>
       {/* ── шапка ── */}
       <header className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-2.5 flex-wrap">
