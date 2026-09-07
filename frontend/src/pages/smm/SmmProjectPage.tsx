@@ -386,37 +386,40 @@ export default function SmmProjectPage() {
           )}
         </div>
       </div>
-      <div className="flex items-center gap-3">
-        <span className="w-4 h-4 rounded-full shrink-0" style={{ background: color }} />
-        {nameEditing ? (
-          <div className="flex items-center gap-2">
-            <input
-              autoFocus
-              value={nameDraft}
-              onChange={e => setNameDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setNameEditing(false) }}
-              className="text-2xl font-bold tracking-tight bg-transparent border-b-2 border-gray-300 dark:border-gray-600 focus:border-[#3f7a58] outline-none px-0.5 min-w-[220px]"
-            />
-            <button onClick={saveName} disabled={renameMut.isPending || !nameDraft.trim()} className="p-1.5 rounded-lg bg-[#3f7a58] text-white hover:brightness-110 disabled:opacity-60" title="Сохранить">{renameMut.isPending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}</button>
-            <button onClick={() => setNameEditing(false)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" title="Отмена"><X size={16} /></button>
-          </div>
-        ) : (
-          <>
-            <h1 className="text-2xl font-bold tracking-tight">{p.name}</h1>
-            {canRename && (
-              <button onClick={() => { setNameDraft(p.name); setNameEditing(true) }} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" title="Переименовать проект"><Pencil size={15} /></button>
-            )}
-          </>
-        )}
-      </div>
+      {/* Имя проекта + вкладки — на одной линии (общий нижний бордер) */}
+      <div className="flex items-end justify-between gap-6 flex-wrap border-b border-gray-100 dark:border-gray-800">
+        <div className="flex items-center gap-3 pb-2.5 shrink-0">
+          <span className="w-4 h-4 rounded-full shrink-0" style={{ background: color }} />
+          {nameEditing ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                value={nameDraft}
+                onChange={e => setNameDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setNameEditing(false) }}
+                className="text-2xl font-bold tracking-tight bg-transparent border-b-2 border-gray-300 dark:border-gray-600 focus:border-[#3f7a58] outline-none px-0.5 min-w-[220px]"
+              />
+              <button onClick={saveName} disabled={renameMut.isPending || !nameDraft.trim()} className="p-1.5 rounded-lg bg-[#3f7a58] text-white hover:brightness-110 disabled:opacity-60" title="Сохранить">{renameMut.isPending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}</button>
+              <button onClick={() => setNameEditing(false)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" title="Отмена"><X size={16} /></button>
+            </div>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold tracking-tight">{p.name}</h1>
+              {canRename && (
+                <button onClick={() => { setNameDraft(p.name); setNameEditing(true) }} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" title="Переименовать проект"><Pencil size={15} /></button>
+              )}
+            </>
+          )}
+        </div>
 
-      <div className="flex items-center gap-1 border-b border-gray-100 dark:border-gray-800 overflow-x-auto">
-        {([['overview', 'Обзор'], ['analytics', 'Аналитика'], ['client', 'Клиент'], ['plan', 'Контент-план']] as const).map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)}
-            className={'px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition whitespace-nowrap ' + (tab === k ? 'border-primary-600 text-gray-900 dark:text-gray-100' : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-200')}>
-            {l}
-          </button>
-        ))}
+        <div className="flex items-center gap-1 overflow-x-auto">
+          {([['overview', 'Обзор'], ['analytics', 'Аналитика'], ['client', 'Клиент'], ['plan', 'Контент-план']] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={'px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition whitespace-nowrap ' + (tab === k ? 'border-primary-600 text-gray-900 dark:text-gray-100' : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-200')}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ОБЗОР — цикл/норма + выполнение плана */}
