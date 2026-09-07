@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useLayoutEffect, useRef, type ReactNode }
 import { createPortal } from 'react-dom'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Pencil, Check, Plus, TrendingUp, TrendingDown, Gift, FileText, X, Printer } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, TrendingUp, TrendingDown, Gift, FileText, X, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
@@ -18,11 +18,11 @@ type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNot
 const EDIT_ROLES = ['founder', 'co_founder', 'admin', 'smm_director', 'smm_specialist']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 const MON_SHORT = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
-const METRICS: { key: MKey; label: string; color: string }[] = [
-  { key: 'subs', label: 'Подписчики', color: '#10b981' },
-  { key: 'reach', label: 'Охват', color: '#3b82f6' },
-  { key: 'eng', label: 'Вовлечённость', color: '#8b5cf6' },
-  { key: 'leads', label: 'Заявки', color: '#e0a63a' },
+const METRICS: { key: MKey; label: string; color: string; Icon: any }[] = [
+  { key: 'subs', label: 'Подписчики', color: '#10b981', Icon: Users },
+  { key: 'reach', label: 'Охват', color: '#3b82f6', Icon: Eye },
+  { key: 'eng', label: 'Вовлечённость', color: '#8b5cf6', Icon: Heart },
+  { key: 'leads', label: 'Заявки', color: '#e0a63a', Icon: Target },
 ]
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const fmtNum = (n: number) => n.toLocaleString('ru-RU')
@@ -273,19 +273,6 @@ export default function SmmProjectPage() {
   const storiesTotal = [...storyByDate.values()].reduce((a, b) => a + b, 0)
   const reelsNorm = p.normReels ?? 0, postsNorm = p.normPosts ?? 0
   const spm = p.storiesPerMonth ?? null
-  const dayTarget = spm != null ? (spm > 0 ? Math.max(1, Math.round(spm / daysInMonth)) : 0) : (p.storiesPerDay ?? 3)
-  let discG = 0, discY = 0, discR = 0
-  if (dayTarget > 0) {
-    const todayStr = iso(now)
-    for (let d = 1; d <= daysInMonth; d++) {
-      const ds = `${monthPref}-${String(d).padStart(2, '0')}`
-      if (ds > todayStr) break
-      const actual = storyByDate.get(ds) ?? 0
-      if (actual >= dayTarget) discG++
-      else if (actual > 0) discY++
-      else if (ds < todayStr) discR++
-    }
-  }
   const pct = (a: number, b: number) => b > 0 ? Math.min(100, Math.round(a / b * 100)) : 0
 
   // Печать отчёта: имя PDF-файла = WeBrand-(проект) - дата-дата (через document.title перед print).
@@ -365,9 +352,8 @@ export default function SmmProjectPage() {
               <PlanBar icon={<Film size={14} />} label="Рилсы" done={reelsDone} total={reelsNorm} color="#10b981" />
               <PlanBar icon={<ImageIcon size={14} />} label="Посты" done={postsDone} total={postsNorm} color="#3b82f6" />
               <div>
-                <div className="flex justify-between text-sm mb-1.5"><span className="text-gray-500 inline-flex items-center gap-1.5">📸 Сторис за месяц</span><span className="font-bold tabular-nums">{storiesTotal}{spm ? ` / ${spm}` : ''}</span></div>
+                <div className="flex justify-between text-sm mb-1.5"><span className="text-gray-500 inline-flex items-center gap-1.5"><Camera size={14} /> Сторис за месяц</span><span className="font-bold tabular-nums">{storiesTotal}{spm ? ` / ${spm}` : ''}</span></div>
                 <div className="h-[7px] rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct(storiesTotal, spm ?? storiesTotal)}%`, background: '#8b5cf6' }} /></div>
-                {dayTarget > 0 && <div className="flex gap-3 mt-2 text-[12px] font-semibold"><span className="text-emerald-600">🟢 {discG}</span><span className="text-amber-500">🟡 {discY}</span><span className="text-red-500">🔴 {discR}</span><span className="text-gray-400 font-normal">дней</span></div>}
               </div>
             </div>
           </div>
@@ -461,21 +447,17 @@ export default function SmmProjectPage() {
       {/* Отчёт — печатная страница для клиента */}
       {reportOpen && createPortal(
         <div id="smmrep">
-          <style>{`@media print{ body>*:not(#smmrep){display:none!important} #smmrep .rov{position:static!important;background:#fff!important;padding:0!important;display:block!important;overflow:visible!important} #smmrep .rdoc{box-shadow:none!important;border:0!important;max-width:100%!important;border-radius:0!important} #smmrep .noprint{display:none!important} @page{margin:12mm} }`}</style>
+          <style>{`@media print{ @page{margin:0} body>*:not(#smmrep){display:none!important} #smmrep .rov{position:static!important;background:#fff!important;padding:0!important;display:block!important;overflow:visible!important} #smmrep .rdoc{box-shadow:none!important;border:0!important;max-width:100%!important;border-radius:0!important;padding:14mm!important} #smmrep .noprint{display:none!important} }`}</style>
           <div className="rov fixed inset-0 z-[60] bg-black/70 overflow-auto flex justify-center py-8 px-4" onClick={e => { if (e.target === e.currentTarget) setReportOpen(false) }}>
             <div className="rdoc relative bg-white text-gray-900 rounded-2xl w-full max-w-3xl p-9 shadow-2xl">
               <button onClick={() => setReportOpen(false)} className="noprint absolute top-4 right-4 text-gray-300 hover:text-gray-600"><X size={20} /></button>
 
-              {/* Шапка: логотип WeBrand + проект/период */}
-              <div className="flex items-end justify-between gap-4 pb-5 border-b-2 border-gray-100">
-                <div>
-                  <WeBrandLogo height={30} />
-                  <p className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-[#3068D8] mt-3">Отчёт по проекту</p>
-                </div>
-                <div className="text-right">
-                  <h3 className="text-lg font-extrabold flex items-center gap-2 justify-end"><span className="w-3 h-3 rounded-full" style={{ background: color }} />{p.name}</h3>
-                  <p className="text-xs text-gray-500 mt-1">{cycle ? fmtCycleRange(cycle.start, cycle.end) : monthTitle}</p>
-                </div>
+              {/* Шапка — симметричная, по центру листа */}
+              <div className="flex flex-col items-center text-center pb-5 border-b border-gray-200">
+                <WeBrandLogo height={32} />
+                <p className="text-[10.5px] font-bold uppercase tracking-[0.22em] text-[#3068D8] mt-4">Отчёт по проекту</p>
+                <h3 className="text-2xl font-extrabold mt-1.5 flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: color }} />{p.name}</h3>
+                <p className="text-[13px] text-gray-500 mt-1">{cycle ? fmtCycleRange(cycle.start, cycle.end) : monthTitle} · {now.getFullYear()}</p>
               </div>
 
               {/* KPI */}
@@ -483,32 +465,35 @@ export default function SmmProjectPage() {
                 {METRICS.map(m => {
                   const l = latest(m.key); const d = l.cur != null && l.prev != null ? l.cur - l.prev : null
                   return (
-                    <div key={m.key} className="relative rounded-xl border border-gray-200 p-3.5 pl-4 overflow-hidden">
-                      <span className="absolute left-0 top-0 bottom-0 w-1" style={{ background: m.color }} />
-                      <span className="text-[11px] text-gray-500 font-medium">{m.label}</span>
-                      <span className="block text-[23px] font-extrabold tabular-nums mt-1 leading-none">{l.cur != null ? fmtNum(l.cur) : '—'}</span>
+                    <div key={m.key} className="rounded-xl border border-gray-200 p-4">
+                      <span className="flex items-center gap-1.5 text-[11px] text-gray-500 font-semibold uppercase tracking-wide"><m.Icon size={13} style={{ color: m.color }} />{m.label}</span>
+                      <span className="block text-[24px] font-extrabold tabular-nums mt-2 leading-none">{l.cur != null ? fmtNum(l.cur) : '—'}</span>
                       {d != null
-                        ? <span className={'inline-flex items-center gap-0.5 text-[11px] font-bold mt-1.5 ' + (d >= 0 ? 'text-emerald-600' : 'text-red-500')}>{d >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{(d >= 0 ? '+' : '−') + fmtNum(Math.abs(d))} за месяц</span>
-                        : <span className="block text-[11px] text-gray-300 mt-1.5">нет сравнения</span>}
+                        ? <span className={'inline-flex items-center gap-0.5 text-[11px] font-bold mt-2 ' + (d >= 0 ? 'text-emerald-600' : 'text-red-500')}>{d >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{(d >= 0 ? '+' : '−') + fmtNum(Math.abs(d))} за месяц</span>
+                        : <span className="block text-[11px] text-gray-400 mt-2">нет сравнения</span>}
                     </div>
                   )
                 })}
               </div>
 
               {/* Графики */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                 {METRICS.map(m => (
-                  <div key={m.key} className="rounded-xl border border-gray-200 p-3.5 text-gray-500">
-                    <div className="text-[11px] font-semibold flex items-center gap-1.5 mb-1.5 text-gray-600"><span className="w-2 h-2 rounded-full" style={{ background: m.color }} />{m.label}</div>
+                  <div key={m.key} className="rounded-xl border border-gray-200 p-4 text-gray-500">
+                    <div className="text-[11px] font-semibold flex items-center gap-1.5 mb-2 text-gray-700 uppercase tracking-wide"><m.Icon size={13} style={{ color: m.color }} />{m.label}</div>
                     <MetricChart data={series(m.key)} color={m.color} w={320} h={96} axes={false} interactive={false} />
                   </div>
                 ))}
               </div>
 
-              {/* Выполнение плана */}
-              <div className="rounded-xl border border-gray-200 p-4 mt-4">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-2">Выполнение плана · {monthTitle}</p>
-                <p className="text-sm text-gray-700">🎬 Рилсы <b className="text-gray-900">{reelsDone}/{reelsNorm}</b> · 🖼 Посты <b className="text-gray-900">{postsDone}/{postsNorm}</b> · 📸 Сторис <b className="text-gray-900">{storiesTotal}{spm ? `/${spm}` : ''}</b> за месяц{dayTarget > 0 ? <> · дисциплина <span className="text-emerald-600 font-semibold">🟢 {discG}</span> <span className="text-amber-500 font-semibold">🟡 {discY}</span> <span className="text-red-500 font-semibold">🔴 {discR}</span></> : ''}</p>
+              {/* Выполнение плана (без дисциплины) */}
+              <div className="rounded-xl border border-gray-200 p-4 mt-3">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-3">Выполнение плана · {monthTitle}</p>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-700">
+                  <span className="inline-flex items-center gap-2"><Film size={15} className="text-gray-400" /> Рилсы <b className="text-gray-900 tabular-nums">{reelsDone}/{reelsNorm}</b></span>
+                  <span className="inline-flex items-center gap-2"><ImageIcon size={15} className="text-gray-400" /> Посты <b className="text-gray-900 tabular-nums">{postsDone}/{postsNorm}</b></span>
+                  <span className="inline-flex items-center gap-2"><Camera size={15} className="text-gray-400" /> Сторис <b className="text-gray-900 tabular-nums">{storiesTotal}{spm ? `/${spm}` : ''}</b> <span className="text-gray-400">за месяц</span></span>
+                </div>
               </div>
               {(profile?.ownerName || profile?.collabSince || profile?.preferences) && (
                 <div className="rounded-xl border border-gray-200 p-4 mt-3">
@@ -518,8 +503,8 @@ export default function SmmProjectPage() {
               )}
 
               {/* Подвал */}
-              <div className="flex items-center justify-between gap-3 mt-6 pt-4 border-t border-gray-100 text-[11px] text-gray-400">
-                <span className="font-semibold text-gray-500">WeBrand — digital-агентство</span>
+              <div className="flex items-center justify-between gap-3 mt-7 pt-4 border-t border-gray-200 text-[11px] text-gray-400">
+                <span className="inline-flex items-center gap-2 font-semibold text-gray-500"><WeBrandLogo height={15} /> digital-агентство</span>
                 <span>Сформировано {fmtDate(iso(now))}</span>
               </div>
 
