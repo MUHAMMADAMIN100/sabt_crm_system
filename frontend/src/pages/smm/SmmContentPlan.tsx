@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Film, Image as ImageIcon, CircleDashed, GalleryHorizontalEnd, Palette, FileText, Plus, X, Loader2, Check, Trash2, ListTree } from 'lucide-react'
+import { Film, Image as ImageIcon, GalleryHorizontalEnd, Palette, FileText, Plus, X, Loader2, Check, Trash2, ListTree } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi } from '@/services/api.service'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -23,15 +23,16 @@ type Item = {
   assignee?: { name?: string } | null
 }
 
+// Сторис в КП не ведём — их СММ-специалисты делают автоматически (см. /smm/stories).
+// Здесь только макеты/посты, рилсы, карусели, дизайн.
 const TYPES: { v: string; label: string; Icon: any }[] = [
   { v: 'reel', label: 'Рилс', Icon: Film },
-  { v: 'post', label: 'Пост', Icon: ImageIcon },
-  { v: 'story', label: 'Сторис', Icon: CircleDashed },
+  { v: 'post', label: 'Макет / пост', Icon: ImageIcon },
   { v: 'carousel', label: 'Карусель', Icon: GalleryHorizontalEnd },
   { v: 'design', label: 'Дизайн', Icon: Palette },
   { v: 'other', label: 'Другое', Icon: FileText },
 ]
-const typeMeta = (v: string) => TYPES.find(t => t.v === v) ?? TYPES[5]
+const typeMeta = (v: string) => TYPES.find(t => t.v === v) ?? TYPES[TYPES.length - 1]
 
 const STATUS: { v: string; label: string; cls: string }[] = [
   { v: 'planned', label: 'Планируется', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300' },
@@ -72,6 +73,8 @@ export default function SmmContentPlan({ projectId, color, canEdit, canDelete }:
     queryFn: () => contentPlanApi.list({ projectId }),
     enabled: !!projectId,
   })
+  // Сторисы в КП не показываем — их ведут отдельно (автоматом у СММ-специалистов).
+  const shown = items.filter(it => it.contentType !== 'story')
 
   const [open, setOpen] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -120,7 +123,7 @@ export default function SmmContentPlan({ projectId, color, canEdit, canDelete }:
 
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="animate-spin text-gray-400" /></div>
-      ) : items.length === 0 ? (
+      ) : shown.length === 0 ? (
         <div className="text-center py-10 text-sm text-gray-400">
           Пока нет позиций. {canEdit && <button onClick={openNew} className="text-primary-600 font-semibold hover:underline">Добавить первую</button>}
         </div>
@@ -137,7 +140,7 @@ export default function SmmContentPlan({ projectId, color, canEdit, canDelete }:
               </tr>
             </thead>
             <tbody>
-              {items.map(it => {
+              {shown.map(it => {
                 const tm = typeMeta(it.contentType); const sm = statusMeta(it.status); const TIcon = tm.Icon
                 return (
                   <tr key={it.id} onClick={() => openItem(it)}
