@@ -133,30 +133,24 @@ export default function SmmContentPlan({ projectId, color, canEdit, canDelete }:
             <thead>
               <tr className="text-left text-[10.5px] font-bold uppercase tracking-wide text-gray-400 border-b border-gray-100 dark:border-gray-800">
                 <th className="px-2 py-2 font-bold">Тип</th>
-                <th className="px-2 py-2 font-bold">Тема / сценарий</th>
+                <th className="px-2 py-2 font-bold">Название / сценарий</th>
                 <th className="px-2 py-2 font-bold whitespace-nowrap">Публикация</th>
-                <th className="px-2 py-2 font-bold whitespace-nowrap">Дедлайн</th>
-                <th className="px-2 py-2 font-bold">Статус</th>
               </tr>
             </thead>
             <tbody>
               {shown.map(it => {
-                const tm = typeMeta(it.contentType); const sm = statusMeta(it.status); const TIcon = tm.Icon
+                const tm = typeMeta(it.contentType); const TIcon = tm.Icon
                 return (
                   <tr key={it.id} onClick={() => openItem(it)}
                     className={'border-b border-gray-50 dark:border-gray-800/60 ' + (canEdit ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50' : '')}>
                     <td className="px-2 py-2.5 align-middle">
                       <span className="inline-flex items-center gap-1.5 font-semibold whitespace-nowrap" style={{ color }}><TIcon size={14} /> {tm.label}</span>
                     </td>
-                    <td className="px-2 py-2.5 align-middle max-w-[420px]">
-                      <div className="font-semibold text-gray-900 dark:text-gray-100 truncate">{it.topic || <span className="text-gray-400 font-normal">Без темы</span>}</div>
+                    <td className="px-2 py-2.5 align-middle max-w-[520px]">
+                      <div className="font-semibold text-gray-900 dark:text-gray-100 truncate">{it.topic || <span className="text-gray-400 font-normal">Без названия</span>}</div>
                       {it.scriptText && <div className="text-[11.5px] text-gray-400 truncate">{it.scriptText}</div>}
                     </td>
                     <td className="px-2 py-2.5 align-middle tabular-nums whitespace-nowrap text-gray-500">{fmtShort(it.publishDate)}</td>
-                    <td className="px-2 py-2.5 align-middle tabular-nums whitespace-nowrap text-gray-500">{fmtShort(it.preparationDeadline)}</td>
-                    <td className="px-2 py-2.5 align-middle">
-                      <span className={'inline-flex items-center text-[11px] font-bold rounded-lg px-2.5 py-1 whitespace-nowrap ' + sm.cls}>{sm.label}</span>
-                    </td>
                   </tr>
                 )
               })}
@@ -199,19 +193,10 @@ function Editor({ d, setD, editId, saving, deleting, canDelete, onSave, onClose,
                 {TYPES.map(t => <option key={t.v} value={t.v}>{t.label}</option>)}
               </select>
             </div>
-            <div><label className={lbl}>Статус</label>
-              <select value={d.status} onChange={e => set('status')(e.target.value)} className={fld}>
-                {STATUS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className={lbl}>Дата публикации</label><DatePicker value={d.publishDate} onChange={set('publishDate')} placeholder="дата" /></div>
-            <div><label className={lbl}>Дедлайн подготовки</label><DatePicker value={d.preparationDeadline} onChange={set('preparationDeadline')} placeholder="дата" /></div>
           </div>
 
-          <div><label className={lbl}>Тема <span className="text-red-500">*</span></label>
+          <div><label className={lbl}>Название <span className="text-red-500">*</span></label>
             <input value={d.topic} onChange={e => set('topic')(e.target.value)} placeholder="Напр. Рилс: 3 ошибки в маникюре" className={fld} autoFocus /></div>
 
           <div className="relative">
@@ -223,9 +208,6 @@ function Editor({ d, setD, editId, saving, deleting, canDelete, onSave, onClose,
 
           <div><label className={lbl}>Подпись к публикации</label>
             <textarea value={d.caption} onChange={e => set('caption')(e.target.value)} rows={2} placeholder="Текст под постом, хэштеги…" className={fld + ' resize-y leading-relaxed'} /></div>
-
-          <div><label className={lbl}>Ссылка на файл</label>
-            <input value={d.fileLink} onChange={e => set('fileLink')(e.target.value)} placeholder="Google Drive / Figma / R2…" className={fld} /></div>
         </div>
 
         <div className="flex items-center gap-2 px-5 py-4 border-t border-gray-100 dark:border-gray-800">
