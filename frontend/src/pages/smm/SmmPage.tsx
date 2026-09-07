@@ -319,8 +319,8 @@ export default function SmmPage() {
     return () => document.removeEventListener('dragend', clear)
   }, [])
 
-  // Съёмку (подготовку) можно ставить в любой день — цикл проекта её не ограничивает (в отличие от публикаций).
-  const cycleFor = (e: Ev) => (e.kind === 'shoot' ? null : projCycle(e.projectId))
+  // Съёмку ограничивает цикл проекта так же, как рилс/публикацию — только внутри активного цикла.
+  const cycleFor = (e: Ev) => projCycle(e.projectId)
   const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null); setDragRange(cycleFor(e)); setDragDuration(e.durationMin || DEFAULT_DUR) }
   // Перенос на день (всё-день) — снимаем время (публикация возвращается наверх).
   const onDropDate = (dateStr: string) => {
