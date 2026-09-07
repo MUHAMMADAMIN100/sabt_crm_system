@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Film, Image as ImageIcon, CircleDashed, Images, Palette, FileText, Plus, X, Loader2, Check, Trash2, ListTree } from 'lucide-react'
+import { Film, Image as ImageIcon, CircleDashed, GalleryHorizontalEnd, Palette, FileText, Plus, X, Loader2, Check, Trash2, ListTree } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi } from '@/services/api.service'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -27,7 +27,7 @@ const TYPES: { v: string; label: string; Icon: any }[] = [
   { v: 'reel', label: 'Рилс', Icon: Film },
   { v: 'post', label: 'Пост', Icon: ImageIcon },
   { v: 'story', label: 'Сторис', Icon: CircleDashed },
-  { v: 'carousel', label: 'Карусель', Icon: Images },
+  { v: 'carousel', label: 'Карусель', Icon: GalleryHorizontalEnd },
   { v: 'design', label: 'Дизайн', Icon: Palette },
   { v: 'other', label: 'Другое', Icon: FileText },
 ]
