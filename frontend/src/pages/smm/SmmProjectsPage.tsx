@@ -1,9 +1,13 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Film, Image as ImageIcon, CalendarRange } from 'lucide-react'
+import { Loader2, Film, Image as ImageIcon, CalendarRange, Plus } from 'lucide-react'
 import { contentPlanApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 import { assignProjectColors, projColor, type SmmProj } from './smmShared'
+
+// Кто может создавать проекты (как на основной странице «Проекты»).
+const CREATE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm']
 
 type Ev = { projectId: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[] }
@@ -12,6 +16,8 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 
 export default function SmmProjectsPage() {
   const navigate = useNavigate()
+  const user = useAuthStore(s => s.user)
+  const canCreate = CREATE_ROLES.includes((user as any)?.role ?? '')
   const now = new Date()
   const from = iso(new Date(now.getFullYear(), now.getMonth(), 1))
   const to = iso(new Date(now.getFullYear(), now.getMonth() + 1, 0))
@@ -41,7 +47,15 @@ export default function SmmProjectsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">Проекты</h1>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h1 className="text-2xl font-bold tracking-tight">Проекты</h1>
+        {canCreate && (
+          <button onClick={() => navigate('/projects', { state: { openCreate: true } })}
+            className="btn-primary inline-flex items-center gap-1.5">
+            <Plus size={16} /> Добавить проект
+          </button>
+        )}
+      </div>
       {isLoading ? (
         <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
       ) : (

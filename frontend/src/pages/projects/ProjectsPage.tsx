@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { projectsApi, employeesApi, smmTariffsApi, riskApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { userCan } from '@/lib/permissions'
@@ -67,6 +67,14 @@ export default function ProjectsPage() {
   const PAGE_SIZE = 12
   const [showCreate, setShowCreate] = useState(false)
   const [editProject, setEditProject] = useState<any>(null)
+  // Открыть форму создания сразу, если пришли с флагом (напр. кнопка «Добавить проект» из SMM).
+  const location = useLocation()
+  useEffect(() => {
+    if ((location.state as any)?.openCreate) {
+      setShowCreate(true)
+      window.history.replaceState({}, '') // чтобы форма не открывалась повторно при возврате назад
+    }
+  }, [location.state])
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const user = useAuthStore(s => s.user)
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
