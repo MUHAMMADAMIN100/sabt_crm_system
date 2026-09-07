@@ -1,10 +1,11 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, Film, Image as ImageIcon, CalendarRange, Plus } from 'lucide-react'
 import { contentPlanApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { assignProjectColors, projColor, type SmmProj } from './smmShared'
+import SmmProjectCreateModal from './SmmProjectCreateModal'
 
 // Кто может создавать проекты (как на основной странице «Проекты»).
 const CREATE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm']
@@ -18,6 +19,7 @@ export default function SmmProjectsPage() {
   const navigate = useNavigate()
   const user = useAuthStore(s => s.user)
   const canCreate = CREATE_ROLES.includes((user as any)?.role ?? '')
+  const [showCreate, setShowCreate] = useState(false)
   const now = new Date()
   const from = iso(new Date(now.getFullYear(), now.getMonth(), 1))
   const to = iso(new Date(now.getFullYear(), now.getMonth() + 1, 0))
@@ -50,7 +52,7 @@ export default function SmmProjectsPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-bold tracking-tight">Проекты</h1>
         {canCreate && (
-          <button onClick={() => navigate('/smm/projects/new')}
+          <button onClick={() => setShowCreate(true)}
             className="btn-primary inline-flex items-center gap-1.5">
             <Plus size={16} /> Добавить проект
           </button>
@@ -84,6 +86,7 @@ export default function SmmProjectsPage() {
           ))}
         </div>
       )}
+      {showCreate && <SmmProjectCreateModal onClose={() => setShowCreate(false)} />}
     </div>
   )
 }
