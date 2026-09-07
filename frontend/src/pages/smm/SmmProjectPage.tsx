@@ -283,6 +283,8 @@ export default function SmmProjectPage() {
 
   // ── Отчёт ──
   const [reportOpen, setReportOpen] = useState(false)
+  // ── Вкладки страницы: обзор / контент-план ──
+  const [tab, setTab] = useState<'overview' | 'plan'>('overview')
 
   if (isLoading) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
   if (!info || !p) return (
@@ -380,6 +382,16 @@ export default function SmmProjectPage() {
         )}
       </div>
 
+      <div className="flex items-center gap-1 border-b border-gray-100 dark:border-gray-800">
+        {([['overview', 'Обзор'], ['plan', 'Контент-план']] as const).map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={'px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition ' + (tab === k ? 'border-primary-600 text-gray-900 dark:text-gray-100' : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-200')}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'overview' && (
       <div className="grid gap-4 lg:grid-cols-2 items-start">
         {/* ЛЕВО — информация */}
         <div className="space-y-4">
@@ -510,9 +522,10 @@ export default function SmmProjectPage() {
           </div>
         </div>
       </div>
+      )}
 
-      {/* Контент-план проекта — таблица позиций + редактор со сценарием */}
-      {id && <SmmContentPlan projectId={id} color={color} canEdit={canEdit} canDelete={canRename} />}
+      {/* Контент-план проекта — отдельная вкладка (таблица позиций + редактор со сценарием) */}
+      {tab === 'plan' && id && <SmmContentPlan projectId={id} color={color} canEdit={canEdit} canDelete={canRename} />}
 
       {/* Отчёт — печатная страница для клиента */}
       {reportOpen && createPortal(
