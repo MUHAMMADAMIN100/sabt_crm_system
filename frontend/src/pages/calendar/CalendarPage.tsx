@@ -118,8 +118,14 @@ export default function CalendarPage() {
   // Роли, которые ведут в календаре СВОИ задачи: форма без типа «Общая»,
   // с выбором проекта и без пометки «от основателя».
   const ownTasksCreator = isSalesManager || isPmDev
-  // Создавать задачи кликом по дню могут менеджерские роли, МП по продажам и ПМ.
-  const canCreate = isManagerPlus || isFounderView
+  // Рядовой сотрудник ведёт в календаре СВОЁ расписание: создаёт задачи и
+  // встречи себе. Тип «Личная» зафиксирован, поэтому выбора исполнителя в
+  // форме нет — раздавать работу коллегам из календаря по-прежнему могут
+  // только руководители и менеджеры продаж.
+  const isSelfOnlyCreator = !isManagerPlus && !isFounderView
+  // Создавать может любой сотрудник: сервер это и так разрешает
+  // (tasks.create есть у всех ролей), а интерфейс кнопку прятал.
+  const canCreate = true
 
   // Диапазон загрузки событий зависит от режима: месяц или неделя.
   const periodStart = calView === 'week'
@@ -387,7 +393,7 @@ export default function CalendarPage() {
       const isOwnTask = e.taskId && (e.createdById === user?.id || e.assigneeId === user?.id)
       // Свою задачу редактируют по клику и менеджерские роли (рук. СММ /
       // рук. видео), не только основатель и МП — CRUD своих задач.
-      if ((isFounderView || isManagerPlus) && isOwnTask) setEditingTaskId(e.taskId)
+      if ((isFounderView || isManagerPlus || isSelfOnlyCreator) && isOwnTask) setEditingTaskId(e.taskId)
       else setDetailEventId(e.id)
     } else if (e.link) {
       window.location.href = e.link
@@ -773,24 +779,25 @@ export default function CalendarPage() {
         <Modal
           open={showTaskForm}
           onClose={() => setShowTaskForm(false)}
-          title={`${ownTasksCreator ? 'Новая задача' : isFounderView ? 'Задача от основателя' : t('calendar.addTask')}${selectedDay ? ' — ' + format(selectedDay, 'dd.MM.yyyy') : ''}`}
+          title={`${ownTasksCreator || isSelfOnlyCreator ? 'Новая задача' : isFounderView ? 'Задача от основателя' : t('calendar.addTask')}${selectedDay ? ' — ' + format(selectedDay, 'dd.MM.yyyy') : ''}`}
           size="lg"
         >
-          {isFounderView ? (
+          {isFounderView || isSelfOnlyCreator ? (
             <FounderQuickTaskForm
               employees={employees || []}
               loading={createTask.isPending}
               onClose={() => setShowTaskForm(false)}
               initialDeadline={createInitialDeadline}
-              allowGeneral={!ownTasksCreator}
+              allowGeneral={!ownTasksCreator && !isSelfOnlyCreator}
               projects={ownTasksCreator ? (projects || []) : undefined}
-              defaultScope={isPmDev ? 'personal' : undefined}
+              defaultScope={isPmDev || isSelfOnlyCreator ? 'personal' : undefined}
+              lockScope={isSelfOnlyCreator}
               onSubmit={data => createTask.mutate({
                 ...data,
                 // deadline (дата+время) приходит из формы.
                 // fromFounder — только для бизнес/общих задач основателя;
                 // у МП по продажам и ПМ задачи не помечаются «от основателя».
-                fromFounder: !ownTasksCreator && data.scope !== 'personal',
+                fromFounder: !ownTasksCreator && !isSelfOnlyCreator && data.scope !== 'personal',
               })}
             />
           ) : (
@@ -813,7 +820,7 @@ export default function CalendarPage() {
 
       {/* Edit-модалка при клике на СВОЮ задачу: основатель, МП и менеджерские
           роли (рук. СММ / рук. видео). */}
-      {(isFounderView || isManagerPlus) && editingTaskId && (
+      {(isFounderView || isManagerPlus || isSelfOnlyCreator) && editingTaskId && (
         <Modal
           open={!!editingTaskId}
           onClose={() => setEditingTaskId(null)}
@@ -885,11 +892,12 @@ export default function CalendarPage() {
               loading={editTaskMut.isPending || deleteTaskMut.isPending}
               onClose={() => setEditingTaskId(null)}
               initialDeadline={editingTaskFull.deadline || undefined}
-              allowGeneral={!ownTasksCreator}
+              allowGeneral={!ownTasksCreator && !isSelfOnlyCreator}
               projects={ownTasksCreator ? (projects || []) : undefined}
               // Смену scope backend разрешает только основателю, со-основателю
-              // и МП по продажам. ПМ тип менять не может — блокируем в форме.
-              lockScope={isPmDev}
+              // и МП по продажам. ПМ и рядовому сотруднику тип менять
+              // нельзя — блокируем в форме, чтобы не ловить отказ сервера.
+              lockScope={isPmDev || isSelfOnlyCreator}
               onDelete={() => {
                 const what = editingTaskFull.kind === 'meeting' ? 'встречу' : 'задачу'
                 if (confirm(`Удалить ${what}?`)) deleteTaskMut.mutate(editingTaskFull.id)
@@ -1849,10 +1857,11 @@ function FounderQuickTaskForm({
             ? (isEdit ? 'Сохраняю...' : 'Создаю...')
             : isEdit
               ? 'Сохранить изменения'
-              // У встречи своя подпись: «Сохранить заметку» на встрече
-              // читалось как ошибка.
+              // Подпись под смысл действия: «Сохранить заметку» на встрече
+              // читалось как ошибка, а на личной задаче — как будто это
+              // вовсе не задача. Сотрудник заводит себе именно задачу.
               : isMeeting ? 'Создать встречу'
-                : scope === 'personal' ? 'Сохранить заметку' : scope === 'general' ? 'Разослать всей команде' : 'Отправить задачу'}
+                : scope === 'personal' ? 'Создать задачу' : scope === 'general' ? 'Разослать всей команде' : 'Отправить задачу'}
         </button>
       </div>
     </form>

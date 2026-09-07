@@ -68,6 +68,14 @@ export class VoiceTaskService {
 
   /** Наговорить задачу СЕБЕ может любой сотрудник (по решению владельца) —
    *  список ниже нужен только для назначения задач ДРУГИМ. */
+  /** Модели распознавания по порядку предпочтения. Первая, которая
+   *  доступна ключу, и используется. */
+  private static readonly GEMINI_MODELS = [
+    'gemini-2.5-flash',
+    'gemini-flash-latest',
+    'gemini-2.0-flash',
+  ];
+
   private static readonly ASSIGN_ROLES: string[] = [
     UserRole.FOUNDER,
     UserRole.SALES_MANAGER_DEV,
@@ -139,8 +147,10 @@ export class VoiceTaskService {
       await this.proposeTask(chatId, user, intent);
       return true;
     } catch (e: any) {
-      this.logger.warn(`voice task failed: ${e?.message || e}`);
-      await this.telegram.sendMessage(chatId, '⚠️ Не удалось разобрать голосовое. Попробуйте ещё раз.');
+      // Пишем в лог целиком: по сообщению в чате видно суть, а разбор
+      // причины на сервере требует подробностей.
+      this.logger.error(`Голосовая задача не обработана: ${e?.message || e}`, e?.stack);
+      await this.telegram.sendMessage(chatId, this.explainFailure(e));
       return true;
     }
   }
@@ -417,9 +427,40 @@ export class VoiceTaskService {
     }
   }
 
+  /** Почему распознавание не сработало — словами, а не кодом ошибки.
+   *  Раньше любая причина выглядела одинаково: «не удалось разобрать
+   *  голосовое». По такому ответу нельзя понять, кончился ли ключ,
+   *  лимит или связь, и функция могла месяцами лежать незамеченной. */
+  private explainFailure(e: any): string {
+    const msg = String(e?.message || e || '');
+    if (/API key not valid|API_KEY_INVALID|api key expired/i.test(msg)) {
+      return '🔑 Ключ распознавания недействителен — его отозвали или он истёк.\n\nНужно прописать новый GEMINI_API_KEY в настройках сервера.';
+    }
+    if (/PERMISSION_DENIED|403/i.test(msg)) {
+      return '🔒 Ключу распознавания запрещён доступ к модели.\n\nПроверьте права ключа GEMINI_API_KEY.';
+    }
+    if (/RESOURCE_EXHAUSTED|quota|429|rate limit/i.test(msg)) {
+      return '📊 Исчерпан лимит распознавания.\n\nПопробуйте позже или поднимите квоту ключа.';
+    }
+    if (/404|not found|not supported/i.test(msg)) {
+      return '🤖 Модель распознавания недоступна этому ключу.\n\nСкорее всего, изменилось её имя на стороне сервиса.';
+    }
+    if (/503|overload|unavailable/i.test(msg)) {
+      return '⏳ Сервис распознавания перегружен. Попробуйте через минуту.';
+    }
+    if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|timeout|fetch failed|network/i.test(msg)) {
+      return '🌐 Нет связи с сервисом распознавания. Попробуйте ещё раз.';
+    }
+    // Незнакомая ошибка: показываем её начало — иначе диагностировать нечем.
+    return '⚠️ Не удалось разобрать голосовое.\n\nПричина: ' + esc(msg.slice(0, 160));
+  }
+
   /** Разбор смысла. Либо по готовому тексту, либо прямо по аудио. */
   private async parse(transcript: string | null, audio?: Buffer): Promise<VoiceIntent> {
-    const model = this.gemini!.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    // Имя модели меняется на стороне сервиса; когда оно было прописано
+    // одно и жёстко, переименование убивало голосовые целиком. Идём по
+    // списку и берём первую, которая отвечает.
+    const models = VoiceTaskService.GEMINI_MODELS;
     const today = todayInDushanbe();
 
     const prompt = `Ты разбираешь голосовое сообщение руководителя, который ставит себе задачу в календарь.
@@ -459,15 +500,25 @@ ${transcript === null
     // разобрать» на совершенно исправном голосовом.
     let res: any = null;
     let lastErr: any = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    outer:
+    for (const name of models) {
+      const model = this.gemini!.getGenerativeModel({ model: name });
+      for (let attempt = 0; attempt < 3; attempt++) {
       try {
         res = await model.generateContent(parts);
-        break;
+        break outer;
       } catch (e: any) {
         lastErr = e;
-        if (!/503|overload|unavailable/i.test(e?.message || '')) throw e;
+        const msg = e?.message || '';
+        // Модели нет у этого ключа — пробуем следующую из списка.
+        if (/404|not found|not supported/i.test(msg)) {
+          this.logger.warn(`Модель ${name} недоступна, пробуем следующую`);
+          break;
+        }
+        if (!/503|overload|unavailable/i.test(msg)) throw e;
         this.logger.warn(`Gemini перегружен, повтор ${attempt + 1}/3`);
         await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+      }
       }
     }
     if (!res) throw lastErr;
