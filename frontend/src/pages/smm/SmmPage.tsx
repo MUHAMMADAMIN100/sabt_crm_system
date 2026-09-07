@@ -453,12 +453,6 @@ export default function SmmPage() {
       <header className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-2.5 flex-wrap">
           <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-          <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-700 px-2.5 py-1.5">
-            <Search size={13} className="text-gray-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск"
-              className="bg-transparent text-[13px] outline-none w-24 placeholder:text-gray-400" />
-            {search && <button onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-600"><X size={12} /></button>}
-          </div>
           <div className="relative">
             <button onClick={() => setFilterOpen(o => !o)}
               className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300">
