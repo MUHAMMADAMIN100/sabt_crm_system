@@ -902,6 +902,11 @@ aside {
 .dark .rdp-custom .rdp-outside .rdp-day_button { @apply text-surface-600; }
 .dark .rdp-custom .rdp-nav button:hover { @apply bg-surface-700 text-surface-200; }
 
+/* Скрыть нативные стрелки-спиннеры у <input type=number> (класс .no-spin) */
+.no-spin::-webkit-inner-spin-button,
+.no-spin::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.no-spin { -moz-appearance: textfield; }
+
 /* ====================== MOBILE RESPONSIVE ====================== */
 @media (max-width: 600px) {
   .card { @apply rounded-xl; }

@@ -114,14 +114,19 @@ export default function SmmProjectCreateModal({ onClose }: { onClose: () => void
                   <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') next() }} placeholder="Напр. Yalla Coffee" className={inp + ' mt-1'} autoFocus /></label>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <label className="block"><span className="text-xs text-gray-500">День старта</span><input type="number" min={1} max={31} value={day} onChange={e => setDay(e.target.value)} className={inp + ' mt-1'} /></label>
-                <label className="block"><span className="text-xs text-gray-500 inline-flex items-center gap-1"><Film size={13} /> Рилс/цикл</span><input type="number" min={0} value={reels} onChange={e => setReels(e.target.value)} className={inp + ' mt-1'} /></label>
-                <label className="block"><span className="text-xs text-gray-500 inline-flex items-center gap-1"><ImageIcon size={13} /> Пост/цикл</span><input type="number" min={0} value={posts} onChange={e => setPosts(e.target.value)} className={inp + ' mt-1'} /></label>
+                <label className="block"><span className="text-xs text-gray-500">День старта</span><input type="number" min={1} max={31} value={day} onChange={e => setDay(e.target.value)} className={inp + ' mt-1 no-spin'} /></label>
+                <label className="block"><span className="text-xs text-gray-500 inline-flex items-center gap-1"><Film size={13} /> Рилс/цикл</span><input type="number" min={0} value={reels} onChange={e => setReels(e.target.value)} className={inp + ' mt-1 no-spin'} /></label>
+                <label className="block"><span className="text-xs text-gray-500 inline-flex items-center gap-1"><ImageIcon size={13} /> Пост/цикл</span><input type="number" min={0} value={posts} onChange={e => setPosts(e.target.value)} className={inp + ' mt-1 no-spin'} /></label>
               </div>
               <div>
                 <label className="block"><span className="text-xs text-gray-500">Сторис в месяц</span>
-                  <input type="number" min={0} value={spm} onChange={e => setSpm(e.target.value)} placeholder="напр. 90" className={inp + ' mt-1 max-w-[160px]'} /></label>
-                <p className="text-[11.5px] text-gray-400 mt-1.5">{perDay > 0 ? `Распределится равномерно: ≈ ${perDay}/день. По этой норме красятся дни на «Сторисы».` : 'Не задано — статус сторис не считается.'}</p>
+                  <div className="flex items-stretch gap-2 mt-1">
+                    <input type="number" min={0} value={spm} onChange={e => setSpm(e.target.value)} placeholder="напр. 90" className={inp + ' flex-1 no-spin'} />
+                    <span className="inline-flex items-center whitespace-nowrap rounded-lg border border-gray-200 dark:border-gray-700 bg-primary-50 dark:bg-primary-900/20 px-3.5 text-sm font-bold tabular-nums text-primary-700 dark:text-primary-300">
+                      ≈ {perDay > 0 ? perDay : '—'}/день
+                    </span>
+                  </div></label>
+                <p className="text-[11.5px] text-gray-400 mt-1.5">{perDay > 0 ? 'Распределится равномерно по дням месяца. По этой норме красятся дни на «Сторисы».' : 'Не задано — статус сторис не считается.'}</p>
               </div>
             </>
           ) : (
