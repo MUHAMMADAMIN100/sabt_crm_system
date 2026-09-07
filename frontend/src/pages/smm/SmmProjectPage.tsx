@@ -177,6 +177,9 @@ export default function SmmProjectPage() {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const canEdit = EDIT_ROLES.includes((user as any)?.role ?? '')
+  // Переименование проекта идёт через общий PATCH /projects/:id (право projects.edit),
+  // где smm_specialist не проходит — поэтому у имени более узкий набор ролей.
+  const canRename = ['admin', 'founder', 'co_founder', 'smm_director'].includes((user as any)?.role ?? '')
 
   const now = new Date()
   const from = iso(new Date(now.getFullYear(), now.getMonth(), 1))
@@ -196,6 +199,11 @@ export default function SmmProjectPage() {
     mutationFn: (patch: { day?: number | null; normReels?: number | null; normPosts?: number | null; storiesPerMonth?: number | null }) => projectsApi.setSmmCycle(id!, patch),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Сохранено') },
     onError: () => toast.error('Не удалось сохранить'),
+  })
+  const renameMut = useMutation({
+    mutationFn: (name: string) => projectsApi.update(id!, { name }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); setNameEditing(false); toast.success('Название обновлено') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось переименовать'),
   })
 
   const projects = data?.projects ?? []
@@ -231,6 +239,16 @@ export default function SmmProjectPage() {
   }
 
   // ── О клиенте (редактирование) ──
+  // ── Имя проекта (inline) ──
+  const [nameEditing, setNameEditing] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const saveName = () => {
+    const v = nameDraft.trim()
+    if (!v) { toast.error('Название не может быть пустым'); return }
+    if (v === p?.name) { setNameEditing(false); return }
+    renameMut.mutate(v)
+  }
+
   const [cliEditing, setCliEditing] = useState(false)
   const [draft, setDraft] = useState({ ownerName: '', keyDate: '', keyDateNote: '', collabSince: '', preferences: '' })
   useEffect(() => {
@@ -339,7 +357,26 @@ export default function SmmProjectPage() {
       </div>
       <div className="flex items-center gap-3">
         <span className="w-4 h-4 rounded-full shrink-0" style={{ background: color }} />
-        <h1 className="text-2xl font-bold tracking-tight">{p.name}</h1>
+        {nameEditing ? (
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              value={nameDraft}
+              onChange={e => setNameDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setNameEditing(false) }}
+              className="text-2xl font-bold tracking-tight bg-transparent border-b-2 border-gray-300 dark:border-gray-600 focus:border-[#3f7a58] outline-none px-0.5 min-w-[220px]"
+            />
+            <button onClick={saveName} disabled={renameMut.isPending || !nameDraft.trim()} className="p-1.5 rounded-lg bg-[#3f7a58] text-white hover:brightness-110 disabled:opacity-60" title="Сохранить">{renameMut.isPending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}</button>
+            <button onClick={() => setNameEditing(false)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" title="Отмена"><X size={16} /></button>
+          </div>
+        ) : (
+          <>
+            <h1 className="text-2xl font-bold tracking-tight">{p.name}</h1>
+            {canRename && (
+              <button onClick={() => { setNameDraft(p.name); setNameEditing(true) }} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" title="Переименовать проект"><Pencil size={15} /></button>
+            )}
+          </>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2 items-start">
