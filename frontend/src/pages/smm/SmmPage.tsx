@@ -93,8 +93,10 @@ function matchesFKind(e: Ev, k: FKind): boolean {
 
 // Контекст выделения: клик по событию подсвечивает его пару (съёмка↔рилс) и линию,
 // остальное гасится; двойной клик открывает карточку. reel = id рилс-события активной пары.
-type SelState = { ids: Set<string>; reel: string | null; onSelect: (e: Ev | null) => void }
-const SelCtx = createContext<SelState>({ ids: new Set(), reel: null, onSelect: () => {} })
+// ids/reel — «в фокусе» пара (наведение имеет приоритет над кликом); active — есть ли фокус вообще
+// (в покое линии бледные). onHover — навёл/увёл курсор с карточки.
+type SelState = { ids: Set<string>; reel: string | null; active: boolean; onSelect: (e: Ev | null) => void; onHover: (e: Ev | null) => void }
+const SelCtx = createContext<SelState>({ ids: new Set(), reel: null, active: false, onSelect: () => {}, onHover: () => {} })
 
 // ─── helpers ──────────────────────────────────────────────────────────
 export function monthTitle(ym: string): string {
@@ -210,11 +212,14 @@ export default function SmmPage() {
   const qc = useQueryClient()
   const [detail, setDetail] = useState<Ev | null>(null)
   const openDetail = (e: Ev) => setDetail(e) // двойной клик — карточка (съёмки тоже открываются как обычно)
-  // Выделение: клик по событию → подсветить его пару (съёмка↔рилс) + линию, остальное приглушить.
+  // Фокус пары (съёмка↔рилс): наведение имеет приоритет над кликом. В покое (нет фокуса) линии бледные.
   const [sel, setSel] = useState<string | null>(null)
+  const [hoverId, setHoverId] = useState<string | null>(null)
   const onSelect = (e: Ev | null) => setSel(e ? e.id : null)
+  const onHover = (e: Ev | null) => setHoverId(e ? e.id : null)
+  const focus = hoverId ?? sel
   const selInfo = useMemo<{ ids: Set<string>; reel: string | null }>(() => {
-    const e0 = sel ? allEvents.find(x => x.id === sel) : null
+    const e0 = focus ? allEvents.find(x => x.id === focus) : null
     if (!e0) return { ids: new Set(), reel: null }
     const ids = new Set<string>([e0.id])
     let reel: string | null = null
@@ -224,7 +229,7 @@ export default function SmmPage() {
       if (shoot) { ids.add(shoot.id); reel = e0.id }
     }
     return { ids, reel }
-  }, [sel, allEvents])
+  }, [focus, allEvents])
   const markMut = useMutation({
     mutationFn: ({ ev, done }: { ev: Ev; done: boolean }) =>
       contentPlanApi.smartUpdate(ev.itemId!, { status: done ? 'published' : 'planned' }),
@@ -501,7 +506,7 @@ export default function SmmPage() {
             onSettings={openProjSettings}
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
-          <SelCtx.Provider value={{ ids: selInfo.ids, reel: selInfo.reel, onSelect }}>
+          <SelCtx.Provider value={{ ids: selInfo.ids, reel: selInfo.reel, active: focus != null, onSelect, onHover }}>
           {view === 'month' ? (
             <MonthScrollView initialMonth={monthStr} commandMonth={monthStr} commandSeq={scrollSeq}
               byDate={mainByDate} today={today} cycles={cycles} dragRange={dragRange}
@@ -792,18 +797,27 @@ function nudgeAnchor(p: Anch, R: LinkRect, off: number) {
   if (p.side === 'h') p.y = Math.max(R.t + 8, Math.min(R.b - 8, p.y + off))
   else p.x = Math.max(R.l + 10, Math.min(R.r - 10, p.x + off))
 }
-function curvePath(a: Anch, b: Anch, col: string, op: number, w: number): string {
+// Стрелка на конце у рилса (направление съёмка → рилс). Ориентируется по нормали стороны рилса.
+function arrowSvg(b: Anch, col: string): string {
+  const tx = -b.nx, ty = -b.ny, px = -ty, py = tx, s = 7 // t — направление «внутрь» рилса
+  const f = (n: number) => n.toFixed(1)
+  return `<polygon points="${f(b.x)},${f(b.y)} ${f(b.x - tx * s + px * s * 0.6)},${f(b.y - ty * s + py * s * 0.6)} ${f(b.x - tx * s - px * s * 0.6)},${f(b.y - ty * s - py * s * 0.6)}" fill="${col}"/>`
+}
+function curvePath(a: Anch, b: Anch, col: string, op: number, w: number, arrow: boolean): string {
   const d = Math.hypot(b.x - a.x, b.y - a.y)
   const k = Math.max(26, Math.min(130, d * 0.42)) // вынос управляющих точек вдоль нормали
   const c1x = a.x + a.nx * k, c1y = a.y + a.ny * k, c2x = b.x + b.nx * k, c2y = b.y + b.ny * k
   const f = (n: number) => n.toFixed(1)
-  return `<path d="M ${f(a.x)} ${f(a.y)} C ${f(c1x)} ${f(c1y)}, ${f(c2x)} ${f(c2y)}, ${f(b.x)} ${f(b.y)}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" opacity="${op}"/>`
-    + `<circle cx="${f(a.x)}" cy="${f(a.y)}" r="${(w * 1.3).toFixed(1)}" fill="${col}" opacity="${op}"/><circle cx="${f(b.x)}" cy="${f(b.y)}" r="${(w * 1.5).toFixed(1)}" fill="${col}" opacity="${op}"/>`
+  let out = `<path d="M ${f(a.x)} ${f(a.y)} C ${f(c1x)} ${f(c1y)}, ${f(c2x)} ${f(c2y)}, ${f(b.x)} ${f(b.y)}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" opacity="${op}"/>`
+  out += `<circle cx="${f(a.x)}" cy="${f(a.y)}" r="${(w * 1.3).toFixed(1)}" fill="${col}" opacity="${op}"/>`
+  out += arrow ? arrowSvg(b, col) : `<circle cx="${f(b.x)}" cy="${f(b.y)}" r="${(w * 1.5).toFixed(1)}" fill="${col}" opacity="${op}"/>`
+  return out
 }
 function EventLinks({ scrollRef, z = 6 }: { scrollRef: { current: HTMLDivElement | null }; z?: number }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const sel = useContext(SelCtx)
   const activeRef = useRef<string | null>(sel.reel); activeRef.current = sel.reel // активная пара (id рилс-события) — без stale-замыкания в scroll-хендлере
+  const focusRef = useRef<boolean>(sel.active); focusRef.current = sel.active // есть ли фокус (иначе — покой: бледные линии)
   const draw = () => {
     const cont = scrollRef.current, svg = svgRef.current
     if (!cont || !svg) return
@@ -834,12 +848,14 @@ function EventLinks({ scrollRef, z = 6 }: { scrollRef: { current: HTMLDivElement
     })
     buckets.forEach(g => { const n = g.length; g.forEach((L, i) => { L.lane = i - (n - 1) / 2 }) })
     links.forEach(L => { const off = (L.lane || 0) * 13; nudgeAnchor(L.a, L.A, off); nudgeAnchor(L.b, L.B, off) })
-    const act = activeRef.current // выделена пара → её линия ярче, остальные приглушены
+    // В покое (нет фокуса) все линии бледные и тонкие. При фокусе (наведение/клик) — активная
+    // пара яркая со стрелкой к рилсу, остальные почти гаснут.
+    const act = activeRef.current, hasFocus = focusRef.current
     svg.innerHTML = links.map(L => {
       const isActive = !!act && L.reelKey === act
-      const op = !act ? 0.85 : (isActive ? 0.95 : 0.12)
-      const w = !act ? 2 : (isActive ? 2.4 : 1.5)
-      return curvePath(L.a, L.b, L.col, op, w)
+      const op = !hasFocus ? 0.24 : (isActive ? 0.95 : 0.06)
+      const w = !hasFocus ? 1.5 : (isActive ? 2.6 : 1.2)
+      return curvePath(L.a, L.b, L.col, op, w, isActive)
     }).join('')
   }
   useLayoutEffect(() => { draw() }) // после каждого рендера (данные/раскладка)
@@ -1175,7 +1191,7 @@ function TimeGridView({ days, events, dragRange, dragDuration, onOpen, onDragSta
                       const dur = s.durationMin || DEFAULT_DUR // высота карточки = длительность
                       return (
                         <div key={s.id} data-ev={s.id} data-proj={s.projectId} data-reel={s.reelId ? `item:${s.reelId}` : undefined}
-                          onClick={ev => { ev.stopPropagation(); sel.onSelect(s) }} onDoubleClick={ev => { ev.stopPropagation(); onOpen(s) }} draggable={!!(s.itemId || s.shootId)}
+                          onClick={ev => { ev.stopPropagation(); sel.onSelect(s) }} onDoubleClick={ev => { ev.stopPropagation(); onOpen(s) }} onMouseEnter={() => sel.onHover(s)} onMouseLeave={() => sel.onHover(null)} draggable={!!(s.itemId || s.shootId)}
                           onDragStart={(ev) => { grabOffsetRef.current = (ev.nativeEvent as DragEvent).offsetY || 0; onDragStart(s) }}
                           className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
                           style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, opacity: (sel.ids.size > 0 && !sel.ids.has(s.id)) ? 0.24 : 1, ...projFill(s.projectId), boxShadow: sel.ids.has(s.id) ? `inset 0 0 0 2px ${projColor(s.projectId)}, 0 2px 8px rgba(0,0,0,.5)` : `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.reelId ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
@@ -1465,7 +1481,7 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
                           const on = sel.ids.has(s.id), dim = sel.ids.size > 0 && !on
                           return (
                             <div key={s.id} data-ev={s.id} data-proj={s.projectId} data-reel={s.reelId ? `item:${s.reelId}` : undefined}
-                              onClick={ev => { ev.stopPropagation(); sel.onSelect(s) }} onDoubleClick={ev => { ev.stopPropagation(); onOpen(s) }} draggable={!!(s.itemId || s.shootId)}
+                              onClick={ev => { ev.stopPropagation(); sel.onSelect(s) }} onDoubleClick={ev => { ev.stopPropagation(); onOpen(s) }} onMouseEnter={() => sel.onHover(s)} onMouseLeave={() => sel.onHover(null)} draggable={!!(s.itemId || s.shootId)}
                               onDragStart={(ev) => { grabOffsetRef.current = (ev.nativeEvent as DragEvent).offsetY || 0; onDragStart(s) }}
                               className="absolute rounded-md px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing z-[2] transition hover:brightness-110"
                               style={{ top: (mm / 60) * HOUR_PX + 1, height: Math.max(20, (dur / 60) * HOUR_PX - 2), left: `calc(${leftPct}% + 1px)`, width: `calc(${widthPct}% - 2px)`, opacity: dim ? 0.24 : 1, ...projFill(s.projectId), boxShadow: on ? `inset 0 0 0 2px ${projColor(s.projectId)}, 0 2px 8px rgba(0,0,0,.5)` : `inset 0 0 0 1px color-mix(in srgb, ${projColor(s.projectId)} 60%, transparent), 0 1px 3px rgba(0,0,0,.35)`, ...(s.reelId ? { outline: `2px dashed ${projColor(s.projectId)}`, outlineOffset: '-2px' } : {}) }}>
@@ -1623,6 +1639,7 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   return (
     <span data-ev={e.id} data-proj={e.projectId} data-reel={e.reelId ? `item:${e.reelId}` : undefined}
           onClick={ev => { ev.stopPropagation(); sel.onSelect(e) }} onDoubleClick={ev => { ev.stopPropagation(); onOpen?.(e) }}
+          onMouseEnter={() => sel.onHover(e)} onMouseLeave={() => sel.onHover(null)}
           draggable={canDrag} onDragStart={() => onDragStart?.(e)}
           style={{ opacity: op, ...projFill(e.projectId), ...(e.reelId ? { outline: `1px dashed ${projColor(e.projectId)}`, outlineOffset: '-1px' } : {}), ...(on ? { boxShadow: `inset 0 0 0 1.5px ${projColor(e.projectId)}` } : {}) }}
           className={'flex items-center gap-1 rounded px-1.5 py-[2px] text-[11px] font-medium leading-tight truncate transition hover:brightness-110 ' + grab}
