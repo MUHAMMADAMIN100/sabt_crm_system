@@ -1879,8 +1879,14 @@ export class FinanceService implements OnModuleInit {
       const activeIds = new Set(active.map(p => p.id));
       const monthActive = planned.filter(x => x.projectId && activeIds.has(x.projectId) && x.ym === ym);
       const expected = r2(monthActive.filter(x => x.status === 'expected').reduce((s, x) => s + Number(x.amount), 0));
-      const receivedCash = r2(monthActive.filter(x => x.status === 'received' && x.receivedTxId).reduce((s, x) => s + Number(x.amount), 0));
-      const spentOffAccount = r2(monthActive.filter(x => x.status === 'received' && !x.receivedTxId).reduce((s, x) => s + Number(x.amount), 0));
+      // Полученные деньги — по ВСЕМ проектам направления (включая
+      // приостановленные/архивные): оплата физически пришла на счёт в этом
+      // месяце, пауза/архив проекта её не отменяют. Иначе доход за месяц
+      // «обнуляется» сразу после постановки проекта на паузу (баг).
+      const dirIds = new Set(projects.map(p => p.id));
+      const monthReceived = planned.filter(x => x.projectId && dirIds.has(x.projectId) && x.ym === ym && x.status === 'received');
+      const receivedCash = r2(monthReceived.filter(x => x.receivedTxId).reduce((s, x) => s + Number(x.amount), 0));
+      const spentOffAccount = r2(monthReceived.filter(x => !x.receivedTxId).reduce((s, x) => s + Number(x.amount), 0));
       // Итоги частей — по планам, отображаемым в ячейках строк (включая
       // перетёкшие циклы прошлого месяца), чтобы tfoot совпадал с таблицей.
       const part1 = r2(displayedPlans.filter(x => x.partNo === 1).reduce((s, x) => s + Number(x.amount), 0));
