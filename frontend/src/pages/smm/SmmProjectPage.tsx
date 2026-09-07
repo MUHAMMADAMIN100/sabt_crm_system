@@ -1,11 +1,12 @@
-import { useMemo, useState, useEffect, useRef, type ReactNode } from 'react'
+import { useMemo, useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, ChevronLeft, Film, Image as ImageIcon, Pencil, Check, Plus, TrendingUp, TrendingDown, Gift, FileText, X, Printer } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Pencil, Check, Plus, TrendingUp, TrendingDown, Gift, FileText, X, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, type SmmProj } from './smmShared'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
@@ -16,6 +17,7 @@ type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNot
 
 const EDIT_ROLES = ['founder', 'co_founder', 'admin', 'smm_director', 'smm_specialist']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
+const MON_SHORT = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
 const METRICS: { key: MKey; label: string; color: string }[] = [
   { key: 'subs', label: 'Подписчики', color: '#10b981' },
   { key: 'reach', label: 'Охват', color: '#3b82f6' },
@@ -79,6 +81,64 @@ function MetricChart({ data, color, w = 480, h = 190, axes = true, interactive =
         )
       })()}
     </svg>
+  )
+}
+
+// Кастомный месяц-пикер (Вариant A): стрелки года + сетка 12 месяцев. Тёмный, popover в body.
+function MonthPicker({ value, onChange, className }: { value: string; onChange: (v: string) => void; className?: string }) {
+  const [open, setOpen] = useState(false)
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const valid = /^\d{4}-\d{2}$/.test(value)
+  const selY = valid ? +value.slice(0, 4) : null
+  const selM = valid ? +value.slice(5, 7) - 1 : null
+  const [viewY, setViewY] = useState(selY ?? new Date().getFullYear())
+  useEffect(() => { if (open) setViewY(selY ?? new Date().getFullYear()) }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    if (!open || !anchorRef.current) return
+    const r = anchorRef.current.getBoundingClientRect(), W = 264, H = popRef.current?.offsetHeight || 236
+    let left = r.left; if (left + W + 8 > window.innerWidth) left = Math.max(8, r.right - W)
+    let top = r.bottom + 4; if (top + H + 8 > window.innerHeight) top = Math.max(8, r.top - H - 4)
+    setPos({ top, left })
+  }, [open])
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => { const t = e.target as Node; if (popRef.current?.contains(t) || anchorRef.current?.contains(t)) return; setOpen(false) }
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onScroll = () => setOpen(false)
+    document.addEventListener('mousedown', onDown); document.addEventListener('keydown', onEsc); window.addEventListener('scroll', onScroll, true)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onEsc); window.removeEventListener('scroll', onScroll, true) }
+  }, [open])
+  const nowY = new Date().getFullYear(), nowM = new Date().getMonth()
+  return (
+    <div ref={anchorRef} className={'relative ' + (className ?? '')}>
+      <button type="button" onClick={() => setOpen(o => !o)} className={inp + ' w-full flex items-center gap-2 text-left'}>
+        <Calendar size={14} className="text-gray-400 shrink-0" />
+        <span className={'flex-1 truncate ' + (valid ? '' : 'text-gray-400')}>{valid ? `${MONTHS[selM!]} ${selY}` : 'Выберите месяц'}</span>
+      </button>
+      {open && createPortal(
+        <div ref={popRef} className="fixed z-[200] bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl shadow-xl p-3" style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: 264 }}>
+          <div className="flex items-center justify-between mb-2.5 px-1">
+            <button type="button" onClick={() => setViewY(y => y - 1)} className="w-8 h-8 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"><ChevronLeft size={17} /></button>
+            <span className="text-sm font-bold text-surface-900 dark:text-surface-100">{viewY}</span>
+            <button type="button" onClick={() => setViewY(y => y + 1)} className="w-8 h-8 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"><ChevronRight size={17} /></button>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {MON_SHORT.map((mo, i) => {
+              const sel = selY === viewY && selM === i, isNow = viewY === nowY && i === nowM
+              return (
+                <button key={i} type="button" onClick={() => { onChange(`${viewY}-${String(i + 1).padStart(2, '0')}`); setOpen(false) }}
+                  className={'py-2.5 rounded-lg text-[13px] font-medium transition ' + (sel ? 'bg-primary-600 text-white font-bold' : 'bg-surface-100 dark:bg-surface-700/60 text-surface-700 dark:text-surface-200 hover:bg-surface-200 dark:hover:bg-surface-700') + (isNow && !sel ? ' ring-1 ring-inset ring-primary-500' : '')}>
+                  {mo}
+                </button>
+              )
+            })}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
   )
 }
 
@@ -326,12 +386,12 @@ export default function SmmProjectPage() {
               </div>
               <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Значимый день</span>
                 {cliEditing
-                  ? <span className="flex items-center gap-2 flex-1 min-w-0 justify-end"><input type="date" value={draft.keyDate} onChange={e => setDraft(d => ({ ...d, keyDate: e.target.value }))} className={editIn + ' w-[140px] shrink-0'} /><input value={draft.keyDateNote} onChange={e => setDraft(d => ({ ...d, keyDateNote: e.target.value }))} placeholder="Комментарий" className={editIn + ' flex-1 min-w-0'} /></span>
+                  ? <span className="flex items-center gap-2 flex-1 min-w-0 justify-end"><DatePicker value={draft.keyDate} onChange={v => setDraft(d => ({ ...d, keyDate: v }))} placeholder="дата" className="w-[150px] shrink-0" /><input value={draft.keyDateNote} onChange={e => setDraft(d => ({ ...d, keyDateNote: e.target.value }))} placeholder="Комментарий" className={editIn + ' flex-1 min-w-0'} /></span>
                   : <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-right">{profile?.keyDate ? <><Gift size={14} style={{ color }} />{fmtDate(profile.keyDate)}{profile.keyDateNote ? ` · ${profile.keyDateNote}` : ''}</> : '—'}</span>}
               </div>
               <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Сотрудничаем с</span>
                 {cliEditing
-                  ? <input type="date" value={draft.collabSince} onChange={e => setDraft(d => ({ ...d, collabSince: e.target.value }))} className={editIn + ' w-[150px]'} />
+                  ? <DatePicker value={draft.collabSince} onChange={v => setDraft(d => ({ ...d, collabSince: v }))} placeholder="дата" className="w-[170px]" />
                   : <span className="text-sm font-semibold text-right">{fmtDate(profile?.collabSince)}</span>}
               </div>
               <div className="h-[112px] pt-2.5 flex flex-col gap-1.5">
@@ -385,7 +445,7 @@ export default function SmmProjectPage() {
 
             {canEdit && (
               <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-                <input type="month" value={addYm} onChange={e => setAddYm(e.target.value)} className={inp + ' w-full mb-2'} />
+                <MonthPicker value={addYm} onChange={setAddYm} className="mb-2" />
                 <div className="grid grid-cols-2 gap-2">
                   {METRICS.map(m => (
                     <input key={m.key} type="number" inputMode="numeric" placeholder={m.label} value={addV[m.key]} onChange={e => setAddV(v => ({ ...v, [m.key]: e.target.value }))} className={inp + ' w-full'} />
