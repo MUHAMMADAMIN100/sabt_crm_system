@@ -232,9 +232,9 @@ export function DatePicker({
           endMonth={new Date(2035, 11)}
           modifiers={{ reelMark: reelDays, macroMark: macroDays, shootMark: shootDays }}
           modifiersStyles={{
-            reelMark: { backgroundColor: '#dbeafe', color: '#1d4ed8', fontWeight: 700, borderRadius: 6 },
-            macroMark: { backgroundColor: '#ffedd5', color: '#c2410c', fontWeight: 700, borderRadius: 6 },
-            shootMark: { backgroundColor: '#ede9fe', color: '#6d28d9', fontWeight: 700, borderRadius: 6 },
+            reelMark: { backgroundColor: '#dbeafe', color: '#1d4ed8', fontWeight: 700, borderRadius: 9 },
+            macroMark: { backgroundColor: '#ffedd5', color: '#c2410c', fontWeight: 700, borderRadius: 9 },
+            shootMark: { backgroundColor: '#ede9fe', color: '#6d28d9', fontWeight: 700, borderRadius: 9 },
           }}
           components={{ DayButton: DayBtn }}
         />
