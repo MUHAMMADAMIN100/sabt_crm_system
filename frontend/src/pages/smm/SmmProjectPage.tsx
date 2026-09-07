@@ -382,21 +382,6 @@ export default function SmmProjectPage() {
         )}
       </div>
 
-      {/* KPI-шапка — снимок метрик, всегда виден. Клик по плитке → вкладка «Аналитика». */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        {METRICS.map(m => {
-          const l = latest(m.key); const dd = l.cur != null && l.prev != null ? l.cur - l.prev : null
-          return (
-            <button key={m.key} onClick={() => { setSelM(m.key); setTab('analytics') }}
-              className={'text-left rounded-xl px-3 py-2.5 border transition ' + (tab === 'analytics' && selM === m.key ? 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60' : 'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700')}>
-              <span className="flex items-center gap-1.5 text-[11px] text-gray-500"><span className="w-1.5 h-1.5 rounded-full" style={{ background: m.color }} />{m.label}</span>
-              <span className="block text-[18px] font-extrabold tabular-nums mt-0.5">{l.cur != null ? fmtNum(l.cur) : '—'}</span>
-              {dd != null ? <span className={'block text-[11px] font-bold ' + (dd >= 0 ? 'text-emerald-600' : 'text-red-500')}>{(dd >= 0 ? '+' : '−') + fmtNum(Math.abs(dd))}</span> : <span className="block text-[11px] text-gray-400">—</span>}
-            </button>
-          )
-        })}
-      </div>
-
       <div className="flex items-center gap-1 border-b border-gray-100 dark:border-gray-800 overflow-x-auto">
         {([['overview', 'Обзор'], ['analytics', 'Аналитика'], ['client', 'Клиент'], ['plan', 'Контент-план']] as const).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
@@ -455,7 +440,7 @@ export default function SmmProjectPage() {
 
       {/* АНАЛИТИКА — метрики по месяцам + запись */}
       {tab === 'analytics' && (
-      <div className={card}>
+      <div className={card + ' max-w-3xl'}>
         <h2 className={secLabel + ' mb-3'}>Метрики · история по месяцам</h2>
         <div className="flex flex-wrap gap-1.5 mb-3">
           {METRICS.map(m => (
@@ -476,7 +461,21 @@ export default function SmmProjectPage() {
           )}
           <span className="ml-auto self-end text-xs text-gray-400">{selLatest.ym ? `${selMeta.label} · на ${mLabel(selLatest.ym)}` : 'нет данных'}</span>
         </div>
-        <div className="mt-3"><MetricChart data={series(selM)} color={selMeta.color} h={240} /></div>
+        <div className="mt-3"><MetricChart data={series(selM)} color={selMeta.color} h={170} /></div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+          {METRICS.map(m => {
+            const l = latest(m.key); const dd = l.cur != null && l.prev != null ? l.cur - l.prev : null
+            return (
+              <button key={m.key} onClick={() => setSelM(m.key)}
+                className={'text-left rounded-xl px-2.5 py-2 border transition ' + (selM === m.key ? 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60' : 'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700')}>
+                <span className="flex items-center gap-1.5 text-[10.5px] text-gray-500"><span className="w-1.5 h-1.5 rounded-full" style={{ background: m.color }} />{m.label}</span>
+                <span className="block text-[15px] font-extrabold tabular-nums mt-0.5">{l.cur != null ? fmtNum(l.cur) : '—'}</span>
+                {dd != null && <span className={'block text-[10.5px] font-bold ' + (dd >= 0 ? 'text-emerald-600' : 'text-red-500')}>{(dd >= 0 ? '+' : '−') + fmtNum(Math.abs(dd))}</span>}
+              </button>
+            )
+          })}
+        </div>
 
         {canEdit && (
           <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
