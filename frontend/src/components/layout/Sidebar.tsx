@@ -238,12 +238,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                     )}
                     title={!open ? item.label : undefined}
                   >
-                    <span className={clsx(
-                      'grid h-7 w-7 shrink-0 place-items-center rounded-[9px] border transition-colors',
-                      financeActive ? 'border-white/15 bg-white/[.12]' : 'border-white/[.07] bg-white/[.04]',
-                    )}>
-                      <item.icon size={15} strokeWidth={1.8} />
-                    </span>
+                    <item.icon size={18} className="shrink-0" />
                     <span className={clsx(
                       'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
                       open ? 'max-w-[200px] opacity-100' : 'max-w-0 opacity-0',
@@ -306,12 +301,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                     )}
                     title={!open ? item.label : undefined}
                   >
-                    <span className={clsx(
-                      'grid h-7 w-7 shrink-0 place-items-center rounded-[9px] border transition-colors',
-                      smmActive ? 'border-white/15 bg-white/[.12]' : 'border-white/[.07] bg-white/[.04]',
-                    )}>
-                      <item.icon size={15} strokeWidth={1.8} />
-                    </span>
+                    <item.icon size={18} className="shrink-0" />
                     <span className={clsx(
                       'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
                       open ? 'max-w-[200px] opacity-100' : 'max-w-0 opacity-0',
