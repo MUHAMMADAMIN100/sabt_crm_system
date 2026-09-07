@@ -363,14 +363,26 @@ export default function SmmPage() {
   // Основной вид: проект + поиск + без сторис. Авто-съёмки (kind='shoot' со связью reelId — приходят
   // с бэкенда отдельными позициями) видят видеографы всегда, остальные — только при выбранном проекте.
   // Съёмка — реальная позиция контент-плана, двигается независимо от рилса.
+  // Скрытая съёмка, которую надо раскрыть, потому что в фокусе (навели/кликнули на её рилс).
+  // null почти всегда → mainEvents не пересчитывается на каждый hover, только при реальном раскрытии.
+  const revealShootId = useMemo(() => {
+    for (const id of selInfo.ids) {
+      const e = allEvents.find(x => x.id === id)
+      if (e && e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId) && !selTypes.has('shoot')) return id
+    }
+    return null
+  }, [selInfo, allEvents, isVideographer, selProjects, selTypes])
   const mainEvents = useMemo(() => allEvents.filter(e => {
+    // Съёмку из активной пары (наведение/клик по рилсу) показываем ВСЕГДА — даже если она скрыта:
+    // так при наведении на рилс видно, когда его съёмка (без выбора проекта).
+    if (e.kind === 'shoot' && e.id === revealShootId) return true
     // Съёмки по умолчанию видят видеографы или при выбранном проекте; либо явно выбран фильтр «Съёмка».
     if (e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId) && !selTypes.has('shoot')) return false
     return (selProjects.size === 0 || selProjects.has(e.projectId))
       && (selTypes.size === 0 || FKINDS.some(k => selTypes.has(k) && matchesFKind(e, k)))
       && matchSearch(e, search)
       && !(e.kind === 'publication' && e.contentType === 'story')
-  }), [allEvents, selProjects, selTypes, search, isVideographer])
+  }), [allEvents, selProjects, selTypes, search, isVideographer, revealShootId])
 
   const mainByDate = useMemo(() => {
     const map = new Map<string, Ev[]>()
