@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, workflowApi, projectsApi } from '@/services/api.service'
@@ -1641,7 +1641,7 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const Ic = e.kind === 'shoot' ? Camera : (TYPE_ICON[type] || AlignLeft)
   const done = e.kind === 'publication' && isDone(e)
   const label = e.kind === 'shoot' ? (e.projectName || e.title || 'Съёмка') : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`
-  const op = dim ? 0.24 : on ? 1 : (done ? 0.45 : (e.reelId ? 0.85 : 1)) // выделенное — всегда полное; гашение перекрывает всё
+  const op = dim ? 0.24 : on ? 1 : (e.reelId ? 0.85 : 1) // сделанные не гасим — помечаем галочкой ✓ (как в Notion)
   return (
     <span data-ev={e.id} data-proj={e.projectId} data-reel={e.reelId ? `item:${e.reelId}` : undefined}
           onClick={ev => { ev.stopPropagation(); sel.onSelect(e) }} onDoubleClick={ev => { ev.stopPropagation(); onOpen?.(e) }}
@@ -1652,9 +1652,9 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
           title={e.kind === 'shoot'
             ? `Съёмка · ${e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`
             : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
-      <Ic size={11} className="shrink-0" />
+      {done ? <CheckCircle2 size={12} className="shrink-0 text-emerald-500" /> : <Ic size={11} className="shrink-0" />}
       {e.kind === 'shoot' && e.time && <span className="font-semibold shrink-0">{e.time}</span>}
-      <span className="truncate">{label}</span>
+      <span className={'truncate' + (done ? ' line-through opacity-70' : '')}>{label}</span>
     </span>
   )
 }
