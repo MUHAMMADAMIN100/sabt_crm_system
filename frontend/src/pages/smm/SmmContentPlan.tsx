@@ -179,38 +179,51 @@ function Editor({ d, setD, editId, saving, deleting, canDelete, onSave, onClose,
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 py-8 bg-black/50 overflow-auto"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
       onKeyDown={e => { if (e.key === 'Escape') onClose() }}>
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl">
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-6xl">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 dark:border-gray-800">
           <span className="w-9 h-9 rounded-xl grid place-items-center bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-300"><TIcon size={18} /></span>
           <h3 className="text-base font-bold flex-1">{editId ? 'Позиция контент-плана' : 'Новая позиция'}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
         </div>
 
-        <div className="p-5 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div><label className={lbl}>Тип</label>
-              <select value={d.contentType} onChange={e => set('contentType')(e.target.value)} className={fld}>
-                {TYPES.map(t => <option key={t.v} value={t.v}>{t.label}</option>)}
-              </select>
+        <div className="px-6 py-5 space-y-4">
+          {/* Название — крупный заголовок без рамки (документ-стиль) */}
+          <input value={d.topic} onChange={e => set('topic')(e.target.value)} placeholder="Название позиции…" autoFocus
+            className="w-full bg-transparent border-0 outline-none px-0 text-2xl font-extrabold text-gray-900 dark:text-gray-100 placeholder:text-gray-300 dark:placeholder:text-gray-600" />
+
+          {/* Мета: тип-чипы (Рилс / Макет) + дата-пилюля справа */}
+          <div className="flex items-center gap-2 flex-wrap pb-3 border-b border-gray-100 dark:border-gray-800">
+            <div className="flex gap-1.5">
+              {[TYPES[0], TYPES[1]].map(t => {
+                const on = d.contentType === t.v; const CIcon = t.Icon
+                return (
+                  <button key={t.v} type="button" onClick={() => set('contentType')(t.v)}
+                    className={'inline-flex items-center gap-1.5 text-[13px] font-semibold rounded-lg border px-3 py-1.5 transition ' + (on ? 'bg-primary-50 dark:bg-primary-900/20 border-primary-300 dark:border-primary-700 text-primary-700 dark:text-primary-300' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}>
+                    <CIcon size={14} /> {t.label}
+                  </button>
+                )
+              })}
             </div>
-            <div><label className={lbl}>Дата публикации</label><DatePicker value={d.publishDate} onChange={set('publishDate')} placeholder="дата" /></div>
+            <div className="ml-auto"><DatePicker value={d.publishDate} onChange={set('publishDate')} placeholder="Выбрать дату" pill quickPicks /></div>
           </div>
 
-          <div><label className={lbl}>Название <span className="text-red-500">*</span></label>
-            <input value={d.topic} onChange={e => set('topic')(e.target.value)} placeholder="Напр. Рилс: 3 ошибки в маникюре" className={fld} autoFocus /></div>
-
+          {/* Сценарий — крупное «тело документа» */}
           <div className="relative">
-            <span className="absolute right-0 -top-0.5 text-[10px] font-bold text-primary-600 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/20 rounded-md px-1.5 py-0.5">сценарий</span>
+            <span className="absolute right-0 top-0 text-[10px] font-bold text-primary-600 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/20 rounded-md px-1.5 py-0.5">сценарий</span>
             <label className={lbl}>Сценарий</label>
-            <textarea value={d.scriptText} onChange={e => set('scriptText')(e.target.value)} rows={5}
-              placeholder={'Хук (0–2 с) → сцены → CTA.\nМожно раскадровку по строкам.'} className={fld + ' resize-y leading-relaxed'} />
+            <textarea value={d.scriptText} onChange={e => set('scriptText')(e.target.value)}
+              placeholder={'Опишите ролик: хук → сцены → призыв. Можно построчно раскадровку…'}
+              className="w-full bg-transparent border-0 outline-none resize-y px-0 min-h-[160px] text-[14.5px] leading-relaxed text-gray-800 dark:text-gray-200 placeholder:text-gray-300 dark:placeholder:text-gray-600" />
           </div>
 
-          <div><label className={lbl}>Подпись к публикации</label>
-            <textarea value={d.caption} onChange={e => set('caption')(e.target.value)} rows={2} placeholder="Текст под постом, хэштеги…" className={fld + ' resize-y leading-relaxed'} /></div>
+          {/* Подпись к публикации */}
+          <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+            <label className={lbl}>Подпись к публикации</label>
+            <textarea value={d.caption} onChange={e => set('caption')(e.target.value)} rows={2} placeholder="Текст под постом, хэштеги…" className={fld + ' resize-y leading-relaxed'} />
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 px-5 py-4 border-t border-gray-100 dark:border-gray-800">
+        <div className="flex items-center gap-2 px-6 py-4 border-t border-gray-100 dark:border-gray-800">
           {editId && canDelete && (
             <button onClick={onDelete} disabled={deleting} className="inline-flex items-center gap-1.5 text-[13px] font-semibold px-3 py-2 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-60">
               {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} Удалить

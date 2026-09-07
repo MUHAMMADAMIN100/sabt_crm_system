@@ -4,7 +4,7 @@ import { DayPicker } from 'react-day-picker'
 import type { DateRange } from 'react-day-picker'
 import { ru } from 'date-fns/locale'
 import { format } from 'date-fns'
-import { Calendar as CalendarIcon, X } from 'lucide-react'
+import { Calendar as CalendarIcon, X, ChevronDown } from 'lucide-react'
 import clsx from 'clsx'
 import 'react-day-picker/dist/style.css'
 
@@ -106,6 +106,7 @@ function Popover({
 export function DatePicker({
   value, onChange, placeholder = 'Выберите дату', className, disabled,
   clearable = true, allowFuture = true, startYear = 1940, marks, minDate, maxDate,
+  pill = false, quickPicks = false,
 }: {
   /** ISO YYYY-MM-DD или пустая строка. */
   value: string
@@ -115,6 +116,10 @@ export function DatePicker({
   disabled?: boolean
   clearable?: boolean
   allowFuture?: boolean
+  /** Компактный триггер-«пилюля» вместо полноширинного input (для мета-строк). */
+  pill?: boolean
+  /** Быстрый выбор в попапе: Сегодня / Завтра / +7 дней. */
+  quickPicks?: boolean
   /** Первый год в дропдауне. Дефолт 1940 — чтобы даты рождения и любые
    *  исторические даты были доступны; нативный select сам скроллится
    *  к выбранному году, длинный список не мешает. */
@@ -194,29 +199,50 @@ export function DatePicker({
   }
 
   return (
-    <div ref={anchorRef} className={clsx('relative', className)}>
-      <button
-        type="button"
-        onClick={() => !disabled && setOpen(o => !o)}
-        disabled={disabled}
-        className={clsx(
-          'input w-full text-left flex items-center gap-2',
-          !value && 'text-surface-400',
-          disabled && 'opacity-60 cursor-not-allowed',
-        )}
-      >
-        <CalendarIcon size={14} className="text-surface-400 shrink-0" />
-        <span className="flex-1 truncate">
-          {date ? format(date, 'd MMM yyyy', { locale: ru }) : placeholder}
-        </span>
-        {clearable && value && !disabled && (
-          <span
-            role="button"
-            onClick={(e) => { e.stopPropagation(); onChange('') }}
-            className="text-surface-400 hover:text-red-500"
-          ><X size={14} /></span>
-        )}
-      </button>
+    <div ref={anchorRef} className={clsx('relative', pill && 'inline-block', className)}>
+      {pill ? (
+        <button
+          type="button"
+          onClick={() => !disabled && setOpen(o => !o)}
+          disabled={disabled}
+          className={clsx(
+            'inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px] font-semibold transition',
+            value
+              ? 'bg-primary-50 dark:bg-primary-900/20 border-primary-300 dark:border-primary-700 text-primary-700 dark:text-primary-300'
+              : 'bg-surface-100 dark:bg-surface-800 border-surface-200 dark:border-surface-700 text-surface-500 hover:text-surface-700 dark:hover:text-surface-200',
+            disabled && 'opacity-60 cursor-not-allowed',
+          )}
+        >
+          <CalendarIcon size={14} className="shrink-0" />
+          <span>{date ? format(date, 'd MMM yyyy', { locale: ru }) : placeholder}</span>
+          {clearable && value && !disabled
+            ? <span role="button" onClick={(e) => { e.stopPropagation(); onChange('') }} className="-mr-0.5 hover:text-red-500"><X size={13} /></span>
+            : <ChevronDown size={13} className="opacity-60" />}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => !disabled && setOpen(o => !o)}
+          disabled={disabled}
+          className={clsx(
+            'input w-full text-left flex items-center gap-2',
+            !value && 'text-surface-400',
+            disabled && 'opacity-60 cursor-not-allowed',
+          )}
+        >
+          <CalendarIcon size={14} className="text-surface-400 shrink-0" />
+          <span className="flex-1 truncate">
+            {date ? format(date, 'd MMM yyyy', { locale: ru }) : placeholder}
+          </span>
+          {clearable && value && !disabled && (
+            <span
+              role="button"
+              onClick={(e) => { e.stopPropagation(); onChange('') }}
+              className="text-surface-400 hover:text-red-500"
+            ><X size={14} /></span>
+          )}
+        </button>
+      )}
       <Popover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef}>
         <DayPicker
           mode="single"
@@ -258,8 +284,20 @@ export function DatePicker({
             <span className="text-surface-400">— занятые дни (наведите: что стоит)</span>
           </div>
         )}
-        <div className="flex gap-2 px-3 py-2 border-t border-surface-100 dark:border-surface-700 text-xs">
-          {todayInRange && (
+        {quickPicks && (
+          <div className="flex gap-1.5 px-3 pt-2">
+            {([['Сегодня', 0], ['Завтра', 1], ['+7 дней', 7]] as const).map(([lbl, off]) => (
+              <button
+                key={lbl}
+                type="button"
+                onClick={() => { const d = new Date(); d.setDate(d.getDate() + off); onChange(format(d, 'yyyy-MM-dd')); setOpen(false) }}
+                className="flex-1 text-center text-[11.5px] font-semibold rounded-lg border border-surface-200 dark:border-surface-700 py-1.5 text-surface-600 dark:text-surface-300 hover:border-primary-400 hover:text-primary-600 dark:hover:text-primary-300 transition"
+              >{lbl}</button>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2 px-3 py-2 border-t border-surface-100 dark:border-surface-700 text-xs mt-1">
+          {todayInRange && !quickPicks && (
             <button
               type="button"
               onClick={() => { onChange(format(new Date(), 'yyyy-MM-dd')); setOpen(false) }}
