@@ -25,20 +25,35 @@ class ChunkErrorBoundary extends React.Component<
       || /Failed to fetch dynamically imported module/i.test(msg)
       || /Importing a module script failed/i.test(msg)
     if (isChunkError && typeof window !== 'undefined') {
-      // Reload один раз: при бесконечной петле sessionStorage-флаг остановит.
-      if (!sessionStorage.getItem('__chunkReloaded')) {
-        sessionStorage.setItem('__chunkReloaded', '1')
+      // Перезагружаем максимум раз в 8 сек. Если СРАЗУ после reload снова та же
+      // ошибка — reload не помог (устаревший/удалённый чанк), и мы НЕ зацикливаемся:
+      // показываем экран с кнопкой обновления. Раньше флаг снимался в componentDidMount
+      // на каждом маунте → защита не работала и получался бесконечный релоад.
+      let last = 0
+      try { last = Number(sessionStorage.getItem('__chunkReloadTs') || '0') } catch { /* ignore */ }
+      if (Date.now() - last > 8000) {
+        try { sessionStorage.setItem('__chunkReloadTs', String(Date.now())) } catch { /* ignore */ }
         window.location.reload()
       }
     }
   }
-  componentDidMount() {
-    // Если страница ожила после reload — снимаем флаг, чтобы не блокировать
-    // следующий легитимный reload.
-    sessionStorage.removeItem('__chunkReloaded')
-  }
   render() {
-    if (this.state.error) return <PageLoader />
+    if (this.state.error) {
+      const msg = String(this.state.error?.message || this.state.error?.name || '')
+      const isChunk = this.state.error?.name === 'ChunkLoadError'
+        || /Loading chunk|dynamically imported module|module script failed/i.test(msg)
+      // Пока идёт авто-reload — лоадер; если reload не помог (throttle) — кнопка «Обновить».
+      if (!isChunk) return <PageLoader />
+      return (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24, textAlign: 'center' }}>
+          <p style={{ color: '#8b93a1', fontSize: 14, maxWidth: 360 }}>Не удалось загрузить обновлённую версию страницы. Обновите её.</p>
+          <button
+            onClick={() => { try { sessionStorage.removeItem('__chunkReloadTs') } catch { /* ignore */ }; window.location.reload() }}
+            style={{ padding: '9px 18px', borderRadius: 10, background: '#4f46e5', color: '#fff', fontWeight: 700, fontSize: 14, border: 0, cursor: 'pointer' }}
+          >Обновить страницу</button>
+        </div>
+      )
+    }
     return this.props.children
   }
 }
