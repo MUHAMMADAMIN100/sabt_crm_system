@@ -204,7 +204,7 @@ function Editor({ d, setD, editId, saving, deleting, canDelete, onSave, onClose,
                 )
               })}
             </div>
-            <div className="ml-auto"><DatePicker value={d.publishDate} onChange={set('publishDate')} placeholder="Выбрать дату" pill quickPicks /></div>
+            <div className="ml-auto"><DatePicker value={d.publishDate} onChange={set('publishDate')} placeholder="Выбрать дату" pill quickPicks minimal /></div>
           </div>
 
           {/* Сценарий — крупное «тело документа» */}

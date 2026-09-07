@@ -884,6 +884,31 @@ aside {
 }
 .rdp-custom .rdp-nav button:hover { @apply bg-surface-100 text-surface-700; }
 
+/* ── Вариант A «Минимал» (класс .rdp-min): заголовок «Месяц Год» по центру,
+   стрелки по краям (без дропдаунов), круглые дни. Год листается стрелками. ── */
+.rdp-custom.rdp-min { position: relative; }
+.rdp-custom.rdp-min .rdp-nav {
+  position: absolute;
+  top: 12px; left: 12px; right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  width: auto;
+}
+.rdp-custom.rdp-min .rdp-month_caption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0;
+  text-transform: capitalize;
+}
+.rdp-custom.rdp-min .rdp-caption_label { font-size: 15px; font-weight: 700; }
+.rdp-custom.rdp-min .rdp-day_button { border-radius: 9999px; }
+/* Подстраховка: ни одна строка недели не должна иметь фон (артефакт «серой полосы»). */
+.rdp-custom .rdp-week, .rdp-custom .rdp-weeks tr { background: transparent !important; }
+
 /* ── Dark mode ── */
 .dark .rdp-custom {
   --rdp-accent-background-color: theme('colors.primary.900' / 30%);

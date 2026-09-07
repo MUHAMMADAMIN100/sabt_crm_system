@@ -106,7 +106,7 @@ function Popover({
 export function DatePicker({
   value, onChange, placeholder = 'Выберите дату', className, disabled,
   clearable = true, allowFuture = true, startYear = 1940, marks, minDate, maxDate,
-  pill = false, quickPicks = false,
+  pill = false, quickPicks = false, minimal = false,
 }: {
   /** ISO YYYY-MM-DD или пустая строка. */
   value: string
@@ -120,6 +120,9 @@ export function DatePicker({
   pill?: boolean
   /** Быстрый выбор в попапе: Сегодня / Завтра / +7 дней. */
   quickPicks?: boolean
+  /** Минималистичный календарь (Вариант A): заголовок по центру + стрелки
+   *  (без дропдаунов), круглые дни. Для near-term дат; год листается стрелками. */
+  minimal?: boolean
   /** Первый год в дропдауне. Дефолт 1940 — чтобы даты рождения и любые
    *  исторические даты были доступны; нативный select сам скроллится
    *  к выбранному году, длинный список не мешает. */
@@ -252,8 +255,8 @@ export function DatePicker({
           weekStartsOn={1}
           showOutsideDays
           disabled={disabledProp}
-          className={dayPickerClass}
-          captionLayout="dropdown"
+          className={clsx(dayPickerClass, minimal && 'rdp-min')}
+          captionLayout={minimal ? 'label' : 'dropdown'}
           startMonth={new Date(startYear, 0)}
           endMonth={new Date(2035, 11)}
           modifiers={{ reelMark: reelDays, macroMark: macroDays, shootMark: shootDays }}
@@ -291,7 +294,7 @@ export function DatePicker({
                 key={lbl}
                 type="button"
                 onClick={() => { const d = new Date(); d.setDate(d.getDate() + off); onChange(format(d, 'yyyy-MM-dd')); setOpen(false) }}
-                className="flex-1 text-center text-[11.5px] font-semibold rounded-lg border border-surface-200 dark:border-surface-700 py-1.5 text-surface-600 dark:text-surface-300 hover:border-primary-400 hover:text-primary-600 dark:hover:text-primary-300 transition"
+                className="flex-1 text-center text-[11.5px] font-semibold rounded-lg py-1.5 text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 hover:text-primary-600 dark:hover:text-primary-300 transition"
               >{lbl}</button>
             ))}
           </div>
