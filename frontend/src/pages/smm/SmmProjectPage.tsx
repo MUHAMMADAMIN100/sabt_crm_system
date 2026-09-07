@@ -18,6 +18,7 @@ type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNot
 const EDIT_ROLES = ['founder', 'co_founder', 'admin', 'smm_director', 'smm_specialist']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 const MON_SHORT = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
+const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
 const METRICS: { key: MKey; label: string; color: string; Icon: any }[] = [
   { key: 'subs', label: 'Подписчики', color: '#10b981', Icon: Users },
   { key: 'reach', label: 'Охват', color: '#3b82f6', Icon: Eye },
@@ -36,13 +37,14 @@ const fRow = 'flex items-center justify-between gap-3 h-[46px] border-b border-g
 const editIn = 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg h-8 px-2.5 text-sm outline-none focus:border-gray-400 dark:focus:border-gray-500'
 
 // Универсальный график метрики: сетка + оси + подписи месяцев + точки + тултип (в интерактиве).
-function MetricChart({ data, color, w = 480, h = 190, axes = true, interactive = true }: {
-  data: { ym: string; value: number }[]; color: string; w?: number; h?: number; axes?: boolean; interactive?: boolean
+// labeled — для отчёта: подписи значений и месяцев на первой и последней точке («было → стало»).
+function MetricChart({ data, color, w = 480, h = 190, axes = true, interactive = true, labeled = false }: {
+  data: { ym: string; value: number }[]; color: string; w?: number; h?: number; axes?: boolean; interactive?: boolean; labeled?: boolean
 }) {
   const [hi, setHi] = useState<number | null>(null)
   const ref = useRef<SVGSVGElement>(null)
   if (data.length < 2) return <div style={{ height: h }} className="flex items-center justify-center text-sm text-gray-400">Мало данных — добавь ещё месяц</div>
-  const pl = axes ? 46 : 8, pr = axes ? 14 : 8, pt = axes ? 16 : 8, pb = axes ? 28 : 8
+  const pl = labeled ? 12 : axes ? 46 : 8, pr = labeled ? 12 : axes ? 14 : 8, pt = labeled ? 26 : axes ? 16 : 8, pb = labeled ? 22 : axes ? 28 : 8
   const iw = w - pl - pr, ih = h - pt - pb
   const vals = data.map(d => d.value)
   let mn = Math.min(...vals), mx = Math.max(...vals)
@@ -68,7 +70,18 @@ function MetricChart({ data, color, w = 480, h = 190, axes = true, interactive =
       <path d={line} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
       {axes && data.map((d, i) => (i % step === 0 || i === data.length - 1)
         ? <text key={i} x={X(i)} y={h - 9} textAnchor="middle" fontSize="10" fill="currentColor">{mShort(d.ym)}</text> : null)}
-      {data.map((d, i) => <circle key={i} cx={X(i)} cy={Y(d.value)} r={i === cur ? 4 : 2.4} fill={color} />)}
+      {data.map((d, i) => <circle key={i} cx={X(i)} cy={Y(d.value)} r={(labeled && (i === 0 || i === data.length - 1)) ? 3.6 : (i === cur ? 4 : 2.4)} fill={color} />)}
+      {labeled && (() => {
+        const f = data[0], l = data[data.length - 1], yr = (ym: string) => ym.slice(0, 4)
+        return (
+          <g>
+            <text x={X(0)} y={Y(f.value) - 9} fontSize="12" fontWeight="700" fill="#111827" textAnchor="start">{fmtNum(f.value)}</text>
+            <text x={X(0)} y={h - 6} fontSize="9.5" fill="#9ca3af" textAnchor="start">{mShort(f.ym)} {yr(f.ym)}</text>
+            <text x={X(data.length - 1)} y={Y(l.value) - 9} fontSize="12" fontWeight="700" fill="#111827" textAnchor="end">{fmtNum(l.value)}</text>
+            <text x={X(data.length - 1)} y={h - 6} fontSize="9.5" fill="#9ca3af" textAnchor="end">{mShort(l.ym)} {yr(l.ym)}</text>
+          </g>
+        )
+      })()}
       {interactive && hi != null && (() => {
         const d = data[hi], hx = X(hi), hy = Y(d.value), tw = 104, tx = Math.max(2, Math.min(w - tw - 2, hx - tw / 2)), ty = Math.max(2, hy - 46)
         return (
@@ -297,7 +310,7 @@ export default function SmmProjectPage() {
     if (!cycle) return `${monthTitle}`
     const s = new Date(cycle.start + 'T00:00:00'), e = new Date(cycle.end + 'T00:00:00')
     if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear())
-      return `${s.getDate()}—${e.getDate()} ${MONTHS[s.getMonth()]} ${e.getFullYear()}`
+      return `${s.getDate()}—${e.getDate()} ${MONTHS_GEN[s.getMonth()]} ${e.getFullYear()}`
     return `${s.getDate()} ${MON_SHORT[s.getMonth()].toLowerCase()} — ${e.getDate()} ${MON_SHORT[e.getMonth()].toLowerCase()} ${e.getFullYear()}`
   })()
   // Бейдж роста: 0 — нейтральный (без стрелки), плюс — зелёный ↗, минус — красный ↘.
@@ -472,7 +485,7 @@ export default function SmmProjectPage() {
               <div className="flex flex-col items-center text-center pb-5 border-b border-gray-200">
                 <WeBrandLogo height={32} />
                 <p className="text-[10.5px] font-bold uppercase tracking-[0.22em] text-[#3068D8] mt-4">Отчёт по проекту</p>
-                <h3 className="text-2xl font-extrabold mt-1.5 flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: color }} />{p.name}</h3>
+                <h3 className="text-2xl font-extrabold mt-1.5">{p.name}</h3>
                 <p className="text-[13px] text-gray-500 mt-1">{reportPeriod}</p>
               </div>
 
@@ -488,11 +501,10 @@ export default function SmmProjectPage() {
                         <span className="flex items-center gap-1.5 text-[11px] text-gray-500 font-semibold uppercase tracking-wide"><m.Icon size={13} style={{ color: m.color }} />{m.label}</span>
                         {deltaBadge(d)}
                       </div>
-                      <div className="flex items-end gap-2 mt-1.5">
+                      <div className="mt-1.5">
                         <span className="text-[26px] font-extrabold tabular-nums leading-none">{l.cur != null ? fmtNum(l.cur) : '—'}</span>
-                        {s.length >= 2 && <span className="text-[11px] text-gray-400 mb-0.5">от {fmtNum(s[0].value)}</span>}
                       </div>
-                      <div className="mt-2.5 text-gray-500"><MetricChart data={s} color={m.color} w={330} h={84} axes={false} interactive={false} /></div>
+                      <div className="mt-2 text-gray-500"><MetricChart data={s} color={m.color} w={330} h={128} axes={false} interactive={false} labeled /></div>
                     </div>
                   )
                 })}
