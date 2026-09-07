@@ -292,6 +292,22 @@ export default function SmmProjectPage() {
   const selLatest = latest(selM)
   const selDelta = selLatest.cur != null && selLatest.prev != null ? selLatest.cur - selLatest.prev : null
 
+  // Период для отчёта: «1—30 сентября 2026» (один месяц) или «1 сен — 5 окт 2026».
+  const reportPeriod = (() => {
+    if (!cycle) return `${monthTitle}`
+    const s = new Date(cycle.start + 'T00:00:00'), e = new Date(cycle.end + 'T00:00:00')
+    if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear())
+      return `${s.getDate()}—${e.getDate()} ${MONTHS[s.getMonth()]} ${e.getFullYear()}`
+    return `${s.getDate()} ${MON_SHORT[s.getMonth()].toLowerCase()} — ${e.getDate()} ${MON_SHORT[e.getMonth()].toLowerCase()} ${e.getFullYear()}`
+  })()
+  // Бейдж роста: 0 — нейтральный (без стрелки), плюс — зелёный ↗, минус — красный ↘.
+  const deltaBadge = (d: number | null) => {
+    if (d == null) return <span className="text-[11px] text-gray-400 font-medium">нет данных</span>
+    if (d === 0) return <span className="text-[11px] text-gray-400 font-semibold">без изменений</span>
+    const up = d > 0
+    return <span className={'inline-flex items-center gap-0.5 text-[11px] font-bold ' + (up ? 'text-emerald-600' : 'text-red-500')}>{up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{(up ? '+' : '−') + fmtNum(Math.abs(d))} за месяц</span>
+  }
+
   const editBtn = (onEdit: () => void) => canEdit ? (
     <button onClick={onEdit} className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"><Pencil size={13} /> Изменить</button>
   ) : null
@@ -457,33 +473,29 @@ export default function SmmProjectPage() {
                 <WeBrandLogo height={32} />
                 <p className="text-[10.5px] font-bold uppercase tracking-[0.22em] text-[#3068D8] mt-4">Отчёт по проекту</p>
                 <h3 className="text-2xl font-extrabold mt-1.5 flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: color }} />{p.name}</h3>
-                <p className="text-[13px] text-gray-500 mt-1">{cycle ? fmtCycleRange(cycle.start, cycle.end) : monthTitle} · {now.getFullYear()}</p>
+                <p className="text-[13px] text-gray-500 mt-1">{reportPeriod}</p>
               </div>
 
-              {/* KPI */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+              {/* Метрики — единая карточка: число + рост + график */}
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mt-6 mb-3">Ключевые метрики · {monthTitle}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {METRICS.map(m => {
-                  const l = latest(m.key); const d = l.cur != null && l.prev != null ? l.cur - l.prev : null
+                  const s = series(m.key); const l = latest(m.key)
+                  const d = l.cur != null && l.prev != null ? l.cur - l.prev : null
                   return (
                     <div key={m.key} className="rounded-xl border border-gray-200 p-4">
-                      <span className="flex items-center gap-1.5 text-[11px] text-gray-500 font-semibold uppercase tracking-wide"><m.Icon size={13} style={{ color: m.color }} />{m.label}</span>
-                      <span className="block text-[24px] font-extrabold tabular-nums mt-2 leading-none">{l.cur != null ? fmtNum(l.cur) : '—'}</span>
-                      {d != null
-                        ? <span className={'inline-flex items-center gap-0.5 text-[11px] font-bold mt-2 ' + (d >= 0 ? 'text-emerald-600' : 'text-red-500')}>{d >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{(d >= 0 ? '+' : '−') + fmtNum(Math.abs(d))} за месяц</span>
-                        : <span className="block text-[11px] text-gray-400 mt-2">нет сравнения</span>}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-[11px] text-gray-500 font-semibold uppercase tracking-wide"><m.Icon size={13} style={{ color: m.color }} />{m.label}</span>
+                        {deltaBadge(d)}
+                      </div>
+                      <div className="flex items-end gap-2 mt-1.5">
+                        <span className="text-[26px] font-extrabold tabular-nums leading-none">{l.cur != null ? fmtNum(l.cur) : '—'}</span>
+                        {s.length >= 2 && <span className="text-[11px] text-gray-400 mb-0.5">от {fmtNum(s[0].value)}</span>}
+                      </div>
+                      <div className="mt-2.5 text-gray-500"><MetricChart data={s} color={m.color} w={330} h={84} axes={false} interactive={false} /></div>
                     </div>
                   )
                 })}
-              </div>
-
-              {/* Графики */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-                {METRICS.map(m => (
-                  <div key={m.key} className="rounded-xl border border-gray-200 p-4 text-gray-500">
-                    <div className="text-[11px] font-semibold flex items-center gap-1.5 mb-2 text-gray-700 uppercase tracking-wide"><m.Icon size={13} style={{ color: m.color }} />{m.label}</div>
-                    <MetricChart data={series(m.key)} color={m.color} w={320} h={96} axes={false} interactive={false} />
-                  </div>
-                ))}
               </div>
 
               {/* Выполнение плана (без дисциплины) */}
@@ -504,7 +516,7 @@ export default function SmmProjectPage() {
 
               {/* Подвал */}
               <div className="flex items-center justify-between gap-3 mt-7 pt-4 border-t border-gray-200 text-[11px] text-gray-400">
-                <span className="inline-flex items-center gap-2 font-semibold text-gray-500"><WeBrandLogo height={15} /> digital-агентство</span>
+                <span className="font-semibold text-gray-500">WeBrand — digital-агентство</span>
                 <span>Сформировано {fmtDate(iso(now))}</span>
               </div>
 
