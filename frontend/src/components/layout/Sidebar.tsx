@@ -204,7 +204,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                     className={clsx(
                       'group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                       'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
-                      !open && 'lg:justify-center lg:px-2',
+                      !open && 'lg:justify-center lg:px-2 lg:gap-0',
                     )}
                     title={!open ? (moreOpen ? 'Свернуть' : 'Ещё') : undefined}
                   >
@@ -234,7 +234,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                       financeActive
                         ? 'bg-[#696bdc] text-white shadow-sm'
                         : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
-                      !open && 'lg:justify-center lg:px-2',
+                      !open && 'lg:justify-center lg:px-2 lg:gap-0',
                     )}
                     title={!open ? item.label : undefined}
                   >
@@ -297,7 +297,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                       smmActive
                         ? 'bg-[#696bdc] text-white shadow-sm'
                         : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
-                      !open && 'lg:justify-center lg:px-2',
+                      !open && 'lg:justify-center lg:px-2 lg:gap-0',
                     )}
                     title={!open ? item.label : undefined}
                   >
@@ -362,7 +362,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                     isActive
                       ? 'bg-primary-600 text-white shadow-sm'
                       : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
-                    !open && 'lg:justify-center lg:px-2',
+                    !open && 'lg:justify-center lg:px-2 lg:gap-0',
                   )
                 }
                 title={!open ? item.label : undefined}
@@ -425,7 +425,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
             title={!open ? 'Развернуть меню' : undefined}
             className={clsx(
               'mt-2 w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium bg-white/[0.05] hover:bg-white/10 text-[rgb(var(--sidebar-fg-dim))] hover:text-[rgb(var(--sidebar-fg))] transition-colors',
-              !open && 'lg:justify-center lg:px-2',
+              !open && 'lg:justify-center lg:px-2 lg:gap-0',
             )}
           >
             {open ? <ChevronLeft size={18} className="shrink-0" /> : <ChevronRight size={18} className="shrink-0" />}
