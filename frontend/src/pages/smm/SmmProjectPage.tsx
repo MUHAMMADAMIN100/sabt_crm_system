@@ -8,6 +8,7 @@ import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, type SmmProj } from './smmShared'
+import SmmContentPlan from './SmmContentPlan'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
@@ -509,6 +510,9 @@ export default function SmmProjectPage() {
           </div>
         </div>
       </div>
+
+      {/* Контент-план проекта — таблица позиций + редактор со сценарием */}
+      {id && <SmmContentPlan projectId={id} color={color} canEdit={canEdit} canDelete={canRename} />}
 
       {/* Отчёт — печатная страница для клиента */}
       {reportOpen && createPortal(

@@ -37,6 +37,9 @@ export class CreateContentPlanDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(2000)
   fileLink?: string;
 
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(10000)
+  scriptText?: string;
+
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(5000)
   caption?: string;
 

@@ -104,6 +104,11 @@ export class ContentPlanItem {
   @Column({ type: 'text', nullable: true })
   fileLink: string;
 
+  /** Сценарий / текст ролика (раскадровка, хук → сцены → CTA). Отдельно от
+   *  подписи (caption) и рабочих комментариев (comments). */
+  @Column({ type: 'text', nullable: true })
+  scriptText: string;
+
   /** Подпись к публикации. */
   @Column({ type: 'text', nullable: true })
   caption: string;
