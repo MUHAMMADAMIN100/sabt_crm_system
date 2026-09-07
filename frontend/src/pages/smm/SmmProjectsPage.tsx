@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { Loader2, Film, Image as ImageIcon, CalendarRange, Plus } from 'lucide-react'
-import { contentPlanApi } from '@/services/api.service'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Loader2, Film, Image as ImageIcon, CalendarRange, Plus, Archive, RotateCcw } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { assignProjectColors, projColor, type SmmProj } from './smmShared'
 import SmmProjectCreateModal from './SmmProjectCreateModal'
@@ -31,6 +32,20 @@ export default function SmmProjectsPage() {
 
   const projects = data?.projects ?? []
   const backlog = data?.backlog ?? []
+
+  // Архив — завершённые SMM-проекты (isArchived=true). Для восстановления.
+  const qc = useQueryClient()
+  const { data: archivedData } = useQuery<any[]>({
+    queryKey: ['smm-archived'],
+    queryFn: () => projectsApi.list({ archived: 'true' }),
+    enabled: canCreate,
+  })
+  const archived = ((archivedData as any[]) || []).filter(p => p.projectType === 'SMM')
+  const restoreMut = useMutation({
+    mutationFn: (pid: string) => projectsApi.restore(pid),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-archived'] }); qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Проект возвращён') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось вернуть'),
+  })
 
   const cards = useMemo(() => {
     assignProjectColors(projects.map(p => p.id))
@@ -84,6 +99,23 @@ export default function SmmProjectsPage() {
               </div>
             </button>
           ))}
+        </div>
+      )}
+      {canCreate && archived.length > 0 && (
+        <div className="pt-3">
+          <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2 inline-flex items-center gap-1.5"><Archive size={13} /> Архив · завершённые</h2>
+          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+            {archived.map((p: any) => (
+              <div key={p.id} className="flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/40 px-3 py-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-gray-300 dark:bg-gray-700 shrink-0" />
+                <span className="text-sm font-semibold text-gray-500 truncate flex-1">{p.name}</span>
+                <button onClick={() => restoreMut.mutate(p.id)} disabled={restoreMut.isPending}
+                  className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-800 disabled:opacity-60">
+                  <RotateCcw size={13} /> Вернуть
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {showCreate && <SmmProjectCreateModal onClose={() => setShowCreate(false)} />}

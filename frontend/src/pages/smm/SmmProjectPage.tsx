@@ -1,8 +1,8 @@
 import { useMemo, useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, TrendingUp, TrendingDown, Gift, FileText, X, Printer } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, TrendingUp, TrendingDown, Gift, FileText, X, Printer, MoreVertical, Archive } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
@@ -175,6 +175,7 @@ function WeBrandLogo({ height = 30 }: { height?: number }) {
 
 export default function SmmProjectPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const canEdit = EDIT_ROLES.includes((user as any)?.role ?? '')
@@ -205,6 +206,13 @@ export default function SmmProjectPage() {
     mutationFn: (name: string) => projectsApi.update(id!, { name }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); setNameEditing(false); toast.success('Название обновлено') },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось переименовать'),
+  })
+  // «Завершить сотрудничество» = архивировать проект (status=archived → уходит из
+  // активного списка и календаря SMM, история сохраняется, можно вернуть из «Архива»).
+  const archiveMut = useMutation({
+    mutationFn: () => projectsApi.archive(id!),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); qc.invalidateQueries({ queryKey: ['smm-archived'] }); toast.success('Сотрудничество завершено — проект в архиве'); navigate('/smm/projects') },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось завершить'),
   })
 
   const projects = data?.projects ?? []
@@ -285,6 +293,9 @@ export default function SmmProjectPage() {
   const [reportOpen, setReportOpen] = useState(false)
   // ── Вкладки страницы: обзор / аналитика / клиент / контент-план ──
   const [tab, setTab] = useState<'overview' | 'analytics' | 'client' | 'plan'>('overview')
+  // ── Меню ⋯ в шапке + подтверждение завершения сотрудничества ──
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [confirmArchive, setConfirmArchive] = useState(false)
 
   if (isLoading) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
   if (!info || !p) return (
@@ -356,7 +367,24 @@ export default function SmmProjectPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Link to="/smm/projects" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
-        <button onClick={() => setReportOpen(true)} className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl bg-[#3068D8] text-white hover:brightness-110"><FileText size={16} /> Получить отчёт</button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setReportOpen(true)} className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl bg-[#3068D8] text-white hover:brightness-110"><FileText size={16} /> Получить отчёт</button>
+          {canRename && (
+            <div className="relative">
+              <button onClick={() => setMenuOpen(o => !o)} className="p-2 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800" title="Ещё"><MoreVertical size={18} /></button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                  <div className="absolute right-0 mt-1 z-50 w-64 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl py-1">
+                    <button onClick={() => { setMenuOpen(false); setConfirmArchive(true) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
+                      <Archive size={15} /> Завершить сотрудничество
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-3">
         <span className="w-4 h-4 rounded-full shrink-0" style={{ background: color }} />
@@ -529,6 +557,24 @@ export default function SmmProjectPage() {
 
       {/* Контент-план проекта — отдельная вкладка (таблица позиций + редактор со сценарием) */}
       {tab === 'plan' && id && <SmmContentPlan projectId={id} color={color} canEdit={canEdit} canDelete={canRename} />}
+
+      {/* Подтверждение завершения сотрудничества (архив) */}
+      {confirmArchive && createPortal(
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50" onClick={e => { if (e.target === e.currentTarget) setConfirmArchive(false) }}>
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="w-10 h-10 rounded-xl grid place-items-center bg-red-50 dark:bg-red-900/20 text-red-500 shrink-0"><Archive size={20} /></span>
+              <h3 className="text-lg font-bold">Завершить сотрудничество?</h3>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">Проект «{p.name}» уйдёт в архив: пропадёт из активного списка и календаря SMM, перестанет считаться в норме. История (метрики, контент, профиль) сохранится — проект можно вернуть из «Архива».</p>
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setConfirmArchive(false)} className="text-sm font-semibold px-4 py-2.5 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">Отмена</button>
+              <button onClick={() => archiveMut.mutate()} disabled={archiveMut.isPending} className="inline-flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-xl bg-red-600 text-white hover:brightness-110 disabled:opacity-60">{archiveMut.isPending ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />} Завершить</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {/* Отчёт — печатная страница для клиента */}
       {reportOpen && createPortal(
