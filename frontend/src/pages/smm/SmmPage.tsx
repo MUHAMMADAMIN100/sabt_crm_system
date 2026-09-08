@@ -18,7 +18,7 @@ export type Ev = {
   id: string; itemId?: string; shootId?: string; kind: 'shoot' | 'publication'; date: string
   projectId: string; projectName: string
   title?: string; time?: string | null; location?: string | null; note?: string | null
-  contentType?: string; topic?: string | null; status?: string; assigneeName?: string | null
+  contentType?: string; topic?: string | null; scriptText?: string | null; status?: string; assigneeName?: string | null
   taskId?: string | null; taskStatus?: string | null; durationMin?: number | null
   count?: number // фактически опубликовано за день (сторис) — для заливки статуса на странице «Сторисы»
   // Производная съёмка (авто под рилс): reelId — id рилса, к которому она относится (для линии-связки).
@@ -250,6 +250,25 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
       return { prev, key }
     },
     onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev); toast.error('Не удалось изменить длительность') },
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }) },
+  })
+  // Сохранение названия/описания позиции (из окна события) — оптимистично, чтобы
+  // подпись на карточке обновилась сразу.
+  const saveInfoMut = useMutation({
+    mutationFn: ({ itemId, patch }: { itemId: string; patch: { topic?: string; scriptText?: string | null } }) =>
+      contentPlanApi.update(itemId, patch),
+    onMutate: async ({ itemId, patch }) => {
+      const key = ['smm-calendar', from, to]
+      await qc.cancelQueries({ queryKey: key })
+      const prev = qc.getQueryData<CalData>(key)
+      qc.setQueryData<CalData>(key, old => old ? {
+        ...old,
+        events: old.events.map(e => e.itemId === itemId ? { ...e, ...patch } : e),
+        backlog: old.backlog.map(b => b.itemId === itemId ? { ...b, ...patch } : b),
+      } : old)
+      return { prev, key }
+    },
+    onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev); toast.error('Не удалось сохранить') },
     onSettled: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }) },
   })
 
@@ -562,9 +581,10 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
       )}
 
       {detail && (
-        <EventModal e={detail} marking={markMut.isPending} onClose={() => setDetail(null)}
+        <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)}
           onMark={done => markMut.mutate({ ev: detail, done })}
           onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
+          onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
           onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }} />
       )}
 
@@ -1754,39 +1774,78 @@ function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
 }
 
-function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration }: { e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void; onDuration?: (min: number) => void }) {
+function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo }: { e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void; onDuration?: (min: number) => void; onSaveInfo?: (patch: { topic?: string; scriptText?: string | null }) => void }) {
   const isShoot = e.kind === 'shoot'
   const type = e.contentType || 'other'
   const done = isDone(e)
   const Ic = isShoot ? Camera : (TYPE_ICON[type] || AlignLeft)
+  const canEdit = !isShoot && !!onSaveInfo
+  const [topic, setTopic] = useState(e.topic || '')
+  const [desc, setDesc] = useState(e.scriptText || '')
+  const saveTopic = () => { const v = topic.trim(); if (onSaveInfo && v && v !== (e.topic || '')) onSaveInfo({ topic: v }) }
+  const saveDesc = () => { if (onSaveInfo && desc !== (e.scriptText || '')) onSaveInfo({ scriptText: desc.trim() || null }) }
   // Закрытие по Esc; портал в body — backdrop на весь вьюпорт (иначе fixed обрезается трансформ-предком).
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
+  const inp = 'w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-gray-400 dark:focus:border-gray-500'
+  const lab = 'text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5'
+  const returnBtn = e.date ? (
+    <button onClick={onUnschedule}
+      className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+      <Inbox size={15} /> Вернуть
+    </button>
+  ) : null
+  const primaryBtn = isShoot ? null : (done ? (
+    <button disabled={marking} onClick={() => onMark(false)}
+      className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">
+      <RotateCcw size={15} /> В работу
+    </button>
+  ) : (
+    <button disabled={marking} onClick={() => onMark(true)}
+      className="flex items-center justify-center gap-2 rounded-lg bg-[#3f7a58] text-white py-2.5 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
+      <Check size={15} /> Сделано
+    </button>
+  ))
+  const both = returnBtn && primaryBtn
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
-        <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start justify-between gap-3 mb-2.5">
           <span style={projFill(e.projectId)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold">
             <Ic size={12} /> {isShoot ? 'Съёмка' : (TYPE_LABEL[type] || 'Контент')}
           </span>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
-        <h3 className="text-lg font-bold mb-1">{e.projectName || '—'}</h3>
-        {!isShoot && e.topic && <p className="text-sm text-gray-500">{e.topic}</p>}
-        <div className="space-y-1.5 text-sm my-4">
-          <Row k="Дата" v={fmtDate(e.date)} />
-          {isShoot && e.time && <Row k="Время" v={e.time} />}
-          {isShoot && e.location && <Row k="Место" v={e.location} />}
-          {isShoot && e.note && <Row k="Заметка" v={e.note} />}
-          {!isShoot && e.assigneeName && <Row k="Ответственный" v={e.assigneeName} />}
-          {!isShoot && <Row k="Статус" v={done ? 'Сделано' : (STATUS_LABEL[e.status || 'planned'] || e.status || 'В работе')} />}
-        </div>
+        <p className="text-xs text-gray-400 mb-3">{e.projectName || '—'}</p>
+
+        {canEdit ? (
+          <div className="space-y-3">
+            <div>
+              <p className={lab}>Название</p>
+              <input value={topic} onChange={ev => setTopic(ev.target.value)} onBlur={saveTopic} placeholder="Название позиции…" className={inp} />
+            </div>
+            <div>
+              <p className={lab}>Описание</p>
+              <textarea value={desc} onChange={ev => setDesc(ev.target.value)} onBlur={saveDesc} rows={3} placeholder="Идея, референсы, что снять…" className={inp + ' resize-y leading-relaxed'} />
+            </div>
+          </div>
+        ) : (
+          <>
+            <h3 className="text-lg font-bold mb-1">{e.title || e.projectName || 'Съёмка'}</h3>
+            <div className="space-y-1.5 text-sm my-3">
+              {e.time && <Row k="Время" v={e.time} />}
+              {e.location && <Row k="Место" v={e.location} />}
+              {e.note && <Row k="Заметка" v={e.note} />}
+            </div>
+          </>
+        )}
+
         {!isShoot && onDuration && (
-          <div className="mb-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5">Длительность съёмки</p>
+          <div className="my-4">
+            <p className={lab}>Длительность съёмки</p>
             <div className="flex flex-wrap gap-1.5">
               {DUR_OPTIONS.map(m => {
                 const on = (e.durationMin || DEFAULT_DUR) === m
@@ -1797,30 +1856,14 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration }: {
                 )
               })}
             </div>
-            <p className="text-[11px] text-gray-400 mt-1.5">Столько времени займёт карточка на календаре и подсветка при перетаскивании.</p>
           </div>
         )}
-        <div className="space-y-2">
-          {e.date && (
-            <button onClick={onUnschedule}
-              className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
-              <Inbox size={15} /> Вернуть в «Не запланировано»
-            </button>
-          )}
-          {isShoot ? (
-            <p className="text-xs text-gray-400 text-center">Съёмка запланирована.</p>
-          ) : done ? (
-            <button disabled={marking} onClick={() => onMark(false)}
-              className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">
-              <RotateCcw size={15} /> Вернуть в работу
-            </button>
-          ) : (
-            <button disabled={marking} onClick={() => onMark(true)}
-              className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#3f7a58] text-white py-2.5 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
-              <Check size={15} /> Отметить сделанным
-            </button>
-          )}
-        </div>
+
+        {(returnBtn || primaryBtn) && (
+          <div className={(both ? 'grid grid-cols-2 gap-2' : 'space-y-2') + ' mt-4'}>
+            {returnBtn}{primaryBtn}
+          </div>
+        )}
       </div>
     </div>,
     document.body,

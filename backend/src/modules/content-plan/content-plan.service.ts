@@ -481,7 +481,7 @@ export class ContentPlanService {
     // Публикации — из собственного хранилища (content_plan_items), по publishDate.
     const pubs: any[] = await this.repo.manager.query(
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId",
-              ci."contentType" AS "itemKind", ci.topic AS title,
+              ci."contentType" AS "itemKind", ci.topic AS title, ci."scriptText" AS "scriptText",
               ci.status AS status, ci."taskId" AS "taskId",
               ci."publishTime" AS time, ci."durationMin" AS "durationMin",
               to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
@@ -542,7 +542,7 @@ export class ContentPlanService {
         id: `item:${p.itemId}`, itemId: p.itemId, kind: 'publication', date: p.date,
         projectId: p.projectId, projectName: nameById.get(p.projectId) || '',
         contentType: p.itemKind === 'reel' ? 'reel' : 'design',
-        topic: p.title || null, status: p.status || undefined, taskId: p.taskId || null,
+        topic: p.title || null, scriptText: p.scriptText || null, status: p.status || undefined, taskId: p.taskId || null,
         time: p.time || null,   // время съёмки ('HH:MM') — для часовой сетки недели
         durationMin: Number(p.durationMin) > 0 ? Number(p.durationMin) : null, // длительность (мин)
       })),
@@ -565,7 +565,7 @@ export class ContentPlanService {
     // (их перетаскивают на календарь из панели сверху). Диапазон не важен.
     const bpubs: any[] = await this.repo.manager.query(
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId",
-              ci."contentType" AS "itemKind", ci.topic AS title
+              ci."contentType" AS "itemKind", ci.topic AS title, ci."scriptText" AS "scriptText"
        FROM content_plan_items ci
        WHERE ci."projectId" = ANY($1::uuid[])
          AND ci."contentType" <> 'story' AND ci."shootForItemId" IS NULL AND ci."publishDate" IS NULL`,
@@ -590,7 +590,7 @@ export class ContentPlanService {
       ...bpubs.map(c => ({
         id: `item:${c.itemId}`, itemId: c.itemId, kind: 'publication',
         projectId: c.projectId, projectName: nameById.get(c.projectId) || '',
-        contentType: c.itemKind === 'reel' ? 'reel' : 'design', topic: c.title || null,
+        contentType: c.itemKind === 'reel' ? 'reel' : 'design', topic: c.title || null, scriptText: c.scriptText || null,
       })),
       ...bshoots.map(s => ({
         id: `shoot:${s.id}`, shootId: s.id, kind: 'shoot',
