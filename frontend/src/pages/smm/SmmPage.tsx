@@ -1704,7 +1704,8 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const type = e.contentType || 'other'
   const Ic = e.kind === 'shoot' ? Camera : (TYPE_ICON[type] || AlignLeft)
   const done = e.kind === 'publication' && isDone(e)
-  const label = e.kind === 'shoot' ? (e.projectName || e.title || 'Съёмка') : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`
+  // Подпись карточки — название позиции (topic); если пусто, откат на «Тип · Проект».
+  const label = e.kind === 'shoot' ? (e.projectName || e.title || 'Съёмка') : (e.topic?.trim() || `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`)
   const op = dim ? 0.24 : on ? 1 : (e.reelId ? 0.85 : 1) // сделанные не гасим — помечаем галочкой ✓ (как в Notion)
   return (
     <span data-ev={e.id} data-proj={e.projectId} data-reel={e.reelId ? `item:${e.reelId}` : undefined}
