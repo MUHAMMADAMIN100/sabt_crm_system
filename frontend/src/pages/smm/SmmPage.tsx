@@ -304,7 +304,9 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
               || old.backlog.some(e => e.kind === 'shoot' && e.reelId === ev.itemId)
             if (!hasShoot) {
               const [yy, mm, dd] = dateStr.split('-').map(Number)
-              const x1 = iso(new Date(yy, mm - 1, dd - 1))
+              let x1 = iso(new Date(yy, mm - 1, dd - 1))
+              const cyc = projCycle(ev.projectId)               // не раньше начала цикла
+              if (cyc && x1 < cyc.start) x1 = cyc.start
               events.push({
                 id: `opt-shoot-${ev.itemId}`, kind: 'shoot', date: x1,
                 projectId: ev.projectId, projectName: ev.projectName,

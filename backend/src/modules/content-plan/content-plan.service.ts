@@ -116,6 +116,18 @@ export class ContentPlanService {
     }
   }
 
+  /** Начало цикла проекта, содержащего дату ref (день старта цикла anchor 1..31).
+   *  Зеркалит cycleBoundsFor на фронте — нужно для клэмпа авто-съёмки по циклу. */
+  private cycleStartForDate(ref: Date, anchor: number): Date {
+    const dim = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
+    const y = ref.getFullYear(), m = ref.getMonth(), d = ref.getDate();
+    const anchorThis = Math.min(anchor, dim(y, m));
+    let sy = y, sm = m;
+    if (d < anchorThis) { sm -= 1; if (sm < 0) { sm = 11; sy -= 1; } }
+    const sAnchor = Math.min(anchor, dim(sy, sm));
+    return new Date(sy, sm, sAnchor);
+  }
+
   /** Авто-съёмка под рилс. При перетаскивании рилса (или его создании с датой):
    *  — съёмки вообще нет (её удалили) → создаём заново на X−1;
    *  — съёмка есть НА ДАТЕ → не трогаем (двигается независимо от рилса);
@@ -132,12 +144,28 @@ export class ContentPlanService {
       return;
     }
     try {
-      const shootDate = new Date(reel.publishDate);
+      let shootDate = new Date(reel.publishDate);
       shootDate.setDate(shootDate.getDate() - 1);          // X−1
+      // Клэмп по началу цикла: съёмка не должна уходить раньше старта цикла проекта
+      // (рилс в первый день цикла → съёмка в тот же день, а не в прошлом цикле).
+      const project = await this.repo.manager.getRepository(Project)
+        .findOne({ where: { id: reel.projectId } }).catch(() => null);
+      const cycleDay = Number(project?.smmData?.cycleStartDay);
+      const cycleStart = Number.isFinite(cycleDay) && cycleDay >= 1
+        ? this.cycleStartForDate(new Date(reel.publishDate), cycleDay) : null;
+      if (cycleStart && shootDate < cycleStart) shootDate = cycleStart;
+
       const shoot = await this.repo.findOne({ where: { shootForItemId: reel.id } });
       if (shoot) {
-        if (shoot.publishDate) return;                     // съёмка на дате — не двигаем
-        await this.repo.update(shoot.id, {                 // была снята с даты — возвращаем на X−1
+        if (shoot.publishDate) {
+          // Съёмка на дате двигается независимо; трогаем ТОЛЬКО если она уехала
+          // раньше старта цикла (невалидно) — подтягиваем на старт цикла.
+          if (cycleStart && new Date(shoot.publishDate) < cycleStart) {
+            await this.repo.update(shoot.id, { publishDate: cycleStart, status: ContentPlanStatus.PLANNED });
+          }
+          return;
+        }
+        await this.repo.update(shoot.id, {                 // была снята с даты — возвращаем на X−1 (в пределах цикла)
           publishDate: shootDate,
           publishTime: reel.publishTime ?? null,
           status: ContentPlanStatus.PLANNED,
