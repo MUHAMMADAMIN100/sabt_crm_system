@@ -1851,12 +1851,14 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
             </div>
 
             {/* Описание рилса — что снимать (только чтение, длинное скроллится внутри) */}
-            {e.scriptText?.trim() && (
-              <div className="mt-4">
-                <p className={lab}>Описание рилса</p>
+            <div className="mt-4">
+              <p className={lab}>Описание рилса</p>
+              {e.scriptText?.trim() ? (
                 <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap max-h-[148px] overflow-y-auto">{e.scriptText}</div>
-              </div>
-            )}
+              ) : (
+                <div className="rounded-xl border border-dashed border-gray-200 dark:border-gray-700 px-3 py-2.5 text-[12.5px] text-gray-400">У рилса пока нет описания — добавьте его, открыв сам рилс.</div>
+              )}
+            </div>
 
             {(e.location || e.note) && (
               <div className="space-y-1.5 text-sm mt-3">
