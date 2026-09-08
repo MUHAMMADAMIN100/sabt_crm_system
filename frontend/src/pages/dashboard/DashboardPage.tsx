@@ -40,6 +40,8 @@ const MyWorkflowCards = lazy(() => import('./components/MyWorkflowCards'))
 const MyDevCards = lazy(() => import('./components/MyDevCards'))
 const MyPlainTasks = lazy(() => import('./components/MyPlainTasks'))
 const StorymakerDashboard = lazy(() => import('./components/StorymakerDashboard'))
+// Кабинет SMM-специалиста: главные задачи из контент-плана + отметка сторис за день.
+const SmmSpecialistDashboard = lazy(() => import('./components/SmmSpecialistDashboard'))
 const UpcomingPublications = lazy(() => import('./components/UpcomingPublications'))
 /** KPI команды разработки — кабинет руководителя направления. */
 const DevTeamKpiWidget = lazy(() => import('@/components/kpi/DevTeamKpiWidget'))
@@ -284,6 +286,7 @@ function DashboardContent() {
 
   if (isWorkerView) {
     const isPublisher = role === 'publisher' || user?.secondaryRole === 'publisher'
+    const isSmmSpecialist = role === 'smm_specialist'
     return (
       <div className="space-y-6">
         <div>
@@ -292,6 +295,12 @@ function DashboardContent() {
             {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
           </p>
         </div>
+        {/* SMM-специалист: главные задачи из контент-плана + отметка сторис за день. */}
+        {isSmmSpecialist && (
+          <Suspense fallback={<PageLoader />}>
+            <SmmSpecialistDashboard />
+          </Suspense>
+        )}
         {/* Видеоролики к публикации на ближайшие 1–2 дня — кабинет публикатора. */}
         {isPublisher && (
           <Suspense fallback={null}>
