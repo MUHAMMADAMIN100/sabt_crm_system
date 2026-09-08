@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Film, Image as ImageIcon, CalendarRange, Plus, Archive, RotateCcw } from 'lucide-react'
+import { Loader2, Film, Image as ImageIcon, CalendarRange, Plus, Archive, RotateCcw, LayoutGrid } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
@@ -21,6 +21,8 @@ export default function SmmProjectsPage() {
   const user = useAuthStore(s => s.user)
   const canCreate = CREATE_ROLES.includes((user as any)?.role ?? '')
   const [showCreate, setShowCreate] = useState(false)
+  // Вкладки: активные / архив завершённых. Архив по умолчанию скрыт.
+  const [tab, setTab] = useState<'active' | 'archived'>('active')
   const now = new Date()
   const from = iso(new Date(now.getFullYear(), now.getMonth(), 1))
   const to = iso(new Date(now.getFullYear(), now.getMonth() + 1, 0))
@@ -73,7 +75,33 @@ export default function SmmProjectsPage() {
           </button>
         )}
       </div>
-      {isLoading ? (
+      {/* Вкладки «Активные / Архив» — архив показывается только по клику.
+          Показываем переключатель лишь тем, у кого есть архив (canCreate). */}
+      {canCreate && archived.length > 0 && (
+        <div className="inline-flex bg-gray-100 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 rounded-xl p-1 gap-1">
+          {([['active', 'Активные', LayoutGrid, projects.length], ['archived', 'Архив', Archive, archived.length]] as const).map(([k, label, Ic, n]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={'inline-flex items-center gap-1.5 text-[13px] font-semibold px-4 py-2 rounded-lg transition ' + (tab === k ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}>
+              <Ic size={14} /> {label} <span className="text-[11px] font-bold opacity-60 tabular-nums">{n}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === 'archived' && canCreate && archived.length > 0 ? (
+        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+          {archived.map((p: any) => (
+            <div key={p.id} className="flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/40 px-3 py-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-gray-300 dark:bg-gray-700 shrink-0" />
+              <span className="text-sm font-semibold text-gray-500 truncate flex-1">{p.name}</span>
+              <button onClick={() => restoreMut.mutate(p.id)} disabled={restoreMut.isPending}
+                className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-800 disabled:opacity-60">
+                <RotateCcw size={13} /> Вернуть
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : isLoading ? (
         <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
       ) : (
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
@@ -99,23 +127,6 @@ export default function SmmProjectsPage() {
               </div>
             </button>
           ))}
-        </div>
-      )}
-      {canCreate && archived.length > 0 && (
-        <div className="pt-3">
-          <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2 inline-flex items-center gap-1.5"><Archive size={13} /> Архив · завершённые</h2>
-          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
-            {archived.map((p: any) => (
-              <div key={p.id} className="flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/40 px-3 py-2.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-gray-300 dark:bg-gray-700 shrink-0" />
-                <span className="text-sm font-semibold text-gray-500 truncate flex-1">{p.name}</span>
-                <button onClick={() => restoreMut.mutate(p.id)} disabled={restoreMut.isPending}
-                  className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-800 disabled:opacity-60">
-                  <RotateCcw size={13} /> Вернуть
-                </button>
-              </div>
-            ))}
-          </div>
         </div>
       )}
       {showCreate && <SmmProjectCreateModal onClose={() => setShowCreate(false)} />}
