@@ -35,6 +35,15 @@ export class ProjectsController {
   @Get('stats')
   getStats() { return this.service.getStats(); }
 
+  /** Схема «кто ведёт какие проекты»: SMM-специалисты с их активными
+   *  проектами + непривязанные проекты. Для руководства и руководителя SMM.
+   *  Объявлено ДО ':id', иначе вайлдкард перехватит путь. */
+  @Get('smm-specialist-load')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
+  smmSpecialistLoad() {
+    return this.service.smmSpecialistLoad();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req) {
     return this.service.findOne(id, req.user?.role);

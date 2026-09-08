@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Film, Image as ImageIcon, CalendarRange, Plus, Archive, RotateCcw, LayoutGrid } from 'lucide-react'
+import { Loader2, Film, Image as ImageIcon, CalendarRange, Plus, Archive, RotateCcw, LayoutGrid, Network } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { assignProjectColors, projColor, type SmmProj } from './smmShared'
 import SmmProjectCreateModal from './SmmProjectCreateModal'
+import SmmSpecialistLoadModal from './SmmSpecialistLoadModal'
 
 // Кто может создавать проекты (как на основной странице «Проекты»).
 const CREATE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm']
+// Кто видит схему нагрузки СММ (кто ведёт какие проекты) — как эндпоинт.
+const LOAD_ROLES = ['admin', 'founder', 'co_founder', 'smm_director']
 
 type Ev = { projectId: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[] }
@@ -20,7 +23,9 @@ export default function SmmProjectsPage() {
   const navigate = useNavigate()
   const user = useAuthStore(s => s.user)
   const canCreate = CREATE_ROLES.includes((user as any)?.role ?? '')
+  const canSeeLoad = LOAD_ROLES.includes((user as any)?.role ?? '')
   const [showCreate, setShowCreate] = useState(false)
+  const [showLoad, setShowLoad] = useState(false)
   // Вкладки: активные / архив завершённых. Архив по умолчанию скрыт.
   const [tab, setTab] = useState<'active' | 'archived'>('active')
   const now = new Date()
@@ -68,12 +73,20 @@ export default function SmmProjectsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-bold tracking-tight">Проекты</h1>
-        {canCreate && (
-          <button onClick={() => setShowCreate(true)}
-            className="btn-primary inline-flex items-center gap-1.5">
-            <Plus size={16} /> Добавить проект
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {canSeeLoad && (
+            <button onClick={() => setShowLoad(true)} title="Кто ведёт какие проекты"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+              <Network size={16} /> Схема
+            </button>
+          )}
+          {canCreate && (
+            <button onClick={() => setShowCreate(true)}
+              className="btn-primary inline-flex items-center gap-1.5">
+              <Plus size={16} /> Добавить проект
+            </button>
+          )}
+        </div>
       </div>
       {/* Вкладки «Активные / Архив» — архив показывается только по клику.
           Показываем переключатель лишь тем, у кого есть архив (canCreate). */}
@@ -130,6 +143,7 @@ export default function SmmProjectsPage() {
         </div>
       )}
       {showCreate && <SmmProjectCreateModal onClose={() => setShowCreate(false)} />}
+      {showLoad && <SmmSpecialistLoadModal onClose={() => setShowLoad(false)} />}
     </div>
   )
 }

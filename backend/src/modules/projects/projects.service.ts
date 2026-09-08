@@ -1963,6 +1963,29 @@ export class ProjectsService implements OnModuleInit {
     return this.getSmmProfile(id);
   }
 
+  /** Схема нагрузки SMM: каждый специалист (role=smm_specialist) с его
+   *  активными SMM-проектами + проекты без назначенного специалиста. */
+  async smmSpecialistLoad() {
+    const projects = await this.repo.find({ where: { projectType: 'SMM' } });
+    const active = projects.filter(p => String(p.status) !== 'archived');
+    const allSpecs = await this.userRepo.find({ where: { role: UserRole.SMM_SPECIALIST } });
+    const specMap = new Map<string, { id: string; name: string; avatar: string | null; projects: { id: string; name: string }[] }>();
+    for (const u of allSpecs) specMap.set(u.id, { id: u.id, name: u.name, avatar: u.avatar || null, projects: [] });
+    const unassigned: { id: string; name: string }[] = [];
+    for (const p of active) {
+      const ids = Array.isArray((p.smmData as any)?.smmSpecialistIds)
+        ? ((p.smmData as any).smmSpecialistIds as any[]).filter(x => typeof x === 'string') : [];
+      const proj = { id: p.id, name: p.name };
+      let matched = false;
+      for (const uid of ids) { const s = specMap.get(uid); if (s) { s.projects.push(proj); matched = true; } }
+      if (!matched) unassigned.push(proj);
+    }
+    const collator = new Intl.Collator('ru');
+    const specialists = [...specMap.values()].sort((a, b) => collator.compare(a.name, b.name));
+    unassigned.sort((a, b) => collator.compare(a.name, b.name));
+    return { specialists, unassigned };
+  }
+
   async archive(id: string, user?: { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
     // smm_director может архивировать ТОЛЬКО SMM-проекты (его область).
