@@ -76,8 +76,6 @@ const EmployeesPage     = lazy(() => import('@/pages/employees/EmployeesPage'))
 const EmployeeAccessPage = lazy(() => import('@/pages/access/EmployeeAccessPage'))
 const EmployeeDetailPage = lazy(() => import('@/pages/employees/EmployeeDetailPage'))
 const CalendarPage      = lazy(() => import('@/pages/calendar/CalendarPage'))
-const ReportsPage       = lazy(() => import('@/pages/reports/ReportsPage'))
-const SmmDailyPage      = lazy(() => import('@/pages/reports/SmmDailyPage'))
 const SmmPage           = lazy(() => import('@/pages/smm/SmmPage'))
 const AnalyticsPage     = lazy(() => import('@/pages/analytics/AnalyticsPage'))
 const NotificationsPage = lazy(() => import('@/pages/notifications/NotificationsPage'))
@@ -173,8 +171,6 @@ export default function App() {
           <Route path="employee-access" element={<RoleGuard><EmployeeAccessPage /></RoleGuard>} />
           <Route path="employees/:id" element={<RoleGuard><EmployeeDetailPage /></RoleGuard>} />
           <Route path="calendar" element={<RoleGuard><CalendarPage /></RoleGuard>} />
-          <Route path="reports" element={<RoleGuard><ReportsPage /></RoleGuard>} />
-          <Route path="smm-daily" element={<RoleGuard><SmmDailyPage /></RoleGuard>} />
           <Route path="smm" element={<RoleGuard><SmmPage /></RoleGuard>} />
           <Route path="smm/stories" element={<RoleGuard><SmmStoriesPage /></RoleGuard>} />
           <Route path="smm/projects" element={<RoleGuard><SmmProjectsPage /></RoleGuard>} />

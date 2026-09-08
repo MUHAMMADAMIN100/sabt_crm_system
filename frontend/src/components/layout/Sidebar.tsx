@@ -80,9 +80,6 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
     // а не кабинет полученных поручений — и подпись должна это отражать.
     { to: '/tasks',         icon: ClipboardCheck,  label: isDevDirector(user) ? 'Задачи' : 'Задачи от руководителя', permission: 'tasks.view' },
     { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
-    { to: '/reports',       icon: FileText,        label: t('nav.reports'),    permission: 'reports.view' },
-    // Ежедневный автоотчёт по СММ-команде — только основатель.
-    { to: '/smm-daily',     icon: ClipboardList,   label: 'Ежедневный отчёт',  permission: 'reports.view' },
     { to: '/analytics',     icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },
     { to: '/archive',       icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
     { to: '/employees',     icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
@@ -102,9 +99,9 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
 
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
   const filtered = navItems.filter(item => {
-    // Аналитика и Отчёты — не зона работы менеджеров продаж, ЕСЛИ им не выдали
-    // персональный грант на эти разделы.
-    if (isSalesManager && (item.to === '/reports' || item.to === '/analytics') && !userCan(user, item.permission)) return false
+    // Аналитика — не зона работы менеджеров продаж, ЕСЛИ им не выдали
+    // персональный грант на этот раздел.
+    if (isSalesManager && item.to === '/analytics' && !userCan(user, item.permission)) return false
     // Онбординг: у sales_manager_smm встроен переключателем в Базу клиентов —
     // отдельный пункт скрываем. У sales_manager_dev — отдельный пункт сайдбара
     // (по запросу пользователя). Остальным ролям пункт не нужен.
@@ -118,8 +115,6 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
     if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'notes.use')
     // «Доступы сотрудников» — только основатель/сооснователь/админ.
     if (item.to === '/employee-access') return canManageAccess(role)
-    // «Ежедневный отчёт» (автоотчёт по компании) — только основатель.
-    if (item.to === '/smm-daily') return canSeeSmmDaily(role)
     // «СММ» — раздел-заглушка, пока только у основателя/со-основателя.
     if (item.to === '/smm') return isTopExec
     // «Задачи от руководителя» — раздел получателя поручений. Основателю и
