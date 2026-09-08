@@ -296,6 +296,23 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         const backlog = old.backlog.filter(b => b.id !== ev.id)
         if (dateStr) {
           events.push({ ...ev, date: dateStr, ...(time !== undefined ? { time } : {}) })  // на дату (+час)
+          // Рилс без съёмки поставили на дату → бэк создаст авто-съёмку на X−1.
+          // Добавляем её в кэш сразу, иначе съёмка появляется только после полного
+          // рефетча (±1 год ≈ 3–4 с). После рефетча temp-съёмка заменяется реальной.
+          if (ev.itemId && ev.kind !== 'shoot' && ev.contentType === 'reel') {
+            const hasShoot = old.events.some(e => e.kind === 'shoot' && e.reelId === ev.itemId)
+              || old.backlog.some(e => e.kind === 'shoot' && e.reelId === ev.itemId)
+            if (!hasShoot) {
+              const [yy, mm, dd] = dateStr.split('-').map(Number)
+              const x1 = iso(new Date(yy, mm - 1, dd - 1))
+              events.push({
+                id: `opt-shoot-${ev.itemId}`, kind: 'shoot', date: x1,
+                projectId: ev.projectId, projectName: ev.projectName,
+                reelId: ev.itemId, derived: true, contentType: ev.contentType,
+                topic: 'Съёмка', time: null, durationMin: ev.durationMin ?? null, status: 'planned',
+              })
+            }
+          }
         } else {
           backlog.push({ ...ev, date: undefined, time: null })   // обратно в корзину
           // Возврат рилса в корзину → бэк удаляет его авто-съёмку; убираем её из кэша
