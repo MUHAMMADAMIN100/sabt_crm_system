@@ -128,18 +128,20 @@ export class ContentPlanService {
     return new Date(sy, sm, sAnchor);
   }
 
-  /** Авто-съёмка под рилс. При перетаскивании рилса (или его создании с датой):
-   *  — съёмки вообще нет (её удалили) → создаём заново на X−1;
-   *  — съёмка есть НА ДАТЕ → не трогаем (двигается независимо от рилса);
-   *  — съёмка есть, но БЕЗ даты (её сняли в «Не запланировано») → возвращаем на X−1
-   *    (пользователь «передумал» и перетащил рилс → съёмка снова появляется). */
-  private async ensureShootForReel(reel: ContentPlanItem | null): Promise<void> {
+  /** Авто-задача подготовки под публикацию (X−1): у РИЛСА — съёмка, у ПОСТА —
+   *  дизайн/макет. Механика одинаковая: при переносе/создании родителя с датой:
+   *  — задачи нет (удалили) → создаём заново на X−1;
+   *  — задача есть НА ДАТЕ → не трогаем (двигается независимо от родителя);
+   *  — задача есть БЕЗ даты (сняли в «Не запланировано») → возвращаем на X−1. */
+  private async ensurePrepForItem(reel: ContentPlanItem | null): Promise<void> {
     if (!reel) return;
-    if (reel.shootForItemId) return;                      // сама съёмка — не плодим съёмку под съёмку
-    if (reel.contentType !== ContentItemType.REEL) return; // только под рилсы
+    if (reel.shootForItemId) return;                      // сама подготовка — не плодим задачу под задачей
+    // Подготовка только под рилсы (съёмка) и посты (дизайн).
+    if (reel.contentType !== ContentItemType.REEL && reel.contentType !== ContentItemType.POST) return;
+    const prepTopic = reel.contentType === ContentItemType.REEL ? 'Съёмка' : 'Дизайн';
     if (!reel.publishDate) {
-      // Рилс вернули в «Не запланировано» → его авто-съёмка должна исчезнуть
-      // с календаря (иначе остаётся сиротой). Заново появится при переносе рилса на дату.
+      // Родителя вернули в «Не запланировано» → авто-задача подготовки должна исчезнуть
+      // с календаря (иначе остаётся сиротой). Заново появится при переносе на дату.
       await this.repo.delete({ shootForItemId: reel.id });
       return;
     }
@@ -172,10 +174,10 @@ export class ContentPlanService {
         });
         return;
       }
-      await this.repo.save(this.repo.create({              // съёмки нет — создаём
+      await this.repo.save(this.repo.create({              // задачи нет — создаём
         projectId: reel.projectId,
-        contentType: reel.contentType,                     // тип reel, но shootForItemId делает её съёмкой
-        topic: 'Съёмка',
+        contentType: reel.contentType,                     // тип родителя; shootForItemId делает её задачей подготовки
+        topic: prepTopic,                                  // Съёмка (рилс) / Дизайн (пост)
         shootForItemId: reel.id,
         publishDate: shootDate,
         publishTime: reel.publishTime ?? null,
@@ -183,7 +185,7 @@ export class ContentPlanService {
         status: ContentPlanStatus.PLANNED,
       }));
     } catch (e) {
-      this.logger.warn(`ensureShootForReel failed for ${reel.id}: ${(e as Error).message}`);
+      this.logger.warn(`ensurePrepForItem failed for ${reel.id}: ${(e as Error).message}`);
     }
   }
 
@@ -255,7 +257,7 @@ export class ContentPlanService {
       await this.repo.update(saved.id, { taskId });
     }
     if (taskId) this.emitTasksChanged(saved.projectId);
-    await this.ensureShootForReel(saved); // авто-съёмка под рилс (если рилс с датой)
+    await this.ensurePrepForItem(saved); // авто-съёмка под рилс (если рилс с датой)
     return saved;
   }
 
@@ -373,7 +375,7 @@ export class ContentPlanService {
     // Авто-съёмка при переносе рилса: если съёмки нет (удалили) или она без даты (сняли) —
     // создаём/возвращаем на X−1. Если съёмка на дате — НЕ двигаем (остаётся на месте).
     const item = await this.repo.findOne({ where: { id } });
-    await this.ensureShootForReel(item);
+    await this.ensurePrepForItem(item);
     return { ok: true };
   }
 
@@ -498,7 +500,7 @@ export class ContentPlanService {
     // Отдельны от рилсов; двигаются независимо. reelId нужен для линии-связки на фронте.
     const shootItems: any[] = await this.repo.manager.query(
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId",
-              reel.topic AS "reelTopic", reel."scriptText" AS "reelScript",
+              reel.topic AS "reelTopic", reel."scriptText" AS "reelScript", reel."contentType" AS "parentType",
               to_char(reel."publishDate"::date, 'YYYY-MM-DD') AS "reelDate",
               ci."publishTime" AS time, ci."durationMin" AS "durationMin",
               to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
@@ -552,10 +554,10 @@ export class ContentPlanService {
       ...shootItems.map(s => ({
         id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot', date: s.date,
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
-        title: s.reelTopic || 'Съёмка', time: s.time || null,   // название рилса — это и есть название съёмки
-        scriptText: s.reelScript || null, reelDate: s.reelDate || null, // описание и дата публикации рилса — для модалки съёмки
+        title: s.reelTopic || null, time: s.time || null,   // название родителя (рилс/пост) = название задачи подготовки
+        scriptText: s.reelScript || null, reelDate: s.reelDate || null, parentKind: s.parentType || null, // описание/дата/тип родителя — для модалки
         durationMin: Number(s.durationMin) > 0 ? Number(s.durationMin) : null,
-        reelId: s.reelId, // связь с рилсом → линия-связка на фронте
+        reelId: s.reelId, // связь с родителем → линия-связка на фронте
       })),
       ...storyRows.map(s => ({
         id: `story:${s.projectId}:${s.date}`, kind: 'publication', date: s.date,
@@ -578,7 +580,7 @@ export class ContentPlanService {
     // Несплан­ированные авто-съёмки (сняли с даты) — тоже в «Не запланировано».
     const bshootItems: any[] = await this.repo.manager.query(
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId",
-              reel.topic AS "reelTopic", reel."scriptText" AS "reelScript",
+              reel.topic AS "reelTopic", reel."scriptText" AS "reelScript", reel."contentType" AS "parentType",
               to_char(reel."publishDate"::date, 'YYYY-MM-DD') AS "reelDate"
        FROM content_plan_items ci
        LEFT JOIN content_plan_items reel ON reel.id = ci."shootForItemId"
@@ -607,7 +609,7 @@ export class ContentPlanService {
       ...bshootItems.map(s => ({
         id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot',
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
-        title: s.reelTopic || 'Съёмка', scriptText: s.reelScript || null, reelDate: s.reelDate || null, reelId: s.reelId,
+        title: s.reelTopic || null, scriptText: s.reelScript || null, reelDate: s.reelDate || null, parentKind: s.parentType || null, reelId: s.reelId,
       })),
     ];
 

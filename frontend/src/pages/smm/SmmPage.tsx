@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare, Palette } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, workflowApi, projectsApi } from '@/services/api.service'
@@ -21,9 +21,9 @@ export type Ev = {
   contentType?: string; topic?: string | null; scriptText?: string | null; status?: string; assigneeName?: string | null
   taskId?: string | null; taskStatus?: string | null; durationMin?: number | null
   count?: number // фактически опубликовано за день (сторис) — для заливки статуса на странице «Сторисы»
-  // Производная съёмка (авто под рилс): reelId — id рилса, к которому она относится (для линии-связки).
-  // reelDate — дата публикации рилса (для карточки рилса в модалке съёмки).
-  derived?: boolean; reelId?: string; reelDate?: string | null
+  // Производная задача подготовки (авто под рилс/пост): reelId — id родителя (для линии-связки),
+  // reelDate — дата публикации родителя, parentKind — тип родителя ('reel'→съёмка, 'post'→дизайн).
+  derived?: boolean; reelId?: string; reelDate?: string | null; parentKind?: string | null
 }
 // Статус дня по сторис на странице «Сторисы»: сделано (цель достигнута) / частично / не сделано.
 export type SDay = 'done' | 'partial' | 'none'
@@ -45,6 +45,14 @@ type View = 'month' | 'week' | 'day' | 'stories'
 const TYPE_ICON: Record<string, any> = {
   reel: Film, video: Film, design: ImageIcon, story: Circle,
   post: AlignLeft, ad: AlignLeft, carousel: ImageIcon, other: AlignLeft,
+}
+
+// Задача подготовки (kind 'shoot'): у рилса — «Съёмка» (Camera), у поста — «Дизайн» (Palette).
+// parentIcon — иконка родителя (для карточки в модалке), forWhat — «рилса»/«поста».
+function prepMeta(e: { parentKind?: string | null }) {
+  return e.parentKind === 'post'
+    ? { label: 'Дизайн', Icon: Palette, parentIcon: ImageIcon, forWhat: 'поста', verb: 'Сделать' }
+    : { label: 'Съёмка', Icon: Camera, parentIcon: Film, forWhat: 'рилса', verb: 'Снять' }
 }
 
 // Цвет проекта — стабильный по projectId; средние тона читаются в обеих темах.
@@ -316,22 +324,23 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         const backlog = old.backlog.filter(b => b.id !== ev.id)
         if (dateStr) {
           events.push({ ...ev, date: dateStr, ...(time !== undefined ? { time } : {}) })  // на дату (+час)
-          // Рилс без съёмки поставили на дату → бэк создаст авто-съёмку на X−1.
-          // Добавляем её в кэш сразу, иначе съёмка появляется только после полного
-          // рефетча (±1 год ≈ 3–4 с). После рефетча temp-съёмка заменяется реальной.
-          if (ev.itemId && ev.kind !== 'shoot' && ev.contentType === 'reel') {
-            const hasShoot = old.events.some(e => e.kind === 'shoot' && e.reelId === ev.itemId)
+          // Рилс/пост без задачи подготовки поставили на дату → бэк создаст её на X−1
+          // (рилс→съёмка, пост→дизайн). Добавляем в кэш сразу, иначе появляется только
+          // после полного рефетча (±1 год ≈ 3–4 с). После рефетча temp заменяется реальной.
+          if (ev.itemId && ev.kind !== 'shoot' && (ev.contentType === 'reel' || ev.contentType === 'design')) {
+            const hasPrep = old.events.some(e => e.kind === 'shoot' && e.reelId === ev.itemId)
               || old.backlog.some(e => e.kind === 'shoot' && e.reelId === ev.itemId)
-            if (!hasShoot) {
+            if (!hasPrep) {
               const [yy, mm, dd] = dateStr.split('-').map(Number)
               let x1 = iso(new Date(yy, mm - 1, dd - 1))
               const cyc = projCycle(ev.projectId)               // не раньше начала цикла
               if (cyc && x1 < cyc.start) x1 = cyc.start
+              const parentKind = ev.contentType === 'reel' ? 'reel' : 'post'
               events.push({
                 id: `opt-shoot-${ev.itemId}`, kind: 'shoot', date: x1,
                 projectId: ev.projectId, projectName: ev.projectName,
-                reelId: ev.itemId, derived: true, contentType: ev.contentType,
-                topic: 'Съёмка', time: null, durationMin: ev.durationMin ?? null, status: 'planned',
+                reelId: ev.itemId, derived: true, parentKind, title: ev.topic ?? null,
+                topic: parentKind === 'reel' ? 'Съёмка' : 'Дизайн', time: null, durationMin: ev.durationMin ?? null, status: 'planned',
               })
             }
           }
@@ -1671,9 +1680,10 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
 
 function BacklogCard({ e, onDragStart, wide = false }: { e: Ev; onDragStart: (e: Ev) => void; wide?: boolean }) {
   const type = e.contentType || 'other'
-  const Ic = e.kind === 'shoot' ? Camera : (TYPE_ICON[type] || AlignLeft)
-  const label = e.kind === 'shoot' ? 'Съёмка' : (TYPE_LABEL[type] || 'Контент')
-  const name = e.topic?.trim() || label
+  const prep = e.kind === 'shoot' ? prepMeta(e) : null
+  const Ic = prep ? prep.Icon : (TYPE_ICON[type] || AlignLeft)
+  const label = prep ? prep.label : (TYPE_LABEL[type] || 'Контент')
+  const name = prep ? (e.title?.trim() || label) : (e.topic?.trim() || label)
   if (wide) {
     // Страница проекта: слот иконка+название, одинакового размера (заполняет ячейку сетки minmax 170px).
     return (
@@ -1703,10 +1713,11 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const canDrag = !!(e.itemId || e.shootId) // авто-съёмки — content_plan_item (itemId), ручные — shoot_sessions (shootId)
   const grab = canDrag ? ' cursor-grab active:cursor-grabbing' : ' cursor-pointer'
   const type = e.contentType || 'other'
-  const Ic = e.kind === 'shoot' ? Camera : (TYPE_ICON[type] || AlignLeft)
+  const prep = e.kind === 'shoot' ? prepMeta(e) : null
+  const Ic = prep ? prep.Icon : (TYPE_ICON[type] || AlignLeft)
   const done = e.kind === 'publication' && isDone(e)
-  // Подпись карточки — название позиции (topic); у съёмки — название её рилса (e.title).
-  const label = e.kind === 'shoot' ? (e.title?.trim() || e.projectName || 'Съёмка') : (e.topic?.trim() || `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`)
+  // Подпись карточки — название позиции (topic); у задачи подготовки — название её родителя (e.title).
+  const label = prep ? (e.title?.trim() || e.projectName || prep.label) : (e.topic?.trim() || `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`)
   const op = dim ? 0.24 : on ? 1 : (e.reelId ? 0.85 : 1) // сделанные не гасим — помечаем галочкой ✓ (как в Notion)
   return (
     <span data-ev={e.id} data-proj={e.projectId} data-reel={e.reelId ? `item:${e.reelId}` : undefined}
@@ -1715,8 +1726,8 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
           draggable={canDrag} onDragStart={() => onDragStart?.(e)}
           style={{ opacity: op, ...projFill(e.projectId), ...(e.reelId ? { outline: `${on ? 2 : 1}px dashed ${projColor(e.projectId)}`, outlineOffset: `-${on ? 2 : 1}px` } : {}), ...(on && !e.reelId ? { boxShadow: `inset 0 0 0 1.5px ${projColor(e.projectId)}` } : {}) }}
           className={'flex items-center gap-1 rounded px-1.5 py-[2px] text-[11px] font-medium leading-tight truncate transition hover:brightness-110 ' + grab}
-          title={e.kind === 'shoot'
-            ? `Съёмка · ${e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`
+          title={prep
+            ? `${prep.label} · ${e.title || e.projectName}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`
             : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
       {done ? <CheckCircle2 size={12} className="shrink-0 text-emerald-500" /> : <Ic size={11} className="shrink-0" />}
       {e.kind === 'shoot' && e.time && <span className="font-semibold shrink-0">{e.time}</span>}
@@ -1780,7 +1791,9 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
   const isShoot = e.kind === 'shoot'
   const type = e.contentType || 'other'
   const done = isDone(e)
-  const Ic = isShoot ? Camera : (TYPE_ICON[type] || AlignLeft)
+  const prep = isShoot ? prepMeta(e) : null
+  const Ic = prep ? prep.Icon : (TYPE_ICON[type] || AlignLeft)
+  const PIcon = prep?.parentIcon ?? Film   // иконка родителя (рилс/пост) для карточки
   const canEdit = !isShoot && !!onSaveInfo
   const [topic, setTopic] = useState(e.topic || '')
   const [desc, setDesc] = useState(e.scriptText || '')
@@ -1817,7 +1830,7 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5 max-h-[88vh] overflow-y-auto" onClick={ev => ev.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 mb-2.5">
           <span style={projFill(e.projectId)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold">
-            <Ic size={12} /> {isShoot ? 'Съёмка' : (TYPE_LABEL[type] || 'Контент')}
+            <Ic size={12} /> {prep ? prep.label : (TYPE_LABEL[type] || 'Контент')}
           </span>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
@@ -1840,18 +1853,18 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
             <div className="flex items-center gap-3 mt-1 rounded-xl border px-3 py-2.5"
               style={{ background: `color-mix(in srgb, ${projColor(e.projectId)} 12%, transparent)`, borderColor: `color-mix(in srgb, ${projColor(e.projectId)} 30%, transparent)` }}>
               <span className="w-9 h-9 rounded-lg grid place-items-center shrink-0"
-                style={{ background: `color-mix(in srgb, ${projColor(e.projectId)} 22%, transparent)`, color: projColor(e.projectId) }}><Film size={16} /></span>
+                style={{ background: `color-mix(in srgb, ${projColor(e.projectId)} 22%, transparent)`, color: projColor(e.projectId) }}><PIcon size={16} /></span>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-bold truncate text-gray-900 dark:text-gray-100">{e.title?.trim() || 'Рилс'}</div>
-                <div className="text-[11.5px] text-gray-400">Публикация рилса{e.reelDate ? ` · ${fmtDate(e.reelDate)}` : ''}</div>
+                <div className="text-sm font-bold truncate text-gray-900 dark:text-gray-100">{e.title?.trim() || (prep ? prep.forWhat : '—')}</div>
+                <div className="text-[11.5px] text-gray-400">Публикация {prep?.forWhat}{e.reelDate ? ` · ${fmtDate(e.reelDate)}` : ''}</div>
               </div>
               <span className="shrink-0" style={{ color: projColor(e.projectId) }}>→</span>
             </div>
 
-            {/* Плитки: когда снять · длительность */}
+            {/* Плитки: когда сделать/снять · длительность */}
             <div className="grid grid-cols-2 gap-2 mt-3">
               <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
-                <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Снять</div>
+                <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{prep?.verb}</div>
                 <div className="text-sm font-bold mt-0.5 tabular-nums">{e.date ? fmtDate(e.date) : '—'}</div>
               </div>
               <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
@@ -1860,13 +1873,13 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
               </div>
             </div>
 
-            {/* Описание рилса — что снимать (только чтение, длинное скроллится внутри) */}
+            {/* Описание родителя — что делать (только чтение, длинное скроллится внутри) */}
             <div className="mt-4">
-              <p className={lab}>Описание рилса</p>
+              <p className={lab}>Описание {prep?.forWhat}</p>
               {e.scriptText?.trim() ? (
                 <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap max-h-[148px] overflow-y-auto">{e.scriptText}</div>
               ) : (
-                <div className="rounded-xl border border-dashed border-gray-200 dark:border-gray-700 px-3 py-2.5 text-[12.5px] text-gray-400">У рилса пока нет описания — добавьте его, открыв сам рилс.</div>
+                <div className="rounded-xl border border-dashed border-gray-200 dark:border-gray-700 px-3 py-2.5 text-[12.5px] text-gray-400">У {prep?.forWhat} пока нет описания — добавьте его, открыв {e.parentKind === 'post' ? 'сам пост' : 'сам рилс'}.</div>
               )}
             </div>
 
