@@ -104,7 +104,7 @@ function matchesFKind(e: Ev, k: FKind): boolean {
 // остальное гасится; двойной клик открывает карточку. reel = id рилс-события активной пары.
 // ids/reel — «в фокусе» пара (наведение имеет приоритет над кликом); active — есть ли фокус вообще
 // (в покое линии бледные). onHover — навёл/увёл курсор с карточки.
-type SelState = { ids: Set<string>; reel: string | null; active: boolean; onSelect: (e: Ev | null) => void; onHover: (e: Ev | null) => void }
+type SelState = { ids: Set<string>; reel: string | null; active: boolean; onSelect: (e: Ev | null) => void; onHover: (e: Ev | null) => void; ghosts?: Set<string> }
 const SelCtx = createContext<SelState>({ ids: new Set(), reel: null, active: false, onSelect: () => {}, onHover: () => {} })
 
 // ─── helpers ──────────────────────────────────────────────────────────
@@ -433,13 +433,23 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     // Съёмку из активной пары (наведение/клик по рилсу) показываем ВСЕГДА — даже если она скрыта:
     // так при наведении на рилс видно, когда его съёмка (без выбора проекта).
     if (e.kind === 'shoot' && e.id === revealShootId) return true
-    // Съёмки по умолчанию видят видеографы или при выбранном проекте; либо явно выбран фильтр «Съёмка».
-    if (e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId) && !selTypes.has('shoot')) return false
+    // Задачи подготовки (Съёмка/Дизайн) больше НЕ прячем полностью: оставляем в
+    // потоке как бледные «призраки» (резервируют слоты по порядку, подсветка при
+    // наведении). Бледность считается в ghostShootIds. Раньше тут был return false.
     return (selProjects.size === 0 || selProjects.has(e.projectId))
       && (selTypes.size === 0 || FKINDS.some(k => selTypes.has(k) && matchesFKind(e, k)))
       && matchSearch(e, search)
       && !(e.kind === 'publication' && e.contentType === 'story')
   }), [allEvents, selProjects, selTypes, search, isVideographer, revealShootId])
+  // «Призраки» — задачи подготовки, которые показываем бледно (не выбран проект,
+  // не видеограф, не включён фильтр «Съёмка»). При наведении на родителя — ярко.
+  const ghostShootIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const e of allEvents) {
+      if (e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId) && !selTypes.has('shoot')) s.add(e.id)
+    }
+    return s
+  }, [allEvents, isVideographer, selProjects, selTypes])
 
   const mainByDate = useMemo(() => {
     const map = new Map<string, Ev[]>()
@@ -569,7 +579,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
             onSettings={openProjSettings} wide={!!embeddedProjectId}
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
-          <SelCtx.Provider value={{ ids: selInfo.ids, reel: selInfo.reel, active: focus != null, onSelect, onHover }}>
+          <SelCtx.Provider value={{ ids: selInfo.ids, reel: selInfo.reel, active: focus != null, onSelect, onHover, ghosts: ghostShootIds }}>
           {view === 'month' ? (
             <MonthScrollView initialMonth={monthStr} commandMonth={monthStr} commandSeq={scrollSeq}
               byDate={mainByDate} today={today} cycles={cycles} dragRange={dragRange}
@@ -1718,7 +1728,10 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const done = e.kind === 'publication' && isDone(e)
   // Подпись карточки — название позиции (topic); у задачи подготовки — название её родителя (e.title).
   const label = prep ? (e.title?.trim() || e.projectName || prep.label) : (e.topic?.trim() || `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`)
-  const op = dim ? 0.24 : on ? 1 : (e.reelId ? 0.85 : 1) // сделанные не гасим — помечаем галочкой ✓ (как в Notion)
+  // «Призрак» — задача подготовки, которую показываем бледно (резервирует слот по
+  // порядку); при наведении (on) — ярко. Иначе прежняя логика прозрачности.
+  const isGhost = e.kind === 'shoot' && !!sel.ghosts?.has(e.id)
+  const op = on ? 1 : isGhost ? 0.26 : dim ? 0.24 : (e.reelId ? 0.85 : 1)
   return (
     <span data-ev={e.id} data-proj={e.projectId} data-reel={e.reelId ? `item:${e.reelId}` : undefined}
           onClick={ev => { ev.stopPropagation(); sel.onSelect(e) }} onDoubleClick={ev => { ev.stopPropagation(); onOpen?.(e) }}
