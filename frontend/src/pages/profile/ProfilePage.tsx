@@ -12,7 +12,6 @@ import { ru } from 'date-fns/locale'
 import { Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import TwoFactorSection from '@/components/profile/TwoFactorSection'
-import ThemeEditorSection from '@/components/profile/ThemeEditorSection'
 import TaskCelebrationSection from '@/components/profile/TaskCelebrationSection'
 import { prepareAvatar } from '@/lib/imageCompress'
 
@@ -319,8 +318,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Персональная тема интерфейса (5-цветный редактор) */}
-      <ThemeEditorSection />
+      {/* Выбор темы/цветов убран: на всю компанию — единая тема основателя. */}
 
       {/* «Печать успеха» за выполненную задачу — тоже с ролевой проверкой внутри */}
       <TaskCelebrationSection />

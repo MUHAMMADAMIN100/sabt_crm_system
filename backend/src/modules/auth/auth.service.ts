@@ -563,8 +563,19 @@ export class AuthService implements OnModuleInit {
     const topRoles = [UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN];
     const effectiveRole = employee?.isSubAdmin && !topRoles.includes(user.role) ? UserRole.ADMIN : user.role;
     const sanitized = this.sanitize(user);
+    // Единая тема оформления на всю компанию — цвета основателя. Персональный
+    // выбор темы отключён, поэтому всем отдаём themeColor основателя.
+    let themeColor: string | null = (sanitized as any).themeColor ?? null;
+    try {
+      const founder = await this.userRepo.findOne({
+        where: { role: UserRole.FOUNDER },
+        order: { createdAt: 'ASC' },
+      });
+      themeColor = founder?.themeColor ?? null;
+    } catch { /* при ошибке оставляем собственный themeColor */ }
     return {
       ...sanitized,
+      themeColor,
       role: effectiveRole,
       position: employee?.position || null,
       department: employee?.department || null,
