@@ -71,7 +71,7 @@ export class ProjectsController {
   /** Настройки месячного цикла SMM-проекта (Умный календарь): день старта
    *  (1..31) + норма за цикл (рилсы/посты). null у поля — сбросить его. */
   @Patch(':id/smm-cycle')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   setSmmCycle(
     @Param('id') id: string,
     @Body() body: { day?: number | null; normReels?: number | null; normPosts?: number | null; storiesPerMonth?: number | null },

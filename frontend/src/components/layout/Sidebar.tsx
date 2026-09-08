@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeDevBoard, canSeeProjectStories, canManageAccess, canSeeSmmDaily, userCan, isDevDirector, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeDevBoard, canSeeProjectStories, canManageAccess, canSeeSmmDaily, canSeeSmmSection, userCan, isDevDirector, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
@@ -115,8 +115,8 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
     if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'notes.use')
     // «Доступы сотрудников» — только основатель/сооснователь/админ.
     if (item.to === '/employee-access') return canManageAccess(role)
-    // «СММ» — раздел-заглушка, пока только у основателя/со-основателя.
-    if (item.to === '/smm') return isTopExec
+    // «СММ» (Умный календарь / Сторисы / Проекты) — вся СММ-команда + топ.
+    if (item.to === '/smm') return canSeeSmmSection(role)
     // «Задачи от руководителя» — раздел получателя поручений. Основателю и
     // со-основателю он не нужен: выданные ими задачи видны в Календаре (там же
     // исполнитель, статус и правка). Маршрут остаётся рабочим для ссылок из

@@ -52,7 +52,7 @@ export class ContentPlanController {
   /** Календарь производства SMM за месяц: публикации + съёмки (раздел СММ).
    *  Только руководящие роли. Объявлено ДО ':id', иначе перехватит вайлдкард. */
   @Get('smm-calendar')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   smmCalendar(@Query('from') from?: string, @Query('to') to?: string) {
     return this.service.smmCalendar(from, to);
   }
@@ -60,14 +60,14 @@ export class ContentPlanController {
   /** Умный календарь: догенерировать заготовки под норму цикла (рилсы/посты)
    *  в «Не запланировано». Только руководящие роли SMM. */
   @Post('smart-generate')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   smartGenerate(@Body() body: { projectId: string; reels?: number; posts?: number }) {
     return this.service.smartGenerateStubs(body?.projectId, body?.reels ?? 0, body?.posts ?? 0);
   }
 
   /** Умный календарь: полностью очистить контент проекта (сброс теста). */
   @Post('smart-clear')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   smartClear(@Body() body: { projectId: string }) {
     return this.service.smartClearProject(body?.projectId);
   }
@@ -75,7 +75,7 @@ export class ContentPlanController {
   /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) без
    *  побочных эффектов. Объявлено ДО ':id'. Только руководящие роли SMM. */
   @Patch('smart-item/:id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null }) {
     return this.service.smartUpdateItem(id, body || {});
   }
