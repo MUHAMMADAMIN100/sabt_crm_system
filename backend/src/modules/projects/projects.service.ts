@@ -1199,6 +1199,14 @@ export class ProjectsService implements OnModuleInit {
     }
     await this.recomputeFinancials(project, project, explicitOnCreate);
 
+    // По умолчанию SMM-проект = 20 сторис/месяц (дневная норма = round(20/30) = 1),
+    // если норма ещё не задана явно. Редактируется на странице проекта (0–100).
+    if (project.projectType === 'SMM') {
+      const sd: any = { ...(project.smmData || {}) };
+      if (sd.storiesPerMonth == null) { sd.storiesPerMonth = 20; sd.storiesPerDay = 1; }
+      project.smmData = sd;
+    }
+
     const saved = await this.repo.save(project);
 
     // Транши оплаты: создаём ProjectPayment записи и суммируем в paidAmount.
@@ -1816,9 +1824,9 @@ export class ProjectsService implements OnModuleInit {
       const n = dayInRange(dto.normPosts, 0, 999);
       if (n == null) delete smmData.normPosts; else smmData.normPosts = n;
     }
-    // Сторис в месяц (норма). Дневную норму (для KPI и раскраски дней) выводим = месяц/30.
+    // Сторис в месяц (норма, 0–100). Дневную норму (для KPI и раскраски дней) выводим = месяц/30.
     if ('storiesPerMonth' in dto) {
-      const m = dayInRange(dto.storiesPerMonth, 0, 9999);
+      const m = dayInRange(dto.storiesPerMonth, 0, 100);
       if (m == null) { delete smmData.storiesPerMonth; delete smmData.storiesPerDay; }
       else { smmData.storiesPerMonth = m; smmData.storiesPerDay = m > 0 ? Math.max(1, Math.round(m / 30)) : 0; }
     }

@@ -240,13 +240,16 @@ export default function SmmProjectPage() {
     if (p && !cycEditing) setCycDraft({
       day: p.cycleStartDay != null ? String(p.cycleStartDay) : '',
       reels: String(p.normReels ?? 0), posts: String(p.normPosts ?? 0),
-      spm: p.storiesPerMonth != null ? String(p.storiesPerMonth) : '',
+      spm: p.storiesPerMonth != null ? String(p.storiesPerMonth) : '20',
     })
   }, [p, cycEditing])
   const perDayHint = (() => { const m = parseInt(cycDraft.spm, 10); return Number.isFinite(m) && m > 0 ? Math.max(1, Math.round(m / daysInMonth)) : 0 })()
   const saveCycle = () => {
     const nn = (s: string) => { const n = parseInt(s, 10); return Number.isFinite(n) ? n : null }
-    cycleMut.mutate({ day: nn(cycDraft.day), normReels: nn(cycDraft.reels) ?? 0, normPosts: nn(cycDraft.posts) ?? 0, storiesPerMonth: nn(cycDraft.spm) })
+    // Сторис в месяц ограничиваем 0–100 (как на бэкенде), чтобы не ловить 400.
+    const spmRaw = nn(cycDraft.spm)
+    const spm = spmRaw == null ? null : Math.max(0, Math.min(100, spmRaw))
+    cycleMut.mutate({ day: nn(cycDraft.day), normReels: nn(cycDraft.reels) ?? 0, normPosts: nn(cycDraft.posts) ?? 0, storiesPerMonth: spm })
     setCycEditing(false)
   }
 
@@ -544,8 +547,8 @@ export default function SmmProjectPage() {
             </div>
             <div className={fRow}><span className="text-sm text-gray-500">Сторис в месяц</span>
               {cycEditing
-                ? <span className="flex items-center gap-2"><input type="number" min={0} value={cycDraft.spm} onChange={e => setCycDraft(d => ({ ...d, spm: e.target.value }))} placeholder="90" className={editIn + ' w-16 text-center'} /><span className="text-gray-400 text-[12.5px] whitespace-nowrap">· ≈ {perDayHint > 0 ? perDayHint : '—'}/день</span></span>
-                : <span className="text-sm font-semibold text-right">{p.storiesPerMonth != null && p.storiesPerMonth > 0 ? <>{p.storiesPerMonth} <span className="text-gray-400 font-medium text-[12.5px]">· ≈ {Math.max(1, Math.round(p.storiesPerMonth / daysInMonth))}/день</span></> : '—'}</span>}
+                ? <span className="flex items-center gap-2"><input type="number" min={0} max={100} value={cycDraft.spm} onChange={e => setCycDraft(d => ({ ...d, spm: e.target.value }))} placeholder="20" className={editIn + ' w-16 text-center'} /><span className="text-gray-400 text-[12.5px] whitespace-nowrap">· ≈ {perDayHint > 0 ? perDayHint : '—'}/день</span></span>
+                : <span className="text-sm font-semibold text-right">{p.storiesPerMonth != null ? (p.storiesPerMonth > 0 ? <>{p.storiesPerMonth} <span className="text-gray-400 font-medium text-[12.5px]">· ≈ {Math.max(1, Math.round(p.storiesPerMonth / daysInMonth))}/день</span></> : '0') : '—'}</span>}
             </div>
             <div className={fRow}><span className="text-sm text-gray-500">Запланировано в календаре</span><span className="text-sm font-semibold text-right">{norm > 0 ? `${placed} из ${norm}` : '—'}</span></div>
             <div className={fRow}><span className="text-sm text-gray-500">Осталось в «Не запланировано»</span><span className="text-sm font-semibold text-right">{left}</span></div>
