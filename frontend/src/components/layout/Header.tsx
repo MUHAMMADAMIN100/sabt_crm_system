@@ -283,11 +283,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           )}
         </div>
 
-        {/* Theme toggle */}
-        <button onClick={toggleTheme} className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300"
-          title={theme === 'dark' ? t('settings.light') : t('settings.dark')}>
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
+        {/* Переключатель темы убран: тёмная тема зафиксирована на всю компанию. */}
 
         {/* Language selector (hidden on very small screens) */}
         <div className="relative hidden xs:block" ref={langRef}>

@@ -8,6 +8,9 @@ import './index.css'
 import { initThemeFromStorage } from './lib/theme'
 import { queryClient } from './lib/queryClient'
 
+// Тёмная тема зафиксирована на всю компанию — включаем класс `dark` ДО первого
+// рендера, чтобы не мигало светлым (сохранённый выбор режима игнорируется).
+document.documentElement.classList.add('dark')
 // Применяем персональный акцентный цвет ДО первого рендера — иначе
 // интерфейс мигает дефолтным ч/б, пока не придёт /auth/me.
 initThemeFromStorage()

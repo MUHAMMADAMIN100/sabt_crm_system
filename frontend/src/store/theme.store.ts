@@ -9,32 +9,33 @@ interface ThemeStore {
   toggleTheme: () => void
 }
 
+// Тёмная тема ЗАФИКСИРОВАНА на всю компанию (по решению основателя): режим
+// день/ночь больше не выбирается — всегда тёмная. setTheme/toggleTheme оставлены
+// как no-op (совместимость с местами, где их вызывают), но всегда держат 'dark'.
 export const useThemeStore = create<ThemeStore>()(
   persist(
-    (set, get) => ({
-      theme: 'light',
-      setTheme: (theme) => {
-        set({ theme })
-        // Add transition class before switching, remove after
-        document.documentElement.classList.add('theme-switching')
-        document.documentElement.classList.toggle('dark', theme === 'dark')
-        setTimeout(() => {
-          document.documentElement.classList.remove('theme-switching')
-        }, 350)
+    (set) => ({
+      theme: 'dark',
+      setTheme: () => {
+        set({ theme: 'dark' })
+        document.documentElement.classList.add('dark')
       },
       toggleTheme: () => {
-        const newTheme = get().theme === 'light' ? 'dark' : 'light'
-        get().setTheme(newTheme)
+        set({ theme: 'dark' })
+        document.documentElement.classList.add('dark')
       },
     }),
-    { 
+    {
       name: 'erp-theme',
       onRehydrateStorage: () => (state) => {
-        // Apply theme on load
-        if (state?.theme) {
-          document.documentElement.classList.toggle('dark', state.theme === 'dark')
-        }
+        // Игнорируем сохранённый выбор — всегда тёмная.
+        if (state) state.theme = 'dark'
+        document.documentElement.classList.add('dark')
       },
     }
   )
 )
+
+// Принудительно тёмная даже если в localStorage осталось 'light' (после гидратации).
+useThemeStore.setState({ theme: 'dark' })
+document.documentElement.classList.add('dark')
