@@ -1704,8 +1704,8 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const type = e.contentType || 'other'
   const Ic = e.kind === 'shoot' ? Camera : (TYPE_ICON[type] || AlignLeft)
   const done = e.kind === 'publication' && isDone(e)
-  // Подпись карточки — название позиции (topic); если пусто, откат на «Тип · Проект».
-  const label = e.kind === 'shoot' ? (e.projectName || e.title || 'Съёмка') : (e.topic?.trim() || `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`)
+  // Подпись карточки — название позиции (topic); у съёмки — название её рилса (e.title).
+  const label = e.kind === 'shoot' ? (e.title?.trim() || e.projectName || 'Съёмка') : (e.topic?.trim() || `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`)
   const op = dim ? 0.24 : on ? 1 : (e.reelId ? 0.85 : 1) // сделанные не гасим — помечаем галочкой ✓ (как в Notion)
   return (
     <span data-ev={e.id} data-proj={e.projectId} data-reel={e.reelId ? `item:${e.reelId}` : undefined}
@@ -1835,16 +1835,20 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
           </div>
         ) : (
           <>
-            <h3 className="text-lg font-bold mb-1">{e.title || e.projectName || 'Съёмка'}</h3>
-            <div className="space-y-1.5 text-sm my-3">
-              {e.time && <Row k="Время" v={e.time} />}
-              {e.location && <Row k="Место" v={e.location} />}
-              {e.note && <Row k="Заметка" v={e.note} />}
-            </div>
+            <h3 className="text-lg font-bold">{e.title?.trim() || 'Съёмка'}</h3>
+            <p className="text-[12.5px] text-gray-400 mt-1 inline-flex items-center gap-1.5">
+              <Camera size={13} /> Съёмка для этого рилса{e.date ? ` · ${fmtDate(e.date)}` : ''}{e.time ? `, ${e.time}` : ''}
+            </p>
+            {(e.location || e.note) && (
+              <div className="space-y-1.5 text-sm mt-3">
+                {e.location && <Row k="Место" v={e.location} />}
+                {e.note && <Row k="Заметка" v={e.note} />}
+              </div>
+            )}
           </>
         )}
 
-        {!isShoot && onDuration && (
+        {onDuration && (
           <div className="my-4">
             <p className={lab}>Длительность съёмки</p>
             <div className="flex flex-wrap gap-1.5">

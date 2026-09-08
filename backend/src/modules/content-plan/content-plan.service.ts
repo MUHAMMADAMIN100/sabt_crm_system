@@ -498,9 +498,11 @@ export class ContentPlanService {
     // Отдельны от рилсов; двигаются независимо. reelId нужен для линии-связки на фронте.
     const shootItems: any[] = await this.repo.manager.query(
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId",
+              reel.topic AS "reelTopic",
               ci."publishTime" AS time, ci."durationMin" AS "durationMin",
               to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
        FROM content_plan_items ci
+       LEFT JOIN content_plan_items reel ON reel.id = ci."shootForItemId"
        WHERE ci."projectId" = ANY($1::uuid[])
          AND ci."shootForItemId" IS NOT NULL
          AND ci."publishDate" IS NOT NULL
@@ -549,7 +551,7 @@ export class ContentPlanService {
       ...shootItems.map(s => ({
         id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot', date: s.date,
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
-        title: 'Съёмка', time: s.time || null,
+        title: s.reelTopic || 'Съёмка', time: s.time || null,   // название рилса — это и есть название съёмки
         durationMin: Number(s.durationMin) > 0 ? Number(s.durationMin) : null,
         reelId: s.reelId, // связь с рилсом → линия-связка на фронте
       })),
@@ -573,8 +575,9 @@ export class ContentPlanService {
     ).catch((e: any) => { this.logger.warn(`smmCalendar backlog pubs failed: ${e?.message || e}`); return []; });
     // Несплан­ированные авто-съёмки (сняли с даты) — тоже в «Не запланировано».
     const bshootItems: any[] = await this.repo.manager.query(
-      `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId"
+      `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId", reel.topic AS "reelTopic"
        FROM content_plan_items ci
+       LEFT JOIN content_plan_items reel ON reel.id = ci."shootForItemId"
        WHERE ci."projectId" = ANY($1::uuid[]) AND ci."shootForItemId" IS NOT NULL AND ci."publishDate" IS NULL`,
       [ids],
     ).catch((e: any) => { this.logger.warn(`smmCalendar backlog shootItems failed: ${e?.message || e}`); return []; });
@@ -600,7 +603,7 @@ export class ContentPlanService {
       ...bshootItems.map(s => ({
         id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot',
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
-        title: 'Съёмка', reelId: s.reelId,
+        title: s.reelTopic || 'Съёмка', reelId: s.reelId,
       })),
     ];
 
