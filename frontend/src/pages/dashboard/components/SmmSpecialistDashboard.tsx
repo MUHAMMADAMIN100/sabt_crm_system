@@ -64,7 +64,8 @@ export default function SmmSpecialistDashboard() {
     return all.filter((p: any) =>
       p.members?.some((m: any) => m.id === user?.id) ||
       p.managerId === user?.id ||
-      p.manager?.id === user?.id,
+      p.manager?.id === user?.id ||
+      (Array.isArray(p.smmData?.smmSpecialistIds) && p.smmData.smmSpecialistIds.includes(user?.id)),
     )
   }, [projectsList, user])
   const myProjectIds = useMemo(() => new Set(myProjects.map((p: any) => p.id)), [myProjects])

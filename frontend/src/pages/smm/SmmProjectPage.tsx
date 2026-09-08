@@ -4,8 +4,9 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, TrendingUp, TrendingDown, Gift, FileText, X, Printer, MoreVertical, Archive } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { contentPlanApi, projectsApi } from '@/services/api.service'
+import { contentPlanApi, projectsApi, usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import { Avatar } from '@/components/ui'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, type SmmProj } from './smmShared'
 import SmmPage from './SmmPage'
@@ -14,7 +15,8 @@ type Ev = { projectId: string; kind?: string; contentType?: string; status?: str
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
 type MKey = 'subs' | 'reach' | 'eng' | 'leads'
 type MPoint = { ym: string; subs: number | null; reach: number | null; eng: number | null; leads: number | null }
-type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNote: string | null; collabSince: string | null; preferences: string | null; metrics: MPoint[] }
+type SmmSpec = { id: string; name: string; avatar: string | null; role: string }
+type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNote: string | null; collabSince: string | null; preferences: string | null; metrics: MPoint[]; smmSpecialistIds?: string[]; smmSpecialists?: SmmSpec[] }
 
 const EDIT_ROLES = ['founder', 'co_founder', 'admin', 'smm_director', 'smm_specialist']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
@@ -28,6 +30,7 @@ const METRICS: { key: MKey; label: string; color: string; Icon: any }[] = [
 ]
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const fmtNum = (n: number) => n.toLocaleString('ru-RU')
+const specWord = (n: number) => { const a = n % 10, b = n % 100; if (a === 1 && b !== 11) return 'специалист'; if (a >= 2 && a <= 4 && (b < 10 || b >= 20)) return 'специалиста'; return 'специалистов' }
 const mLabel = (ym: string) => { const [y, m] = ym.split('-'); return `${MONTHS[+m - 1] ?? ''} ${y}` }
 const mShort = (ym: string) => (MONTHS[+ym.split('-')[1] - 1] ?? '').slice(0, 3)
 const fmtDate = (v?: string | null) => v ? new Date(v + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'
@@ -297,6 +300,24 @@ export default function SmmProjectPage() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
 
+  // ── SMM-специалист проекта ──
+  // Назначает руководство (у него есть доступ к списку /users); руководитель SMM
+  // и сам специалист видят назначенных, но не меняют. Выбор — только специалисты.
+  const canAssignSpec = ['admin', 'founder', 'co_founder'].includes((user as any)?.role ?? '')
+  const { data: specialistUsers } = useQuery<SmmSpec[]>({
+    queryKey: ['users', 'smm_specialist'],
+    queryFn: () => usersApi.list('smm_specialist'),
+    enabled: canAssignSpec,
+  })
+  const [specOpen, setSpecOpen] = useState(false)
+  const assignedSpecs = profile?.smmSpecialists ?? []
+  const assignedIds = new Set(profile?.smmSpecialistIds ?? [])
+  const toggleSpec = (uid: string) => {
+    const next = new Set(assignedIds)
+    if (next.has(uid)) next.delete(uid); else next.add(uid)
+    saveMut.mutate({ smmSpecialistIds: [...next] })
+  }
+
   if (isLoading) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
   if (!info || !p) return (
     <div className="space-y-4">
@@ -432,6 +453,67 @@ export default function SmmProjectPage() {
             {cycEditing ? editActions(saveCycle, () => setCycEditing(false)) : editBtn(() => setCycEditing(true))}
           </div>
           <div>
+            {/* SMM-специалист проекта — кто ведёт проект (влияет на его личный кабинет). */}
+            <div className={fRow + ' relative'}>
+              <span className="text-sm text-gray-500">SMM-специалист</span>
+              <div className="flex items-center gap-2 min-w-0">
+                {assignedSpecs.length === 0 ? (
+                  <span className="text-sm text-gray-400">Не назначен</span>
+                ) : assignedSpecs.length === 1 ? (
+                  <span className="inline-flex items-center gap-1.5 min-w-0">
+                    <Avatar name={assignedSpecs[0].name} src={assignedSpecs[0].avatar || undefined} size={20} />
+                    <span className="text-sm font-semibold truncate max-w-[160px]">{assignedSpecs[0].name}</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="flex -space-x-2">
+                      {assignedSpecs.slice(0, 3).map(s => (
+                        <span key={s.id} className="ring-2 ring-white dark:ring-gray-900 rounded-full">
+                          <Avatar name={s.name} src={s.avatar || undefined} size={20} />
+                        </span>
+                      ))}
+                    </span>
+                    <span className="text-sm font-semibold whitespace-nowrap">{assignedSpecs.length} {specWord(assignedSpecs.length)}</span>
+                  </span>
+                )}
+                {canAssignSpec && (
+                  <div className="relative shrink-0">
+                    <button
+                      onClick={() => setSpecOpen(o => !o)}
+                      className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                      <Pencil size={12} /> {assignedSpecs.length ? 'Изменить' : 'Назначить'}
+                    </button>
+                    {specOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setSpecOpen(false)} />
+                        <div className="absolute right-0 mt-1 z-50 w-72 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl py-1.5 max-h-72 overflow-y-auto">
+                          <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">SMM-специалисты</div>
+                          {!specialistUsers?.length ? (
+                            <p className="px-3 py-3 text-sm text-gray-400">Нет специалистов</p>
+                          ) : specialistUsers.map(u => {
+                            const on = assignedIds.has(u.id)
+                            return (
+                              <button
+                                key={u.id}
+                                onClick={() => toggleSpec(u.id)}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                              >
+                                <Avatar name={u.name} src={u.avatar || undefined} size={26} />
+                                <span className="text-sm font-medium text-gray-800 dark:text-gray-100 flex-1 truncate">{u.name}</span>
+                                <span className={'w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ' + (on ? 'bg-[#3f7a58] border-[#3f7a58]' : 'border-gray-300 dark:border-gray-600')}>
+                                  {on && <Check size={13} className="text-white" />}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
             <div className={fRow}><span className="text-sm text-gray-500">День старта цикла</span>
               {cycEditing
                 ? <input type="number" min={1} max={31} value={cycDraft.day} onChange={e => setCycDraft(d => ({ ...d, day: e.target.value }))} className={editIn + ' w-16 text-center'} />

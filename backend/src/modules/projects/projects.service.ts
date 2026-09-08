@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
 import { hasGrant } from '../auth/permissions';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike } from 'typeorm';
+import { Repository, ILike, In } from 'typeorm';
 import { Project, ProjectStatus, ProjectBillingType, ProjectPaymentStatus } from './project.entity';
 import { ProjectPayment } from './payment.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -1874,12 +1874,28 @@ export class ProjectsService implements OnModuleInit {
   async getSmmProfile(id: string) {
     const project = await this.repo.findOne({ where: { id } });
     if (!project) throw new NotFoundException('Project not found');
-    return this.normSmmProfile(project.smmData || {});
+    const base = this.normSmmProfile(project.smmData || {});
+    // Назначенные SMM-специалисты проекта: id храним в smmData, для отображения
+    // резолвим в мини-объекты (имя/аватар) — чтобы список видели и те, кому
+    // недоступен /users (руководитель SMM, сам специалист).
+    const ids: string[] = Array.isArray((project.smmData as any)?.smmSpecialistIds)
+      ? ((project.smmData as any).smmSpecialistIds as any[]).filter(x => typeof x === 'string')
+      : [];
+    let smmSpecialists: { id: string; name: string; avatar: string | null; role: string }[] = [];
+    if (ids.length) {
+      const users = await this.userRepo.find({ where: { id: In(ids) } });
+      const byId = new Map(users.map(u => [u.id, u] as const));
+      smmSpecialists = ids
+        .map(uid => byId.get(uid))
+        .filter((u): u is User => !!u)
+        .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }));
+    }
+    return { ...base, smmSpecialistIds: smmSpecialists.map(u => u.id), smmSpecialists };
   }
 
   async setSmmProfile(
     id: string,
-    dto: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; metrics?: any[]; followers?: { ym: string; value: number }[] },
+    dto: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; metrics?: any[]; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[] },
     user?: { id: string; role: string; name?: string },
   ) {
     const project = await this.repo.findOne({ where: { id } });
@@ -1894,6 +1910,19 @@ export class ProjectsService implements OnModuleInit {
     if ('keyDateNote' in dto) setOrDel('keyDateNote', str(dto.keyDateNote, 500));
     if ('collabSince' in dto) setOrDel('collabSince', dateOr(dto.collabSince));
     if ('preferences' in dto) setOrDel('preferences', str(dto.preferences, 4000));
+    // Назначенные SMM-специалисты проекта. Принимаем только id пользователей с
+    // ролью smm_specialist (защита «в выборе только специалисты»), дедуп, cap 10.
+    if ('smmSpecialistIds' in dto) {
+      const raw = Array.isArray(dto.smmSpecialistIds) ? dto.smmSpecialistIds.filter(x => typeof x === 'string') : [];
+      const uniq = [...new Set(raw)].slice(0, 10);
+      let valid: string[] = [];
+      if (uniq.length) {
+        const users = await this.userRepo.find({ where: { id: In(uniq) } });
+        const allowed = new Set(users.filter(u => u.role === UserRole.SMM_SPECIALIST).map(u => u.id));
+        valid = uniq.filter(x => allowed.has(x));
+      }
+      setOrDel('smmSpecialistIds', valid.length ? valid : null);
+    }
     // Помесячные метрики: подписчики/охват/вовлечённость/заявки. Дедуп по ym, сортировка, cap 240.
     if ('metrics' in dto) {
       const arr = Array.isArray(dto.metrics) ? dto.metrics : [];
@@ -1930,7 +1959,8 @@ export class ProjectsService implements OnModuleInit {
       entity: 'project', entityId: id, entityName: project.name, details: { smmProfile: true },
     });
     this.gateway.broadcast('projects:changed', { projectId: id });
-    return this.normSmmProfile(smmData);
+    // Возвращаем через getSmmProfile — с резолвом специалистов (имя/аватар).
+    return this.getSmmProfile(id);
   }
 
   async archive(id: string, user?: { id: string; role: string; name?: string }) {
