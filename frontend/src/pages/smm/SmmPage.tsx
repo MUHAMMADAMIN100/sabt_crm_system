@@ -512,7 +512,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
       ) : (
         <>
           <BacklogPanel groups={backlogGroups} activeIds={selProjects} onPick={toggleProject}
-            onSettings={openProjSettings}
+            onSettings={openProjSettings} wide={!!embeddedProjectId}
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
           <SelCtx.Provider value={{ ids: selInfo.ids, reel: selInfo.reel, active: focus != null, onSelect, onHover }}>
@@ -1554,10 +1554,12 @@ export function StoriesTab({ projects, cells, statusByProject, today, monthLabel
 }
 
 // ─── панель «Не запланировано» ─────────────────────────────────────────
-function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDrop, over, setOver }: {
+function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDrop, over, setOver, wide = false }: {
   groups: { id: string; name: string; items: Ev[]; norm: number }[]; activeIds: Set<string>; onPick: (id: string) => void
   onSettings: (id: string) => void
   onDragStart: (e: Ev) => void; onDrop: () => void; over: boolean; setOver: (v: boolean) => void
+  /** Широкий режим (страница проекта): карточка на всю ширину, слоты крупнее (иконка+название). */
+  wide?: boolean
 }) {
   // Панель сворачивается в одну строку-кнопку, чтобы отдать место календарю (запоминаем выбор).
   const [open, setOpen] = useState(() => { try { return localStorage.getItem('smmBacklogOpen') === '1' } catch { return false } })
@@ -1582,8 +1584,8 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
       {open && (groups.length === 0 ? (
         <div className="text-[12.5px] text-gray-400 px-1 py-2">Нет SMM-проектов.</div>
       ) : (
-      <div className="grid gap-2 max-h-[176px] overflow-y-auto pr-0.5 mt-1.5"
-        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+      <div className={'grid gap-2 overflow-y-auto pr-0.5 mt-1.5 ' + (wide ? 'max-h-[320px]' : 'max-h-[176px]')}
+        style={{ gridTemplateColumns: wide ? '1fr' : 'repeat(auto-fill, minmax(150px, 1fr))' }}>
         {groups.map(g => {
           const c = projColor(g.id)
           const active = activeIds.has(g.id)
@@ -1606,10 +1608,11 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
                   <Settings size={13} />
                 </button>
               </div>
-              <div className="flex flex-wrap gap-1 min-h-[20px]">
+              <div className={wide ? 'grid gap-2 min-h-[20px]' : 'flex flex-wrap gap-1 min-h-[20px]'}
+                style={wide ? { gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))' } : undefined}>
                 {g.items.length === 0
                   ? <span className="text-[11px] text-gray-400/60">—</span>
-                  : g.items.map(it => <BacklogCard key={it.id} e={it} onDragStart={onDragStart} />)}
+                  : g.items.map(it => <BacklogCard key={it.id} e={it} onDragStart={onDragStart} wide={wide} />)}
               </div>
             </div>
           )
@@ -1620,10 +1623,23 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
   )
 }
 
-function BacklogCard({ e, onDragStart }: { e: Ev; onDragStart: (e: Ev) => void }) {
+function BacklogCard({ e, onDragStart, wide = false }: { e: Ev; onDragStart: (e: Ev) => void; wide?: boolean }) {
   const type = e.contentType || 'other'
   const Ic = e.kind === 'shoot' ? Camera : (TYPE_ICON[type] || AlignLeft)
   const label = e.kind === 'shoot' ? 'Съёмка' : (TYPE_LABEL[type] || 'Контент')
+  const name = e.topic?.trim() || label
+  if (wide) {
+    // Страница проекта: слот иконка+название, одинакового размера (заполняет ячейку сетки minmax 170px).
+    return (
+      <span draggable onDragStart={() => onDragStart(e)}
+        style={projFill(e.projectId)}
+        className="inline-flex items-center gap-2 h-[34px] min-w-0 px-2.5 rounded-lg text-[12.5px] font-semibold cursor-grab active:cursor-grabbing transition hover:brightness-110"
+        title={`${label}${e.topic ? ` · ${e.topic}` : ''}`}>
+        <Ic size={14} className="shrink-0" />
+        <span className="truncate">{name}</span>
+      </span>
+    )
+  }
   return (
     <span draggable onDragStart={() => onDragStart(e)}
       style={projFill(e.projectId)}
