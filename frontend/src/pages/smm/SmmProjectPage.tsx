@@ -312,10 +312,26 @@ export default function SmmProjectPage() {
   const [specOpen, setSpecOpen] = useState(false)
   const assignedSpecs = profile?.smmSpecialists ?? []
   const assignedIds = new Set(profile?.smmSpecialistIds ?? [])
+  // Отдельная мутация с ОПТИМИСТИЧНЫМ обновлением кэша профиля — галочка и чипы
+  // меняются мгновенно, не дожидаясь ответа сервера/рефетча.
+  const specMut = useMutation({
+    mutationFn: (ids: string[]) => projectsApi.setSmmProfile(id!, { smmSpecialistIds: ids }),
+    onMutate: async (ids: string[]) => {
+      await qc.cancelQueries({ queryKey: ['smm-profile', id] })
+      const prev = qc.getQueryData<SmmProfile>(['smm-profile', id])
+      const resolved = ids
+        .map(uid => prev?.smmSpecialists?.find(s => s.id === uid) || specialistUsers?.find(s => s.id === uid))
+        .filter((s): s is SmmSpec => !!s)
+      qc.setQueryData(['smm-profile', id], (old: any) => ({ ...(old || {}), smmSpecialistIds: ids, smmSpecialists: resolved }))
+      return { prev }
+    },
+    onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(['smm-profile', id], ctx.prev); toast.error('Не удалось сохранить') },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['smm-profile', id] }),
+  })
   const toggleSpec = (uid: string) => {
     const next = new Set(assignedIds)
     if (next.has(uid)) next.delete(uid); else next.add(uid)
-    saveMut.mutate({ smmSpecialistIds: [...next] })
+    specMut.mutate([...next])
   }
 
   if (isLoading) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
