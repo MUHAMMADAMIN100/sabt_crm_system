@@ -88,17 +88,21 @@ const TYPE_LABEL: Record<string, string> = {
 // ─── категории для точек (таб «Сторисы») ──────────────────────────────
 // ─── фильтр по типу в шапке: Reels · Макет · Съёмка · Одноразовые задачи ──
 // «Одноразовые задачи» = всё, что относится к проекту «Одноразовые съёмки».
-type FKind = 'reel' | 'design' | 'shoot' | 'oneoff'
-const FKINDS: FKind[] = ['reel', 'design', 'shoot', 'oneoff']
-const FKIND_LABEL: Record<FKind, string> = { reel: 'Reels', design: 'Макет', shoot: 'Съёмка', oneoff: 'Одноразовые задачи' }
-const FKIND_ICON: Record<FKind, any> = { reel: Film, design: ImageIcon, shoot: Camera, oneoff: CheckSquare }
+type FKind = 'reel' | 'design' | 'shoot' | 'designprep' | 'oneoff'
+const FKINDS: FKind[] = ['reel', 'design', 'shoot', 'designprep', 'oneoff']
+const FKIND_LABEL: Record<FKind, string> = { reel: 'Reels', design: 'Макет', shoot: 'Съёмка', designprep: 'Дизайн', oneoff: 'Одноразовые задачи' }
+const FKIND_ICON: Record<FKind, any> = { reel: Film, design: ImageIcon, shoot: Camera, designprep: Palette, oneoff: CheckSquare }
 const ONEOFF_RE = /одноразов/i
 function matchesFKind(e: Ev, k: FKind): boolean {
   if (k === 'oneoff') return ONEOFF_RE.test(e.projectName || '')
   if (k === 'reel') return e.kind === 'publication' && (e.contentType === 'reel' || e.contentType === 'video')
-  if (k === 'shoot') return e.kind === 'shoot'
+  // Задачи подготовки (kind 'shoot'): под рилс — «Съёмка», под пост — «Дизайн» (parentKind='post').
+  if (k === 'shoot') return e.kind === 'shoot' && e.parentKind !== 'post'
+  if (k === 'designprep') return e.kind === 'shoot' && e.parentKind === 'post'
   return e.kind === 'publication' && e.contentType === 'design'
 }
+// Какой фильтр «раскрывает» задачу подготовки (делает её не-призраком): под пост — 'designprep', иначе 'shoot'.
+const prepFKind = (e: { parentKind?: string | null }): FKind => e.parentKind === 'post' ? 'designprep' : 'shoot'
 
 // Контекст выделения: клик по событию подсвечивает его пару (съёмка↔рилс) и линию,
 // остальное гасится; двойной клик открывает карточку. reel = id рилс-события активной пары.
@@ -425,7 +429,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const revealShootId = useMemo(() => {
     for (const id of selInfo.ids) {
       const e = allEvents.find(x => x.id === id)
-      if (e && e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId) && !selTypes.has('shoot')) return id
+      if (e && e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId) && !selTypes.has(prepFKind(e))) return id
     }
     return null
   }, [selInfo, allEvents, isVideographer, selProjects, selTypes])
@@ -446,7 +450,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const ghostShootIds = useMemo(() => {
     const s = new Set<string>()
     for (const e of allEvents) {
-      if (e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId) && !selTypes.has('shoot')) s.add(e.id)
+      if (e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId) && !selTypes.has(prepFKind(e))) s.add(e.id)
     }
     return s
   }, [allEvents, isVideographer, selProjects, selTypes])
