@@ -1836,18 +1836,28 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
           </div>
         ) : (
           <>
-            <h3 className="text-lg font-bold">{e.title?.trim() || 'Съёмка'}</h3>
-
-            {/* Карточка связанного рилса — к чему относится съёмка */}
-            <div className="flex items-center gap-3 mt-3.5 rounded-xl border px-3 py-2.5"
+            {/* Карточка рилса — заголовок модалки съёмки (без дубля названия) */}
+            <div className="flex items-center gap-3 mt-1 rounded-xl border px-3 py-2.5"
               style={{ background: `color-mix(in srgb, ${projColor(e.projectId)} 12%, transparent)`, borderColor: `color-mix(in srgb, ${projColor(e.projectId)} 30%, transparent)` }}>
-              <span className="w-8 h-8 rounded-lg grid place-items-center shrink-0"
-                style={{ background: `color-mix(in srgb, ${projColor(e.projectId)} 22%, transparent)`, color: projColor(e.projectId) }}><Film size={15} /></span>
+              <span className="w-9 h-9 rounded-lg grid place-items-center shrink-0"
+                style={{ background: `color-mix(in srgb, ${projColor(e.projectId)} 22%, transparent)`, color: projColor(e.projectId) }}><Film size={16} /></span>
               <div className="flex-1 min-w-0">
-                <div className="text-[13.5px] font-bold truncate text-gray-900 dark:text-gray-100">{e.title?.trim() || 'Рилс'}</div>
+                <div className="text-sm font-bold truncate text-gray-900 dark:text-gray-100">{e.title?.trim() || 'Рилс'}</div>
                 <div className="text-[11.5px] text-gray-400">Публикация рилса{e.reelDate ? ` · ${fmtDate(e.reelDate)}` : ''}</div>
               </div>
               <span className="shrink-0" style={{ color: projColor(e.projectId) }}>→</span>
+            </div>
+
+            {/* Плитки: когда снять · длительность */}
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Снять</div>
+                <div className="text-sm font-bold mt-0.5 tabular-nums">{e.date ? fmtDate(e.date) : '—'}</div>
+              </div>
+              <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Длительность</div>
+                <div className="text-sm font-bold mt-0.5">{fmtDur(e.durationMin || DEFAULT_DUR)}</div>
+              </div>
             </div>
 
             {/* Описание рилса — что снимать (только чтение, длинное скроллится внутри) */}
@@ -1871,7 +1881,7 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
 
         {onDuration && (
           <div className="my-4">
-            <p className={lab}>Длительность съёмки</p>
+            <p className={lab}>{isShoot ? 'Изменить длительность' : 'Длительность съёмки'}</p>
             <div className="flex flex-wrap gap-1.5">
               {DUR_OPTIONS.map(m => {
                 const on = (e.durationMin || DEFAULT_DUR) === m
