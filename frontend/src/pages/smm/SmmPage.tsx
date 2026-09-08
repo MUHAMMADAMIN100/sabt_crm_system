@@ -22,7 +22,8 @@ export type Ev = {
   taskId?: string | null; taskStatus?: string | null; durationMin?: number | null
   count?: number // фактически опубликовано за день (сторис) — для заливки статуса на странице «Сторисы»
   // Производная съёмка (авто под рилс): reelId — id рилса, к которому она относится (для линии-связки).
-  derived?: boolean; reelId?: string
+  // reelDate — дата публикации рилса (для карточки рилса в модалке съёмки).
+  derived?: boolean; reelId?: string; reelDate?: string | null
 }
 // Статус дня по сторис на странице «Сторисы»: сделано (цель достигнута) / частично / не сделано.
 export type SDay = 'done' | 'partial' | 'none'
@@ -632,7 +633,7 @@ function ProjectCycleModal({ p, saving, clearing, onClose, onSave, onClear, onOp
   }, [onClose])
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5 max-h-[88vh] overflow-y-auto" onClick={ev => ev.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 mb-1">
           <span style={projFill(p.id)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold">
             <CalendarRange size={12} /> Цикл проекта
@@ -1813,7 +1814,7 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
   const both = returnBtn && primaryBtn
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={ev => ev.stopPropagation()}>
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5 max-h-[88vh] overflow-y-auto" onClick={ev => ev.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 mb-2.5">
           <span style={projFill(e.projectId)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold">
             <Ic size={12} /> {isShoot ? 'Съёмка' : (TYPE_LABEL[type] || 'Контент')}
@@ -1836,9 +1837,27 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
         ) : (
           <>
             <h3 className="text-lg font-bold">{e.title?.trim() || 'Съёмка'}</h3>
-            <p className="text-[12.5px] text-gray-400 mt-1 inline-flex items-center gap-1.5">
-              <Camera size={13} /> Съёмка для этого рилса{e.date ? ` · ${fmtDate(e.date)}` : ''}{e.time ? `, ${e.time}` : ''}
-            </p>
+
+            {/* Карточка связанного рилса — к чему относится съёмка */}
+            <div className="flex items-center gap-3 mt-3.5 rounded-xl border px-3 py-2.5"
+              style={{ background: `color-mix(in srgb, ${projColor(e.projectId)} 12%, transparent)`, borderColor: `color-mix(in srgb, ${projColor(e.projectId)} 30%, transparent)` }}>
+              <span className="w-8 h-8 rounded-lg grid place-items-center shrink-0"
+                style={{ background: `color-mix(in srgb, ${projColor(e.projectId)} 22%, transparent)`, color: projColor(e.projectId) }}><Film size={15} /></span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13.5px] font-bold truncate text-gray-900 dark:text-gray-100">{e.title?.trim() || 'Рилс'}</div>
+                <div className="text-[11.5px] text-gray-400">Публикация рилса{e.reelDate ? ` · ${fmtDate(e.reelDate)}` : ''}</div>
+              </div>
+              <span className="shrink-0" style={{ color: projColor(e.projectId) }}>→</span>
+            </div>
+
+            {/* Описание рилса — что снимать (только чтение, длинное скроллится внутри) */}
+            {e.scriptText?.trim() && (
+              <div className="mt-4">
+                <p className={lab}>Описание рилса</p>
+                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap max-h-[148px] overflow-y-auto">{e.scriptText}</div>
+              </div>
+            )}
+
             {(e.location || e.note) && (
               <div className="space-y-1.5 text-sm mt-3">
                 {e.location && <Row k="Место" v={e.location} />}
