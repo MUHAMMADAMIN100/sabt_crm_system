@@ -125,7 +125,12 @@ export class ContentPlanService {
     if (!reel) return;
     if (reel.shootForItemId) return;                      // сама съёмка — не плодим съёмку под съёмку
     if (reel.contentType !== ContentItemType.REEL) return; // только под рилсы
-    if (!reel.publishDate) return;                         // без даты рилса съёмку не ставим
+    if (!reel.publishDate) {
+      // Рилс вернули в «Не запланировано» → его авто-съёмка должна исчезнуть
+      // с календаря (иначе остаётся сиротой). Заново появится при переносе рилса на дату.
+      await this.repo.delete({ shootForItemId: reel.id });
+      return;
+    }
     try {
       const shootDate = new Date(reel.publishDate);
       shootDate.setDate(shootDate.getDate() - 1);          // X−1
