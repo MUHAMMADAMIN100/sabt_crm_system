@@ -7,7 +7,6 @@ import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { assignProjectColors, projColor, type SmmProj } from './smmShared'
 import SmmProjectCreateModal from './SmmProjectCreateModal'
-import SmmSpecialistLoadModal from './SmmSpecialistLoadModal'
 
 // Кто может создавать проекты (как на основной странице «Проекты»).
 const CREATE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm']
@@ -25,7 +24,6 @@ export default function SmmProjectsPage() {
   const canCreate = CREATE_ROLES.includes((user as any)?.role ?? '')
   const canSeeLoad = LOAD_ROLES.includes((user as any)?.role ?? '')
   const [showCreate, setShowCreate] = useState(false)
-  const [showLoad, setShowLoad] = useState(false)
   // Вкладки: активные / архив завершённых. Архив по умолчанию скрыт.
   const [tab, setTab] = useState<'active' | 'archived'>('active')
   const now = new Date()
@@ -75,7 +73,7 @@ export default function SmmProjectsPage() {
         <h1 className="text-2xl font-bold tracking-tight">Проекты</h1>
         <div className="flex items-center gap-2">
           {canSeeLoad && (
-            <button onClick={() => setShowLoad(true)} title="Кто ведёт какие проекты"
+            <button onClick={() => navigate('/smm/specialists')} title="Кто ведёт какие проекты"
               className="inline-flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
               <Network size={16} /> Схема
             </button>
@@ -143,7 +141,6 @@ export default function SmmProjectsPage() {
         </div>
       )}
       {showCreate && <SmmProjectCreateModal onClose={() => setShowCreate(false)} />}
-      {showLoad && <SmmSpecialistLoadModal onClose={() => setShowLoad(false)} />}
     </div>
   )
 }
