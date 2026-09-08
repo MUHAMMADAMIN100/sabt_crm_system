@@ -292,10 +292,16 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
       const prev = qc.getQueryData<CalData>(key)
       qc.setQueryData<CalData>(key, old => {
         if (!old) return old
-        const events = old.events.filter(e => e.id !== ev.id)
+        let events = old.events.filter(e => e.id !== ev.id)
         const backlog = old.backlog.filter(b => b.id !== ev.id)
-        if (dateStr) events.push({ ...ev, date: dateStr, ...(time !== undefined ? { time } : {}) })  // на дату (+час)
-        else backlog.push({ ...ev, date: undefined, time: null })   // обратно в корзину
+        if (dateStr) {
+          events.push({ ...ev, date: dateStr, ...(time !== undefined ? { time } : {}) })  // на дату (+час)
+        } else {
+          backlog.push({ ...ev, date: undefined, time: null })   // обратно в корзину
+          // Возврат рилса в корзину → бэк удаляет его авто-съёмку; убираем её из кэша
+          // сразу (иначе съёмка «висит» на календаре до полного рефетча ±1 год ≈ 3–4 с).
+          if (ev.itemId && ev.kind !== 'shoot') events = events.filter(e => !(e.kind === 'shoot' && e.reelId === ev.itemId))
+        }
         return { ...old, events, backlog }
       })
       return { prev, key }
