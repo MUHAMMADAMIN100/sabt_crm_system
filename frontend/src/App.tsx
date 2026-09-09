@@ -60,7 +60,6 @@ class ChunkErrorBoundary extends React.Component<
 
 const AuthPage          = lazy(() => import('@/pages/auth/AuthPage'))
 const DashboardPage     = lazy(() => import('@/pages/dashboard/DashboardPage'))
-const ProjectsPage      = lazy(() => import('@/pages/projects/ProjectsPage'))
 const MyNotesPage       = lazy(() => import('@/pages/notes/MyNotesPage'))
 // Раздел «Задачи»: исполнителю — кабинет поручений, руководителю
 // направления — полный список задач его сферы (см. TasksRoute).
@@ -154,7 +153,6 @@ export default function App() {
         <Route path="/public/brief/:token" element={<PublicBriefPage />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<DashboardPage />} />
-          <Route path="projects" element={<RoleGuard><ProjectsPage /></RoleGuard>} />
           <Route path="my-notes" element={<RoleGuard><MyNotesPage /></RoleGuard>} />
           {/* Задачи от руководителя + детальная карточка задачи. Раньше этих
               маршрутов не было вовсе — ссылки из уведомлений (/tasks/:id)

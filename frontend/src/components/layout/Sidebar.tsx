@@ -67,7 +67,6 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
     { to: '/',              icon: LayoutDashboard, label: t('nav.dashboard'),  permission: 'dashboard',         exact: true },
     { to: '/finance',       icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
     { to: '/smm',           icon: Megaphone,       label: 'СММ',               permission: 'dashboard' },
-    { to: '/projects',      icon: FolderKanban,    label: t('nav.projects'),   permission: 'projects.view' },
     { to: '/my-notes',      icon: StickyNote,      label: 'Заметки',           permission: 'dashboard' },
     // Поручения от руководства — есть у КАЖДОГО сотрудника (permission
     // 'tasks.view' есть у всех ролей). Кроме основателя и со-основателя: они
@@ -100,12 +99,6 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
     // отдельный пункт скрываем. У sales_manager_dev — отдельный пункт сайдбара
     // (по запросу пользователя). Остальным ролям пункт не нужен.
     if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
-    // «Проекты» (общий список) — больше не для СММ: у них новый раздел
-    // «СММ → Проекты». Оставляем разработке/продажам/руководству.
-    if (item.to === '/projects') {
-      if (role === 'smm_director' || role === 'smm_specialist') return false
-      return userCan(user, item.permission)
-    }
     // «Заметки» — только сторисмейкер, и лишь пока возможность не отняли.
     if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'notes.use')
     // «Доступы сотрудников» — только основатель/сооснователь/админ.
@@ -125,7 +118,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
   // Прочие роли видят полный список без изменений.
   const isFounder = role === 'founder'
   const FOUNDER_CORE = new Set<string>([
-    '/', '/finance', '/smm', '/projects', '/calendar',
+    '/', '/finance', '/smm', '/calendar',
     '/analytics', '/employees', '/clients', '/ai',
   ])
   const coreItems = isFounder ? filtered.filter(i => FOUNDER_CORE.has(i.to)) : filtered

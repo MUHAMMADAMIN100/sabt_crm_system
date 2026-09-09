@@ -500,11 +500,9 @@ export function canAccessRoute(
   // «Доска проектов» (/workflow-board) отключена полностью — раздел убран из
   // приложения (и SMM-производство, и dev-канбан). Код страниц сохранён.
   if (route === '/workflow-board') return false
-  // Общий список «Проекты» больше не для СММ: у них раздел «СММ → Проекты».
-  if (route === '/projects') {
-    if (role === 'smm_director' || role === 'smm_specialist') return false
-    return userCan(u, 'projects.view')
-  }
+  // Общий список «Проекты» (/projects) убран из приложения у всех. Детальная
+  // карточка /projects/:id остаётся (ссылки из уведомлений и пр.).
+  if (route === '/projects') return false
   // «Истории по проектам» и «Заметки» — только сторисмейкер, и лишь пока
   // соответствующую возможность у него не отняли в «Доступах сотрудников».
   if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole) && userCan(u, 'stories.manage')

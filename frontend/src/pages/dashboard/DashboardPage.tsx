@@ -485,7 +485,6 @@ function DashboardContent() {
           <div className="lg:col-span-2 card">
             <div className="flex items-center justify-between mb-4">
               <h2 className="section-title">Активные проекты</h2>
-              <Link to="/projects" className="text-sm text-primary-600 dark:text-primary-400 hover:underline">{t('common.viewAll')}</Link>
             </div>
             {!projects?.length ? (
               <p className="text-surface-500 dark:text-surface-400 text-sm py-8 text-center">Нет активных проектов</p>
@@ -626,7 +625,6 @@ function DashboardContent() {
           <div className="card">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-sm">{t('dashboard.activeProjects')}</h3>
-              <Link to="/projects" className="text-xs text-primary-600 dark:text-primary-400 hover:underline">{t('common.viewAll')}</Link>
             </div>
             <div className="space-y-3">
               {projects?.slice(0, 4).map((p: any) => (
