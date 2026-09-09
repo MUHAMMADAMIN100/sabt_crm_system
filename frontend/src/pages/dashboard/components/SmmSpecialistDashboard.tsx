@@ -1,19 +1,13 @@
-import { useMemo, useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { projectsApi, storiesApi, contentPlanApi } from '@/services/api.service'
+import { projectsApi, contentPlanApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { ProgressBar } from '@/components/ui'
-import { Film, Image as ImageIcon, Palette, Camera, Minus, Plus, Check, ListChecks } from 'lucide-react'
-import { format, startOfMonth, addDays } from 'date-fns'
+import { Film, Image as ImageIcon, Palette, Camera } from 'lucide-react'
+import { format, addDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
-
-/** Дневной план сторис проекта (smmData.storiesPerDay, дефолт 3, максимум 12). */
-function dailyTarget(project: any): number {
-  const v = Number(project?.smmData?.storiesPerDay)
-  return Number.isFinite(v) && v > 0 ? Math.min(v, 12) : 3
-}
+import StorymakerDashboard from './StorymakerDashboard'
 
 /** Тип задачи контент-плана → иконка + подпись. Публикации, съёмки и
  *  задачи подготовки (съёмка под рилс / дизайн под пост) сводятся к единому виду. */
@@ -33,32 +27,26 @@ function taskTitle(e: any): string {
 }
 
 /**
- * Главная SMM-специалиста (Вариант B — две колонки):
- *  • слева (шире) — «Главные задачи»: контент-план его проектов, сгруппированный
- *    Просрочено / Сегодня / На неделе (рилсы, публикации, съёмки, дизайн);
- *  • справа — «Сторис сегодня»: отметка выложенных сторис по каждому проекту
- *    (степпер, дневная норма из storiesPerDay) + месячный прогресс.
+ * Главная SMM-специалиста:
+ *  • «Главные задачи» — контент-план его проектов (Просрочено / Сегодня / На неделе);
+ *  • ниже — полный инструмент сторис (бывший сторисмейкер, StorymakerDashboard):
+ *    KPI по сторис + «Нужно сегодня» + календарь отметок. Сторисмейкер как роль
+ *    упразднён — за сторисы отвечают SMM-специалисты.
  */
 export default function SmmSpecialistDashboard() {
   const user = useAuthStore(s => s.user)
-  const qc = useQueryClient()
   const today = format(new Date(), 'yyyy-MM-dd')
-  const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd')
   // Окно задач: захватываем просрочку за месяц и неделю вперёд.
   const winFrom = format(addDays(new Date(), -31), 'yyyy-MM-dd')
   const winTo = format(addDays(new Date(), 8), 'yyyy-MM-dd')
 
   const { data: projectsList } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
-  const { data: monthStories } = useQuery({
-    queryKey: ['stories-my-month', monthStart, today],
-    queryFn: () => storiesApi.my(monthStart, today),
-  })
   const { data: cal } = useQuery({
     queryKey: ['smm-cal-home', winFrom, winTo],
     queryFn: () => contentPlanApi.smmCalendar({ from: winFrom, to: winTo }),
   })
 
-  // Мои SMM-проекты: я в составе или менеджер; активные, сторис не в архиве.
+  // Мои SMM-проекты: я в составе, менеджер или назначенный специалист.
   const myProjects = useMemo(() => {
     const all = (projectsList || []).filter((p: any) => !p.isArchived && (p.projectType || 'SMM') === 'SMM')
     return all.filter((p: any) =>
@@ -69,49 +57,6 @@ export default function SmmSpecialistDashboard() {
     )
   }, [projectsList, user])
   const myProjectIds = useMemo(() => new Set(myProjects.map((p: any) => p.id)), [myProjects])
-  const trackedProjects = useMemo(
-    () => myProjects.filter((p: any) => !p.storiesArchived && dailyTarget(p) > 0),
-    [myProjects],
-  )
-
-  // Фактические сторис за СЕГОДНЯ по каждому проекту (мои логи).
-  const todayByProject = useMemo(() => {
-    const map: Record<string, number> = {}
-    ;(monthStories || []).forEach((s: any) => {
-      if (s.date === today) map[s.projectId] = (map[s.projectId] || 0) + (s.storiesCount || s.count || 0)
-    })
-    return map
-  }, [monthStories, today])
-
-  // Локальный оптимистичный оверрайд для мгновенного отклика степпера.
-  const [pending, setPending] = useState<Record<string, number>>({})
-  const countOf = (pid: string) => (pid in pending ? pending[pid] : (todayByProject[pid] || 0))
-
-  const upsert = useMutation({
-    mutationFn: (v: { projectId: string; storiesCount: number }) =>
-      storiesApi.upsert({ projectId: v.projectId, date: today, storiesCount: v.storiesCount }),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['stories-my-month'] })
-      qc.invalidateQueries({ queryKey: ['stories-today'] })
-      qc.invalidateQueries({ queryKey: ['stories-month'] })
-    },
-  })
-  const setCount = (pid: string, next: number) => {
-    const target = dailyTarget(myProjects.find((p: any) => p.id === pid))
-    const clamped = Math.max(0, Math.min(Math.max(target + 5, 30), next))
-    setPending(prev => ({ ...prev, [pid]: clamped }))
-    upsert.mutate({ projectId: pid, storiesCount: clamped })
-  }
-
-  // Месячная сводка сторис (мои логи vs план проектов).
-  const daysElapsed = new Date().getDate()
-  const monthActual = useMemo(
-    () => (monthStories || []).reduce((s: number, r: any) => s + (r.storiesCount || r.count || 0), 0),
-    [monthStories],
-  )
-  const monthExpected = trackedProjects.reduce((s: number, p: any) => s + dailyTarget(p) * daysElapsed, 0)
-  const monthPct = monthExpected > 0 ? Math.min(100, Math.round((monthActual / monthExpected) * 100)) : 0
-  const doneToday = trackedProjects.filter((p: any) => countOf(p.id) >= dailyTarget(p)).length
 
   // ── Задачи из контент-плана (мои проекты, не сторис, не выполненные) ──
   const tasks = useMemo(() => {
@@ -194,7 +139,7 @@ export default function SmmSpecialistDashboard() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-5 items-start">
+    <div className="space-y-6">
       {/* ── Главные задачи ── */}
       <div className="card">
         <div className="flex items-center justify-between mb-3">
@@ -212,92 +157,9 @@ export default function SmmSpecialistDashboard() {
         )}
       </div>
 
-      {/* ── Сторис сегодня ── */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold text-surface-900 dark:text-surface-100 flex items-center gap-2">
-            <ListChecks size={17} className="text-primary-600 dark:text-primary-400" />
-            Сторис сегодня
-          </h2>
-          {trackedProjects.length > 0 && (
-            <span className={clsx(
-              'text-[10px] font-bold px-2 py-0.5 rounded-full',
-              doneToday === trackedProjects.length
-                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-surface-100 text-surface-500 dark:bg-surface-700 dark:text-surface-400',
-            )}>
-              {doneToday}/{trackedProjects.length}
-            </span>
-          )}
-        </div>
-
-        {trackedProjects.length === 0 ? (
-          <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-8">Нет проектов со сторис</p>
-        ) : (
-          <div className="space-y-1">
-            {trackedProjects.map((p: any) => {
-              const target = dailyTarget(p)
-              const count = countOf(p.id)
-              const done = count >= target
-              return (
-                <div key={p.id} className={clsx(
-                  'flex items-center gap-2.5 py-2 px-1.5 rounded-xl transition-colors',
-                  done ? 'bg-green-50/60 dark:bg-green-900/10' : 'hover:bg-surface-50 dark:hover:bg-surface-800/40',
-                )}>
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.color || '#6d8bf5' }} />
-                  <span className={clsx('text-[13px] font-medium flex-1 min-w-0 truncate',
-                    done ? 'text-surface-500 dark:text-surface-400' : 'text-surface-800 dark:text-surface-200')}>
-                    {p.name}
-                  </span>
-                  {/* точки-прогресс до нормы */}
-                  <div className="hidden sm:flex gap-1 shrink-0">
-                    {Array.from({ length: target }, (_, i) => i).map(i => (
-                      <span key={i} className={clsx('w-2.5 h-2.5 rounded-full',
-                        i < count ? 'bg-green-500' : 'bg-surface-200 dark:bg-surface-600')} />
-                    ))}
-                  </div>
-                  {/* степпер: точное число выложенных сторис */}
-                  <div className="flex items-center gap-0.5 shrink-0 bg-surface-100 dark:bg-surface-700/60 rounded-lg p-0.5 border border-surface-200 dark:border-surface-600/50">
-                    <button
-                      type="button" onClick={() => setCount(p.id, count - 1)} disabled={count <= 0}
-                      className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600 disabled:opacity-30 transition-colors"
-                    >
-                      <Minus size={13} />
-                    </button>
-                    <span className="min-w-[22px] text-center text-[13px] font-bold tabular-nums text-surface-900 dark:text-surface-100">{count}</span>
-                    <button
-                      type="button" onClick={() => setCount(p.id, count + 1)}
-                      className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600 transition-colors"
-                    >
-                      <Plus size={13} />
-                    </button>
-                  </div>
-                  {done
-                    ? <Check size={16} className="text-green-500 shrink-0" />
-                    : <span className="w-4 shrink-0" />}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* Месячный прогресс */}
-        {trackedProjects.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-surface-100 dark:border-surface-700 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-surface-400 dark:text-surface-500">План сторис за месяц</span>
-              <div className="flex items-center gap-1.5">
-                <span className={clsx('text-xs font-bold',
-                  monthPct >= 80 ? 'text-green-600 dark:text-green-400'
-                  : monthPct >= 50 ? 'text-surface-600 dark:text-surface-400'
-                  : 'text-red-500 dark:text-red-400')}>{monthPct}%</span>
-                <span className="text-xs text-surface-500 dark:text-surface-400 tabular-nums">{monthActual}/{monthExpected}</span>
-              </div>
-            </div>
-            <ProgressBar value={monthPct} />
-          </div>
-        )}
-      </div>
+      {/* ── Сторис — полный инструмент (бывший сторисмейкер): KPI + «Нужно
+             сегодня» + календарь отметок по всем SMM-проектам. ── */}
+      <StorymakerDashboard />
     </div>
   )
 }

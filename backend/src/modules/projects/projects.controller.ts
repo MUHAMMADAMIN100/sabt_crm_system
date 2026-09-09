@@ -73,7 +73,7 @@ export class ProjectsController {
   /** Архив историй сторисмейкера (не настоящий архив проекта). Доступ:
    *  сторисмейкер (двигает свой кабинет) + руководитель SMM + топ. */
   @Patch(':id/stories-archive')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.STORYMAKER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.STORYMAKER, UserRole.SMM_SPECIALIST)
   setStoriesArchived(@Param('id') id: string, @Body() dto: SetStoriesArchiveDto, @Request() req) {
     return this.service.setStoriesArchived(id, dto.archived, req.user);
   }
