@@ -62,7 +62,6 @@ const AuthPage          = lazy(() => import('@/pages/auth/AuthPage'))
 const DashboardPage     = lazy(() => import('@/pages/dashboard/DashboardPage'))
 const ProjectsPage      = lazy(() => import('@/pages/projects/ProjectsPage'))
 const ProjectsBoardPage = lazy(() => import('@/pages/workflow/ProjectsBoardPage'))
-const ProjectStoriesPage = lazy(() => import('@/pages/stories/ProjectStoriesPage'))
 const MyNotesPage       = lazy(() => import('@/pages/notes/MyNotesPage'))
 // Раздел «Задачи»: исполнителю — кабинет поручений, руководителю
 // направления — полный список задач его сферы (см. TasksRoute).
@@ -99,7 +98,6 @@ const FinancePlanningPage     = lazy(() => import('@/pages/finance/FinancePlanni
 const FinanceTransactionsPage = lazy(() => import('@/pages/finance/FinanceTransactionsPage'))
 const FinanceInventoryPage    = lazy(() => import('@/pages/finance/FinanceInventoryPage'))
 const FinanceActivityPage     = lazy(() => import('@/pages/finance/FinanceActivityPage'))
-const OrganizerDirectoryPage  = lazy(() => import('@/pages/organizer/OrganizerDirectoryPage'))
 const FinanceSettingsPage     = lazy(() => import('@/pages/finance/FinanceSettingsPage'))
 const EmployeeSalaryPage      = lazy(() => import('@/pages/finance/EmployeeSalaryPage'))
 const PublicBriefPage   = lazy(() => import('@/pages/public/PublicBriefPage'))
@@ -159,7 +157,6 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="projects" element={<RoleGuard><ProjectsPage /></RoleGuard>} />
           <Route path="workflow-board" element={<RoleGuard><ProjectsBoardPage /></RoleGuard>} />
-          <Route path="project-stories" element={<RoleGuard><ProjectStoriesPage /></RoleGuard>} />
           <Route path="my-notes" element={<RoleGuard><MyNotesPage /></RoleGuard>} />
           {/* Задачи от руководителя + детальная карточка задачи. Раньше этих
               маршрутов не было вовсе — ссылки из уведомлений (/tasks/:id)
@@ -197,9 +194,6 @@ export default function App() {
           <Route path="finance/transactions" element={<RoleGuard><FinanceTransactionsPage /></RoleGuard>} />
           <Route path="finance/inventory" element={<RoleGuard><FinanceInventoryPage /></RoleGuard>} />
           <Route path="finance/activity" element={<RoleGuard><FinanceActivityPage /></RoleGuard>} />
-          <Route path="organizer/clients" element={<RoleGuard><OrganizerDirectoryPage kind="clients" /></RoleGuard>} />
-          <Route path="organizer/models" element={<RoleGuard><OrganizerDirectoryPage kind="models" /></RoleGuard>} />
-          <Route path="organizer/places" element={<RoleGuard><OrganizerDirectoryPage kind="places" /></RoleGuard>} />
           <Route path="finance/settings" element={<RoleGuard><FinanceSettingsPage /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

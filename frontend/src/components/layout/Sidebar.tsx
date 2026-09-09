@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermissionAny, getUserPositionLabel, canSeeWorkflowBoard, canSeeDevBoard, canSeeProjectStories, canManageAccess, canSeeSmmDaily, canSeeSmmSection, userCan, isDevDirector, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, canSeeDevBoard, canSeeProjectStories, canManageAccess, canSeeSmmDaily, canSeeSmmSection, userCan, isDevDirector, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
@@ -69,7 +69,6 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
     { to: '/smm',           icon: Megaphone,       label: 'СММ',               permission: 'dashboard' },
     { to: '/projects',      icon: FolderKanban,    label: t('nav.projects'),   permission: 'projects.view' },
     { to: '/workflow-board', icon: Trello,         label: 'Доска проектов',    permission: 'projects.view' },
-    { to: '/project-stories', icon: ImageIcon,     label: 'Истории по проектам', permission: 'stories.manage' },
     { to: '/my-notes',      icon: StickyNote,      label: 'Заметки',           permission: 'dashboard' },
     // Поручения от руководства — есть у КАЖДОГО сотрудника (permission
     // 'tasks.view' есть у всех ролей). Кроме основателя и со-основателя: они
@@ -85,10 +84,6 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
     { to: '/employees',     icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
     { to: '/employee-access', icon: ShieldCheck,   label: 'Доступы сотрудников', permission: 'users.manage' },
     { to: '/clients',       icon: Contact,         label: 'База клиентов',     permission: 'clients.view' },
-    // Справочники организатора съёмок (отдельные от «Базы клиентов»).
-    { to: '/organizer/clients', icon: Contact,       label: 'Клиенты',         permission: 'organizer.directory' },
-    { to: '/organizer/models',  icon: PersonStanding, label: 'Модели',          permission: 'organizer.directory' },
-    { to: '/organizer/places',  icon: MapPin,        label: 'Места',           permission: 'organizer.directory' },
     { to: '/onboarding',    icon: UserPlus,        label: 'Онбординг',         permission: 'clients.view' },
     { to: '/tariffs',       icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/risks',         icon: ShieldAlert,     label: 'Риски',             permission: 'risks.view' },
@@ -106,12 +101,16 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
     // отдельный пункт скрываем. У sales_manager_dev — отдельный пункт сайдбара
     // (по запросу пользователя). Остальным ролям пункт не нужен.
     if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
-    // Доска проектов — SMM-производство + грант КП, плюс роли доски «Разработка»
-    // (топ и pm_dev — у него вид только по dev-проектам).
-    if (item.to === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || canSeeDevBoard(role, secondaryRole) || userCan(user, 'content-plan.manage') || userCan(user, 'board.view')
-    // «Истории по проектам» и «Заметки» — только сторисмейкер, и лишь пока
-    // возможность не отняли персонально в «Доступах сотрудников».
-    if (item.to === '/project-stories') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'stories.manage')
+    // «Доска проектов» — теперь ТОЛЬКО вид «Разработка» (dev). Старое
+    // SMM-производство убрано (работа СММ — в разделе «СММ»).
+    if (item.to === '/workflow-board') return canSeeDevBoard(role, secondaryRole)
+    // «Проекты» (общий список) — больше не для СММ: у них новый раздел
+    // «СММ → Проекты». Оставляем разработке/продажам/руководству.
+    if (item.to === '/projects') {
+      if (role === 'smm_director' || role === 'smm_specialist') return false
+      return userCan(user, item.permission)
+    }
+    // «Заметки» — только сторисмейкер, и лишь пока возможность не отняли.
     if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'notes.use')
     // «Доступы сотрудников» — только основатель/сооснователь/админ.
     if (item.to === '/employee-access') return canManageAccess(role)

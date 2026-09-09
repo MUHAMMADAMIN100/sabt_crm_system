@@ -6,7 +6,7 @@ import { Plus, LayoutGrid, SlidersHorizontal, Trash2, Eraser, History, ChevronRi
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
-import { canSeeWorkflowBoard, canSeeDevBoard, userCan } from '@/lib/permissions'
+import { canSeeDevBoard } from '@/lib/permissions'
 import DevProjectsBoard from './DevProjectsBoard'
 import {
   STAGES, shortRole, CardFormModal, AdCampaignModal, WorkflowCardBadges,
@@ -26,9 +26,11 @@ export default function ProjectsBoardPage() {
   const user = useAuthStore(s => s.user)
   const actor = { role: user?.role, secondaryRole: user?.secondaryRole, extraPermissions: user?.extraPermissions }
 
-  // Доступ к видам доски: SMM-производство и/или «Разработка».
-  const canSmm = canSeeWorkflowBoard(user?.role, user?.secondaryRole)
-    || userCan(actor as any, 'content-plan.manage') || userCan(actor as any, 'board.view')
+  // Старая СММ-доска (производственный канбан) ОТКЛЮЧЕНА — работа СММ ведётся
+  // в разделе «СММ» (Умный календарь). Оставлен только вид «Разработка».
+  // Код SMM-вида сохранён ниже, но недоступен (canSmm=false; маршрут
+  // /workflow-board гейтится на dev-роли). Вернуть — снять заглушку.
+  const canSmm = false
   const canDev = canSeeDevBoard(user?.role, user?.secondaryRole)
   const [view, setView] = useState<'smm' | 'dev'>(() => {
     if (!canSmm) return 'dev'

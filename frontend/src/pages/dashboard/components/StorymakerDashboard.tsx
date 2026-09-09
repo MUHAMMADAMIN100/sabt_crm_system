@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
 import { projectsApi, storiesApi } from '@/services/api.service'
 import { StatCard } from '@/components/ui'
 import StoryCalendar from '@/components/stories/StoryCalendar'
@@ -111,7 +110,6 @@ export default function StorymakerDashboard() {
         <div className="card lg:col-span-1">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-surface-900 dark:text-surface-100 text-sm">Нужно сегодня</h3>
-            <Link to="/project-stories" className="text-xs text-primary-600 dark:text-primary-400 hover:underline">Все проекты</Link>
           </div>
           {pending.length === 0 ? (
             <p className="text-xs text-green-600 dark:text-green-400 py-6 text-center font-medium">
@@ -123,10 +121,9 @@ export default function StorymakerDashboard() {
                 const target = dailyTarget(p)
                 const count = todayByProject[p.id] || 0
                 return (
-                  <Link
+                  <div
                     key={p.id}
-                    to="/project-stories"
-                    className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors"
+                    className="flex items-center gap-3 p-2.5 rounded-xl"
                   >
                     <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color || '#18181b' }} />
                     <span className="text-sm font-medium text-surface-800 dark:text-surface-200 flex-1 truncate">{p.name}</span>
@@ -139,7 +136,7 @@ export default function StorymakerDashboard() {
                       ))}
                     </div>
                     <span className="text-[11px] font-semibold tabular-nums text-surface-500 dark:text-surface-400 w-8 text-right">{count}/{target}</span>
-                  </Link>
+                  </div>
                 )
               })}
             </div>

@@ -497,9 +497,14 @@ export function canAccessRoute(
   if (['/profile', '/notifications', '/'].includes(route)) return true
   // Онбординг — только менеджеры по продажам.
   if (route === '/onboarding') return (role === 'sales_manager_smm' || role === 'sales_manager_dev') && userCan(u, 'clients.view')
-  // Глобальная доска проектов — SMM-производство/руководители/топ + грант КП,
-  // плюс pm_dev (его вид — «Разработка»).
-  if (route === '/workflow-board') return canSeeWorkflowBoard(role, secondaryRole) || canSeeDevBoard(role, secondaryRole) || userCan(u, 'content-plan.manage') || userCan(u, 'board.view')
+  // «Доска проектов» — теперь только вид «Разработка» (dev). Старое
+  // SMM-производство отключено (работа СММ — в разделе «СММ»).
+  if (route === '/workflow-board') return canSeeDevBoard(role, secondaryRole)
+  // Общий список «Проекты» больше не для СММ: у них раздел «СММ → Проекты».
+  if (route === '/projects') {
+    if (role === 'smm_director' || role === 'smm_specialist') return false
+    return userCan(u, 'projects.view')
+  }
   // «Истории по проектам» и «Заметки» — только сторисмейкер, и лишь пока
   // соответствующую возможность у него не отняли в «Доступах сотрудников».
   if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole) && userCan(u, 'stories.manage')
