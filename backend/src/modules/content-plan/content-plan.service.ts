@@ -500,6 +500,7 @@ export class ContentPlanService {
     // Отдельны от рилсов; двигаются независимо. reelId нужен для линии-связки на фронте.
     const shootItems: any[] = await this.repo.manager.query(
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId",
+              ci.status AS status,
               reel.topic AS "reelTopic", reel."scriptText" AS "reelScript", reel."contentType" AS "parentType",
               to_char(reel."publishDate"::date, 'YYYY-MM-DD') AS "reelDate",
               ci."publishTime" AS time, ci."durationMin" AS "durationMin",
@@ -556,6 +557,7 @@ export class ContentPlanService {
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
         title: s.reelTopic || null, time: s.time || null,   // название родителя (рилс/пост) = название задачи подготовки
         scriptText: s.reelScript || null, reelDate: s.reelDate || null, parentKind: s.parentType || null, // описание/дата/тип родителя — для модалки
+        status: s.status || undefined, // статус задачи подготовки — для отметки «готово» в панели дня
         durationMin: Number(s.durationMin) > 0 ? Number(s.durationMin) : null,
         reelId: s.reelId, // связь с родителем → линия-связка на фронте
       })),
