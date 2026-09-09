@@ -12,9 +12,11 @@ import { SmmProjectCardBox, CARD_CLS, type SmmCard } from './SmmProjectCard'
 import SmmSpecialistBoard from './SmmSpecialistBoard'
 
 // Кто может создавать проекты (как на основной странице «Проекты»).
-const CREATE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm']
-// Кто видит схему нагрузки СММ (кто ведёт какие проекты) — как эндпоинт.
-const LOAD_ROLES = ['admin', 'founder', 'co_founder', 'smm_director']
+// СММ-специалист тоже может добавлять проект (по просьбе владельца).
+const CREATE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm', 'smm_specialist']
+// Кто видит схему нагрузки СММ (кто ведёт какие проекты). Специалист её ВИДИТ,
+// но переставлять проекты не может (DnD-переназначение отключено в доске).
+const LOAD_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist']
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }

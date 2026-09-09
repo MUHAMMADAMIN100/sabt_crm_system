@@ -165,7 +165,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'ai.chat', 'tariffs.manage', 'risks.view', 'teams.manage', 'organizer.directory',
   ],
   smm_specialist: [
-    'dashboard', 'projects.view',
+    'dashboard', 'projects.view', 'projects.create',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
     'reports.view', 'reports.create',

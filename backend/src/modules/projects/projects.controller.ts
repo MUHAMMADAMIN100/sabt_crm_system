@@ -36,10 +36,11 @@ export class ProjectsController {
   getStats() { return this.service.getStats(); }
 
   /** Схема «кто ведёт какие проекты»: SMM-специалисты с их активными
-   *  проектами + непривязанные проекты. Для руководства и руководителя SMM.
-   *  Объявлено ДО ':id', иначе вайлдкард перехватит путь. */
+   *  проектами + непривязанные проекты. Смотрят руководство, руководитель SMM
+   *  и сам СММ-специалист (он ВИДИТ схему, но переставлять проекты не может —
+   *  переназначение через setSmmProfile ему запрещено). Объявлено ДО ':id'. */
   @Get('smm-specialist-load')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   smmSpecialistLoad() {
     return this.service.smmSpecialistLoad();
   }

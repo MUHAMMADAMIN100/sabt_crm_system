@@ -1920,7 +1920,8 @@ export class ProjectsService implements OnModuleInit {
     if ('preferences' in dto) setOrDel('preferences', str(dto.preferences, 4000));
     // Назначенные SMM-специалисты проекта. Принимаем только id пользователей с
     // ролью smm_specialist (защита «в выборе только специалисты»), дедуп, cap 10.
-    if ('smmSpecialistIds' in dto) {
+    // Сам СММ-специалист переставлять проекты НЕ может — игнорируем это поле от него.
+    if ('smmSpecialistIds' in dto && user?.role !== UserRole.SMM_SPECIALIST) {
       const raw = Array.isArray(dto.smmSpecialistIds) ? dto.smmSpecialistIds.filter(x => typeof x === 'string') : [];
       const uniq = [...new Set(raw)].slice(0, 10);
       let valid: string[] = [];

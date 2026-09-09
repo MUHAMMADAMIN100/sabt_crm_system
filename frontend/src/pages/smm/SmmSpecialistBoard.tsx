@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 import { Avatar } from '@/components/ui'
 import { Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -17,17 +18,17 @@ const byName = (a: Proj, b: Proj) => a.name.localeCompare(b.name, 'ru')
 
 // Стабильные (module-level) компоненты — чтобы ре-рендер при dragOver не
 // ремаунтил перетаскиваемую карточку (иначе нативный DnD рвётся).
-function DragCard({ p, fromSpecId, card, onStart, onEnd, onOpen }: {
-  p: Proj; fromSpecId: string | null; card: SmmCard
+function DragCard({ p, fromSpecId, card, canDrag, onStart, onEnd, onOpen }: {
+  p: Proj; fromSpecId: string | null; card: SmmCard; canDrag: boolean
   onStart: (p: Proj, from: string | null) => void; onEnd: () => void; onOpen: (id: string) => void
 }) {
   return (
     <div
-      draggable
-      onDragStart={() => onStart(p, fromSpecId)}
-      onDragEnd={onEnd}
+      draggable={canDrag}
+      onDragStart={canDrag ? () => onStart(p, fromSpecId) : undefined}
+      onDragEnd={canDrag ? onEnd : undefined}
       onClick={() => onOpen(p.id)}
-      className={MINI_CLS + ' cursor-grab active:cursor-grabbing hover:border-gray-300 dark:hover:border-gray-600 select-none'}
+      className={MINI_CLS + (canDrag ? ' cursor-grab active:cursor-grabbing' : ' cursor-pointer') + ' hover:border-gray-300 dark:hover:border-gray-600 select-none'}
     >
       <SmmProjectMiniBox c={card} />
     </div>
@@ -83,6 +84,11 @@ export default function SmmSpecialistBoard({ cardById }: { cardById: (id: string
   const unassigned = data?.unassigned ?? []
   const maxLoad = Math.max(1, ...specialists.map(s => s.projects.length), unassigned.length)
 
+  // Переставлять проекты (DnD-переназначение специалиста) может только
+  // руководство. СММ-специалист схему ВИДИТ, но не перетаскивает.
+  const role = useAuthStore(s => s.user?.role)
+  const canReassign = ['admin', 'founder', 'co_founder', 'smm_director'].includes(role || '')
+
   const dragRef = useRef<{ project: Proj; fromSpecId: string | null } | null>(null)
   const [overCol, setOverCol] = useState<string | null>(null)
 
@@ -94,13 +100,14 @@ export default function SmmSpecialistBoard({ cardById }: { cardById: (id: string
 
   const onStart = useCallback((project: Proj, fromSpecId: string | null) => { dragRef.current = { project, fromSpecId } }, [])
   const onEnd = useCallback(() => { dragRef.current = null; setOverCol(null) }, [])
-  const onOver = useCallback((k: string) => setOverCol(prev => (prev === k ? prev : k)), [])
+  const onOver = useCallback((k: string) => { if (canReassign) setOverCol(prev => (prev === k ? prev : k)) }, [canReassign])
   const onOpen = useCallback((id: string) => navigate(`/smm/projects/${id}`), [navigate])
 
   const currentIdsOf = (projectId: string) =>
     specialists.filter(s => s.projects.some(p => p.id === projectId)).map(s => s.id)
 
   const onDrop = (colKey: string) => {
+    if (!canReassign) return
     const toSpecId = colKey === UNASSIGNED ? null : colKey
     const info = dragRef.current
     dragRef.current = null
@@ -146,8 +153,8 @@ export default function SmmSpecialistBoard({ cardById }: { cardById: (id: string
           }
         >
           {s.projects.length
-            ? s.projects.map(p => <DragCard key={p.id} p={p} fromSpecId={s.id} card={cardById(p.id) ?? fallback(p)} onStart={onStart} onEnd={onEnd} onOpen={onOpen} />)
-            : <p className="text-[11.5px] text-gray-400 text-center py-4">Перетащите проект сюда</p>}
+            ? s.projects.map(p => <DragCard key={p.id} p={p} fromSpecId={s.id} card={cardById(p.id) ?? fallback(p)} canDrag={canReassign} onStart={onStart} onEnd={onEnd} onOpen={onOpen} />)
+            : <p className="text-[11.5px] text-gray-400 text-center py-4">{canReassign ? 'Перетащите проект сюда' : 'Нет проектов'}</p>}
         </Column>
       ))}
 
@@ -165,7 +172,7 @@ export default function SmmSpecialistBoard({ cardById }: { cardById: (id: string
         }
       >
         {unassigned.length
-          ? unassigned.map(p => <DragCard key={p.id} p={p} fromSpecId={null} card={cardById(p.id) ?? fallback(p)} onStart={onStart} onEnd={onEnd} onOpen={onOpen} />)
+          ? unassigned.map(p => <DragCard key={p.id} p={p} fromSpecId={null} card={cardById(p.id) ?? fallback(p)} canDrag={canReassign} onStart={onStart} onEnd={onEnd} onOpen={onOpen} />)
           : <p className="text-[11.5px] text-amber-600/70 dark:text-amber-400/70 text-center py-4">Все проекты распределены</p>}
       </Column>
     </div>

@@ -39,7 +39,7 @@ const ALL_ROLES = [
 export const GRANTABLE: Record<string, GrantDef> = {
   // ─── Проекты ───────────────────────────────────────────────────────
   'projects.view':   { label: 'Проекты — просмотр',       category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'] },
-  'projects.create': { label: 'Проекты — добавление',     category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'] },
+  'projects.create': { label: 'Проекты — добавление',     category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev', 'smm_specialist'] },
   'projects.edit':   { label: 'Проекты — редактирование', category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'] },
   // Архив/восстановление проектов. Нативно — те же роли, что были в @Roles
   // эндпоинта; грантом можно выдать другим (напр. проект-менеджеру по
