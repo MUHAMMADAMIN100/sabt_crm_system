@@ -4,6 +4,49 @@ import { CalendarRange, Film, Image as ImageIcon } from 'lucide-react'
 export type SmmCard = {
   id: string; name: string; color: string
   day: number | null; reels: number; posts: number; norm: number; left: number
+  // Успеваемость по плану (опубликовано рилсов+постов / норма цикла), 0–100 или
+  // null, если норма контента не задана. Мирроит «Выполнение плана» проекта.
+  pct: number | null
+}
+
+// Порог цвета успеваемости: ≥80 зелёный, ≥50 жёлтый, иначе красный.
+export function pctTextCls(pct: number): string {
+  if (pct >= 80) return 'text-emerald-600 dark:text-emerald-400'
+  if (pct >= 50) return 'text-amber-600 dark:text-amber-400'
+  return 'text-red-500 dark:text-red-400'
+}
+function pctBarCls(pct: number): string {
+  if (pct >= 80) return 'bg-emerald-500'
+  if (pct >= 50) return 'bg-amber-500'
+  return 'bg-red-500'
+}
+
+// Компактная мини-карточка (для схемы нагрузки): имя + % успеваемости, мелкая
+// мета (цикл · рилсы/посты) и тонкая полоска прогресса.
+export const MINI_CLS = 'rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-800/50 px-3 py-2.5'
+
+export function SmmProjectMiniBox({ c }: { c: SmmCard }) {
+  const meta = [
+    c.day ? `цикл с ${c.day}-го` : 'цикл не задан',
+    c.norm > 0 ? `${c.reels} рилс · ${c.posts} пост` : '',
+  ].filter(Boolean).join(' · ')
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.color }} />
+        <span className="text-[12.5px] font-bold text-gray-900 dark:text-gray-100 truncate flex-1">{c.name}</span>
+        {c.pct != null
+          ? <span className={'text-[12px] font-extrabold tabular-nums shrink-0 ' + pctTextCls(c.pct)}>{c.pct}%</span>
+          : <span className="text-[11px] font-semibold text-gray-400 shrink-0">—</span>}
+      </div>
+      <div className="text-[10.5px] text-gray-400 dark:text-gray-500 mt-1 truncate">{meta}</div>
+      {c.pct != null && (
+        <div className="h-1 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden mt-1.5">
+          <div className={'h-full rounded-full ' + pctBarCls(c.pct)} style={{ width: `${c.pct}%` }} />
+        </div>
+      )}
+    </>
+  )
 }
 
 // Единый контейнер карточки (рамка/фон/паддинг) — чтобы в сетке и в схеме

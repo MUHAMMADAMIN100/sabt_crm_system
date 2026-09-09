@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '@/services/api.service'
 import { Avatar } from '@/components/ui'
-import { Loader2, GripVertical } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
-import { SmmProjectCardBox, CARD_CLS, type SmmCard } from './SmmProjectCard'
+import { SmmProjectMiniBox, MINI_CLS, type SmmCard } from './SmmProjectCard'
 
 type Proj = { id: string; name: string }
 type Spec = { id: string; name: string; avatar: string | null; projects: Proj[] }
@@ -27,10 +27,9 @@ function DragCard({ p, fromSpecId, card, onStart, onEnd, onOpen }: {
       onDragStart={() => onStart(p, fromSpecId)}
       onDragEnd={onEnd}
       onClick={() => onOpen(p.id)}
-      className={CARD_CLS + ' relative cursor-grab active:cursor-grabbing hover:border-gray-300 dark:hover:border-gray-600 select-none'}
+      className={MINI_CLS + ' cursor-grab active:cursor-grabbing hover:border-gray-300 dark:hover:border-gray-600 select-none'}
     >
-      <GripVertical size={13} className="absolute top-2 right-2 text-gray-300 dark:text-gray-600" />
-      <SmmProjectCardBox c={card} />
+      <SmmProjectMiniBox c={card} />
     </div>
   )
 }
@@ -124,7 +123,7 @@ export default function SmmSpecialistBoard({ cardById }: { cardById: (id: string
     persist.mutate({ projectId: project.id, ids: newIds })
   }
 
-  const fallback = (p: Proj): SmmCard => ({ id: p.id, name: p.name, color: '#8a97a6', day: null, reels: 0, posts: 0, norm: 0, left: 0 })
+  const fallback = (p: Proj): SmmCard => ({ id: p.id, name: p.name, color: '#8a97a6', day: null, reels: 0, posts: 0, norm: 0, left: 0, pct: null })
 
   if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-gray-400" /></div>
   if (specialists.length === 0 && unassigned.length === 0)

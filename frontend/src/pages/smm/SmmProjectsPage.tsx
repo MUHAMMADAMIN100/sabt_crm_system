@@ -16,8 +16,8 @@ const CREATE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_m
 // Кто видит схему нагрузки СММ (кто ведёт какие проекты) — как эндпоинт.
 const LOAD_ROLES = ['admin', 'founder', 'co_founder', 'smm_director']
 
-type Ev = { projectId: string }
-type CalData = { projects: SmmProj[]; backlog: Ev[] }
+type Ev = { projectId: string; kind?: string; contentType?: string; status?: string }
+type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
@@ -44,6 +44,7 @@ export default function SmmProjectsPage() {
 
   const projects = data?.projects ?? []
   const backlog = data?.backlog ?? []
+  const events = data?.events ?? []
 
   // Архив — завершённые SMM-проекты (isArchived=true). Для восстановления.
   const qc = useQueryClient()
@@ -63,16 +64,26 @@ export default function SmmProjectsPage() {
     assignProjectColors(projects.map(p => p.id))
     const backlogBy = new Map<string, number>()
     for (const b of backlog) backlogBy.set(b.projectId, (backlogBy.get(b.projectId) ?? 0) + 1)
+    // Опубликовано за месяц по проекту (рилсы/посты) — для % успеваемости.
+    const doneBy = new Map<string, number>()
+    for (const e of events) {
+      if (e.kind === 'publication' && e.status === 'published'
+          && (e.contentType === 'reel' || e.contentType === 'video' || e.contentType === 'design')) {
+        doneBy.set(e.projectId, (doneBy.get(e.projectId) ?? 0) + 1)
+      }
+    }
     return projects.map(p => {
       const norm = (p.normReels ?? 0) + (p.normPosts ?? 0)
+      const done = doneBy.get(p.id) ?? 0
+      const pct = norm > 0 ? Math.min(100, Math.round(done / norm * 100)) : null
       return {
         id: p.id, name: p.name, color: projColor(p.id),
         day: p.cycleStartDay ?? null,
         reels: p.normReels ?? 0, posts: p.normPosts ?? 0,
-        norm, left: backlogBy.get(p.id) ?? 0,
+        norm, left: backlogBy.get(p.id) ?? 0, pct,
       }
     })
-  }, [projects, backlog])
+  }, [projects, backlog, events])
   const cardById = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards])
 
   const layerCls = (active: boolean) =>
