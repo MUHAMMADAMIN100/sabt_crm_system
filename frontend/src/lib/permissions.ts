@@ -497,9 +497,9 @@ export function canAccessRoute(
   if (['/profile', '/notifications', '/'].includes(route)) return true
   // Онбординг — только менеджеры по продажам.
   if (route === '/onboarding') return (role === 'sales_manager_smm' || role === 'sales_manager_dev') && userCan(u, 'clients.view')
-  // «Доска проектов» — теперь только вид «Разработка» (dev). Старое
-  // SMM-производство отключено (работа СММ — в разделе «СММ»).
-  if (route === '/workflow-board') return canSeeDevBoard(role, secondaryRole)
+  // «Доска проектов» (/workflow-board) отключена полностью — раздел убран из
+  // приложения (и SMM-производство, и dev-канбан). Код страниц сохранён.
+  if (route === '/workflow-board') return false
   // Общий список «Проекты» больше не для СММ: у них раздел «СММ → Проекты».
   if (route === '/projects') {
     if (role === 'smm_director' || role === 'smm_specialist') return false

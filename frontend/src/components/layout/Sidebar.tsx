@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermissionAny, getUserPositionLabel, canSeeDevBoard, canSeeProjectStories, canManageAccess, canSeeSmmDaily, canSeeSmmSection, userCan, isDevDirector, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, canSeeProjectStories, canManageAccess, canSeeSmmDaily, canSeeSmmSection, userCan, isDevDirector, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
@@ -68,7 +68,6 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
     { to: '/finance',       icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
     { to: '/smm',           icon: Megaphone,       label: 'СММ',               permission: 'dashboard' },
     { to: '/projects',      icon: FolderKanban,    label: t('nav.projects'),   permission: 'projects.view' },
-    { to: '/workflow-board', icon: Trello,         label: 'Доска проектов',    permission: 'projects.view' },
     { to: '/my-notes',      icon: StickyNote,      label: 'Заметки',           permission: 'dashboard' },
     // Поручения от руководства — есть у КАЖДОГО сотрудника (permission
     // 'tasks.view' есть у всех ролей). Кроме основателя и со-основателя: они
@@ -101,9 +100,6 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
     // отдельный пункт скрываем. У sales_manager_dev — отдельный пункт сайдбара
     // (по запросу пользователя). Остальным ролям пункт не нужен.
     if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
-    // «Доска проектов» — теперь ТОЛЬКО вид «Разработка» (dev). Старое
-    // SMM-производство убрано (работа СММ — в разделе «СММ»).
-    if (item.to === '/workflow-board') return canSeeDevBoard(role, secondaryRole)
     // «Проекты» (общий список) — больше не для СММ: у них новый раздел
     // «СММ → Проекты». Оставляем разработке/продажам/руководству.
     if (item.to === '/projects') {
@@ -129,7 +125,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
   // Прочие роли видят полный список без изменений.
   const isFounder = role === 'founder'
   const FOUNDER_CORE = new Set<string>([
-    '/', '/finance', '/smm', '/projects', '/workflow-board', '/calendar',
+    '/', '/finance', '/smm', '/projects', '/calendar',
     '/analytics', '/employees', '/clients', '/ai',
   ])
   const coreItems = isFounder ? filtered.filter(i => FOUNDER_CORE.has(i.to)) : filtered
