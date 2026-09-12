@@ -11,10 +11,16 @@ import { ApiTags } from '@nestjs/swagger';
  * POST /api/webhooks/meta — события (входящие сообщения и т.п.). Meta ждёт
  *      быстрый 200, иначе ретраит и в итоге отключает вебхук.
  *
- * Verify Token берётся из env META_VERIFY_TOKEN (Railway → Variables);
- * fallback — значение по умолчанию ниже (можно оставить для старта).
+ * Verify Token берётся ТОЛЬКО из env META_VERIFY_TOKEN (Railway → Variables).
+ * Захардкоженного значения нет намеренно: секрет в репозитории публично
+ * читаем, и любой мог бы подтвердить подписку от нашего имени. Без переменной
+ * окружения верификация просто не проходит — это безопасное состояние.
+ *
+ * ВНИМАНИЕ на будущее: подпись запроса (X-Hub-Signature-256 по app secret)
+ * НЕ проверяется. Пока POST только логирует — это безвредно, но перед тем как
+ * создавать по вебхуку лиды/уведомления, проверку подписи нужно добавить.
  */
-const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || 'sabt_super_secret_token_2026';
+const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || '';
 
 @ApiTags('Meta Webhook')
 @Controller('webhooks/meta')
@@ -27,6 +33,10 @@ export class MetaWebhookController {
     @Query('hub.verify_token') token?: string,
     @Query('hub.challenge') challenge?: string,
   ): string {
+    if (!VERIFY_TOKEN) {
+      this.logger.warn('Meta webhook verification skipped: META_VERIFY_TOKEN is not set');
+      throw new ForbiddenException('Verification failed');
+    }
     if (mode === 'subscribe' && token === VERIFY_TOKEN && challenge != null) {
       this.logger.log('Meta webhook verified (hub.challenge echoed)');
       return challenge;

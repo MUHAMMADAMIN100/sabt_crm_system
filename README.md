@@ -1,198 +1,127 @@
-# 🏢 ERP System — Корпоративная система управления
+# Sabt — CRM/ERP агентства WeBrand
 
-Полнофункциональная ERP-система для управления сотрудниками, проектами и задачами компании.
+Внутренняя система SMM-агентства WeBrand (Душанбе). Закрывает полный цикл работы
+агентства: **лид → проект и тариф → производство контента → публикация → реклама →
+финансы → зарплаты и KPI**. Три направления: SMM-сопровождение, разработка
+(сайты, боты, CRM, магазины), дизайн.
 
-## 🚀 Технологии
+Интерфейс русский, валюта — сомони (TJS).
 
-### Backend
-- **NestJS** — фреймворк для Node.js
-- **TypeORM** — ORM для работы с БД
-- **PostgreSQL** — база данных
-- **JWT** — аутентификация
-- **WebSockets** (Socket.IO) — реал-тайм уведомления
-- **Swagger** — документация API
+> **Полное техническое задание — в [`SYSTEM_PROMPT.md`](SYSTEM_PROMPT.md).** Это главный
+> документ системы: модули, все роли, бизнес-правила. Финансовый модуль описан
+> отдельно в [`FINANCE_SPEC.md`](FINANCE_SPEC.md).
 
-### Frontend
-- **React 18** + **TypeScript**
-- **Vite** — сборщик
-- **TailwindCSS** — стилизация
-- **Zustand** — управление состоянием
-- **React Query** — кэш и запросы
-- **Recharts** — графики
-- **React Hook Form** — формы
+---
 
-## 📁 Структура проекта
+## Стек
+
+**Бэкенд** — NestJS 10, TypeORM, PostgreSQL (Supabase), Socket.IO, Passport/JWT.
+JWT живёт в httpOnly-cookie, есть refresh-токены с ротацией, 2FA (TOTP),
+rate-limit, журнал безопасности, строгий CORS-allowlist.
+
+**Фронтенд** — React 18, Vite, TypeScript, Tailwind, Zustand, TanStack Query v5,
+socket.io-client. Все страницы грузятся лениво; тема тёмная (зафиксирована для
+всей компании), акцентный цвет задаётся основателем и раздаётся всем.
+
+**Деплой** — бэкенд на Railway (авто из `main`), фронтенд на Vercel, база — Supabase.
+Миграции на проде применяются при старте (`migrationsRun`), `synchronize` выключен.
+
+---
+
+## Разделы системы
+
+| Раздел | Что внутри |
+|---|---|
+| **Панель** | Ролевой дашборд: у основателя — пульс компании, у руководителей — нагрузка команды, у SMM-специалиста — панель дня (календарь + отметки) |
+| **СММ** | Умный календарь (производство контента), Сторисы, Проекты со схемой нагрузки специалистов |
+| **Финансы** | Обзор, доход/расход по направлениям, планирование, транзакции, инвентарь, зарплаты. Доступ по гранту `finance.manage` |
+| **Задачи** | Поручения от руководства, мультиисполнители, чек-листы, результаты, тайм-трекер |
+| **Календарь** | Задачи с дедлайнами, съёмки, дни рождения |
+| **Сотрудники** | Кадры, KPI, доступы, оргструктура |
+| **База клиентов** | Лиды и воронка продаж, онбординг |
+| **Аналитика, Риски, Архив, Файлы, ИИ-помощник** | Вспомогательные разделы |
+
+**Роли** — 21 (от основателя до исполнителей), плюс необязательная вторая роль и
+персональные гранты поверх роли, выдаваемые на странице «Доступы сотрудников».
+Подробная таблица — в [`SYSTEM_PROMPT.md`](SYSTEM_PROMPT.md), раздел 3.
+
+---
+
+## Структура репозитория
 
 ```
-erp-system/
-├── backend/                  # NestJS backend
-│   ├── src/
-│   │   ├── modules/
-│   │   │   ├── auth/         # Авторизация (JWT)
-│   │   │   ├── users/        # Пользователи
-│   │   │   ├── employees/    # Сотрудники
-│   │   │   ├── projects/     # Проекты
-│   │   │   ├── tasks/        # Задачи
-│   │   │   ├── comments/     # Комментарии
-│   │   │   ├── time-tracker/ # Тайм-трекер
-│   │   │   ├── notifications/# Уведомления
-│   │   │   ├── reports/      # Отчёты
-│   │   │   ├── analytics/    # Аналитика
-│   │   │   ├── calendar/     # Календарь
-│   │   │   ├── files/        # Файлы
-│   │   │   └── gateway/      # WebSocket
-│   │   └── database/seeds/   # Seed данные
-│   └── Dockerfile
-├── frontend/                 # React frontend
-│   ├── src/
-│   │   ├── pages/            # Страницы
-│   │   ├── components/       # Компоненты
-│   │   ├── services/         # API сервисы
-│   │   ├── store/            # Zustand stores
-│   │   └── lib/              # Утилиты
-│   └── Dockerfile
-└── docker-compose.yml
+sabt_crm_system/
+├── backend/            # NestJS: 34 модуля, ~44 сущности, миграции
+│   └── src/
+│       ├── modules/    # auth, users, projects, content-plan, stories,
+│       │               # finance, kpi, tasks, clients, telegram, …
+│       ├── common/     # сегментация по направлениям, общие утилиты
+│       └── database/   # миграции TypeORM
+├── frontend/           # React SPA
+│   └── src/
+│       ├── pages/      # dashboard, smm, finance, tasks, employees, …
+│       ├── components/ # UI, проекты, сторис, KPI
+│       ├── services/   # API-слой (axios)
+│       ├── store/      # Zustand (auth, тема)
+│       └── lib/        # права, тема, утилиты
+├── docs/               # MOBILE_API, обзор финмодуля, безопасность, openapi.json
+├── fin-webrand/        # Автономный прототип финмодуля (эталон-референс, не деплоится)
+└── SYSTEM_PROMPT.md    # Главный документ системы
 ```
 
-## 🔧 Быстрый старт
+---
 
-### С Docker (рекомендуется)
+## Запуск локально
+
+Нужны Node.js 18+ и доступ к PostgreSQL (проще всего — строка подключения от Supabase).
 
 ```bash
-# Клонировать / распаковать проект
-cd erp-system
+npm install                      # монорепо: npm workspaces
 
-# Запустить всё одной командой
-docker-compose up -d
-
-# Подождать ~30 сек, затем запустить seed
-docker exec erp_backend npm run seed
-```
-
-Открыть: **http://localhost:5173**
-
-### Локально (без Docker)
-
-#### Требования
-- Node.js 18+
-- PostgreSQL 15+
-
-#### 1. База данных
-```bash
-createdb erp_db
-createuser erp_user -P   # пароль: erp_password
-psql -c "GRANT ALL ON DATABASE erp_db TO erp_user;"
-```
-
-#### 2. Backend
-```bash
+# бэкенд
 cd backend
-cp .env.example .env
-# Отредактируйте .env: DATABASE_URL, JWT_SECRET
+cp .env.example .env             # заполнить DATABASE_URL и JWT_SECRET
+npm run start:dev                # http://localhost:3000/api, Swagger на /api/docs
 
-npm install
-npm run start:dev
-```
-
-#### 3. Frontend
-```bash
+# фронтенд (в другом терминале)
 cd frontend
-npm install
-npm run dev
+npm run dev                      # http://localhost:5173
 ```
 
-#### 4. Seed данные
+Обязательные переменные бэкенда — `DATABASE_URL` и `JWT_SECRET` (минимум 32 символа):
+без них приложение намеренно не стартует. Остальные (Brevo, Telegram, Gemini,
+`META_VERIFY_TOKEN`) необязательны — соответствующие интеграции просто отключаются.
+
+В dev-режиме схема синхронизируется автоматически (`synchronize: on`); на проде —
+только миграциями.
+
+---
+
+## Полезные команды
+
 ```bash
-cd backend
-npm run seed
+# бэкенд
+npm run start:dev            # разработка с hot-reload
+npm run build                # сборка
+npm run test                 # юнит-тесты
+npm run migration:generate   # сгенерировать миграцию по изменениям сущностей
+npm run migration:run        # применить миграции
+
+# фронтенд
+npm run dev                  # разработка
+npm run build                # tsc + vite build (здесь ловятся ошибки типов)
+npm run test                 # vitest
 ```
 
-## 👤 Тестовые аккаунты
+---
 
-| Роль | Email | Пароль |
-|------|-------|--------|
-| Администратор | admin@erp.com | admin123 |
-| Менеджер | manager@erp.com | pass123 |
-| Сотрудник | ivan@erp.com | pass123 |
+## Документация
 
-## 📌 Функционал
-
-### ✅ Реализовано
-- 🔐 Авторизация (JWT, роли: admin/manager/employee)
-- 👥 Управление сотрудниками (CRUD, отделы, профили)
-- 📁 Проекты (статусы, прогресс, участники, архив)
-- ✅ Задачи (приоритеты, дедлайны, Kanban-вид)
-- 💬 Комментарии к задачам
-- ⏱️ Тайм-трекер (таймер + ручной ввод)
-- 📅 Календарь (задачи и проекты)
-- 🔔 Уведомления (in-app)
-- 📝 Ежедневные отчёты сотрудников
-- 📊 Аналитика (графики, KPI, активность)
-- 🗂️ Файловое хранилище
-- 📦 Архив проектов
-- 👤 Управление пользователями (admin)
-- 🔄 WebSocket (реал-тайм соединения)
-- 📚 Swagger API документация
-
-### 🔜 Будущие этапы
-- 📧 Email уведомления
-- 🤖 AI-ассистент
-- 📱 Мобильное приложение
-- 📤 Экспорт PDF/Excel
-
-## 📡 API Документация
-
-После запуска backend откройте:
-```
-http://localhost:3000/api/docs
-```
-
-## 🔌 WebSocket Events
-
-```javascript
-// Подключение
-const socket = io('http://localhost:3000/ws', {
-  auth: { token: 'JWT_TOKEN' }
-})
-
-// Присоединиться к проекту
-socket.emit('join:project', projectId)
-
-// Получать обновления
-socket.on('notification', (data) => { ... })
-socket.on('task:updated', (data) => { ... })
-```
-
-## 🌐 Порты
-
-| Сервис | Порт |
-|--------|------|
-| Frontend | 5173 (dev) / 80 (docker) |
-| Backend API | 3000 |
-| PostgreSQL | 5432 |
-| Redis | 6379 |
-
-## 📝 Переменные окружения
-
-### Backend (.env)
-```env
-DATABASE_URL=postgresql://erp_user:erp_password@localhost:5432/erp_db
-JWT_SECRET=change-this-in-production
-JWT_EXPIRES_IN=7d
-PORT=3000
-FRONTEND_URL=http://localhost:5173
-CORS_ORIGINS=http://localhost:5173
-MAIL_HOST=smtp.gmail.com
-MAIL_PORT=587
-MAIL_USER=your@email.com
-MAIL_PASS=app-password
-```
-
-В production указывайте только точные frontend origins; wildcard-домены не
-поддерживаются. Настройка секретов и ежедневного резервного копирования:
-[docs/SECURITY_AND_BACKUP.md](docs/SECURITY_AND_BACKUP.md).
-
-### Frontend (.env)
-```env
-VITE_API_URL=http://localhost:3000
-```
+| Файл | О чём |
+|---|---|
+| [`SYSTEM_PROMPT.md`](SYSTEM_PROMPT.md) | Главный документ: модули, роли, бизнес-правила |
+| [`FINANCE_SPEC.md`](FINANCE_SPEC.md) | Спецификация финансового модуля |
+| [`docs/MOBILE_API.md`](docs/MOBILE_API.md) | Гайд по API для мобильного приложения |
+| [`docs/SECURITY_AND_BACKUP.md`](docs/SECURITY_AND_BACKUP.md) | Секреты, бэкапы, операционные проверки |
+| [`docs/FINANCE_MODULE_REVIEW.md`](docs/FINANCE_MODULE_REVIEW.md) | Аудит и история финмодуля |
+| [`docs/openapi.json`](docs/openapi.json) | Машинная спецификация эндпоинтов |
