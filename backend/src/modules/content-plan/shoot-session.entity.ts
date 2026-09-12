@@ -2,9 +2,12 @@ import {
   Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn,
 } from 'typeorm';
 
-/** Съёмочная сессия — группирует несколько рилсов под одну съёмку
- *  (одна дата/место/время). Карточки ссылаются через shootSessionId.
- *  Позволяет «Подтвердить съёмку» пачкой для всей сессии. */
+/** Съёмочная сессия — наследие удалённой «Доски проектов»: группировала
+ *  несколько рилсов под одну съёмку (дата/место/время). Новые съёмки
+ *  создаются как задачи подготовки в контент-плане (`shootForItemId`).
+ *  Сущность сохранена, потому что старые сессии продолжают показываться
+ *  в умном календаре (`smmCalendar`) и в общем календаре, и их можно
+ *  переносить по датам — см. `updateShootSession` в ContentPlanService. */
 @Entity('shoot_sessions')
 export class ShootSession {
   @PrimaryGeneratedColumn('uuid')

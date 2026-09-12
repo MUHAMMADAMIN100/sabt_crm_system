@@ -286,19 +286,6 @@ export function useSocket(authMarker: string | null) {
       qc.refetchQueries({ queryKey: ['calendar'], type: 'active' })
     })
 
-    // Доска «Процесс работы» проекта: карточку перетащили/создали/удалили —
-    // обновляем у всех, кто смотрит эту доску.
-    socket.on('workflow:changed', () => {
-      qc.invalidateQueries({ queryKey: ['workflow'] })
-      // Отдельные ключи доски: ['workflow'] их НЕ покрывает — React Query
-      // сравнивает элементы ключа, а не строковый префикс.
-      qc.invalidateQueries({ queryKey: ['workflow-overdue'] })
-      qc.invalidateQueries({ queryKey: ['workflow-events'] })
-      qc.invalidateQueries({ queryKey: ['workflow-archive'] })
-      qc.refetchQueries({ queryKey: ['workflow'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['workflow-events'], type: 'active' })
-    })
-
     // Сервер принудительно рвёт сокет при протухшем JWT ('io server
     // disconnect') — в этом случае socket.io НЕ переподключается сам, и
     // реалтайм умирал до перезагрузки страницы. Пробуем вернуться сами.

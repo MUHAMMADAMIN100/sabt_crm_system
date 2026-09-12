@@ -7,6 +7,7 @@ import {
   ContentApprovalStatus,
   ContentItemType,
 } from './content-plan-item.entity';
+import { ShootSession } from './shoot-session.entity';
 import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
 import { AppGateway } from '../gateway/app.gateway';
@@ -417,10 +418,6 @@ export class ContentPlanService {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dushanbe' }).slice(0, 7);
   }
 
-  /** Разовое наполнение хранилища Умного календаря (content_plan_items) из
-   *  «Доски проектов» (workflow_cards, kind='kp') — только для проектов, где
-   *  своих элементов ещё нет. После копирования системы независимы: правки в
-   *  Умном календаре не трогают Доску и наоборот. */
   /** Границы ТЕКУЩЕГО цикла (в котором сегодня) по дню старта anchor. */
   private currentCycleBounds(anchor: number): { start: string; end: string } {
     const today = new Date();
@@ -616,5 +613,28 @@ export class ContentPlanService {
     ];
 
     return { from: f, to: t, events, projects, backlog };
+  }
+
+  /** Перенос старой съёмочной сессии (наследие удалённой «Доски проектов»)
+   *  на другую дату/время — перетаскиванием в умном календаре. Новые съёмки
+   *  живут как задачи подготовки контент-плана (shootForItemId), но старые
+   *  сессии остаются в календаре, и их нужно уметь двигать. */
+  async updateShootSession(
+    id: string,
+    dto: { date?: string; time?: string | null; location?: string | null; title?: string | null },
+  ) {
+    const repo = this.repo.manager.getRepository(ShootSession);
+    const session = await repo.findOne({ where: { id } });
+    if (!session) throw new NotFoundException('Съёмка не найдена');
+
+    const patch: any = {};
+    if (dto.date !== undefined) patch.date = dto.date;
+    if (dto.time !== undefined) patch.time = dto.time;
+    if (dto.location !== undefined) patch.location = dto.location;
+    if (dto.title !== undefined) patch.title = dto.title;
+    if (Object.keys(patch).length) await repo.update(id, patch);
+
+    this.emitTasksChanged(session.projectId);
+    return { ...session, ...patch };
   }
 }

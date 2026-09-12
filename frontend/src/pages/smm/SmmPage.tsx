@@ -11,7 +11,7 @@ import {
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare, Palette } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { contentPlanApi, workflowApi, projectsApi } from '@/services/api.service'
+import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 
 export type Ev = {
@@ -317,7 +317,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     mutationFn: ({ ev, dateStr, time }: { ev: Ev; dateStr: string | null; time?: string | null }) =>
       ev.itemId
         ? contentPlanApi.smartUpdate(ev.itemId, { publishDate: dateStr, ...(time !== undefined ? { publishTime: time } : {}) })
-        : workflowApi.updateShootSession(ev.shootId!, { date: dateStr, ...(time !== undefined ? { time } : {}) }),
+        : contentPlanApi.updateShootSession(ev.shootId!, { date: dateStr, ...(time !== undefined ? { time } : {}) }),
     onMutate: async ({ ev, dateStr, time }) => {
       const key = ['smm-calendar', from, to]
       await qc.cancelQueries({ queryKey: key })

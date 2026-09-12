@@ -57,6 +57,14 @@ export class ContentPlanController {
     return this.service.smmCalendar(from, to);
   }
 
+  /** Перенос старой съёмочной сессии (наследие «Доски проектов») по датам —
+   *  drag в умном календаре. Литеральный сегмент объявлен ДО ':id'. */
+  @Patch('shoot-session/:id')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  updateShootSession(@Param('id') id: string, @Body() body: any) {
+    return this.service.updateShootSession(id, body || {});
+  }
+
   /** Умный календарь: догенерировать заготовки под норму цикла (рилсы/посты)
    *  в «Не запланировано». Только руководящие роли SMM. */
   @Post('smart-generate')

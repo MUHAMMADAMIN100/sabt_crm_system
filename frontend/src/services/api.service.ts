@@ -264,9 +264,6 @@ export const kpiApi = {
   /** Детализация конкретной KPI-метрики — массив записей для модалки. */
   details: (userId: string, metric: string, params?: { from?: string; to?: string }) =>
     api.get(`/kpi/user/${userId}/details`, { params: { metric, ...params } }).then(r => r.data),
-  /** Ежедневный автоотчёт СММ (только основатель). */
-  smmDaily: (date?: string, scope?: 'all' | 'smm') =>
-    api.get('/kpi/smm-daily', { params: { date, scope } }).then(r => r.data),
 }
 
 // ─── Clients (sales CRM) ─────────────────────────────────
@@ -355,6 +352,9 @@ export const contentPlanApi = {
   // Календарь производства SMM за диапазон дат: публикации + съёмки (раздел СММ).
   smmCalendar: (params?: { from?: string; to?: string }) =>
     api.get('/content-plan/smm-calendar', { params }).then(r => r.data),
+  // Перенос съёмки в Умном календаре (legacy-таблица shoot_sessions).
+  updateShootSession: (id: string, data: { date?: string | null; time?: string | null; location?: string | null; title?: string | null }) =>
+    api.patch(`/content-plan/shoot-session/${id}`, data).then(r => r.data),
 }
 
 // ─── Project Launch Checklist (Wave 7) ───────────────────
@@ -505,63 +505,6 @@ export const riskApi = {
   projectRiskDetail: (id: string) => api.get(`/risk-analytics/risks/projects/${id}`).then(r => r.data),
   employeeRisks: () => api.get('/risk-analytics/risks/employees').then(r => r.data),
   employeeRiskDetail: (id: string) => api.get(`/risk-analytics/risks/employees/${id}`).then(r => r.data),
-}
-
-// ─── Workflow — доска «Процесс работы» SMM-проекта ──────
-export const workflowApi = {
-  list: (projectId: string) => api.get(`/workflow/project/${projectId}`).then(r => r.data),
-  listAll: () => api.get('/workflow/all').then(r => r.data),
-  /** Карточки, где текущий пользователь — исполнитель (кабинет сотрудника). */
-  myCards: () => api.get('/workflow/my').then(r => r.data),
-  /** Просроченные карточки доски (в зоне видимости) — для дашбордов. */
-  overdue: () => api.get('/workflow/overdue').then(r => r.data),
-  /** Глобальная занятость дат (публикации/съёмки всех проектов) — для
-   *  подсветки календаря при планировании. */
-  publicationLoad: () => api.get('/workflow/publication-load').then(r => r.data),
-  /** Видеоролики, запланированные к публикации на ближайшие N дней (по
-   *  умолчанию 1–2 дня) — для кабинета публикатора и дашбордов. */
-  upcomingPublications: (days = 2) =>
-    api.get('/workflow/upcoming-publications', { params: { days } }).then(r => r.data),
-  create: (projectId: string, data: any) => api.post(`/workflow/project/${projectId}`, data).then(r => r.data),
-  /** M3: сгенерировать план месяца из тарифа (рилсы + макеты). */
-  generatePlan: (projectId: string, month?: string) =>
-    api.post(`/workflow/project/${projectId}/generate-plan`, { month }).then(r => r.data),
-  update: (id: string, data: any) => api.patch(`/workflow/${id}`, data).then(r => r.data),
-  move: (id: string, data: { stage: string; position?: number }) =>
-    api.patch(`/workflow/${id}/move`, data).then(r => r.data),
-  remove: (id: string) => api.delete(`/workflow/${id}`).then(r => r.data),
-  /** Движок переходов: действие выхода этапа (ТЗ §10). */
-  transition: (id: string, action: string, payload?: any) =>
-    api.post(`/workflow/${id}/transition`, { action, payload }).then(r => r.data),
-  /** История событий карточки. */
-  events: (id: string) => api.get(`/workflow/${id}/events`).then(r => r.data),
-  /** §9.1/§9.2: сгруппировать рилсы в съёмку + пакетно подтвердить. */
-  createShootSession: (projectId: string, data: any) =>
-    api.post(`/workflow/project/${projectId}/shoot-session`, data).then(r => r.data),
-  updateShootSession: (id: string, data: any) =>
-    api.patch(`/workflow/shoot-session/${id}`, data).then(r => r.data),
-  moveContentItem: (data: { projectId: string; itemId: string; publishDate: string | null }) =>
-    api.patch('/workflow/content-item', data).then(r => r.data),
-  /** §11: настройка отступов дедлайнов. */
-  getDeadlineSettings: () => api.get('/workflow/settings/deadlines').then(r => r.data),
-  updateDeadlineSettings: (data: any) => api.patch('/workflow/settings/deadlines', data).then(r => r.data),
-  /** Контент-план: сохранить КП → карточки «Рилсы»/«Макеты». */
-  saveContentPlan: (projectId: string, data: { reels?: any[]; macros?: any[] }) =>
-    api.post(`/workflow/project/${projectId}/content-plan`, data).then(r => r.data),
-  /** Обновить элементы групповой карточки. */
-  updateItems: (id: string, items: any[]) =>
-    api.patch(`/workflow/${id}/items`, { items }).then(r => r.data),
-  /** Все исполнители по ролям (видеографы/дизайнеры) для селекта. */
-  assignees: (roles: string[]) =>
-    api.get('/workflow/assignees', { params: { roles: roles.join(',') } }).then(r => r.data),
-  /** Вынести один элемент группы как отдельную карточку на следующий этап. */
-  advanceItem: (cardId: string, itemId: string) =>
-    api.post(`/workflow/${cardId}/item/${itemId}/advance`, {}).then(r => r.data),
-  /** Очистить всю доску (для тестов) — только руководитель. */
-  clearAll: () => api.post('/workflow/clear', {}).then(r => r.data),
-  /** «История» — архивные карточки (опубликованы > 6 дней назад). */
-  archive: () => api.get('/workflow/archive').then(r => r.data),
-  projectArchive: (projectId: string) => api.get(`/workflow/project/${projectId}/archive`).then(r => r.data),
 }
 
 /** Справочники организатора съёмок: клиенты / модели / места (полный CRUD).

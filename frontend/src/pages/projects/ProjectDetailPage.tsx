@@ -21,7 +21,6 @@ import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import {
   ProjectOverviewTab, ProjectActivityTab,
 } from '@/components/projects/ProjectExtraTabs'
-import ProjectWorkflowTab from '@/components/projects/ProjectWorkflowTab'
 import SMM_QUESTIONS from '@/config/smm-questions'
 import { downloadSmmBrief } from '@/lib/smmBrief'
 import toast from 'react-hot-toast'
@@ -51,7 +50,7 @@ const fileUrl = (path: string) => path?.startsWith('http') ? path : `${API_URL}$
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'workflow' | 'about' | 'client' | 'members' | 'activity'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'about' | 'client' | 'members' | 'activity'>('overview')
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
@@ -563,24 +562,19 @@ export default function ProjectDetailPage() {
       )}
 
       <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
-        {((['overview', 'workflow', 'about', 'client', 'members'] as const)
-          // Вкладки «Задачи» и «Активность» убраны — работаем по Доске проектов.
-          // «Процесс работы» — только для SMM-проектов.
-          .filter(tab => tab !== 'workflow' || project?.projectType === 'SMM'))
+        {(['overview', 'about', 'client', 'members'] as const)
+          // Вкладки «Задачи» и «Активность» скрыты: задачи ведутся в Умном календаре.
           .map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={clsx('px-4 py-3 sm:py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px]',
                 activeTab === tab ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400' : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300')}>
-              {tab === 'overview' ? 'Обзор'
-                : tab === 'workflow' ? 'Процесс работы'
-                : t(`tabs.${tab}`)}
+              {tab === 'overview' ? 'Обзор' : t(`tabs.${tab}`)}
             </button>
           ))}
       </div>
 
       {activeTab === 'overview' && project && <ProjectOverviewTab project={project} />}
       {activeTab === 'activity' && project && <ProjectActivityTab projectId={project.id} />}
-      {activeTab === 'workflow' && project && <ProjectWorkflowTab project={project} />}
 
       {activeTab === 'tasks' && (
         <div className="flex gap-4 overflow-x-auto pb-3 lg:grid lg:grid-cols-4 lg:overflow-x-visible">

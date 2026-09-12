@@ -5,7 +5,6 @@ import { TelegramService } from './telegram.service';
 import { VoiceTaskService } from './voice-task.service';
 import { BotWorkspaceService } from './bot-workspace.service';
 import { Employee } from '../employees/employee.entity';
-import { WorkflowService } from '../workflow/workflow.service';
 import { TasksService } from '../tasks/tasks.service';
 
 interface TelegramUpdate {
@@ -31,7 +30,6 @@ export class TelegramController {
     private telegramService: TelegramService,
     private voiceTaskService: VoiceTaskService,
     private botWorkspace: BotWorkspaceService,
-    @Inject(forwardRef(() => WorkflowService)) private workflowService: WorkflowService,
     @Inject(forwardRef(() => TasksService)) private tasksService: TasksService,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
   ) {}
@@ -74,10 +72,9 @@ export class TelegramController {
           return { ok: true };
         }
       }
-      // Карточки доски: wf:done|skip:<cardId>. Обычные задачи: t:done|progress:<taskId>.
-      const wfMatch = data.match(/^wf:(done|skip):(.+)$/);
+      // Кнопки задач в боте: t:done|progress:<taskId>.
       const taskMatch = data.match(/^t:(done|progress):(.+)$/);
-      if (!chatId || (!wfMatch && !taskMatch)) {
+      if (!chatId || !taskMatch) {
         if (cq.id) await this.telegramService.answerCallbackQuery(cq.id, '');
         return { ok: true };
       }
@@ -88,15 +85,10 @@ export class TelegramController {
       }
       let resultText = 'Готово';
       try {
-        if (taskMatch) {
-          const res = await this.tasksService.handleBotAction(taskMatch[2], taskMatch[1] as 'done' | 'progress', userId);
-          resultText = res.text;
-        } else {
-          const res = await this.workflowService.handleBotAction(wfMatch![2], wfMatch![1] as 'done' | 'skip', userId);
-          resultText = res.text;
-        }
+        const res = await this.tasksService.handleBotAction(taskMatch[2], taskMatch[1] as 'done' | 'progress', userId);
+        resultText = res.text;
       } catch (e: any) {
-        resultText = taskMatch ? 'Не удалось выполнить. Откройте задачу в системе.' : 'Не удалось выполнить. Откройте «Доску проектов».';
+        resultText = 'Не удалось выполнить. Откройте задачу в системе.';
       }
       await this.telegramService.answerCallbackQuery(cq.id, resultText);
       // Заменяем текст сообщения (с результатом) и убираем кнопки.

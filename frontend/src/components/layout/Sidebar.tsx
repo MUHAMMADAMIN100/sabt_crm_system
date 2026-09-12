@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermissionAny, getUserPositionLabel, canSeeProjectStories, canManageAccess, canSeeSmmDaily, canSeeSmmSection, userCan, isDevDirector, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, canSeeProjectStories, canManageAccess, canSeeSmmSection, userCan, isDevDirector, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,

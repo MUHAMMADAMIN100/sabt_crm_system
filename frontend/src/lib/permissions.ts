@@ -392,12 +392,6 @@ export function canManageAccess(role?: string | null): boolean {
   return role === 'admin' || role === 'founder' || role === 'co_founder'
 }
 
-/** «Отчёты СММ» (ежедневный автоотчёт команды) — по требованию основателя
- *  видит ТОЛЬКО основатель (пока). */
-export function canSeeSmmDaily(role?: string | null): boolean {
-  return role === 'founder'
-}
-
 /** Раздел «СММ» (Умный календарь / Сторисы / Проекты) — вся СММ-команда
  *  и топ-менеджмент. Роли совпадают с бэкендом (эндпоинт smm-calendar). */
 export function canSeeSmmSection(role?: string | null): boolean {
@@ -479,8 +473,8 @@ export function canAccessRoute(
   if (['/profile', '/notifications', '/'].includes(route)) return true
   // Онбординг — только менеджеры по продажам.
   if (route === '/onboarding') return (role === 'sales_manager_smm' || role === 'sales_manager_dev') && userCan(u, 'clients.view')
-  // «Доска проектов» (/workflow-board) отключена полностью — раздел убран из
-  // приложения (и SMM-производство, и dev-канбан). Код страниц сохранён.
+  // «Доска проектов» удалена из системы (сент. 2026) — вся работа в Умном
+  // календаре. Старый адрес держим закрытым на случай сохранённых ссылок.
   if (route === '/workflow-board') return false
   // Общий список «Проекты» (/projects) убран из приложения у всех. Детальная
   // карточка /projects/:id остаётся (ссылки из уведомлений и пр.).
@@ -490,8 +484,8 @@ export function canAccessRoute(
   if (route === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(u, 'notes.use')
   // «Доступы сотрудников» — только основатель/сооснователь/админ.
   if (route === '/employee-access') return canManageAccess(role)
-  // «Отчёты СММ» (ежедневный автоотчёт) — только основатель.
-  if (route === '/smm-daily') return canSeeSmmDaily(role)
+  // «Отчёты СММ» (ежедневный автоотчёт) удалены полностью.
+  if (route === '/smm-daily') return false
   // «СММ» и все подстраницы (Умный календарь / Сторисы / Проекты) — СММ-команда + топ.
   if (route === '/smm' || route.startsWith('/smm/')) return canSeeSmmSection(role)
   // «Активность команды» — мониторинг для основателя/админа. Сооснователь

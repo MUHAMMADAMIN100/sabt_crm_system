@@ -9,7 +9,6 @@ import { Task } from '../tasks/task.entity';
 import { TaskAssignee } from '../tasks/task-assignee.entity';
 import { User } from '../users/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
-import { WorkflowModule } from '../workflow/workflow.module';
 import { TasksModule } from '../tasks/tasks.module';
 import { CommentsModule } from '../comments/comments.module';
 import { TaskResultsModule } from '../task-results/task-results.module';
@@ -19,7 +18,6 @@ import { TaskResultsModule } from '../task-results/task-results.module';
   imports: [
     TypeOrmModule.forFeature([Employee, Task, TaskAssignee, User]),
     NotificationsModule,
-    forwardRef(() => WorkflowModule),
     forwardRef(() => TasksModule),
     forwardRef(() => CommentsModule),
     forwardRef(() => TaskResultsModule),

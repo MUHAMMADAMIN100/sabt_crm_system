@@ -42,7 +42,6 @@ import { FinanceModule } from './modules/finance/finance.module';
 import { OrganizerDirectoryModule } from './modules/organizer-directory/organizer-directory.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { KpiModule } from './modules/kpi/kpi.module';
-import { WorkflowModule } from './modules/workflow/workflow.module';
 import { NotesModule } from './modules/notes/notes.module';
 import { DbIndexesService } from './common/db-indexes.service';
 
@@ -122,7 +121,6 @@ import { DbIndexesService } from './common/db-indexes.service';
     FinanceModule,
     TeamsModule,
     KpiModule,
-    WorkflowModule,
     NotesModule,
     OrganizerDirectoryModule,
   ],

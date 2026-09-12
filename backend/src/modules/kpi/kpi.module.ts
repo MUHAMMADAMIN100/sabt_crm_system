@@ -2,8 +2,6 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { KpiService } from './kpi.service';
 import { KpiController } from './kpi.controller';
-import { SmmDailyService } from './smm-daily.service';
-import { SmmDailyScheduler } from './smm-daily.scheduler';
 import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { Task } from '../tasks/task.entity';
@@ -20,9 +18,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
  * Универсальные 4 метрики (задач выполнено / часов / соблюдено
  * дедлайнов / активных дней) + бонусы по роли (МП — funnel-метрики,
  * SMM — stories, PM — проектов под управлением).
- *
- * + Ежедневный автоотчёт СММ для основателя (SmmDailyService/Scheduler):
- * активность каждого СММ-сотрудника за день из журналов доски/историй/задач.
  */
 @Module({
   imports: [
@@ -31,7 +26,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     NotificationsModule,
   ],
   controllers: [KpiController],
-  providers: [KpiService, SmmDailyService, SmmDailyScheduler],
+  providers: [KpiService],
   exports: [KpiService],
 })
 export class KpiModule {}
