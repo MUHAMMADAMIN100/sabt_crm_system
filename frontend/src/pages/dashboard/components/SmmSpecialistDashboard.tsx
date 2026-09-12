@@ -59,8 +59,9 @@ export default function SmmSpecialistDashboard() {
   const { data: cal } = useQuery({ queryKey: ['smm-calendar', from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to }) })
   const { data: myStories } = useQuery({ queryKey: ['stories-my-month', from, to], queryFn: () => storiesApi.my(from, to) })
 
-  // Специалист ВИДИТ все активные SMM-проекты агентства (решение владельца),
-  // а отмечать сторис может только по своим — см. canMark (сервер проверяет то же).
+  // Личный кабинет — ТОЛЬКО свои проекты (назначен специалистом, участник или
+  // менеджер). Все проекты агентства специалист видит в разделе «СММ», здесь
+  // же панель дня показывает его собственную работу — см. canMark.
   const myProjects = useMemo(
     () => (projectsList || []).filter((p: any) => !p.isArchived && (p.projectType || 'SMM') === 'SMM'),
     [projectsList],
@@ -70,10 +71,12 @@ export default function SmmSpecialistDashboard() {
     p.members?.some((m: any) => m.id === user?.id) ||
     p.managerId === user?.id || p.manager?.id === user?.id ||
     (Array.isArray(p.smmData?.smmSpecialistIds) && p.smmData.smmSpecialistIds.includes(user?.id))
-  const myProjectIds = useMemo(() => new Set(myProjects.map((p: any) => p.id)), [myProjects])
+  // Свои проекты: по ним показываем задачи, считаем мини-месяц и отмечаем сторис.
+  const mine = useMemo(() => myProjects.filter((p: any) => canMark(p)), [myProjects, user?.id, isMgmt])
+  const myProjectIds = useMemo(() => new Set(mine.map((p: any) => p.id)), [mine])
   const trackedProjects = useMemo(
-    () => myProjects.filter((p: any) => !p.storiesArchived && dailyTarget(p) > 0),
-    [myProjects],
+    () => mine.filter((p: any) => !p.storiesArchived && dailyTarget(p) > 0),
+    [mine],
   )
 
   // Контент-события (мои проекты): публикации (рилс/макет) + задачи подготовки (съёмка/дизайн).
@@ -273,15 +276,11 @@ export default function SmmSpecialistDashboard() {
                         <span key={i} className={clsx('w-2.5 h-2.5 rounded-full', i < cnt ? 'bg-green-500' : 'bg-surface-200 dark:bg-surface-600')} />
                       ))}
                     </span>
-                    {canMark(p) ? (
-                      <div className="flex items-center gap-0.5 shrink-0 bg-surface-100 dark:bg-surface-700/60 rounded-lg p-0.5 border border-surface-200 dark:border-surface-600/50">
-                        <button onClick={() => setStory(p.id, cnt - 1)} disabled={cnt <= 0} className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600 disabled:opacity-30"><Minus size={13} /></button>
-                        <span className="min-w-[22px] text-center text-[13px] font-bold tabular-nums text-surface-900 dark:text-surface-100">{cnt}</span>
-                        <button onClick={() => setStory(p.id, cnt + 1)} className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600"><Plus size={13} /></button>
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-surface-400 dark:text-surface-500 shrink-0" title="Отмечать может назначенный специалист">{cnt} · не ваш проект</span>
-                    )}
+                    <div className="flex items-center gap-0.5 shrink-0 bg-surface-100 dark:bg-surface-700/60 rounded-lg p-0.5 border border-surface-200 dark:border-surface-600/50">
+                      <button onClick={() => setStory(p.id, cnt - 1)} disabled={cnt <= 0} className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600 disabled:opacity-30"><Minus size={13} /></button>
+                      <span className="min-w-[22px] text-center text-[13px] font-bold tabular-nums text-surface-900 dark:text-surface-100">{cnt}</span>
+                      <button onClick={() => setStory(p.id, cnt + 1)} className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600"><Plus size={13} /></button>
+                    </div>
                   </div>
                 )
               })}
