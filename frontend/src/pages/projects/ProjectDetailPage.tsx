@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { storiesDailyTarget } from '@/pages/smm/smmShared'
 import { projectsApi, tasksApi, employeesApi, storiesApi } from '@/services/api.service'
 import { invalidateAfterTaskChange, invalidateAfterProjectChange } from '@/lib/invalidateQueries'
 import { useAuthStore } from '@/store/auth.store'
@@ -760,7 +761,7 @@ export default function ProjectDetailPage() {
           {/* SMM plan vs fact */}
           {project.projectType === 'SMM' && (
             <SmmPlanFactCard
-              storiesPerDay={Number((project.smmData as any)?.storiesPerDay || 0)}
+              storiesPerDay={storiesDailyTarget(project)}
               layoutsPerMonth={Number((project.smmData as any)?.layoutsPerMonth || 0)}
               stories={projectStories || []}
             />

@@ -42,7 +42,7 @@ export default function SmmProjectCreateModal({ onClose }: { onClose: () => void
       const smmData: Record<string, any> = { normReels: n(reels) ?? 0, normPosts: n(posts) ?? 0 }
       const d = n(day); if (d) smmData.cycleStartDay = d
       const m = n(spm)
-      if (m != null) { smmData.storiesPerMonth = m; smmData.storiesPerDay = m > 0 ? Math.max(1, Math.round(m / 30)) : 0 }
+      if (m != null) { smmData.storiesPerMonth = m; smmData.storiesPerDay = m > 0 ? Math.max(1, Math.round(m / new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate())) : 0 } // месяц / дни текущего месяца
       if (ownerName.trim()) smmData.ownerName = ownerName.trim()
       if (keyDate) smmData.keyDate = keyDate
       if (keyDateNote.trim()) smmData.keyDateNote = keyDateNote.trim()

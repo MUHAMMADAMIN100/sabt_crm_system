@@ -7,11 +7,9 @@ import { Image as ImageIcon, CheckCircle2, ListChecks, CalendarDays } from 'luci
 import { format, startOfMonth } from 'date-fns'
 import clsx from 'clsx'
 
-/** Дневной план сторис проекта (из smmData.storiesPerDay, дефолт 3, максимум 12). */
-function dailyTarget(project: any): number {
-  const v = Number(project?.smmData?.storiesPerDay)
-  return Number.isFinite(v) && v > 0 ? Math.min(v, 12) : 3
-}
+import { storiesDailyTarget } from '@/pages/smm/smmShared'
+/** Дневной план сторис на сегодня — единая формула (месяц / дни месяца). */
+function dailyTarget(project: any): number { return storiesDailyTarget(project) }
 
 /**
  * Дашборд сторисмейкера — оперативная сводка по сторис всех SMM-проектов:

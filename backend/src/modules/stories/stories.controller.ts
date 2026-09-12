@@ -25,6 +25,6 @@ export class StoriesController {
   @Post()
   @RequirePerm('stories.manage')
   upsert(@Request() req, @Body() body: { projectId: string; date: string; storiesCount: number }) {
-    return this.service.upsert(req.user.id, body.projectId, body.date, body.storiesCount);
+    return this.service.upsert(req.user.id, body.projectId, body.date, body.storiesCount, req.user);
   }
 }

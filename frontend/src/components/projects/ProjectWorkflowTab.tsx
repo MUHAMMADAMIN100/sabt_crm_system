@@ -13,7 +13,7 @@ import {
   predictTransition, canManageBoard,
 } from './workflowShared'
 
-// Реэкспорт констант — их импортируют другие модули (ProjectsBoardPage и т.д.).
+// Реэкспорт констант — их импортируют другие модули (дашборды, KPI).
 export { STAGES, CONTENT_TYPES, typeLabel, shortRole }
 
 interface Props {

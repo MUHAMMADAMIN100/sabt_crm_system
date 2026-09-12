@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { tasksApi } from '@/services/api.service'
-import { DEV_STAGES } from '@/pages/workflow/DevProjectsBoard'
+import { DEV_STAGES } from '@/lib/devStages'
 import TaskDrawer from '@/components/tasks/TaskDrawer'
 import { isTaskOverdue } from '@/lib/taskStatus'
 import { CalendarDays, Hammer } from 'lucide-react'

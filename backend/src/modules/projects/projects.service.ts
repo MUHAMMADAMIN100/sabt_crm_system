@@ -39,6 +39,12 @@ import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
 
+/** Число дней в текущем месяце — для производной дневной нормы сторис (месяц / дни). */
+function daysInCurrentMonth(): number {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
+
 @Injectable()
 export class ProjectsService implements OnModuleInit {
   private readonly logger = new Logger(ProjectsService.name);
@@ -838,7 +844,7 @@ export class ProjectsService implements OnModuleInit {
       // не сегмент продаж), чтобы не добавлять запрос каждому вызову списка.
       let isStoryMaker = !!emp?.isStoryMaker || role === 'storymaker';
       if (!isStoryMaker
-        && !['admin', 'founder', 'co_founder', 'smm_director', 'organizer', 'pm_dev', 'dev_director', 'video_director'].includes(role)
+        && !['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist', 'organizer', 'pm_dev', 'dev_director', 'video_director'].includes(role)
         && !getSalesSegment(role)) {
         const userRow = await this.userRepo.findOne({
           where: { id: userId },
@@ -858,7 +864,9 @@ export class ProjectsService implements OnModuleInit {
         qb.andWhere('p.projectType IN (:...salesTypes)', {
           salesTypes: getSalesSegment(role)!.projectTypes,
         });
-      } else if (role === 'smm_director' || role === 'organizer' || role === 'video_director') {
+      } else if (role === 'smm_director' || role === 'organizer' || role === 'video_director' || role === 'smm_specialist') {
+        // smm_specialist видит ВСЕ SMM-проекты (решение владельца, сент. 2026); отмечать сторис
+        // может только по своим — это проверяет StoriesService.upsert.
         // Руководители SMM и видео + организатор видят ВСЕ SMM-проекты
         // компании (управляющие роли производства; видеопродакшн живёт
         // внутри SMM-проектов). Проекты разработки им не показываем.
@@ -1831,11 +1839,11 @@ export class ProjectsService implements OnModuleInit {
       const n = dayInRange(dto.normPosts, 0, 999);
       if (n == null) delete smmData.normPosts; else smmData.normPosts = n;
     }
-    // Сторис в месяц (норма, 0–100). Дневную норму (для KPI и раскраски дней) выводим = месяц/30.
+    // Сторис в месяц (норма, 0–100). Дневную норму (для KPI и раскраски дней) выводим = месяц / дни текущего месяца.
     if ('storiesPerMonth' in dto) {
       const m = dayInRange(dto.storiesPerMonth, 0, 100);
       if (m == null) { delete smmData.storiesPerMonth; delete smmData.storiesPerDay; }
-      else { smmData.storiesPerMonth = m; smmData.storiesPerDay = m > 0 ? Math.max(1, Math.round(m / 30)) : 0; }
+      else { smmData.storiesPerMonth = m; smmData.storiesPerDay = m > 0 ? Math.max(1, Math.round(m / daysInCurrentMonth())) : 0; }
     }
     await this.repo.update(id, { smmData });
     await this.activityLog.log({

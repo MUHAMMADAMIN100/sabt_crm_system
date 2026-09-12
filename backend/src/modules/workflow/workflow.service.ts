@@ -2345,7 +2345,7 @@ export class WorkflowService implements OnModuleInit {
   private async createInApp(userId: string, title: string, message: string) {
     try {
       await this.notifications.create({
-        userId, type: NotificationType.STATUS_CHANGE, title, message, link: '/workflow-board',
+        userId, type: NotificationType.STATUS_CHANGE, title, message, link: '/', // доска удалена — ведём на главную
       } as any);
     } catch (e: any) {
       this.logger.warn(`in-app notify failed for ${userId}: ${e?.message || e}`);

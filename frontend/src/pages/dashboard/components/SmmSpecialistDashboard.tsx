@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, contentPlanApi, storiesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { projColor } from '@/pages/smm/smmShared'
+import { projColor, storiesDailyTarget } from '@/pages/smm/smmShared'
 import { Film, Image as ImageIcon, Palette, Camera, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus } from 'lucide-react'
 import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, addMonths, format } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -12,11 +12,8 @@ import clsx from 'clsx'
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
 
-/** Дневная норма сторис проекта (smmData.storiesPerDay, дефолт из значения, максимум 12). */
-function dailyTarget(p: any): number {
-  const v = Number(p?.smmData?.storiesPerDay)
-  return Number.isFinite(v) && v > 0 ? Math.min(v, 12) : 3
-}
+/** Дневная норма сторис проекта на дату — единая формула (месяц / дни месяца). */
+function dailyTarget(p: any, date: Date = new Date()): number { return storiesDailyTarget(p, date) }
 
 /** Мета задачи: иконка, ярлык, цветовая группа, подпись описания. */
 function taskInfo(e: any): { Icon: any; tag: string; group: 'reel' | 'maket' | 'shoot' | 'design'; descLabel: string } {
@@ -62,15 +59,17 @@ export default function SmmSpecialistDashboard() {
   const { data: cal } = useQuery({ queryKey: ['smm-calendar', from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to }) })
   const { data: myStories } = useQuery({ queryKey: ['stories-my-month', from, to], queryFn: () => storiesApi.my(from, to) })
 
-  // Мои SMM-проекты: участник / менеджер / назначенный специалист.
-  const myProjects = useMemo(() => {
-    const all = (projectsList || []).filter((p: any) => !p.isArchived && (p.projectType || 'SMM') === 'SMM')
-    return all.filter((p: any) =>
-      p.members?.some((m: any) => m.id === user?.id) ||
-      p.managerId === user?.id || p.manager?.id === user?.id ||
-      (Array.isArray(p.smmData?.smmSpecialistIds) && p.smmData.smmSpecialistIds.includes(user?.id)),
-    )
-  }, [projectsList, user])
+  // Специалист ВИДИТ все активные SMM-проекты агентства (решение владельца),
+  // а отмечать сторис может только по своим — см. canMark (сервер проверяет то же).
+  const myProjects = useMemo(
+    () => (projectsList || []).filter((p: any) => !p.isArchived && (p.projectType || 'SMM') === 'SMM'),
+    [projectsList],
+  )
+  const isMgmt = ['admin', 'founder', 'co_founder', 'smm_director'].includes(user?.role || '')
+  const canMark = (p: any) => isMgmt ||
+    p.members?.some((m: any) => m.id === user?.id) ||
+    p.managerId === user?.id || p.manager?.id === user?.id ||
+    (Array.isArray(p.smmData?.smmSpecialistIds) && p.smmData.smmSpecialistIds.includes(user?.id))
   const myProjectIds = useMemo(() => new Set(myProjects.map((p: any) => p.id)), [myProjects])
   const trackedProjects = useMemo(
     () => myProjects.filter((p: any) => !p.storiesArchived && dailyTarget(p) > 0),
@@ -131,7 +130,7 @@ export default function SmmSpecialistDashboard() {
   })
   const storyCountOf = (pid: string) => (pid in pendingStory ? pendingStory[pid] : (storyByDay[selKey]?.[pid] || 0))
   const setStory = (pid: string, next: number) => {
-    const target = dailyTarget(myProjects.find((p: any) => p.id === pid))
+    const target = dailyTarget(myProjects.find((p: any) => p.id === pid), sel)
     const n = Math.max(0, Math.min(Math.max(target + 5, 30), next))
     setPendingStory(prev => ({ ...prev, [pid]: n }))
     storyMut.mutate({ projectId: pid, storiesCount: n })
@@ -261,7 +260,7 @@ export default function SmmSpecialistDashboard() {
             </div>
             <div className="space-y-2">
               {trackedProjects.map((p: any) => {
-                const target = dailyTarget(p)
+                const target = dailyTarget(p, sel)
                 const cnt = storyCountOf(p.id)
                 const full = cnt >= target
                 return (
@@ -274,11 +273,15 @@ export default function SmmSpecialistDashboard() {
                         <span key={i} className={clsx('w-2.5 h-2.5 rounded-full', i < cnt ? 'bg-green-500' : 'bg-surface-200 dark:bg-surface-600')} />
                       ))}
                     </span>
-                    <div className="flex items-center gap-0.5 shrink-0 bg-surface-100 dark:bg-surface-700/60 rounded-lg p-0.5 border border-surface-200 dark:border-surface-600/50">
-                      <button onClick={() => setStory(p.id, cnt - 1)} disabled={cnt <= 0} className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600 disabled:opacity-30"><Minus size={13} /></button>
-                      <span className="min-w-[22px] text-center text-[13px] font-bold tabular-nums text-surface-900 dark:text-surface-100">{cnt}</span>
-                      <button onClick={() => setStory(p.id, cnt + 1)} className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600"><Plus size={13} /></button>
-                    </div>
+                    {canMark(p) ? (
+                      <div className="flex items-center gap-0.5 shrink-0 bg-surface-100 dark:bg-surface-700/60 rounded-lg p-0.5 border border-surface-200 dark:border-surface-600/50">
+                        <button onClick={() => setStory(p.id, cnt - 1)} disabled={cnt <= 0} className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600 disabled:opacity-30"><Minus size={13} /></button>
+                        <span className="min-w-[22px] text-center text-[13px] font-bold tabular-nums text-surface-900 dark:text-surface-100">{cnt}</span>
+                        <button onClick={() => setStory(p.id, cnt + 1)} className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600"><Plus size={13} /></button>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-surface-400 dark:text-surface-500 shrink-0" title="Отмечать может назначенный специалист">{cnt} · не ваш проект</span>
+                    )}
                   </div>
                 )
               })}

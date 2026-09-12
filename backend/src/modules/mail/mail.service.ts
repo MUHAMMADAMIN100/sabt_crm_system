@@ -240,9 +240,9 @@ export class MailService {
               ${rows}
             </table>
           </div>
-          <a href="${this.appUrl}/workflow-board"
+          <a href="${this.appUrl}/"
              style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
-            Открыть доску →
+            Открыть систему →
           </a>
         </div>
         ${this.footer()}

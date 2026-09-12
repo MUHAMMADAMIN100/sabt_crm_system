@@ -8,7 +8,7 @@ import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subMonths } f
 import clsx from 'clsx'
 import { DEV_TEAM_ROLES, getRoleLabel } from '@/lib/permissions'
 import { getTaskStatusLabel, normalizeTaskStatus, isTaskOverdue, STATUS_COLOR_CLASSES } from '@/lib/taskStatus'
-import { DEV_STAGES } from '@/pages/workflow/DevProjectsBoard'
+import { DEV_STAGES } from '@/lib/devStages'
 import TaskDrawer from '@/components/tasks/TaskDrawer'
 
 type Period = 'today' | 'week' | 'month' | 'prev_month'

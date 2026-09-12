@@ -447,24 +447,6 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
   'team-activity.view': '/team-activity',
 }
 
-/** Роли, видящие глобальную «Доску проектов» — SMM-производство +
- *  руководители + топ. Менеджерам продаж и разработчику не нужна. */
-export const WORKFLOW_BOARD_ROLES = [
-  'admin', 'founder', 'co_founder', 'smm_director', 'video_director',
-  'smm_specialist', 'designer', 'videographer', 'video_editor', 'organizer',
-  'scriptwriter', 'qa', 'publisher', 'targetologist',
-]
-export function canSeeWorkflowBoard(role?: string | null, secondaryRole?: string | null): boolean {
-  return WORKFLOW_BOARD_ROLES.includes(role || '') || WORKFLOW_BOARD_ROLES.includes(secondaryRole || '')
-}
-
-/** Вид «Разработка» на доске проектов — канбан dev-проектов по бизнес-этапам
- *  [10%]…[100%]. Топ видит оба вида (переключатель), pm_dev — только этот. */
-export const DEV_BOARD_ROLES = ['admin', 'founder', 'co_founder', 'dev_director', 'pm_dev', 'developer']
-export function canSeeDevBoard(role?: string | null, secondaryRole?: string | null): boolean {
-  return DEV_BOARD_ROLES.includes(role || '') || DEV_BOARD_ROLES.includes(secondaryRole || '')
-}
-
 /** «Истории по проектам» — пункт только для сторисмейкера (отметка сторис по
  *  всем SMM-проектам). Остальные роли его не видят. */
 export function canSeeProjectStories(role?: string | null, secondaryRole?: string | null): boolean {
@@ -505,7 +487,6 @@ export function canAccessRoute(
   if (route === '/projects') return false
   // «Истории по проектам» и «Заметки» — только сторисмейкер, и лишь пока
   // соответствующую возможность у него не отняли в «Доступах сотрудников».
-  if (route === '/project-stories') return canSeeProjectStories(role, secondaryRole) && userCan(u, 'stories.manage')
   if (route === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(u, 'notes.use')
   // «Доступы сотрудников» — только основатель/сооснователь/админ.
   if (route === '/employee-access') return canManageAccess(role)

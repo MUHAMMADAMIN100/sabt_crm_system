@@ -307,7 +307,7 @@ export class DeadlineScheduler implements OnModuleInit {
   /** Заменяет notifyOverdueTasks: просрочки теперь из workflow_cards.
    *  Карточка просрочена, если deadline < сегодня, этап не финальный
    *  (не published/ads), статус не закрыт (не done/published) и это не КП. */
-  @Cron('0 18 * * *', { timeZone: 'Asia/Dushanbe' })
+  // ОТКЛЮЧЕНО: «Доска проектов» удалена (сент. 2026) — просрочки карточек не шлём. @Cron снят.
   async notifyOverdueWorkflowCards() {
     this.logger.log('Checking overdue workflow cards...')
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
@@ -409,10 +409,10 @@ export class DeadlineScheduler implements OnModuleInit {
   /** in-app + (если sendExternal) Telegram + Email об одной просроченной карточке. */
   private async pushOverdueNotify(userId: string, title: string, message: string, sendExternal: boolean, emailHtml: string) {
     await this.notificationsService.create({
-      userId, type: NotificationType.TASK_OVERDUE, title, message, link: '/workflow-board',
+      userId, type: NotificationType.TASK_OVERDUE, title, message, link: '/',
     } as any).catch(() => {})
     if (sendExternal) {
-      this.telegramService.sendToUser(userId, `<b>${title}</b>\n${message}\n\n👉 ${this.telegramService.appUrl}/workflow-board`).catch(() => {})
+      this.telegramService.sendToUser(userId, `<b>${title}</b>\n${message}\n\n👉 ${this.telegramService.appUrl}/`).catch(() => {})
       const u = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null)
       if (u?.email) this.mailService.sendGenericNotification(u.email, u.name || 'Сотрудник', title, emailHtml).catch(() => {})
     }

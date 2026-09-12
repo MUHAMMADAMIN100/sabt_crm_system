@@ -757,7 +757,7 @@ export class KpiService {
         title: e.title || 'Карточка удалена',
         subtitle: `${what}${units > 1 ? ` · ${units} шт.` : ''} · ${onTime ? '✓ в срок' : '⚠ с опозданием'}`,
         date: e.at ? new Date(e.at).toISOString() : null,
-        link: '/workflow-board',
+        link: '/',
         meta: { onTime, deadline: e.dl, units },
       };
     };
@@ -786,7 +786,7 @@ export class KpiService {
             subtitle: `${STAGE_LABELS[r.stage] || r.stage}${units > 1 ? ` · ${units} шт.` : ''} · ${status}`,
             date: r.closed_at ? new Date(r.closed_at).toISOString()
               : (r.at ? new Date(r.at).toISOString() : null),
-            link: '/workflow-board',
+            link: '/',
             meta: { weight: w, units, deadline: r.dl, arrivedAt: r.at },
           };
         });

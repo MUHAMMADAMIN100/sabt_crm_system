@@ -13,6 +13,7 @@ import { isTaskOverdue } from '@/lib/taskStatus'
 import { useChartColors } from '@/lib/theme'
 import { isDevDirector } from '@/lib/permissions'
 import TeamStoriesBar from '@/components/stories/TeamStoriesBar'
+import { storiesDailyTarget } from '@/pages/smm/smmShared'
 
 const FounderDashboard = lazy(() => import('./components/FounderDashboard'))
 const PMDashboard = lazy(() => import('./components/PMDashboard'))
@@ -34,7 +35,6 @@ const SALES_GREETINGS = [
   'Новый день — новые возможности',
 ]
 const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
-const MyWorkflowCards = lazy(() => import('./components/MyWorkflowCards'))
 // Кабинет команды разработки: производственные карточки доски и обычные
 // поручения — ДВУМЯ отдельными блоками, чтобы одно не терялось в другом.
 const MyDevCards = lazy(() => import('./components/MyDevCards'))
@@ -42,7 +42,6 @@ const MyPlainTasks = lazy(() => import('./components/MyPlainTasks'))
 const StorymakerDashboard = lazy(() => import('./components/StorymakerDashboard'))
 // Кабинет SMM-специалиста: главные задачи из контент-плана + отметка сторис за день.
 const SmmSpecialistDashboard = lazy(() => import('./components/SmmSpecialistDashboard'))
-const UpcomingPublications = lazy(() => import('./components/UpcomingPublications'))
 /** KPI команды разработки — кабинет руководителя направления. */
 const DevTeamKpiWidget = lazy(() => import('@/components/kpi/DevTeamKpiWidget'))
 
@@ -56,10 +55,7 @@ function storyDotColor(index: number, count: number, target: number) {
   return 'bg-surface-400'
 }
 
-function projectDailyTarget(project: any): number {
-  const v = Number(project?.smmData?.storiesPerDay)
-  return Number.isFinite(v) && v > 0 ? Math.min(v, 12) : 3
-}
+function projectDailyTarget(project: any): number { return storiesDailyTarget(project) }
 
 // ── Stories widget ────────────────────────────────────────────────
 function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotalExpected, monthPct, daysElapsed }: {
@@ -196,14 +192,6 @@ function DashboardContent() {
         <Suspense fallback={<PageLoader />}>
           <FounderDashboard />
         </Suspense>
-        {/* Видеоролики к публикации на ближайшие 1–2 дня — видно руководству. */}
-        <Suspense fallback={null}>
-          <UpcomingPublications />
-        </Suspense>
-        {/* Назначенные лично карточки доски — виджет сам скрыт, если их нет. */}
-        <Suspense fallback={null}>
-          <MyWorkflowCards />
-        </Suspense>
       </div>
     )
   }
@@ -219,18 +207,6 @@ function DashboardContent() {
         </div>
         <Suspense fallback={<PageLoader />}>
           <PMDashboard />
-        </Suspense>
-        {/* Видеоролики к публикации на ближайшие 1–2 дня — для руководителя СММ
-            (публикатор ему подчиняется по этапу «Готово к публикации»). */}
-        {(role === 'smm_director' || user?.secondaryRole === 'publisher') && (
-          <Suspense fallback={null}>
-            <UpcomingPublications />
-          </Suspense>
-        )}
-        {/* Руководитель СММ/видео — штатный исполнитель этапов проверки/
-            согласования; назначенные ему карточки показываем и в его кабинете. */}
-        <Suspense fallback={null}>
-          <MyWorkflowCards />
         </Suspense>
       </div>
     )
@@ -271,12 +247,6 @@ function DashboardContent() {
             {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
           </p>
         </div>
-        {/* Сторисмейкер со второй ролью «публикатор» тоже видит ролики к публикации. */}
-        {(role === 'publisher' || user?.secondaryRole === 'publisher') && (
-          <Suspense fallback={null}>
-            <UpcomingPublications />
-          </Suspense>
-        )}
         <Suspense fallback={<PageLoader />}>
           <StorymakerDashboard />
         </Suspense>
@@ -285,7 +255,6 @@ function DashboardContent() {
   }
 
   if (isWorkerView) {
-    const isPublisher = role === 'publisher' || user?.secondaryRole === 'publisher'
     const isSmmSpecialist = role === 'smm_specialist'
     return (
       <div className="space-y-6">
@@ -301,15 +270,6 @@ function DashboardContent() {
             <SmmSpecialistDashboard />
           </Suspense>
         )}
-        {/* Видеоролики к публикации на ближайшие 1–2 дня — кабинет публикатора. */}
-        {isPublisher && (
-          <Suspense fallback={null}>
-            <UpcomingPublications />
-          </Suspense>
-        )}
-        <Suspense fallback={null}>
-          <MyWorkflowCards />
-        </Suspense>
         {/* Разработчику — его карточки этапов с доски «Разработка». */}
         {isDevTeam && (
           <Suspense fallback={null}>

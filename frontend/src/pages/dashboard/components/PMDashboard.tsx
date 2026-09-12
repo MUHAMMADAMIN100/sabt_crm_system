@@ -1,14 +1,13 @@
 import { useMemo, lazy, Suspense } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { analyticsApi, workflowApi } from '@/services/api.service'
+import { analyticsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { PageLoader, Avatar, CollapsibleSection } from '@/components/ui'
 import { TrendingDown, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { PmWidgets, HeadSmmWidgets } from './RiskWidgets'
-import { STAGES } from '@/components/projects/workflowShared'
 
 // Глобальный календарь историй — для руководителя SMM (отметки SMM-команды)
 const GlobalStoriesCalendar = lazy(() => import('./GlobalStoriesCalendar'))
@@ -19,12 +18,6 @@ const SMM_ROLES = ['smm_specialist', 'storymaker']
 export default function PMDashboard() {
   const user = useAuthStore(s => s.user)
   const isHeadSMM = user?.role === 'smm_director'
-
-  // Просрочки теперь из Доски проектов (workflow), не из задач.
-  const { data: overdueCards, isLoading: loadingOverdue } = useQuery({
-    queryKey: ['workflow-overdue'],
-    queryFn: workflowApi.overdue,
-  })
 
   const { data: workloadRaw } = useQuery({
     queryKey: ['employee-workload'],
@@ -38,9 +31,6 @@ export default function PMDashboard() {
     )
   }, [workloadRaw, isHeadSMM])
 
-  const stageLabel = (k: string) => STAGES.find(s => s.key === k)?.label || k
-
-  if (loadingOverdue) return <PageLoader />
 
   return (
     <div className="space-y-6">
@@ -58,46 +48,12 @@ export default function PMDashboard() {
       )}
 
       {/* Summary row */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-red-500">{overdueCards?.length ?? 0}</p>
-          <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">Просрочено (Доска)</p>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="card text-center">
           <p className="text-3xl font-bold text-primary-600 dark:text-primary-400">{workload?.length ?? 0}</p>
           <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">В команде</p>
         </div>
       </div>
-
-      {/* Overdue workflow cards (Доска проектов) */}
-      <CollapsibleSection
-        id="pm-overdue"
-        title={<h2 className="section-title flex items-center gap-2 text-red-600 dark:text-red-400"><TrendingDown size={16} /> Просроченные карточки</h2>}
-      >
-        {!overdueCards?.length ? (
-          <p className="text-sm text-green-600 dark:text-green-400 py-4 text-center">Просрочек нет ✓</p>
-        ) : (
-          <div className="space-y-2">
-            {overdueCards.slice(0, 12).map((c: any) => (
-              <Link
-                key={c.id}
-                to="/workflow-board"
-                className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{c.title}</p>
-                  <p className="text-xs text-surface-400">{c.project?.name} · {stageLabel(c.stage)}{c.assignee ? ` · ${c.assignee.name}` : ''}</p>
-                </div>
-                {c.deadline && (
-                  <span className="text-xs text-red-500 font-semibold shrink-0">
-                    {format(new Date(c.deadline), 'dd.MM', { locale: ru })}
-                  </span>
-                )}
-              </Link>
-            ))}
-          </div>
-        )}
-      </CollapsibleSection>
 
       {/* Team workload */}
       <CollapsibleSection

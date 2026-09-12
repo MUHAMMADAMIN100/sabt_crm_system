@@ -6,6 +6,7 @@ import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Camera } from 'lucide-react'
 import { CollapsibleSection } from '@/components/ui'
 import clsx from 'clsx'
+import { storiesDailyTarget } from '@/pages/smm/smmShared'
 
 const WEEKDAYS = ['П', 'В', 'С', 'Ч', 'П', 'С', 'В']
 
@@ -99,7 +100,7 @@ export default function GlobalStoriesCalendar() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {projects.map((p: any) => {
-            const target = Math.min(Number(p?.smmData?.storiesPerDay) || 3, 12)
+            const target = storiesDailyTarget(p, current) // месячная норма / дни выбранного месяца
             const projectMap = map[p.id] || {}
             const projectTotal = Object.values(projectMap).reduce((s, n) => s + n, 0)
             return (

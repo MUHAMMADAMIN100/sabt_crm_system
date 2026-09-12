@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { storiesApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import { storiesDailyTarget } from '@/pages/smm/smmShared'
 import { Avatar } from '@/components/ui'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -26,10 +27,10 @@ interface StoryCalendarProps {
 const FALLBACK_TARGET = 3 // used only if project has no smmData.storiesPerDay
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-/** Per-project daily target taken from smmData.storiesPerDay. */
-function getDailyTarget(project: any): number {
-  const v = Number(project?.smmData?.storiesPerDay)
-  return Number.isFinite(v) && v > 0 ? Math.min(v, 12) : FALLBACK_TARGET
+/** Дневная норма на дату — единая формула (месячная норма / дни месяца), фолбэк storiesPerDay/3. */
+function getDailyTarget(project: any, date: Date = new Date()): number {
+  const t = storiesDailyTarget(project, date)
+  return t > 0 ? t : (Number(project?.smmData?.storiesPerMonth) === 0 ? 0 : FALLBACK_TARGET)
 }
 
 export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyProgress, allowFuture }: StoryCalendarProps) {
@@ -441,7 +442,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
 
   // Project calendar view
   const projectStories = storyMap[selectedProject.id] || {}
-  const dailyTarget = getDailyTarget(selectedProject)
+  const dailyTarget = getDailyTarget(selectedProject, current)
   // Календарь стартует от project.startDate, если он внутри текущего месяца —
   // дни до старта проекта не рендерим (раньше там были пустые клетки).
   const { days: projectDays, startPad: projectPad } = projectDaysFor(selectedProject)

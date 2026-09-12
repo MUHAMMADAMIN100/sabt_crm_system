@@ -70,3 +70,22 @@ export type SmmProj = {
   storiesPerMonth?: number | null; storiesPerDay?: number | null
   startDate?: string | null; endDate?: string | null
 }
+
+/** Дневная норма сторис проекта НА ДАТУ: месячная норма / реальное число дней месяца
+ *  (20 → 1 в сентябре, 20 → 1 в феврале; 90 → 3). storiesPerMonth === 0 → 0 (без сторис).
+ *  Фолбэк — сохранённый storiesPerDay, затем 3. Единая формула для всех экранов и KPI. */
+export function storiesDailyTarget(
+  p: { smmData?: any; storiesPerMonth?: number | null; storiesPerDay?: number | null } | null | undefined,
+  date: Date = new Date(),
+): number {
+  const sd = (p as any)?.smmData || {}
+  const m = (p as any)?.storiesPerMonth ?? sd.storiesPerMonth
+  if (m != null && Number.isFinite(Number(m))) {
+    const n = Number(m)
+    if (n <= 0) return 0
+    const dim = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+    return Math.min(12, Math.max(1, Math.round(n / dim)))
+  }
+  const d = Number((p as any)?.storiesPerDay ?? sd.storiesPerDay)
+  return Number.isFinite(d) && d > 0 ? Math.min(d, 12) : 3
+}

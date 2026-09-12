@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -11,6 +11,15 @@ import { NotificationType } from '../notifications/notification.entity';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 import { AppGateway } from '../gateway/app.gateway';
+
+/** Роли, которым разрешено ОТМЕЧАТЬ сторис (решение владельца, сент. 2026). Остальные — только чтение. */
+const STORY_WRITE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist'];
+const STORY_MGMT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director'];
+/** Число дней в месяце даты 'YYYY-MM-DD' — дневная норма = месячная / дни месяца. */
+function daysInMonthOf(dateStr: string): number {
+  const [y, m] = dateStr.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+}
 
 @Injectable()
 export class StoriesService {
@@ -42,9 +51,29 @@ export class StoriesService {
       .getMany();
   }
 
-  async upsert(employeeId: string, projectId: string, date: string, storiesCount: number) {
+  async upsert(
+    employeeId: string, projectId: string, date: string, storiesCount: number,
+    actor?: { id: string; role?: string | null; secondaryRole?: string | null },
+  ) {
     if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       throw new BadRequestException('Некорректная дата (ожидается формат YYYY-MM-DD)');
+    }
+    // Кто может писать: только SMM-специалист и руководство. Специалист — только по
+    // своим проектам (менеджер, участник или назначен через smmData.smmSpecialistIds).
+    // Внутренние вызовы без actor не ограничиваем.
+    if (actor) {
+      const roles = [actor.role, actor.secondaryRole].filter(Boolean) as string[];
+      if (!roles.some(r => STORY_WRITE_ROLES.includes(r))) {
+        throw new ForbiddenException('Отмечать сторис могут SMM-специалисты и руководство');
+      }
+      if (!roles.some(r => STORY_MGMT_ROLES.includes(r))) {
+        const project = await this.projectRepo.findOne({ where: { id: projectId }, relations: ['members'] });
+        if (!project) throw new BadRequestException('Проект не найден');
+        const ids = (project.smmData as any)?.smmSpecialistIds;
+        const assigned = Array.isArray(ids) && ids.includes(employeeId);
+        const isMember = project.managerId === employeeId || (project.members || []).some(m => m.id === employeeId);
+        if (!assigned && !isMember) throw new ForbiddenException('Вы не назначены на этот проект');
+      }
     }
     // UI-лимиты на количество сторис в день сняты для сторисмейкера — защитный
     // кламп на бэке, чтобы нельзя было записать мусор/отрицательные значения.
@@ -111,7 +140,12 @@ export class StoriesService {
       // План на день для этого проекта (на проект, не на каждого участника).
       // Сторис — это командная работа: достаточно, чтобы любой участник
       // отметил план дня — день считается выполненным.
-      const target = Number((project.smmData as any)?.storiesPerDay) || 3;
+      // Дневная норма = месячная / дни месяца (сегодняшнего); фолбэк — сохранённый storiesPerDay.
+      const sd: any = project.smmData || {};
+      const mNorm = sd.storiesPerMonth;
+      const target = (mNorm != null && Number.isFinite(Number(mNorm)))
+        ? (Number(mNorm) > 0 ? Math.max(1, Math.round(Number(mNorm) / daysInMonthOf(today))) : 0)
+        : (Number(sd.storiesPerDay) || 3);
       // Если проект явно настроен без stories (target=0) — пропускаем
       // его в cron, чтобы не слать бессмысленные "0/0" уведомления.
       if (target <= 0) continue;
