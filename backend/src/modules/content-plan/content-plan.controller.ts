@@ -84,9 +84,13 @@ export class ContentPlanController {
    *  побочных эффектов. Объявлено ДО ':id'. Только руководящие роли SMM. */
   @Patch('smart-item/:id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
-  smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null }) {
-    return this.service.smartUpdateItem(id, body || {});
+  smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null }, @Request() req) {
+    return this.service.smartUpdateItem(id, body || {}, { id: req.user?.id, name: req.user?.name });
   }
+
+  /** История задачи: перенос, закрытие, отмена. Видна всем, кто видит задачу. */
+  @Get('item/:id/history')
+  itemHistory(@Param('id') id: string) { return this.service.itemHistory(id); }
 
   @Get(':id')
   findOne(@Param('id') id: string) { return this.service.findOne(id); }

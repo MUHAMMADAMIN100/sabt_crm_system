@@ -352,6 +352,8 @@ export const contentPlanApi = {
   // Календарь производства SMM за диапазон дат: публикации + съёмки (раздел СММ).
   smmCalendar: (params?: { from?: string; to?: string }) =>
     api.get('/content-plan/smm-calendar', { params }).then(r => r.data),
+  // История задачи контент-плана: перенос, закрытие, отмена.
+  itemHistory: (id: string) => api.get(`/content-plan/item/${id}/history`).then(r => r.data),
   // Перенос съёмки в Умном календаре (legacy-таблица shoot_sessions).
   updateShootSession: (id: string, data: { date?: string | null; time?: string | null; location?: string | null; title?: string | null }) =>
     api.patch(`/content-plan/shoot-session/${id}`, data).then(r => r.data),

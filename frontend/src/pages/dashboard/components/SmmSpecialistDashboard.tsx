@@ -4,8 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, contentPlanApi, storiesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { projColor, storiesDailyTarget } from '@/pages/smm/smmShared'
-import { Film, Image as ImageIcon, Palette, Camera, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle } from 'lucide-react'
-import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, addMonths, format, subDays, differenceInCalendarDays } from 'date-fns'
+import { Film, Image as ImageIcon, Palette, Camera, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle, MoreHorizontal, CalendarDays, RotateCcw, Ban } from 'lucide-react'
+import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, addMonths, format, subDays, addDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
 
@@ -46,6 +46,9 @@ function taskTitle(e: any): string {
   return (e.topic && e.topic.trim()) || 'Без названия'
 }
 const isDone = (e: any) => e.status === 'published'
+const isCancelled = (e: any) => e.status === 'cancelled'
+/** Дата из YYYY-MM-DD в «12 сент». */
+const shortDay = (d?: string | null) => (d ? format(new Date(d + 'T00:00:00'), 'd MMM', { locale: ru }) : '')
 
 // Цвета типов (иконка/ярлык): Рилс — синий, Макет — янтарный, Съёмка — лаймовый, Дизайн — фуксия.
 const GROUP_CLS: Record<string, string> = {
@@ -138,7 +141,7 @@ export default function SmmSpecialistDashboard() {
   const overdue = useMemo(() => {
     const list = (overdueCal?.events || []).filter((e: any) => {
       if (!e.date || e.date >= todayKey || !myProjectIds.has(e.projectId)) return false
-      if (isDone(e)) return false
+      if (isDone(e) || isCancelled(e)) return false
       return (e.kind === 'publication' && e.contentType !== 'story') || e.kind === 'shoot'
     })
     return list.sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)))
@@ -186,6 +189,25 @@ export default function SmmSpecialistDashboard() {
   })
   const toggleDone = (e: any) => { if (e.itemId) markMut.mutate({ itemId: e.itemId, done: isDone(e) }) }
 
+  const refetchCal = () => {
+    qc.invalidateQueries({ queryKey: ['smm-calendar'] })
+    qc.invalidateQueries({ queryKey: ['smm-calendar-overdue'] })
+  }
+  // Перенос: дата меняется, статус возвращается в «запланировано».
+  const moveMut = useMutation({
+    mutationFn: (v: { itemId: string; date: string }) =>
+      contentPlanApi.smartUpdate(v.itemId, { publishDate: v.date, status: 'planned' }),
+    onSettled: refetchCal,
+  })
+  // Отмена: задача уходит из просрочек, но выполненной НЕ считается.
+  const cancelMut = useMutation({
+    mutationFn: (v: { itemId: string; cancel: boolean }) =>
+      contentPlanApi.smartUpdate(v.itemId, { status: v.cancel ? 'cancelled' : 'planned' }),
+    onSettled: refetchCal,
+  })
+  const moveTo = (e: any, d: Date) => { if (e.itemId) moveMut.mutate({ itemId: e.itemId, date: dk(d) }) }
+  const setCancelled = (e: any, cancel: boolean) => { if (e.itemId) cancelMut.mutate({ itemId: e.itemId, cancel }) }
+
   const storyMut = useMutation({
     mutationFn: (v: { projectId: string; storiesCount: number }) =>
       storiesApi.upsert({ projectId: v.projectId, date: selKey, storiesCount: v.storiesCount }),
@@ -218,11 +240,13 @@ export default function SmmSpecialistDashboard() {
     const order = (e: any) => (e.kind === 'shoot' ? 1 : 0)
     return order(a) - order(b) || taskTitle(a).localeCompare(taskTitle(b), 'ru')
   })
-  const selDone = selEvents.filter(isDone).length
+  // Отменённые остаются в списке, но из счёта убраны: это не работа на день.
+  const selActive = selEvents.filter((e: any) => !isCancelled(e))
+  const selDone = selActive.filter(isDone).length
   const openEvent = openId ? ([...overdue, ...selEvents].find(e => e.id === openId) || null) : null
 
   // Сводка выбранного дня: что ещё не закрыто.
-  const tasksLeft = selEvents.length - selDone
+  const tasksLeft = selActive.length - selDone
   const storiesLeft = trackedProjects.filter((p: any) => storyCountOf(p.id) < dailyTarget(p, sel)).length
   // Остаток по сторис за выбранный день: сколько всего нужно и сколько уже есть
   // (перевыполнение по одному проекту не закрывает норму другого — поэтому min).
@@ -242,7 +266,7 @@ export default function SmmSpecialistDashboard() {
       {/* Сводка дня */}
       <div className="card">
         <div className="flex items-center gap-4">
-          <Ring done={selDone} total={selEvents.length} />
+          <Ring done={selDone} total={selActive.length} />
           <div className="min-w-0 flex-1">
             <h2 className="text-[17px] font-extrabold text-surface-900 dark:text-surface-100 first-letter:uppercase leading-tight">
               {isToday(sel) ? 'Сегодня' : format(sel, 'EEEE, d MMMM', { locale: ru })}
@@ -276,6 +300,7 @@ export default function SmmSpecialistDashboard() {
           <div className="space-y-2">
             {overdue.map(e => (
               <TaskRow key={e.id} e={e} onToggle={() => toggleDone(e)} onInfo={() => setOpenId(e.id)}
+                onMove={d => moveTo(e, d)} onCancel={c => setCancelled(e, c)}
                 late={Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(e.date + 'T00:00:00')))} />
             ))}
           </div>
@@ -329,7 +354,7 @@ export default function SmmSpecialistDashboard() {
           <h2 className="text-base font-bold text-surface-900 dark:text-surface-100">
             {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM', { locale: ru })}
           </h2>
-          <span className="text-xs text-surface-400 dark:text-surface-500">{selDone}/{selEvents.length} задач</span>
+          <span className="text-xs text-surface-400 dark:text-surface-500">{selDone}/{selActive.length} задач</span>
         </div>
 
         <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">Задачи</div>
@@ -338,7 +363,8 @@ export default function SmmSpecialistDashboard() {
         ) : (
           <div className="space-y-2">
             {selEvents.map(e => (
-              <TaskRow key={e.id} e={e} onToggle={() => toggleDone(e)} onInfo={() => setOpenId(e.id)} />
+              <TaskRow key={e.id} e={e} onToggle={() => toggleDone(e)} onInfo={() => setOpenId(e.id)}
+                onMove={d => moveTo(e, d)} onCancel={c => setCancelled(e, c)} />
             ))}
           </div>
         )}
@@ -421,38 +447,124 @@ function Metric({ value, label, tone, bar }: { value: string; label: string; ton
 }
 
 // ── Строка задачи (день и просрочки) ──
-function TaskRow({ e, onToggle, onInfo, late }: { e: any; onToggle: () => void; onInfo: () => void; late?: number }) {
+function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late }: {
+  e: any; onToggle: () => void; onInfo: () => void
+  onMove?: (d: Date) => void; onCancel?: (cancel: boolean) => void; late?: number
+}) {
   const { Icon, tag, group } = taskInfo(e)
+  const [menu, setMenu] = useState(false)
   const done = isDone(e)
+  const cancelled = isCancelled(e)
+  const canAct = !!e.itemId && !!onMove && !!onCancel
+  const tomorrow = addDays(new Date(), 1)
+  // «закрыто 12 сент, план был 19 авг» — показываем, только если закрыли не в срок.
+  const closedLate = done && e.changedAt && e.date && e.changedAt !== e.date
+
+  const pick = (fn: () => void) => () => { setMenu(false); fn() }
+
   return (
-    <div className={clsx('flex items-center gap-3 rounded-xl border px-3 py-2.5 transition',
-      late ? 'bg-red-50/50 dark:bg-red-900/10 border-red-200/70 dark:border-red-900/40'
+    <div className={clsx('relative flex items-center gap-3 rounded-xl border px-3 py-2.5 transition',
+      cancelled ? 'bg-surface-50 dark:bg-surface-800/40 border-surface-100 dark:border-surface-700/60 opacity-60'
+        : late ? 'bg-red-50/50 dark:bg-red-900/10 border-red-200/70 dark:border-red-900/40'
         : done ? 'bg-green-50/60 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40'
         : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700/60')}>
-      <button onClick={onToggle} disabled={!e.itemId}
-        className={clsx('w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition',
-          done ? 'bg-green-500 border-green-500' : 'border-surface-300 dark:border-surface-600 hover:border-green-500')}>
-        <Check size={13} className={clsx('text-white transition-opacity', done ? 'opacity-100' : 'opacity-0')} strokeWidth={3} />
-      </button>
+
+      {cancelled ? (
+        <span className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-surface-400 dark:text-surface-500" title="Задача отменена"><Ban size={15} /></span>
+      ) : (
+        <button onClick={onToggle} disabled={!e.itemId} title="Отметить готовой"
+          className={clsx('w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition',
+            done ? 'bg-green-500 border-green-500' : 'border-surface-300 dark:border-surface-600 hover:border-green-500')}>
+          <Check size={13} className={clsx('text-white transition-opacity', done ? 'opacity-100' : 'opacity-0')} strokeWidth={3} />
+        </button>
+      )}
+
       <div className={clsx('w-8 h-8 rounded-lg shrink-0 flex items-center justify-center', GROUP_CLS[group])}><Icon size={16} /></div>
-      <div className="min-w-0 flex-1">
-        <p className={clsx('text-[13.5px] font-semibold truncate', done ? 'line-through text-surface-400 dark:text-surface-500' : 'text-surface-900 dark:text-surface-100')}>{taskTitle(e)}</p>
-        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-          <span className={clsx('text-[9.5px] font-extrabold uppercase px-1.5 py-0.5 rounded', GROUP_CLS[group])}>{tag}</span>
-          <span className="inline-flex items-center gap-1 text-[11px] text-surface-400 dark:text-surface-500 truncate">
-            <i className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: projColor(e.projectId) }} />{e.projectName}
+
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <p className={clsx('text-[13.5px] font-semibold truncate',
+          done || cancelled ? 'line-through text-surface-400 dark:text-surface-500' : 'text-surface-900 dark:text-surface-100')}>{taskTitle(e)}</p>
+        {/* На телефоне мета в одну строку: ярлык типа скрыт (он понятен по иконке),
+            название проекта обрезается, число дней опоздания не сжимается. */}
+        <div className="flex items-center gap-2 mt-0.5 flex-nowrap sm:flex-wrap overflow-hidden">
+          <span className={clsx('text-[9.5px] font-extrabold uppercase px-1.5 py-0.5 rounded shrink-0 hidden sm:inline-block', GROUP_CLS[group])}>{tag}</span>
+          <span className="inline-flex items-center gap-1 text-[11px] text-surface-400 dark:text-surface-500 min-w-0 truncate">
+            <i className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{ background: projColor(e.projectId) }} />
+            <span className="truncate">{e.projectName}</span>
           </span>
           {late ? (
-            <span className="text-[11px] font-bold text-red-500 dark:text-red-400">
-              срок был {format(new Date(e.date + 'T00:00:00'), 'd MMM', { locale: ru })} · {late} {plural(late, 'день', 'дня', 'дней')}
+            <span className="text-[11px] font-bold text-red-500 dark:text-red-400 shrink-0">
+              <span className="hidden sm:inline">срок был {shortDay(e.date)} · </span>
+              {late} {plural(late, 'день', 'дня', 'дней')}
             </span>
           ) : null}
+          {cancelled && (
+            <span className="text-[11px] font-semibold text-surface-400 dark:text-surface-500 shrink-0">отменено</span>
+          )}
+          {closedLate && (
+            <span className="text-[11px] font-semibold text-green-600 dark:text-green-400 shrink-0 hidden sm:inline">
+              закрыто {shortDay(e.changedAt)}, план был {shortDay(e.date)}
+            </span>
+          )}
         </div>
       </div>
-      <button onClick={onInfo} title="Подробнее"
-        className="w-8 h-8 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-surface-400 hover:text-primary-600 hover:border-primary-400 flex items-center justify-center shrink-0 transition">
-        <Info size={16} />
-      </button>
+
+      {/* Быстрое действие: перенести просрочку на сегодня. */}
+      {canAct && !!late && !done && !cancelled && (
+        <button onClick={() => onMove!(new Date())}
+          className="text-[11.5px] font-bold text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 rounded-lg px-2.5 py-1.5 shrink-0 whitespace-nowrap hover:bg-primary-100 dark:hover:bg-primary-900/40">
+          <span className="hidden sm:inline">На </span>сегодня
+        </button>
+      )}
+
+      {canAct ? (
+        <button onClick={() => setMenu(v => !v)} title="Ещё"
+          className="w-8 h-8 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-surface-400 hover:text-primary-600 hover:border-primary-400 flex items-center justify-center shrink-0 transition">
+          <MoreHorizontal size={16} />
+        </button>
+      ) : (
+        <button onClick={onInfo} title="Подробнее"
+          className="w-8 h-8 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-surface-400 hover:text-primary-600 hover:border-primary-400 flex items-center justify-center shrink-0 transition">
+          <Info size={16} />
+        </button>
+      )}
+
+      {menu && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setMenu(false)} />
+          <div className="absolute right-2 top-full mt-1 z-40 w-[236px] rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-xl p-1.5">
+            {!cancelled && !done && (
+              <>
+                <p className="px-2.5 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-surface-400 dark:text-surface-500">Перенести</p>
+                <button onClick={pick(() => onMove!(new Date()))} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800">
+                  <CalendarDays size={14} className="text-surface-400" /> На сегодня
+                </button>
+                <button onClick={pick(() => onMove!(tomorrow))} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800">
+                  <CalendarDays size={14} className="text-surface-400" /> На завтра, {format(tomorrow, 'd MMMM', { locale: ru })}
+                </button>
+                <label className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800 cursor-pointer">
+                  <CalendarDays size={14} className="text-surface-400" /> Выбрать дату
+                  <input type="date" className="ml-auto w-[104px] bg-transparent text-[12px] text-surface-500 dark:text-surface-400 outline-none"
+                    onChange={ev => { const v = ev.target.value; if (v) { setMenu(false); onMove!(new Date(v + 'T00:00:00')) } }} />
+                </label>
+                <div className="h-px bg-surface-100 dark:bg-surface-800 my-1.5 mx-2" />
+              </>
+            )}
+            <button onClick={pick(onInfo)} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800">
+              <Info size={14} className="text-surface-400" /> Подробнее
+            </button>
+            {cancelled ? (
+              <button onClick={pick(() => onCancel!(false))} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20">
+                <RotateCcw size={14} /> Вернуть в работу
+              </button>
+            ) : (
+              <button onClick={pick(() => onCancel!(true))} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
+                <Ban size={14} /> Отменить задачу
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -504,11 +616,30 @@ function StoryRow({ name, color, count, target, onSet }: {
   )
 }
 
+/** Запись журнала в человеческую фразу. */
+function historyText(h: any): string {
+  if (h.kind === 'move') return `перенесено с ${shortDay(h.from) || '—'} на ${shortDay(h.to) || 'без даты'}`
+  if (h.kind === 'status') {
+    if (h.to === 'published') return 'отмечено готовым'
+    if (h.to === 'cancelled') return 'задача отменена'
+    if (h.from === 'published') return 'отметка снята'
+    if (h.from === 'cancelled') return 'возвращена в работу'
+    return `статус: ${h.to}`
+  }
+  return 'изменение'
+}
+
 // ── Модалка с информацией о задаче ──
 function TaskModal({ e, onClose, onToggle }: { e: any; onClose: () => void; onToggle: () => void }) {
   const { Icon, tag, group, descLabel } = taskInfo(e)
   const done = isDone(e)
   const desc = (e.scriptText && String(e.scriptText).trim()) || ''
+  // История: перенос, закрытие, отмена. Видна всем, кто видит задачу.
+  const { data: history } = useQuery({
+    queryKey: ['item-history', e.itemId],
+    queryFn: () => contentPlanApi.itemHistory(e.itemId),
+    enabled: !!e.itemId,
+  })
   return createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" >
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
@@ -538,6 +669,21 @@ function TaskModal({ e, onClose, onToggle }: { e: any; onClose: () => void; onTo
           <div className={clsx('text-[13px] leading-relaxed rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-800/50 px-3.5 py-3 max-h-[160px] overflow-y-auto whitespace-pre-wrap', !desc && 'text-surface-400 dark:text-surface-500 italic')}>
             {desc || 'Описание пока не заполнено — добавьте его в контент-плане проекта.'}
           </div>
+
+          {Array.isArray(history) && history.length > 0 && (
+            <>
+              <div className="text-[11px] font-extrabold uppercase tracking-wide text-surface-400 dark:text-surface-500 mt-4 mb-2">История</div>
+              <div className="space-y-1.5 max-h-[140px] overflow-y-auto">
+                {history.map((h: any, i: number) => (
+                  <div key={i} className="flex items-baseline gap-2 text-[12px]">
+                    <span className="text-surface-400 dark:text-surface-500 tabular-nums shrink-0">{h.at}</span>
+                    <span className="text-surface-700 dark:text-surface-300">{historyText(h)}</span>
+                    {h.who && <span className="text-surface-400 dark:text-surface-500 ml-auto shrink-0">{h.who}</span>}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <div className="flex gap-2.5 px-5 pb-5">
           {e.itemId && (

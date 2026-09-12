@@ -8,6 +8,7 @@ import {
   ContentItemType,
 } from './content-plan-item.entity';
 import { ShootSession } from './shoot-session.entity';
+import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity';
 import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
 import { AppGateway } from '../gateway/app.gateway';
@@ -364,7 +365,54 @@ export class ContentPlanService {
   /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) БЕЗ
    *  синхронизации задач и прочих побочных эффектов старой системы —
    *  это отдельный контур, не связанный с «Доской проектов» и канбаном. */
-  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null }) {
+  /** Дата в виде YYYY-MM-DD (или null) — для сравнения и записи в журнал. */
+  private dayOf(v: any): string | null {
+    return !v ? null : (typeof v === 'string' ? v.slice(0, 10) : new Date(v).toISOString().slice(0, 10));
+  }
+
+  /** Запись в общий журнал активности. Контент-план раньше в него не писал,
+   *  поэтому у перенесённых и отменённых задач не оставалось следа: дата
+   *  просто перезаписывалась. Своих действий в enum нет — переиспользуем
+   *  TASK_UPDATE/TASK_STATUS, а различает записи поле entity. */
+  private async logItemAction(item: ContentPlanItem, action: ActivityAction, details: Record<string, any>, actor?: { id?: string; name?: string }) {
+    try {
+      const repo = this.repo.manager.getRepository(ActivityLog);
+      await repo.save(repo.create({
+        userId: actor?.id || null,
+        userName: actor?.name || null,
+        action,
+        entity: 'content_plan_item',
+        entityId: item.id,
+        entityName: item.topic || null,
+        details,
+      } as any));
+    } catch (e) {
+      this.logger.warn(`logItemAction failed for ${item?.id}: ${(e as Error).message}`);
+    }
+  }
+
+  /** История одной задачи контент-плана: перенос, закрытие, отмена. */
+  async itemHistory(id: string) {
+    const rows: any[] = await this.repo.manager.query(
+      `SELECT a.action::text AS action, a.details AS details, a."userName" AS "userName",
+              u.name AS "userFullName",
+              to_char(a."createdAt" AT TIME ZONE 'Asia/Dushanbe', 'YYYY-MM-DD HH24:MI') AS at
+       FROM activity_logs a
+       LEFT JOIN users u ON u.id = a."userId"
+       WHERE a.entity = 'content_plan_item' AND a."entityId" = $1
+       ORDER BY a."createdAt" DESC
+       LIMIT 30`,
+      [id],
+    ).catch((e: any) => { this.logger.warn(`itemHistory failed: ${e?.message || e}`); return []; });
+    return rows.map(r => ({
+      at: r.at,
+      who: r.userFullName || r.userName || null,
+      ...(r.details || {}),
+    }));
+  }
+
+  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null }, actor?: { id?: string; name?: string }) {
+    const before = await this.repo.findOne({ where: { id } });
     const set: Partial<ContentPlanItem> = {};
     if ('publishDate' in patch) set.publishDate = patch.publishDate ? new Date(patch.publishDate) : null;
     // Время съёмки 'HH:MM' (или null — «Весь день»). tz-безопасно, отдельно от даты.
@@ -377,6 +425,18 @@ export class ContentPlanService {
     // создаём/возвращаем на X−1. Если съёмка на дате — НЕ двигаем (остаётся на месте).
     const item = await this.repo.findOne({ where: { id } });
     await this.ensurePrepForItem(item);
+
+    // След в журнале: без него перенос молча стирает просрочку.
+    if (before && item) {
+      const wasDate = this.dayOf(before.publishDate), nowDate = this.dayOf(item.publishDate);
+      if ('publishDate' in patch && wasDate !== nowDate) {
+        await this.logItemAction(item, ActivityAction.TASK_UPDATE, { kind: 'move', from: wasDate, to: nowDate }, actor);
+      }
+      if ('status' in patch && patch.status && before.status !== patch.status) {
+        await this.logItemAction(item, ActivityAction.TASK_STATUS,
+          { kind: 'status', from: before.status, to: patch.status, plannedDate: nowDate }, actor);
+      }
+    }
     return { ok: true };
   }
 
@@ -482,6 +542,7 @@ export class ContentPlanService {
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId",
               ci."contentType" AS "itemKind", ci.topic AS title, ci."scriptText" AS "scriptText",
               ci.status AS status, ci."taskId" AS "taskId",
+              to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS "changedAt",
               ci."publishTime" AS time, ci."durationMin" AS "durationMin",
               to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
        FROM content_plan_items ci
@@ -498,6 +559,7 @@ export class ContentPlanService {
     const shootItems: any[] = await this.repo.manager.query(
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId",
               ci.status AS status,
+              to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS "changedAt",
               reel.topic AS "reelTopic", reel."scriptText" AS "reelScript", reel."contentType" AS "parentType",
               to_char(reel."publishDate"::date, 'YYYY-MM-DD') AS "reelDate",
               ci."publishTime" AS time, ci."durationMin" AS "durationMin",
@@ -550,7 +612,7 @@ export class ContentPlanService {
         durationMin: Number(p.durationMin) > 0 ? Number(p.durationMin) : null, // длительность (мин)
       })),
       ...shootItems.map(s => ({
-        id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot', date: s.date,
+        id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot', date: s.date, changedAt: s.changedAt || null,
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
         title: s.reelTopic || null, time: s.time || null,   // название родителя (рилс/пост) = название задачи подготовки
         scriptText: s.reelScript || null, reelDate: s.reelDate || null, parentKind: s.parentType || null, // описание/дата/тип родителя — для модалки
@@ -596,7 +658,7 @@ export class ContentPlanService {
 
     const backlog = [
       ...bpubs.map(c => ({
-        id: `item:${c.itemId}`, itemId: c.itemId, kind: 'publication',
+        id: `item:${c.itemId}`, itemId: c.itemId, kind: 'publication', changedAt: c.changedAt || null,
         projectId: c.projectId, projectName: nameById.get(c.projectId) || '',
         contentType: c.itemKind === 'reel' ? 'reel' : 'design', topic: c.title || null, scriptText: c.scriptText || null,
       })),
