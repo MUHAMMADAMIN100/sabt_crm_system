@@ -224,6 +224,11 @@ export default function SmmSpecialistDashboard() {
   // Сводка выбранного дня: что ещё не закрыто.
   const tasksLeft = selEvents.length - selDone
   const storiesLeft = trackedProjects.filter((p: any) => storyCountOf(p.id) < dailyTarget(p, sel)).length
+  // Остаток по сторис за выбранный день: сколько всего нужно и сколько уже есть
+  // (перевыполнение по одному проекту не закрывает норму другого — поэтому min).
+  const storiesNeed = trackedProjects.reduce((sum: number, p: any) => sum + dailyTarget(p, sel), 0)
+  const storiesDid = trackedProjects.reduce((sum: number, p: any) => sum + Math.min(storyCountOf(p.id), dailyTarget(p, sel)), 0)
+  const storiesRest = Math.max(0, storiesNeed - storiesDid)
   const summary = [
     tasksLeft > 0 ? `${tasksLeft} ${plural(tasksLeft, 'задача', 'задачи', 'задач')}` : null,
     storiesLeft > 0 ? `сторис по ${storiesLeft} ${plural(storiesLeft, 'проекту', 'проектам', 'проектам')}` : null,
@@ -341,45 +346,30 @@ export default function SmmSpecialistDashboard() {
         {/* Сторис за выбранный день */}
         {trackedProjects.length > 0 && (
           <>
-            <div className="flex items-baseline gap-2 mt-5 mb-2">
+            <div className="flex items-baseline gap-2 mt-5 mb-1.5">
               <span className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500">
                 Сторис {isToday(sel) ? 'сегодня' : `за ${format(sel, 'd MMM', { locale: ru })}`}
               </span>
-              <span className="text-[11px] text-surface-400 dark:text-surface-500">
-                {trackedProjects.length - storiesLeft} из {trackedProjects.length} проектов
+              <span className={clsx('ml-auto text-xs font-bold',
+                storiesRest === 0 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400')}>
+                {storiesRest === 0 ? 'всё отмечено' : `осталось ${storiesRest} из ${storiesNeed}`}
               </span>
             </div>
+            <div className="h-1.5 rounded-full bg-surface-200 dark:bg-surface-700 overflow-hidden mb-3">
+              <div className="h-full rounded-full bg-green-500 transition-all"
+                style={{ width: `${storiesNeed > 0 ? Math.round((storiesDid / storiesNeed) * 100) : 0}%` }} />
+            </div>
             <div className="space-y-2">
-              {trackedProjects.map((p: any) => {
-                const target = dailyTarget(p, sel)
-                const cnt = storyCountOf(p.id)
-                const full = cnt >= target
-                return (
-                  <div key={p.id} className={clsx('flex items-center gap-3 rounded-xl border px-3 py-2.5',
-                    full ? 'bg-green-50/60 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40' : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700/60')}>
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: projColor(p.id) }} />
-                    <span className={clsx('text-[13.5px] font-semibold flex-1 min-w-0 truncate', full ? 'text-surface-500 dark:text-surface-400' : 'text-surface-800 dark:text-surface-200')}>{p.name}</span>
-                    <span className="hidden sm:flex gap-1 shrink-0">
-                      {Array.from({ length: target }, (_, i) => i).map(i => (
-                        <span key={i} className={clsx('w-2.5 h-2.5 rounded-full', i < cnt ? 'bg-green-500' : 'bg-surface-200 dark:bg-surface-600')} />
-                      ))}
-                    </span>
-                    <div className="flex items-center gap-0.5 shrink-0 bg-surface-100 dark:bg-surface-700/60 rounded-lg p-0.5 border border-surface-200 dark:border-surface-600/50">
-                      <button onClick={() => setStory(p.id, cnt - 1)} disabled={cnt <= 0} className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600 disabled:opacity-30"><Minus size={13} /></button>
-                      <span className="min-w-[22px] text-center text-[13px] font-bold tabular-nums text-surface-900 dark:text-surface-100">{cnt}</span>
-                      <button onClick={() => setStory(p.id, cnt + 1)} className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600"><Plus size={13} /></button>
-                    </div>
-                    {full ? (
-                      <span className="text-[10.5px] font-bold text-green-600 dark:text-green-400 shrink-0 w-[62px] text-center">готово</span>
-                    ) : (
-                      <button onClick={() => setStory(p.id, target)} title={`Поставить дневную норму: ${target}`}
-                        className="text-[10.5px] font-bold text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-800 rounded-lg px-2 py-1 shrink-0 w-[62px] hover:bg-primary-50 dark:hover:bg-primary-900/20">
-                        норма {target}
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
+              {trackedProjects.map((p: any) => (
+                <StoryRow
+                  key={p.id}
+                  name={p.name}
+                  color={projColor(p.id)}
+                  count={storyCountOf(p.id)}
+                  target={dailyTarget(p, sel)}
+                  onSet={n => setStory(p.id, n)}
+                />
+              ))}
             </div>
           </>
         )}
@@ -463,6 +453,53 @@ function TaskRow({ e, onToggle, onInfo, late }: { e: any; onToggle: () => void; 
         className="w-8 h-8 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-surface-400 hover:text-primary-600 hover:border-primary-400 flex items-center justify-center shrink-0 transition">
         <Info size={16} />
       </button>
+    </div>
+  )
+}
+
+// ── Строка сторис: точки нормы + счётчик ──
+function StoryRow({ name, color, count, target, onSet }: {
+  name: string; color: string; count: number; target: number; onSet: (n: number) => void
+}) {
+  const full = count >= target
+  const over = count > target
+  const total = Math.max(target, count)
+  const label = over ? `сверх нормы ${count - target}`
+    : full ? 'норма закрыта'
+    : `осталось ${target - count} из ${target}`
+  return (
+    <div className={clsx('flex items-center gap-3 rounded-xl border px-3 py-2',
+      full ? 'bg-green-50/60 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40'
+        : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700/60')}>
+      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+      <div className="min-w-0 flex-1">
+        <p className={clsx('text-[13.5px] font-semibold truncate', full ? 'text-surface-500 dark:text-surface-400' : 'text-surface-800 dark:text-surface-200')}>{name}</p>
+        <p className={clsx('text-[11px] font-semibold leading-tight',
+          over ? 'text-primary-600 dark:text-primary-400'
+            : full ? 'text-green-600 dark:text-green-400'
+            : 'text-amber-600 dark:text-amber-500')}>{label}</p>
+      </div>
+      {/* Точки = норма. Нажатие ставит это число, нажатие по последней горящей — снимает.
+          Длинные нормы прячем на узком экране, чтобы строка не ломалась. */}
+      {total <= 8 && (
+        <div className={clsx('gap-1.5 shrink-0', total <= 2 ? 'flex' : 'hidden min-[420px]:flex')}>
+          {Array.from({ length: total }, (_, i) => i + 1).map(i => (
+            <button key={i} onClick={() => onSet(i === count ? i - 1 : i)}
+              title={`Отметить ${i}`} aria-label={`Отметить ${i}`}
+              className={clsx('w-[22px] h-[22px] rounded-full border-2 transition hover:scale-110',
+                i > count ? 'border-amber-300 dark:border-amber-700/70 bg-transparent'
+                  : i > target ? 'bg-primary-500 border-primary-500'
+                  : 'bg-green-500 border-green-500')} />
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-0.5 shrink-0 bg-surface-100 dark:bg-surface-700/60 rounded-lg p-0.5 border border-surface-200 dark:border-surface-600/50">
+        <button onClick={() => onSet(count - 1)} disabled={count <= 0} aria-label="Убрать одну сторис"
+          className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600 disabled:opacity-30"><Minus size={13} /></button>
+        <span className="min-w-[22px] text-center text-[13px] font-bold tabular-nums text-surface-900 dark:text-surface-100">{count}</span>
+        <button onClick={() => onSet(count + 1)} aria-label="Добавить одну сторис"
+          className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600"><Plus size={13} /></button>
+      </div>
     </div>
   )
 }
