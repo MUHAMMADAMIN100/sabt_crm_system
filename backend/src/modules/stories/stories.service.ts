@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { StoryLog } from './story.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
@@ -94,7 +94,19 @@ export class StoriesService {
       .getMany();
 
     for (const project of projects) {
-      if (!project.manager || !project.members?.length) continue;
+      if (!project.manager) continue;
+      // Команда сторис = участники проекта + назначенные SMM-специалисты
+      // (smmData.smmSpecialistIds) — назначение через «Схему»/поле проекта не
+      // добавляет в project_members, но вклад такого специалиста учитываем.
+      const assignedIds: string[] = Array.isArray((project.smmData as any)?.smmSpecialistIds)
+        ? ((project.smmData as any).smmSpecialistIds as any[]).filter(x => typeof x === 'string') : [];
+      const memberIds = new Set((project.members || []).map(m => m.id));
+      const extraIds = assignedIds.filter(id => !memberIds.has(id));
+      const extraUsers = extraIds.length
+        ? await this.userRepo.find({ where: { id: In(extraIds) } }).catch(() => [] as User[])
+        : [];
+      const crew = [...(project.members || []), ...extraUsers];
+      if (!crew.length) continue;
 
       // План на день для этого проекта (на проект, не на каждого участника).
       // Сторис — это командная работа: достаточно, чтобы любой участник
@@ -111,7 +123,7 @@ export class StoriesService {
         countByUser[log.employeeId] = (countByUser[log.employeeId] || 0) + (log.storiesCount || 0);
       }
 
-      const memberStats = project.members.map(m => ({
+      const memberStats = crew.map(m => ({
         id: m.id,
         name: m.name,
         count: countByUser[m.id] || 0,

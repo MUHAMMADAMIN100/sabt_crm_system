@@ -173,7 +173,11 @@ export class ProjectsService implements OnModuleInit {
          AND u.role IN ('smm_specialist','smm_director','storymaker')`,
       [projectId],
     );
-    const hasSmmMember = Number(smmRows?.[0]?.cnt || 0) > 0;
+    // + назначенные специалисты проекта (smmData.smmSpecialistIds) — они закрывают
+    //   SMM-функцию и без членства в project_members.
+    const assignedSpecs = (project.smmData as any)?.smmSpecialistIds;
+    const hasAssignedSpecialist = Array.isArray(assignedSpecs) && assignedSpecs.length > 0;
+    const hasSmmMember = Number(smmRows?.[0]?.cnt || 0) > 0 || hasAssignedSpecialist;
 
     // 2) общее число позиций контент-плана и сколько в первую неделю
     //    (от startBillingDate или createdAt)

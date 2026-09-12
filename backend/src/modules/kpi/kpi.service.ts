@@ -67,10 +67,12 @@ export const STAGE_LABELS: Record<string, string> = {
   published: 'Опубликовано', ads: 'Реклама',
 };
 
-/** Истории ведёт только сторисмейкер — метрика «Историй опубликовано»
- *  показывается лишь ему (основная или вторая роль). */
+/** Истории ведут SMM-специалисты (роль сторисмейкера упразднена, оставлена
+ *  для совместимости) — метрика «План сторис» показывается им (основная или
+ *  вторая роль). */
 function isStoryMaker(user: { role?: string | null; secondaryRole?: string | null }): boolean {
-  return user.role === UserRole.STORYMAKER || user.secondaryRole === UserRole.STORYMAKER;
+  const STORY_ROLES: string[] = [UserRole.STORYMAKER, UserRole.SMM_SPECIALIST];
+  return STORY_ROLES.includes(user.role || '') || STORY_ROLES.includes(user.secondaryRole || '');
 }
 
 /** Базовые таргеты на 30-дневный период. Для других периодов скейлим
@@ -340,6 +342,8 @@ export class KpiService {
             $5::boolean
             OR EXISTS (SELECT 1 FROM project_members pm
                        WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid)
+            -- назначен SMM-специалистом проекта (smmData.smmSpecialistIds), без членства
+            OR jsonb_exists(COALESCE(p."smmData"->'smmSpecialistIds', '[]'::jsonb), $1::uuid::text)
           )
       ),
       -- Дни до появления проекта в системе в план не идут: нельзя было
@@ -806,7 +810,8 @@ export class KpiService {
                         THEN (p."smmData"->>'storiesPerDay')::int ELSE 3 END > 0
                AND ($5::boolean OR EXISTS (
                  SELECT 1 FROM project_members pm
-                 WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid))
+                 WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid)
+                 OR jsonb_exists(COALESCE(p."smmData"->'smmSpecialistIds', '[]'::jsonb), $1::uuid::text))
            ),
            logs AS (
              SELECT sl."projectId" AS pid, sl.date::date AS day,
