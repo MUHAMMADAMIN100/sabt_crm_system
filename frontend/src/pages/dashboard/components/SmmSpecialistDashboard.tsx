@@ -4,8 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, contentPlanApi, storiesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { projColor, storiesDailyTarget } from '@/pages/smm/smmShared'
-import { Film, Image as ImageIcon, Palette, Camera, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus } from 'lucide-react'
-import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, addMonths, format } from 'date-fns'
+import { Film, Image as ImageIcon, Palette, Camera, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle } from 'lucide-react'
+import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, addMonths, format, subDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
 
@@ -14,6 +14,23 @@ const dk = (d: Date) => format(d, 'yyyy-MM-dd')
 
 /** Дневная норма сторис проекта на дату — единая формула (месяц / дни месяца). */
 function dailyTarget(p: any, date: Date = new Date()): number { return storiesDailyTarget(p, date) }
+
+/** Месячная норма сторис проекта: явная, либо дневная × дни месяца. */
+function monthlyTarget(p: any, date: Date): number {
+  const sd = (p as any)?.smmData || {}
+  const m = (p as any)?.storiesPerMonth ?? sd.storiesPerMonth
+  if (m != null && Number.isFinite(Number(m))) return Math.max(0, Number(m))
+  const dim = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+  return dailyTarget(p, date) * dim
+}
+
+/** Русское склонение по числу. */
+function plural(n: number, one: string, few: string, many: string): string {
+  const d = n % 10, h = n % 100
+  if (d === 1 && h !== 11) return one
+  if (d >= 2 && d <= 4 && (h < 10 || h >= 20)) return few
+  return many
+}
 
 /** Мета задачи: иконка, ярлык, цветовая группа, подпись описания. */
 function taskInfo(e: any): { Icon: any; tag: string; group: 'reel' | 'maket' | 'shoot' | 'design'; descLabel: string } {
@@ -54,10 +71,17 @@ export default function SmmSpecialistDashboard() {
   const from = dk(startOfMonth(cursor))
   const to = dk(endOfMonth(cursor))
   const selKey = dk(sel)
+  const todayKey = dk(new Date())
 
   const { data: projectsList } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
   const { data: cal } = useQuery({ queryKey: ['smm-calendar', from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to }) })
   const { data: myStories } = useQuery({ queryKey: ['stories-my-month', from, to], queryFn: () => storiesApi.my(from, to) })
+  // Просрочки ищем шире текущего месяца: задача могла «повиснуть» в прошлом.
+  const overdueFrom = useMemo(() => dk(subDays(new Date(), 75)), [])
+  const { data: overdueCal } = useQuery({
+    queryKey: ['smm-calendar-overdue', overdueFrom, todayKey],
+    queryFn: () => contentPlanApi.smmCalendar({ from: overdueFrom, to: todayKey }),
+  })
 
   // Личный кабинет — ТОЛЬКО свои проекты (назначен специалистом, участник или
   // менеджер). Все проекты агентства специалист видит в разделе «СММ», здесь
@@ -110,19 +134,55 @@ export default function SmmSpecialistDashboard() {
     return { reel, maket, story }
   }
 
+  // Просроченное: задача прошлых дней, которую не отметили готовой.
+  const overdue = useMemo(() => {
+    const list = (overdueCal?.events || []).filter((e: any) => {
+      if (!e.date || e.date >= todayKey || !myProjectIds.has(e.projectId)) return false
+      if (isDone(e)) return false
+      return (e.kind === 'publication' && e.contentType !== 'story') || e.kind === 'shoot'
+    })
+    return list.sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)))
+  }, [overdueCal, myProjectIds, todayKey])
+
+  const overdueByDay = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const e of overdue) m[e.date] = (m[e.date] || 0) + 1
+    return m
+  }, [overdue])
+
+  // Цифры месяца для сводки: сторис факт/норма и сданные рилсы.
+  const monthStories = useMemo(
+    () => Object.values(storyByDay).reduce((sum, byProject) => sum + Object.values(byProject).reduce((a, b) => a + b, 0), 0),
+    [storyByDay],
+  )
+  const monthStoriesTarget = useMemo(
+    () => trackedProjects.reduce((sum: number, p: any) => sum + monthlyTarget(p, cursor), 0),
+    [trackedProjects, cursor],
+  )
+  const reelsDone = useMemo(
+    () => Object.values(contentByDay).flat().filter((e: any) =>
+      e.kind === 'publication' && (e.contentType === 'reel' || e.contentType === 'video') && isDone(e)).length,
+    [contentByDay],
+  )
+
   // ── Мутации ──
   const markMut = useMutation({
     mutationFn: (v: { itemId: string; done: boolean }) => contentPlanApi.smartUpdate(v.itemId, { status: v.done ? 'planned' : 'published' }),
     onMutate: async (v) => {
       await qc.cancelQueries({ queryKey: ['smm-calendar', from, to] })
       const prev = qc.getQueryData<any>(['smm-calendar', from, to])
-      qc.setQueryData<any>(['smm-calendar', from, to], (old: any) => old
+      const patch = (old: any) => old
         ? { ...old, events: old.events.map((e: any) => e.itemId === v.itemId ? { ...e, status: v.done ? 'planned' : 'published' } : e) }
-        : old)
+        : old
+      qc.setQueryData<any>(['smm-calendar', from, to], patch)
+      qc.setQueriesData({ queryKey: ['smm-calendar-overdue'] }, patch)
       return { prev }
     },
     onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(['smm-calendar', from, to], ctx.prev) },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['smm-calendar'] }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['smm-calendar'] })
+      qc.invalidateQueries({ queryKey: ['smm-calendar-overdue'] })
+    },
   })
   const toggleDone = (e: any) => { if (e.itemId) markMut.mutate({ itemId: e.itemId, done: isDone(e) }) }
 
@@ -159,19 +219,61 @@ export default function SmmSpecialistDashboard() {
     return order(a) - order(b) || taskTitle(a).localeCompare(taskTitle(b), 'ru')
   })
   const selDone = selEvents.filter(isDone).length
-  const openEvent = openId ? selEvents.find(e => e.id === openId) : null
+  const openEvent = openId ? ([...overdue, ...selEvents].find(e => e.id === openId) || null) : null
+
+  // Сводка выбранного дня: что ещё не закрыто.
+  const tasksLeft = selEvents.length - selDone
+  const storiesLeft = trackedProjects.filter((p: any) => storyCountOf(p.id) < dailyTarget(p, sel)).length
+  const summary = [
+    tasksLeft > 0 ? `${tasksLeft} ${plural(tasksLeft, 'задача', 'задачи', 'задач')}` : null,
+    storiesLeft > 0 ? `сторис по ${storiesLeft} ${plural(storiesLeft, 'проекту', 'проектам', 'проектам')}` : null,
+  ].filter(Boolean)
 
   const Chip = ({ letter, n, g }: { letter: string; n: number; g: string }) =>
     n > 0 ? <span className={clsx('text-[10px] font-extrabold px-1.5 py-0.5 rounded leading-none', GROUP_CLS[g])}>{letter} {n}</span> : null
 
   return (
     <div className="space-y-4">
-      {/* Легенда */}
-      <div className="flex items-center gap-4 flex-wrap text-xs text-surface-500 dark:text-surface-400">
-        <span className="inline-flex items-center gap-1.5 font-semibold"><span className="w-4 h-4 rounded bg-blue-500/15 text-blue-500 dark:text-blue-400 text-[9px] font-extrabold flex items-center justify-center">Р</span>Рилс</span>
-        <span className="inline-flex items-center gap-1.5 font-semibold"><span className="w-4 h-4 rounded bg-amber-500/15 text-amber-500 dark:text-amber-400 text-[9px] font-extrabold flex items-center justify-center">М</span>Макет</span>
-        <span className="inline-flex items-center gap-1.5 font-semibold"><span className="w-4 h-4 rounded bg-emerald-500/15 text-emerald-500 dark:text-emerald-400 text-[9px] font-extrabold flex items-center justify-center">С</span>Сторис</span>
+      {/* Сводка дня */}
+      <div className="card">
+        <div className="flex items-center gap-4 flex-wrap">
+          <Ring done={selDone} total={selEvents.length} />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[17px] font-extrabold text-surface-900 dark:text-surface-100 first-letter:uppercase leading-tight">
+              {isToday(sel) ? 'Сегодня' : format(sel, 'EEEE, d MMMM', { locale: ru })}
+            </h2>
+            <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5">
+              {summary.length ? `Осталось: ${summary.join(' · ')}` : 'Всё закрыто — задач и сторис на этот день не осталось'}
+            </p>
+            <div className="flex flex-wrap gap-2 mt-2.5">
+              {overdue.length > 0 && (
+                <Metric value={String(overdue.length)} label="просрочено" tone="danger" />
+              )}
+              <Metric
+                value={`${monthStories}/${monthStoriesTarget}`}
+                label={`сторис за ${format(cursor, 'LLLL', { locale: ru })}`}
+                bar={monthStoriesTarget > 0 ? Math.min(1, monthStories / monthStoriesTarget) : 0}
+              />
+              <Metric value={String(reelsDone)} label="рилсов сдано" tone={reelsDone > 0 ? 'ok' : undefined} />
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Просроченное */}
+      {overdue.length > 0 && (
+        <div className="card border-red-200/70 dark:border-red-900/40">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-red-500 dark:text-red-400 mb-2">
+            <AlertTriangle size={13} /> Просрочено · {overdue.length}
+          </div>
+          <div className="space-y-2">
+            {overdue.map(e => (
+              <TaskRow key={e.id} e={e} onToggle={() => toggleDone(e)} onInfo={() => setOpenId(e.id)}
+                late={Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(e.date + 'T00:00:00')))} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Мини-месяц */}
       <div className="card">
@@ -186,6 +288,7 @@ export default function SmmSpecialistDashboard() {
           {days.map(d => {
             const key = dk(d)
             const c = counts(key)
+            const late = overdueByDay[key] || 0
             const isSel = isSameDay(d, sel)
             const t = isToday(d)
             return (
@@ -195,11 +298,14 @@ export default function SmmSpecialistDashboard() {
                 className={clsx(
                   'min-h-[66px] rounded-xl border p-1.5 flex flex-col text-left transition',
                   t ? 'bg-primary-50 dark:bg-primary-900/20' : 'bg-surface-50 dark:bg-surface-800/40',
-                  isSel ? 'border-primary-500 ring-1 ring-primary-500' : 'border-surface-100 dark:border-surface-700/60 hover:border-surface-300 dark:hover:border-surface-600',
+                  isSel ? 'border-primary-500 ring-1 ring-primary-500'
+                    : late > 0 ? 'border-red-300 dark:border-red-800/70'
+                    : 'border-surface-100 dark:border-surface-700/60 hover:border-surface-300 dark:hover:border-surface-600',
                 )}
               >
                 <span className={clsx('text-[11px] font-bold text-right leading-none', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
                 <span className="flex flex-wrap gap-1 mt-auto">
+                  {late > 0 && <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded leading-none bg-red-500/15 text-red-500 dark:text-red-400" title="Просрочено">! {late}</span>}
                   <Chip letter="Р" n={c.reel} g="reel" />
                   <Chip letter="М" n={c.maket} g="maket" />
                   {c.story > 0 && <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded leading-none bg-emerald-500/12 text-emerald-500 dark:text-emerald-400">С {c.story}</span>}
@@ -224,42 +330,22 @@ export default function SmmSpecialistDashboard() {
           <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
         ) : (
           <div className="space-y-2">
-            {selEvents.map(e => {
-              const { Icon, tag, group } = taskInfo(e)
-              const done = isDone(e)
-              return (
-                <div key={e.id} className={clsx('flex items-center gap-3 rounded-xl border px-3 py-2.5 transition',
-                  done ? 'bg-green-50/60 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40' : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700/60')}>
-                  <button onClick={() => toggleDone(e)} disabled={!e.itemId}
-                    className={clsx('w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition',
-                      done ? 'bg-green-500 border-green-500' : 'border-surface-300 dark:border-surface-600 hover:border-green-500')}>
-                    <Check size={13} className={clsx('text-white transition-opacity', done ? 'opacity-100' : 'opacity-0')} strokeWidth={3} />
-                  </button>
-                  <div className={clsx('w-8 h-8 rounded-lg shrink-0 flex items-center justify-center', GROUP_CLS[group])}><Icon size={16} /></div>
-                  <div className="min-w-0 flex-1">
-                    <p className={clsx('text-[13.5px] font-semibold truncate', done ? 'line-through text-surface-400 dark:text-surface-500' : 'text-surface-900 dark:text-surface-100')}>{taskTitle(e)}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className={clsx('text-[9.5px] font-extrabold uppercase px-1.5 py-0.5 rounded', GROUP_CLS[group])}>{tag}</span>
-                      <span className="inline-flex items-center gap-1 text-[11px] text-surface-400 dark:text-surface-500 truncate">
-                        <i className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: projColor(e.projectId) }} />{e.projectName}
-                      </span>
-                    </div>
-                  </div>
-                  <button onClick={() => setOpenId(e.id)} title="Подробнее"
-                    className="w-8 h-8 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-surface-400 hover:text-primary-600 hover:border-primary-400 flex items-center justify-center shrink-0 transition">
-                    <Info size={16} />
-                  </button>
-                </div>
-              )
-            })}
+            {selEvents.map(e => (
+              <TaskRow key={e.id} e={e} onToggle={() => toggleDone(e)} onInfo={() => setOpenId(e.id)} />
+            ))}
           </div>
         )}
 
         {/* Сторис за выбранный день */}
         {trackedProjects.length > 0 && (
           <>
-            <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500 mt-5 mb-2">
-              Сторис {isToday(sel) ? 'сегодня' : `за ${format(sel, 'd MMM', { locale: ru })}`}
+            <div className="flex items-baseline gap-2 mt-5 mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500">
+                Сторис {isToday(sel) ? 'сегодня' : `за ${format(sel, 'd MMM', { locale: ru })}`}
+              </span>
+              <span className="text-[11px] text-surface-400 dark:text-surface-500">
+                {trackedProjects.length - storiesLeft} из {trackedProjects.length} проектов
+              </span>
             </div>
             <div className="space-y-2">
               {trackedProjects.map((p: any) => {
@@ -281,6 +367,14 @@ export default function SmmSpecialistDashboard() {
                       <span className="min-w-[22px] text-center text-[13px] font-bold tabular-nums text-surface-900 dark:text-surface-100">{cnt}</span>
                       <button onClick={() => setStory(p.id, cnt + 1)} className="w-6 h-6 rounded-md flex items-center justify-center text-surface-500 dark:text-surface-300 hover:bg-white dark:hover:bg-surface-600"><Plus size={13} /></button>
                     </div>
+                    {full ? (
+                      <span className="text-[10.5px] font-bold text-green-600 dark:text-green-400 shrink-0 w-[62px] text-center">готово</span>
+                    ) : (
+                      <button onClick={() => setStory(p.id, target)} title={`Поставить дневную норму: ${target}`}
+                        className="text-[10.5px] font-bold text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-800 rounded-lg px-2 py-1 shrink-0 w-[62px] hover:bg-primary-50 dark:hover:bg-primary-900/20">
+                        норма {target}
+                      </button>
+                    )}
                   </div>
                 )
               })}
@@ -291,6 +385,82 @@ export default function SmmSpecialistDashboard() {
 
       {/* Модалка задачи */}
       {openEvent && <TaskModal e={openEvent} onClose={() => setOpenId(null)} onToggle={() => { toggleDone(openEvent); setOpenId(null) }} />}
+    </div>
+  )
+}
+
+// ── Кольцо прогресса дня ──
+function Ring({ done, total }: { done: number; total: number }) {
+  const C = 2 * Math.PI * 15.5
+  const pct = total > 0 ? Math.min(1, done / total) : 0
+  const full = total > 0 && done >= total
+  return (
+    <svg viewBox="0 0 36 36" className="w-[68px] h-[68px] shrink-0" role="img" aria-label={`Сделано ${done} из ${total}`}>
+      <circle cx="18" cy="18" r="15.5" fill="none" stroke="currentColor" strokeWidth="3.5" className="text-surface-200 dark:text-surface-700" />
+      {pct > 0 && (
+        <circle cx="18" cy="18" r="15.5" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round"
+          className={full ? 'text-green-500' : 'text-primary-500'}
+          strokeDasharray={`${(C * pct).toFixed(2)} ${C.toFixed(2)}`} transform="rotate(-90 18 18)" />
+      )}
+      <text x="18" y="17.8" textAnchor="middle" fontSize="9" fontWeight="700" fill="currentColor" className="text-surface-900 dark:text-surface-100">{done}/{total}</text>
+      <text x="18" y="23.6" textAnchor="middle" fontSize="4.4" fill="currentColor" className="text-surface-400 dark:text-surface-500">задач</text>
+    </svg>
+  )
+}
+
+// ── Цифра сводки ──
+function Metric({ value, label, tone, bar }: { value: string; label: string; tone?: 'danger' | 'ok'; bar?: number }) {
+  return (
+    <div className={clsx('rounded-xl border px-3 py-1.5 min-w-[96px]',
+      tone === 'danger' ? 'border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-900/10'
+        : 'border-surface-100 dark:border-surface-700/60 bg-surface-50 dark:bg-surface-800/50')}>
+      <div className={clsx('text-[17px] font-extrabold tabular-nums leading-tight',
+        tone === 'danger' ? 'text-red-500 dark:text-red-400'
+          : tone === 'ok' ? 'text-green-600 dark:text-green-400'
+          : 'text-surface-900 dark:text-surface-100')}>{value}</div>
+      <div className="text-[10.5px] text-surface-400 dark:text-surface-500">{label}</div>
+      {bar !== undefined && (
+        <div className="h-1 rounded-full bg-surface-200 dark:bg-surface-700 mt-1 overflow-hidden">
+          <div className="h-full rounded-full bg-green-500" style={{ width: `${Math.round(bar * 100)}%` }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Строка задачи (день и просрочки) ──
+function TaskRow({ e, onToggle, onInfo, late }: { e: any; onToggle: () => void; onInfo: () => void; late?: number }) {
+  const { Icon, tag, group } = taskInfo(e)
+  const done = isDone(e)
+  return (
+    <div className={clsx('flex items-center gap-3 rounded-xl border px-3 py-2.5 transition',
+      late ? 'bg-red-50/50 dark:bg-red-900/10 border-red-200/70 dark:border-red-900/40'
+        : done ? 'bg-green-50/60 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40'
+        : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700/60')}>
+      <button onClick={onToggle} disabled={!e.itemId}
+        className={clsx('w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition',
+          done ? 'bg-green-500 border-green-500' : 'border-surface-300 dark:border-surface-600 hover:border-green-500')}>
+        <Check size={13} className={clsx('text-white transition-opacity', done ? 'opacity-100' : 'opacity-0')} strokeWidth={3} />
+      </button>
+      <div className={clsx('w-8 h-8 rounded-lg shrink-0 flex items-center justify-center', GROUP_CLS[group])}><Icon size={16} /></div>
+      <div className="min-w-0 flex-1">
+        <p className={clsx('text-[13.5px] font-semibold truncate', done ? 'line-through text-surface-400 dark:text-surface-500' : 'text-surface-900 dark:text-surface-100')}>{taskTitle(e)}</p>
+        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+          <span className={clsx('text-[9.5px] font-extrabold uppercase px-1.5 py-0.5 rounded', GROUP_CLS[group])}>{tag}</span>
+          <span className="inline-flex items-center gap-1 text-[11px] text-surface-400 dark:text-surface-500 truncate">
+            <i className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: projColor(e.projectId) }} />{e.projectName}
+          </span>
+          {late ? (
+            <span className="text-[11px] font-bold text-red-500 dark:text-red-400">
+              срок был {format(new Date(e.date + 'T00:00:00'), 'd MMM', { locale: ru })} · {late} {plural(late, 'день', 'дня', 'дней')}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <button onClick={onInfo} title="Подробнее"
+        className="w-8 h-8 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-surface-400 hover:text-primary-600 hover:border-primary-400 flex items-center justify-center shrink-0 transition">
+        <Info size={16} />
+      </button>
     </div>
   )
 }
