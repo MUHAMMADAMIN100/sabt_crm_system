@@ -877,11 +877,14 @@ export class ProjectsService implements OnModuleInit {
         // (project.managerId === userId). Раньше учитывалось только
         // membership — sm­m_specialist'а, повышенного до manager'а отдельного
         // проекта, отсекали из списка, и он не мог даже создать в нём задачу.
+        // + проекты, где сотрудник назначен SMM-специалистом (smmData.smmSpecialistIds):
+        // назначение через «Схему»/поле проекта должно открывать проект в его
+        // кабинете даже без членства (иначе панель дня видела только member-проекты).
         qb.andWhere(
           `(p.managerId = :userId OR p.id IN (
             SELECT pm."projectsId" FROM project_members pm
             WHERE pm."usersId" = :userId
-          ))`,
+          ) OR jsonb_exists(COALESCE(p."smmData"->'smmSpecialistIds', '[]'::jsonb), :userId))`,
           { userId },
         );
       }
