@@ -481,7 +481,7 @@ function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late }: {
   const pick = (fn: () => void) => () => { setMenu(false); fn() }
 
   return (
-    <div onClick={onInfo} className={clsx('relative flex items-center gap-3 rounded-xl border px-3 py-2.5 transition cursor-pointer hover:border-surface-300 dark:hover:border-surface-600',
+    <div data-task-row onClick={onInfo} className={clsx('relative flex items-center gap-3 rounded-xl border px-3 py-2.5 transition cursor-pointer hover:border-surface-300 dark:hover:border-surface-600',
       cancelled ? 'bg-surface-50 dark:bg-surface-800/40 border-surface-100 dark:border-surface-700/60 opacity-60'
         : late ? 'bg-red-50/50 dark:bg-red-900/10 border-red-200/70 dark:border-red-900/40'
         : done ? 'bg-green-50/60 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40'
@@ -671,6 +671,7 @@ function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, o
   const [showHistory, setShowHistory] = useState(false)
   const [drag, setDrag] = useState(0)
   const startY = useRef<number | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
 
   // Переключились на другую задачу — сбрасываем раскрытые части.
   useEffect(() => { setPicking(false); setMenu(false); setShowHistory(false); setCopied(false) }, [e.id])
@@ -687,6 +688,21 @@ function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, o
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, onNext, onPrev])
+
+  // Клик мимо панели закрывает её. Клик по другой задаче — не закрывает,
+  // а переключает: строка помечена data-task-row и её обработчик сам сменит
+  // открытую задачу. На телефоне тем же способом срабатывает затемнение.
+  useEffect(() => {
+    const onDown = (ev: MouseEvent) => {
+      const t = ev.target as Element | null
+      if (!t || typeof t.closest !== 'function') return
+      if (panelRef.current?.contains(t)) return
+      if (t.closest('[data-task-row]')) return
+      onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [onClose])
 
   // На телефоне окно поверх страницы — страница под ним не должна прокручиваться.
   useEffect(() => {
@@ -733,7 +749,7 @@ function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, o
       {/* Затемнение только на телефоне: на компьютере список задач остаётся кликабельным. */}
       <div className="sm:hidden absolute inset-0 bg-black/60" onClick={onClose} />
 
-      <div role="dialog" aria-label={taskTitle(e)}
+      <div ref={panelRef} role="dialog" aria-label={taskTitle(e)}
         style={drag ? { transform: `translateY(${drag}px)` } : undefined}
         className={clsx('absolute inset-x-0 bottom-0 max-h-[88vh] flex flex-col bg-white dark:bg-surface-900 rounded-t-[22px] shadow-2xl',
           'sm:static sm:h-full sm:max-h-none sm:rounded-none sm:border-l sm:border-surface-200 sm:dark:border-surface-700',
