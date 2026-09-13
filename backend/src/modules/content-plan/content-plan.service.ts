@@ -542,6 +542,7 @@ export class ContentPlanService {
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId",
               ci."contentType" AS "itemKind", ci.topic AS title, ci."scriptText" AS "scriptText",
               ci.status AS status, ci."taskId" AS "taskId",
+              ci.caption AS caption, ci."fileLink" AS "fileLink",
               to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS "changedAt",
               ci."publishTime" AS time, ci."durationMin" AS "durationMin",
               to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
@@ -558,7 +559,7 @@ export class ContentPlanService {
     // Отдельны от рилсов; двигаются независимо. reelId нужен для линии-связки на фронте.
     const shootItems: any[] = await this.repo.manager.query(
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId",
-              ci.status AS status,
+              ci.status AS status, ci."fileLink" AS "fileLink",
               to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS "changedAt",
               reel.topic AS "reelTopic", reel."scriptText" AS "reelScript", reel."contentType" AS "parentType",
               to_char(reel."publishDate"::date, 'YYYY-MM-DD') AS "reelDate",
@@ -613,6 +614,7 @@ export class ContentPlanService {
       })),
       ...shootItems.map(s => ({
         id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot', date: s.date, changedAt: s.changedAt || null,
+        fileLink: s.fileLink || null,
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
         title: s.reelTopic || null, time: s.time || null,   // название родителя (рилс/пост) = название задачи подготовки
         scriptText: s.reelScript || null, reelDate: s.reelDate || null, parentKind: s.parentType || null, // описание/дата/тип родителя — для модалки
@@ -659,6 +661,7 @@ export class ContentPlanService {
     const backlog = [
       ...bpubs.map(c => ({
         id: `item:${c.itemId}`, itemId: c.itemId, kind: 'publication', changedAt: c.changedAt || null,
+        caption: c.caption || null, fileLink: c.fileLink || null,
         projectId: c.projectId, projectName: nameById.get(c.projectId) || '',
         contentType: c.itemKind === 'reel' ? 'reel' : 'design', topic: c.title || null, scriptText: c.scriptText || null,
       })),

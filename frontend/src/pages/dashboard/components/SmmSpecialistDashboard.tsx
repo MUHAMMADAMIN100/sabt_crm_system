@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, contentPlanApi, storiesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { projColor, storiesDailyTarget } from '@/pages/smm/smmShared'
-import { Film, Image as ImageIcon, Palette, Camera, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle, MoreHorizontal, CalendarDays, RotateCcw, Ban } from 'lucide-react'
+import { Film, Image as ImageIcon, Palette, Camera, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle, MoreHorizontal, CalendarDays, RotateCcw, Ban, Copy, Paperclip, History as HistoryIcon, ChevronUp, ChevronDown } from 'lucide-react'
 import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, addMonths, format, subDays, addDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
+import toast from 'react-hot-toast'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
@@ -243,7 +244,12 @@ export default function SmmSpecialistDashboard() {
   // Отменённые остаются в списке, но из счёта убраны: это не работа на день.
   const selActive = selEvents.filter((e: any) => !isCancelled(e))
   const selDone = selActive.filter(isDone).length
-  const openEvent = openId ? ([...overdue, ...selEvents].find(e => e.id === openId) || null) : null
+  const navList: any[] = (() => {
+    const seen = new Set<string>()
+    return [...overdue, ...selEvents].filter((x: any) => (seen.has(x.id) ? false : (seen.add(x.id), true)))
+  })()
+  const openIdx = openId ? navList.findIndex((x: any) => x.id === openId) : -1
+  const openEvent = openIdx >= 0 ? navList[openIdx] : null
 
   // Сводка выбранного дня: что ещё не закрыто.
   const tasksLeft = selActive.length - selDone
@@ -402,7 +408,19 @@ export default function SmmSpecialistDashboard() {
       </div>
 
       {/* Модалка задачи */}
-      {openEvent && <TaskModal e={openEvent} onClose={() => setOpenId(null)} onToggle={() => { toggleDone(openEvent); setOpenId(null) }} />}
+      {openEvent && (
+        <TaskPanel
+          e={openEvent}
+          pos={openIdx + 1}
+          total={navList.length}
+          onPrev={() => { if (openIdx > 0) setOpenId(navList[openIdx - 1].id) }}
+          onNext={() => { if (openIdx < navList.length - 1) setOpenId(navList[openIdx + 1].id) }}
+          onClose={() => setOpenId(null)}
+          onToggle={() => toggleDone(openEvent)}
+          onMove={d => { moveTo(openEvent, d); toast.success(`Перенесено на ${format(d, 'd MMMM', { locale: ru })}`) }}
+          onCancel={c => { setCancelled(openEvent, c); toast.success(c ? 'Задача отменена' : 'Задача возвращена в работу') }}
+        />
+      )}
     </div>
   )
 }
@@ -463,7 +481,7 @@ function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late }: {
   const pick = (fn: () => void) => () => { setMenu(false); fn() }
 
   return (
-    <div className={clsx('relative flex items-center gap-3 rounded-xl border px-3 py-2.5 transition',
+    <div onClick={onInfo} className={clsx('relative flex items-center gap-3 rounded-xl border px-3 py-2.5 transition cursor-pointer hover:border-surface-300 dark:hover:border-surface-600',
       cancelled ? 'bg-surface-50 dark:bg-surface-800/40 border-surface-100 dark:border-surface-700/60 opacity-60'
         : late ? 'bg-red-50/50 dark:bg-red-900/10 border-red-200/70 dark:border-red-900/40'
         : done ? 'bg-green-50/60 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40'
@@ -472,7 +490,7 @@ function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late }: {
       {cancelled ? (
         <span className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-surface-400 dark:text-surface-500" title="Задача отменена"><Ban size={15} /></span>
       ) : (
-        <button onClick={onToggle} disabled={!e.itemId} title="Отметить готовой"
+        <button onClick={ev => { ev.stopPropagation(); onToggle() }} disabled={!e.itemId} title="Отметить готовой"
           className={clsx('w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition',
             done ? 'bg-green-500 border-green-500' : 'border-surface-300 dark:border-surface-600 hover:border-green-500')}>
           <Check size={13} className={clsx('text-white transition-opacity', done ? 'opacity-100' : 'opacity-0')} strokeWidth={3} />
@@ -511,19 +529,19 @@ function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late }: {
 
       {/* Быстрое действие: перенести просрочку на сегодня. */}
       {canAct && !!late && !done && !cancelled && (
-        <button onClick={() => onMove!(new Date())}
+        <button onClick={ev => { ev.stopPropagation(); onMove!(new Date()) }}
           className="text-[11.5px] font-bold text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 rounded-lg px-2.5 py-1.5 shrink-0 whitespace-nowrap hover:bg-primary-100 dark:hover:bg-primary-900/40">
           <span className="hidden sm:inline">На </span>сегодня
         </button>
       )}
 
       {canAct ? (
-        <button onClick={() => setMenu(v => !v)} title="Ещё"
+        <button onClick={ev => { ev.stopPropagation(); setMenu(v => !v) }} title="Ещё"
           className="w-8 h-8 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-surface-400 hover:text-primary-600 hover:border-primary-400 flex items-center justify-center shrink-0 transition">
           <MoreHorizontal size={16} />
         </button>
       ) : (
-        <button onClick={onInfo} title="Подробнее"
+        <button onClick={ev => { ev.stopPropagation(); onInfo() }} title="Подробнее"
           className="w-8 h-8 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-surface-400 hover:text-primary-600 hover:border-primary-400 flex items-center justify-center shrink-0 transition">
           <Info size={16} />
         </button>
@@ -531,8 +549,8 @@ function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late }: {
 
       {menu && (
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setMenu(false)} />
-          <div className="absolute right-2 top-full mt-1 z-40 w-[236px] rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-xl p-1.5">
+          <div className="fixed inset-0 z-30" onClick={ev => { ev.stopPropagation(); setMenu(false) }} />
+          <div onClick={ev => ev.stopPropagation()} className="absolute right-2 top-full mt-1 z-40 w-[236px] rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-xl p-1.5">
             {!cancelled && !done && (
               <>
                 <p className="px-2.5 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-surface-400 dark:text-surface-500">Перенести</p>
@@ -629,69 +647,244 @@ function historyText(h: any): string {
   return 'изменение'
 }
 
-// ── Модалка с информацией о задаче ──
-function TaskModal({ e, onClose, onToggle }: { e: any; onClose: () => void; onToggle: () => void }) {
-  const { Icon, tag, group, descLabel } = taskInfo(e)
+// ── Панель задачи: справа на компьютере, снизу на телефоне ──
+function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel }: {
+  e: any; pos: number; total: number
+  onPrev: () => void; onNext: () => void; onClose: () => void
+  onToggle: () => void; onMove: (d: Date) => void; onCancel: (cancel: boolean) => void
+}) {
+  const { tag, group, descLabel } = taskInfo(e)
   const done = isDone(e)
+  const cancelled = isCancelled(e)
+  const canAct = !!e.itemId
   const desc = (e.scriptText && String(e.scriptText).trim()) || ''
-  // История: перенос, закрытие, отмена. Видна всем, кто видит задачу.
+  const caption = (e.caption && String(e.caption).trim()) || ''
+  // Ссылку открываем только http(s): поле заполняют руками, javascript:-ссылка не должна пройти.
+  const fileHref = typeof e.fileLink === 'string' && /^https?:\/\//i.test(e.fileLink.trim()) ? e.fileLink.trim() : null
+  const todayKey = dk(new Date())
+  const lateDays = !done && !cancelled && e.date && e.date < todayKey
+    ? differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(e.date + 'T00:00:00')) : 0
+
+  const [picking, setPicking] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [menu, setMenu] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [drag, setDrag] = useState(0)
+  const startY = useRef<number | null>(null)
+
+  // Переключились на другую задачу — сбрасываем раскрытые части.
+  useEffect(() => { setPicking(false); setMenu(false); setShowHistory(false); setCopied(false) }, [e.id])
+
+  // Esc закрывает, стрелки листают задачи дня. Пока печатают в поле даты — не мешаем.
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      const t = ev.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (ev.key === 'Escape') onClose()
+      else if (ev.key === 'ArrowDown') { ev.preventDefault(); onNext() }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); onPrev() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, onNext, onPrev])
+
+  // На телефоне окно поверх страницы — страница под ним не должна прокручиваться.
+  useEffect(() => {
+    if (!window.matchMedia('(max-width: 639px)').matches) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [])
+
   const { data: history } = useQuery({
     queryKey: ['item-history', e.itemId],
     queryFn: () => contentPlanApi.itemHistory(e.itemId),
     enabled: !!e.itemId,
   })
+
+  const move = (d: Date) => { setPicking(false); onMove(d) }
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(caption)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.error('Не удалось скопировать')
+    }
+  }
+
+  const fullDay = (d?: string | null) => (d ? format(new Date(d + 'T00:00:00'), 'd MMMM, EEEEEE', { locale: ru }) : 'без даты')
+  const whenLabel = e.kind === 'shoot' ? (group === 'design' ? 'дизайн' : 'съёмка') : 'публикация'
+
+  const status = cancelled ? { text: 'Отменено', cls: 'bg-surface-100 dark:bg-surface-800 text-surface-500 border-surface-200 dark:border-surface-700' }
+    : done ? { text: 'Готово', cls: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800/60' }
+    : lateDays > 0 ? { text: `Просрочено · ${lateDays} ${plural(lateDays, 'день', 'дня', 'дней')}`, cls: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/60' }
+    : { text: 'В работе', cls: 'bg-surface-50 dark:bg-surface-800 text-surface-500 dark:text-surface-400 border-surface-200 dark:border-surface-700' }
+
+  const swipe = {
+    onTouchStart: (ev: React.TouchEvent) => { startY.current = ev.touches[0].clientY },
+    onTouchMove: (ev: React.TouchEvent) => { if (startY.current != null) setDrag(Math.max(0, ev.touches[0].clientY - startY.current)) },
+    onTouchEnd: () => { if (drag > 90) onClose(); setDrag(0); startY.current = null },
+  }
+  const iconBtn = 'rounded-[14px] sm:rounded-xl border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-800 flex items-center justify-center shrink-0 transition'
+
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" >
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md rounded-2xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-2xl overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-surface-100 dark:border-surface-800">
-          <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center', GROUP_CLS[group])}><Icon size={20} /></div>
-          <div className="min-w-0">
-            <div className={clsx('text-[10px] font-extrabold uppercase tracking-wide', GROUP_CLS[group].split(' ').filter(c => c.includes('text-')).join(' '))}>{tag}</div>
-            <div className="text-[16px] font-extrabold text-surface-900 dark:text-surface-100 leading-tight">{taskTitle(e)}</div>
-          </div>
-          <button onClick={onClose} className="ml-auto w-8 h-8 rounded-lg border border-surface-200 dark:border-surface-700 text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-800 flex items-center justify-center shrink-0"><X size={16} /></button>
+    <div className="fixed inset-0 z-[80] sm:inset-auto sm:top-0 sm:right-0 sm:bottom-0 sm:w-[470px] sm:max-w-full">
+      {/* Затемнение только на телефоне: на компьютере список задач остаётся кликабельным. */}
+      <div className="sm:hidden absolute inset-0 bg-black/60" onClick={onClose} />
+
+      <div role="dialog" aria-label={taskTitle(e)}
+        style={drag ? { transform: `translateY(${drag}px)` } : undefined}
+        className={clsx('absolute inset-x-0 bottom-0 max-h-[88vh] flex flex-col bg-white dark:bg-surface-900 rounded-t-[22px] shadow-2xl',
+          'sm:static sm:h-full sm:max-h-none sm:rounded-none sm:border-l sm:border-surface-200 sm:dark:border-surface-700',
+          !drag && 'transition-transform duration-200')}>
+
+        {/* Компьютер: навигация по задачам дня */}
+        <div className="hidden sm:flex items-center gap-2 px-4 py-3 border-b border-surface-100 dark:border-surface-800">
+          <button onClick={onPrev} disabled={pos <= 1} title="Предыдущая задача (↑)" className={clsx(iconBtn, 'w-8 h-8 disabled:opacity-30')}><ChevronUp size={16} /></button>
+          <button onClick={onNext} disabled={pos >= total} title="Следующая задача (↓)" className={clsx(iconBtn, 'w-8 h-8 disabled:opacity-30')}><ChevronDown size={16} /></button>
+          <span className="text-[12.5px] font-semibold text-surface-500 dark:text-surface-400">{pos} из {total}</span>
+          <button onClick={onClose} title="Закрыть (Esc)" className="ml-auto w-8 h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:text-surface-800 dark:hover:text-surface-200 flex items-center justify-center"><X size={15} /></button>
         </div>
-        <div className="px-5 py-4">
-          <div className="flex items-center justify-between py-2 border-b border-surface-100 dark:border-surface-800 text-[13px]">
-            <span className="text-surface-400 dark:text-surface-500">Проект</span>
-            <span className="font-bold text-surface-900 dark:text-surface-100 inline-flex items-center gap-2"><i className="w-2 h-2 rounded-full" style={{ background: projColor(e.projectId) }} />{e.projectName}</span>
+
+        {/* Шапка: на телефоне за неё можно потянуть вниз, чтобы закрыть */}
+        <div className="px-4 sm:px-5 pb-3 sm:pt-4 touch-none sm:touch-auto" {...swipe}>
+          <div className="sm:hidden pt-2 pb-2"><div className="w-10 h-[5px] rounded-full bg-surface-300 dark:bg-surface-600 mx-auto" /></div>
+          <div className="flex items-center gap-1.5">
+            <span className={clsx('text-[10px] font-extrabold uppercase tracking-wide px-2 py-[3px] rounded-md', GROUP_CLS[group])}>{tag}</span>
+            <span className={clsx('text-[10px] font-extrabold uppercase tracking-wide px-2 py-[2px] rounded-md border', status.cls)}>{status.text}</span>
+            <button onClick={onClose} title="Закрыть" className="sm:hidden ml-auto w-[30px] h-[30px] rounded-full bg-surface-100 dark:bg-surface-800 text-surface-500 flex items-center justify-center"><X size={14} /></button>
           </div>
-          <div className="flex items-center justify-between py-2 border-b border-surface-100 dark:border-surface-800 text-[13px]">
-            <span className="text-surface-400 dark:text-surface-500">Дата</span>
-            <span className="font-bold text-surface-900 dark:text-surface-100">{e.date ? format(new Date(e.date + 'T00:00:00'), 'd MMMM', { locale: ru }) : '—'}</span>
+          <h3 className="mt-2 text-[20px] sm:text-[21px] font-extrabold leading-tight tracking-tight text-surface-900 dark:text-surface-100 [text-wrap:balance]">{taskTitle(e)}</h3>
+          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap text-[13px] text-surface-500 dark:text-surface-400">
+            <i className="w-[7px] h-[7px] rounded-full inline-block" style={{ background: projColor(e.projectId) }} />
+            <b className="font-semibold text-surface-800 dark:text-surface-200">{e.projectName}</b>
+            <span>· {whenLabel}</span>
+            <button onClick={() => canAct && !done && !cancelled && setPicking(v => !v)}
+              disabled={!canAct || done || cancelled}
+              title={canAct && !done && !cancelled ? 'Перенести на другую дату' : undefined}
+              className="font-semibold text-primary-600 dark:text-primary-400 border-b border-dashed border-primary-300 dark:border-primary-700 disabled:text-surface-700 dark:disabled:text-surface-300 disabled:border-transparent">
+              {fullDay(e.date)}{e.kind === 'shoot' && e.time ? `, ${e.time}` : ''}
+            </button>
           </div>
-          <div className="flex items-center justify-between py-2 text-[13px]">
-            <span className="text-surface-400 dark:text-surface-500">Статус</span>
-            <span className={clsx('text-[11px] font-extrabold px-2.5 py-0.5 rounded-full', done ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400')}>{done ? 'Готово' : 'В работе'}</span>
-          </div>
-          <div className="text-[11px] font-extrabold uppercase tracking-wide text-surface-400 dark:text-surface-500 mt-3 mb-2">{descLabel}</div>
-          <div className={clsx('text-[13px] leading-relaxed rounded-xl border border-surface-100 dark:border-surface-800 bg-surface-50 dark:bg-surface-800/50 px-3.5 py-3 max-h-[160px] overflow-y-auto whitespace-pre-wrap', !desc && 'text-surface-400 dark:text-surface-500 italic')}>
-            {desc || 'Описание пока не заполнено — добавьте его в контент-плане проекта.'}
-          </div>
+          {e.kind === 'shoot' && e.reelDate && (
+            <p className="mt-1 text-[12px] text-surface-400 dark:text-surface-500">
+              для {group === 'design' ? 'поста' : 'рилса'} · публикация {shortDay(e.reelDate)}
+            </p>
+          )}
+          {picking && (
+            <div className="mt-3 flex items-center gap-2 flex-wrap rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60 p-2">
+              <button onClick={() => move(new Date())} className="h-9 px-3 rounded-lg bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 text-[12.5px] font-semibold text-surface-700 dark:text-surface-200">Сегодня</button>
+              <button onClick={() => move(addDays(new Date(), 1))} className="h-9 px-3 rounded-lg bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 text-[12.5px] font-semibold text-surface-700 dark:text-surface-200">Завтра</button>
+              <input type="date" defaultValue={e.date || undefined}
+                onChange={ev => { const v = ev.target.value; if (v) move(new Date(v + 'T00:00:00')) }}
+                className="ml-auto h-9 px-2 rounded-lg bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 text-[12.5px] text-surface-700 dark:text-surface-200" />
+            </div>
+          )}
+        </div>
+
+        {/* Содержимое прокручивается, кнопки внизу остаются на месте */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 sm:px-5 py-3.5 space-y-4">
+          <section>
+            <p className="text-[11px] font-extrabold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1.5">{descLabel}</p>
+            {desc ? (
+              <p className="text-[14.5px] sm:text-[14px] leading-relaxed whitespace-pre-wrap text-surface-800 dark:text-surface-200">{desc}</p>
+            ) : (
+              <p className="text-[13px] italic text-surface-400 dark:text-surface-500">Описание пока не заполнено — добавьте его в контент-плане проекта.</p>
+            )}
+          </section>
+
+          {caption && (
+            <section>
+              <div className="flex items-center mb-1.5">
+                <p className="text-[11px] font-extrabold uppercase tracking-wide text-surface-400 dark:text-surface-500">Подпись к публикации</p>
+                <button onClick={copy}
+                  className="ml-auto inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 text-[12px] font-bold hover:bg-primary-100 dark:hover:bg-primary-900/40">
+                  {copied ? <Check size={13} strokeWidth={3} /> : <Copy size={13} />}{copied ? 'Скопировано' : 'Копировать'}
+                </button>
+              </div>
+              <p className="text-[14.5px] sm:text-[14px] leading-relaxed whitespace-pre-wrap text-surface-800 dark:text-surface-200">{caption}</p>
+            </section>
+          )}
+
+          {fileHref && (
+            <a href={fileHref} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-2.5 h-11 px-3 rounded-xl border border-surface-200 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-800 text-[13px]">
+              <Paperclip size={15} className="text-surface-400 shrink-0" />
+              <span className="flex-1 min-w-0 truncate font-semibold text-surface-800 dark:text-surface-200">{fileHref.replace(/^https?:\/\//i, '')}</span>
+              <span className="text-[12.5px] font-bold text-primary-600 dark:text-primary-400 shrink-0">Открыть</span>
+            </a>
+          )}
 
           {Array.isArray(history) && history.length > 0 && (
-            <>
-              <div className="text-[11px] font-extrabold uppercase tracking-wide text-surface-400 dark:text-surface-500 mt-4 mb-2">История</div>
-              <div className="space-y-1.5 max-h-[140px] overflow-y-auto">
-                {history.map((h: any, i: number) => (
-                  <div key={i} className="flex items-baseline gap-2 text-[12px]">
-                    <span className="text-surface-400 dark:text-surface-500 tabular-nums shrink-0">{h.at}</span>
-                    <span className="text-surface-700 dark:text-surface-300">{historyText(h)}</span>
-                    {h.who && <span className="text-surface-400 dark:text-surface-500 ml-auto shrink-0">{h.who}</span>}
-                  </div>
-                ))}
-              </div>
-            </>
+            <section className="border-t border-dashed border-surface-200 dark:border-surface-700 pt-1">
+              <button onClick={() => setShowHistory(v => !v)} className="w-full flex items-center gap-2 h-10 text-[13px] text-surface-500 dark:text-surface-400">
+                <HistoryIcon size={14} className="shrink-0" />
+                <b className="font-semibold text-surface-800 dark:text-surface-200">История</b>
+                <span className="truncate">· {historyText(history[0])}</span>
+                <ChevronDown size={14} className={clsx('ml-auto shrink-0 transition-transform', showHistory && 'rotate-180')} />
+              </button>
+              {showHistory && (
+                <div className="space-y-1.5 pb-1">
+                  {history.map((h: any, i: number) => (
+                    <div key={i} className="flex items-baseline gap-2 text-[12px]">
+                      <span className="text-surface-400 dark:text-surface-500 tabular-nums shrink-0">{h.at}</span>
+                      <span className="text-surface-700 dark:text-surface-300 min-w-0">{historyText(h)}</span>
+                      {h.who && <span className="text-surface-400 dark:text-surface-500 ml-auto shrink-0">{h.who}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           )}
         </div>
-        <div className="flex gap-2.5 px-5 pb-5">
-          {e.itemId && (
-            <button onClick={onToggle} className={clsx('flex-1 rounded-xl py-2.5 text-[13px] font-bold', done ? 'border border-surface-200 dark:border-surface-600 text-surface-500 dark:text-surface-300' : 'bg-green-500 text-white')}>
-              {done ? 'Снять отметку' : '✓ Отметить готовым'}
+
+        {/* Действия. На телефоне отступ под полоску айфона. */}
+        <div className="flex items-center gap-2 px-4 sm:px-5 pt-3 pb-[max(14px,env(safe-area-inset-bottom))] sm:pb-3.5 border-t border-surface-100 dark:border-surface-800">
+          {cancelled ? (
+            <button onClick={() => onCancel(false)} disabled={!canAct}
+              className="flex-1 h-[50px] sm:h-[42px] rounded-[14px] sm:rounded-xl border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 text-[15px] sm:text-[13.5px] font-bold flex items-center justify-center gap-2">
+              <RotateCcw size={15} /> Вернуть в работу
+            </button>
+          ) : (
+            <button onClick={onToggle} disabled={!canAct}
+              className={clsx('flex-1 h-[50px] sm:h-[42px] rounded-[14px] sm:rounded-xl text-[15px] sm:text-[13.5px] font-bold flex items-center justify-center gap-2 transition disabled:opacity-40',
+                done ? 'border border-surface-200 dark:border-surface-700 text-surface-600 dark:text-surface-300'
+                  : 'bg-green-500 hover:bg-green-600 text-white')}>
+              {done ? 'Снять отметку' : (<><Check size={16} strokeWidth={3} /><span className="sm:hidden">Готово</span><span className="hidden sm:inline">Отметить готовым</span></>)}
             </button>
           )}
-          <button onClick={onClose} className="flex-1 rounded-xl py-2.5 text-[13px] font-bold border border-surface-200 dark:border-surface-600 text-surface-600 dark:text-surface-300">Закрыть</button>
+
+          {canAct && !done && !cancelled && (
+            <button onClick={() => setPicking(v => !v)} title="Перенести"
+              className={clsx(iconBtn, 'w-[50px] h-[50px] sm:w-auto sm:h-[42px] sm:px-3.5 gap-1.5', picking && 'border-primary-400 text-primary-600 dark:text-primary-400')}>
+              <CalendarDays size={17} /><span className="hidden sm:inline text-[13px] font-semibold">Перенести</span>
+            </button>
+          )}
+
+          {canAct && !done && (
+            <div className="relative shrink-0">
+              <button onClick={() => setMenu(v => !v)} title="Ещё" className={clsx(iconBtn, 'w-[50px] h-[50px] sm:w-[42px] sm:h-[42px]')}>
+                <MoreHorizontal size={17} />
+              </button>
+              {menu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+                  <div className="absolute right-0 bottom-full mb-2 z-20 w-[210px] rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-xl p-1.5">
+                    {cancelled ? (
+                      <button onClick={() => { setMenu(false); onCancel(false) }} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20">
+                        <RotateCcw size={14} /> Вернуть в работу
+                      </button>
+                    ) : (
+                      <button onClick={() => { setMenu(false); onCancel(true) }} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
+                        <Ban size={14} /> Отменить задачу
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>,
