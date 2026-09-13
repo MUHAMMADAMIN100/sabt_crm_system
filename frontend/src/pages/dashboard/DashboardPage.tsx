@@ -7,33 +7,15 @@ import { StatCard, PageLoader, StatusBadge, PriorityBadge, ProgressBar, Avatar }
 import { FolderKanban, CheckSquare, Users, Clock, AlertTriangle, TrendingDown } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { format, startOfMonth } from 'date-fns'
-import { ru } from 'date-fns/locale'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { isTaskOverdue } from '@/lib/taskStatus'
 import { useChartColors } from '@/lib/theme'
 import { isDevDirector } from '@/lib/permissions'
-import TeamStoriesBar from '@/components/stories/TeamStoriesBar'
 import { storiesDailyTarget } from '@/pages/smm/smmShared'
 
 const FounderDashboard = lazy(() => import('./components/FounderDashboard'))
 const PMDashboard = lazy(() => import('./components/PMDashboard'))
 
-/** Комплименты и мотивация для менеджеров продаж — показываются вместо
- *  имени на их панели, случайная фраза при каждом входе. */
-const SALES_GREETINGS = [
-  'Ты сегодня в ударе',
-  'Каждый звонок — шаг к новой сделке',
-  'Лучший продажник — это ты',
-  'Сегодня отличный день для крупной сделки',
-  'Твоя энергия закрывает сделки',
-  'Верь в себя — клиенты это чувствуют',
-  'Маленький шаг сегодня — большой результат завтра',
-  'Ты умеешь находить подход к каждому клиенту',
-  'Продажи любят настойчивых — это про тебя',
-  'Сделай этот день продуктивным',
-  'Твой профессионализм впечатляет',
-  'Новый день — новые возможности',
-]
 const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
 // Кабинет команды разработки: производственные карточки доски и обычные
 // поручения — ДВУМЯ отдельными блоками, чтобы одно не терялось в другом.
@@ -171,24 +153,11 @@ function DashboardContent() {
   const { t } = useTranslation()
   // Палитра графиков следует персональному цвету системы.
   const PIE_COLORS = useChartColors()
-  // Случайный комплимент для МП — выбирается один раз за вход на панель.
-  const salesGreeting = useMemo(
-    () => SALES_GREETINGS[Math.floor(Math.random() * SALES_GREETINGS.length)],
-    [],
-  )
 
   // Role-specific dashboards
   if (isFounderView) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="page-title">
-            {role === 'founder' ? 'Ассаламу алейкум!' : `Добро пожаловать, ${user?.name?.split(' ')[0] || ''}`}
-          </h1>
-          <p className="text-surface-500 dark:text-surface-400 mt-0.5">
-            {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
-          </p>
-        </div>
         <Suspense fallback={<PageLoader />}>
           <FounderDashboard />
         </Suspense>
@@ -199,12 +168,6 @@ function DashboardContent() {
   if (isPMView) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="page-title">Добро пожаловать, {user?.name?.split(' ')[0] || ''}</h1>
-          <p className="text-surface-500 dark:text-surface-400 mt-0.5">
-            {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
-          </p>
-        </div>
         <Suspense fallback={<PageLoader />}>
           <PMDashboard />
         </Suspense>
@@ -215,12 +178,6 @@ function DashboardContent() {
   if (isSalesView) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="page-title">{salesGreeting}</h1>
-          <p className="text-surface-500 dark:text-surface-400 mt-0.5">
-            {isDevDirectorView ? 'Руководитель разработки' : 'Менеджер по продажам'} · {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
-          </p>
-        </div>
         {/* Руководителю направления — KPI его команды первым блоком: сразу
             видно, кто чем занят и на каком этапе задачи. Ниже остаётся его
             собственная продажная сводка. */}
@@ -241,12 +198,6 @@ function DashboardContent() {
   if (role === 'storymaker' || user?.isStoryMaker) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="page-title">Добро пожаловать, {user?.name?.split(' ')[0] || ''}</h1>
-          <p className="text-surface-500 dark:text-surface-400 mt-0.5">
-            {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
-          </p>
-        </div>
         <Suspense fallback={<PageLoader />}>
           <StorymakerDashboard />
         </Suspense>
@@ -258,12 +209,6 @@ function DashboardContent() {
     const isSmmSpecialist = role === 'smm_specialist'
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="page-title">Добро пожаловать, {user?.name?.split(' ')[0] || ''}</h1>
-          <p className="text-surface-500 dark:text-surface-400 mt-0.5">
-            {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
-          </p>
-        </div>
         {/* SMM-специалист: главные задачи из контент-плана + отметка сторис за день. */}
         {isSmmSpecialist && (
           <Suspense fallback={<PageLoader />}>
@@ -392,15 +337,6 @@ function DashboardContent() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="page-title">
-          {t('dashboard.greeting')}, {user?.name?.split(' ')[0] || ''} 👋
-        </h1>
-        <p className="text-surface-500 dark:text-surface-400 mt-0.5">
-          {format(new Date(), "EEEE, d MMMM yyyy", { locale: ru })}
-        </p>
-      </div>
-
       {/* Проект-менеджер по разработке: его карточки этапов. Обычные задачи
           у него ниже своим блоком «Мои задачи» — дубля не делаем. */}
       {isDevTeam && (
@@ -647,16 +583,7 @@ function DashboardContent() {
   )
 }
 
-/**
- * Панель. Сверху — «Лента команды»: сторис сотрудников, как в инстаграме.
- * Она общая для всех ролей, поэтому вынесена над ролевым дашбордом, а не
- * продублирована внутри каждой ветки.
- */
+/** Панель: ролевой дашборд без общей шапки и ленты сторис. */
 export default function DashboardPage() {
-  return (
-    <div className="space-y-5">
-      <TeamStoriesBar />
-      <DashboardContent />
-    </div>
-  )
+  return <DashboardContent />
 }

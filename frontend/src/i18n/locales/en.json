@@ -60,7 +60,6 @@
     "archive": "Archive"
   },
   "dashboard": {
-    "greeting": "Good day",
     "myTasks": "My Tasks",
     "noTasks": "No tasks 🎉",
     "urgent": "Urgent",
