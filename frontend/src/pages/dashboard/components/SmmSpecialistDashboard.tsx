@@ -237,6 +237,15 @@ export default function SmmSpecialistDashboard() {
   // него остаётся висеть без списка, из которого её открыли.
   const closeDay = () => { setDayOpen(false); setOpenId(null) }
 
+  // Кнопка создания в нижней панели ведёт сюда с ?day=today: открываем
+  // сегодняшний день сразу, чтобы отметить сторис в одно касание.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('day') !== 'today') return
+    setSel(new Date())
+    setDayOpen(true)
+    window.history.replaceState({}, '', window.location.pathname)
+  }, [])
+
   // Окно дня: Esc закрывает, но только если поверх не открыта панель задачи —
   // иначе одно нажатие схлопнуло бы оба слоя. Страница под окном не листается.
   useEffect(() => {

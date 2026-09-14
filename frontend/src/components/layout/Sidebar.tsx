@@ -13,6 +13,7 @@ import {
   Activity,
 } from 'lucide-react'
 import clsx from 'clsx'
+import { useNavItems } from './navItems'
 
 /** Подпункты раздела «Финансы» (Fin System · WebRand). */
 const FINANCE_SUBNAV = [
@@ -61,58 +62,9 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
 
   const role = user?.role
   const secondaryRole = user?.secondaryRole
-  const isTopExec = role === 'founder' || role === 'co_founder'
 
-  const navItems: { to: string; icon: any; label: string; permission: Permission; exact?: boolean }[] = [
-    { to: '/',              icon: LayoutDashboard, label: t('nav.dashboard'),  permission: 'dashboard',         exact: true },
-    { to: '/finance',       icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
-    { to: '/smm',           icon: Megaphone,       label: 'СММ',               permission: 'dashboard' },
-    { to: '/my-notes',      icon: StickyNote,      label: 'Заметки',           permission: 'dashboard' },
-    // Поручения от руководства — есть у КАЖДОГО сотрудника (permission
-    // 'tasks.view' есть у всех ролей). Кроме основателя и со-основателя: они
-    // задачи выдают, а не получают, и следят за ними в Календаре (см. фильтр
-    // ниже). Сам маршрут им доступен — по ссылке из уведомления о закрытии
-    // задачи карточка должна открываться.
-    // Руководителю направления здесь полноценный список задач его сферы,
-    // а не кабинет полученных поручений — и подпись должна это отражать.
-    { to: '/tasks',         icon: ClipboardCheck,  label: isDevDirector(user) ? 'Задачи' : 'Задачи от руководителя', permission: 'tasks.view' },
-    { to: '/calendar',      icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
-    { to: '/analytics',     icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },
-    { to: '/archive',       icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
-    { to: '/employees',     icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
-    { to: '/employee-access', icon: ShieldCheck,   label: 'Доступы сотрудников', permission: 'users.manage' },
-    { to: '/clients',       icon: Contact,         label: 'База клиентов',     permission: 'clients.view' },
-    { to: '/onboarding',    icon: UserPlus,        label: 'Онбординг',         permission: 'clients.view' },
-    { to: '/tariffs',       icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
-    { to: '/risks',         icon: ShieldAlert,     label: 'Риски',             permission: 'risks.view' },
-    { to: '/security-log',  icon: Shield,          label: 'Журнал безопасности', permission: 'security-log.view' },
-    { to: '/team-activity', icon: Activity,        label: 'Активность команды', permission: 'team-activity.view' },
-    { to: '/ai',            icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
-  ]
-
-  const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
-  const filtered = navItems.filter(item => {
-    // Аналитика — не зона работы менеджеров продаж, ЕСЛИ им не выдали
-    // персональный грант на этот раздел.
-    if (isSalesManager && item.to === '/analytics' && !userCan(user, item.permission)) return false
-    // Онбординг: у sales_manager_smm встроен переключателем в Базу клиентов —
-    // отдельный пункт скрываем. У sales_manager_dev — отдельный пункт сайдбара
-    // (по запросу пользователя). Остальным ролям пункт не нужен.
-    if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
-    // «Заметки» — только сторисмейкер, и лишь пока возможность не отняли.
-    if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'notes.use')
-    // «Доступы сотрудников» — только основатель/сооснователь/админ.
-    if (item.to === '/employee-access') return canManageAccess(role)
-    // «СММ» (Умный календарь / Сторисы / Проекты) — вся СММ-команда + топ.
-    if (item.to === '/smm') return canSeeSmmSection(role)
-    // «Задачи от руководителя» — раздел получателя поручений. Основателю и
-    // со-основателю он не нужен: выданные ими задачи видны в Календаре (там же
-    // исполнитель, статус и правка). Маршрут остаётся рабочим для ссылок из
-    // уведомлений — прячем только пункт меню.
-    if (item.to === '/tasks') return !isTopExec
-    // Права роли + персональные гранты (например clients.view от clients.create).
-    return userCan(user, item.permission)
-  })
+  // Пункты и правила видимости — из общего модуля (их же берёт нижняя панель).
+  const filtered = useNavItems()
 
   // Навбар основателя: основные пункты на виду, остальные — под кнопкой «Ещё».
   // Прочие роли видят полный список без изменений.

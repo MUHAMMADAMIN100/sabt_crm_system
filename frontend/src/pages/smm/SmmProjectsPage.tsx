@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Plus, Archive, RotateCcw, LayoutGrid, Network } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -27,6 +27,16 @@ export default function SmmProjectsPage() {
   const navigate = useNavigate()
   const user = useAuthStore(s => s.user)
   const canCreate = CREATE_ROLES.includes((user as any)?.role ?? '')
+  // Открытие формы прямо по адресу: так на неё ведёт кнопка создания
+  // из нижней панели на телефоне.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('new') !== '1' || !canCreate) return
+    setShowCreate(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('new')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, canCreate])
   const canSeeLoad = LOAD_ROLES.includes((user as any)?.role ?? '')
   const [showCreate, setShowCreate] = useState(false)
   // Вкладки: активные / архив завершённых. Архив по умолчанию скрыт.
