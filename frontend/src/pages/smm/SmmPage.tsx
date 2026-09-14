@@ -817,13 +817,13 @@ function DayCell({ d, evs, isToday, blocked, droppable, cycles, onOpen, onDragSt
         + (dragOverKey === dISO ? 'ring-1 ring-inset ring-gray-400 ' : '')
         + (isToday ? 'bg-[#eb5757]/[0.06]' : weekend ? 'bg-gray-50/50 dark:bg-white/[0.015]' : '')}>
       {covering.length > 0 && (
-        <div className="-mx-1 -mt-1 mb-0.5 flex flex-col gap-[2px]">
+        <div className="-mx-1 -mt-1 mb-0.5 flex flex-col gap-[1px]">
           {covering.map(cy => {
             const isStart = dISO === cy.start
             const isEnd = dISO === cy.end
             return (
               <div key={cy.id} title={`${cy.name} · текущий цикл ${cy.start} → ${cy.end}`}
-                className="h-[4px]"
+                className="h-[2px]"
                 style={{
                   background: cy.color,
                   marginLeft: isStart ? 4 : 0, marginRight: isEnd ? 4 : 0,
