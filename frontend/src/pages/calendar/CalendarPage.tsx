@@ -1461,10 +1461,8 @@ function FounderQuickTaskForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) { toast.error(isMeeting ? 'Укажите название встречи' : 'Укажите название задачи'); return }
-    if (scope === 'business' && selectedIds.length === 0) {
-      toast.error('Выберите хотя бы одного участника')
-      return
-    }
+    // «Для бизнеса» без участника — можно: сервер запишет задачу на того,
+    // кто её создал, и её позже передадут сотруднику.
     if (!deadlineDate) {
       toast.error(isMeeting ? 'Укажите дату и время встречи' : 'Укажите дедлайн задачи')
       return

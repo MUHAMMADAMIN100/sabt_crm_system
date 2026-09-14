@@ -611,6 +611,15 @@ export class TasksService implements OnModuleInit {
       dto.projectId = undefined;
     }
 
+    // BUSINESS без выбранного исполнителя — задача на самого создателя.
+    // Раньше форма требовала участника и сохранить без него было нельзя;
+    // без хозяина задача не попала бы ни в чей календарь и потерялась бы.
+    // Уведомлений не будет: себя в рассылку не включаем (см. ниже).
+    if (scope === 'business' && !(this.extractAssigneeIds(dto)?.length)) {
+      dto.assigneeId = userId;
+      (dto as any).assigneeIds = [userId];
+    }
+
     // Multi-assignee: вычисляем итоговый список + основного исполнителя
     const incomingAssigneeIds = this.extractAssigneeIds(dto);
     if (incomingAssigneeIds && incomingAssigneeIds.length > 0) {
