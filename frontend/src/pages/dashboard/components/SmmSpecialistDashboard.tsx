@@ -135,8 +135,9 @@ export default function SmmSpecialistDashboard() {
     const ev = contentByDay[dstr] || []
     const reel = ev.filter(e => e.kind === 'publication' && (e.contentType === 'reel' || e.contentType === 'video')).length
     const maket = ev.filter(e => e.kind === 'publication' && e.contentType === 'design').length
+    const shoot = ev.filter(e => e.kind === 'shoot').length
     const story = Object.values(storyByDay[dstr] || {}).reduce((a, b) => a + b, 0)
-    return { reel, maket, story }
+    return { reel, maket, shoot, story }
   }
 
   // Просроченное: задача прошлых дней, которую не отметили готовой.
@@ -285,6 +286,12 @@ export default function SmmSpecialistDashboard() {
     storiesLeft > 0 ? `сторис по ${storiesLeft} ${plural(storiesLeft, 'проекту', 'проектам', 'проектам')}` : null,
   ].filter(Boolean)
 
+  // Телефон: цифры в ячейку не помещаются (≈35px полезной ширины), поэтому
+  // тип показываем точкой, а объём — её размером. Точка на каждую задачу не
+  // годится: в день бывает по 5–7 задач, ряд упирается в предел и дни
+  // перестают отличаться.
+  const dotSize = (n: number) => (n >= 5 ? 'w-2 h-2' : n >= 3 ? 'w-1.5 h-1.5' : 'w-1 h-1')
+
   const Chip = ({ letter, n, g }: { letter: string; n: number; g: string }) =>
     n > 0 ? <span className={clsx('text-[10px] font-extrabold px-1.5 py-0.5 rounded leading-none', GROUP_CLS[g])}>{letter} {n}</span> : null
 
@@ -332,6 +339,8 @@ export default function SmmSpecialistDashboard() {
             const key = dk(d)
             const c = counts(key)
             const late = overdueByDay[key] || 0
+            // Норма сторис именно на этот день: она зависит от числа дней в месяце.
+            const storyTarget = trackedProjects.reduce((sum: number, p: any) => sum + dailyTarget(p, d), 0)
             const isSel = isSameDay(d, sel)
             const t = isToday(d)
             return (
@@ -347,7 +356,25 @@ export default function SmmSpecialistDashboard() {
                 )}
               >
                 <span className={clsx('text-[11px] font-bold text-right leading-none', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
-                <span className="flex flex-wrap gap-1 mt-auto">
+
+                {/* Телефон: точка на тип, размер по объёму, снизу сторис за день. */}
+                <span className="sm:hidden mt-auto w-full">
+                  <span className="flex items-center gap-[3px] h-2">
+                    {late > 0 && <i className={clsx('rounded-full bg-red-500 shrink-0', dotSize(late))} />}
+                    {c.reel > 0 && <i className={clsx('rounded-full bg-primary-500 shrink-0', dotSize(c.reel))} />}
+                    {c.maket > 0 && <i className={clsx('rounded-full bg-amber-500 shrink-0', dotSize(c.maket))} />}
+                    {c.shoot > 0 && <i className={clsx('rounded-full bg-lime-500 shrink-0', dotSize(c.shoot))} />}
+                  </span>
+                  {storyTarget > 0 && (
+                    <span className="block h-[3px] rounded-full bg-surface-200 dark:bg-surface-700 mt-[3px] overflow-hidden">
+                      <i className="block h-full rounded-full bg-green-500"
+                        style={{ width: `${Math.round(Math.min(1, c.story / storyTarget) * 100)}%` }} />
+                    </span>
+                  )}
+                </span>
+
+                {/* Компьютер: ширины хватает, оставляем привычные цифры. */}
+                <span className="hidden sm:flex flex-wrap gap-1 mt-auto">
                   {late > 0 && <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded leading-none bg-red-500/15 text-red-500 dark:text-red-400" title="Просрочено">! {late}</span>}
                   <Chip letter="Р" n={c.reel} g="reel" />
                   <Chip letter="М" n={c.maket} g="maket" />
