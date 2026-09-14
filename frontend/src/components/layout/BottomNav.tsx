@@ -82,7 +82,32 @@ export default function BottomNav() {
     return list
   }, [user, navigate])
 
-  const tabCls = 'relative flex-1 flex flex-col items-center gap-[3px] pt-1.5 pb-1 min-h-[44px] rounded-xl'
+  const tabCls = 'relative flex flex-col items-center gap-[3px] pt-1.5 pb-1 min-h-[44px] rounded-xl'
+
+  // Кнопка создания стоит в средней колонке, поэтому разделы делятся на две
+  // части: два слева от неё, остальное справа.
+  const left = pinned.slice(0, 2)
+  const right = pinned.slice(2)
+
+  const renderTab = (i: ReturnType<typeof useNavItems>[number]) => (
+    <NavLink key={i.to} to={i.to} end={i.exact}
+      className={({ isActive }) => clsx(tabCls, isActive ? 'text-white' : 'text-white/45')}>
+      {({ isActive }) => (
+        <>
+          {isActive && <span className="absolute top-0.5 w-9 h-[26px] rounded-[9px] bg-primary-500/20" />}
+          <span className="relative">
+            <i.icon size={20} />
+            {i.to === '/tasks' && overdue > 0 && (
+              <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center border-[1.5px] border-[rgb(var(--sidebar-bg))]">
+                {overdue > 9 ? '9+' : overdue}
+              </span>
+            )}
+          </span>
+          <span className="relative text-[9.5px] font-semibold">{i.label.split(' ')[0]}</span>
+        </>
+      )}
+    </NavLink>
+  )
 
   return (
     <>
@@ -143,38 +168,29 @@ export default function BottomNav() {
       )}
 
       <nav className={clsx(
-        'lg:hidden fixed inset-x-0 bottom-0 z-30 flex items-end justify-between',
-        'bg-[rgb(var(--sidebar-bg))] border-t border-white/[.07]',
+        'lg:hidden fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 items-end',
         'px-2 pt-2 pb-[max(10px,env(safe-area-inset-bottom))]',
         'transition-transform duration-200',
         hidden && !more && !fan && 'translate-y-full',
       )}>
-        {pinned.map(i => (
-          <NavLink key={i.to} to={i.to} end={i.exact}
-            className={({ isActive }) => clsx(tabCls, isActive ? 'text-white' : 'text-white/45')}>
-            {({ isActive }) => (
-              <>
-                {isActive && <span className="absolute top-0.5 w-9 h-[26px] rounded-[9px] bg-primary-500/20" />}
-                <span className="relative">
-                  <i.icon size={20} />
-                  {i.to === '/tasks' && overdue > 0 && (
-                    <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center border-[1.5px] border-[rgb(var(--sidebar-bg))]">
-                      {overdue > 9 ? '9+' : overdue}
-                    </span>
-                  )}
-                </span>
-                <span className="relative text-[9.5px] font-semibold">{i.label.split(' ')[0]}</span>
-              </>
-            )}
-          </NavLink>
-        ))}
+        {/* Фон вынесен в подложку: вырез делается маской, а маска на самой
+            панели обрезала бы и кнопку, и подписи. Вырез прозрачный, поэтому
+            подкрашивать его под фон страницы не нужно. */}
+        <span aria-hidden className="absolute inset-0 bg-[rgb(var(--sidebar-bg))] border-t border-white/[.07]"
+          style={{
+            WebkitMaskImage: 'radial-gradient(circle 32px at 50% 0, transparent 31px, #000 32px)',
+            maskImage: 'radial-gradient(circle 32px at 50% 0, transparent 31px, #000 32px)',
+          }} />
+        {left.map(renderTab)}
 
         <button onClick={() => { setMore(false); setFan(v => !v) }} title="Создать"
-          className={clsx('shrink-0 w-[50px] h-[50px] -mt-5 mx-1 rounded-[18px] bg-primary-600 text-white',
+          className={clsx('relative justify-self-center w-[52px] h-[52px] -mt-7 rounded-full bg-primary-600 text-white',
             'flex items-center justify-center shadow-lg shadow-primary-600/40 transition-transform',
             fan && 'rotate-45')}>
-          <Plus size={23} strokeWidth={2.2} />
+          <Plus size={24} strokeWidth={2.2} />
         </button>
+
+        {right.map(renderTab)}
 
         <button onClick={() => { setFan(false); setMore(v => !v) }}
           className={clsx(tabCls, more ? 'text-white' : 'text-white/45')}>
