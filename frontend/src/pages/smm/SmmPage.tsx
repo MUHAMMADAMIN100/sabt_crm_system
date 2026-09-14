@@ -479,6 +479,12 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     // месяцах (его дни), остальное не подсвечивается. Двигается сам с датой.
     const ref = new Date()
     const out: { id: string; name: string; color: string; start: string; end: string }[] = []
+    // Линии рисуем только когда выбран РОВНО ОДИН проект. При нескольких
+    // полосы идут стопкой: чей цикл где начинается, всё равно не прочитать,
+    // а высота ячейки уходит на них вместо публикаций. На странице проекта
+    // календарь встроенный и сам выбирает свой проект, поэтому там линия
+    // остаётся (решение владельца, сентябрь 2026).
+    if (selProjects.size !== 1) return out
     for (const p of projects) {
       if (!selProjects.has(p.id) || !p.cycleStartDay) continue
       const { start, end } = activeCycle(p.cycleStartDay, p.cycleAnchor, ref)
