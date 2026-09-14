@@ -318,22 +318,6 @@ export default function SmmSpecialistDashboard() {
         </div>
       </div>
 
-      {/* Просроченное */}
-      {overdue.length > 0 && (
-        <div className="card border-red-200/70 dark:border-red-900/40">
-          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-red-500 dark:text-red-400 mb-2">
-            <AlertTriangle size={13} /> Просрочено · {overdue.length}
-          </div>
-          <div className="space-y-2">
-            {overdue.map(e => (
-              <TaskRow key={e.id} e={e} onToggle={() => toggleDone(e)} onInfo={() => setOpenId(e.id)}
-                onMove={d => moveTo(e, d)} onCancel={c => setCancelled(e, c)}
-                late={Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(e.date + 'T00:00:00')))} />
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Мини-месяц */}
       <div className="card">
         <div className="flex items-center justify-center gap-4 mb-3">
@@ -374,6 +358,22 @@ export default function SmmSpecialistDashboard() {
           })}
         </div>
       </div>
+
+      {/* Просроченное */}
+      {overdue.length > 0 && (
+        <div className="card border-red-200/70 dark:border-red-900/40">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-red-500 dark:text-red-400 mb-2">
+            <AlertTriangle size={13} /> Просрочено · {overdue.length}
+          </div>
+          <div className="space-y-2">
+            {overdue.map(e => (
+              <TaskRow key={e.id} e={e} onToggle={() => toggleDone(e)} onInfo={() => setOpenId(e.id)}
+                onMove={d => moveTo(e, d)} onCancel={c => setCancelled(e, c)}
+                late={Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(e.date + 'T00:00:00')))} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Детали дня — модальное окно, открывается кликом по дню в календаре */}
       {dayOpen && createPortal(
