@@ -70,6 +70,7 @@ export default function SmmSpecialistDashboard() {
   const [cursor, setCursor] = useState(() => new Date())
   const [sel, setSel] = useState(() => new Date())
   const [openId, setOpenId] = useState<string | null>(null)
+  const [dayOpen, setDayOpen] = useState(false)
   const [pendingStory, setPendingStory] = useState<Record<string, number>>({})
 
   const from = dk(startOfMonth(cursor))
@@ -231,6 +232,26 @@ export default function SmmSpecialistDashboard() {
     setPendingStory({})
   }
 
+  // Закрываем оба слоя разом: панель задачи открыта поверх окна дня и без
+  // него остаётся висеть без списка, из которого её открыли.
+  const closeDay = () => { setDayOpen(false); setOpenId(null) }
+
+  // Окно дня: Esc закрывает, но только если поверх не открыта панель задачи —
+  // иначе одно нажатие схлопнуло бы оба слоя. Страница под окном не листается.
+  useEffect(() => {
+    if (!dayOpen) return
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape' && !openId) setDayOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [dayOpen, openId])
+
   // ── Мини-календарь ──
   const monthStart = startOfMonth(cursor)
   const days = eachDayOfInterval({ start: monthStart, end: endOfMonth(cursor) })
@@ -332,7 +353,7 @@ export default function SmmSpecialistDashboard() {
             return (
               <button
                 key={key}
-                onClick={() => { setSel(d); setPendingStory({}) }}
+                onClick={() => { setSel(d); setPendingStory({}); setDayOpen(true) }}
                 className={clsx(
                   'min-h-[66px] rounded-xl border p-1.5 flex flex-col text-left transition',
                   t ? 'bg-primary-50 dark:bg-primary-900/20' : 'bg-surface-50 dark:bg-surface-800/40',
@@ -354,15 +375,22 @@ export default function SmmSpecialistDashboard() {
         </div>
       </div>
 
-      {/* Детали дня */}
-      <div className="card">
-        <div className="flex items-baseline gap-2.5 mb-3">
-          <h2 className="text-base font-bold text-surface-900 dark:text-surface-100">
-            {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM', { locale: ru })}
-          </h2>
-          <span className="text-xs text-surface-400 dark:text-surface-500">{selDone}/{selActive.length} задач</span>
-        </div>
-
+      {/* Детали дня — модальное окно, открывается кликом по дню в календаре */}
+      {dayOpen && createPortal(
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={closeDay} />
+          <div role="dialog" aria-label="Задачи дня"
+            className="relative w-full sm:max-w-2xl max-h-[88vh] sm:max-h-[85vh] flex flex-col bg-white dark:bg-surface-900 rounded-t-[22px] sm:rounded-2xl sm:border border-surface-200 dark:border-surface-700 shadow-2xl">
+            <div className="sm:hidden pt-2 pb-1"><div className="w-10 h-[5px] rounded-full bg-surface-300 dark:bg-surface-600 mx-auto" /></div>
+            <div className="flex items-baseline gap-2.5 px-4 sm:px-5 pt-3 sm:pt-4 pb-3">
+              <h2 className="text-base font-bold text-surface-900 dark:text-surface-100 first-letter:uppercase">
+                {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM, EEEE', { locale: ru })}
+              </h2>
+              <span className="text-xs text-surface-400 dark:text-surface-500">{selDone}/{selActive.length} задач</span>
+              <button onClick={closeDay} title="Закрыть"
+                className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:text-surface-800 dark:hover:text-surface-200 flex items-center justify-center self-center"><X size={15} /></button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 sm:px-5 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))]">
         <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">Задачи</div>
         {selEvents.length === 0 ? (
           <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
@@ -405,7 +433,11 @@ export default function SmmSpecialistDashboard() {
             </div>
           </>
         )}
-      </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {/* Модалка задачи */}
       {openEvent && (
