@@ -78,10 +78,12 @@ export class ProjectsController {
     return this.service.setStoriesArchived(id, dto.archived, req.user);
   }
 
-  /** Настройки месячного цикла SMM-проекта (Умный календарь): день старта
-   *  (1..31) + норма за цикл (рилсы/посты). null у поля — сбросить его. */
+  /** Настройки месячного цикла проекта (Умный календарь): день старта
+   *  (1..31) + норма за цикл (рилсы/посты). null у поля — сбросить его.
+   *  Разделы «СММ» и «Разработка» пользуются одним календарём, поэтому
+   *  помимо SMM-ролей допущена команда разработки. */
   @Patch(':id/smm-cycle')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
   setSmmCycle(
     @Param('id') id: string,
     @Body() body: { day?: number | null; normReels?: number | null; normPosts?: number | null; storiesPerMonth?: number | null },
@@ -97,9 +99,9 @@ export class ProjectsController {
     return this.service.getSmmProfile(id);
   }
 
-  /** Редактируют только SMM и владелец/руководство. */
+  /** Редактируют SMM/разработка и владелец/руководство. */
   @Patch(':id/smm-profile')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
   setSmmProfile(
     @Param('id') id: string,
     @Body() body: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[] },

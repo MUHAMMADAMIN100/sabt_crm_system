@@ -34,6 +34,20 @@ const SMM_SUBNAV = [
   { to: '/smm/projects', label: 'Проекты', icon: FolderKanban },
 ]
 
+/** Подпункты раздела «Разработка» — устроен точь-в-точь как «СММ»,
+ *  только без «Сторисов» (для dev-проектов они не нужны). */
+const DEV_SUBNAV = [
+  { to: '/dev', label: 'Умный календарь', icon: CalendarRange, exact: true },
+  { to: '/dev/projects', label: 'Проекты', icon: FolderKanban },
+]
+
+/** Раскрывающиеся разделы с подпунктами: путь пункта меню → его подменю.
+ *  «СММ» и «Разработка» рендерятся одним и тем же блоком. */
+const SECTION_SUBNAV: Record<string, typeof SMM_SUBNAV> = {
+  '/smm': SMM_SUBNAV,
+  '/dev': DEV_SUBNAV,
+}
+
 interface SidebarProps { open: boolean; onClose: () => void; onToggle: () => void }
 
 /** Тёмный сайдбар в корпоративном стиле (по референсу GRANT CHINA, но с
@@ -51,8 +65,12 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
   const open = pinnedOpen || hovered
   const financeActive = location.pathname === '/finance' || location.pathname.startsWith('/finance/')
   const [financeOpen, setFinanceOpen] = useState(financeActive)
-  const smmActive = location.pathname === '/smm' || location.pathname.startsWith('/smm/')
-  const [smmOpen, setSmmOpen] = useState(smmActive)
+  // Раскрытость разделов с подменю («СММ», «Разработка») — по одному флагу
+  // на раздел; изначально раскрыт тот, внутри которого находится страница.
+  const sectionActive = (base: string) => location.pathname === base || location.pathname.startsWith(base + '/')
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(Object.keys(SECTION_SUBNAV).map(base => [base, sectionActive(base)])))
+  const toggleSection = (base: string) => setOpenSections(prev => ({ ...prev, [base]: !prev[base] }))
   // «Ещё» — свёрнутая нижняя группа навбара (только у основателя).
   const [moreOpen, setMoreOpen] = useState(false)
 
@@ -70,7 +88,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
   // Прочие роли видят полный список без изменений.
   const isFounder = role === 'founder'
   const FOUNDER_CORE = new Set<string>([
-    '/', '/finance', '/smm', '/calendar',
+    '/', '/finance', '/smm', '/dev', '/calendar',
     '/analytics', '/employees', '/clients', '/ai',
   ])
   const coreItems = isFounder ? filtered.filter(i => FOUNDER_CORE.has(i.to)) : filtered
@@ -220,16 +238,19 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                 </li>
               )
             }
-            // «СММ» — раскрывающийся раздел с подпунктами (первый — Умный календарь).
-            if (item.to === '/smm') {
+            // «СММ» / «Разработка» — раскрывающиеся разделы с подпунктами
+            // (первый — Умный календарь). Один блок на оба раздела.
+            if (SECTION_SUBNAV[item.to]) {
+              const isSecActive = sectionActive(item.to)
+              const isSecOpen = !!openSections[item.to]
               return (
                 <li key={item.to}>
                   <button
                     type="button"
-                    onClick={() => (open ? setSmmOpen(v => !v) : handleNavClick())}
+                    onClick={() => (open ? toggleSection(item.to) : handleNavClick())}
                     className={clsx(
                       'group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                      smmActive
+                      isSecActive
                         ? 'bg-[#696bdc] text-white shadow-sm'
                         : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
                       !open && 'lg:justify-center lg:px-2 lg:gap-0',
@@ -244,12 +265,12 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                       {item.label}
                     </span>
                     {open && (
-                      <ChevronDown size={15} className={clsx('ml-auto shrink-0 transition-transform', smmOpen && 'rotate-180')} />
+                      <ChevronDown size={15} className={clsx('ml-auto shrink-0 transition-transform', isSecOpen && 'rotate-180')} />
                     )}
                   </button>
-                  {open && smmOpen && (
+                  {open && isSecOpen && (
                     <ul className="mt-1 ml-3 pl-3 border-l border-white/10 space-y-0.5">
-                      {SMM_SUBNAV.map(sub => (
+                      {SECTION_SUBNAV[item.to].map(sub => (
                         <li key={sub.to}>
                           <NavLink
                             to={sub.to}

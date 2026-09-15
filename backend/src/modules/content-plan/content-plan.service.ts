@@ -11,6 +11,7 @@ import { ShootSession } from './shoot-session.entity';
 import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity';
 import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
+import { DEV_PROJECT_TYPES } from '../../common/sales-segment';
 import { AppGateway } from '../gateway/app.gateway';
 
 export interface ContentPlanFilters {
@@ -496,11 +497,15 @@ export class ContentPlanService {
   }
 
   /**
-   * Календарь производства SMM за месяц: что и когда ПУБЛИКОВАТЬ (из контент-
+   * Календарь производства за месяц: что и когда ПУБЛИКОВАТЬ (из контент-
    * плана, по publishDate) и что и когда СНИМАТЬ (из shoot_sessions, по date).
    * Фокус на проектах руководителя, без KPI. Готовность/цвет считает фронт.
+   *
+   * segment — чьи проекты отдавать: 'smm' (по умолчанию) или 'dev' — раздел
+   * «Разработка» использует тот же умный календарь, но с dev-проектами
+   * (типы из DEV_PROJECT_TYPES; в БД legacy-значение 'Web сайт').
    */
-  async smmCalendar(from?: string, to?: string) {
+  async smmCalendar(from?: string, to?: string, segment: 'smm' | 'dev' = 'smm') {
     // Диапазон дат [from, to] (YYYY-MM-DD). По умолчанию — текущий месяц.
     const ym = this.currentYm();
     const f = from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : `${ym}-01`;
@@ -508,7 +513,8 @@ export class ContentPlanService {
     const t = to && /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : `${ym}-${String(lastDay).padStart(2, '0')}`;
 
     const projectRepo = this.repo.manager.getRepository(Project);
-    const all = await projectRepo.find({ where: { projectType: 'SMM' } });
+    const types = segment === 'dev' ? DEV_PROJECT_TYPES : ['SMM'];
+    const all = await projectRepo.find({ where: { projectType: In(types) } });
     const active = all.filter(p => String(p.status) !== 'archived');
     const nameById = new Map(active.map(p => [p.id, p.name] as const));
     // Даты проекта (начало работы / конец) — для окна «Настройки проекта».

@@ -17,3 +17,12 @@ export function projectTypeLabel(type?: string | null): string {
   if (!type) return ''
   return PROJECT_TYPE_LABELS[type] || type
 }
+
+/** Все типы dev-проектов — двойник DEV_PROJECT_TYPES бэкенда
+ *  (backend/src/common/sales-segment.ts). По ним раздел «Разработка»
+ *  отбирает свои проекты. */
+export const DEV_PROJECT_TYPES = ['Web сайт', 'Лендинг', 'Телеграм бот', 'CRM система', 'Интернет магазин']
+
+export function isDevProjectType(type?: string | null): boolean {
+  return DEV_PROJECT_TYPES.includes(type || '')
+}

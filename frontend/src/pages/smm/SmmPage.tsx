@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import { useSmmSection, SECTION_BASE } from './smmShared'
 
 export type Ev = {
   id: string; itemId?: string; shootId?: string; kind: 'shoot' | 'publication'; date: string
@@ -164,6 +165,9 @@ const VIEWS: { k: View; label: string }[] = [
 // ═══════════════════════════════════════════════════════════════════════
 export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: string } = {}) {
   const navigate = useNavigate()
+  // Раздел: 'smm' — обычный СММ-календарь, 'dev' — тот же календарь, но
+  // с проектами «Разработки» (провайдер стоит на роутах /dev/*).
+  const section = useSmmSection()
   const user = useAuthStore(s => s.user)
   // Съёмки видят видеографы всегда; остальные — только когда выбран проект (фильтр по плитке).
   const isVideographer = ['videographer', 'video_director', 'video_editor'].includes(user?.role ?? '')
@@ -203,8 +207,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   }, [view, cursor])
 
   const { data, isLoading } = useQuery<CalData>({
-    queryKey: ['smm-calendar', from, to],
-    queryFn: () => contentPlanApi.smmCalendar({ from, to }),
+    queryKey: ['smm-calendar', section, from, to],
+    queryFn: () => contentPlanApi.smmCalendar({ from, to, segment: section }),
     placeholderData: keepPreviousData,
   })
 
@@ -623,7 +627,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
           onClose={() => setProjSettings(null)}
           onSave={(day, normReels, normPosts, anchor) => cycleMut.mutate({ id: projSettings.id, day, normReels, normPosts, anchor })}
           onClear={() => clearMut.mutate(projSettings.id)}
-          onOpen={() => navigate(`/smm/projects/${projSettings.id}`)} />
+          onOpen={() => navigate(`${SECTION_BASE[section]}/projects/${projSettings.id}`)} />
       )}
     </div>
   )

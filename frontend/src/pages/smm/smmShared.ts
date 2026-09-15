@@ -2,6 +2,19 @@
 // палитра/цвет проекта и границы месячного цикла. Алгоритм совпадает с
 // SmmPage — те же цвета на всех страницах.
 
+import { createContext, useContext } from 'react'
+
+/** Раздел, в котором работают страницы умного календаря: «СММ» ('smm') или
+ *  «Разработка» ('dev'). Одни и те же страницы обслуживают оба раздела —
+ *  различаются только проекты (SMM против dev-типов) и базовый путь.
+ *  Провайдер ставится на роуте (/dev/*), поэтому встроенный календарь на
+ *  странице проекта наследует раздел без проброса пропсов. */
+export type SmmSection = 'smm' | 'dev'
+export const SmmSectionContext = createContext<SmmSection>('smm')
+export const useSmmSection = (): SmmSection => useContext(SmmSectionContext)
+/** База путей раздела: `${base}/projects/…`. */
+export const SECTION_BASE: Record<SmmSection, string> = { smm: '/smm', dev: '/dev' }
+
 export const PROJ_COLORS = ['#e0865a', '#d9b74a', '#a7c14f', '#5fbd80', '#3fb6a0', '#4aa6cf', '#6f8bea', '#9a7be0', '#c77be0', '#e07ac0', '#e07a90', '#d0616a', '#c08a5a', '#8a97a6']
 
 const _projColorMap = new Map<string, string>()

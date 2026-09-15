@@ -1,12 +1,12 @@
 import { useTranslation } from '@/i18n'
 import { useAuthStore } from '@/store/auth.store'
 import {
-  canManageAccess, canSeeProjectStories, canSeeSmmSection, isDevDirector, userCan,
+  canManageAccess, canSeeProjectStories, canSeeSmmSection, canSeeDevSection, isDevDirector, userCan,
   type Permission,
 } from '@/lib/permissions'
 import {
   LayoutDashboard, Wallet, Megaphone, StickyNote, ClipboardCheck, Calendar, BarChart3,
-  Archive, Users, ShieldCheck, Contact, UserPlus, Tag, ShieldAlert, Shield, Activity, Sparkles,
+  Archive, Users, ShieldCheck, Contact, UserPlus, Tag, ShieldAlert, Shield, Activity, Sparkles, Code2,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -33,6 +33,7 @@ export function useNavItems(): NavItem[] {
     { to: '/',                icon: LayoutDashboard, label: t('nav.dashboard'), permission: 'dashboard', exact: true },
     { to: '/finance',         icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
     { to: '/smm',             icon: Megaphone,       label: 'СММ',               permission: 'dashboard' },
+    { to: '/dev',             icon: Code2,           label: 'Разработка',        permission: 'dashboard' },
     { to: '/my-notes',        icon: StickyNote,      label: 'Заметки',           permission: 'dashboard' },
     { to: '/tasks',           icon: ClipboardCheck,  label: isDevDirector(user) ? 'Задачи' : 'Задачи от руководителя', permission: 'tasks.view' },
     { to: '/calendar',        icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
@@ -55,6 +56,7 @@ export function useNavItems(): NavItem[] {
     if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'notes.use')
     if (item.to === '/employee-access') return canManageAccess(role)
     if (item.to === '/smm') return canSeeSmmSection(role)
+    if (item.to === '/dev') return canSeeDevSection(role)
     if (item.to === '/tasks') return !isTopExec
     return userCan(user, item.permission)
   })

@@ -398,6 +398,13 @@ export function canSeeSmmSection(role?: string | null): boolean {
   return ['founder', 'co_founder', 'admin', 'smm_director', 'smm_specialist'].includes(role || '')
 }
 
+/** Раздел «Разработка» (Умный календарь / Проекты) — команда разработки
+ *  и топ-менеджмент. Зеркально canSeeSmmSection; роли совпадают с бэкендом
+ *  (эндпоинт smm-calendar c segment=dev). */
+export function canSeeDevSection(role?: string | null): boolean {
+  return ['founder', 'co_founder', 'admin', 'dev_director', 'pm_dev', 'developer'].includes(role || '')
+}
+
 /** Комбинированный лейбл ролей: «Видеограф / Монтажёр». */
 export function getCombinedRoleLabel(
   role: string | undefined | null,
@@ -488,6 +495,8 @@ export function canAccessRoute(
   if (route === '/smm-daily') return false
   // «СММ» и все подстраницы (Умный календарь / Сторисы / Проекты) — СММ-команда + топ.
   if (route === '/smm' || route.startsWith('/smm/')) return canSeeSmmSection(role)
+  // «Разработка» и подстраницы (Умный календарь / Проекты) — dev-команда + топ.
+  if (route === '/dev' || route.startsWith('/dev/')) return canSeeDevSection(role)
   // «Активность команды» — мониторинг для основателя/админа. Сооснователь
   // (за которым в т.ч. и следят) эту страницу не видит.
   if (route === '/team-activity') return role === 'founder' || role === 'admin'

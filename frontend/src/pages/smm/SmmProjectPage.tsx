@@ -8,7 +8,7 @@ import { contentPlanApi, projectsApi, usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Avatar } from '@/components/ui'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, type SmmProj } from './smmShared'
+import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, useSmmSection, SECTION_BASE, type SmmProj } from './smmShared'
 import SmmPage from './SmmPage'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
@@ -179,6 +179,9 @@ function WeBrandLogo({ height = 30 }: { height?: number }) {
 export default function SmmProjectPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  // Раздел ('smm' | 'dev') — страница обслуживает и СММ, и «Разработку».
+  const section = useSmmSection()
+  const base = SECTION_BASE[section]
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const canEdit = EDIT_ROLES.includes((user as any)?.role ?? '')
@@ -192,7 +195,7 @@ export default function SmmProjectPage() {
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   const monthPref = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const monthTitle = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`
-  const { data, isLoading } = useQuery<CalData>({ queryKey: ['smm-calendar', from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to }) })
+  const { data, isLoading } = useQuery<CalData>({ queryKey: ['smm-calendar', section, from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to, segment: section }) })
   const { data: profile } = useQuery<SmmProfile>({ queryKey: ['smm-profile', id], queryFn: () => projectsApi.getSmmProfile(id!), enabled: !!id })
 
   const saveMut = useMutation({
@@ -214,7 +217,7 @@ export default function SmmProjectPage() {
   // активного списка и календаря SMM, история сохраняется, можно вернуть из «Архива»).
   const archiveMut = useMutation({
     mutationFn: () => projectsApi.archive(id!),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); qc.invalidateQueries({ queryKey: ['smm-archived'] }); toast.success('Сотрудничество завершено — проект в архиве'); navigate('/smm/projects') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); qc.invalidateQueries({ queryKey: ['smm-archived'] }); toast.success('Сотрудничество завершено — проект в архиве'); navigate(`${base}/projects`) },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось завершить'),
   })
 

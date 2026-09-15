@@ -6,13 +6,18 @@ import { Film, Image as ImageIcon, Loader2, X, ArrowRight, ArrowLeft, Check } fr
 import toast from 'react-hot-toast'
 import { projectsApi, contentPlanApi } from '@/services/api.service'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { useSmmSection, SECTION_BASE } from './smmShared'
 
 const inp = 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-gray-400 dark:focus:border-gray-500 w-full'
 
-// Модалка создания SMM-проекта — мастер из 2 шагов: ① проект и норма → ② клиент.
-// «Создать» → проект (тип SMM, smmData одним запросом, без тарифа) → генерация контента → страница проекта.
+// Модалка создания проекта — мастер из 2 шагов: ① проект и норма → ② клиент.
+// «Создать» → проект (smmData одним запросом, без тарифа) → генерация контента → страница проекта.
+// Раздел задаёт тип проекта: СММ → 'SMM', «Разработка» → 'Web сайт'
+// (legacy-значение в БД, в интерфейсе показывается как «Разработка»).
 export default function SmmProjectCreateModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
+  const section = useSmmSection()
+  const base = SECTION_BASE[section]
   const qc = useQueryClient()
   const [step, setStep] = useState<1 | 2>(1)
   const [name, setName] = useState('')
@@ -48,7 +53,7 @@ export default function SmmProjectCreateModal({ onClose }: { onClose: () => void
       if (keyDateNote.trim()) smmData.keyDateNote = keyDateNote.trim()
       if (collabSince) smmData.collabSince = collabSince
       if (preferences.trim()) smmData.preferences = preferences.trim()
-      const created: any = await projectsApi.create({ name: name.trim(), projectType: 'SMM', allowNoTariff: true, smmData })
+      const created: any = await projectsApi.create({ name: name.trim(), projectType: section === 'dev' ? 'Web сайт' : 'SMM', allowNoTariff: true, smmData })
       if (created?.id) {
         try { await contentPlanApi.smartGenerate({ projectId: created.id, reels: smmData.normReels, posts: smmData.normPosts }) }
         catch { /* нет прав/ошибка — проект уже создан */ }
@@ -59,7 +64,7 @@ export default function SmmProjectCreateModal({ onClose }: { onClose: () => void
       qc.invalidateQueries({ queryKey: ['smm-calendar'] })
       toast.success('Проект создан')
       onClose()
-      navigate(created?.id ? `/smm/projects/${created.id}` : '/smm/projects')
+      navigate(created?.id ? `${base}/projects/${created.id}` : `${base}/projects`)
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось создать проект'),
   })
@@ -94,7 +99,7 @@ export default function SmmProjectCreateModal({ onClose }: { onClose: () => void
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
           <div>
-            <h2 className="text-lg font-bold leading-tight">Новый SMM-проект</h2>
+            <h2 className="text-lg font-bold leading-tight">{section === 'dev' ? 'Новый проект разработки' : 'Новый SMM-проект'}</h2>
             <p className="text-xs text-gray-400 mt-0.5">{step === 1 ? 'Шаг 1 из 2 — проект и норма' : 'Шаг 2 из 2 — данные клиента'}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>

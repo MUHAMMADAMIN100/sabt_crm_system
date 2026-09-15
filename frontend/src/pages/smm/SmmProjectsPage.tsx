@@ -6,16 +6,22 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { assignProjectColors, projColor, type SmmProj } from './smmShared'
+import { isDevProjectType } from '@/lib/projectType'
+import { assignProjectColors, projColor, useSmmSection, SECTION_BASE, type SmmProj } from './smmShared'
 import SmmProjectCreateModal from './SmmProjectCreateModal'
 import { SmmProjectCardBox, CARD_CLS, type SmmCard } from './SmmProjectCard'
 import SmmSpecialistBoard from './SmmSpecialistBoard'
 
-// Кто может создавать проекты (как на основной странице «Проекты»).
-// СММ-специалист тоже может добавлять проект (по просьбе владельца).
-const CREATE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm', 'smm_specialist']
+// Кто может создавать проекты (как на основной странице «Проекты») — по разделам.
+// СММ-специалист тоже может добавлять проект (по просьбе владельца); в
+// «Разработке» — только роли с нативным правом projects.create.
+const CREATE_ROLES: Record<'smm' | 'dev', string[]> = {
+  smm: ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm', 'smm_specialist'],
+  dev: ['admin', 'founder', 'co_founder', 'dev_director', 'sales_manager_dev'],
+}
 // Кто видит схему нагрузки СММ (кто ведёт какие проекты). Специалист её ВИДИТ,
 // но переставлять проекты не может (DnD-переназначение отключено в доске).
+// Схема — про СММ-специалистов, в разделе «Разработка» не показывается.
 const LOAD_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist']
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string }
@@ -25,8 +31,10 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 
 export default function SmmProjectsPage() {
   const navigate = useNavigate()
+  const section = useSmmSection()
+  const base = SECTION_BASE[section]
   const user = useAuthStore(s => s.user)
-  const canCreate = CREATE_ROLES.includes((user as any)?.role ?? '')
+  const canCreate = CREATE_ROLES[section].includes((user as any)?.role ?? '')
   // Открытие формы прямо по адресу: так на неё ведёт кнопка создания
   // из нижней панели на телефоне.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -37,7 +45,7 @@ export default function SmmProjectsPage() {
     next.delete('new')
     setSearchParams(next, { replace: true })
   }, [searchParams, canCreate])
-  const canSeeLoad = LOAD_ROLES.includes((user as any)?.role ?? '')
+  const canSeeLoad = section === 'smm' && LOAD_ROLES.includes((user as any)?.role ?? '')
   const [showCreate, setShowCreate] = useState(false)
   // Вкладки: активные / архив завершённых. Архив по умолчанию скрыт.
   const [tab, setTab] = useState<'active' | 'archived'>('active')
@@ -50,22 +58,23 @@ export default function SmmProjectsPage() {
   const to = iso(new Date(now.getFullYear(), now.getMonth() + 1, 0))
 
   const { data, isLoading } = useQuery<CalData>({
-    queryKey: ['smm-calendar', from, to],
-    queryFn: () => contentPlanApi.smmCalendar({ from, to }),
+    queryKey: ['smm-calendar', section, from, to],
+    queryFn: () => contentPlanApi.smmCalendar({ from, to, segment: section }),
   })
 
   const projects = data?.projects ?? []
   const backlog = data?.backlog ?? []
   const events = data?.events ?? []
 
-  // Архив — завершённые SMM-проекты (isArchived=true). Для восстановления.
+  // Архив — завершённые проекты раздела (isArchived=true). Для восстановления.
   const qc = useQueryClient()
   const { data: archivedData } = useQuery<any[]>({
     queryKey: ['smm-archived'],
     queryFn: () => projectsApi.list({ archived: 'true' }),
     enabled: canCreate,
   })
-  const archived = ((archivedData as any[]) || []).filter(p => p.projectType === 'SMM')
+  const archived = ((archivedData as any[]) || []).filter(p =>
+    section === 'dev' ? isDevProjectType(p.projectType) : p.projectType === 'SMM')
   const restoreMut = useMutation({
     mutationFn: (pid: string) => projectsApi.restore(pid),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-archived'] }); qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Проект возвращён') },
@@ -160,7 +169,7 @@ export default function SmmProjectsPage() {
           ) : (
             <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
               {cards.map(c => (
-                <button key={c.id} type="button" onClick={() => navigate(`/smm/projects/${c.id}`)}
+                <button key={c.id} type="button" onClick={() => navigate(`${base}/projects/${c.id}`)}
                   className={CARD_CLS + ' text-left w-full hover:border-gray-300 dark:hover:border-gray-600'}>
                   <SmmProjectCardBox c={c} />
                 </button>
