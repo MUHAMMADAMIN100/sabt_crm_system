@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare, Palette } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare, Palette, AlertCircle, ArrowRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
@@ -111,6 +111,24 @@ const prepFKind = (e: { parentKind?: string | null }): FKind => e.parentKind ===
 type SelState = { ids: Set<string>; reel: string | null; active: boolean; onSelect: (e: Ev | null) => void; onHover: (e: Ev | null) => void; ghosts?: Set<string> }
 const SelCtx = createContext<SelState>({ ids: new Set(), reel: null, active: false, onSelect: () => {}, onHover: () => {} })
 
+// Режим календаря: «План» — публикации, «Производство» — съёмки и дизайн.
+// Режимы разводят пары «съёмка↔рилс» по разным экранам, поэтому линии-связки
+// больше не нужны: связь показывается подписью на карточке.
+type CalMode = 'plan' | 'prod'
+type CalState = { mode: CalMode; prepByReel: Map<string, Ev>; today: string; soon: string; showDone: boolean; setShowDone: (v: boolean) => void }
+const CalCtx = createContext<CalState>({ mode: 'plan', prepByReel: new Map(), today: '', soon: '', showDone: false, setShowDone: () => {} })
+const MODE_KINDS: Record<CalMode, FKind[]> = { plan: ['reel', 'design', 'oneoff'], prod: ['shoot', 'designprep', 'oneoff'] }
+// Срочность: просроченное и горящее поднимаются наверх ячейки, чтобы попасть
+// в четыре видимые карточки.
+function urgency(e: Ev, c: { prepByReel: Map<string, Ev>; today: string; soon: string }): number {
+  if (isDone(e)) return 0
+  if (e.date && e.date < c.today) return 2
+  if (e.kind === 'shoot') return e.reelDate && e.reelDate <= c.soon ? 2 : 0
+  const pi = e.itemId ? c.prepByReel.get(e.itemId) : undefined
+  if (pi && !isDone(pi) && (!pi.date || pi.date < c.today)) return 2
+  return 0
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────
 export function monthTitle(ym: string): string {
   const [y, m] = ym.split('-').map(Number)
@@ -185,6 +203,19 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   })
   // Фильтр по типу в шапке (пусто = все типы).
   const [selTypes, setSelTypes] = useState<Set<FKind>>(new Set())
+  // Видеограф по умолчанию в «Производстве», остальные в «Плане»; выбор запоминаем.
+  const [mode, setModeState] = useState<CalMode>(() => {
+    try { const v = localStorage.getItem('smmCalMode'); if (v === 'plan' || v === 'prod') return v } catch { /* ignore */ }
+    return isVideographer ? 'prod' : 'plan'
+  })
+  const setMode = (m: CalMode) => {
+    setModeState(m)
+    try { localStorage.setItem('smmCalMode', m) } catch { /* ignore */ }
+    // Типы другого режима сбрасываем, иначе фильтр молча спрячет всё.
+    setSelTypes(prev => new Set([...prev].filter(k => MODE_KINDS[m].includes(k))))
+  }
+  const [showDone, setShowDoneState] = useState<boolean>(() => { try { return localStorage.getItem('smmShowDone') === '1' } catch { return false } })
+  const setShowDone = (v: boolean) => { setShowDoneState(v); try { localStorage.setItem('smmShowDone', v ? '1' : '0') } catch { /* ignore */ } }
   const toggleType = (k: FKind) => setSelTypes(prev => {
     const next = new Set(prev)
     if (next.has(k)) next.delete(k); else next.add(k)
@@ -424,36 +455,37 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   // Основной вид: проект + поиск + без сторис. Авто-съёмки (kind='shoot' со связью reelId — приходят
   // с бэкенда отдельными позициями) видят видеографы всегда, остальные — только при выбранном проекте.
   // Съёмка — реальная позиция контент-плана, двигается независимо от рилса.
-  // Скрытая съёмка, которую надо раскрыть, потому что в фокусе (навели/кликнули на её рилс).
-  // null почти всегда → mainEvents не пересчитывается на каждый hover, только при реальном раскрытии.
-  const revealShootId = useMemo(() => {
-    for (const id of selInfo.ids) {
-      const e = allEvents.find(x => x.id === id)
-      if (e && e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId) && !selTypes.has(prepFKind(e))) return id
-    }
-    return null
-  }, [selInfo, allEvents, isVideographer, selProjects, selTypes])
   const mainEvents = useMemo(() => allEvents.filter(e => {
-    // Съёмку из активной пары (наведение/клик по рилсу) показываем ВСЕГДА — даже если она скрыта:
-    // так при наведении на рилс видно, когда его съёмка (без выбора проекта).
-    if (e.kind === 'shoot' && e.id === revealShootId) return true
-    // Задачи подготовки (Съёмка/Дизайн) больше НЕ прячем полностью: оставляем в
-    // потоке как бледные «призраки» (резервируют слоты по порядку, подсветка при
-    // наведении). Бледность считается в ghostShootIds. Раньше тут был return false.
+    if (mode === 'plan' ? e.kind !== 'publication' : e.kind !== 'shoot') return false
+    // В неделе и дне готовое прячем целиком; в месяце оставляем — там оно
+    // сворачивается в счётчик «✓ N готово» внутри ячейки.
+    if (!showDone && view !== 'month' && isDone(e)) return false
     return (selProjects.size === 0 || selProjects.has(e.projectId))
       && (selTypes.size === 0 || FKINDS.some(k => selTypes.has(k) && matchesFKind(e, k)))
       && matchSearch(e, search)
       && !(e.kind === 'publication' && e.contentType === 'story')
-  }), [allEvents, selProjects, selTypes, search, isVideographer, revealShootId])
-  // «Призраки» — задачи подготовки, которые показываем бледно (не выбран проект,
-  // не видеограф, не включён фильтр «Съёмка»). При наведении на родителя — ярко.
-  const ghostShootIds = useMemo(() => {
-    const s = new Set<string>()
+  }), [allEvents, selProjects, selTypes, search, mode, showDone, view])
+
+  // Подготовка по id родителя — для значка её состояния на карточке публикации.
+  const prepByReel = useMemo(() => {
+    const m = new Map<string, Ev>()
+    for (const e of allEvents) if (e.kind === 'shoot' && e.reelId) m.set(e.reelId, e)
+    return m
+  }, [allEvents])
+
+  // Счётчики на переключателе: незакрытая работа за месяц в шапке. Месяц
+  // считаем здесь же — переменная месяца объявлена ниже по компоненту.
+  const modeCounts = useMemo(() => {
+    const ym = format(cursor, 'yyyy-MM')
+    const c = { plan: 0, prod: 0 }
     for (const e of allEvents) {
-      if (e.kind === 'shoot' && e.reelId && !isVideographer && !selProjects.has(e.projectId) && !selTypes.has(prepFKind(e))) s.add(e.id)
+      if (!e.date || !e.date.startsWith(ym) || isDone(e)) continue
+      if (selProjects.size > 0 && !selProjects.has(e.projectId)) continue
+      if (e.kind === 'publication' && e.contentType !== 'story') c.plan++
+      else if (e.kind === 'shoot') c.prod++
     }
-    return s
-  }, [allEvents, isVideographer, selProjects, selTypes])
+    return c
+  }, [allEvents, cursor, selProjects])
 
   const mainByDate = useMemo(() => {
     const map = new Map<string, Ev[]>()
@@ -548,7 +580,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
                     className={'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-left hover:bg-gray-100 dark:hover:bg-gray-800 ' + (selTypes.size === 0 ? 'font-semibold' : '')}>
                     Все типы {selTypes.size === 0 && <Check size={14} className="ml-auto text-gray-400 shrink-0" />}
                   </button>
-                  {FKINDS.map(k => {
+                  {FKINDS.filter(k => MODE_KINDS[mode].includes(k)).map(k => {
                     const Ic = FKIND_ICON[k]
                     return (
                       <button key={k} onClick={() => toggleType(k)}
@@ -563,6 +595,23 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
               </>
             )}
           </div>
+          {view !== 'stories' && (
+            <div className="inline-flex rounded-lg bg-gray-100 dark:bg-gray-800/70 p-0.5">
+              {([['plan', 'План'], ['prod', 'Производство']] as const).map(([k, label]) => (
+                <button key={k} onClick={() => setMode(k)}
+                  className={'px-3 py-1.5 text-[13px] font-semibold rounded-md transition inline-flex items-center gap-1.5 ' + (mode === k ? 'bg-white dark:bg-gray-900 shadow-sm text-gray-900 dark:text-gray-100' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}>
+                  {label}
+                  <span className={'text-[11px] font-bold tabular-nums ' + (mode === k ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400')}>{modeCounts[k]}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {view !== 'stories' && (
+            <button onClick={() => setShowDone(!showDone)} title={showDone ? 'Скрыть выполненное' : 'Показать выполненное'}
+              className={'inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-lg border transition ' + (showDone ? 'border-emerald-300 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400' : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:border-gray-300')}>
+              <CheckCircle2 size={14} /> Готовое
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-lg bg-gray-100 dark:bg-gray-800/70 p-0.5">
@@ -589,7 +638,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
             onSettings={openProjSettings} wide={!!embeddedProjectId}
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
-          <SelCtx.Provider value={{ ids: selInfo.ids, reel: selInfo.reel, active: focus != null, onSelect, onHover, ghosts: ghostShootIds }}>
+          <CalCtx.Provider value={{ mode, prepByReel, today, soon: iso(addDays(new Date(), 1)), showDone, setShowDone }}>
+          <SelCtx.Provider value={{ ids: selInfo.ids, reel: selInfo.reel, active: focus != null, onSelect, onHover }}>
           {view === 'month' ? (
             <MonthScrollView initialMonth={monthStr} commandMonth={monthStr} commandSeq={scrollSeq}
               byDate={mainByDate} today={today} cycles={cycles} dragRange={dragRange}
@@ -607,6 +657,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
               onDragStart={onDragStartEv} onDropDate={onDropDate} onDropTime={onDropTime} dragOverKey={dragOverKey} setDragOverKey={setDragOverKey} />
           )}
           </SelCtx.Provider>
+          </CalCtx.Provider>
         </>
       )}
 
@@ -813,6 +864,15 @@ function DayCell({ d, evs, isToday, blocked, droppable, cycles, onOpen, onDragSt
   const isFirst = d.getDate() === 1
   const weekend = d.getDay() === 0 || d.getDay() === 6
   const covering = cycles.filter(cy => dISO >= cy.start && dISO <= cy.end)
+  const cal = useContext(CalCtx)
+  const [expanded, setExpanded] = useState(false)
+  // Не больше четырёх карточек: иначе ячейка растягивается под пятнадцать и
+  // неделя не помещается. Сначала срочное, готовое — в счётчик.
+  const doneList = evs.filter(e => isDone(e))
+  const ordered = evs.filter(e => !isDone(e)).sort((a, b) => urgency(b, cal) - urgency(a, cal))
+  const list = cal.showDone ? [...ordered, ...doneList] : ordered
+  const hiddenCount = Math.max(0, list.length - MAX_PER_DAY)
+  const shown = expanded ? list : list.slice(0, MAX_PER_DAY)
   return (
     <div data-daymonth={dISO.slice(0, 7)}
       onDragOver={droppable ? (ev => { ev.preventDefault(); if (dragOverKey !== dISO) setDragOverKey(dISO) }) : undefined}
@@ -846,119 +906,23 @@ function DayCell({ d, evs, isToday, blocked, droppable, cycles, onOpen, onDragSt
           : <span />}
         <span className={'text-[12px] font-semibold px-1 shrink-0 ' + (isToday ? 'bg-[#eb5757] text-white rounded-full w-[20px] h-[20px] grid place-items-center' : 'text-gray-500 dark:text-gray-400')}>{d.getDate()}</span>
       </div>
-      {evs.map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
+      {shown.map(e => <EventChip key={e.id} e={e} onOpen={onOpen} onDragStart={onDragStart} />)}
+      {hiddenCount > 0 && (
+        <button type="button" onClick={ev => { ev.stopPropagation(); setExpanded(v => !v) }}
+          className="text-[10.5px] font-semibold text-primary-600 dark:text-primary-400 hover:underline px-1 text-left">
+          {expanded ? 'свернуть' : `ещё ${hiddenCount}`}
+        </button>
+      )}
+      {!cal.showDone && doneList.length > 0 && (
+        <button type="button" onClick={ev => { ev.stopPropagation(); cal.setShowDone(true) }} title="Показать выполненное"
+          className="mt-auto inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-600 dark:text-emerald-400 px-1 text-left">
+          <CheckCircle2 size={11} /> {doneList.length} готово
+        </button>
+      )}
     </div>
   )
 }
 
-// Умная линия-связка съёмка↔рилс. Плавная кривая цвета проекта. Умный маршрут:
-//  • концы — по ДВУМ ближайшим смотрящим друг на друга сторонам (не жёстко правый→левый);
-//  • параллельные связки на близкой высоте раскладываются по «дорожкам» (не сливаются);
-//  • координаты контента (линии едут с сеткой), z поднимается над полосой «весь день» в неделе.
-type LinkRect = { l: number; t: number; r: number; b: number; cx: number; cy: number }
-type Anch = { x: number; y: number; nx: number; ny: number; side: 'h' | 'v' }
-function rectAnchors(R: LinkRect): Anch[] {
-  return [
-    { x: R.l, y: R.cy, nx: -1, ny: 0, side: 'h' },
-    { x: R.r, y: R.cy, nx: 1, ny: 0, side: 'h' },
-    { x: R.cx, y: R.t, nx: 0, ny: -1, side: 'v' },
-    { x: R.cx, y: R.b, nx: 0, ny: 1, side: 'v' },
-  ]
-}
-// Ближайшая пара сторон: минимум расстояния с бонусом за нормали, смотрящие навстречу.
-function nearestPair(A: LinkRect, B: LinkRect): { a: Anch; b: Anch } {
-  let best: { a: Anch; b: Anch; score: number } | null = null
-  for (const a of rectAnchors(A)) for (const b of rectAnchors(B)) {
-    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1
-    const facing = (a.nx * dx + a.ny * dy) / d + (b.nx * -dx + b.ny * -dy) / d
-    const score = d - facing * 70
-    if (!best || score < best.score) best = { a: { ...a }, b: { ...b }, score }
-  }
-  return best!
-}
-// Смещение конца вдоль его стороны — разводит параллельные связки по дорожкам.
-function nudgeAnchor(p: Anch, R: LinkRect, off: number) {
-  if (p.side === 'h') p.y = Math.max(R.t + 8, Math.min(R.b - 8, p.y + off))
-  else p.x = Math.max(R.l + 10, Math.min(R.r - 10, p.x + off))
-}
-// Стрелка на конце у рилса (направление съёмка → рилс). Ориентируется по нормали стороны рилса.
-function arrowSvg(b: Anch, col: string): string {
-  const tx = -b.nx, ty = -b.ny, px = -ty, py = tx, s = 7 // t — направление «внутрь» рилса
-  const f = (n: number) => n.toFixed(1)
-  return `<polygon points="${f(b.x)},${f(b.y)} ${f(b.x - tx * s + px * s * 0.6)},${f(b.y - ty * s + py * s * 0.6)} ${f(b.x - tx * s - px * s * 0.6)},${f(b.y - ty * s - py * s * 0.6)}" fill="${col}"/>`
-}
-function curvePath(a: Anch, b: Anch, col: string, op: number, w: number, arrow: boolean): string {
-  const d = Math.hypot(b.x - a.x, b.y - a.y)
-  const k = Math.max(26, Math.min(130, d * 0.42)) // вынос управляющих точек вдоль нормали
-  const c1x = a.x + a.nx * k, c1y = a.y + a.ny * k, c2x = b.x + b.nx * k, c2y = b.y + b.ny * k
-  const f = (n: number) => n.toFixed(1)
-  let out = `<path d="M ${f(a.x)} ${f(a.y)} C ${f(c1x)} ${f(c1y)}, ${f(c2x)} ${f(c2y)}, ${f(b.x)} ${f(b.y)}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" opacity="${op}"/>`
-  out += `<circle cx="${f(a.x)}" cy="${f(a.y)}" r="${(w * 1.3).toFixed(1)}" fill="${col}" opacity="${op}"/>`
-  out += arrow ? arrowSvg(b, col) : `<circle cx="${f(b.x)}" cy="${f(b.y)}" r="${(w * 1.5).toFixed(1)}" fill="${col}" opacity="${op}"/>`
-  return out
-}
-function EventLinks({ scrollRef, z = 6 }: { scrollRef: { current: HTMLDivElement | null }; z?: number }) {
-  const svgRef = useRef<SVGSVGElement>(null)
-  const sel = useContext(SelCtx)
-  const activeRef = useRef<string | null>(sel.reel); activeRef.current = sel.reel // активная пара (id рилс-события) — без stale-замыкания в scroll-хендлере
-  const focusRef = useRef<boolean>(sel.active); focusRef.current = sel.active // есть ли фокус (иначе — покой: бледные линии)
-  const draw = () => {
-    const cont = scrollRef.current, svg = svgRef.current
-    if (!cont || !svg) return
-    const cr = cont.getBoundingClientRect()
-    svg.setAttribute('width', String(cont.scrollWidth))
-    svg.setAttribute('height', String(cont.scrollHeight))
-    const toRect = (r: DOMRect): LinkRect => {
-      const l = r.left - cr.left + cont.scrollLeft, t = r.top - cr.top + cont.scrollTop
-      return { l, t, r: l + r.width, b: t + r.height, cx: l + r.width / 2, cy: t + r.height / 2 }
-    }
-    const byId = new Map<string, HTMLElement>()
-    cont.querySelectorAll<HTMLElement>('[data-ev]').forEach(el => byId.set(el.dataset.ev as string, el))
-    const links: { A: LinkRect; B: LinkRect; a: Anch; b: Anch; col: string; reelKey: string; lane?: number }[] = []
-    cont.querySelectorAll<HTMLElement>('[data-reel]').forEach(shoot => {
-      const reelKey = shoot.dataset.reel as string
-      const reel = byId.get(reelKey) // связь съёмка → её рилс
-      if (!reel) return
-      const A = toRect(shoot.getBoundingClientRect()), B = toRect(reel.getBoundingClientRect())
-      const np = nearestPair(A, B)
-      links.push({ A, B, a: np.a, b: np.b, col: projColor(shoot.dataset.proj || ''), reelKey })
-    })
-    // Дорожки: группируем по высоте середины связки, внутри группы симметрично разводим.
-    const buckets = new Map<number, typeof links>()
-    links.forEach(L => {
-      const key = Math.round(((L.a.y + L.b.y) / 2) / 26)
-      const arr = buckets.get(key)
-      if (arr) arr.push(L); else buckets.set(key, [L])
-    })
-    buckets.forEach(g => { const n = g.length; g.forEach((L, i) => { L.lane = i - (n - 1) / 2 }) })
-    links.forEach(L => { const off = (L.lane || 0) * 13; nudgeAnchor(L.a, L.A, off); nudgeAnchor(L.b, L.B, off) })
-    // В покое (нет фокуса) все линии бледные и тонкие. При фокусе (наведение/клик) — активная
-    // пара яркая со стрелкой к рилсу, остальные почти гаснут.
-    const act = activeRef.current, hasFocus = focusRef.current
-    svg.innerHTML = links.map(L => {
-      const isActive = !!act && L.reelKey === act
-      const op = !hasFocus ? 0.24 : (isActive ? 0.95 : 0.06)
-      const w = !hasFocus ? 1.5 : (isActive ? 2.6 : 1.2)
-      return curvePath(L.a, L.b, L.col, op, w, isActive)
-    }).join('')
-  }
-  useLayoutEffect(() => { draw() }) // после каждого рендера (данные/раскладка)
-  useEffect(() => {
-    const cont = scrollRef.current
-    if (!cont) return
-    let raf = 0
-    const on = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw) }
-    cont.addEventListener('scroll', on, { passive: true })
-    window.addEventListener('resize', on)
-    return () => { cont.removeEventListener('scroll', on); window.removeEventListener('resize', on); cancelAnimationFrame(raf) }
-  }, [scrollRef]) // eslint-disable-line react-hooks/exhaustive-deps
-  return <svg ref={svgRef} className="absolute top-0 left-0 pointer-events-none" style={{ zIndex: z, overflow: 'visible' }} />
-}
-
-// Непрерывный (Notion-style) месячный вид: НЕПРЕРЫВНАЯ лента недель — без разбивки на отдельные
-// месяцы и без дублей дней на стыке (последняя неделя сентября и первая неделя октября — одна
-// непрерывная лента). Начало месяца помечается в клетке 1-го числа. Заголовок вверху меняется
-// на видимый месяц; стрелки/«Сегодня» прокручивают к нужному месяцу через commandSeq.
 function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today, cycles, dragRange, onOpen, onDragStart, onDropDate, onVisibleMonth, dragOverKey, setDragOverKey }: {
   initialMonth: string; commandMonth: string; commandSeq: number
   byDate: Map<string, Ev[]>; today: string
@@ -1108,7 +1072,6 @@ function MonthScrollView({ initialMonth, commandMonth, commandSeq, byDate, today
             </div>
           )
         })}
-        <EventLinks scrollRef={scrollRef} />
       </div>
       {/* Плавающая кнопка «вернуться к сегодня» — видна, когда проскроллил в другой месяц. */}
       {returnBtn && (
@@ -1586,7 +1549,6 @@ function WeekScrollView({ initialDay, commandDay, commandSeq, events, dragRange,
             )
           })}
         </div>
-        <EventLinks scrollRef={scrollRef} z={15} />
       </div>
       {returnBtn && (
         <button onClick={goToToday}
@@ -1656,6 +1618,25 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
         {total > 0 && <span className="text-gray-400/70 font-semibold normal-case">· {total}</span>}
         <ChevronDown size={14} className={'ml-auto shrink-0 transition-transform ' + (open ? 'rotate-180' : '')} />
       </button>
+      {/* Свёрнуто: одна строка проектов. Плитки — это ещё и фильтр, поэтому совсем не прячем. */}
+      {!open && groups.length > 0 && (
+        <div className="flex flex-wrap gap-1 pb-0.5">
+          {groups.map(g => {
+            const c = projColor(g.id)
+            const active = activeIds.has(g.id)
+            return (
+              <button key={g.id} type="button" onClick={() => onPick(g.id)}
+                title={active ? 'Убрать из фильтра' : 'Показать этот проект (можно несколько)'}
+                className={'inline-flex items-center gap-1.5 rounded-md px-2 py-[3px] text-[11.5px] font-medium transition ' + (activeIds.size > 0 && !active ? 'opacity-45 hover:opacity-100' : '')}
+                style={{ border: `1px solid color-mix(in srgb, ${c} ${active ? 85 : 35}%, transparent)`, background: `color-mix(in srgb, ${c} ${active ? 16 : 6}%, transparent)` }}>
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c }} />
+                <span className="truncate max-w-[130px]">{g.name}</span>
+                {g.items.length > 0 && <span className="text-gray-400 tabular-nums">{g.items.length}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
       {open && (groups.length === 0 ? (
         <div className="text-[12.5px] text-gray-400 px-1 py-2">Нет SMM-проектов.</div>
       ) : (
@@ -1736,6 +1717,27 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const prep = e.kind === 'shoot' ? prepMeta(e) : null
   const Ic = prep ? prep.Icon : (TYPE_ICON[type] || AlignLeft)
   const done = e.kind === 'publication' && isDone(e)
+  const cal = useContext(CalCtx)
+  // Подпись вместо линии-связки. У публикации — состояние её подготовки,
+  // у съёмки и дизайна — для какого выхода и когда он.
+  let aux: { cls: string; icon: any; text: string; title: string } | null = null
+  if (e.kind === 'publication' && !done && e.itemId) {
+    const pi = cal.prepByReel.get(e.itemId)
+    if (pi) {
+      const pm = prepMeta(pi)
+      if (isDone(pi)) aux = { cls: 'text-emerald-600 dark:text-emerald-400', icon: Check, text: '', title: `${pm.label}: готово` }
+      else if (!pi.date || pi.date < cal.today) aux = { cls: 'text-red-500 dark:text-red-400', icon: AlertCircle, text: '', title: pi.date ? `${pm.label} просрочена` : `${pm.label} не назначена` }
+      else aux = { cls: 'text-gray-500 dark:text-gray-400', icon: pm.Icon, text: String(Number(pi.date.slice(8, 10))), title: `${pm.label} ${pi.date}` }
+    }
+  } else if (e.kind === 'shoot' && e.reelId && !isDone(e)) {
+    const hot = !!e.reelDate && e.reelDate <= cal.soon
+    aux = {
+      cls: hot ? 'text-red-500 dark:text-red-400' : 'text-primary-600 dark:text-primary-400',
+      icon: ArrowRight,
+      text: e.reelDate ? String(Number(e.reelDate.slice(8, 10))) : '—',
+      title: e.reelDate ? `Выход ${e.reelDate}` : 'Выход ещё не запланирован',
+    }
+  }
   // Подпись карточки — название позиции (topic); у задачи подготовки — название её родителя (e.title).
   const label = prep ? (e.title?.trim() || e.projectName || prep.label) : (e.topic?.trim() || `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`)
   // «Призрак» — задача подготовки, которую показываем бледно (резервирует слот по
@@ -1754,7 +1756,12 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
             : `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}${e.topic ? ` · ${e.topic}` : ''}${done ? ' · сделано' : ''}`}>
       {done ? <CheckCircle2 size={12} className="shrink-0 text-emerald-500" /> : <Ic size={11} className="shrink-0" />}
       {e.kind === 'shoot' && e.time && <span className="font-semibold shrink-0">{e.time}</span>}
-      <span className={'truncate' + (done ? ' line-through opacity-70' : '')}>{label}</span>
+      <span className={'truncate min-w-0' + (done ? ' line-through opacity-70' : '')}>{label}</span>
+      {aux && (
+        <span title={aux.title} className={'ml-auto shrink-0 inline-flex items-center gap-0.5 text-[10px] font-bold ' + aux.cls}>
+          <aux.icon size={10} strokeWidth={2.5} />{aux.text}
+        </span>
+      )}
     </span>
   )
 }
