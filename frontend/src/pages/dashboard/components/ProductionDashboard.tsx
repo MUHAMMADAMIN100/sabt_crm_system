@@ -20,12 +20,12 @@ import {
 import { ru } from 'date-fns/locale'
 import {
   Camera, Scissors, Palette, Film, Image as ImageIcon,
-  ChevronLeft, ChevronRight, AlertTriangle, Check, CalendarDays, X,
+  ChevronLeft, ChevronRight, AlertTriangle, Check, X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { contentPlanApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { TaskPanel } from './SmmSpecialistDashboard'
+import { TaskPanel, TaskRow } from './SmmSpecialistDashboard'
 
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
 const WEEK = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс']
@@ -91,7 +91,6 @@ const titleOf = (it: Item) =>
   (it.parentTopic && it.parentTopic.trim()) || (it.topic && it.topic.trim()) || 'Без названия'
 const isDone = (it: Item) => it.status === 'published'
 const isCancelled = (it: Item) => it.status === 'cancelled'
-const shortDay = (d?: string | null) => (d ? format(new Date(d + 'T00:00:00'), 'd MMM', { locale: ru }) : '')
 
 function plural(n: number, one: string, few: string, many: string) {
   const d = n % 10, h = n % 100
@@ -211,6 +210,8 @@ export default function ProductionDashboard() {
   // Порядок строго детерминирован: время → проект → название → id. Без
   // этого после отметки строки менялись местами — сервер отдавал задачи
   // одной даты в том порядке, в каком они лежат в базе, а он плавает.
+  // Окно переноса исполнителя: от сегодня до дня выхода публикации.
+  const windowOf = (it: Item) => ({ min: todayKey, max: it.parentDate })
   const selItems = (byDay[selKey] || []).slice().sort((a, b) =>
     (a.time || '99').localeCompare(b.time || '99')
     || a.projectName.localeCompare(b.projectName, 'ru')
@@ -309,8 +310,13 @@ export default function ProductionDashboard() {
               {selItems.length === 0 ? (
                 <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
               ) : (
-                <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
-                  {selItems.map(it => <Row key={it.id} it={it} onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })} onInfo={() => setOpenId(it.id)} />)}
+                <div className="space-y-2">
+                  {selItems.map(it => (
+                    <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)}
+                      onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })}
+                      onInfo={() => setOpenId(it.id)}
+                      onMove={d => move.mutate({ id: it.id, date: dk(d) })} />
+                  ))}
                 </div>
               )}
             </div>
@@ -334,16 +340,17 @@ export default function ProductionDashboard() {
           <h2 className="text-sm font-bold mb-1 flex items-center gap-2 text-red-600 dark:text-red-400">
             <AlertTriangle size={15} /> Просрочено · {overdueOpen.length}
           </h2>
-          <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
+          <div className="space-y-2">
             {overdue.map(it => (
-              <Row key={it.id} it={it}
+              <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)}
                 late={isDone(it) ? undefined : Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(it.date + 'T00:00:00')))}
                 onToggle={() => {
                   const done = !isDone(it)
                   if (done) setKeep(prev => new Set(prev).add(it.id))
                   toggle.mutate({ id: it.id, done })
                 }}
-                onInfo={() => setOpenId(it.id)} />
+                onInfo={() => setOpenId(it.id)}
+                onMove={d => move.mutate({ id: it.id, date: dk(d) })} />
             ))}
           </div>
         </div>
@@ -379,44 +386,6 @@ function Tile({ value, label, tone }: { value: string; label: string; tone?: 'ok
       <b className={clsx('block text-[17px] font-bold tabular-nums leading-none',
         tone === 'bad' ? 'text-red-500 dark:text-red-400' : tone === 'ok' ? 'text-emerald-500 dark:text-emerald-400' : '')}>{value}</b>
       <span className="block text-[10px] text-surface-500 dark:text-surface-400 mt-1">{label}</span>
-    </div>
-  )
-}
-
-function Row({ it, onToggle, onInfo, late }: { it: Item; onToggle: () => void; onInfo: () => void; late?: number }) {
-  const m = meta(it)
-  const done = isDone(it)
-  // data-task-row: панель задачи не закрывается по клику на другую строку,
-  // а переключается на неё (см. обработчик клика мимо панели в TaskPanel).
-  return (
-    <div data-task-row className="py-2.5 flex items-start gap-3">
-      <button
-        type="button"
-        onClick={onToggle}
-        title={done ? 'Снять отметку' : 'Отметить готово'}
-        className={clsx('w-[18px] h-[18px] rounded-full border flex items-center justify-center shrink-0 mt-0.5 transition',
-          done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-surface-300 dark:border-surface-600 hover:border-emerald-500')}
-      >
-        {done && <Check size={12} strokeWidth={3} />}
-      </button>
-      <button type="button" onClick={onInfo} title="Открыть задачу" className="min-w-0 flex-1 text-left rounded-lg -mx-1 px-1 hover:bg-surface-50 dark:hover:bg-surface-800/60 transition-colors">
-        <p className={clsx('text-[13.5px] font-semibold truncate', done && 'line-through text-surface-400 dark:text-surface-500')}>
-          {titleOf(it)}
-        </p>
-        <div className="flex items-center gap-2 mt-0.5 flex-wrap text-[11px] text-surface-500 dark:text-surface-400">
-          <span className={clsx('inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[9.5px] uppercase tracking-wide', m.cls)}>
-            <m.Icon size={10} /> {m.label}
-          </span>
-          <span className="truncate">{it.projectName}</span>
-          {it.parentDate && (
-            <span className="inline-flex items-center gap-1">
-              <CalendarDays size={11} /> выход {shortDay(it.parentDate)}
-            </span>
-          )}
-          {late ? <span className="text-red-500 dark:text-red-400 font-medium">{late} {plural(late, 'день', 'дня', 'дней')}</span> : null}
-        </div>
-      </button>
-      {it.time && <span className="text-[11px] tabular-nums text-surface-500 dark:text-surface-400 shrink-0 mt-0.5">{it.time}</span>}
     </div>
   )
 }

@@ -600,16 +600,25 @@ function Metric({ value, label, tone, bar }: { value: string; label: string; ton
 }
 
 // ── Строка задачи (день и просрочки) ──
-function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late }: {
+/** Строка задачи. Экспортирована: её же использует кабинет производства
+ *  (видеограф / монтажёр / дизайнер) — там canCancel=false и задано окно
+ *  переноса, потому что исполнитель двигает карточку только от сегодня до
+ *  дня выхода и не отменяет задачи. */
+export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel = true, moveWindow }: {
   e: any; onToggle: () => void; onInfo: () => void
   onMove?: (d: Date) => void; onCancel?: (cancel: boolean) => void; late?: number
+  canCancel?: boolean
+  moveWindow?: { min: string; max?: string | null }
 }) {
   const { Icon, tag, group } = taskInfo(e)
   const [menu, setMenu] = useState(false)
   const done = isDone(e)
   const cancelled = isCancelled(e)
-  const canAct = !!e.itemId && !!onMove && !!onCancel
+  const canAct = !!e.itemId && !!onMove
+  const showCancel = canCancel && !!onCancel
   const tomorrow = addDays(new Date(), 1)
+  // «На завтра» — только если завтра ещё внутри окна переноса.
+  const tomorrowOk = !moveWindow?.max || dk(tomorrow) <= moveWindow.max
   // «закрыто 12 сент, план был 19 авг» — показываем, только если закрыли не в срок.
   const closedLate = done && e.changedAt && e.date && e.changedAt !== e.date
 
@@ -692,12 +701,14 @@ function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late }: {
                 <button onClick={pick(() => onMove!(new Date()))} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800">
                   <CalendarDays size={14} className="text-surface-400" /> На сегодня
                 </button>
-                <button onClick={pick(() => onMove!(tomorrow))} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800">
-                  <CalendarDays size={14} className="text-surface-400" /> На завтра, {format(tomorrow, 'd MMMM', { locale: ru })}
-                </button>
+                {tomorrowOk && (
+                  <button onClick={pick(() => onMove!(tomorrow))} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800">
+                    <CalendarDays size={14} className="text-surface-400" /> На завтра, {format(tomorrow, 'd MMMM', { locale: ru })}
+                  </button>
+                )}
                 <label className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800 cursor-pointer">
                   <CalendarDays size={14} className="text-surface-400" /> Выбрать дату
-                  <input type="date" className="ml-auto w-[104px] bg-transparent text-[12px] text-surface-500 dark:text-surface-400 outline-none"
+                  <input type="date" min={moveWindow?.min} max={moveWindow?.max || undefined} className="ml-auto w-[104px] bg-transparent text-[12px] text-surface-500 dark:text-surface-400 outline-none"
                     onChange={ev => { const v = ev.target.value; if (v) { setMenu(false); onMove!(new Date(v + 'T00:00:00')) } }} />
                 </label>
                 <div className="h-px bg-surface-100 dark:bg-surface-800 my-1.5 mx-2" />
@@ -706,7 +717,7 @@ function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late }: {
             <button onClick={pick(onInfo)} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800">
               <Info size={14} className="text-surface-400" /> Подробнее
             </button>
-            {cancelled ? (
+            {showCancel && (cancelled ? (
               <button onClick={pick(() => onCancel!(false))} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20">
                 <RotateCcw size={14} /> Вернуть в работу
               </button>
@@ -714,7 +725,7 @@ function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late }: {
               <button onClick={pick(() => onCancel!(true))} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
                 <Ban size={14} /> Отменить задачу
               </button>
-            )}
+            ))}
           </div>
         </>
       )}
