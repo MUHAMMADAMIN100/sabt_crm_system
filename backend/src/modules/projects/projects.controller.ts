@@ -104,7 +104,8 @@ export class ProjectsController {
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
   setSmmProfile(
     @Param('id') id: string,
-    @Body() body: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[] },
+    @Body() body: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[];
+      videographerIds?: string[]; videoEditorIds?: string[]; designerIds?: string[] },
     @Request() req,
   ) {
     return this.service.setSmmProfile(id, body || {}, req.user);

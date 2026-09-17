@@ -1822,6 +1822,16 @@ export class ProjectsService implements OnModuleInit {
     };
   }
 
+  /** Производственная команда проекта: кто закрывает какой этап. Ключ —
+   *  поле в smmData, roles — кем можно назначить (вторая роль тоже считается:
+   *  «Видеограф / Монтажёр» у нас обычная связка).
+   *  По этим полям content-plan раздаёт карточки подготовки исполнителям. */
+  private static readonly CREW_FIELDS = [
+    { key: 'videographerIds', out: 'videographers', roles: [UserRole.VIDEOGRAPHER] },
+    { key: 'videoEditorIds',  out: 'videoEditors',  roles: [UserRole.VIDEO_EDITOR] },
+    { key: 'designerIds',     out: 'designers',     roles: [UserRole.DESIGNER] },
+  ] as const;
+
   async getSmmProfile(id: string) {
     const project = await this.repo.findOne({ where: { id } });
     if (!project) throw new NotFoundException('Project not found');
@@ -1841,12 +1851,44 @@ export class ProjectsService implements OnModuleInit {
         .filter((u): u is User => !!u)
         .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }));
     }
-    return { ...base, smmSpecialistIds: smmSpecialists.map(u => u.id), smmSpecialists };
+    // Производственная команда — теми же мини-объектами, что и специалисты.
+    const crew: Record<string, any> = {};
+    for (const f of ProjectsService.CREW_FIELDS) {
+      const raw: string[] = Array.isArray((project.smmData as any)?.[f.key])
+        ? ((project.smmData as any)[f.key] as any[]).filter(x => typeof x === 'string') : [];
+      let people: { id: string; name: string; avatar: string | null; role: string }[] = [];
+      if (raw.length) {
+        const users = await this.userRepo.find({ where: { id: In(raw) } });
+        const byId = new Map(users.map(u => [u.id, u] as const));
+        people = raw.map(uid => byId.get(uid)).filter((u): u is User => !!u)
+          .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }));
+      }
+      crew[f.key] = people.map(u => u.id);
+      crew[f.out] = people;
+    }
+    // Кандидаты для назначения отдаём прямо тут: список /users закрыт ролями,
+    // а назначать команду должен и СММ-специалист по своему проекту.
+    const candRoles = ProjectsService.CREW_FIELDS.flatMap(f => f.roles as readonly UserRole[]);
+    const candidates = await this.userRepo.find({
+      where: [
+        { role: In(candRoles as any), isActive: true },
+        { secondaryRole: In(candRoles as any), isActive: true },
+      ],
+    }).catch(() => [] as User[]);
+    const crewCandidates: Record<string, any[]> = {};
+    for (const f of ProjectsService.CREW_FIELDS) {
+      const roles = f.roles as readonly UserRole[];
+      crewCandidates[f.out] = candidates
+        .filter(u => roles.includes(u.role) || (u.secondaryRole && roles.includes(u.secondaryRole)))
+        .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }));
+    }
+    return { ...base, smmSpecialistIds: smmSpecialists.map(u => u.id), smmSpecialists, ...crew, crewCandidates };
   }
 
   async setSmmProfile(
     id: string,
-    dto: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; metrics?: any[]; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[] },
+    dto: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; metrics?: any[]; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[];
+      videographerIds?: string[]; videoEditorIds?: string[]; designerIds?: string[] },
     user?: { id: string; role: string; name?: string },
   ) {
     const project = await this.repo.findOne({ where: { id } });
@@ -1874,6 +1916,25 @@ export class ProjectsService implements OnModuleInit {
         valid = uniq.filter(x => allowed.has(x));
       }
       setOrDel('smmSpecialistIds', valid.length ? valid : null);
+    }
+    // Производственная команда проекта: видеограф, монтажёр, дизайнер.
+    // В отличие от smmSpecialistIds это назначение может делать и СММ-специалист:
+    // распределить съёмку по своему проекту — его рабочая задача, а не передел
+    // проектов. Принимаем только людей с подходящей ролью (или второй ролью).
+    for (const f of ProjectsService.CREW_FIELDS) {
+      if (!(f.key in dto)) continue;
+      const raw = Array.isArray((dto as any)[f.key]) ? (dto as any)[f.key].filter((x: any) => typeof x === 'string') : [];
+      const uniq = [...new Set<string>(raw)].slice(0, 10);
+      let valid: string[] = [];
+      if (uniq.length) {
+        const users = await this.userRepo.find({ where: { id: In(uniq) } });
+        const roles = f.roles as readonly UserRole[];
+        const allowed = new Set(
+          users.filter(u => roles.includes(u.role) || (u.secondaryRole && roles.includes(u.secondaryRole))).map(u => u.id),
+        );
+        valid = uniq.filter(x => allowed.has(x));
+      }
+      setOrDel(f.key, valid.length ? valid : null);
     }
     // Помесячные метрики: подписчики/охват/вовлечённость/заявки. Дедуп по ym, сортировка, cap 240.
     if ('metrics' in dto) {

@@ -16,7 +16,19 @@ type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
 type MKey = 'subs' | 'reach' | 'eng' | 'leads'
 type MPoint = { ym: string; subs: number | null; reach: number | null; eng: number | null; leads: number | null }
 type SmmSpec = { id: string; name: string; avatar: string | null; role: string }
+type CrewField = 'videographerIds' | 'videoEditorIds' | 'designerIds'
+type CrewOut = 'videographers' | 'videoEditors' | 'designers'
+/** Строки «команда производства» в карточке проекта. Порядок = порядок
+ *  работы над рилсом: сняли → смонтировали, и отдельно дизайн постов. */
+const CREW_ROWS: { field: CrewField; out: CrewOut; label: string }[] = [
+  { field: 'videographerIds', out: 'videographers', label: 'Видеограф' },
+  { field: 'videoEditorIds',  out: 'videoEditors',  label: 'Монтажёр' },
+  { field: 'designerIds',     out: 'designers',     label: 'Дизайнер' },
+]
+
 type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNote: string | null; collabSince: string | null; preferences: string | null; metrics: MPoint[]; smmSpecialistIds?: string[]; smmSpecialists?: SmmSpec[] }
+  & Partial<Record<CrewField, string[]>> & Partial<Record<CrewOut, SmmSpec[]>>
+  & { crewCandidates?: Partial<Record<CrewOut, SmmSpec[]>> }
 
 const EDIT_ROLES = ['founder', 'co_founder', 'admin', 'smm_director', 'smm_specialist']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
@@ -334,6 +346,33 @@ export default function SmmProjectPage() {
     onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(['smm-profile', id], ctx.prev); toast.error('Не удалось сохранить') },
     onSettled: () => qc.invalidateQueries({ queryKey: ['smm-profile', id] }),
   })
+  // Производственная команда проекта: кто снимает, монтирует и рисует. От
+  // этого зависит, в чей кабинет попадёт карточка подготовки. Назначает и
+  // СММ-специалист — распределить работу по своему проекту его задача.
+  const canAssignCrew = ['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist'].includes((user as any)?.role ?? '')
+  const crewMut = useMutation({
+    // Приведение нужно из-за вычисляемого ключа: TS не сопоставляет его с
+    // конкретными полями dto, хотя набор ключей ограничен типом CrewField.
+    mutationFn: (v: { field: CrewField; ids: string[] }) =>
+      projectsApi.setSmmProfile(id!, { [v.field]: v.ids } as Partial<Record<CrewField, string[]>>),
+    onMutate: async (v: { field: CrewField; ids: string[] }) => {
+      await qc.cancelQueries({ queryKey: ['smm-profile', id] })
+      const prev = qc.getQueryData<SmmProfile>(['smm-profile', id])
+      const out = CREW_ROWS.find(r => r.field === v.field)!.out
+      const pool = [...(prev?.[out] ?? []), ...(prev?.crewCandidates?.[out] ?? [])]
+      const resolved = v.ids.map(uid => pool.find(s => s.id === uid)).filter((s): s is SmmSpec => !!s)
+      qc.setQueryData(['smm-profile', id], (old: any) => ({ ...(old || {}), [v.field]: v.ids, [out]: resolved }))
+      return { prev }
+    },
+    onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(['smm-profile', id], ctx.prev); toast.error('Не удалось сохранить') },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['smm-profile', id] }),
+  })
+  const toggleCrew = (field: CrewField, out: CrewOut, uid: string) => {
+    const cur = new Set(profile?.[field] ?? [])
+    if (cur.has(uid)) cur.delete(uid); else cur.add(uid)
+    crewMut.mutate({ field, ids: [...cur] })
+  }
+
   const toggleSpec = (uid: string) => {
     const next = new Set(assignedIds)
     if (next.has(uid)) next.delete(uid); else next.add(uid)
@@ -536,6 +575,21 @@ export default function SmmProjectPage() {
                 )}
               </div>
             </div>
+            {/* Команда производства: съёмка → видеограф, монтаж → монтажёр,
+                макет → дизайнер. Пусто — карточки уйдут единственному в
+                агентстве человеку с такой ролью, а если их несколько,
+                останутся у СММ-специалиста. */}
+            {CREW_ROWS.map(r => (
+              <CrewRow
+                key={r.field}
+                label={r.label}
+                assigned={profile?.[r.out] ?? []}
+                candidates={profile?.crewCandidates?.[r.out] ?? []}
+                canAssign={canAssignCrew}
+                onToggle={uid => toggleCrew(r.field, r.out, uid)}
+                rowCls={fRow}
+              />
+            ))}
             <div className={fRow}><span className="text-sm text-gray-500">День старта цикла</span>
               {cycEditing
                 ? <input type="number" min={1} max={31} value={cycDraft.day} onChange={e => setCycDraft(d => ({ ...d, day: e.target.value }))} className={editIn + ' w-16 text-center'} />
@@ -760,6 +814,84 @@ function PlanBar({ icon, label, done, total, color }: { icon: ReactNode; label: 
     <div>
       <div className="flex justify-between text-sm mb-1.5"><span className="text-gray-500 inline-flex items-center gap-1.5">{icon} {label}</span><span className="font-bold tabular-nums">{done} / {total}</span></div>
       <div className="h-[7px] rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} /></div>
+    </div>
+  )
+}
+
+/** Строка назначения исполнителя этапа. Устроена как «SMM-специалист»:
+ *  показывает назначенных, а по кнопке открывает список кандидатов.
+ *  Кандидатов отдаёт профиль проекта — список /users закрыт ролями, а
+ *  назначать команду должен и СММ-специалист. */
+function CrewRow({ label, assigned, candidates, canAssign, onToggle, rowCls }: {
+  label: string
+  assigned: SmmSpec[]
+  candidates: SmmSpec[]
+  canAssign: boolean
+  onToggle: (uid: string) => void
+  rowCls: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ids = new Set(assigned.map(a => a.id))
+  return (
+    <div className={rowCls + ' relative'}>
+      <span className="text-sm text-gray-500">{label}</span>
+      <div className="flex items-center gap-2 min-w-0">
+        {assigned.length === 0 ? (
+          <span className="text-sm text-gray-400">Не назначен</span>
+        ) : assigned.length === 1 ? (
+          <span className="inline-flex items-center gap-1.5 min-w-0">
+            <Avatar name={assigned[0].name} src={assigned[0].avatar || undefined} size={20} />
+            <span className="text-sm font-semibold truncate max-w-[160px]">{assigned[0].name}</span>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-2">
+            <span className="flex -space-x-2">
+              {assigned.slice(0, 3).map(s => (
+                <span key={s.id} className="ring-2 ring-white dark:ring-gray-900 rounded-full">
+                  <Avatar name={s.name} src={s.avatar || undefined} size={20} />
+                </span>
+              ))}
+            </span>
+            <span className="text-sm font-semibold whitespace-nowrap">{assigned.length} чел.</span>
+          </span>
+        )}
+        {canAssign && (
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setOpen(o => !o)}
+              className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+            >
+              <Pencil size={12} /> {assigned.length ? 'Изменить' : 'Назначить'}
+            </button>
+            {open && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                <div className="absolute right-0 mt-1 z-50 w-72 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl py-1.5 max-h-72 overflow-y-auto">
+                  <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">{label}</div>
+                  {!candidates.length ? (
+                    <p className="px-3 py-3 text-sm text-gray-400">Нет подходящих сотрудников</p>
+                  ) : candidates.map(u => {
+                    const on = ids.has(u.id)
+                    return (
+                      <button
+                        key={u.id}
+                        onClick={() => onToggle(u.id)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                      >
+                        <Avatar name={u.name} src={u.avatar || undefined} size={26} />
+                        <span className="text-sm font-medium text-gray-800 dark:text-gray-100 flex-1 truncate">{u.name}</span>
+                        <span className={'w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ' + (on ? 'bg-[#3f7a58] border-[#3f7a58]' : 'border-gray-300 dark:border-gray-600')}>
+                          {on && <Check size={13} className="text-white" />}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
