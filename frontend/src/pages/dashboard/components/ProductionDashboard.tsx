@@ -147,8 +147,10 @@ export default function ProductionDashboard() {
       .filter(it => it.date && it.date < todayKey && (!isDone(it) || keep.has(it.id)) && !isCancelled(it))
       .sort((a, b) => a.date.localeCompare(b.date) || a.projectName.localeCompare(b.projectName, 'ru') || a.id.localeCompare(b.id))
   }, [pastData, todayKey, keep])
-  // В счётчике и на календаре — только несделанное.
+  // В счётчике и на календаре — только несделанное; закрытое в этой сессии
+  // считаем отдельно для строки «сегодня закрыто N».
   const overdueOpen = useMemo(() => overdue.filter(it => !isDone(it)), [overdue])
+  const closedToday = overdue.length - overdueOpen.length
   const overdueByDay = useMemo(() => {
     const m: Record<string, number> = {}
     for (const it of overdueOpen) m[it.date] = (m[it.date] || 0) + 1
@@ -233,7 +235,9 @@ export default function ProductionDashboard() {
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Tile value={String(overdueOpen.length)} label="просрочено" tone={overdueOpen.length > 0 ? 'bad' : undefined} />
+            <Tile value={String(overdueOpen.length)}
+              label={overdueOpen.length > 0 ? 'просрочено' : 'просрочено · всё в срок'}
+              tone={overdueOpen.length > 0 ? 'bad' : 'ok'} />
             <Tile value={String(monthDone)} label={`сдано за ${format(cursor, 'LLLL', { locale: ru })}`} tone={monthDone > 0 ? 'ok' : undefined} />
             <Tile value={String(todayItems.length)} label="задач сегодня" />
           </div>
@@ -315,8 +319,17 @@ export default function ProductionDashboard() {
         document.body,
       )}
 
+      {/* Просрочки нет — тревожный блок не показываем вовсе (решение владельца,
+          вариант «тихо и чисто»): одна спокойная строка под календарём. */}
+      {overdueOpen.length === 0 && (
+        <p className="text-[12.5px] text-center text-surface-500 dark:text-surface-400 -mt-1">
+          <span className="font-semibold text-emerald-600 dark:text-emerald-400">✓ Просрочки нет</span>
+          {closedToday > 0 && <> · сегодня закрыто {closedToday}</>}
+        </p>
+      )}
+
       {/* Просроченное */}
-      {overdue.length > 0 && (
+      {overdueOpen.length > 0 && (
         <div className="card border-red-200/70 dark:border-red-900/40">
           <h2 className="text-sm font-bold mb-1 flex items-center gap-2 text-red-600 dark:text-red-400">
             <AlertTriangle size={15} /> Просрочено · {overdueOpen.length}
