@@ -290,6 +290,8 @@ export const clientsApi = {
 export const storiesApi = {
   my: (from: string, to: string) => api.get('/stories/my', { params: { from, to } }).then(r => r.data),
   all: (from: string, to: string) => api.get('/stories', { params: { from, to } }).then(r => r.data),
+  /** Сводка «кто делал сторис, кто нет» — страница «Проверка сторис». */
+  check: (from: string, to: string) => api.get('/stories/check', { params: { from, to } }).then(r => r.data),
   upsert: (data: { projectId: string; date: string; storiesCount: number }) => api.post('/stories', data).then(r => r.data),
 }
 

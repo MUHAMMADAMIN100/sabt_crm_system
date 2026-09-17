@@ -17,9 +17,16 @@ export class StoriesController {
   }
 
   @Get()
-  @RequirePerm('stories.manage')
+  @RequirePerm('stories.view')
   getAll(@Query('from') from: string, @Query('to') to: string) {
     return this.service.getAll(from, to);
+  }
+
+  /** Сводка «кто отмечал сторис, а кто нет» — страница «Проверка сторис». */
+  @Get('check')
+  @RequirePerm('stories.view')
+  check(@Query('from') from: string, @Query('to') to: string) {
+    return this.service.check(from, to);
   }
 
   @Post()

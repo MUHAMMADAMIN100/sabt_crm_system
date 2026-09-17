@@ -25,6 +25,8 @@ export type UserRole =
   | 'qa'
   | 'publisher'
   | 'targetologist'
+  /** Проверяющий сторис — только смотрит, кто отметил сторис, а кто нет. */
+  | 'stories_checker'
   | 'employee'
 
 export interface User {

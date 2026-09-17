@@ -15,6 +15,8 @@ import { AppGateway } from '../gateway/app.gateway';
 /** Роли, которым разрешено ОТМЕЧАТЬ сторис (решение владельца, сент. 2026). Остальные — только чтение. */
 const STORY_WRITE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist'];
 const STORY_MGMT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director'];
+/** Статус дня в сводке проверки: выполнено / частично / не отмечено. */
+type CheckDay = 'done' | 'partial' | 'none';
 /** Число дней в месяце даты 'YYYY-MM-DD' — дневная норма = месячная / дни месяца. */
 function daysInMonthOf(dateStr: string): number {
   const [y, m] = dateStr.split('-').map(Number);
@@ -99,6 +101,183 @@ export class StoriesService {
 
     this.gateway.broadcast('stories:changed', { projectId, employeeId, date });
     return saved;
+  }
+
+  /**
+   * Сводка «кто делал сторис, а кто нет» за период — для роли «Проверяющий
+   * сторис» (только чтение) и руководства. Считает ровно по тем же правилам,
+   * что и вечерний cron 18:00, чтобы цифры на странице и в Telegram сходились:
+   *   • команда сторис проекта = участники + назначенные SMM-специалисты
+   *     (smmData.smmSpecialistIds);
+   *   • дневная норма проекта = месячная / дни месяца (фолбэк storiesPerDay);
+   *   • день проекта закрыт, если команда СУММАРНО выполнила норму.
+   * Срез по людям: норма человека на день = сумма норм его проектов, факт —
+   * его собственные отметки. Будущие дни не считаются (там «не отмечено» нет).
+   *
+   * Всё считается на сервере: роли-проверяющему не нужен доступ ни к списку
+   * проектов, ни к календарю — только этот эндпоинт.
+   */
+  async check(from: string, to: string) {
+    const isIso = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    if (!isIso(from) || !isIso(to) || from > to) throw new BadRequestException('Некорректный период');
+
+    const days: string[] = [];
+    for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+      days.push(d.toISOString().slice(0, 10));
+      if (days.length > 70) throw new BadRequestException('Период не больше двух месяцев');
+    }
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
+    const past = days.filter(d => d <= today);
+
+    const projects = await this.projectRepo.createQueryBuilder('p')
+      .leftJoinAndSelect('p.members', 'members')
+      .where('p.projectType = :type', { type: 'SMM' })
+      .andWhere('p.isArchived = false')
+      .andWhere('p."storiesArchived" = false')
+      .getMany();
+
+    // Люди: участники проектов + назначенные специалисты, которых нет в участниках.
+    const known = new Map<string, any>();
+    for (const p of projects) for (const m of p.members || []) known.set(m.id, m);
+    const assignedOf = (p: Project): string[] => {
+      const ids = (p.smmData as any)?.smmSpecialistIds;
+      return Array.isArray(ids) ? ids.filter((x: any) => typeof x === 'string') : [];
+    };
+    const unknownIds = new Set<string>();
+    for (const p of projects) for (const id of assignedOf(p)) if (!known.has(id)) unknownIds.add(id);
+    if (unknownIds.size) {
+      const extra = await this.userRepo.find({ where: { id: In([...unknownIds]) } }).catch(() => [] as User[]);
+      for (const u of extra) known.set(u.id, u);
+    }
+
+    // Команда каждого проекта — только действующие сотрудники.
+    const crewOf = new Map<string, string[]>();
+    for (const p of projects) {
+      const ids = new Set<string>((p.members || []).map(m => m.id));
+      for (const id of assignedOf(p)) ids.add(id);
+      crewOf.set(p.id, [...ids].filter(id => {
+        const u = known.get(id);           // неизвестный/удалённый id в smmSpecialistIds — пропускаем
+        return !!u && u.isActive !== false;
+      }));
+    }
+
+    // Дневная норма проекта в конкретном месяце (кешируем по projectId|YYYY-MM).
+    const targetCache = new Map<string, number>();
+    const targetOf = (p: Project, date: string): number => {
+      const key = `${p.id}|${date.slice(0, 7)}`;
+      const hit = targetCache.get(key);
+      if (hit !== undefined) return hit;
+      const sd: any = p.smmData || {};
+      const mNorm = sd.storiesPerMonth;
+      const val = (mNorm != null && Number.isFinite(Number(mNorm)))
+        ? (Number(mNorm) > 0 ? Math.max(1, Math.round(Number(mNorm) / daysInMonthOf(date))) : 0)
+        : (Number(sd.storiesPerDay) || 3);
+      targetCache.set(key, val);
+      return val;
+    };
+
+    // Факт из story_logs: отдельно по человеку и суммарно по проекту за день.
+    const logs = await this.repo.createQueryBuilder('s')
+      .select(['s.id', 's.projectId', 's.employeeId', 's.date', 's.storiesCount'])
+      .where('s.date BETWEEN :from AND :to', { from, to })
+      .getMany();
+    const byPerson = new Map<string, number>();   // projectId|date|employeeId
+    const byProject = new Map<string, number>();  // projectId|date
+    for (const l of logs) {
+      const date = String(l.date).slice(0, 10);  // колонка date → строка 'YYYY-MM-DD'
+      const n = Number(l.storiesCount) || 0;
+      const pk = `${l.projectId}|${date}`;
+      byPerson.set(`${pk}|${l.employeeId}`, (byPerson.get(`${pk}|${l.employeeId}`) || 0) + n);
+      byProject.set(pk, (byProject.get(pk) || 0) + n);
+    }
+
+    const statusOf = (actual: number, target: number): CheckDay =>
+      actual >= target ? 'done' : actual > 0 ? 'partial' : 'none';
+    const tally = (byDay: Record<string, CheckDay>) => {
+      const c = { done: 0, partial: 0, none: 0 };
+      for (const v of Object.values(byDay)) c[v]++;
+      return c;
+    };
+
+    // ── Срез по проектам ─────────────────────────────────────────────
+    const projectRows = projects.map(p => {
+      const byDay: Record<string, CheckDay> = {};
+      let marked = 0, expected = 0;
+      for (const d of past) {
+        const target = targetOf(p, d);
+        if (target <= 0) continue;                 // проект без сторис — дни не красим
+        const actual = byProject.get(`${p.id}|${d}`) || 0;
+        byDay[d] = statusOf(actual, target);
+        marked += actual; expected += target;
+      }
+      return {
+        id: p.id, name: p.name, crew: (crewOf.get(p.id) || []).length,
+        target: targetOf(p, past[past.length - 1] || to),
+        days: byDay, marked, expected, ...tally(byDay),
+      };
+    }).filter(r => Object.keys(r.days).length > 0)
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+
+    // ── Срез по людям ────────────────────────────────────────────────
+    const projectsOf = new Map<string, Project[]>();
+    for (const p of projects) {
+      for (const uid of crewOf.get(p.id) || []) {
+        const list = projectsOf.get(uid) || [];
+        list.push(p);
+        projectsOf.set(uid, list);
+      }
+    }
+    const peopleRows = [...projectsOf.entries()].map(([uid, list]) => {
+      const u = known.get(uid) || {};
+      const byDay: Record<string, CheckDay> = {};
+      let marked = 0, expected = 0;
+      for (const d of past) {
+        let target = 0, actual = 0;
+        for (const p of list) {
+          const t = targetOf(p, d);
+          if (t <= 0) continue;
+          target += t;
+          actual += byPerson.get(`${p.id}|${d}|${uid}`) || 0;
+        }
+        if (target <= 0) continue;
+        byDay[d] = statusOf(actual, target);
+        marked += actual; expected += target;
+      }
+      return {
+        id: uid, name: u.name || 'Сотрудник', role: u.role ?? null, position: u.position ?? null,
+        avatar: u.avatar ?? null,
+        projects: list.map(p => ({ id: p.id, name: p.name })),
+        days: byDay, marked, expected, ...tally(byDay),
+      };
+    }).filter(r => Object.keys(r.days).length > 0)
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+
+    // ── Кто не закрыл сегодняшний день ───────────────────────────────
+    const inRange = today >= from && today <= to;
+    const missingToday = !inRange ? [] : peopleRows
+      .filter(r => r.days[today] && r.days[today] !== 'done')
+      .map(r => {
+        const list = projectsOf.get(r.id) || [];
+        return {
+          id: r.id, name: r.name, status: r.days[today],
+          projects: list.map(p => ({
+            id: p.id, name: p.name,
+            target: targetOf(p, today),
+            actual: byPerson.get(`${p.id}|${today}|${r.id}`) || 0,
+          })).filter(x => x.target > 0 && x.actual < x.target),
+        };
+      });
+
+    const totals = {
+      people: peopleRows.length,
+      projects: projectRows.length,
+      marked: projectRows.reduce((s, r) => s + r.marked, 0),
+      expected: projectRows.reduce((s, r) => s + r.expected, 0),
+      todayDone: inRange ? projectRows.filter(r => r.days[today] === 'done').length : 0,
+      todayTotal: inRange ? projectRows.filter(r => r.days[today]).length : 0,
+    };
+
+    return { from, to, today, days, people: peopleRows, projects: projectRows, missingToday, totals };
   }
 
   /**

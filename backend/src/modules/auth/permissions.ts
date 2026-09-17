@@ -116,6 +116,9 @@ export const GRANTABLE: Record<string, GrantDef> = {
 
   // ─── Истории, заметки, файлы, учёт времени ─────────────────────────
   'stories.manage':    { label: 'Истории — отметки по проектам',  category: 'Производство', roles: [...ALL_ROLES] },
+  // Просмотр отметок сторис (кто сделал, кто нет). Есть у всех + у роли
+  // «Проверяющий сторис», которой отмечать (stories.manage) НЕ положено.
+  'stories.view':      { label: 'Истории — просмотр (кто сделал, кто нет)', category: 'Производство', roles: [...ALL_ROLES, 'stories_checker'] },
   'notes.use':         { label: 'Заметки — личные записи',       category: 'Производство', roles: [...ALL_ROLES] },
   'time-tracker.use':  { label: 'Учёт времени — таймер',         category: 'Производство', roles: [...ALL_ROLES] },
   'files.view':        { label: 'Файлы — просмотр',              category: 'Производство', roles: [...ALL_ROLES] },

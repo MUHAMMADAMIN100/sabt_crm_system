@@ -52,6 +52,10 @@ export enum UserRole {
   PUBLISHER       = 'publisher',
   /** Таргетолог — запуск рекламы (этап «Реклама»). */
   TARGETOLOGIST   = 'targetologist',
+  /** Проверяющий сторис — контролёр: ТОЛЬКО смотрит, кто отметил сторис,
+   *  а кто нет (срез по людям и по проектам). Ничего не отмечает и не
+   *  редактирует; доступа к проектам и задачам у роли нет. */
+  STORIES_CHECKER = 'stories_checker',
   EMPLOYEE        = 'employee',
 }
 

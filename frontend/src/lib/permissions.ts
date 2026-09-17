@@ -27,6 +27,7 @@ const ROLE_LABELS: Record<string, string> = {
   qa: 'Контролёр качества',
   publisher: 'Публикатор',
   targetologist: 'Таргетолог',
+  stories_checker: 'Проверяющий сторис',
   employee: 'Сотрудник',
 }
 
@@ -84,6 +85,7 @@ export type Permission =
   | 'profile.view'
   | 'ai.chat'
   | 'stories.manage'
+  | 'stories.view'
   | 'organizer.directory'
   | 'time-tracker.use'
   | 'notes.use'
@@ -105,7 +107,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'analytics.view', 'reports.view', 'reports.create', 'reports.edit.all',
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
-    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use', 'notes.use',
+    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'clients.view', 'security-log.view', 'organizer.directory',
     'team-activity.view',
   ],
@@ -119,7 +121,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'analytics.view', 'reports.view', 'reports.create', 'reports.edit.all',
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
-    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use', 'notes.use',
+    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
     'team-activity.view',
   ],
@@ -133,7 +135,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'analytics.view', 'reports.view', 'reports.create', 'reports.edit.all',
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
-    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'time-tracker.use', 'notes.use',
+    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
   ],
   // Руководитель по видеографии — менеджерский уровень для видео-
@@ -161,7 +163,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.create',
     'calendar.view', 'calendar.create', 'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use', 'notes.use',
+    'notifications.view', 'profile.view', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'ai.chat', 'tariffs.manage', 'risks.view', 'teams.manage', 'organizer.directory',
   ],
   smm_specialist: [
@@ -170,7 +172,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use', 'notes.use',
+    'notifications.view', 'profile.view', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   designer: [
@@ -285,7 +287,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'calendar.view',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use', 'notes.use',
+    'notifications.view', 'profile.view', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   // Сценарист / SMM-менеджер — владелец Контент-плана workflow-доски.
@@ -295,7 +297,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use', 'notes.use',
+    'notifications.view', 'profile.view', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   // Контролёр качества — этап «Внутренняя проверка».
@@ -315,7 +317,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'time-tracker.use', 'notes.use',
+    'notifications.view', 'profile.view', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
   // Таргетолог — запуск рекламы (этап «Реклама»).
@@ -327,6 +329,12 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
+  ],
+  // Проверяющий сторис — контролёр: видит ТОЛЬКО сводку «кто делал сторис,
+  // а кто нет». Ни задач, ни проектов, ни отметок (stories.manage) у роли нет.
+  stories_checker: [
+    'dashboard', 'stories.view',
+    'notifications.view', 'profile.view',
   ],
   employee: [
     'dashboard', 'projects.view',
@@ -390,6 +398,13 @@ export function userCan(user: GrantUser, permission: string): boolean {
 /** Управлять доступами сотрудников могут только основатель/сооснователь/админ. */
 export function canManageAccess(role?: string | null): boolean {
   return role === 'admin' || role === 'founder' || role === 'co_founder'
+}
+
+/** Страница «Проверка сторис» — контролёр сторис и руководство.
+ *  Обычный SMM-специалист сюда не ходит: у него своя отметка в кабинете. */
+export function canCheckStories(role?: string | null, secondaryRole?: string | null): boolean {
+  const CHECKERS = ['stories_checker', 'admin', 'founder', 'co_founder', 'smm_director']
+  return [role, secondaryRole].some(r => !!r && CHECKERS.includes(r))
 }
 
 /** Раздел «СММ» (Умный календарь / Сторисы / Проекты) — вся СММ-команда
@@ -493,6 +508,9 @@ export function canAccessRoute(
   if (route === '/employee-access') return canManageAccess(role)
   // «Отчёты СММ» (ежедневный автоотчёт) удалены полностью.
   if (route === '/smm-daily') return false
+  // «Проверка сторис» — только контролёр и руководство; право можно отнять
+  // персональным запретом (userCan), тогда страница закрывается.
+  if (route === '/stories-check') return canCheckStories(role, secondaryRole) && userCan(u, 'stories.view')
   // «СММ» и все подстраницы (Умный календарь / Сторисы / Проекты) — СММ-команда + топ.
   if (route === '/smm' || route.startsWith('/smm/')) return canSeeSmmSection(role)
   // «Разработка» и подстраницы (Умный календарь / Проекты) — dev-команда + топ.

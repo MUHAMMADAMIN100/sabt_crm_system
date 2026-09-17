@@ -70,6 +70,7 @@ const ProjectDetailPage = lazy(() => import('@/pages/projects/ProjectDetailPage'
 const SmmProjectsPage   = lazy(() => import('@/pages/smm/SmmProjectsPage'))
 const SmmProjectPage    = lazy(() => import('@/pages/smm/SmmProjectPage'))
 const SmmStoriesPage    = lazy(() => import('@/pages/smm/SmmStoriesPage'))
+const StoriesCheckPage  = lazy(() => import('@/pages/stories/StoriesCheckPage'))
 const EmployeesPage     = lazy(() => import('@/pages/employees/EmployeesPage'))
 const EmployeeAccessPage = lazy(() => import('@/pages/access/EmployeeAccessPage'))
 const EmployeeDetailPage = lazy(() => import('@/pages/employees/EmployeeDetailPage'))
@@ -132,6 +133,15 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/** Главная. «Проверяющему сторис» показывать общую панель нечем — у роли
+ *  нет ни задач, ни проектов, поэтому сразу ведём на его единственную
+ *  страницу «Проверка сторис». */
+function HomeRoute() {
+  const role = useAuthStore(s => s.user?.role)
+  if (role === 'stories_checker') return <Navigate to="/stories-check" replace />
+  return <DashboardPage />
+}
+
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const role = useAuthStore(s => s.user?.role)
   const secondaryRole = useAuthStore(s => s.user?.secondaryRole)
@@ -158,7 +168,7 @@ export default function App() {
         {/* Публичная страница брифа — без авторизации, по токену. */}
         <Route path="/public/brief/:token" element={<PublicBriefPage />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-          <Route index element={<DashboardPage />} />
+          <Route index element={<HomeRoute />} />
           <Route path="my-notes" element={<RoleGuard><MyNotesPage /></RoleGuard>} />
           {/* Задачи от руководителя + детальная карточка задачи. Раньше этих
               маршрутов не было вовсе — ссылки из уведомлений (/tasks/:id)
@@ -170,6 +180,7 @@ export default function App() {
           <Route path="employee-access" element={<RoleGuard><EmployeeAccessPage /></RoleGuard>} />
           <Route path="employees/:id" element={<RoleGuard><EmployeeDetailPage /></RoleGuard>} />
           <Route path="calendar" element={<RoleGuard><CalendarPage /></RoleGuard>} />
+          <Route path="stories-check" element={<RoleGuard><StoriesCheckPage /></RoleGuard>} />
           <Route path="smm" element={<RoleGuard><SmmPage /></RoleGuard>} />
           <Route path="smm/stories" element={<RoleGuard><SmmStoriesPage /></RoleGuard>} />
           <Route path="smm/projects" element={<RoleGuard><SmmProjectsPage /></RoleGuard>} />
