@@ -153,17 +153,48 @@ export default function ProductionDashboard() {
   const todayLeft = todayItems.filter(it => !isDone(it) && !isCancelled(it)).length
   const monthDone = items.filter(isDone).length
 
+  // Оптимистичные мутации: галочка и перенос меняют кэш СРАЗУ, сервер
+  // догоняет. Раньше интерфейс ждал сохранение и полную перезагрузку двух
+  // списков — с задержкой до Railway это выглядело как «ничего не нажалось».
+  const KEY_MONTH = ['my-work', from, to] as const
+  const KEY_OVER = ['my-work-overdue', overdueFrom, todayKey] as const
+  const snapshot = async () => {
+    await qc.cancelQueries({ queryKey: ['my-work'] })
+    await qc.cancelQueries({ queryKey: ['my-work-overdue'] })
+    return { month: qc.getQueryData<any>(KEY_MONTH), over: qc.getQueryData<any>(KEY_OVER) }
+  }
+  const patchItem = (id: string, fn: (it: Item) => Item) => {
+    const patch = (old: any) => old ? { ...old, items: (old.items || []).map((it: Item) => it.id === id ? fn(it) : it) } : old
+    qc.setQueryData<any>(KEY_MONTH, patch)
+    qc.setQueryData<any>(KEY_OVER, patch)
+  }
+  const rollback = (ctx: any) => {
+    if (ctx?.month) qc.setQueryData(KEY_MONTH, ctx.month)
+    if (ctx?.over) qc.setQueryData(KEY_OVER, ctx.over)
+  }
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['my-work'] })
     qc.invalidateQueries({ queryKey: ['my-work-overdue'] })
   }
   const toggle = useMutation({
     mutationFn: (v: { id: string; done: boolean }) => contentPlanApi.myWorkUpdate(v.id, { done: v.done }),
-    onSuccess: refresh,
+    onMutate: async (v) => {
+      const ctx = await snapshot()
+      patchItem(v.id, it => ({ ...it, status: v.done ? 'published' : 'planned' }))
+      return ctx
+    },
+    onError: (_e, _v, ctx) => rollback(ctx),
+    onSettled: refresh,
   })
   const move = useMutation({
     mutationFn: (v: { id: string; date: string }) => contentPlanApi.myWorkUpdate(v.id, { date: v.date }),
-    onSuccess: refresh,
+    onMutate: async (v) => {
+      const ctx = await snapshot()
+      patchItem(v.id, it => ({ ...it, date: v.date, status: 'planned' }))
+      return ctx
+    },
+    onError: (_e, _v, ctx) => rollback(ctx),
+    onSettled: refresh,
   })
 
   const days = eachDayOfInterval({ start: startOfMonth(cursor), end: endOfMonth(cursor) })

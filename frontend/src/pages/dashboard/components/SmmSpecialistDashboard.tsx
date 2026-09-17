@@ -210,16 +210,40 @@ export default function SmmSpecialistDashboard() {
     qc.invalidateQueries({ queryKey: ['smm-calendar'] })
     qc.invalidateQueries({ queryKey: ['smm-calendar-overdue'] })
   }
+  // Перенос и отмена — тоже оптимистично, как галочка: кэш меняется сразу,
+  // сервер догоняет; при ошибке возвращаем снимок.
+  const patchEvent = (itemId: string, fn: (e: any) => any) => {
+    const patch = (old: any) => old ? { ...old, events: old.events.map((e: any) => e.itemId === itemId ? fn(e) : e) } : old
+    qc.setQueryData<any>(['smm-calendar', from, to], patch)
+    qc.setQueriesData({ queryKey: ['smm-calendar-overdue'] }, patch)
+  }
+  const snapshotCal = async () => {
+    await qc.cancelQueries({ queryKey: ['smm-calendar', from, to] })
+    return { prev: qc.getQueryData<any>(['smm-calendar', from, to]) }
+  }
+  const rollbackCal = (ctx: any) => { if (ctx?.prev) qc.setQueryData(['smm-calendar', from, to], ctx.prev) }
   // Перенос: дата меняется, статус возвращается в «запланировано».
   const moveMut = useMutation({
     mutationFn: (v: { itemId: string; date: string }) =>
       contentPlanApi.smartUpdate(v.itemId, { publishDate: v.date, status: 'planned' }),
+    onMutate: async (v) => {
+      const ctx = await snapshotCal()
+      patchEvent(v.itemId, e => ({ ...e, date: v.date, status: 'planned' }))
+      return ctx
+    },
+    onError: (_e, _v, ctx) => rollbackCal(ctx),
     onSettled: refetchCal,
   })
   // Отмена: задача уходит из просрочек, но выполненной НЕ считается.
   const cancelMut = useMutation({
     mutationFn: (v: { itemId: string; cancel: boolean }) =>
       contentPlanApi.smartUpdate(v.itemId, { status: v.cancel ? 'cancelled' : 'planned' }),
+    onMutate: async (v) => {
+      const ctx = await snapshotCal()
+      patchEvent(v.itemId, e => ({ ...e, status: v.cancel ? 'cancelled' : 'planned' }))
+      return ctx
+    },
+    onError: (_e, _v, ctx) => rollbackCal(ctx),
     onSettled: refetchCal,
   })
   const moveTo = (e: any, d: Date) => { if (e.itemId) moveMut.mutate({ itemId: e.itemId, date: dk(d) }) }
