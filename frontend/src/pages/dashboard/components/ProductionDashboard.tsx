@@ -6,17 +6,21 @@
 // списке — ярлык у каждой карточки свой, и разделять кабинеты не нужно.
 //
 // Строение повторяет кабинет СММ-специалиста: цифры дня, мини-месяц,
-// задачи выбранного дня, просрочка.
-import { useMemo, useState } from 'react'
+// модальное окно дня, просрочка. Но ячейка календаря другая: у этих людей
+// задача всегда одного вида, и точки по типам ничего не говорят. Вместо них
+// тепловая карта — чем больше работы в дне, тем насыщеннее ячейка; день,
+// где всё сдано, помечен галочкой.
+import { useMemo, useState, useEffect, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay,
+  startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday,
   addMonths, format, subDays, differenceInCalendarDays,
 } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import {
   Camera, Scissors, Palette, Film, Image as ImageIcon,
-  ChevronLeft, ChevronRight, AlertTriangle, Check, CalendarDays,
+  ChevronLeft, ChevronRight, AlertTriangle, Check, CalendarDays, X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { contentPlanApi } from '@/services/api.service'
@@ -37,18 +41,32 @@ type Item = {
 
 /** Ярлык, иконка и цвет по этапу. Карточка без этапа — это публикация,
  *  назначенная лично (пока такого не бывает, но пусть не ломается). */
+// rgb — для тепловой заливки ячейки (насыщенность считается от числа задач,
+// поэтому цвет задаётся инлайном, а не классом).
 const STAGE = {
-  shoot:  { label: 'Съёмка', Icon: Camera,   cls: 'text-lime-600 dark:text-lime-400 bg-lime-500/12',       dot: 'bg-lime-500' },
-  edit:   { label: 'Монтаж', Icon: Scissors, cls: 'text-violet-500 dark:text-violet-400 bg-violet-500/12', dot: 'bg-violet-500' },
-  design: { label: 'Дизайн', Icon: Palette,  cls: 'text-fuchsia-500 dark:text-fuchsia-400 bg-fuchsia-500/12', dot: 'bg-fuchsia-500' },
+  shoot:  { label: 'Съёмка', Icon: Camera,   cls: 'text-lime-600 dark:text-lime-400 bg-lime-500/12',          rgb: '132,204,22' },
+  edit:   { label: 'Монтаж', Icon: Scissors, cls: 'text-violet-500 dark:text-violet-400 bg-violet-500/12',    rgb: '139,92,246' },
+  design: { label: 'Дизайн', Icon: Palette,  cls: 'text-fuchsia-500 dark:text-fuchsia-400 bg-fuchsia-500/12', rgb: '217,70,239' },
 } as const
 
-type Meta = { label: string; Icon: any; cls: string; dot: string }
+type Meta = { label: string; Icon: any; cls: string; rgb: string }
 function meta(it: Item): Meta {
   if (it.stage && STAGE[it.stage]) return STAGE[it.stage]
   return it.contentType === 'reel'
-    ? { label: 'Рилс', Icon: Film, cls: 'text-blue-500 dark:text-blue-400 bg-blue-500/12', dot: 'bg-blue-500' }
-    : { label: 'Макет', Icon: ImageIcon, cls: 'text-amber-500 dark:text-amber-400 bg-amber-500/12', dot: 'bg-amber-500' }
+    ? { label: 'Рилс', Icon: Film, cls: 'text-blue-500 dark:text-blue-400 bg-blue-500/12', rgb: '59,130,246' }
+    : { label: 'Макет', Icon: ImageIcon, cls: 'text-amber-500 dark:text-amber-400 bg-amber-500/12', rgb: '245,158,11' }
+}
+
+/** Заливка дня: цвет — преобладающий этап, насыщенность — от объёма.
+ *  У «Видеографа / Монтажёра» день со съёмкой и монтажом красится в тот
+ *  цвет, которого больше. Потолок 45%, чтобы число оставалось читаемым. */
+function heatStyle(list: Item[]): CSSProperties | undefined {
+  if (!list.length) return undefined
+  const count = new Map<string, number>()
+  for (const it of list) count.set(meta(it).rgb, (count.get(meta(it).rgb) || 0) + 1)
+  const rgb = [...count.entries()].sort((a, b) => b[1] - a[1])[0][0]
+  const alpha = Math.min(0.45, 0.10 + list.length * 0.06)
+  return { background: `rgba(${rgb},${alpha.toFixed(2)})` }
 }
 /** Название: у карточки подготовки оно у родителя («Reels #4»), у своей — своё. */
 const titleOf = (it: Item) =>
@@ -69,6 +87,15 @@ export default function ProductionDashboard() {
   const qc = useQueryClient()
   const [cursor, setCursor] = useState(() => new Date())
   const [sel, setSel] = useState(() => new Date())
+  const [dayOpen, setDayOpen] = useState(false)
+  const closeDay = () => setDayOpen(false)
+  // Escape закрывает окно дня — как везде в системе.
+  useEffect(() => {
+    if (!dayOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeDay() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [dayOpen])
 
   const from = dk(startOfMonth(cursor))
   const to = dk(endOfMonth(cursor))
@@ -154,49 +181,66 @@ export default function ProductionDashboard() {
             const key = dk(d)
             const list = byDay[key] || []
             const late = overdueByDay[key] || 0
-            const isSel = isSameDay(d, sel)
             const t = isToday(d)
+            const allDone = list.length > 0 && list.every(it => isDone(it) || isCancelled(it))
             return (
               <button
                 key={key}
-                onClick={() => setSel(d)}
+                onClick={() => { setSel(d); setDayOpen(true) }}
+                style={heatStyle(list)}
                 className={clsx(
                   'min-h-[58px] rounded-xl border p-1.5 flex flex-col text-left transition',
-                  // Сегодня — рамка с ореолом, выбранный день — пунктир: два разных
-                  // сигнала, иначе при клике по другому дню сегодня теряется.
-                  isSel ? 'bg-surface-100 dark:bg-surface-800/70' : 'bg-surface-50 dark:bg-surface-800/40',
+                  // Сегодня — рамка с ореолом; выбранный день не подсвечиваем: его
+                  // показывает открытое окно.
+                  !list.length && 'bg-surface-50 dark:bg-surface-800/40',
                   t ? 'border-primary-500 ring-[3px] ring-primary-500/20'
                     : late > 0 ? 'border-red-300 dark:border-red-800/70'
                     : 'border-surface-100 dark:border-surface-700/60 hover:border-surface-300 dark:hover:border-surface-600',
-                  isSel && 'outline-dashed outline-2 outline-offset-[-3px] outline-surface-400 dark:outline-surface-500',
                 )}
               >
                 <span className={clsx('text-[11px] font-bold text-right leading-none', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
-                <span className="mt-auto flex flex-wrap items-center gap-[3px]">
-                  {list.slice(0, 4).map(it => (
-                    <i key={it.id} className={clsx('w-[7px] h-[7px] rounded-full', meta(it).dot, isDone(it) && 'opacity-35')} />
-                  ))}
-                  {list.length > 4 && <span className="text-[9px] font-bold text-surface-400">+{list.length - 4}</span>}
-                </span>
+                {/* Всё сдано — галочка; иначе сколько задач в дне. Пустой день пуст. */}
+                {list.length > 0 && (
+                  allDone
+                    ? <Check size={16} strokeWidth={3} className="mt-auto text-emerald-500 dark:text-emerald-400" />
+                    : <span className="mt-auto text-[17px] font-bold tabular-nums leading-none text-surface-700 dark:text-surface-100">{list.length}</span>
+                )}
               </button>
             )
           })}
         </div>
       </div>
 
-      {/* Задачи выбранного дня */}
-      <div className="card">
-        <h2 className="text-sm font-bold mb-1 capitalize">
-          {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM, EEEE', { locale: ru })}
-        </h2>
-        {selItems.length === 0 ? (
-          <p className="text-[12.5px] text-surface-500 dark:text-surface-400 py-3">На этот день задач нет.</p>
-        ) : (
-          <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
-            {selItems.map(it => <Row key={it.id} it={it} onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })} />)}
+      {/* Окно дня — снизу на телефоне, по центру на компьютере; как у СММ. */}
+      {dayOpen && createPortal(
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={closeDay} />
+          <div role="dialog" aria-label="Задачи дня"
+            className="relative w-full sm:max-w-xl max-h-[88vh] sm:max-h-[85vh] flex flex-col bg-white dark:bg-surface-900 rounded-t-[22px] sm:rounded-2xl sm:border border-surface-200 dark:border-surface-700 shadow-2xl">
+            <div className="sm:hidden pt-2 pb-1"><div className="w-10 h-[5px] rounded-full bg-surface-300 dark:bg-surface-600 mx-auto" /></div>
+            <div className="flex items-baseline gap-2.5 px-4 sm:px-5 pt-3 sm:pt-4 pb-3">
+              <h2 className="text-base font-bold text-surface-900 dark:text-surface-100 first-letter:uppercase">
+                {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM, EEEE', { locale: ru })}
+              </h2>
+              <span className="text-xs text-surface-400 dark:text-surface-500">
+                {selItems.filter(isDone).length}/{selItems.length} {plural(selItems.length, 'задача', 'задачи', 'задач')}
+              </span>
+              <button onClick={closeDay} title="Закрыть"
+                className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:text-surface-800 dark:hover:text-surface-200 flex items-center justify-center self-center"><X size={15} /></button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 sm:px-5 py-2 pb-[max(14px,env(safe-area-inset-bottom))]">
+              {selItems.length === 0 ? (
+                <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
+              ) : (
+                <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
+                  {selItems.map(it => <Row key={it.id} it={it} onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })} />)}
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+        </div>,
+        document.body,
+      )}
 
       {/* Просроченное */}
       {overdue.length > 0 && (
