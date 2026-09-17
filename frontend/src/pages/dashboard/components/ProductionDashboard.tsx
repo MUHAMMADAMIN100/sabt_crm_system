@@ -7,10 +7,10 @@
 //
 // Строение повторяет кабинет СММ-специалиста: цифры дня, мини-месяц,
 // модальное окно дня, просрочка. Но ячейка календаря другая: у этих людей
-// задача всегда одного вида, и точки по типам ничего не говорят. Вместо них
-// тепловая карта — чем больше работы в дне, тем насыщеннее ячейка; день,
-// где всё сдано, помечен галочкой.
-import { useMemo, useState, useEffect, type CSSProperties } from 'react'
+// задача всегда одного вида, и точки по ТИПАМ ничего не говорят. Вместо них
+// точки-прогресс — одна на задачу: зелёная сделана, цвет роли в работе,
+// красный контур просрочена. Видно и объём дня, и сколько уже закрыто.
+import { useMemo, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -20,7 +20,7 @@ import {
 import { ru } from 'date-fns/locale'
 import {
   Camera, Scissors, Palette, Film, Image as ImageIcon,
-  ChevronLeft, ChevronRight, AlertTriangle, Check, X,
+  ChevronLeft, ChevronRight, AlertTriangle, X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { contentPlanApi } from '@/services/api.service'
@@ -73,30 +73,6 @@ function meta(it: Item): Meta {
   return it.contentType === 'reel'
     ? { label: 'Рилс', Icon: Film, cls: 'text-blue-500 dark:text-blue-400 bg-blue-500/12', rgb: '59,130,246' }
     : { label: 'Макет', Icon: ImageIcon, cls: 'text-amber-500 dark:text-amber-400 bg-amber-500/12', rgb: '245,158,11' }
-}
-
-/** Заливка дня: цвет — преобладающий этап, насыщенность — от объёма.
- *  У «Видеографа / Монтажёра» день со съёмкой и монтажом красится в тот
- *  цвет, которого больше. Потолок 45%, чтобы число оставалось читаемым. */
-function heatStyle(list: Item[]): CSSProperties | undefined {
-  if (!list.length) return undefined
-  const count = new Map<string, number>()
-  for (const it of list) count.set(meta(it).rgb, (count.get(meta(it).rgb) || 0) + 1)
-  const rgb = [...count.entries()].sort((a, b) => b[1] - a[1])[0][0]
-  const alpha = Math.min(0.45, 0.10 + list.length * 0.06)
-  return { background: `rgba(${rgb},${alpha.toFixed(2)})` }
-}
-/** Название: у карточки подготовки оно у родителя («Reels #4»), у своей — своё. */
-const titleOf = (it: Item) =>
-  (it.parentTopic && it.parentTopic.trim()) || (it.topic && it.topic.trim()) || 'Без названия'
-const isDone = (it: Item) => it.status === 'published'
-const isCancelled = (it: Item) => it.status === 'cancelled'
-
-function plural(n: number, one: string, few: string, many: string) {
-  const d = n % 10, h = n % 100
-  if (d === 1 && h !== 11) return one
-  if (d >= 2 && d <= 4 && (h < 10 || h >= 20)) return few
-  return many
 }
 
 export default function ProductionDashboard() {
@@ -260,28 +236,37 @@ export default function ProductionDashboard() {
             const list = byDay[key] || []
             const late = overdueByDay[key] || 0
             const t = isToday(d)
-            const allDone = list.length > 0 && list.every(it => isDone(it) || isCancelled(it))
+            // Отменённые в точках не показываем — это не работа на день.
+            const dots = list.filter(it => !isCancelled(it))
+            const MAX_DOTS = 8
             return (
               <button
                 key={key}
                 onClick={() => { setSel(d); setDayOpen(true) }}
-                style={heatStyle(list)}
                 className={clsx(
-                  'min-h-[58px] rounded-xl border p-1.5 flex flex-col text-left transition',
+                  'min-h-[58px] rounded-xl border p-1.5 flex flex-col text-left transition bg-surface-50 dark:bg-surface-800/40',
                   // Сегодня — рамка с ореолом; выбранный день не подсвечиваем: его
                   // показывает открытое окно.
-                  !list.length && 'bg-surface-50 dark:bg-surface-800/40',
                   t ? 'border-primary-500 ring-[3px] ring-primary-500/20'
                     : late > 0 ? 'border-red-300 dark:border-red-800/70'
                     : 'border-surface-100 dark:border-surface-700/60 hover:border-surface-300 dark:hover:border-surface-600',
                 )}
               >
                 <span className={clsx('text-[11px] font-bold text-right leading-none', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
-                {/* Всё сдано — галочка; иначе сколько задач в дне. Пустой день пуст. */}
-                {list.length > 0 && (
-                  allDone
-                    ? <Check size={16} strokeWidth={3} className="mt-auto text-emerald-500 dark:text-emerald-400" />
-                    : <span className="mt-auto text-[17px] font-bold tabular-nums leading-none text-surface-700 dark:text-surface-100">{list.length}</span>
+                {/* Точки-прогресс: одна на задачу. Зелёная — сделана, цвет роли —
+                    в работе, красный контур — просрочена. Больше восьми — «+N». */}
+                {dots.length > 0 && (
+                  <span className="mt-auto flex flex-wrap items-center gap-[3px]">
+                    {dots.slice(0, MAX_DOTS).map(it => {
+                      const done = isDone(it)
+                      const lateOne = !done && it.date < todayKey
+                      return (
+                        <i key={it.id} className={clsx('w-[7px] h-[7px] rounded-[2px] shrink-0', done && 'bg-emerald-500', lateOne && 'border-[1.5px] border-red-500')}
+                          style={!done && !lateOne ? { background: `rgb(${meta(it).rgb})` } : undefined} />
+                      )
+                    })}
+                    {dots.length > MAX_DOTS && <span className="text-[9px] font-bold leading-none text-surface-400">+{dots.length - MAX_DOTS}</span>}
+                  </span>
                 )}
               </button>
             )
