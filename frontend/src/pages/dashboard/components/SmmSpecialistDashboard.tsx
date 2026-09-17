@@ -359,21 +359,22 @@ export default function SmmSpecialistDashboard() {
   return (
     <div className="space-y-4">
       {/* Сводка дня */}
+      {/* Шапка как в кабинете производства: слева кольцо и день, справа
+          цифры в одну строку. На телефоне цифры уходят вниз во всю ширину. */}
       <div className="card">
-        <div className="flex items-center gap-4">
-          <Ring done={selDone} total={selActive.length} />
-          <div className="min-w-0 flex-1">
-            <h2 className="text-[17px] font-extrabold text-surface-900 dark:text-surface-100 first-letter:uppercase leading-tight">
-              {isToday(sel) ? 'Сегодня' : format(sel, 'EEEE, d MMMM', { locale: ru })}
-            </h2>
-            <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5">
-              {summary.length ? `Осталось: ${summary.join(' · ')}` : 'Всё закрыто — задач и сторис на этот день не осталось'}
-            </p>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-4 min-w-0 flex-1">
+            <Ring done={selDone} total={selActive.length} />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[17px] font-extrabold text-surface-900 dark:text-surface-100 first-letter:uppercase leading-tight">
+                {isToday(sel) ? 'Сегодня' : format(sel, 'EEEE, d MMMM', { locale: ru })}
+              </h2>
+              <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5">
+                {summary.length ? `Осталось: ${summary.join(' · ')}` : 'Всё закрыто — задач и сторис на этот день не осталось'}
+              </p>
+            </div>
           </div>
-        </div>
-        {/* Цифры — отдельной строкой: на телефоне во всю ширину карточки,
-            на компьютере с отступом под колонку заголовка (кольцо 68 + gap 16). */}
-        <div className="flex flex-wrap gap-2 mt-3 sm:pl-[84px]">
+          <div className="flex flex-wrap gap-2 sm:justify-end sm:shrink-0">
           {overdue.length > 0 && (
             <Metric value={String(overdueOpen.length)} label="просрочено" tone="danger" />
           )}
@@ -383,6 +384,7 @@ export default function SmmSpecialistDashboard() {
             bar={monthStoriesTarget > 0 ? Math.min(1, monthStories / monthStoriesTarget) : 0}
           />
           <Metric value={String(reelsDone)} label="рилсов сдано" tone={reelsDone > 0 ? 'ok' : undefined} />
+          </div>
         </div>
       </div>
 
