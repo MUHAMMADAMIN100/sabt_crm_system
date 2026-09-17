@@ -36,6 +36,7 @@ import { ProjectAdsModule } from './modules/project-ads/project-ads.module';
 import { ProjectAnnouncementsModule } from './modules/project-announcements/project-announcements.module';
 import { SmmTariffsModule } from './modules/smm-tariffs/smm-tariffs.module';
 import { ContentPlanModule } from './modules/content-plan/content-plan.module';
+import { ProductionDigestModule } from './modules/production-digest/production-digest.module';
 import { RiskAnalyticsModule } from './modules/risk-analytics/risk-analytics.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { OrganizerDirectoryModule } from './modules/organizer-directory/organizer-directory.module';
@@ -115,6 +116,7 @@ import { DbIndexesService } from './common/db-indexes.service';
     ProjectAnnouncementsModule,
     SmmTariffsModule,
     ContentPlanModule,
+    ProductionDigestModule,
     RiskAnalyticsModule,
     FinanceModule,
     TeamsModule,
