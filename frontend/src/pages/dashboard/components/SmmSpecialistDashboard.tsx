@@ -308,7 +308,11 @@ export default function SmmSpecialistDashboard() {
   const selEvents = (contentByDay[selKey] || []).slice().sort((a, b) => {
     // публикации выше задач подготовки; внутри — по названию
     const order = (e: any) => (e.kind === 'shoot' ? 1 : 0)
+    // Одинаковые названия у разных проектов («Пост 1») — добиваем проектом
+    // и id, чтобы порядок не плавал после отметки.
     return order(a) - order(b) || taskTitle(a).localeCompare(taskTitle(b), 'ru')
+      || String(a.projectName || '').localeCompare(String(b.projectName || ''), 'ru')
+      || String(a.id).localeCompare(String(b.id))
   })
   // Отменённые остаются в списке, но из счёта убраны: это не работа на день.
   const selActive = selEvents.filter((e: any) => !isCancelled(e))

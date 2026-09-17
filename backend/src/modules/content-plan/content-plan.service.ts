@@ -193,7 +193,7 @@ export class ContentPlanService {
        WHERE ci."assigneeId" = $1
          AND ci."publishDate" IS NOT NULL
          AND ci."publishDate"::date >= ($2)::date AND ci."publishDate"::date <= ($3)::date
-       ORDER BY ci."publishDate" ASC`,
+       ORDER BY ci."publishDate" ASC, ci."publishTime" ASC NULLS LAST, ci."createdAt" ASC, ci.id ASC`,
       [userId, from, to],
     ).catch((e: any) => { this.logger.warn(`myWork failed: ${e?.message || e}`); return []; });
 

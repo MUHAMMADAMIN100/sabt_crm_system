@@ -141,7 +141,7 @@ export default function ProductionDashboard() {
     const list = (pastData?.items ?? []) as Item[]
     return list
       .filter(it => it.date && it.date < todayKey && !isDone(it) && !isCancelled(it))
-      .sort((a, b) => a.date.localeCompare(b.date))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.projectName.localeCompare(b.projectName, 'ru') || a.id.localeCompare(b.id))
   }, [pastData, todayKey])
   const overdueByDay = useMemo(() => {
     const m: Record<string, number> = {}
@@ -200,7 +200,14 @@ export default function ProductionDashboard() {
   const days = eachDayOfInterval({ start: startOfMonth(cursor), end: endOfMonth(cursor) })
   const pad = (getDay(startOfMonth(cursor)) + 6) % 7
   const goMonth = (n: number) => setCursor(c => addMonths(c, n))
-  const selItems = (byDay[selKey] || []).slice().sort((a, b) => (a.time || '99').localeCompare(b.time || '99'))
+  // Порядок строго детерминирован: время → проект → название → id. Без
+  // этого после отметки строки менялись местами — сервер отдавал задачи
+  // одной даты в том порядке, в каком они лежат в базе, а он плавает.
+  const selItems = (byDay[selKey] || []).slice().sort((a, b) =>
+    (a.time || '99').localeCompare(b.time || '99')
+    || a.projectName.localeCompare(b.projectName, 'ru')
+    || titleOf(a).localeCompare(titleOf(b), 'ru')
+    || a.id.localeCompare(b.id))
   // Панель листает стрелками тот список, из которого её открыли.
   const navList: Item[] = dayOpen ? selItems : overdue
   const openIdx = openId ? navList.findIndex(it => it.id === openId) : -1
