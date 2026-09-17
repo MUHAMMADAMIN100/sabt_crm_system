@@ -108,6 +108,10 @@ export default function ProductionDashboard() {
   const [dayOpen, setDayOpen] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
   const closeDay = () => { setDayOpen(false); setOpenId(null) }
+  // Просрочка, закрытая в этой сессии: строка не исчезает, а остаётся
+  // зачёркнутой — так видно, что именно сделал, и можно снять отметку,
+  // если промахнулся. После перезагрузки страницы сделанное уходит из блока.
+  const [keep, setKeep] = useState<Set<string>>(() => new Set())
   // Escape закрывает окно дня — но если поверх открыта панель задачи, Escape
   // закрывает сначала её (панель слушает клавишу сама).
   useEffect(() => {
@@ -140,14 +144,16 @@ export default function ProductionDashboard() {
   const overdue = useMemo(() => {
     const list = (pastData?.items ?? []) as Item[]
     return list
-      .filter(it => it.date && it.date < todayKey && !isDone(it) && !isCancelled(it))
+      .filter(it => it.date && it.date < todayKey && (!isDone(it) || keep.has(it.id)) && !isCancelled(it))
       .sort((a, b) => a.date.localeCompare(b.date) || a.projectName.localeCompare(b.projectName, 'ru') || a.id.localeCompare(b.id))
-  }, [pastData, todayKey])
+  }, [pastData, todayKey, keep])
+  // В счётчике и на календаре — только несделанное.
+  const overdueOpen = useMemo(() => overdue.filter(it => !isDone(it)), [overdue])
   const overdueByDay = useMemo(() => {
     const m: Record<string, number> = {}
-    for (const it of overdue) m[it.date] = (m[it.date] || 0) + 1
+    for (const it of overdueOpen) m[it.date] = (m[it.date] || 0) + 1
     return m
-  }, [overdue])
+  }, [overdueOpen])
 
   const todayItems = byDay[todayKey] || []
   const todayLeft = todayItems.filter(it => !isDone(it) && !isCancelled(it)).length
@@ -227,7 +233,7 @@ export default function ProductionDashboard() {
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Tile value={String(overdue.length)} label="просрочено" tone={overdue.length > 0 ? 'bad' : undefined} />
+            <Tile value={String(overdueOpen.length)} label="просрочено" tone={overdueOpen.length > 0 ? 'bad' : undefined} />
             <Tile value={String(monthDone)} label={`сдано за ${format(cursor, 'LLLL', { locale: ru })}`} tone={monthDone > 0 ? 'ok' : undefined} />
             <Tile value={String(todayItems.length)} label="задач сегодня" />
           </div>
@@ -313,12 +319,18 @@ export default function ProductionDashboard() {
       {overdue.length > 0 && (
         <div className="card border-red-200/70 dark:border-red-900/40">
           <h2 className="text-sm font-bold mb-1 flex items-center gap-2 text-red-600 dark:text-red-400">
-            <AlertTriangle size={15} /> Просрочено · {overdue.length}
+            <AlertTriangle size={15} /> Просрочено · {overdueOpen.length}
           </h2>
           <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
             {overdue.map(it => (
-              <Row key={it.id} it={it} late={Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(it.date + 'T00:00:00')))}
-                onToggle={() => toggle.mutate({ id: it.id, done: true })} onInfo={() => setOpenId(it.id)} />
+              <Row key={it.id} it={it}
+                late={isDone(it) ? undefined : Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(it.date + 'T00:00:00')))}
+                onToggle={() => {
+                  const done = !isDone(it)
+                  if (done) setKeep(prev => new Set(prev).add(it.id))
+                  toggle.mutate({ id: it.id, done })
+                }}
+                onInfo={() => setOpenId(it.id)} />
             ))}
           </div>
         </div>
