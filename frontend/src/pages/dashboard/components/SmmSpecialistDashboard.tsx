@@ -1084,7 +1084,9 @@ function MoveCalendar({ current, min, max, onPick }: {
         weekStartsOn={1}
         showOutsideDays
         captionLayout="label"
-        className="rdp-custom rdp-min p-1 text-sm"
+        className="rdp-custom rdp-min rdp-move p-1 text-sm"
+        modifiers={{ release: maxD ? [maxD] : [] }}
+        modifiersClassNames={{ release: 'rdp-release' }}
         components={{ DayButton: DayBtn }}
       />
       <p className="px-2 pb-1 text-[11px] text-surface-500 dark:text-surface-400">{hint}</p>

@@ -1026,3 +1026,80 @@ aside {
                  transform: translate(-50%, -50%) rotate(-8deg) }
   .stamp-shake { animation: none }
 }
+
+/* ============ Календарь переноса в панели задачи (rdp-move) ============
+   Кабинет производства: исполнитель двигает карточку только в окне
+   «от сегодня до дня выхода». Палитра нарочно НЕ зависит от персональной
+   темы: синий акцент терялся на тёмно-синем фоне. Выбранный день —
+   максимально контрастный (белый на тёмной теме, почти чёрный на светлой),
+   доступное окно — плашки, недоступное — сильно погашено, день выхода —
+   зелёный с подписью, стрелки нейтральные. */
+.rdp-move .rdp-day_button {
+  background: theme('colors.surface.100');
+  color: theme('colors.surface.800');
+  font-weight: 600;
+}
+.dark .rdp-move .rdp-day_button {
+  background: theme('colors.surface.800');
+  color: theme('colors.surface.100');
+}
+.rdp-move .rdp-day_button:hover:not([disabled]) { background: theme('colors.surface.200'); }
+.dark .rdp-move .rdp-day_button:hover:not([disabled]) { background: theme('colors.surface.700'); }
+
+/* недоступные дни и дни соседнего месяца — почти невидимы */
+.rdp-move .rdp-disabled .rdp-day_button,
+.rdp-move .rdp-outside .rdp-day_button {
+  background: transparent !important;
+  color: theme('colors.surface.400') !important;
+  opacity: .35;
+  font-weight: 500;
+}
+.dark .rdp-move .rdp-disabled .rdp-day_button,
+.dark .rdp-move .rdp-outside .rdp-day_button { color: theme('colors.surface.500') !important; }
+
+/* выбранный день — контраст, а не цвет темы */
+.rdp-move .rdp-selected .rdp-day_button {
+  background-color: theme('colors.surface.900') !important;
+  color: #fff !important;
+  box-shadow: 0 0 0 3px theme('colors.surface.50');
+}
+.dark .rdp-move .rdp-selected .rdp-day_button {
+  background-color: #fff !important;
+  color: theme('colors.surface.950') !important;
+  box-shadow: 0 0 0 3px theme('colors.surface.900');
+}
+
+/* сегодня — точка нейтральным цветом */
+.rdp-move .rdp-today:not(.rdp-selected) .rdp-day_button { color: theme('colors.surface.900'); }
+.dark .rdp-move .rdp-today:not(.rdp-selected) .rdp-day_button { color: #fff; }
+.rdp-move .rdp-today:not(.rdp-selected) .rdp-day_button::after { background: theme('colors.surface.900'); }
+.dark .rdp-move .rdp-today:not(.rdp-selected) .rdp-day_button::after { background: #fff; }
+
+/* день выхода публикации */
+.rdp-move .rdp-release:not(.rdp-selected) .rdp-day_button {
+  background: theme('colors.emerald.50') !important;
+  color: theme('colors.emerald.700') !important;
+  box-shadow: inset 0 0 0 1.5px theme('colors.emerald.500');
+  opacity: 1;
+}
+.dark .rdp-move .rdp-release:not(.rdp-selected) .rdp-day_button {
+  background: rgb(16 185 129 / .16) !important;
+  color: theme('colors.emerald.400') !important;
+}
+
+/* стрелки и заголовок — нейтральные, заметные */
+.rdp-move .rdp-month_caption { justify-content: center; }
+.rdp-move .rdp-button_previous,
+.rdp-move .rdp-button_next {
+  color: theme('colors.surface.600');
+  background: theme('colors.surface.100');
+  border: 1px solid theme('colors.surface.200');
+  border-radius: 9px;
+}
+.dark .rdp-move .rdp-button_previous,
+.dark .rdp-move .rdp-button_next {
+  color: theme('colors.surface.200');
+  background: theme('colors.surface.800');
+  border-color: theme('colors.surface.700');
+}
+.rdp-move .rdp-chevron { fill: currentColor; }
