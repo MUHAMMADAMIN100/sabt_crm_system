@@ -132,6 +132,15 @@ export class ContentPlanItem {
   @Column({ type: 'uuid', nullable: true })
   shootForItemId: string | null;
 
+  /** Этап подготовки — заполнен ТОЛЬКО у карточек подготовки (shootForItemId):
+   *    shoot  — съёмка   (видеограф),
+   *    edit   — монтаж   (монтажёр),
+   *    design — макет    (дизайнер).
+   *  Раньше этап выводили из типа родителя, но у рилса теперь две карточки
+   *  подготовки (съёмка и монтаж), и тип родителя их не различает. */
+  @Column({ type: 'varchar', length: 8, nullable: true })
+  prepStage: 'shoot' | 'edit' | 'design' | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

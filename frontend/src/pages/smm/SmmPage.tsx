@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare, Palette } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare, Palette, Scissors } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
@@ -25,6 +25,9 @@ export type Ev = {
   // Производная задача подготовки (авто под рилс/пост): reelId — id родителя (для линии-связки),
   // reelDate — дата публикации родителя, parentKind — тип родителя ('reel'→съёмка, 'post'→дизайн).
   derived?: boolean; reelId?: string; reelDate?: string | null; parentKind?: string | null
+  // Этап подготовки: 'shoot' — съёмка, 'edit' — монтаж, 'design' — макет.
+  // У рилса карточек подготовки две (съёмка и монтаж), тип родителя их не различает.
+  prepStage?: 'shoot' | 'edit' | 'design' | null
 }
 // Статус дня по сторис на странице «Сторисы»: сделано (цель достигнута) / частично / не сделано.
 export type SDay = 'done' | 'partial' | 'none'
@@ -48,12 +51,23 @@ const TYPE_ICON: Record<string, any> = {
   post: AlignLeft, ad: AlignLeft, carousel: ImageIcon, other: AlignLeft,
 }
 
-// Задача подготовки (kind 'shoot'): у рилса — «Съёмка» (Camera), у поста — «Дизайн» (Palette).
+// Этап задачи подготовки. Легаси-карточки поля не имеют — там этап выводим
+// из типа родителя, как было до появления монтажа.
+export type PrepStage = 'shoot' | 'edit' | 'design'
+export const prepStageOf = (e: { prepStage?: string | null; parentKind?: string | null }): PrepStage =>
+  e.prepStage === 'edit' ? 'edit'
+    : e.prepStage === 'design' ? 'design'
+    : e.parentKind === 'post' ? 'design' : 'shoot'
+
+// Задача подготовки (kind 'shoot'): съёмка (Camera), монтаж (Scissors), дизайн (Palette).
 // parentIcon — иконка родителя (для карточки в модалке), forWhat — «рилса»/«поста».
-function prepMeta(e: { parentKind?: string | null }) {
-  return e.parentKind === 'post'
-    ? { label: 'Дизайн', Icon: Palette, parentIcon: ImageIcon, forWhat: 'поста', verb: 'Сделать' }
-    : { label: 'Съёмка', Icon: Camera, parentIcon: Film, forWhat: 'рилса', verb: 'Снять' }
+const PREP_META = {
+  shoot:  { label: 'Съёмка', Icon: Camera,   parentIcon: Film,      forWhat: 'рилса', verb: 'Снять' },
+  edit:   { label: 'Монтаж', Icon: Scissors, parentIcon: Film,      forWhat: 'рилса', verb: 'Смонтировать' },
+  design: { label: 'Дизайн', Icon: Palette,  parentIcon: ImageIcon, forWhat: 'поста', verb: 'Сделать' },
+} as const
+function prepMeta(e: { prepStage?: string | null; parentKind?: string | null }) {
+  return PREP_META[prepStageOf(e)]
 }
 
 // Цвет проекта — стабильный по projectId; средние тона читаются в обеих темах.
@@ -89,21 +103,23 @@ const TYPE_LABEL: Record<string, string> = {
 // ─── категории для точек (таб «Сторисы») ──────────────────────────────
 // ─── фильтр по типу в шапке: Reels · Макет · Съёмка · Одноразовые задачи ──
 // «Одноразовые задачи» = всё, что относится к проекту «Одноразовые съёмки».
-type FKind = 'reel' | 'design' | 'shoot' | 'designprep' | 'oneoff'
-const FKINDS: FKind[] = ['reel', 'design', 'shoot', 'designprep', 'oneoff']
-const FKIND_LABEL: Record<FKind, string> = { reel: 'Reels', design: 'Макет', shoot: 'Съёмка', designprep: 'Дизайн', oneoff: 'Одноразовые задачи' }
-const FKIND_ICON: Record<FKind, any> = { reel: Film, design: ImageIcon, shoot: Camera, designprep: Palette, oneoff: CheckSquare }
+type FKind = 'reel' | 'design' | 'shoot' | 'edit' | 'designprep' | 'oneoff'
+const FKINDS: FKind[] = ['reel', 'design', 'shoot', 'edit', 'designprep', 'oneoff']
+const FKIND_LABEL: Record<FKind, string> = { reel: 'Reels', design: 'Макет', shoot: 'Съёмка', edit: 'Монтаж', designprep: 'Дизайн', oneoff: 'Одноразовые задачи' }
+const FKIND_ICON: Record<FKind, any> = { reel: Film, design: ImageIcon, shoot: Camera, edit: Scissors, designprep: Palette, oneoff: CheckSquare }
 const ONEOFF_RE = /одноразов/i
 function matchesFKind(e: Ev, k: FKind): boolean {
   if (k === 'oneoff') return ONEOFF_RE.test(e.projectName || '')
   if (k === 'reel') return e.kind === 'publication' && (e.contentType === 'reel' || e.contentType === 'video')
-  // Задачи подготовки (kind 'shoot'): под рилс — «Съёмка», под пост — «Дизайн» (parentKind='post').
-  if (k === 'shoot') return e.kind === 'shoot' && e.parentKind !== 'post'
-  if (k === 'designprep') return e.kind === 'shoot' && e.parentKind === 'post'
+  // Задачи подготовки (kind 'shoot') различаются этапом: съёмка / монтаж / дизайн.
+  if (k === 'shoot') return e.kind === 'shoot' && prepStageOf(e) === 'shoot'
+  if (k === 'edit') return e.kind === 'shoot' && prepStageOf(e) === 'edit'
+  if (k === 'designprep') return e.kind === 'shoot' && prepStageOf(e) === 'design'
   return e.kind === 'publication' && e.contentType === 'design'
 }
-// Какой фильтр «раскрывает» задачу подготовки (делает её не-призраком): под пост — 'designprep', иначе 'shoot'.
-const prepFKind = (e: { parentKind?: string | null }): FKind => e.parentKind === 'post' ? 'designprep' : 'shoot'
+// Какой фильтр «раскрывает» задачу подготовки (делает её не-призраком).
+const PREP_FKIND: Record<PrepStage, FKind> = { shoot: 'shoot', edit: 'edit', design: 'designprep' }
+const prepFKind = (e: { prepStage?: string | null; parentKind?: string | null }): FKind => PREP_FKIND[prepStageOf(e)]
 
 // Контекст выделения: клик по событию подсвечивает его пару (съёмка↔рилс) и линию,
 // остальное гасится; двойной клик открывает карточку. reel = id рилс-события активной пары.
@@ -344,23 +360,28 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         const backlog = old.backlog.filter(b => b.id !== ev.id)
         if (dateStr) {
           events.push({ ...ev, date: dateStr, ...(time !== undefined ? { time } : {}) })  // на дату (+час)
-          // Рилс/пост без задачи подготовки поставили на дату → бэк создаст её на X−1
-          // (рилс→съёмка, пост→дизайн). Добавляем в кэш сразу, иначе появляется только
-          // после полного рефетча (±1 год ≈ 3–4 с). После рефетча temp заменяется реальной.
+          // Рилс/пост без задач подготовки поставили на дату → бэк заведёт их сам:
+          // у рилса съёмку (X−2) и монтаж (X−1), у поста дизайн (X−1). Добавляем в
+          // кэш сразу, иначе они появятся только после полного рефетча (±1 год ≈
+          // 3–4 с). После рефетча temp заменяется реальными карточками.
           if (ev.itemId && ev.kind !== 'shoot' && (ev.contentType === 'reel' || ev.contentType === 'design')) {
-            const hasPrep = old.events.some(e => e.kind === 'shoot' && e.reelId === ev.itemId)
-              || old.backlog.some(e => e.kind === 'shoot' && e.reelId === ev.itemId)
-            if (!hasPrep) {
+            const parentKind = ev.contentType === 'reel' ? 'reel' : 'post'
+            const stages: { stage: PrepStage; days: number }[] = parentKind === 'reel'
+              ? [{ stage: 'shoot', days: 2 }, { stage: 'edit', days: 1 }]
+              : [{ stage: 'design', days: 1 }]
+            for (const st of stages) {
+              const hasPrep = old.events.some(e => e.kind === 'shoot' && e.reelId === ev.itemId && prepStageOf(e) === st.stage)
+                || old.backlog.some(e => e.kind === 'shoot' && e.reelId === ev.itemId && prepStageOf(e) === st.stage)
+              if (hasPrep) continue
               const [yy, mm, dd] = dateStr.split('-').map(Number)
-              let x1 = iso(new Date(yy, mm - 1, dd - 1))
+              let x1 = iso(new Date(yy, mm - 1, dd - st.days))
               const cyc = projCycle(ev.projectId)               // не раньше начала цикла
               if (cyc && x1 < cyc.start) x1 = cyc.start
-              const parentKind = ev.contentType === 'reel' ? 'reel' : 'post'
               events.push({
-                id: `opt-shoot-${ev.itemId}`, kind: 'shoot', date: x1,
+                id: `opt-${st.stage}-${ev.itemId}`, kind: 'shoot', date: x1,
                 projectId: ev.projectId, projectName: ev.projectName,
-                reelId: ev.itemId, derived: true, parentKind, title: ev.topic ?? null,
-                topic: parentKind === 'reel' ? 'Съёмка' : 'Дизайн', time: null, durationMin: ev.durationMin ?? null, status: 'planned',
+                reelId: ev.itemId, derived: true, parentKind, prepStage: st.stage, title: ev.topic ?? null,
+                topic: PREP_META[st.stage].label, time: null, durationMin: ev.durationMin ?? null, status: 'planned',
               })
             }
           }

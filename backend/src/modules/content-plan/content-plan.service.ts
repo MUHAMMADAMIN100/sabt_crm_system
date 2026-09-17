@@ -11,6 +11,7 @@ import { ShootSession } from './shoot-session.entity';
 import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity';
 import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
+import { User } from '../users/user.entity';
 import { DEV_PROJECT_TYPES } from '../../common/sales-segment';
 import { AppGateway } from '../gateway/app.gateway';
 
@@ -131,64 +132,129 @@ export class ContentPlanService {
     return new Date(sy, sm, sAnchor);
   }
 
-  /** Авто-задача подготовки под публикацию (X−1): у РИЛСА — съёмка, у ПОСТА —
-   *  дизайн/макет. Механика одинаковая: при переносе/создании родителя с датой:
-   *  — задачи нет (удалили) → создаём заново на X−1;
-   *  — задача есть НА ДАТЕ → не трогаем (двигается независимо от родителя);
-   *  — задача есть БЕЗ даты (сняли в «Не запланировано») → возвращаем на X−1. */
-  private async ensurePrepForItem(reel: ContentPlanItem | null): Promise<void> {
-    if (!reel) return;
-    if (reel.shootForItemId) return;                      // сама подготовка — не плодим задачу под задачей
-    // Подготовка только под рилсы (съёмка) и посты (дизайн).
-    if (reel.contentType !== ContentItemType.REEL && reel.contentType !== ContentItemType.POST) return;
-    const prepTopic = reel.contentType === ContentItemType.REEL ? 'Съёмка' : 'Дизайн';
-    if (!reel.publishDate) {
-      // Родителя вернули в «Не запланировано» → авто-задача подготовки должна исчезнуть
-      // с календаря (иначе остаётся сиротой). Заново появится при переносе на дату.
-      await this.repo.delete({ shootForItemId: reel.id });
+  /** Роль, которая закрывает этап подготовки. */
+  private static readonly PREP_ROLE = { shoot: 'videographer', edit: 'video_editor', design: 'designer' } as const;
+  /** Поле проекта с назначенными на этап людьми (smmData). */
+  private static readonly PREP_FIELD = { shoot: 'videographerIds', edit: 'videoEditorIds', design: 'designerIds' } as const;
+
+  /** Кто получит карточку подготовки. Порядок такой:
+   *    1. назначенный на ПРОЕКТЕ (smmData.videographerIds и т.п.);
+   *    2. иначе — единственный в агентстве сотрудник с этой ролью. Так решается
+   *       случай «дизайнер у нас один»: весь дизайн уходит ему сам, ничего
+   *       настраивать не нужно;
+   *    3. если таких несколько и на проекте никто не назначен — никто.
+   *       Карточка останется видна СММ-специалисту проекта, и её можно
+   *       передать вручную.
+   *  Вторую роль учитываем: «Видеограф / Монтажёр» — обычная у нас связка. */
+  private async resolvePrepAssignee(
+    stage: 'shoot' | 'edit' | 'design', project: Project | null,
+  ): Promise<string | null> {
+    try {
+      const assigned = (project?.smmData as any)?.[ContentPlanService.PREP_FIELD[stage]];
+      if (Array.isArray(assigned)) {
+        const first = assigned.find((x: any) => typeof x === 'string' && x);
+        if (first) return first;
+      }
+      const role = ContentPlanService.PREP_ROLE[stage];
+      const users = await this.repo.manager.getRepository(User).find({
+        where: [{ role: role as any, isActive: true }, { secondaryRole: role as any, isActive: true }],
+        select: ['id'], take: 3,
+      });
+      return users.length === 1 ? users[0].id : null;
+    } catch (e) {
+      this.logger.warn(`resolvePrepAssignee(${stage}) failed: ${(e as Error).message}`);
+      return null;
+    }
+  }
+
+  /** Этапы подготовки под публикацию и за сколько дней до выхода они стоят.
+   *  У РИЛСА их два: съёмка (X−2) и монтаж (X−1) — монтажёру нужна своя
+   *  карточка со своим сроком, иначе его работы в системе не существует.
+   *  У ПОСТА один — дизайн/макет (X−1). */
+  private prepStagesFor(type: ContentItemType): { stage: 'shoot' | 'edit' | 'design'; topic: string; daysBefore: number }[] {
+    if (type === ContentItemType.REEL) {
+      return [
+        { stage: 'shoot', topic: 'Съёмка', daysBefore: 2 },
+        { stage: 'edit',  topic: 'Монтаж', daysBefore: 1 },
+      ];
+    }
+    if (type === ContentItemType.POST) return [{ stage: 'design', topic: 'Дизайн', daysBefore: 1 }];
+    return [];
+  }
+
+  /** Авто-задачи подготовки под публикацию. Механика на каждый этап та же,
+   *  что была у единственной съёмки: при переносе/создании родителя с датой:
+   *  — карточки нет (удалили) → создаём заново на своём смещении;
+   *  — карточка есть НА ДАТЕ → не трогаем (двигается независимо от родителя);
+   *  — карточка есть БЕЗ даты (сняли в «Не запланировано») → возвращаем. */
+  private async ensurePrepForItem(parent: ContentPlanItem | null): Promise<void> {
+    if (!parent) return;
+    if (parent.shootForItemId) return;                    // сама подготовка — не плодим задачу под задачей
+    const stages = this.prepStagesFor(parent.contentType);
+    if (!stages.length) return;
+    if (!parent.publishDate) {
+      // Родителя вернули в «Не запланировано» → карточки подготовки должны
+      // исчезнуть с календаря (иначе остаются сиротами). Появятся при переносе.
+      await this.repo.delete({ shootForItemId: parent.id });
       return;
     }
     try {
-      let shootDate = new Date(reel.publishDate);
-      shootDate.setDate(shootDate.getDate() - 1);          // X−1
-      // Клэмп по началу цикла: съёмка не должна уходить раньше старта цикла проекта
-      // (рилс в первый день цикла → съёмка в тот же день, а не в прошлом цикле).
+      // Клэмп по началу цикла: подготовка не должна уходить раньше старта
+      // цикла проекта (рилс в первый день цикла → съёмка в тот же день).
       const project = await this.repo.manager.getRepository(Project)
-        .findOne({ where: { id: reel.projectId } }).catch(() => null);
+        .findOne({ where: { id: parent.projectId } }).catch(() => null);
       const cycleDay = Number(project?.smmData?.cycleStartDay);
       const cycleStart = Number.isFinite(cycleDay) && cycleDay >= 1
-        ? this.cycleStartForDate(new Date(reel.publishDate), cycleDay) : null;
-      if (cycleStart && shootDate < cycleStart) shootDate = cycleStart;
+        ? this.cycleStartForDate(new Date(parent.publishDate), cycleDay) : null;
 
-      const shoot = await this.repo.findOne({ where: { shootForItemId: reel.id } });
-      if (shoot) {
-        if (shoot.publishDate) {
-          // Съёмка на дате двигается независимо; трогаем ТОЛЬКО если она уехала
-          // раньше старта цикла (невалидно) — подтягиваем на старт цикла.
-          if (cycleStart && new Date(shoot.publishDate) < cycleStart) {
-            await this.repo.update(shoot.id, { publishDate: cycleStart, status: ContentPlanStatus.PLANNED });
+      const existing = await this.repo.find({ where: { shootForItemId: parent.id } });
+      // Карточки, заведённые до появления монтажа, этапа не имеют: считаем их
+      // тем единственным этапом, который тогда существовал.
+      const legacy = parent.contentType === ContentItemType.POST ? 'design' : 'shoot';
+
+      for (const st of stages) {
+        const cur = existing.find(e => (e.prepStage || legacy) === st.stage);
+        let date = new Date(parent.publishDate);
+        date.setDate(date.getDate() - st.daysBefore);
+        if (cycleStart && date < cycleStart) date = cycleStart;
+
+        if (cur) {
+          if (!cur.prepStage) await this.repo.update(cur.id, { prepStage: st.stage });
+          if (!cur.assigneeId) {                          // карточка из прошлого — дозаполняем исполнителя
+            const uid = await this.resolvePrepAssignee(st.stage, project);
+            if (uid) await this.repo.update(cur.id, { assigneeId: uid });
           }
-          return;
+          if (cur.publishDate) {
+            // На дате — двигается независимо; трогаем ТОЛЬКО если уехала
+            // раньше старта цикла (невалидно) — подтягиваем на старт.
+            if (cycleStart && new Date(cur.publishDate) < cycleStart) {
+              await this.repo.update(cur.id, { publishDate: cycleStart, status: ContentPlanStatus.PLANNED });
+            }
+            continue;
+          }
+          await this.repo.update(cur.id, {                // была снята с даты — возвращаем
+            publishDate: date,
+            publishTime: parent.publishTime ?? null,
+            status: ContentPlanStatus.PLANNED,
+          });
+          continue;
         }
-        await this.repo.update(shoot.id, {                 // была снята с даты — возвращаем на X−1 (в пределах цикла)
-          publishDate: shootDate,
-          publishTime: reel.publishTime ?? null,
+
+        await this.repo.save(this.repo.create({           // карточки нет — создаём
+          assigneeId: await this.resolvePrepAssignee(st.stage, project),
+          projectId: parent.projectId,
+          contentType: parent.contentType,                // тип родителя; shootForItemId делает её подготовкой
+          topic: st.topic,
+          shootForItemId: parent.id,
+          prepStage: st.stage,
+          publishDate: date,
+          publishTime: parent.publishTime ?? null,
+          durationMin: parent.durationMin ?? null,
           status: ContentPlanStatus.PLANNED,
-        });
-        return;
+        }));
       }
-      await this.repo.save(this.repo.create({              // задачи нет — создаём
-        projectId: reel.projectId,
-        contentType: reel.contentType,                     // тип родителя; shootForItemId делает её задачей подготовки
-        topic: prepTopic,                                  // Съёмка (рилс) / Дизайн (пост)
-        shootForItemId: reel.id,
-        publishDate: shootDate,
-        publishTime: reel.publishTime ?? null,
-        durationMin: reel.durationMin ?? null,
-        status: ContentPlanStatus.PLANNED,
-      }));
     } catch (e) {
-      this.logger.warn(`ensurePrepForItem failed for ${reel.id}: ${(e as Error).message}`);
+      this.logger.warn(`ensurePrepForItem failed for ${parent.id}: ${(e as Error).message}`);
     }
   }
 
@@ -565,6 +631,7 @@ export class ContentPlanService {
     // Отдельны от рилсов; двигаются независимо. reelId нужен для линии-связки на фронте.
     const shootItems: any[] = await this.repo.manager.query(
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId",
+              ci."prepStage" AS "prepStage",
               ci.status AS status, ci."fileLink" AS "fileLink",
               to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS "changedAt",
               reel.topic AS "reelTopic", reel."scriptText" AS "reelScript", reel."contentType" AS "parentType",
@@ -624,6 +691,9 @@ export class ContentPlanService {
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
         title: s.reelTopic || null, time: s.time || null,   // название родителя (рилс/пост) = название задачи подготовки
         scriptText: s.reelScript || null, reelDate: s.reelDate || null, parentKind: s.parentType || null, // описание/дата/тип родителя — для модалки
+        // Этап подготовки: shoot — съёмка, edit — монтаж, design — макет.
+        // Легаси-карточки без этапа: пост → дизайн, остальное → съёмка.
+        prepStage: s.prepStage || (s.parentType === 'post' ? 'design' : 'shoot'),
         status: s.status || undefined, // статус задачи подготовки — для отметки «готово» в панели дня
         durationMin: Number(s.durationMin) > 0 ? Number(s.durationMin) : null,
         reelId: s.reelId, // связь с родителем → линия-связка на фронте
@@ -649,6 +719,7 @@ export class ContentPlanService {
     // Несплан­ированные авто-съёмки (сняли с даты) — тоже в «Не запланировано».
     const bshootItems: any[] = await this.repo.manager.query(
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId",
+              ci."prepStage" AS "prepStage",
               reel.topic AS "reelTopic", reel."scriptText" AS "reelScript", reel."contentType" AS "parentType",
               to_char(reel."publishDate"::date, 'YYYY-MM-DD') AS "reelDate"
        FROM content_plan_items ci
@@ -680,6 +751,7 @@ export class ContentPlanService {
         id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot',
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
         title: s.reelTopic || null, scriptText: s.reelScript || null, reelDate: s.reelDate || null, parentKind: s.parentType || null, reelId: s.reelId,
+        prepStage: s.prepStage || (s.parentType === 'post' ? 'design' : 'shoot'),
       })),
     ];
 

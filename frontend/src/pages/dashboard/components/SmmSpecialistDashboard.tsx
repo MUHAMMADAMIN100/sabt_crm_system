@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, contentPlanApi, storiesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { projColor, storiesDailyTarget } from '@/pages/smm/smmShared'
-import { Film, Image as ImageIcon, Palette, Camera, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle, MoreHorizontal, CalendarDays, RotateCcw, Ban, Copy, Paperclip, History as HistoryIcon, ChevronUp, ChevronDown } from 'lucide-react'
+import { Film, Image as ImageIcon, Palette, Camera, Scissors, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle, MoreHorizontal, CalendarDays, RotateCcw, Ban, Copy, Paperclip, History as HistoryIcon, ChevronUp, ChevronDown } from 'lucide-react'
 import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, addMonths, format, subDays, addDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
@@ -33,17 +33,30 @@ function plural(n: number, one: string, few: string, many: string): string {
   return many
 }
 
+/** Этап карточки подготовки. Старые карточки поля не имеют — там этап
+ *  выводим из типа родителя, как было до появления монтажа. */
+const prepStageOf = (e: any): 'shoot' | 'edit' | 'design' =>
+  e?.prepStage === 'edit' ? 'edit'
+    : e?.prepStage === 'design' ? 'design'
+    : e?.parentKind === 'post' ? 'design' : 'shoot'
+
+const PREP_INFO = {
+  shoot:  { Icon: Camera,   tag: 'Съёмка', group: 'shoot'  as const, descLabel: 'Что снять',   fallback: 'Съёмка' },
+  edit:   { Icon: Scissors, tag: 'Монтаж', group: 'edit'   as const, descLabel: 'Что смонтировать', fallback: 'Монтаж рилса' },
+  design: { Icon: Palette,  tag: 'Дизайн', group: 'design' as const, descLabel: 'Описание',    fallback: 'Дизайн макета' },
+}
+
 /** Мета задачи: иконка, ярлык, цветовая группа, подпись описания. */
-function taskInfo(e: any): { Icon: any; tag: string; group: 'reel' | 'maket' | 'shoot' | 'design'; descLabel: string } {
+function taskInfo(e: any): { Icon: any; tag: string; group: 'reel' | 'maket' | 'shoot' | 'edit' | 'design'; descLabel: string } {
   if (e.kind === 'shoot') {
-    if (e.parentKind === 'post') return { Icon: Palette, tag: 'Дизайн', group: 'design', descLabel: 'Описание' }
-    return { Icon: Camera, tag: 'Съёмка', group: 'shoot', descLabel: 'Что снять' }
+    const { Icon, tag, group, descLabel } = PREP_INFO[prepStageOf(e)]
+    return { Icon, tag, group, descLabel }
   }
   if (e.contentType === 'reel' || e.contentType === 'video') return { Icon: Film, tag: 'Рилс', group: 'reel', descLabel: 'Сценарий' }
   return { Icon: ImageIcon, tag: 'Макет', group: 'maket', descLabel: 'Описание' }
 }
 function taskTitle(e: any): string {
-  if (e.kind === 'shoot') return (e.title && e.title.trim()) || (e.parentKind === 'post' ? 'Дизайн макета' : 'Съёмка')
+  if (e.kind === 'shoot') return (e.title && e.title.trim()) || PREP_INFO[prepStageOf(e)].fallback
   return (e.topic && e.topic.trim()) || 'Без названия'
 }
 const isDone = (e: any) => e.status === 'published'
@@ -57,6 +70,7 @@ const GROUP_CLS: Record<string, string> = {
   maket: 'text-amber-500 dark:text-amber-400 bg-amber-500/12',
   shoot: 'text-lime-600 dark:text-lime-400 bg-lime-500/12',
   design: 'text-fuchsia-500 dark:text-fuchsia-400 bg-fuchsia-500/12',
+  edit: 'text-violet-500 dark:text-violet-400 bg-violet-500/12',
 }
 
 /**
