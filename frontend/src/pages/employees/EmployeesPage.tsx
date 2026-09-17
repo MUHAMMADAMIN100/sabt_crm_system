@@ -856,6 +856,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
               <option value="video_editor">Монтажёр</option>
               <option value="organizer">Организатор</option>
               <option value="storymaker">Сторисмейкер</option>
+              <option value="stories_checker">Проверяющий сторис</option>
               <option value="scriptwriter">Сценарист / SMM-менеджер</option>
               <option value="qa">Контролёр качества</option>
               <option value="publisher">Публикатор</option>
