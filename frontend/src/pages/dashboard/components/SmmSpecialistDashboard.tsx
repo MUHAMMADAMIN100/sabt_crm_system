@@ -87,6 +87,11 @@ export default function SmmSpecialistDashboard() {
   const [sel, setSel] = useState(() => new Date())
   const [openId, setOpenId] = useState<string | null>(null)
   const [dayOpen, setDayOpen] = useState(false)
+  // Просрочка, закрытая в этой сессии: строка не исчезает, а остаётся
+  // зачёркнутой — видно, что сделал, и можно снять отметку, если промахнулся.
+  // После перезагрузки страницы сделанное уходит из блока (как в кабинете
+  // производства), иначе за 75 дней он зарос бы закрытыми задачами.
+  const [keep, setKeep] = useState<Set<string>>(() => new Set())
   const [pendingStory, setPendingStory] = useState<Record<string, number>>({})
 
   const from = dk(startOfMonth(cursor))
@@ -160,17 +165,20 @@ export default function SmmSpecialistDashboard() {
   const overdue = useMemo(() => {
     const list = (overdueCal?.events || []).filter((e: any) => {
       if (!e.date || e.date >= todayKey || !myProjectIds.has(e.projectId)) return false
-      if (isDone(e) || isCancelled(e)) return false
+      if (isCancelled(e)) return false
+      if (isDone(e) && !keep.has(e.id)) return false
       return (e.kind === 'publication' && e.contentType !== 'story') || e.kind === 'shoot'
     })
     return list.sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)))
-  }, [overdueCal, myProjectIds, todayKey])
+  }, [overdueCal, myProjectIds, todayKey, keep])
+  // В плитке, заголовке и на календаре — только несделанное.
+  const overdueOpen = useMemo(() => overdue.filter((e: any) => !isDone(e)), [overdue])
 
   const overdueByDay = useMemo(() => {
     const m: Record<string, number> = {}
-    for (const e of overdue) m[e.date] = (m[e.date] || 0) + 1
+    for (const e of overdueOpen) m[e.date] = (m[e.date] || 0) + 1
     return m
-  }, [overdue])
+  }, [overdueOpen])
 
   // Цифры месяца для сводки: сторис факт/норма и сданные рилсы.
   const monthStories = useMemo(
@@ -367,7 +375,7 @@ export default function SmmSpecialistDashboard() {
             на компьютере с отступом под колонку заголовка (кольцо 68 + gap 16). */}
         <div className="flex flex-wrap gap-2 mt-3 sm:pl-[84px]">
           {overdue.length > 0 && (
-            <Metric value={String(overdue.length)} label="просрочено" tone="danger" />
+            <Metric value={String(overdueOpen.length)} label="просрочено" tone="danger" />
           )}
           <Metric
             value={`${monthStories}/${monthStoriesTarget}`}
@@ -392,6 +400,10 @@ export default function SmmSpecialistDashboard() {
             const key = dk(d)
             const c = counts(key)
             const late = overdueByDay[key] || 0
+            // День, где все задачи закрыты, — зелёная галочка у числа: сделанное
+            // видно прямо в календаре, не открывая день.
+            const dayEv = contentByDay[key] || []
+            const allDone = dayEv.length > 0 && dayEv.every((e: any) => isDone(e) || isCancelled(e))
             // Норма сторис именно на этот день: она зависит от числа дней в месяце.
             const storyTarget = trackedProjects.reduce((sum: number, p: any) => sum + dailyTarget(p, d), 0)
             const isSel = isSameDay(d, sel)
@@ -414,7 +426,10 @@ export default function SmmSpecialistDashboard() {
                   isSel && 'outline-dashed outline-2 outline-offset-[-3px] outline-surface-400 dark:outline-surface-500',
                 )}
               >
-                <span className={clsx('text-[11px] font-bold text-right leading-none', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
+                <span className="flex items-center justify-between leading-none">
+                  {allDone ? <Check size={11} strokeWidth={3} className="text-emerald-500 dark:text-emerald-400" /> : <span />}
+                  <span className={clsx('text-[11px] font-bold', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
+                </span>
 
                 {/* Телефон: точка на тип, размер по объёму, снизу сторис за день. */}
                 <span className="sm:hidden mt-auto w-full">
@@ -449,13 +464,15 @@ export default function SmmSpecialistDashboard() {
       {overdue.length > 0 && (
         <div className="card border-red-200/70 dark:border-red-900/40">
           <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-red-500 dark:text-red-400 mb-2">
-            <AlertTriangle size={13} /> Просрочено · {overdue.length}
+            <AlertTriangle size={13} /> Просрочено · {overdueOpen.length}
           </div>
           <div className="space-y-2">
             {overdue.map(e => (
-              <TaskRow key={e.id} e={e} onToggle={() => toggleDone(e)} onInfo={() => setOpenId(e.id)}
+              <TaskRow key={e.id} e={e}
+                onToggle={() => { if (!isDone(e)) setKeep(prev => new Set(prev).add(e.id)); toggleDone(e) }}
+                onInfo={() => setOpenId(e.id)}
                 onMove={d => moveTo(e, d)} onCancel={c => setCancelled(e, c)}
-                late={Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(e.date + 'T00:00:00')))} />
+                late={isDone(e) ? undefined : Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(e.date + 'T00:00:00')))} />
             ))}
           </div>
         </div>
