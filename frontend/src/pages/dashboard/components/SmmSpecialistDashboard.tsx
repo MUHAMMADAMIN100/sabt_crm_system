@@ -358,10 +358,16 @@ export default function SmmSpecialistDashboard() {
                 onClick={() => { setSel(d); setPendingStory({}); setDayOpen(true) }}
                 className={clsx(
                   'min-h-[66px] rounded-xl border p-1.5 flex flex-col text-left transition',
-                  t ? 'bg-primary-50 dark:bg-primary-900/20' : 'bg-surface-50 dark:bg-surface-800/40',
-                  isSel ? 'border-primary-500 ring-1 ring-primary-500'
+                  // «Сегодня» и «выбранный день» — два РАЗНЫХ сигнала, иначе они
+                  // сливаются: раньше и там и там была акцентная рамка, и стоило
+                  // открыть другой день, как сегодняшний переставал читаться.
+                  // Сегодня — акцентная рамка с мягким ореолом (заливки нет),
+                  // выбранный день — пунктирный контур внутри ячейки.
+                  isSel ? 'bg-surface-100 dark:bg-surface-800/70' : 'bg-surface-50 dark:bg-surface-800/40',
+                  t ? 'border-primary-500 ring-[3px] ring-primary-500/20'
                     : late > 0 ? 'border-red-300 dark:border-red-800/70'
                     : 'border-surface-100 dark:border-surface-700/60 hover:border-surface-300 dark:hover:border-surface-600',
+                  isSel && 'outline-dashed outline-2 outline-offset-[-3px] outline-surface-400 dark:outline-surface-500',
                 )}
               >
                 <span className={clsx('text-[11px] font-bold text-right leading-none', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
