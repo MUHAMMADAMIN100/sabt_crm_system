@@ -739,11 +739,13 @@ function historyText(h: any): string {
 /** Панель задачи. Экспортирована: её же использует кабинет производства
  *  (видеограф / монтажёр / дизайнер) — там canCancel=false, потому что
  *  отменить задачу может руководство, а не исполнитель. */
-export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel, canCancel = true }: {
+export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel, canCancel = true, showFile = true }: {
   e: any; pos: number; total: number
   onPrev: () => void; onNext: () => void; onClose: () => void
   onToggle: () => void; onMove: (d: Date) => void; onCancel: (cancel: boolean) => void
   canCancel?: boolean
+  /** Ссылка на файл. В кабинете производства её не показываем (решение владельца). */
+  showFile?: boolean
 }) {
   const { tag, group, descLabel } = taskInfo(e)
   const done = isDone(e)
@@ -915,7 +917,7 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
             </section>
           )}
 
-          {fileHref && (
+          {showFile && fileHref && (
             <a href={fileHref} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-2.5 h-11 px-3 rounded-xl border border-surface-200 dark:border-surface-700 hover:bg-surface-50 dark:hover:bg-surface-800 text-[13px]">
               <Paperclip size={15} className="text-surface-400 shrink-0" />

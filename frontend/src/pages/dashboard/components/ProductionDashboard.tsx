@@ -302,6 +302,7 @@ export default function ProductionDashboard() {
           onMove={d => move.mutate({ id: openItem.id, date: dk(d) })}
           onCancel={() => {}}
           canCancel={false}
+          showFile={false}
         />
       )}
     </div>
