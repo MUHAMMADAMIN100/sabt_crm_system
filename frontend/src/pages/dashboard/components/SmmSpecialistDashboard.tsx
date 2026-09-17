@@ -8,6 +8,8 @@ import { Film, Image as ImageIcon, Palette, Camera, Scissors, Info, ChevronLeft,
 import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, addMonths, format, subDays, addDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
+import { DayPicker } from 'react-day-picker'
+import 'react-day-picker/dist/style.css'
 import toast from 'react-hot-toast'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -767,13 +769,17 @@ function historyText(h: any): string {
 /** Панель задачи. Экспортирована: её же использует кабинет производства
  *  (видеограф / монтажёр / дизайнер) — там canCancel=false, потому что
  *  отменить задачу может руководство, а не исполнитель. */
-export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel, canCancel = true, showFile = true }: {
+export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel, canCancel = true, showFile = true, moveWindow }: {
   e: any; pos: number; total: number
   onPrev: () => void; onNext: () => void; onClose: () => void
   onToggle: () => void; onMove: (d: Date) => void; onCancel: (cancel: boolean) => void
   canCancel?: boolean
   /** Ссылка на файл. В кабинете производства её не показываем (решение владельца). */
   showFile?: boolean
+  /** Окно переноса (ISO-даты). Задано — вместо быстрых кнопок и нативного
+   *  поля показываем встроенный календарь, где дни вне окна погашены:
+   *  исполнитель двигает задачу только от сегодня до дня выхода публикации. */
+  moveWindow?: { min: string; max?: string | null }
 }) {
   const { tag, group, descLabel } = taskInfo(e)
   const done = isDone(e)
@@ -910,7 +916,10 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
               для {group === 'design' ? 'поста' : 'рилса'} · публикация {shortDay(e.reelDate)}
             </p>
           )}
-          {picking && (
+          {picking && moveWindow && (
+            <MoveCalendar current={e.date || null} min={moveWindow.min} max={moveWindow.max || null} onPick={move} />
+          )}
+          {picking && !moveWindow && (
             <div className="mt-3 flex items-center gap-2 flex-wrap rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60 p-2">
               <button onClick={() => move(new Date())} className="h-9 px-3 rounded-lg bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 text-[12.5px] font-semibold text-surface-700 dark:text-surface-200">Сегодня</button>
               <button onClick={() => move(addDays(new Date(), 1))} className="h-9 px-3 rounded-lg bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 text-[12.5px] font-semibold text-surface-700 dark:text-surface-200">Завтра</button>
@@ -1027,5 +1036,58 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
       </div>
     </div>,
     document.body,
+  )
+}
+
+
+/** Календарь переноса в окне «от min до max». Дни вне окна погашены и не
+ *  нажимаются, день выхода подписан «выход», сегодня помечено точкой (стиль
+ *  rdp-custom из index.css). Один месяц, стрелки — если окно переходит
+ *  через границу месяца. */
+function MoveCalendar({ current, min, max, onPick }: {
+  current: string | null; min: string; max: string | null; onPick: (d: Date) => void
+}) {
+  const parse = (s: string) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d) }
+  const minD = parse(min)
+  const maxD = max ? parse(max) : null
+  const cur = current ? parse(current) : undefined
+  const disabled: any[] = [{ before: minD }]
+  if (maxD) disabled.push({ after: maxD })
+  const same = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  const oneDay = !!maxD && same(minD, maxD)
+  const DayBtn = (props: any) => {
+    const { day, modifiers: _m, ...rest } = props
+    const isOut = !!maxD && same(day.date, maxD)
+    return (
+      <button {...rest} style={{ ...rest.style, position: 'relative' }}>
+        {rest.children}
+        {isOut && <span className="absolute left-0 right-0 bottom-[1px] text-[7px] font-extrabold uppercase tracking-wide leading-none text-emerald-600 dark:text-emerald-400 pointer-events-none">выход</span>}
+      </button>
+    )
+  }
+  const hint = oneDay
+    ? `Перенести можно только на ${format(minD, 'd MMMM', { locale: ru })} — это день выхода.`
+    : maxD
+      ? `Можно с ${format(minD, 'd MMMM', { locale: ru })} по ${format(maxD, 'd MMMM', { locale: ru })} — до выхода публикации.`
+      : `Можно с ${format(minD, 'd MMMM', { locale: ru })}, в прошлое — нельзя.`
+  return (
+    <div className="mt-3 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60 p-1.5">
+      <DayPicker
+        mode="single"
+        selected={cur}
+        onSelect={d => { if (d) onPick(d) }}
+        defaultMonth={cur ?? minD}
+        startMonth={minD}
+        endMonth={maxD ?? undefined}
+        disabled={disabled}
+        locale={ru as any}
+        weekStartsOn={1}
+        showOutsideDays
+        captionLayout="label"
+        className="rdp-custom rdp-min p-1 text-sm"
+        components={{ DayButton: DayBtn }}
+      />
+      <p className="px-2 pb-1 text-[11px] text-surface-500 dark:text-surface-400">{hint}</p>
+    </div>
   )
 }

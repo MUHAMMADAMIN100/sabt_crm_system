@@ -366,6 +366,7 @@ export default function ProductionDashboard() {
           onCancel={() => {}}
           canCancel={false}
           showFile={false}
+          moveWindow={{ min: todayKey, max: openItem.parentDate }}
         />
       )}
     </div>

@@ -219,6 +219,18 @@ export class ContentPlanService {
     if (typeof patch.done === 'boolean') upd.status = patch.done ? ContentPlanStatus.PUBLISHED : ContentPlanStatus.PLANNED;
     if (patch.date !== undefined) {
       if (typeof patch.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(patch.date)) throw new BadRequestException('Некорректная дата');
+      // Окно переноса исполнителя: не раньше сегодня и не позже дня выхода
+      // публикации — дальше это уже зона СММ-специалиста. Проверяем здесь,
+      // а не только в интерфейсе, чтобы правило нельзя было обойти.
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
+      if (patch.date < today) throw new BadRequestException('Нельзя перенести в прошлое');
+      if (item.shootForItemId) {
+        const parent = await this.repo.findOne({ where: { id: item.shootForItemId } });
+        if (parent?.publishDate) {
+          const out = new Date(parent.publishDate).toISOString().slice(0, 10);
+          if (patch.date > out) throw new BadRequestException(`Нельзя позже дня выхода (${out.slice(8, 10)}.${out.slice(5, 7)})`);
+        }
+      }
       upd.publishDate = new Date(`${patch.date}T00:00:00`);
       upd.status = ContentPlanStatus.PLANNED;              // перенесённая — снова в работе
     }
