@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import {
@@ -165,6 +165,59 @@ export class ContentPlanService {
       this.logger.warn(`resolvePrepAssignee(${stage}) failed: ${(e as Error).message}`);
       return null;
     }
+  }
+
+  /** «Мои задачи производства» за период: всё, где человек назначен
+   *  исполнителем — съёмки, монтаж, макеты. Публикации тоже попадут, если
+   *  когда-нибудь начнём назначать исполнителя и на них.
+   *
+   *  Отдаём вместе с родителем: монтажёру важно, к какому выходу ролик, а
+   *  видеографу — что именно снимать (сценарий лежит у родителя). */
+  async myWork(userId: string, from: string, to: string) {
+    const isIso = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    if (!isIso(from) || !isIso(to) || from > to) throw new BadRequestException('Некорректный период');
+
+    const rows: any[] = await this.repo.manager.query(
+      `SELECT ci.id, ci."projectId" AS "projectId", p.name AS "projectName",
+              ci."prepStage" AS stage, ci.topic AS topic, ci.status AS status,
+              ci."publishTime" AS time, ci."durationMin" AS "durationMin",
+              ci."fileLink" AS "fileLink", ci."contentType" AS "contentType",
+              ci."shootForItemId" AS "parentId",
+              to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date,
+              parent.topic AS "parentTopic", parent."contentType" AS "parentType",
+              parent."scriptText" AS "scriptText", parent.caption AS caption,
+              to_char(parent."publishDate"::date, 'YYYY-MM-DD') AS "parentDate"
+       FROM content_plan_items ci
+       JOIN projects p ON p.id = ci."projectId"
+       LEFT JOIN content_plan_items parent ON parent.id = ci."shootForItemId"
+       WHERE ci."assigneeId" = $1
+         AND ci."publishDate" IS NOT NULL
+         AND ci."publishDate"::date >= ($2)::date AND ci."publishDate"::date <= ($3)::date
+       ORDER BY ci."publishDate" ASC`,
+      [userId, from, to],
+    ).catch((e: any) => { this.logger.warn(`myWork failed: ${e?.message || e}`); return []; });
+
+    return {
+      from, to,
+      items: rows.map(r => ({
+        ...r,
+        // Легаси-карточки без этапа: пост → дизайн, остальное → съёмка.
+        stage: r.stage || (r.parentId ? (r.parentType === 'post' ? 'design' : 'shoot') : null),
+        durationMin: Number(r.durationMin) > 0 ? Number(r.durationMin) : null,
+      })),
+    };
+  }
+
+  /** Отметка «готово» на своей карточке. Готово = статус published — та же
+   *  договорённость, что и в кабинете СММ-специалиста. */
+  async updateMyWork(userId: string, id: string, done: boolean) {
+    const item = await this.repo.findOne({ where: { id } });
+    if (!item) throw new BadRequestException('Карточка не найдена');
+    if (item.assigneeId !== userId) throw new ForbiddenException('Это не ваша задача');
+    const status = done ? ContentPlanStatus.PUBLISHED : ContentPlanStatus.PLANNED;
+    await this.repo.update(id, { status });
+    this.emitTasksChanged(item.projectId);
+    return { id, status };
   }
 
   /** Этапы подготовки под публикацию и за сколько дней до выхода они стоят.

@@ -356,6 +356,10 @@ export const contentPlanApi = {
   smmCalendar: (params?: { from?: string; to?: string; segment?: 'smm' | 'dev' }) =>
     api.get('/content-plan/smm-calendar', { params }).then(r => r.data),
   // История задачи контент-плана: перенос, закрытие, отмена.
+  /** «Мои задачи производства» — карточки, где я исполнитель (съёмка/монтаж/макет). */
+  myWork: (from: string, to: string) => api.get('/content-plan/my-work', { params: { from, to } }).then(r => r.data),
+  /** Отметка «готово» на своей карточке. */
+  myWorkDone: (id: string, done: boolean) => api.patch(`/content-plan/my-work/${id}`, { done }).then(r => r.data),
   itemHistory: (id: string) => api.get(`/content-plan/item/${id}/history`).then(r => r.data),
   // Перенос съёмки в Умном календаре (legacy-таблица shoot_sessions).
   updateShootSession: (id: string, data: { date?: string | null; time?: string | null; location?: string | null; title?: string | null }) =>

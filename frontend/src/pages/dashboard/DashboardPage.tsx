@@ -24,6 +24,7 @@ const MyPlainTasks = lazy(() => import('./components/MyPlainTasks'))
 const StorymakerDashboard = lazy(() => import('./components/StorymakerDashboard'))
 // Кабинет SMM-специалиста: главные задачи из контент-плана + отметка сторис за день.
 const SmmSpecialistDashboard = lazy(() => import('./components/SmmSpecialistDashboard'))
+const ProductionDashboard = lazy(() => import('./components/ProductionDashboard'))
 /** KPI команды разработки — кабинет руководителя направления. */
 const DevTeamKpiWidget = lazy(() => import('@/components/kpi/DevTeamKpiWidget'))
 
@@ -207,12 +208,23 @@ function DashboardContent() {
 
   if (isWorkerView) {
     const isSmmSpecialist = role === 'smm_specialist'
+    // Производство (видеограф / монтажёр / дизайнер) — карточки, назначенные
+    // лично. Вторую роль тоже учитываем: «Видеограф / Монтажёр» — обычная
+    // связка, и тогда в одном списке и съёмки, и монтаж.
+    const PROD_ROLES = ['videographer', 'video_editor', 'designer']
+    const isProduction = PROD_ROLES.includes(role) || PROD_ROLES.includes(user?.secondaryRole || '')
     return (
       <div className="space-y-6">
         {/* SMM-специалист: главные задачи из контент-плана + отметка сторис за день. */}
         {isSmmSpecialist && (
           <Suspense fallback={<PageLoader />}>
             <SmmSpecialistDashboard />
+          </Suspense>
+        )}
+        {/* Видеограф / монтажёр / дизайнер: съёмки, монтаж и макеты — свои. */}
+        {isProduction && (
+          <Suspense fallback={<PageLoader />}>
+            <ProductionDashboard />
           </Suspense>
         )}
         {/* Разработчику — его карточки этапов с доски «Разработка». */}

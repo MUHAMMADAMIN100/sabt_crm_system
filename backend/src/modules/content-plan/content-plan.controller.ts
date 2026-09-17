@@ -44,6 +44,22 @@ export class ContentPlanController {
     return this.service.findAll({ projectId, status, approvalStatus, assigneeId, contentType, from, to });
   }
 
+  /** «Мои задачи производства» — карточки, где я исполнитель: съёмки у
+   *  видеографа, монтаж у монтажёра, макеты у дизайнера. Роль не проверяем:
+   *  отбор идёт по назначению, чужого человек не увидит. Отдельный эндпоинт
+   *  нужен, чтобы не открывать дизайнеру календарь всего агентства. */
+  @Get('my-work')
+  myWork(@Request() req, @Query('from') from: string, @Query('to') to: string) {
+    return this.service.myWork(req.user.id, from, to);
+  }
+
+  /** Отметка «готово/не готово» на своей карточке. Менять можно только статус
+   *  и только у своей — поэтому это не smart-item, закрытый ролями СММ. */
+  @Patch('my-work/:id')
+  updateMyWork(@Request() req, @Param('id') id: string, @Body() body: { done?: boolean }) {
+    return this.service.updateMyWork(req.user.id, id, !!body?.done);
+  }
+
   @Get('plan-fact/:projectId')
   getPlanFact(@Param('projectId') projectId: string) {
     return this.service.getPlanFactByProject(projectId);
