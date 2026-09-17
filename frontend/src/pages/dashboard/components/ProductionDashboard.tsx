@@ -25,6 +25,7 @@ import {
 import clsx from 'clsx'
 import { contentPlanApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import { TaskPanel } from './SmmSpecialistDashboard'
 
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
 const WEEK = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс']
@@ -37,6 +38,23 @@ type Item = {
   contentType?: string | null
   parentId: string | null; parentTopic: string | null; parentType: string | null
   parentDate: string | null; scriptText: string | null
+  caption?: string | null; fileLink?: string | null
+}
+
+/** Карточка → событие календаря, каким его ждёт панель задачи из кабинета
+ *  СММ. Панель одна на оба кабинета, чтобы дизайнер видел то же, что и
+ *  специалист: описание, подпись, файл, историю. */
+function toEvent(it: Item) {
+  return {
+    id: it.id, itemId: it.id,
+    kind: it.stage ? 'shoot' : 'publication',
+    prepStage: it.stage, parentKind: it.parentType,
+    contentType: it.contentType === 'reel' ? 'reel' : 'design',
+    title: it.parentTopic, topic: it.topic,
+    projectId: it.projectId, projectName: it.projectName,
+    date: it.date, time: it.time, durationMin: it.durationMin, reelDate: it.parentDate,
+    status: it.status, scriptText: it.scriptText, caption: it.caption ?? null, fileLink: it.fileLink ?? null,
+  }
 }
 
 /** Ярлык, иконка и цвет по этапу. Карточка без этапа — это публикация,
@@ -88,14 +106,16 @@ export default function ProductionDashboard() {
   const [cursor, setCursor] = useState(() => new Date())
   const [sel, setSel] = useState(() => new Date())
   const [dayOpen, setDayOpen] = useState(false)
-  const closeDay = () => setDayOpen(false)
-  // Escape закрывает окно дня — как везде в системе.
+  const [openId, setOpenId] = useState<string | null>(null)
+  const closeDay = () => { setDayOpen(false); setOpenId(null) }
+  // Escape закрывает окно дня — но если поверх открыта панель задачи, Escape
+  // закрывает сначала её (панель слушает клавишу сама).
   useEffect(() => {
     if (!dayOpen) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeDay() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !openId) setDayOpen(false) }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [dayOpen])
+  }, [dayOpen, openId])
 
   const from = dk(startOfMonth(cursor))
   const to = dk(endOfMonth(cursor))
@@ -133,18 +153,27 @@ export default function ProductionDashboard() {
   const todayLeft = todayItems.filter(it => !isDone(it) && !isCancelled(it)).length
   const monthDone = items.filter(isDone).length
 
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['my-work'] })
+    qc.invalidateQueries({ queryKey: ['my-work-overdue'] })
+  }
   const toggle = useMutation({
-    mutationFn: (v: { id: string; done: boolean }) => contentPlanApi.myWorkDone(v.id, v.done),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['my-work'] })
-      qc.invalidateQueries({ queryKey: ['my-work-overdue'] })
-    },
+    mutationFn: (v: { id: string; done: boolean }) => contentPlanApi.myWorkUpdate(v.id, { done: v.done }),
+    onSuccess: refresh,
+  })
+  const move = useMutation({
+    mutationFn: (v: { id: string; date: string }) => contentPlanApi.myWorkUpdate(v.id, { date: v.date }),
+    onSuccess: refresh,
   })
 
   const days = eachDayOfInterval({ start: startOfMonth(cursor), end: endOfMonth(cursor) })
   const pad = (getDay(startOfMonth(cursor)) + 6) % 7
   const goMonth = (n: number) => setCursor(c => addMonths(c, n))
   const selItems = (byDay[selKey] || []).slice().sort((a, b) => (a.time || '99').localeCompare(b.time || '99'))
+  // Панель листает стрелками тот список, из которого её открыли.
+  const navList: Item[] = dayOpen ? selItems : overdue
+  const openIdx = openId ? navList.findIndex(it => it.id === openId) : -1
+  const openItem = openIdx >= 0 ? navList[openIdx] : null
 
   return (
     <div className="space-y-4">
@@ -233,7 +262,7 @@ export default function ProductionDashboard() {
                 <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
               ) : (
                 <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
-                  {selItems.map(it => <Row key={it.id} it={it} onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })} />)}
+                  {selItems.map(it => <Row key={it.id} it={it} onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })} onInfo={() => setOpenId(it.id)} />)}
                 </div>
               )}
             </div>
@@ -251,13 +280,30 @@ export default function ProductionDashboard() {
           <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
             {overdue.map(it => (
               <Row key={it.id} it={it} late={Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(it.date + 'T00:00:00')))}
-                onToggle={() => toggle.mutate({ id: it.id, done: true })} />
+                onToggle={() => toggle.mutate({ id: it.id, done: true })} onInfo={() => setOpenId(it.id)} />
             ))}
           </div>
         </div>
       )}
 
       {user?.name && <p className="text-[11px] text-surface-400 text-center pb-2">Показаны задачи, назначенные лично вам</p>}
+
+      {/* Панель задачи — та же, что у СММ-специалиста. Отменять задачу
+          исполнитель не может (canCancel=false), переносить свою — может. */}
+      {openItem && (
+        <TaskPanel
+          e={toEvent(openItem)}
+          pos={openIdx + 1}
+          total={navList.length}
+          onPrev={() => { if (openIdx > 0) setOpenId(navList[openIdx - 1].id) }}
+          onNext={() => { if (openIdx < navList.length - 1) setOpenId(navList[openIdx + 1].id) }}
+          onClose={() => setOpenId(null)}
+          onToggle={() => toggle.mutate({ id: openItem.id, done: !isDone(openItem) })}
+          onMove={d => move.mutate({ id: openItem.id, date: dk(d) })}
+          onCancel={() => {}}
+          canCancel={false}
+        />
+      )}
     </div>
   )
 }
@@ -272,11 +318,13 @@ function Tile({ value, label, tone }: { value: string; label: string; tone?: 'ok
   )
 }
 
-function Row({ it, onToggle, late }: { it: Item; onToggle: () => void; late?: number }) {
+function Row({ it, onToggle, onInfo, late }: { it: Item; onToggle: () => void; onInfo: () => void; late?: number }) {
   const m = meta(it)
   const done = isDone(it)
+  // data-task-row: панель задачи не закрывается по клику на другую строку,
+  // а переключается на неё (см. обработчик клика мимо панели в TaskPanel).
   return (
-    <div className="py-2.5 flex items-start gap-3">
+    <div data-task-row className="py-2.5 flex items-start gap-3">
       <button
         type="button"
         onClick={onToggle}
@@ -286,7 +334,7 @@ function Row({ it, onToggle, late }: { it: Item; onToggle: () => void; late?: nu
       >
         {done && <Check size={12} strokeWidth={3} />}
       </button>
-      <div className="min-w-0 flex-1">
+      <button type="button" onClick={onInfo} title="Открыть задачу" className="min-w-0 flex-1 text-left rounded-lg -mx-1 px-1 hover:bg-surface-50 dark:hover:bg-surface-800/60 transition-colors">
         <p className={clsx('text-[13.5px] font-semibold truncate', done && 'line-through text-surface-400 dark:text-surface-500')}>
           {titleOf(it)}
         </p>
@@ -302,7 +350,7 @@ function Row({ it, onToggle, late }: { it: Item; onToggle: () => void; late?: nu
           )}
           {late ? <span className="text-red-500 dark:text-red-400 font-medium">{late} {plural(late, 'день', 'дня', 'дней')}</span> : null}
         </div>
-      </div>
+      </button>
       {it.time && <span className="text-[11px] tabular-nums text-surface-500 dark:text-surface-400 shrink-0 mt-0.5">{it.time}</span>}
     </div>
   )

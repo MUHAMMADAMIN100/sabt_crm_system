@@ -736,10 +736,14 @@ function historyText(h: any): string {
 }
 
 // ── Панель задачи: справа на компьютере, снизу на телефоне ──
-function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel }: {
+/** Панель задачи. Экспортирована: её же использует кабинет производства
+ *  (видеограф / монтажёр / дизайнер) — там canCancel=false, потому что
+ *  отменить задачу может руководство, а не исполнитель. */
+export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel, canCancel = true }: {
   e: any; pos: number; total: number
   onPrev: () => void; onNext: () => void; onClose: () => void
   onToggle: () => void; onMove: (d: Date) => void; onCancel: (cancel: boolean) => void
+  canCancel?: boolean
 }) {
   const { tag, group, descLabel } = taskInfo(e)
   const done = isDone(e)
@@ -818,7 +822,7 @@ function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, o
   }
 
   const fullDay = (d?: string | null) => (d ? format(new Date(d + 'T00:00:00'), 'd MMMM, EEEEEE', { locale: ru }) : 'без даты')
-  const whenLabel = e.kind === 'shoot' ? (group === 'design' ? 'дизайн' : 'съёмка') : 'публикация'
+  const whenLabel = e.kind === 'shoot' ? tag.toLowerCase() : 'публикация'
 
   const status = cancelled ? { text: 'Отменено', cls: 'bg-surface-100 dark:bg-surface-800 text-surface-500 border-surface-200 dark:border-surface-700' }
     : done ? { text: 'Готово', cls: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800/60' }
@@ -966,7 +970,7 @@ function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, o
             </button>
           )}
 
-          {canAct && !done && (
+          {canAct && !done && canCancel && (
             <div className="relative shrink-0">
               <button onClick={() => setMenu(v => !v)} title="Ещё" className={clsx(iconBtn, 'w-[50px] h-[50px] sm:w-[42px] sm:h-[42px]')}>
                 <MoreHorizontal size={17} />

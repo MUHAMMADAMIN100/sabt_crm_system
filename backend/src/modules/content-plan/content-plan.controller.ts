@@ -53,11 +53,12 @@ export class ContentPlanController {
     return this.service.myWork(req.user.id, from, to);
   }
 
-  /** Отметка «готово/не готово» на своей карточке. Менять можно только статус
-   *  и только у своей — поэтому это не smart-item, закрытый ролями СММ. */
+  /** Своя карточка: отметка «готово/не готово» и перенос на другой день.
+   *  Только эти два действия и только у своей — поэтому это не smart-item,
+   *  закрытый ролями СММ. Отмена задачи исполнителю не даётся. */
   @Patch('my-work/:id')
-  updateMyWork(@Request() req, @Param('id') id: string, @Body() body: { done?: boolean }) {
-    return this.service.updateMyWork(req.user.id, id, !!body?.done);
+  updateMyWork(@Request() req, @Param('id') id: string, @Body() body: { done?: boolean; date?: string }) {
+    return this.service.updateMyWork(req.user.id, id, body || {});
   }
 
   @Get('plan-fact/:projectId')

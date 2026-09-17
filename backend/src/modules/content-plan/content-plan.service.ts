@@ -208,16 +208,24 @@ export class ContentPlanService {
     };
   }
 
-  /** Отметка «готово» на своей карточке. Готово = статус published — та же
-   *  договорённость, что и в кабинете СММ-специалиста. */
-  async updateMyWork(userId: string, id: string, done: boolean) {
+  /** Своя карточка: «готово» (= статус published, та же договорённость, что
+   *  в кабинете СММ) или перенос на другой день. Перенос не трогает
+   *  родителя — карточка подготовки и так двигается независимо. */
+  async updateMyWork(userId: string, id: string, patch: { done?: boolean; date?: string }) {
     const item = await this.repo.findOne({ where: { id } });
     if (!item) throw new BadRequestException('Карточка не найдена');
     if (item.assigneeId !== userId) throw new ForbiddenException('Это не ваша задача');
-    const status = done ? ContentPlanStatus.PUBLISHED : ContentPlanStatus.PLANNED;
-    await this.repo.update(id, { status });
+    const upd: Partial<ContentPlanItem> = {};
+    if (typeof patch.done === 'boolean') upd.status = patch.done ? ContentPlanStatus.PUBLISHED : ContentPlanStatus.PLANNED;
+    if (patch.date !== undefined) {
+      if (typeof patch.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(patch.date)) throw new BadRequestException('Некорректная дата');
+      upd.publishDate = new Date(`${patch.date}T00:00:00`);
+      upd.status = ContentPlanStatus.PLANNED;              // перенесённая — снова в работе
+    }
+    if (!Object.keys(upd).length) return { id, status: item.status };
+    await this.repo.update(id, upd);
     this.emitTasksChanged(item.projectId);
-    return { id, status };
+    return { id, status: upd.status ?? item.status };
   }
 
   /** Этапы подготовки под публикацию и за сколько дней до выхода они стоят.

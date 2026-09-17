@@ -358,8 +358,8 @@ export const contentPlanApi = {
   // История задачи контент-плана: перенос, закрытие, отмена.
   /** «Мои задачи производства» — карточки, где я исполнитель (съёмка/монтаж/макет). */
   myWork: (from: string, to: string) => api.get('/content-plan/my-work', { params: { from, to } }).then(r => r.data),
-  /** Отметка «готово» на своей карточке. */
-  myWorkDone: (id: string, done: boolean) => api.patch(`/content-plan/my-work/${id}`, { done }).then(r => r.data),
+  /** Своя карточка: отметка «готово» и/или перенос на день (YYYY-MM-DD). */
+  myWorkUpdate: (id: string, patch: { done?: boolean; date?: string }) => api.patch(`/content-plan/my-work/${id}`, patch).then(r => r.data),
   itemHistory: (id: string) => api.get(`/content-plan/item/${id}/history`).then(r => r.data),
   // Перенос съёмки в Умном календаре (legacy-таблица shoot_sessions).
   updateShootSession: (id: string, data: { date?: string | null; time?: string | null; location?: string | null; title?: string | null }) =>
