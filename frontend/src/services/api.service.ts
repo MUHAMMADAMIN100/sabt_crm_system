@@ -295,6 +295,16 @@ export const storiesApi = {
   upsert: (data: { projectId: string; date: string; storiesCount: number }) => api.post('/stories', data).then(r => r.data),
 }
 
+// ─── Рабочие смены ───────────────────────────────────────
+export const workShiftsApi = {
+  /** Моя смена: идёт ли сейчас и сколько наработано за сегодня. */
+  my: () => api.get('/work-shifts/my').then(r => r.data),
+  start: () => api.post('/work-shifts/start').then(r => r.data),
+  stop: () => api.post('/work-shifts/stop').then(r => r.data),
+  /** Сводка по команде (только руководству компании). */
+  team: (date?: string) => api.get('/work-shifts/team', { params: date ? { date } : undefined }).then(r => r.data),
+}
+
 // ─── Files ───────────────────────────────────────────────
 export const filesApi = {
   byProject: (projectId: string) => api.get(`/files/project/${projectId}`).then(r => r.data),

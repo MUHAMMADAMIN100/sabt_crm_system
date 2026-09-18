@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useNavItems } from './navItems'
+import ShiftButton from './ShiftButton'
 
 /** Подпункты раздела «Финансы» (Fin System · WebRand). */
 const FINANCE_SUBNAV = [
@@ -339,6 +340,11 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
       {/* Компактный пользовательский блок снизу с быстрыми действиями */}
       {user && (
         <div className="p-3 border-t border-white/5 shrink-0">
+          {/* Рабочая смена — над карточкой сотрудника: начало и конец дня
+              всегда под рукой, на любой странице. Основателю не видна. */}
+          <div className="mb-2.5">
+            <ShiftButton variant="sidebar" collapsed={!open} />
+          </div>
           <div className={clsx('flex items-center gap-2', !open && 'lg:flex-col')}>
             <NavLink
               to="/profile"

@@ -37,6 +37,7 @@ import { ProjectAnnouncementsModule } from './modules/project-announcements/proj
 import { SmmTariffsModule } from './modules/smm-tariffs/smm-tariffs.module';
 import { ContentPlanModule } from './modules/content-plan/content-plan.module';
 import { ProductionDigestModule } from './modules/production-digest/production-digest.module';
+import { WorkShiftsModule } from './modules/work-shifts/work-shifts.module';
 import { RiskAnalyticsModule } from './modules/risk-analytics/risk-analytics.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { OrganizerDirectoryModule } from './modules/organizer-directory/organizer-directory.module';
@@ -117,6 +118,7 @@ import { DbIndexesService } from './common/db-indexes.service';
     SmmTariffsModule,
     ContentPlanModule,
     ProductionDigestModule,
+    WorkShiftsModule,
     RiskAnalyticsModule,
     FinanceModule,
     TeamsModule,

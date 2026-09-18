@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/auth.store'
 import { canSeeSmmSection, userCan } from '@/lib/permissions'
 import { tasksApi } from '@/services/api.service'
 import { useNavItems } from './navItems'
+import ShiftButton from './ShiftButton'
 
 /** Сколько разделов стоит прямо на панели. Остальные уходят под «Ещё». */
 const PINNED = 3
@@ -141,6 +142,11 @@ export default function BottomNav() {
                 <button onClick={() => setMore(false)} className="ml-auto w-7 h-7 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 flex items-center justify-center"><X size={14} /></button>
               </div>
               <div className="px-2 pb-1">
+                {/* Рабочая смена — первой строкой и крупной кнопкой: начало
+                    и конец дня попадаются пальцем не глядя. */}
+                <div className="px-1 pb-2">
+                  <ShiftButton variant="sheet" />
+                </div>
                 {rest.map(i => (
                   <NavLink key={i.to} to={i.to} onClick={() => setMore(false)}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-surface-800 dark:text-surface-200">

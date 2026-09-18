@@ -4,8 +4,8 @@
 // (объединение общего журнала и финансового).
 import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
-import { Loader2, ChevronDown, Radio } from 'lucide-react'
-import { activityLogApi, usersApi } from '@/services/api.service'
+import { Loader2, ChevronDown, Radio, Clock } from 'lucide-react'
+import { activityLogApi, usersApi, workShiftsApi } from '@/services/api.service'
 import { getRoleLabel } from '@/lib/permissions'
 
 // ─── Ярлыки действий общего журнала (enum → человекочитаемо) ──────────
@@ -209,6 +209,9 @@ export default function TeamActivityPage() {
         </span>
       </div>
 
+      {/* Рабочие смены за сегодня — кто на работе прямо сейчас. */}
+      <ShiftsToday />
+
       {/* Filters: who */}
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -355,5 +358,74 @@ function Chip({ children, active, cofounder, onClick }: { children: ReactNode; a
                   : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300')}>
       {children}
     </button>
+  )
+}
+
+/** Смены за сегодня: кто на работе, во сколько начал, сколько отработал.
+ *  Живёт здесь же, где лента активности: у основателя это одна страница
+ *  «что происходит в команде», разносить по двум смысла нет. */
+function ShiftsToday() {
+  const [open, setOpen] = useState(true)
+  const { data } = useQuery({
+    queryKey: ['work-shifts-team'],
+    queryFn: () => workShiftsApi.team(),
+    refetchInterval: 60_000,
+  })
+  const items: any[] = data?.items ?? []
+  if (!items.length) return null
+
+  const fmt = (min: number) => {
+    if (!min) return '—'
+    const h = Math.floor(min / 60), m = min % 60
+    return h ? (m ? `${h} ч ${m} мин` : `${h} ч`) : `${m} мин`
+  }
+  const TAG: Record<string, { text: string; cls: string }> = {
+    working: { text: 'на работе', cls: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/12' },
+    closed:  { text: 'смена закрыта', cls: 'text-gray-500 dark:text-gray-400 bg-gray-500/12' },
+    absent:  { text: 'не выходил', cls: 'text-red-600 dark:text-red-400 bg-red-500/12' },
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl mb-5 overflow-hidden">
+      <button onClick={() => setOpen(v => !v)} className="w-full flex items-center gap-2.5 px-4 py-3 text-left">
+        <Clock size={15} className="text-emerald-500 shrink-0" />
+        <b className="text-sm font-bold">Смены сегодня</b>
+        <span className="text-xs text-gray-500">на работе {data?.working ?? 0} из {data?.total ?? 0}</span>
+        <span className="ml-auto text-gray-400 text-xs">{open ? 'свернуть' : 'развернуть'}</span>
+      </button>
+      {open && (
+        <div className="border-t border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
+          {items.map(u => {
+            const tag = TAG[u.status] || TAG.absent
+            return (
+              <div key={u.id} className="flex items-center gap-3 px-4 py-2.5">
+                <div className="w-8 h-8 rounded-full grid place-items-center text-white font-bold text-[11px] shrink-0"
+                  style={{ background: avColor(u.id) }}>{initials(u.name)}</div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold truncate">{u.name}</p>
+                  <p className="text-[11px] text-gray-500 truncate">{getRoleLabel(u.role)}</p>
+                </div>
+                <span className={'text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded shrink-0 ' + tag.cls}>
+                  {tag.text}
+                </span>
+                {u.late && (
+                  <span className="text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded shrink-0 text-amber-600 dark:text-amber-400 bg-amber-500/12">
+                    опоздание
+                  </span>
+                )}
+                <span className="text-[11px] text-gray-500 tabular-nums w-[52px] text-right shrink-0">{u.startedLabel || '—'}</span>
+                <span className="text-[12px] font-semibold tabular-nums w-[92px] text-right shrink-0">{fmt(u.todayMinutes)}</span>
+                <span className="text-[11px] text-gray-400 tabular-nums w-[92px] text-right shrink-0 hidden sm:inline">
+                  за неделю {fmt(u.weekMinutes)}
+                </span>
+              </div>
+            )
+          })}
+          <p className="px-4 py-2 text-[11px] text-gray-400">
+            Опозданием считается начало смены позже {data?.lateAfter ?? '10:00'}. Забытые смены закрываются автоматически в полночь.
+          </p>
+        </div>
+      )}
+    </div>
   )
 }
