@@ -53,6 +53,19 @@ export class ContentPlanController {
     return this.service.myWork(req.user.id, from, to);
   }
 
+  /** Кому руководитель видеографии может передать съёмку. */
+  @Get('shoot-assignees')
+  shootAssignees(@Request() req) {
+    return this.service.shootAssignees(req.user);
+  }
+
+  /** Передать съёмку другому видеографу (или оставить у себя — userId=null).
+   *  Право проверяется в сервисе: только руководитель видеографии и топ. */
+  @Patch('shoot/:id/assignee')
+  reassignShoot(@Request() req, @Param('id') id: string, @Body() body: { userId?: string | null }) {
+    return this.service.reassignShoot(id, body?.userId ?? null, req.user);
+  }
+
   /** Своя карточка: отметка «готово/не готово» и перенос на другой день.
    *  Только эти два действия и только у своей — поэтому это не smart-item,
    *  закрытый ролями СММ. Отмена задачи исполнителю не даётся. */

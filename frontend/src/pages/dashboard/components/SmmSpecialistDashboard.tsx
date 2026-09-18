@@ -606,11 +606,15 @@ function Metric({ value, label, tone, bar }: { value: string; label: string; ton
  *  (видеограф / монтажёр / дизайнер) — там canCancel=false и задано окно
  *  переноса, потому что исполнитель двигает карточку только от сегодня до
  *  дня выхода и не отменяет задачи. */
-export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel = true, moveWindow }: {
+export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel = true, moveWindow, assigneeName, showAssignee }: {
   e: any; onToggle: () => void; onInfo: () => void
   onMove?: (d: Date) => void; onCancel?: (cancel: boolean) => void; late?: number
   canCancel?: boolean
   moveWindow?: { min: string; max?: string | null }
+  /** Имя исполнителя в строке — кабинет руководителя видеографии: видно,
+   *  кто снимает, а нераспределённые бросаются в глаза. */
+  assigneeName?: string | null
+  showAssignee?: boolean
 }) {
   const { Icon, tag, group } = taskInfo(e)
   const [menu, setMenu] = useState(false)
@@ -664,6 +668,12 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
           ) : null}
           {cancelled && (
             <span className="text-[11px] font-semibold text-surface-400 dark:text-surface-500 shrink-0">отменено</span>
+          )}
+          {showAssignee && (
+            <span className={clsx('text-[11px] font-semibold shrink-0 hidden sm:inline',
+              assigneeName ? 'text-surface-500 dark:text-surface-400' : 'text-amber-600 dark:text-amber-400')}>
+              {assigneeName || 'не распределена'}
+            </span>
           )}
           {closedLate && (
             <span className="text-[11px] font-semibold text-green-600 dark:text-green-400 shrink-0 hidden sm:inline">
@@ -810,6 +820,14 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
    *  поля показываем встроенный календарь, где дни вне окна погашены:
    *  исполнитель двигает задачу только от сегодня до дня выхода публикации. */
   moveWindow?: { min: string; max?: string | null }
+  /** Передача съёмки. Задано — в панели появляется строка «Исполнитель» с
+   *  кнопкой; даём её только руководителю видеографии (см. canReassignShoot
+   *  на сервере), остальные видят имя без кнопки. */
+  assign?: {
+    name?: string | null
+    candidates: { id: string; name: string; avatar?: string | null }[]
+    onPick: (userId: string | null) => void
+  }
 }) {
   const { tag, group, descLabel } = taskInfo(e)
   const done = isDone(e)
@@ -824,6 +842,7 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
     ? differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(e.date + 'T00:00:00')) : 0
 
   const [picking, setPicking] = useState(false)
+  const [giving, setGiving] = useState(false)
   const [copied, setCopied] = useState(false)
   const [menu, setMenu] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -832,7 +851,7 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
   const panelRef = useRef<HTMLDivElement | null>(null)
 
   // Переключились на другую задачу — сбрасываем раскрытые части.
-  useEffect(() => { setPicking(false); setMenu(false); setShowHistory(false); setCopied(false) }, [e.id])
+  useEffect(() => { setPicking(false); setMenu(false); setShowHistory(false); setCopied(false); setGiving(false) }, [e.id])
 
   // Esc закрывает, стрелки листают задачи дня. Пока печатают в поле даты — не мешаем.
   useEffect(() => {
@@ -970,6 +989,38 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
               <p className="text-[13px] italic text-surface-400 dark:text-surface-500">Описание пока не заполнено — добавьте его в контент-плане проекта.</p>
             )}
           </section>
+
+          {assign && (
+            <section className="relative">
+              <p className="text-[11px] font-extrabold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1.5">Исполнитель</p>
+              <div className="flex items-center gap-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60 px-3 py-2">
+                <span className={clsx('text-[13.5px] font-semibold flex-1 min-w-0 truncate',
+                  assign.name ? 'text-surface-800 dark:text-surface-200' : 'text-surface-400 dark:text-surface-500')}>
+                  {assign.name || 'Не распределена'}
+                </span>
+                <button onClick={() => setGiving(v => !v)}
+                  className="shrink-0 text-[12px] font-bold px-3 py-1.5 rounded-lg border border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 dark:hover:bg-primary-900/40">
+                  Передать
+                </button>
+              </div>
+              {giving && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setGiving(false)} />
+                  <div className="absolute right-0 mt-1 z-20 w-[240px] rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-xl p-1.5 max-h-60 overflow-y-auto">
+                    <p className="px-2.5 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-surface-400 dark:text-surface-500">Видеографы</p>
+                    {assign.candidates.length === 0 ? (
+                      <p className="px-2.5 py-2 text-[13px] text-surface-400">Некому передать</p>
+                    ) : assign.candidates.map(u => (
+                      <button key={u.id} onClick={() => { setGiving(false); assign.onPick(u.id) }}
+                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800">
+                        <span className="truncate">{u.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          )}
 
           {caption && (
             <section>

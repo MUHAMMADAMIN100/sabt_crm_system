@@ -39,6 +39,7 @@ type Item = {
   parentId: string | null; parentTopic: string | null; parentType: string | null
   parentDate: string | null; scriptText: string | null
   caption?: string | null; fileLink?: string | null
+  assigneeId?: string | null; assigneeName?: string | null
 }
 
 /** Карточка → событие календаря, каким его ждёт панель задачи из кабинета
@@ -100,6 +101,19 @@ export default function ProductionDashboard() {
   const to = dk(endOfMonth(cursor))
   const selKey = dk(sel)
   const todayKey = dk(new Date())
+
+  // Распределяет съёмки руководитель видеографии; основатель и админ —
+  // запасной ключ, чтобы работа не вставала в его отсутствие. Право
+  // проверяется и на сервере (canReassignShoot).
+  const canGive = ['video_director', 'admin', 'founder', 'co_founder']
+    .some(r => r === user?.role || r === user?.secondaryRole)
+  const { data: assignees } = useQuery({
+    queryKey: ['shoot-assignees'],
+    queryFn: () => contentPlanApi.shootAssignees(),
+    enabled: canGive,
+    staleTime: 5 * 60_000,
+  })
+  const candidates = (assignees ?? []) as { id: string; name: string; avatar?: string | null }[]
 
   const { data } = useQuery({ queryKey: ['my-work', from, to], queryFn: () => contentPlanApi.myWork(from, to) })
   // Просрочку ищем шире месяца: задача могла повиснуть в прошлом.
@@ -164,6 +178,22 @@ export default function ProductionDashboard() {
     onMutate: async (v) => {
       const ctx = await snapshot()
       patchItem(v.id, it => ({ ...it, status: v.done ? 'published' : 'planned' }))
+      return ctx
+    },
+    onError: (_e, _v, ctx) => rollback(ctx),
+    onSettled: refresh,
+  })
+  // Передача съёмки: карточка уходит из моего кабинета — убираем её из
+  // списков сразу, не дожидаясь ответа.
+  const give = useMutation({
+    mutationFn: (v: { id: string; userId: string | null }) => contentPlanApi.reassignShoot(v.id, v.userId),
+    onMutate: async (v) => {
+      const ctx = await snapshot()
+      if (v.userId !== user?.id) {
+        const drop = (old: any) => old ? { ...old, items: (old.items || []).filter((it: Item) => it.id !== v.id) } : old
+        qc.setQueryData<any>(KEY_MONTH, drop)
+        qc.setQueryData<any>(KEY_OVER, drop)
+      }
       return ctx
     },
     onError: (_e, _v, ctx) => rollback(ctx),
@@ -299,6 +329,7 @@ export default function ProductionDashboard() {
                 <div className="space-y-2">
                   {selItems.map(it => (
                     <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)}
+                      showAssignee={canGive && it.stage === 'shoot'} assigneeName={it.assigneeName}
                       onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })}
                       onInfo={() => setOpenId(it.id)}
                       onMove={d => move.mutate({ id: it.id, date: dk(d) })} />
@@ -329,6 +360,7 @@ export default function ProductionDashboard() {
           <div className="space-y-2">
             {overdue.map(it => (
               <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)}
+                showAssignee={canGive && it.stage === 'shoot'} assigneeName={it.assigneeName}
                 late={isDone(it) ? undefined : Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(it.date + 'T00:00:00')))}
                 onToggle={() => {
                   const done = !isDone(it)
@@ -342,7 +374,11 @@ export default function ProductionDashboard() {
         </div>
       )}
 
-      {user?.name && <p className="text-[11px] text-surface-400 text-center pb-2">Показаны задачи, назначенные лично вам</p>}
+      <p className="text-[11px] text-surface-400 text-center pb-2">
+        {canGive
+          ? 'Съёмки без исполнителя закреплены за вами — передайте их видеографу в карточке задачи'
+          : 'Показаны задачи, назначенные лично вам'}
+      </p>
 
       {/* Панель задачи — та же, что у СММ-специалиста. Отменять задачу
           исполнитель не может (canCancel=false), переносить свою — может. */}
@@ -360,6 +396,11 @@ export default function ProductionDashboard() {
           canCancel={false}
           showFile={false}
           moveWindow={{ min: todayKey, max: openItem.parentDate }}
+          assign={canGive && openItem.stage === 'shoot' ? {
+            name: openItem.assigneeName,
+            candidates,
+            onPick: uid => { setOpenId(null); give.mutate({ id: openItem.id, userId: uid }) },
+          } : undefined}
         />
       )}
     </div>

@@ -11,7 +11,7 @@ import { ShootSession } from './shoot-session.entity';
 import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity';
 import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
-import { User } from '../users/user.entity';
+import { User, UserRole } from '../users/user.entity';
 import { DEV_PROJECT_TYPES } from '../../common/sales-segment';
 import { AppGateway } from '../gateway/app.gateway';
 
@@ -137,14 +137,25 @@ export class ContentPlanService {
   /** Поле проекта с назначенными на этап людьми (smmData). */
   private static readonly PREP_FIELD = { shoot: 'videographerIds', edit: 'videoEditorIds', design: 'designerIds' } as const;
 
+  /** Единственный активный сотрудник с ролью (или второй ролью). Если таких
+   *  ноль или несколько — null: угадывать за людей не беремся. */
+  private async soleUserWithRole(role: string): Promise<string | null> {
+    const users = await this.repo.manager.getRepository(User).find({
+      where: [{ role: role as any, isActive: true }, { secondaryRole: role as any, isActive: true }],
+      select: ['id'], take: 3,
+    });
+    return users.length === 1 ? users[0].id : null;
+  }
+
   /** Кто получит карточку подготовки. Порядок такой:
-   *    1. назначенный на ПРОЕКТЕ (smmData.videographerIds и т.п.);
-   *    2. иначе — единственный в агентстве сотрудник с этой ролью. Так решается
-   *       случай «дизайнер у нас один»: весь дизайн уходит ему сам, ничего
-   *       настраивать не нужно;
-   *    3. если таких несколько и на проекте никто не назначен — никто.
-   *       Карточка останется видна СММ-специалисту проекта, и её можно
-   *       передать вручную.
+   *    1. назначенный на ПРОЕКТЕ (smmData.videographerIds и т.п.) — руководитель
+   *       закрепил человека за проектом, съёмки идут сразу ему;
+   *    2. для СЪЁМКИ — руководитель видеографии (решение владельца, 18.09.2026):
+   *       за реализацию отвечает он, а не угаданный системой видеограф, и он же
+   *       передаёт съёмку дальше, если не успевает;
+   *    3. иначе — единственный в агентстве сотрудник с ролью этапа. Так решается
+   *       случай «дизайнер у нас один»: весь дизайн уходит ему сам;
+   *    4. если таких несколько и на проекте никто не назначен — никто.
    *  Вторую роль учитываем: «Видеограф / Монтажёр» — обычная у нас связка. */
   private async resolvePrepAssignee(
     stage: 'shoot' | 'edit' | 'design', project: Project | null,
@@ -155,16 +166,62 @@ export class ContentPlanService {
         const first = assigned.find((x: any) => typeof x === 'string' && x);
         if (first) return first;
       }
-      const role = ContentPlanService.PREP_ROLE[stage];
-      const users = await this.repo.manager.getRepository(User).find({
-        where: [{ role: role as any, isActive: true }, { secondaryRole: role as any, isActive: true }],
-        select: ['id'], take: 3,
-      });
-      return users.length === 1 ? users[0].id : null;
+      if (stage === 'shoot') {
+        const head = await this.soleUserWithRole(UserRole.VIDEO_DIRECTOR);
+        if (head) return head;
+      }
+      return await this.soleUserWithRole(ContentPlanService.PREP_ROLE[stage]);
     } catch (e) {
       this.logger.warn(`resolvePrepAssignee(${stage}) failed: ${(e as Error).message}`);
       return null;
     }
+  }
+
+  /** Передавать съёмку может руководитель видеографии; основатель и админ —
+   *  запасной ключ, чтобы работа не вставала, когда руководитель недоступен
+   *  (полный доступ у них и так есть — они могут поменять роли). */
+  private canReassignShoot(user?: { role?: string | null; secondaryRole?: string | null }): boolean {
+    const roles = [user?.role, user?.secondaryRole].filter(Boolean) as string[];
+    return roles.some(r => [UserRole.VIDEO_DIRECTOR, UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(r as UserRole));
+  }
+
+  /** Видеографы агентства — кому руководитель может передать съёмку.
+   *  Себя тоже возвращаем: «оставить у себя» — валидный выбор. */
+  async shootAssignees(actor: { id: string; role?: string | null; secondaryRole?: string | null }) {
+    if (!this.canReassignShoot(actor)) throw new ForbiddenException('Передавать съёмки может руководитель видеографии');
+    const users = await this.repo.manager.getRepository(User).find({
+      where: [
+        { role: UserRole.VIDEOGRAPHER as any, isActive: true },
+        { secondaryRole: UserRole.VIDEOGRAPHER as any, isActive: true },
+        { role: UserRole.VIDEO_DIRECTOR as any, isActive: true },
+        { secondaryRole: UserRole.VIDEO_DIRECTOR as any, isActive: true },
+      ],
+    });
+    return users
+      .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  }
+
+  /** Передать съёмку другому исполнителю. Только карточка съёмки и только у
+   *  руководителя видеографии — остальные этапы и роли сюда не ходят. */
+  async reassignShoot(
+    itemId: string, userId: string | null,
+    actor: { id: string; role?: string | null; secondaryRole?: string | null },
+  ) {
+    if (!this.canReassignShoot(actor)) throw new ForbiddenException('Передавать съёмки может руководитель видеографии');
+    const item = await this.repo.findOne({ where: { id: itemId } });
+    if (!item) throw new BadRequestException('Карточка не найдена');
+    if (item.prepStage !== 'shoot') throw new BadRequestException('Передавать можно только съёмку');
+    if (userId) {
+      const user = await this.repo.manager.getRepository(User).findOne({ where: { id: userId } });
+      const roles = [user?.role, user?.secondaryRole].filter(Boolean) as string[];
+      const ok = user?.isActive !== false
+        && roles.some(r => (r as UserRole) === UserRole.VIDEOGRAPHER || (r as UserRole) === UserRole.VIDEO_DIRECTOR);
+      if (!ok) throw new BadRequestException('Съёмку можно передать только видеографу');
+    }
+    await this.repo.update(itemId, { assigneeId: userId });
+    this.emitTasksChanged(item.projectId);
+    return { id: itemId, assigneeId: userId };
   }
 
   /** «Мои задачи производства» за период: всё, где человек назначен
@@ -179,6 +236,7 @@ export class ContentPlanService {
 
     const rows: any[] = await this.repo.manager.query(
       `SELECT ci.id, ci."projectId" AS "projectId", p.name AS "projectName",
+              ci."assigneeId" AS "assigneeId", au.name AS "assigneeName",
               ci."prepStage" AS stage, ci.topic AS topic, ci.status AS status,
               ci."publishTime" AS time, ci."durationMin" AS "durationMin",
               ci."fileLink" AS "fileLink", ci."contentType" AS "contentType",
@@ -190,6 +248,7 @@ export class ContentPlanService {
        FROM content_plan_items ci
        JOIN projects p ON p.id = ci."projectId"
        LEFT JOIN content_plan_items parent ON parent.id = ci."shootForItemId"
+       LEFT JOIN users au ON au.id = ci."assigneeId"
        WHERE ci."assigneeId" = $1
          AND ci."publishDate" IS NOT NULL
          AND ci."publishDate"::date >= ($2)::date AND ci."publishDate"::date <= ($3)::date

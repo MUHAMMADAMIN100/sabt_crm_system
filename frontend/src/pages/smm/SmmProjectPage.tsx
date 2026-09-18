@@ -20,8 +20,10 @@ type CrewField = 'videographerIds' | 'videoEditorIds' | 'designerIds'
 type CrewOut = 'videographers' | 'videoEditors' | 'designers'
 /** Строки «команда производства» в карточке проекта. Порядок = порядок
  *  работы над рилсом: сняли → смонтировали, и отдельно дизайн постов. */
-const CREW_ROWS: { field: CrewField; out: CrewOut; label: string }[] = [
-  { field: 'videographerIds', out: 'videographers', label: 'Видеограф' },
+const CREW_ROWS: { field: CrewField; out: CrewOut; label: string; roles?: string[] }[] = [
+  // Видеографа за проектом закрепляет только руководитель видеографии: съёмки
+  // по умолчанию его, и раздавать их — его работа (решение владельца, 18.09).
+  { field: 'videographerIds', out: 'videographers', label: 'Видеограф', roles: ['video_director', 'admin', 'founder', 'co_founder'] },
   { field: 'videoEditorIds',  out: 'videoEditors',  label: 'Монтажёр' },
   { field: 'designerIds',     out: 'designers',     label: 'Дизайнер' },
 ]
@@ -585,7 +587,7 @@ export default function SmmProjectPage() {
                 label={r.label}
                 assigned={profile?.[r.out] ?? []}
                 candidates={profile?.crewCandidates?.[r.out] ?? []}
-                canAssign={canAssignCrew}
+                canAssign={r.roles ? r.roles.includes((user as any)?.role ?? '') : canAssignCrew}
                 onToggle={uid => toggleCrew(r.field, r.out, uid)}
                 rowCls={fRow}
               />

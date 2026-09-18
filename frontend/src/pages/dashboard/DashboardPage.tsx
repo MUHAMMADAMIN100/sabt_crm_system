@@ -169,6 +169,13 @@ function DashboardContent() {
   if (isPMView) {
     return (
       <div className="space-y-6">
+        {/* Руководителю видеографии — сначала съёмки: по умолчанию они
+            закреплены за ним, и отсюда он передаёт их видеографам. */}
+        {role === 'video_director' && (
+          <Suspense fallback={<PageLoader />}>
+            <ProductionDashboard />
+          </Suspense>
+        )}
         <Suspense fallback={<PageLoader />}>
           <PMDashboard />
         </Suspense>
