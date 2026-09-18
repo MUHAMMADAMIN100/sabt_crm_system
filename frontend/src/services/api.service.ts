@@ -301,6 +301,8 @@ export const workShiftsApi = {
   my: () => api.get('/work-shifts/my').then(r => r.data),
   start: () => api.post('/work-shifts/start').then(r => r.data),
   stop: () => api.post('/work-shifts/stop').then(r => r.data),
+  /** Пауза: время не идёт, но день не закрыт — вернулся и продолжил. */
+  pause: () => api.post('/work-shifts/pause').then(r => r.data),
   /** Сводка по команде (только руководству компании). */
   team: (date?: string) => api.get('/work-shifts/team', { params: date ? { date } : undefined }).then(r => r.data),
 }

@@ -28,6 +28,12 @@ export class WorkShiftsController {
     return this.service.stop(req.user.id);
   }
 
+  /** Пауза: отрезок закрывается, но день остаётся незакрытым. */
+  @Post('pause')
+  pause(@Request() req) {
+    return this.service.pause(req.user.id);
+  }
+
   /** Сводка по команде — только руководству компании. */
   @Get('team')
   @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)

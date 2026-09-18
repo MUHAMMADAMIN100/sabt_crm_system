@@ -387,6 +387,7 @@ function ShiftsToday() {
   }
   const TAG: Record<string, { text: string; cls: string }> = {
     working: { text: 'на работе', cls: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/12' },
+    paused:  { text: 'на паузе', cls: 'text-amber-600 dark:text-amber-400 bg-amber-500/12' },
     closed:  { text: 'смена закрыта', cls: 'text-gray-500 dark:text-gray-400 bg-gray-500/12' },
     absent:  { text: 'не выходил', cls: 'text-red-600 dark:text-red-400 bg-red-500/12' },
   }
@@ -396,7 +397,10 @@ function ShiftsToday() {
       <button onClick={() => setOpen(v => !v)} className="w-full flex items-center gap-2.5 px-4 py-3 text-left">
         <Clock size={15} className="text-emerald-500 shrink-0" />
         <b className="text-sm font-bold">Смены сегодня</b>
-        <span className="text-xs text-gray-500">на работе {data?.working ?? 0} из {data?.total ?? 0}</span>
+        <span className="text-xs text-gray-500">
+          на работе {data?.working ?? 0} из {data?.total ?? 0}
+          {(data?.paused ?? 0) > 0 && <> · на паузе {data.paused}</>}
+        </span>
         <span className="ml-auto text-gray-400 text-xs">{open ? 'свернуть' : 'развернуть'}</span>
       </button>
       {open && (

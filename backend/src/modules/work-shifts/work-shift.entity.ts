@@ -37,6 +37,14 @@ export class WorkShift {
   @Column({ default: false })
   autoClosed: boolean;
 
+  /** Чем закончился отрезок:
+   *    pause — человек на паузе (обед, отлучился), день не закрыт;
+   *    stop  — смена завершена;
+   *    auto  — закрыл ночной крон, забыли нажать «Завершить».
+   *  NULL — отрезок ещё идёт. */
+  @Column({ type: 'varchar', length: 8, nullable: true })
+  endReason: 'pause' | 'stop' | 'auto' | null;
+
   /** Дата начала смены в календаре Душанбе (YYYY-MM-DD). Хранится отдельно,
    *  чтобы группировка по дням не зависела от часового пояса сервера. */
   @Index()

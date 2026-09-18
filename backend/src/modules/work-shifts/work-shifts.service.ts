@@ -28,15 +28,29 @@ export class WorkShiftsService {
     @InjectRepository(User) private userRepo: Repository<User>,
   ) {}
 
-  /** Моя текущая смена + сколько наработано за сегодня. */
+  /** Моя смена: идёт, на паузе или не начата, и сколько наработано сегодня.
+   *  Пауза — это закрытый отрезок с причиной pause: день не закончен,
+   *  человек вернётся и продолжит. */
   async my(employeeId: string) {
     const open = await this.repo.findOne({ where: { employeeId, endedAt: IsNull() } });
     const today = dushanbeDate();
     const rows = await this.repo.find({ where: { employeeId, date: today } });
     const todayMs = rows.reduce((sum, s) => sum + this.durationMs(s), 0);
+    const last = rows
+      .filter(r => r.endedAt)
+      .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime())[0];
+    const state: 'working' | 'paused' | 'idle' =
+      open ? 'working' : last?.endReason === 'pause' ? 'paused' : 'idle';
+    // closedMinutes — только закрытые отрезки. Идущий отрезок фронт досчитывает
+    // сам от startedAt, иначе счётчик стоял бы до следующего запроса, а если
+    // прибавлять к todayMinutes — время удваивалось бы.
+    const closedMs = rows.filter(r => r.endedAt).reduce((sum, r) => sum + this.durationMs(r), 0);
     return {
+      state,
       open: open ? { id: open.id, startedAt: open.startedAt, startedLabel: dushanbeTime(open.startedAt) } : null,
+      pausedSince: state === 'paused' && last?.endedAt ? dushanbeTime(new Date(last.endedAt)) : null,
       todayMinutes: Math.round(todayMs / 60000),
+      closedMinutes: Math.round(closedMs / 60000),
       shiftsToday: rows.length,
     };
   }
@@ -51,13 +65,20 @@ export class WorkShiftsService {
     return this.my(employeeId);
   }
 
-  async stop(employeeId: string) {
+  /** Завершить день или уйти на паузу. Механика одна — закрываем отрезок,
+   *  различает их только причина: после паузы человек вернётся и нажмёт
+   *  «Продолжить», после завершения день закрыт. */
+  private async close(employeeId: string, reason: 'pause' | 'stop') {
     const open = await this.repo.findOne({ where: { employeeId, endedAt: IsNull() } });
     if (!open) throw new BadRequestException('Смена не начата');
     open.endedAt = new Date();
+    open.endReason = reason;
     await this.repo.save(open);
     return this.my(employeeId);
   }
+
+  stop(employeeId: string) { return this.close(employeeId, 'stop'); }
+  pause(employeeId: string) { return this.close(employeeId, 'pause'); }
 
   private durationMs(s: WorkShift): number {
     const end = s.endedAt ? new Date(s.endedAt).getTime() : Date.now();
@@ -104,7 +125,14 @@ export class WorkShiftsService {
       const lateHour = first
         ? Number(new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', hour12: false }).format(first))
         : null;
-      const status: 'working' | 'closed' | 'absent' = open ? 'working' : today.length ? 'closed' : 'absent';
+      const lastToday = today
+        .filter(x => x.endedAt)
+        .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime())[0];
+      const status: 'working' | 'paused' | 'closed' | 'absent' =
+        open ? 'working'
+          : lastToday?.endReason === 'pause' ? 'paused'
+          : today.length ? 'closed'
+          : 'absent';
       return {
         id: u.id, name: u.name, role: u.role, avatar: u.avatar ?? null,
         status,
@@ -117,13 +145,14 @@ export class WorkShiftsService {
     });
 
     // Сначала те, кто на работе, потом опоздавшие, потом остальные.
-    const rank = (s: string) => (s === 'working' ? 0 : s === 'closed' ? 1 : 2);
+    const rank = (s: string) => (s === 'working' ? 0 : s === 'paused' ? 1 : s === 'closed' ? 2 : 3);
     items.sort((a, b) => rank(a.status) - rank(b.status) || a.name.localeCompare(b.name, 'ru'));
 
     return {
       date: day,
       lateAfter: `${String(LATE_AFTER_HOUR).padStart(2, '0')}:00`,
       working: items.filter(i => i.status === 'working').length,
+      paused: items.filter(i => i.status === 'paused').length,
       total: items.length,
       items,
     };
@@ -139,6 +168,7 @@ export class WorkShiftsService {
     for (const s of open) {
       s.endedAt = now;
       s.autoClosed = true;
+      s.endReason = 'auto';
     }
     await this.repo.save(open);
     this.logger.log(`Забытые смены закрыты автоматически: ${open.length}`);
