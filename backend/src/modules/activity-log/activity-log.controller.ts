@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
 import { ActivityLogService } from './activity-log.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
@@ -16,6 +16,7 @@ export class ActivityLogController {
   @Get('team')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   teamFeed(
+    @Request() req,
     @Query('userId') userId?: string,
     @Query('from')   from?: string,
     @Query('to')     to?: string,
@@ -28,6 +29,9 @@ export class ActivityLogController {
       to,
       limit:  limit  ? +limit  : 40,
       offset: offset ? +offset : 0,
+      // Финансовую активность отдаём только основателю: админ страницу
+      // видит, а движения по деньгам — нет.
+      includeFinance: req.user?.role === UserRole.FOUNDER,
     });
   }
 

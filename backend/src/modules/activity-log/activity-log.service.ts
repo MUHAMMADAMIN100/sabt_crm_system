@@ -73,6 +73,10 @@ export class ActivityLogService {
     to?: string;
     limit?: number;
     offset?: number;
+    /** Показывать ли финансовые записи. Решение владельца (18.09.2026):
+     *  финансовую активность видит только основатель — админу и всем
+     *  остальным она не отдаётся вовсе, а не прячется в интерфейсе. */
+    includeFinance?: boolean;
   }) {
     const limit  = Math.max(1, Math.min(100, Number(filters.limit) || 40));
     const offset = Math.max(0, Number(filters.offset) || 0);
@@ -104,9 +108,10 @@ export class ActivityLogService {
        WHERE ($1::text IS NULL OR t."userId" = $1)
          AND ($2::timestamptz IS NULL OR t."createdAt" >= $2::timestamptz)
          AND ($3::timestamptz IS NULL OR t."createdAt" <= $3::timestamptz)
+         AND ($6::boolean OR t.source <> 'finance')
        ORDER BY t."createdAt" DESC
        LIMIT $4 OFFSET $5`,
-      [userId, from, to, limit + 1, offset],
+      [userId, from, to, limit + 1, offset, !!filters.includeFinance],
     ).catch((e: any) => {
       this.logger.warn(`teamFeed failed: ${e?.message || e}`);
       return [];

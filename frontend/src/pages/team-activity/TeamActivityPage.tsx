@@ -7,6 +7,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { Loader2, ChevronDown, Radio, Clock } from 'lucide-react'
 import { activityLogApi, usersApi, workShiftsApi } from '@/services/api.service'
 import { getRoleLabel } from '@/lib/permissions'
+import { useAuthStore } from '@/store/auth.store'
 
 // ─── Ярлыки действий общего журнала (enum → человекочитаемо) ──────────
 const ACTION_LABELS: Record<string, string> = {
@@ -156,6 +157,10 @@ function periodFrom(period: string): string | undefined {
 
 // ═══════════════════════════════════════════════════════════════════════
 export default function TeamActivityPage() {
+  // Финансовую активность видит только основатель. Сервер её остальным не
+  // отдаёт вовсе (teamFeed.includeFinance), здесь лишь убираем упоминания,
+  // чтобы не предлагать фильтр, по которому всегда пусто.
+  const isFounder = useAuthStore(s => s.user?.role) === 'founder'
   const [userId, setUserId] = useState<string | undefined>(undefined)
   const [section, setSection] = useState('all')
   const [period, setPeriod] = useState('all')
@@ -201,7 +206,8 @@ export default function TeamActivityPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Активность команды</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Кто, что и когда сделал — задачи, проекты, клиенты и <b className="text-emerald-600 dark:text-emerald-400">финансы</b>.
+            Кто, что и когда сделал — задачи, проекты, клиенты
+            {isFounder && <> и <b className="text-emerald-600 dark:text-emerald-400">финансы</b></>}.
           </p>
         </div>
         <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 border border-gray-200 dark:border-gray-700 rounded-full px-2.5 py-1 shrink-0">
@@ -239,7 +245,7 @@ export default function TeamActivityPage() {
 
       {/* Filters: section */}
       <div className="flex gap-1.5 flex-wrap mb-6">
-        {SECTION_FILTERS.map(s => (
+        {SECTION_FILTERS.filter(s => isFounder || s.key !== 'finance').map(s => (
           <button key={s.key} onClick={() => setSection(s.key)}
                   className={'text-xs font-semibold px-2.5 py-1 rounded-lg border transition ' +
                     (section === s.key
