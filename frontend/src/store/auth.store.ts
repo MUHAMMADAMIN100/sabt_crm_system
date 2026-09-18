@@ -101,6 +101,14 @@ interface AuthState {
  *    F5 не мигал экран логина пока идёт /auth/me. Даже если кто-то выставит
  *    его в true — реальный fetch свалится 401 и состояние сбросится.
  */
+/** Состояние загрузки /auth/me. Живут вне стора, потому что это не данные,
+ *  а защита от шторма: один запрос за раз (mePending), нарастающая пауза
+ *  между неудачами (meAttempt) и единственный отложенный повтор
+ *  (meRetryTimer). */
+let mePending: Promise<void> | null = null
+let meRetryTimer: ReturnType<typeof setTimeout> | null = null
+let meAttempt = 0
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -154,10 +162,14 @@ export const useAuthStore = create<AuthState>()(
       },
 
       fetchMe: async () => {
+        if (mePending) return mePending
+        if (meRetryTimer) { clearTimeout(meRetryTimer); meRetryTimer = null }
+        mePending = (async () => {
         set({ loading: true })
         try {
           const { data } = await api.get('/auth/me')
           const oldRole = get().user?.role
+          meAttempt = 0
           set({ user: data, authenticated: true, loading: false })
           // Персональный цвет интерфейса: значение с сервера — источник
           // истины, применяется мгновенно (ездит между устройствами).
@@ -173,11 +185,16 @@ export const useAuthStore = create<AuthState>()(
           // Wi-Fi выбрасывал сотрудника на экран входа посреди работы.
           const st = e?.response?.status
           if (st === undefined || st >= 500 || st === 408 || st === 429) {
+            // Пауза растёт: 3с, 6с, 12с, 24с, дальше раз в 30с. При 429
+            // (лимит запросов) частый повтор только продлевал бы блокировку.
             set({ loading: false })
-            setTimeout(() => {
+            const wait = Math.min(30000, 3000 * 2 ** meAttempt)
+            meAttempt += 1
+            meRetryTimer = setTimeout(() => {
+              meRetryTimer = null
               const s = get()
               if (s.authenticated && !s.user) s.fetchMe().catch(() => {})
-            }, 3000)
+            }, wait)
             return
           }
           // КРИТИЧНО: грейс после login. Иначе если /auth/me случайно
@@ -187,7 +204,8 @@ export const useAuthStore = create<AuthState>()(
           // раз через секунду — куки уже точно будут.
           if (isJustAuthed()) {
             set({ loading: false })
-            setTimeout(() => {
+            meRetryTimer = setTimeout(() => {
+              meRetryTimer = null
               const st = get()
               if (st.authenticated && !st.user) {
                 st.fetchMe().catch(() => {})
@@ -201,6 +219,8 @@ export const useAuthStore = create<AuthState>()(
           tokenStore.clear()
           set({ authenticated: false, user: null, loading: false })
         }
+        })()
+        try { await mePending } finally { mePending = null }
       },
 
       updateUser: (updates) => {
