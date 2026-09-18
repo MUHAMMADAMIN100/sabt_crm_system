@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, contentPlanApi, storiesApi } from '@/services/api.service'
@@ -602,6 +602,47 @@ function Metric({ value, label, tone, bar }: { value: string; label: string; ton
 }
 
 // ── Строка задачи (день и просрочки) ──
+/** Выпадающее меню, привязанное к кнопке, но нарисованное ПОВЕРХ страницы.
+ *  Обычный absolute обрезается прокручиваемым родителем — окном дня или телом
+ *  панели задачи, — и меню уезжает под край. Здесь координаты считаются от
+ *  кнопки, меню рендерится в body и при нехватке места снизу открывается вверх. */
+function AnchoredMenu({ anchorRef, open, onClose, width = 236, children }: {
+  anchorRef: RefObject<HTMLElement | null>
+  open: boolean
+  onClose: () => void
+  width?: number
+  children: ReactNode
+}) {
+  const boxRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open || !anchorRef.current) return
+    const r = anchorRef.current.getBoundingClientRect()
+    const h = boxRef.current?.offsetHeight || 280
+    let top = r.bottom + 6
+    if (top + h + 8 > window.innerHeight) top = Math.max(8, r.top - h - 6)
+    const left = Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8))
+    setPos({ top, left })
+  }, [open, anchorRef, width])
+
+  if (!open) return null
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-[90]" onClick={ev => { ev.stopPropagation(); onClose() }} />
+      <div
+        ref={boxRef}
+        onClick={ev => ev.stopPropagation()}
+        style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width }}
+        className="fixed z-[91] rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-xl p-1.5 max-h-[60vh] overflow-y-auto"
+      >
+        {children}
+      </div>
+    </>,
+    document.body,
+  )
+}
+
 /** Строка задачи. Экспортирована: её же использует кабинет производства
  *  (видеограф / монтажёр / дизайнер) — там canCancel=false и задано окно
  *  переноса, потому что исполнитель двигает карточку только от сегодня до
@@ -618,6 +659,7 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
 }) {
   const { Icon, tag, group } = taskInfo(e)
   const [menu, setMenu] = useState(false)
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
   const done = isDone(e)
   const cancelled = isCancelled(e)
   const canAct = !!e.itemId && !!onMove
@@ -692,7 +734,7 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
       )}
 
       {canAct ? (
-        <button onClick={ev => { ev.stopPropagation(); setMenu(v => !v) }} title="Ещё"
+        <button ref={menuBtnRef} onClick={ev => { ev.stopPropagation(); setMenu(v => !v) }} title="Ещё"
           className="w-8 h-8 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-surface-400 hover:text-primary-600 hover:border-primary-400 flex items-center justify-center shrink-0 transition">
           <MoreHorizontal size={16} />
         </button>
@@ -703,10 +745,7 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
         </button>
       )}
 
-      {menu && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={ev => { ev.stopPropagation(); setMenu(false) }} />
-          <div onClick={ev => ev.stopPropagation()} className="absolute right-2 top-full mt-1 z-40 w-[236px] rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-xl p-1.5">
+      <AnchoredMenu anchorRef={menuBtnRef} open={menu} onClose={() => setMenu(false)}>
             {!cancelled && !done && (
               <>
                 <p className="px-2.5 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-surface-400 dark:text-surface-500">Перенести</p>
@@ -738,9 +777,7 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
                 <Ban size={14} /> Отменить задачу
               </button>
             ))}
-          </div>
-        </>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }
@@ -843,6 +880,8 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
 
   const [picking, setPicking] = useState(false)
   const [giving, setGiving] = useState(false)
+  const giveBtnRef = useRef<HTMLButtonElement>(null)
+  const moreBtnRef = useRef<HTMLButtonElement>(null)
   const [copied, setCopied] = useState(false)
   const [menu, setMenu] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -998,27 +1037,22 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
                   assign.name ? 'text-surface-800 dark:text-surface-200' : 'text-surface-400 dark:text-surface-500')}>
                   {assign.name || 'Не распределена'}
                 </span>
-                <button onClick={() => setGiving(v => !v)}
+                <button ref={giveBtnRef} onClick={() => setGiving(v => !v)}
                   className="shrink-0 text-[12px] font-bold px-3 py-1.5 rounded-lg border border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 dark:hover:bg-primary-900/40">
                   Передать
                 </button>
               </div>
-              {giving && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setGiving(false)} />
-                  <div className="absolute right-0 mt-1 z-20 w-[240px] rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-xl p-1.5 max-h-60 overflow-y-auto">
-                    <p className="px-2.5 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-surface-400 dark:text-surface-500">Видеографы</p>
-                    {assign.candidates.length === 0 ? (
-                      <p className="px-2.5 py-2 text-[13px] text-surface-400">Некому передать</p>
-                    ) : assign.candidates.map(u => (
-                      <button key={u.id} onClick={() => { setGiving(false); assign.onPick(u.id) }}
-                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800">
-                        <span className="truncate">{u.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
+              <AnchoredMenu anchorRef={giveBtnRef} open={giving} onClose={() => setGiving(false)} width={240}>
+                <p className="px-2.5 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-surface-400 dark:text-surface-500">Видеографы</p>
+                {assign.candidates.length === 0 ? (
+                  <p className="px-2.5 py-2 text-[13px] text-surface-400">Некому передать</p>
+                ) : assign.candidates.map(u => (
+                  <button key={u.id} onClick={() => { setGiving(false); assign.onPick(u.id) }}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800">
+                    <span className="truncate">{u.name}</span>
+                  </button>
+                ))}
+              </AnchoredMenu>
             </section>
           )}
 
@@ -1092,13 +1126,10 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
 
           {canAct && !done && canCancel && (
             <div className="relative shrink-0">
-              <button onClick={() => setMenu(v => !v)} title="Ещё" className={clsx(iconBtn, 'w-[50px] h-[50px] sm:w-[42px] sm:h-[42px]')}>
+              <button ref={moreBtnRef} onClick={() => setMenu(v => !v)} title="Ещё" className={clsx(iconBtn, 'w-[50px] h-[50px] sm:w-[42px] sm:h-[42px]')}>
                 <MoreHorizontal size={17} />
               </button>
-              {menu && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
-                  <div className="absolute right-0 bottom-full mb-2 z-20 w-[210px] rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-xl p-1.5">
+              <AnchoredMenu anchorRef={moreBtnRef} open={menu} onClose={() => setMenu(false)} width={210}>
                     {cancelled ? (
                       <button onClick={() => { setMenu(false); onCancel(false) }} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20">
                         <RotateCcw size={14} /> Вернуть в работу
@@ -1108,9 +1139,7 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
                         <Ban size={14} /> Отменить задачу
                       </button>
                     )}
-                  </div>
-                </>
-              )}
+              </AnchoredMenu>
             </div>
           )}
         </div>
