@@ -156,6 +156,12 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   passwordChangedAt: Date | null;
 
+  /** Основной видеограф агентства: все новые съёмки закрепляются за ним, а он
+   *  передаёт их напарнику, когда не успевает. Флаг, а не имя в коде, — чтобы
+   *  сменить человека можно было без деплоя. Одновременно он ровно один. */
+  @Column({ default: false })
+  isDefaultVideographer: boolean;
+
   @Column({ default: true })
   isActive: boolean;
 

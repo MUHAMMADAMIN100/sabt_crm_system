@@ -59,8 +59,15 @@ export class ContentPlanController {
     return this.service.shootAssignees(req.user);
   }
 
+  /** Назначить основного видеографа: за ним закрепляются новые съёмки, а
+   *  будущие незакрытые разово переезжают к нему. */
+  @Patch('default-videographer')
+  setDefaultVideographer(@Request() req, @Body() body: { userId?: string | null }) {
+    return this.service.setDefaultVideographer(body?.userId ?? null, req.user);
+  }
+
   /** Передать съёмку другому видеографу (или оставить у себя — userId=null).
-   *  Право проверяется в сервисе: только руководитель видеографии и топ. */
+   *  Право проверяется в сервисе: исполнитель своей съёмки, руководитель, топ. */
   @Patch('shoot/:id/assignee')
   reassignShoot(@Request() req, @Param('id') id: string, @Body() body: { userId?: string | null }) {
     return this.service.reassignShoot(id, body?.userId ?? null, req.user);

@@ -150,9 +150,11 @@ export class ContentPlanService {
   /** Кто получит карточку подготовки. Порядок такой:
    *    1. назначенный на ПРОЕКТЕ (smmData.videographerIds и т.п.) — руководитель
    *       закрепил человека за проектом, съёмки идут сразу ему;
-   *    2. для СЪЁМКИ — руководитель видеографии (решение владельца, 18.09.2026):
-   *       за реализацию отвечает он, а не угаданный системой видеограф, и он же
-   *       передаёт съёмку дальше, если не успевает;
+   *    2. для СЪЁМКИ — ОСНОВНОЙ видеограф (решение владельца, 18.09.2026):
+   *       большую часть съёмок делает один и тот же человек, поэтому он и
+   *       отвечает по умолчанию, а передаёт напарнику, когда не успевает.
+   *       Если основной не назначен — руководитель видеографии, чтобы съёмка
+   *       не осталась ничьей;
    *    3. иначе — единственный в агентстве сотрудник с ролью этапа. Так решается
    *       случай «дизайнер у нас один»: весь дизайн уходит ему сам;
    *    4. если таких несколько и на проекте никто не назначен — никто.
@@ -167,6 +169,9 @@ export class ContentPlanService {
         if (first) return first;
       }
       if (stage === 'shoot') {
+        const main = await this.repo.manager.getRepository(User)
+          .findOne({ where: { isDefaultVideographer: true, isActive: true }, select: ['id'] });
+        if (main) return main.id;
         const head = await this.soleUserWithRole(UserRole.VIDEO_DIRECTOR);
         if (head) return head;
       }
@@ -177,8 +182,8 @@ export class ContentPlanService {
     }
   }
 
-  /** Передавать съёмку может руководитель видеографии; основатель и админ —
-   *  запасной ключ, чтобы работа не вставала, когда руководитель недоступен
+  /** Кто распоряжается съёмками вообще: руководитель видеографии; основатель
+   *  и админ — запасной ключ, чтобы работа не вставала в его отсутствие
    *  (полный доступ у них и так есть — они могут поменять роли). */
   private canReassignShoot(user?: { role?: string | null; secondaryRole?: string | null }): boolean {
     const roles = [user?.role, user?.secondaryRole].filter(Boolean) as string[];
@@ -188,7 +193,6 @@ export class ContentPlanService {
   /** Видеографы агентства — кому руководитель может передать съёмку.
    *  Себя тоже возвращаем: «оставить у себя» — валидный выбор. */
   async shootAssignees(actor: { id: string; role?: string | null; secondaryRole?: string | null }) {
-    if (!this.canReassignShoot(actor)) throw new ForbiddenException('Передавать съёмки может руководитель видеографии');
     const users = await this.repo.manager.getRepository(User).find({
       where: [
         { role: UserRole.VIDEOGRAPHER as any, isActive: true },
@@ -197,9 +201,58 @@ export class ContentPlanService {
         { secondaryRole: UserRole.VIDEO_DIRECTOR as any, isActive: true },
       ],
     });
-    return users
-      .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    // Кому передать — видит и сам исполнитель съёмки: список людей не секрет,
+    // а вот назначить основного может только руководитель (setDefaultVideographer).
+    return {
+      canManage: this.canReassignShoot(actor),
+      defaultId: users.find(u => (u as any).isDefaultVideographer)?.id ?? null,
+      candidates: users
+        .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+    };
+  }
+
+  /** Назначить основного видеографа: за ним закрепляются все новые съёмки.
+   *  Заодно разово переводим на него будущие незакрытые съёмки — иначе
+   *  настройка подействовала бы только на карточки, созданные после неё, а
+   *  текущие остались бы разобранными по-старому. Проекты, где видеограф
+   *  закреплён отдельно, не трогаем: это осознанное решение руководителя. */
+  async setDefaultVideographer(
+    userId: string | null, actor: { id: string; role?: string | null; secondaryRole?: string | null },
+  ) {
+    if (!this.canReassignShoot(actor)) throw new ForbiddenException('Основного видеографа назначает руководитель видеографии');
+    const users = this.repo.manager.getRepository(User);
+    if (userId) {
+      const user = await users.findOne({ where: { id: userId } });
+      const roles = [user?.role, user?.secondaryRole].filter(Boolean) as string[];
+      const ok = user?.isActive !== false
+        && roles.some(r => (r as UserRole) === UserRole.VIDEOGRAPHER || (r as UserRole) === UserRole.VIDEO_DIRECTOR);
+      if (!ok) throw new BadRequestException('Основным можно назначить только видеографа');
+    }
+    // Основной ровно один: снимаем флаг со всех, ставим одному.
+    await users.update({ isDefaultVideographer: true }, { isDefaultVideographer: false });
+    if (!userId) return { userId: null, moved: 0 };
+    await users.update(userId, { isDefaultVideographer: true });
+
+    const moved: any[] = await this.repo.manager.query(
+      `UPDATE content_plan_items ci
+       SET "assigneeId" = $1
+       FROM projects p
+       WHERE p.id = ci."projectId"
+         AND ci."prepStage" = 'shoot'
+         AND ci."publishDate" IS NOT NULL
+         AND ci."publishDate"::date >= CURRENT_DATE
+         AND ci.status NOT IN ('published', 'cancelled')
+         AND ci."assigneeId" IS DISTINCT FROM $1
+         AND (CASE WHEN jsonb_typeof(p."smmData"->'videographerIds') = 'array'
+                   THEN jsonb_array_length(p."smmData"->'videographerIds')
+                   ELSE 0 END) = 0
+       RETURNING ci.id`,
+      [userId],
+    ).catch((e: any) => { this.logger.warn(`setDefaultVideographer backfill failed: ${e?.message || e}`); return []; });
+
+    this.emitTasksChanged();
+    return { userId, moved: Array.isArray(moved) ? moved.length : 0 };
   }
 
   /** Передать съёмку другому исполнителю. Только карточка съёмки и только у
@@ -208,10 +261,14 @@ export class ContentPlanService {
     itemId: string, userId: string | null,
     actor: { id: string; role?: string | null; secondaryRole?: string | null },
   ) {
-    if (!this.canReassignShoot(actor)) throw new ForbiddenException('Передавать съёмки может руководитель видеографии');
     const item = await this.repo.findOne({ where: { id: itemId } });
     if (!item) throw new BadRequestException('Карточка не найдена');
     if (item.prepStage !== 'shoot') throw new BadRequestException('Передавать можно только съёмку');
+    // Свою съёмку передаёт сам исполнитель — ради этого всё и затевалось:
+    // основной видеограф отдаёт напарнику то, что не успевает.
+    if (item.assigneeId !== actor.id && !this.canReassignShoot(actor)) {
+      throw new ForbiddenException('Передать можно только свою съёмку');
+    }
     if (userId) {
       const user = await this.repo.manager.getRepository(User).findOne({ where: { id: userId } });
       const roles = [user?.role, user?.secondaryRole].filter(Boolean) as string[];

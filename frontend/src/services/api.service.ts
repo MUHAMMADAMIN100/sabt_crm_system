@@ -360,8 +360,11 @@ export const contentPlanApi = {
   myWork: (from: string, to: string) => api.get('/content-plan/my-work', { params: { from, to } }).then(r => r.data),
   /** Своя карточка: отметка «готово» и/или перенос на день (YYYY-MM-DD). */
   myWorkUpdate: (id: string, patch: { done?: boolean; date?: string }) => api.patch(`/content-plan/my-work/${id}`, patch).then(r => r.data),
-  /** Кому руководитель видеографии может передать съёмку. */
+  /** Видеографы, кому можно передать съёмку, + кто сейчас основной. */
   shootAssignees: () => api.get('/content-plan/shoot-assignees').then(r => r.data),
+  /** Назначить основного видеографа (за ним закрепляются новые съёмки). */
+  setDefaultVideographer: (userId: string | null) =>
+    api.patch('/content-plan/default-videographer', { userId }).then(r => r.data),
   /** Передать съёмку другому видеографу (null — оставить у себя). */
   reassignShoot: (id: string, userId: string | null) =>
     api.patch(`/content-plan/shoot/${id}/assignee`, { userId }).then(r => r.data),
