@@ -809,7 +809,7 @@ function historyText(h: any): string {
 /** Панель задачи. Экспортирована: её же использует кабинет производства
  *  (видеограф / монтажёр / дизайнер) — там canCancel=false, потому что
  *  отменить задачу может руководство, а не исполнитель. */
-export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel, canCancel = true, showFile = true, moveWindow }: {
+export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel, canCancel = true, showFile = true, moveWindow, assign }: {
   e: any; pos: number; total: number
   onPrev: () => void; onNext: () => void; onClose: () => void
   onToggle: () => void; onMove: (d: Date) => void; onCancel: (cancel: boolean) => void

@@ -76,6 +76,19 @@ function meta(it: Item): Meta {
     : { label: 'Макет', Icon: ImageIcon, cls: 'text-amber-500 dark:text-amber-400 bg-amber-500/12', rgb: '245,158,11' }
 }
 
+/** Название: у карточки подготовки оно у родителя («Reels #4»), у своей — своё. */
+const titleOf = (it: Item) =>
+  (it.parentTopic && it.parentTopic.trim()) || (it.topic && it.topic.trim()) || 'Без названия'
+const isDone = (it: Item) => it.status === 'published'
+const isCancelled = (it: Item) => it.status === 'cancelled'
+
+function plural(n: number, one: string, few: string, many: string) {
+  const d = n % 10, h = n % 100
+  if (d === 1 && h !== 11) return one
+  if (d >= 2 && d <= 4 && (h < 10 || h >= 20)) return few
+  return many
+}
+
 export default function ProductionDashboard() {
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
