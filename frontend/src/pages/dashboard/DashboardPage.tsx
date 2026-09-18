@@ -140,7 +140,10 @@ function DashboardContent() {
   const user = useAuthStore(s => s.user)
   const role = user?.role || 'employee'
   const isFounderView = ['admin', 'founder', 'co_founder'].includes(role)
-  const isPMView = role === 'video_director' || role === 'smm_director'
+  // Руководитель видеографии работает как производственник: у него съёмки,
+  // а не сводка РМ — панель и меню такие же, как у дизайнера (решение
+  // владельца, 18.09.2026). Сводка РМ остаётся у руководителя SMM.
+  const isPMView = role === 'smm_director'
   const isSalesView = role === 'sales_manager_smm' || role === 'sales_manager_dev'
   // Руководитель разработки второй ролью поверх МП: тот же продажный дашборд
   // плюс KPI команды направления сверху.
@@ -148,7 +151,7 @@ function DashboardContent() {
   const navigate = useNavigate()
   // Команда разработки — разработчики и проект-менеджер по разработке.
   const isDevTeam = role === 'developer' || role === 'pm_dev'
-  const isWorkerView = ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'developer', 'videographer', 'scriptwriter', 'qa', 'publisher', 'targetologist', 'employee'].includes(role)
+  const isWorkerView = ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'developer', 'videographer', 'video_director', 'scriptwriter', 'qa', 'publisher', 'targetologist', 'employee'].includes(role)
   const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(role)
   const isAdmin = ['admin', 'founder', 'co_founder'].includes(role)
   const { t } = useTranslation()
@@ -169,13 +172,6 @@ function DashboardContent() {
   if (isPMView) {
     return (
       <div className="space-y-6">
-        {/* Руководителю видеографии — сначала съёмки: по умолчанию они
-            закреплены за ним, и отсюда он передаёт их видеографам. */}
-        {role === 'video_director' && (
-          <Suspense fallback={<PageLoader />}>
-            <ProductionDashboard />
-          </Suspense>
-        )}
         <Suspense fallback={<PageLoader />}>
           <PMDashboard />
         </Suspense>
@@ -218,7 +214,7 @@ function DashboardContent() {
     // Производство (видеограф / монтажёр / дизайнер) — карточки, назначенные
     // лично. Вторую роль тоже учитываем: «Видеограф / Монтажёр» — обычная
     // связка, и тогда в одном списке и съёмки, и монтаж.
-    const PROD_ROLES = ['videographer', 'video_editor', 'designer']
+    const PROD_ROLES = ['videographer', 'video_editor', 'designer', 'video_director']
     const isProduction = PROD_ROLES.includes(role) || PROD_ROLES.includes(user?.secondaryRole || '')
     return (
       <div className="space-y-6">

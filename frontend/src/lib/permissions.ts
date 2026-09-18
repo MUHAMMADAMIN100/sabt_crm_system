@@ -140,17 +140,20 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   // Руководитель по видеографии — менеджерский уровень для видео-
   // направления: управление задачами, аналитика, отчёты, риски.
+  // Руководитель видеографии ведёт съёмки, а не отчётность: меню у него
+  // такое же, как у дизайнера (решение владельца, 18.09.2026). Убраны
+  // «Сотрудники», «Аналитика», «Архив» и «Риски» — вместе с правами, иначе
+  // страницы остались бы доступны по прямой ссылке.
   video_director: [
     'dashboard', 'projects.view', 'projects.edit',
     'projects.members.manage',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
     'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',
-    'employees.view', 'analytics.view',
     'reports.view', 'reports.create',
-    'calendar.view', 'calendar.create', 'archive.view',
+    'calendar.view', 'calendar.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
-    'ai.chat', 'risks.view',
+    'ai.chat',
   ],
   // Руководитель SMM — полный доступ ко ВСЕМ SMM-проектам
   // (создание/удаление/архив/смена менеджера), но без финансов.
