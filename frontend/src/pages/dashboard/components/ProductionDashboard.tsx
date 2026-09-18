@@ -10,8 +10,7 @@
 // задача всегда одного вида, и точки по ТИПАМ ничего не говорят. Вместо них
 // точки-прогресс — одна на задачу: зелёная сделана, цвет роли в работе,
 // красный контур просрочена. Видно и объём дня, и сколько уже закрыто.
-import { useMemo, useState, useEffect } from 'react'
-import { createPortal } from 'react-dom'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday,
@@ -20,7 +19,7 @@ import {
 import { ru } from 'date-fns/locale'
 import {
   Camera, Scissors, Palette, Film, Image as ImageIcon,
-  ChevronLeft, ChevronRight, AlertTriangle, X,
+  ChevronLeft, ChevronRight, AlertTriangle,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { contentPlanApi } from '@/services/api.service'
@@ -94,21 +93,11 @@ export default function ProductionDashboard() {
   const qc = useQueryClient()
   const [cursor, setCursor] = useState(() => new Date())
   const [sel, setSel] = useState(() => new Date())
-  const [dayOpen, setDayOpen] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
-  const closeDay = () => { setDayOpen(false); setOpenId(null) }
   // Просрочка, закрытая в этой сессии: строка не исчезает, а остаётся
   // зачёркнутой — так видно, что именно сделал, и можно снять отметку,
   // если промахнулся. После перезагрузки страницы сделанное уходит из блока.
   const [keep, setKeep] = useState<Set<string>>(() => new Set())
-  // Escape закрывает окно дня — но если поверх открыта панель задачи, Escape
-  // закрывает сначала её (панель слушает клавишу сама).
-  useEffect(() => {
-    if (!dayOpen) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !openId) setDayOpen(false) }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [dayOpen, openId])
 
   const from = dk(startOfMonth(cursor))
   const to = dk(endOfMonth(cursor))
@@ -246,8 +235,8 @@ export default function ProductionDashboard() {
     || a.projectName.localeCompare(b.projectName, 'ru')
     || titleOf(a).localeCompare(titleOf(b), 'ru')
     || a.id.localeCompare(b.id))
-  // Панель листает стрелками тот список, из которого её открыли.
-  const navList: Item[] = dayOpen ? selItems : overdue
+  // Панель листает стрелками тот список, из которого её открыли: день или просрочку.
+  const navList: Item[] = openId && selItems.some(it => it.id === openId) ? selItems : overdue
   const openIdx = openId ? navList.findIndex(it => it.id === openId) : -1
   const openItem = openIdx >= 0 ? navList[openIdx] : null
 
@@ -318,7 +307,7 @@ export default function ProductionDashboard() {
             return (
               <button
                 key={key}
-                onClick={() => { setSel(d); setDayOpen(true) }}
+                onClick={() => setSel(d)}
                 className={clsx(
                   'min-h-[58px] rounded-xl border p-1.5 flex flex-col text-left transition bg-surface-50 dark:bg-surface-800/40',
                   // Сегодня — рамка с ореолом; выбранный день не подсвечиваем: его
@@ -329,15 +318,19 @@ export default function ProductionDashboard() {
                 )}
               >
                 <span className={clsx('text-[11px] font-bold text-right leading-none', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
-                {/* Точки-прогресс: одна на задачу. Зелёная — сделана, цвет роли —
-                    в работе, красный контур — просрочена. Больше восьми — «+N». */}
+                {/* Точки-прогресс: одна на задачу. Цвет роли — в работе, красный
+                    контур — просрочена, серая — уже сделана. У съёмок цвет роли
+                    лаймовый, поэтому «сделано» НЕ зелёное: иначе день в работе
+                    выглядел бы закрытым. Больше восьми — «+N». */}
                 {dots.length > 0 && (
                   <span className="mt-auto flex flex-wrap items-center gap-[3px]">
                     {dots.slice(0, MAX_DOTS).map(it => {
                       const done = isDone(it)
                       const lateOne = !done && it.date < todayKey
                       return (
-                        <i key={it.id} className={clsx('w-[7px] h-[7px] rounded-[2px] shrink-0', done && 'bg-emerald-500', lateOne && 'border-[1.5px] border-red-500')}
+                        <i key={it.id} className={clsx('w-[7px] h-[7px] rounded-[2px] shrink-0',
+                          done && 'bg-surface-300 dark:bg-surface-600',
+                          lateOne && 'border-[1.5px] border-red-500')}
                           style={!done && !lateOne ? { background: `rgb(${meta(it).rgb})` } : undefined} />
                       )
                     })}
@@ -350,43 +343,31 @@ export default function ProductionDashboard() {
         </div>
       </div>
 
-      {/* Окно дня — снизу на телефоне, по центру на компьютере; как у СММ. */}
-      {dayOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={closeDay} />
-          <div role="dialog" aria-label="Задачи дня"
-            className="relative w-full sm:max-w-2xl max-h-[88vh] sm:max-h-[85vh] flex flex-col bg-white dark:bg-surface-900 rounded-t-[22px] sm:rounded-2xl sm:border border-surface-200 dark:border-surface-700 shadow-2xl">
-            <div className="sm:hidden pt-2 pb-1"><div className="w-10 h-[5px] rounded-full bg-surface-300 dark:bg-surface-600 mx-auto" /></div>
-            <div className="flex items-baseline gap-2.5 px-4 sm:px-5 pt-3 sm:pt-4 pb-3">
-              <h2 className="text-base font-bold text-surface-900 dark:text-surface-100 first-letter:uppercase">
-                {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM, EEEE', { locale: ru })}
-              </h2>
-              <span className="text-xs text-surface-400 dark:text-surface-500">
-                {selItems.filter(isDone).length}/{selItems.length} {plural(selItems.length, 'задача', 'задачи', 'задач')}
-              </span>
-              <button onClick={closeDay} title="Закрыть"
-                className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:text-surface-800 dark:hover:text-surface-200 flex items-center justify-center self-center"><X size={15} /></button>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 sm:px-5 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))]">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">Задачи</div>
-              {selItems.length === 0 ? (
-                <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
-              ) : (
-                <div className="space-y-2">
-                  {selItems.map(it => (
-                    <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)}
-                      showAssignee={canManage && it.stage === 'shoot'} assigneeName={it.assigneeName}
-                      onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })}
-                      onInfo={() => setOpenId(it.id)}
-                      onMove={d => move.mutate({ id: it.id, date: dk(d) })} />
-                  ))}
-                </div>
-              )}
-            </div>
+      {/* Задачи выбранного дня — сразу под календарём, не только в окне по
+          клику: кабинет не выглядит пустым, и видно, чем занят день. */}
+      <div className="card">
+        <div className="flex items-baseline gap-2.5 mb-2">
+          <h2 className="text-sm font-bold capitalize">
+            {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM, EEEE', { locale: ru })}
+          </h2>
+          <span className="text-xs text-surface-400 dark:text-surface-500">
+            {selItems.filter(isDone).length}/{selItems.length} {plural(selItems.length, 'задача', 'задачи', 'задач')}
+          </span>
+        </div>
+        {selItems.length === 0 ? (
+          <p className="text-[13px] text-surface-400 dark:text-surface-500 py-2">На этот день задач нет</p>
+        ) : (
+          <div className="space-y-2">
+            {selItems.map(it => (
+              <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)}
+                showAssignee={canManage && it.stage === 'shoot'} assigneeName={it.assigneeName}
+                onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })}
+                onInfo={() => setOpenId(it.id)}
+                onMove={d => move.mutate({ id: it.id, date: dk(d) })} />
+            ))}
           </div>
-        </div>,
-        document.body,
-      )}
+        )}
+      </div>
 
       {/* Просрочки нет — тревожный блок не показываем вовсе (решение владельца,
           вариант «тихо и чисто»): одна спокойная строка под календарём. */}
