@@ -6,7 +6,7 @@ import {
 } from '@/lib/permissions'
 import {
   LayoutDashboard, Wallet, Megaphone, StickyNote, ClipboardCheck, Calendar,
-  Archive, Users, ShieldCheck, Contact, UserPlus, Tag, Shield, Activity, Sparkles, Code2, UserCheck,
+  Archive, Users, ShieldCheck, Contact, UserPlus, Tag, Shield, Sparkles, Code2, UserCheck,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -48,7 +48,6 @@ export function useNavItems(): NavItem[] {
     { to: '/onboarding',      icon: UserPlus,        label: 'Онбординг',         permission: 'clients.view' },
     { to: '/tariffs',         icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/security-log',    icon: Shield,          label: 'Журнал безопасности', permission: 'security-log.view' },
-    { to: '/team-activity',   icon: Activity,        label: 'Активность команды', permission: 'team-activity.view' },
     { to: '/ai',              icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]
 
