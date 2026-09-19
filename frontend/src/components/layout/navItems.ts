@@ -1,7 +1,7 @@
 import { useTranslation } from '@/i18n'
 import { useAuthStore } from '@/store/auth.store'
 import {
-  canManageAccess, canSeeProjectStories, canSeeSmmSection, canSeeDevSection, canCheckStories, isDevDirector, userCan,
+  canManageAccess, canSeeProjectStories, canSeeSmmSection, canSeeDevSection, canCheckStories, isDevLead, userCan,
   type Permission,
 } from '@/lib/permissions'
 import {
@@ -39,7 +39,7 @@ export function useNavItems(): NavItem[] {
     { to: '/dev',             icon: Code2,           label: 'Разработка',        permission: 'dashboard' },
     { to: '/my-notes',        icon: StickyNote,      label: 'Заметки',           permission: 'dashboard' },
     { to: '/stories-check',   icon: UserCheck,       label: 'Проверка сторис',   permission: 'stories.view' },
-    { to: '/tasks',           icon: ClipboardCheck,  label: isDevDirector(user) ? 'Задачи' : 'Задачи от руководителя', permission: 'tasks.view' },
+    { to: '/tasks',           icon: ClipboardCheck,  label: isDevLead(user) ? 'Задачи' : 'Задачи от руководителя', permission: 'tasks.view' },
     { to: '/calendar',        icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
     { to: '/archive',         icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
     { to: '/employees',       icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },

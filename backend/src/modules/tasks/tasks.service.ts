@@ -23,7 +23,12 @@ import { DailyReport } from '../reports/daily-report.entity';
 import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES } from '../../common/sales-segment';
 import { directionScopeOf } from '../../common/direction-scope';
 
-const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR, UserRole.DEV_DIRECTOR];
+// PM_DEV здесь же: проект-менеджер по разработке ставит задачи команде, а не
+// только себе. Раньше он мог назначать других лишь внутри dev-проекта — задача
+// без проекта молча переназначалась на него самого. Область видимости при этом
+// ограничена направлением (outOfDirection + directionScopeOf), поэтому SMM ему
+// по-прежнему недоступен.
+const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR, UserRole.DEV_DIRECTOR, UserRole.PM_DEV];
 
 /** PM-полномочия учитывают и ВТОРУЮ роль: руководитель разработки назначен
  *  Сабрине второй ролью поверх менеджера продаж, и без этого проверки ниже

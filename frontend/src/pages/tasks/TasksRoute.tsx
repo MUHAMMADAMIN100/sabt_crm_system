@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { useAuthStore } from '@/store/auth.store'
-import { isDevDirector } from '@/lib/permissions'
+import { isDevLead } from '@/lib/permissions'
 import { PageLoader } from '@/components/ui'
 
 /**
@@ -8,7 +8,8 @@ import { PageLoader } from '@/components/ui'
  *
  *  · Исполнитель — кабинет поручений «Задачи от руководителя»: что мне
  *    выдали и что я выдал, статус в один клик.
- *  · Руководитель направления — полноценный список задач своей сферы:
+ *  · Руководитель направления и проект-менеджер разработки — полноценный
+ *    список задач своей сферы:
  *    фильтры по статусу/приоритету/исполнителю, создание, массовые
  *    действия, экспорт. Без него руководитель не видел, на каком этапе
  *    идёт работа команды: кабинет поручений показывает только личные.
@@ -18,7 +19,7 @@ const TasksPage = lazy(() => import('./TasksPage'))
 
 export default function TasksRoute() {
   const user = useAuthStore(s => s.user)
-  const Page = isDevDirector(user) ? TasksPage : ManagementTasksPage
+  const Page = isDevLead(user) ? TasksPage : ManagementTasksPage
   return (
     <Suspense fallback={<PageLoader />}>
       <Page />

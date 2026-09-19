@@ -236,7 +236,8 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   // Без SMM-доски проектов, клиентов и финансов.
   pm_dev: [
     'dashboard', 'projects.view',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    // tasks.assign — ставит задачи команде разработки, а не только себе.
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
     'calendar.view', 'calendar.create',
     'analytics.view',
     'reports.view', 'reports.create',
@@ -478,6 +479,15 @@ export function canSeeProjectStories(role?: string | null, secondaryRole?: strin
  *  сегментирует данные сам (common/direction-scope.ts), фронт прячет разделы. */
 export function isDevDirector(user?: { role?: string | null; secondaryRole?: string | null } | null): boolean {
   return !!user && (user.role === 'dev_director' || user.secondaryRole === 'dev_director')
+}
+
+/** Кто ведёт задачи направления разработки: руководитель и проект-менеджер.
+ *  Обоим нужен полный раздел «Задачи» — со списком команды, фильтрами и
+ *  созданием, — а не личный кабинет поручений. Видимость всё равно
+ *  ограничена направлением на сервере (directionScopeOf). */
+export function isDevLead(user?: { role?: string | null; secondaryRole?: string | null } | null): boolean {
+  const roles = [user?.role, user?.secondaryRole]
+  return roles.some(r => r === 'dev_director' || r === 'pm_dev')
 }
 
 /** Команда разработки — кого руководитель видит в списках, KPI и задачах.

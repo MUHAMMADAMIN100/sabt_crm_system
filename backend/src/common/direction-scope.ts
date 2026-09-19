@@ -51,7 +51,11 @@ export function directionScopeOf(
   user?: { role?: string | null; secondaryRole?: string | null } | null,
 ): DirectionScope | null {
   if (!user) return null;
-  if (user.role === 'dev_director' || user.secondaryRole === 'dev_director') {
+  // Проект-менеджер по разработке ведёт то же направление, что и
+  // руководитель: ставит задачи команде и следит за проектами. Скоуп у него
+  // такой же — SMM он по-прежнему не видит (решение владельца, 19.09.2026).
+  const LEADS = ['dev_director', 'pm_dev'];
+  if (LEADS.includes(user.role || '') || LEADS.includes(user.secondaryRole || '')) {
     return DEV_SCOPE;
   }
   return null;
