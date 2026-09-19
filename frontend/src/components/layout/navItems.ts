@@ -5,8 +5,8 @@ import {
   type Permission,
 } from '@/lib/permissions'
 import {
-  LayoutDashboard, Wallet, Megaphone, StickyNote, ClipboardCheck, Calendar, BarChart3,
-  Archive, Users, ShieldCheck, Contact, UserPlus, Tag, ShieldAlert, Shield, Activity, Sparkles, Code2, UserCheck,
+  LayoutDashboard, Wallet, Megaphone, StickyNote, ClipboardCheck, Calendar,
+  Archive, Users, ShieldCheck, Contact, UserPlus, Tag, Shield, Activity, Sparkles, Code2, UserCheck,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -29,6 +29,9 @@ export function useNavItems(): NavItem[] {
   const isTopExec = role === 'founder' || role === 'co_founder'
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
 
+  // «Аналитика» и «Риски» убраны из меню 19.09.2026 (решение владельца).
+  // Страницы и маршруты остались в коде — вернуть можно одной строкой здесь
+  // и снятием запрета в canAccessRoute.
   const items: NavItem[] = [
     { to: '/',                icon: LayoutDashboard, label: t('nav.dashboard'), permission: 'dashboard', exact: true },
     { to: '/finance',         icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
@@ -38,21 +41,18 @@ export function useNavItems(): NavItem[] {
     { to: '/stories-check',   icon: UserCheck,       label: 'Проверка сторис',   permission: 'stories.view' },
     { to: '/tasks',           icon: ClipboardCheck,  label: isDevDirector(user) ? 'Задачи' : 'Задачи от руководителя', permission: 'tasks.view' },
     { to: '/calendar',        icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
-    { to: '/analytics',       icon: BarChart3,       label: t('nav.analytics'),  permission: 'analytics.view' },
     { to: '/archive',         icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
     { to: '/employees',       icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
     { to: '/employee-access', icon: ShieldCheck,     label: 'Доступы сотрудников', permission: 'users.manage' },
     { to: '/clients',         icon: Contact,         label: 'База клиентов',     permission: 'clients.view' },
     { to: '/onboarding',      icon: UserPlus,        label: 'Онбординг',         permission: 'clients.view' },
     { to: '/tariffs',         icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
-    { to: '/risks',           icon: ShieldAlert,     label: 'Риски',             permission: 'risks.view' },
     { to: '/security-log',    icon: Shield,          label: 'Журнал безопасности', permission: 'security-log.view' },
     { to: '/team-activity',   icon: Activity,        label: 'Активность команды', permission: 'team-activity.view' },
     { to: '/ai',              icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
   ]
 
   return items.filter(item => {
-    if (isSalesManager && item.to === '/analytics' && !userCan(user, item.permission)) return false
     if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
     if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'notes.use')
     if (item.to === '/employee-access') return canManageAccess(role)

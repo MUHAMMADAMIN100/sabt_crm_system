@@ -51,8 +51,10 @@ export function FounderWidgets() {
     <section className="space-y-3">
       <h2 className="font-semibold text-base flex items-center gap-2"><Zap size={16} className="text-surface-500" /> Сводка для основателя</h2>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Tile label="Проекты RED" value={projectsAtRiskRed.length} accent="text-red-600" link="/risks?level=red" icon={AlertTriangle} />
-        <Tile label="Проекты YELLOW" value={projectsAtRiskYellow.length} accent="text-surface-600" link="/risks" icon={AlertCircle} />
+        {/* Ссылки на /risks убраны: страница закрыта 19.09.2026, переход вёл бы
+            на редирект. Сами цифры остаются — они считаются здесь же. */}
+        <Tile label="Проекты RED" value={projectsAtRiskRed.length} accent="text-red-600" icon={AlertTriangle} />
+        <Tile label="Проекты YELLOW" value={projectsAtRiskYellow.length} accent="text-surface-600" icon={AlertCircle} />
         <Tile label="Просрочки оплат" value={overdueProjects.length} accent={overdueProjects.length > 0 ? 'text-red-600' : 'text-gray-500'} icon={DollarSign} />
         <Tile label="Перерасход тарифа" value={overusedProjects.length} accent={overusedProjects.length > 0 ? 'text-surface-600' : 'text-gray-500'} icon={TrendingUp} />
         <Tile label="Перегруженные PM" value={overloadedPmCount} accent={overloadedPmCount > 0 ? 'text-surface-600' : 'text-gray-500'} icon={Users} />
@@ -193,7 +195,7 @@ export function PmWidgets() {
         <Tile label="На проверке"  value={onReview} accent={onReview > 10 ? 'text-red-600' : onReview > 5 ? 'text-surface-600' : 'text-gray-700'} icon={ListChecks} />
         <Tile label="На доработке" value={onRework} accent={onRework > 5 ? 'text-surface-600' : 'text-gray-700'} icon={AlertCircle} />
         <Tile label="План на 7 дней" value={weekTasks.length} accent="text-surface-600" />
-        <Tile label="Проектов в риске" value={myRisks.length} accent={myRisks.length > 0 ? 'text-red-600' : 'text-green-600'} link="/risks" />
+        <Tile label="Проектов в риске" value={myRisks.length} accent={myRisks.length > 0 ? 'text-red-600' : 'text-green-600'} />
       </div>
 
       {myRisks.length > 0 && (

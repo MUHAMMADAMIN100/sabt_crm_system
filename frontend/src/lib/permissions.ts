@@ -511,6 +511,11 @@ export function canAccessRoute(
   if (route === '/employee-access') return canManageAccess(role)
   // «Отчёты СММ» (ежедневный автоотчёт) удалены полностью.
   if (route === '/smm-daily') return false
+  // «Аналитика» и «Риски» убраны из системы (решение владельца, 19.09.2026).
+  // Код страниц цел — закрыты маршруты и убраны пункты меню, чтобы вернуть
+  // можно было одной правкой, а не восстановлением из истории.
+  if (route === '/analytics') return false
+  if (route === '/risks') return false
   // «Проверка сторис» — только контролёр и руководство; право можно отнять
   // персональным запретом (userCan), тогда страница закрывается.
   if (route === '/stories-check') return canCheckStories(role, secondaryRole) && userCan(u, 'stories.view')

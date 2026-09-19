@@ -90,7 +90,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
   const isFounder = role === 'founder'
   const FOUNDER_CORE = new Set<string>([
     '/', '/finance', '/smm', '/dev', '/calendar',
-    '/analytics', '/employees', '/clients', '/ai',
+    '/employees', '/clients', '/ai',
   ])
   const coreItems = isFounder ? filtered.filter(i => FOUNDER_CORE.has(i.to)) : filtered
   const moreItems = isFounder ? filtered.filter(i => !FOUNDER_CORE.has(i.to)) : []
