@@ -8,6 +8,7 @@ import { Loader2, ChevronDown, Radio, Clock } from 'lucide-react'
 import { activityLogApi, usersApi, workShiftsApi } from '@/services/api.service'
 import { getRoleLabel } from '@/lib/permissions'
 import { useAuthStore } from '@/store/auth.store'
+import ShiftsTimesheet from './ShiftsTimesheet'
 
 // ─── Ярлыки действий общего журнала (enum → человекочитаемо) ──────────
 const ACTION_LABELS: Record<string, string> = {
@@ -215,8 +216,9 @@ export default function TeamActivityPage() {
         </span>
       </div>
 
-      {/* Рабочие смены за сегодня — кто на работе прямо сейчас. */}
+      {/* Смены: сегодняшний срез и табель за месяц с разбором по людям. */}
       <ShiftsToday />
+      <ShiftsTimesheet />
 
       {/* Filters: who */}
       <div className="flex items-center gap-2 flex-wrap mb-3">

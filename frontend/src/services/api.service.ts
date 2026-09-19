@@ -305,6 +305,8 @@ export const workShiftsApi = {
   pause: () => api.post('/work-shifts/pause').then(r => r.data),
   /** Сводка по команде (только руководству компании). */
   team: (date?: string) => api.get('/work-shifts/team', { params: date ? { date } : undefined }).then(r => r.data),
+  /** Табель за месяц: часы по дням, итоги и отрезки смен. */
+  month: (ym?: string) => api.get('/work-shifts/month', { params: ym ? { ym } : undefined }).then(r => r.data),
 }
 
 // ─── Files ───────────────────────────────────────────────

@@ -34,6 +34,13 @@ export class WorkShiftsController {
     return this.service.pause(req.user.id);
   }
 
+  /** Табель за месяц: часы по дням, итоги и отрезки смен. */
+  @Get('month')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  month(@Query('ym') ym?: string) {
+    return this.service.month(ym);
+  }
+
   /** Сводка по команде — только руководству компании. */
   @Get('team')
   @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)

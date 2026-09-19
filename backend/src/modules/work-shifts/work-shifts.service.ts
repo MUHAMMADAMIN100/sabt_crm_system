@@ -158,6 +158,87 @@ export class WorkShiftsService {
     };
   }
 
+  /** Табель за месяц: по каждому сотруднику часы по дням, итоги и сами
+   *  отрезки смен. Отрезки отдаём сразу, а не отдельным запросом: их за
+   *  месяц на всю команду — сотни строк, зато карточка человека открывается
+   *  мгновенно, без второго похода на сервер. */
+  async month(ym?: string) {
+    const valid = typeof ym === 'string' && /^\d{4}-\d{2}$/.test(ym);
+    const month = valid ? ym! : dushanbeDate().slice(0, 7);
+    const [y, m] = month.split('-').map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const from = `${month}-01`;
+    const to = `${month}-${String(daysInMonth).padStart(2, '0')}`;
+
+    const users = await this.userRepo.find({
+      where: { isActive: true },
+      select: ['id', 'name', 'role', 'avatar'],
+    });
+    const people = users.filter(u => u.role !== UserRole.FOUNDER);
+
+    const rows = await this.repo
+      .createQueryBuilder('s')
+      .where('s.date BETWEEN :from AND :to', { from, to })
+      .getMany();
+
+    const byUser = new Map<string, WorkShift[]>();
+    for (const s of rows) {
+      const list = byUser.get(s.employeeId) || [];
+      list.push(s);
+      byUser.set(s.employeeId, list);
+    }
+
+    const items = people.map(u => {
+      const all = (byUser.get(u.id) || []).sort(
+        (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(),
+      );
+      const days: Record<number, number> = {};
+      const segments: Record<number, { from: string; to: string | null; reason: string | null; minutes: number }[]> = {};
+      const lateDays = new Set<number>();
+      const autoDays = new Set<number>();
+
+      for (const sh of all) {
+        const dayNum = Number(String(sh.date).slice(8, 10));
+        const min = Math.round(this.durationMs(sh) / 60000);
+        days[dayNum] = (days[dayNum] || 0) + min;
+        (segments[dayNum] ||= []).push({
+          from: dushanbeTime(new Date(sh.startedAt)),
+          to: sh.endedAt ? dushanbeTime(new Date(sh.endedAt)) : null,
+          reason: sh.endReason ?? null,
+          minutes: min,
+        });
+        if (sh.autoClosed) autoDays.add(dayNum);
+      }
+      // Опоздание считаем по первому приходу за день.
+      for (const dayNum of Object.keys(segments).map(Number)) {
+        const first = segments[dayNum][0];
+        if (first && Number(first.from.slice(0, 2)) >= LATE_AFTER_HOUR) lateDays.add(dayNum);
+      }
+
+      const workedDays = Object.values(days).filter(v => v > 0).length;
+      const totalMinutes = Object.values(days).reduce((a, b) => a + b, 0);
+      return {
+        id: u.id, name: u.name, role: u.role, avatar: u.avatar ?? null,
+        days, segments,
+        lateDays: [...lateDays].sort((a, b) => a - b),
+        autoDays: [...autoDays].sort((a, b) => a - b),
+        workedDays,
+        totalMinutes,
+        avgMinutes: workedDays ? Math.round(totalMinutes / workedDays) : 0,
+      };
+    });
+
+    items.sort((a, b) => b.totalMinutes - a.totalMinutes || a.name.localeCompare(b.name, 'ru'));
+
+    return {
+      ym: month,
+      daysInMonth,
+      today: dushanbeDate(),
+      lateAfter: `${String(LATE_AFTER_HOUR).padStart(2, '0')}:00`,
+      items,
+    };
+  }
+
   /** Полночь по Душанбе: закрываем забытые смены. Без этого один
    *  забывчивый даёт 40 часов за сутки и ломает всю статистику. */
   @Cron('59 23 * * *', { timeZone: TZ })
