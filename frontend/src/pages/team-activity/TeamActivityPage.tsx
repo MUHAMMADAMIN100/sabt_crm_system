@@ -201,7 +201,10 @@ export default function TeamActivityPage() {
   const toggle = (id: string) => setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 pb-16">
+    // Ширину не ограничиваем: это больше не самостоятельная страница, а
+    // вкладка внутри «Сотрудников» — она должна занимать столько же места,
+    // сколько список сотрудников рядом.
+    <div className="pb-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-5">
         <div>
