@@ -29,8 +29,18 @@ const AUTH_COOKIE_NAMES = ['auth_token', 'refresh_token'] as const;
  * containing credentials are rejected.
  */
 export function normalizeHttpOrigin(value: string | undefined | null): string | null {
-  const candidate = value?.trim();
+  let candidate = value?.trim();
   if (!candidate || candidate === '*' || candidate === 'null') return null;
+
+  // Домен без схемы («crm.webrand.tj») — обычная запись в переменной
+  // окружения. Раньше такое значение молча отбрасывалось: домен не попадал
+  // в доверенные, браузер блокировал ответ на вход, и сотрудники видели
+  // «неверный логин или пароль». Достраиваем https — http для внешнего
+  // домена всё равно не годится.
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(candidate)) {
+    if (!/^[a-z0-9.-]+(:\d+)?$/i.test(candidate)) return null;
+    candidate = `https://${candidate}`;
+  }
 
   try {
     const url = new URL(candidate);
