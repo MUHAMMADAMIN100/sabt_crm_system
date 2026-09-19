@@ -168,39 +168,9 @@ export default function EmployeesPage() {
       toast.success(t('employees.deleted'))
     },
   })
-  const toggleSubAdmin = useMutation({
-    mutationFn: employeesApi.toggleSubAdmin,
-    onMutate: async (empId: string) => {
-      await qc.cancelQueries({ queryKey: ['employees'] })
-      const previous = qc.getQueryData(['employees'])
-      qc.setQueryData(['employees'], (old: any[]) => old?.map((e: any) => e.id === empId ? { ...e, isSubAdmin: !e.isSubAdmin } : e) ?? [])
-      return { previous }
-    },
-    onError: (_err: any, _vars: any, context: any) => {
-      qc.setQueryData(['employees'], context?.previous)
-      toast.error(t('common.error'))
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); toast.success(t('common.updated')) },
-  })
-
-  const toggleStoryMaker = useMutation({
-    mutationFn: employeesApi.toggleStoryMaker,
-    onMutate: async (empId: string) => {
-      await qc.cancelQueries({ queryKey: ['employees'] })
-      const previous = qc.getQueryData(['employees'])
-      qc.setQueryData(['employees'], (old: any[]) => old?.map((e: any) => e.id === empId ? { ...e, isStoryMaker: !e.isStoryMaker } : e) ?? [])
-      return { previous }
-    },
-    onError: (_err: any, _vars: any, context: any) => {
-      qc.setQueryData(['employees'], context?.previous)
-      toast.error(t('common.error'))
-    },
-    onSuccess: (_data, empId) => {
-      qc.invalidateQueries({ queryKey: ['employees'] })
-      const emp = (qc.getQueryData(['employees']) as any[] | undefined)?.find(e => e.id === empId)
-      toast.success(emp?.isStoryMaker ? 'Сторисмейкер включён' : 'Сторисмейкер выключен')
-    },
-  })
+  // Мутации toggleSubAdmin и toggleStoryMaker удалены вместе с их пунктами
+  // меню (19.09.2026). Эндпоинты на сервере остались — если переключатели
+  // понадобятся снова, вернуть можно без правок бэкенда.
 
   const blockMut = useMutation({
     mutationFn: ({ userId, reason }: { userId: string; reason?: string }) => usersApi.block(userId, reason),
@@ -372,25 +342,10 @@ export default function EmployeesPage() {
                         {/* Подложка: клик мимо меню закрывает его. */}
                         <div className="fixed inset-0 z-20" onClick={() => setActionsFor(null)} />
                         <div className="absolute right-0 top-full mt-1 z-30 w-52 rounded-lg bg-white dark:bg-surface-800 shadow-lg ring-1 ring-surface-200 dark:ring-surface-700 py-1 text-sm">
-                          <button
-                            onClick={() => { toggleSubAdmin.mutate(emp.id); setActionsFor(null) }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-50 dark:hover:bg-surface-700/60 transition-colors"
-                          >
-                            <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400'} />
-                            <span className="text-surface-700 dark:text-surface-200">
-                              {emp.isSubAdmin ? 'Снять помощника админа' : 'Сделать помощником админа'}
-                            </span>
-                          </button>
-                          <button
-                            onClick={() => { toggleStoryMaker.mutate(emp.id); setActionsFor(null) }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-50 dark:hover:bg-surface-700/60 transition-colors"
-                            title="Доступ к историям всех SMM-проектов"
-                          >
-                            <Camera size={14} className={emp.isStoryMaker ? 'text-surface-600 dark:text-surface-300' : 'text-surface-400'} />
-                            <span className="text-surface-700 dark:text-surface-200">
-                              {emp.isStoryMaker ? 'Снять сторисмейкера' : 'Назначить сторисмейкером'}
-                            </span>
-                          </button>
+                          {/* «Помощник админа» и «Сторисмейкер» убраны из меню
+                              (решение владельца, 19.09.2026): роли задаются
+                              должностью и «Доступами сотрудников», отдельные
+                              переключатели только путали. */}
                           <button
                             onClick={() => { setResetPwdEmp(emp); setCustomPwd(''); setActionsFor(null) }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-50 dark:hover:bg-surface-700/60 transition-colors"
@@ -571,12 +526,6 @@ export default function EmployeesPage() {
                       <div className="flex gap-1 justify-end">
                         {canEditEmployee(emp) && (
                           <>
-                            <button onClick={() => toggleSubAdmin.mutate(emp.id)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg" title="Помощник админа">
-                              <ShieldCheck size={14} className={emp.isSubAdmin ? 'text-primary-600' : 'text-surface-400'} />
-                            </button>
-                            <button onClick={() => toggleStoryMaker.mutate(emp.id)} className="p-1.5 hover:bg-surface-50 dark:hover:bg-surface-900/20 rounded-lg" title="Сторисмейкер — доступ к историям всех SMM-проектов">
-                              <Camera size={14} className={emp.isStoryMaker ? 'text-surface-600' : 'text-surface-400'} />
-                            </button>
                             <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-surface-50 dark:hover:bg-surface-900/20 rounded-lg text-surface-500" title="Сбросить пароль">
                               <Key size={14} />
                             </button>
