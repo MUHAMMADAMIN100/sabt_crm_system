@@ -211,21 +211,10 @@ export default function TeamActivityPage() {
     // вкладка внутри «Сотрудников» — она должна занимать столько же места,
     // сколько список сотрудников рядом.
     <div className="pb-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-5">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Активность команды</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Кто, что и когда сделал — задачи, проекты, клиенты
-            {isFounder && <> и <b className="text-emerald-600 dark:text-emerald-400">финансы</b></>}.
-          </p>
-        </div>
-        <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 border border-gray-200 dark:border-gray-700 rounded-full px-2.5 py-1 shrink-0">
-          <Radio size={12} className="text-emerald-500" /> обновляется автоматически
-        </span>
-      </div>
-
-      {/* Переключатель разделов */}
+      {/* Заголовок «Активность команды» убран (19.09.2026): страница уже
+          называется «Сотрудники», а разделы подписаны вкладками — две шапки
+          подряд только съедали экран. Отметка об автообновлении переехала
+          вправо в строку вкладок. */}
       <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 mb-4 overflow-x-auto">
         {([
           ['timesheet', 'Табель месяца'],
@@ -240,6 +229,9 @@ export default function TeamActivityPage() {
             {label}
           </button>
         ))}
+        <span className="ml-auto hidden sm:inline-flex items-center gap-1.5 text-[11px] text-gray-500 pb-2 pl-3 shrink-0">
+          <Radio size={11} className="text-emerald-500" /> обновляется автоматически
+        </span>
       </div>
 
       {tab === 'today' && <ShiftsToday />}
