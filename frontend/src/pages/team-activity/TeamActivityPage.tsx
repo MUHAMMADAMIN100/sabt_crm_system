@@ -165,7 +165,9 @@ export default function TeamActivityPage() {
   // Три раздела вместо простыни: смены за сегодня, табель месяца и лента
   // событий. Раньше шли подряд по вертикали — до ленты нужно было
   // прокручивать весь табель.
-  const [tab, setTab] = useState<'today' | 'timesheet' | 'feed'>('today')
+  // Первым открываем табель: за день его смотрят чаще, а «кто сейчас на
+  // работе» видно и по сегодняшней колонке (решение владельца, 19.09.2026).
+  const [tab, setTab] = useState<'today' | 'timesheet' | 'feed'>('timesheet')
   const [userId, setUserId] = useState<string | undefined>(undefined)
   const [section, setSection] = useState('all')
   const [period, setPeriod] = useState('all')
@@ -226,8 +228,8 @@ export default function TeamActivityPage() {
       {/* Переключатель разделов */}
       <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 mb-4 overflow-x-auto">
         {([
-          ['today', 'Смены сегодня'],
           ['timesheet', 'Табель месяца'],
+          ['today', 'Смены сегодня'],
           ['feed', 'Лента событий'],
         ] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
