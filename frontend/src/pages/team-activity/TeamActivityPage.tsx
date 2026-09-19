@@ -162,6 +162,10 @@ export default function TeamActivityPage() {
   // отдаёт вовсе (teamFeed.includeFinance), здесь лишь убираем упоминания,
   // чтобы не предлагать фильтр, по которому всегда пусто.
   const isFounder = useAuthStore(s => s.user?.role) === 'founder'
+  // Три раздела вместо простыни: смены за сегодня, табель месяца и лента
+  // событий. Раньше шли подряд по вертикали — до ленты нужно было
+  // прокручивать весь табель.
+  const [tab, setTab] = useState<'today' | 'timesheet' | 'feed'>('today')
   const [userId, setUserId] = useState<string | undefined>(undefined)
   const [section, setSection] = useState('all')
   const [period, setPeriod] = useState('all')
@@ -219,10 +223,27 @@ export default function TeamActivityPage() {
         </span>
       </div>
 
-      {/* Смены: сегодняшний срез и табель за месяц с разбором по людям. */}
-      <ShiftsToday />
-      <ShiftsTimesheet />
+      {/* Переключатель разделов */}
+      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 mb-4 overflow-x-auto">
+        {([
+          ['today', 'Смены сегодня'],
+          ['timesheet', 'Табель месяца'],
+          ['feed', 'Лента событий'],
+        ] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={'px-3.5 py-2 text-[13px] font-semibold border-b-2 -mb-px whitespace-nowrap transition-colors '
+              + (tab === k
+                ? 'border-emerald-500 text-gray-900 dark:text-gray-100'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}>
+            {label}
+          </button>
+        ))}
+      </div>
 
+      {tab === 'today' && <ShiftsToday />}
+      {tab === 'timesheet' && <ShiftsTimesheet />}
+
+      {tab === 'feed' && (<>
       {/* Filters: who */}
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -354,6 +375,7 @@ export default function TeamActivityPage() {
           )}
         </>
       )}
+      </>)}
     </div>
   )
 }
@@ -376,7 +398,6 @@ function Chip({ children, active, cofounder, onClick }: { children: ReactNode; a
  *  Живёт здесь же, где лента активности: у основателя это одна страница
  *  «что происходит в команде», разносить по двум смысла нет. */
 function ShiftsToday() {
-  const [open, setOpen] = useState(true)
   const { data } = useQuery({
     queryKey: ['work-shifts-team'],
     queryFn: () => workShiftsApi.team(),
@@ -399,16 +420,16 @@ function ShiftsToday() {
 
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl mb-5 overflow-hidden">
-      <button onClick={() => setOpen(v => !v)} className="w-full flex items-center gap-2.5 px-4 py-3 text-left">
+      {/* Сворачивать больше нечего: раздел стал отдельной вкладкой. */}
+      <div className="flex items-center gap-2.5 px-4 py-3">
         <Clock size={15} className="text-emerald-500 shrink-0" />
         <b className="text-sm font-bold">Смены сегодня</b>
         <span className="text-xs text-gray-500">
           на работе {data?.working ?? 0} из {data?.total ?? 0}
           {(data?.paused ?? 0) > 0 && <> · на паузе {data.paused}</>}
         </span>
-        <span className="ml-auto text-gray-400 text-xs">{open ? 'свернуть' : 'развернуть'}</span>
-      </button>
-      {open && (
+      </div>
+      {(
         <div className="border-t border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
           {items.map(u => {
             const tag = TAG[u.status] || TAG.absent
