@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth.store'
-import { authApi, usersApi, meApi, workShiftsApi } from '@/services/api.service'
+import { usersApi, meApi, workShiftsApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
 import { Avatar } from '@/components/ui'
-import { Key, Camera, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Camera, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getUserPositionLabel } from '@/lib/permissions'
-import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
 import TaskCelebrationSection from '@/components/profile/TaskCelebrationSection'
 import { prepareAvatar } from '@/lib/imageCompress'
@@ -98,8 +97,6 @@ function Detail({ entries, sign }: { entries: Entry[]; sign: '+' | '−' }) {
 export default function ProfilePage() {
   const user = useAuthStore(s => s.user)
   const fetchMe = useAuthStore(s => s.fetchMe)
-  const [changingPass, setChangingPass] = useState(false)
-  const { register, handleSubmit, reset } = useForm()
   const { t } = useTranslation()
   const fileRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
@@ -156,18 +153,6 @@ export default function ProfilePage() {
   const emp = sal?.employee || null
   const history: any[] = sal?.history || []
   const mine = shifts?.item || null
-
-  const onChangePassword = async (data: any) => {
-    if (data.newPassword !== data.confirm) { toast.error(t('auth.passwordsNotMatch')); return }
-    try {
-      await authApi.changePassword({ oldPassword: data.oldPassword, newPassword: data.newPassword })
-      toast.success(t('auth.passwordChanged'))
-      reset()
-      setChangingPass(false)
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message || t('common.error'))
-    }
-  }
 
   const bonusEntries: Entry[] = row?.bonusEntries || []
   const fineEntries: Entry[] = row?.fineEntries || []
@@ -239,9 +224,11 @@ export default function ProfilePage() {
 
       <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,1fr)_340px]">
 
+        <div className="space-y-4 min-w-0">
+
         {/* Главная цифра: сколько причитается и когда придёт */}
         {showSalary && (
-          <div className="card lg:col-start-1 lg:row-start-1">
+          <div className="card">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[13px] text-surface-500 dark:text-surface-400">
                 {row?.frozen ? 'Выплачено за' : 'К выплате за'} {monthOnly(ym)}
@@ -313,7 +300,7 @@ export default function ProfilePage() {
 
         {/* Разбор: из чего сложилась сумма */}
         {showSalary && sal?.linked && row && (
-          <div className="card lg:col-start-1 lg:row-start-2">
+          <div className="card">
             <h3 className="section-title mb-1">Из чего сложилась сумма</h3>
 
             <Row label="Оклад за месяц" value={money(salary)} />
@@ -357,9 +344,13 @@ export default function ProfilePage() {
           </div>
         )}
 
+        </div>
+
+        <div className="space-y-4 min-w-0">
+
         {/* Смены за тот же месяц */}
         {!isFounder && (
-          <div className="card lg:col-start-2 lg:row-start-1">
+          <div className="card">
             <div className="flex items-baseline justify-between gap-2 mb-3">
               <h3 className="section-title">Мои смены</h3>
               <span className="text-xs text-surface-400 dark:text-surface-500">{monthOnly(ym)}</span>
@@ -385,7 +376,7 @@ export default function ProfilePage() {
 
         {/* История выплат */}
         {history.length > 0 && (
-          <div className="card lg:col-start-2 lg:row-start-2">
+          <div className="card">
             <h3 className="section-title mb-1">История выплат</h3>
             <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
               {history.map(h => (
@@ -412,35 +403,8 @@ export default function ProfilePage() {
             </div>
           </div>
         )}
-      </div>
 
-      {/* Настройки: остался только пароль. Выбор языка и двухфакторная
-          аутентификация убраны из профиля (решение владельца, 21.09.2026). */}
-      <div className="card">
-        <button onClick={() => setChangingPass(p => !p)} className="btn-secondary text-sm">
-          <Key size={14} /> {t('auth.changePassword')}
-        </button>
-
-        {changingPass && (
-          <form onSubmit={handleSubmit(onChangePassword)} className="space-y-3 mt-3 max-w-sm">
-            <div>
-              <label className="label">{t('auth.oldPassword')}</label>
-              <input type="password" {...register('oldPassword', { required: true })} className="input" />
-            </div>
-            <div>
-              <label className="label">{t('auth.newPassword')}</label>
-              <input type="password" {...register('newPassword', { required: true, minLength: 8 })} className="input" minLength={8} />
-            </div>
-            <div>
-              <label className="label">{t('auth.confirmPassword')}</label>
-              <input type="password" {...register('confirm', { required: true })} className="input" />
-            </div>
-            <div className="flex gap-2">
-              <button type="submit" className="btn-primary text-sm">{t('common.save')}</button>
-              <button type="button" onClick={() => setChangingPass(false)} className="btn-secondary text-sm">{t('common.cancel')}</button>
-            </div>
-          </form>
-        )}
+        </div>
       </div>
 
       {/* «Печать успеха» за выполненную задачу — с ролевой проверкой внутри */}
