@@ -381,10 +381,9 @@ export default function ProfilePage() {
                 <span className="text-[15px] font-semibold tabular-nums text-surface-900 dark:text-surface-100">{mine?.workedDays || 0}</span>
               </div>
               <div className="flex items-center justify-between gap-3 py-3">
-                <span className="text-sm text-surface-600 dark:text-surface-300">
-                  Опозданий
-                  {shifts?.lateAfter && <span className="text-surface-400 dark:text-surface-500"> · после {shifts.lateAfter}</span>}
-                </span>
+                {/* Порог не подписываем: правило человек знает и без напоминания
+                    в каждой строке (в табеле у руководства оно осталось). */}
+                <span className="text-sm text-surface-600 dark:text-surface-300">Опозданий</span>
                 <span className={`text-[15px] font-semibold tabular-nums ${(mine?.lateDays?.length || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-surface-900 dark:text-surface-100'}`}>
                   {mine?.lateDays?.length || 0}
                 </span>
