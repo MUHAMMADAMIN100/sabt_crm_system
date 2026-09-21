@@ -181,6 +181,18 @@ export class FinanceController {
   }
 
   @Get('employees') listEmployees() { return this.service.listEmployees(); }
+
+  /** Опоздания за месяц: кого и на сколько можно оштрафовать. Считает
+   *  система, решение остаётся за владельцем. */
+  @Get('late-fines')
+  lateFines(@Query('ym') ym?: string, @Query('amount') amount?: string) {
+    return this.service.lateOverview(ym, Number(amount) || 100);
+  }
+
+  @Post('late-fines')
+  applyLateFines(@Body() body: { ym?: string; amount?: number; userIds?: string[] }) {
+    return this.service.applyLateFines(body?.ym, Number(body?.amount) || 100, body?.userIds);
+  }
   @Post('employees') createEmployee(@Body() dto: CreateEmployeeDto) { return this.service.createEmployee(dto); }
   @Patch('employees/:id') updateEmployee(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) { return this.service.updateEmployee(id, dto); }
   @Delete('employees/:id') removeEmployee(@Param('id') id: string) { return this.service.removeEmployee(id); }

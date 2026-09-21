@@ -46,6 +46,9 @@ import {
 // ─── helpers ────────────────────────────────────────────────────────
 const r2 = (n: any) => Math.round((Number(n) || 0) * 100) / 100;
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+/** По этой пометке узнаём штрафы, уже проведённые за опоздание: второй раз
+ *  за тот же день система их не предложит. */
+const LATE_NOTE_RE = /^опоздание/i;
 
 // ─── Сопоставление «строка ведомости ↔ аккаунт CRM» по имени ──────────
 /** Слова имени: без регистра, без «ё», без лишних знаков и пробелов. */
@@ -3634,6 +3637,74 @@ export class FinanceService implements OnModuleInit {
 
   // Сотрудники
   listEmployees() { return this.empRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } }); }
+
+  // ─── Опоздания → штраф одной кнопкой ─────────────────────────────────
+  /** Кто сколько раз опоздал за месяц и на какую сумму это тянет.
+   *
+   *  Смены читаем напрямую запросом: заводить ради этого зависимость от
+   *  модуля смен не хочется, а кольца в графе модулей нам уже дорого
+   *  обходились. Порог опоздания тот же, что в табеле, — 09:30 по Душанбе;
+   *  дни, отмеченные как отгул/отпуск/больничный, не считаются.
+   *  Уже проведённые штрафы за тот же день второй раз не предлагаются. */
+  async lateOverview(ym?: string, amountPerLate = 100) {
+    const month = YM_RE.test(ym || '') ? (ym as string) : currentYm();
+    const rows: Array<{ employeeId: string; date: string; first: string }> = await this.ds.query(
+      `SELECT s."employeeId",
+              to_char(s."date", 'YYYY-MM-DD') AS date,
+              to_char(min(s."startedAt") AT TIME ZONE 'Asia/Dushanbe', 'HH24:MI') AS first
+         FROM work_shifts s
+        WHERE to_char(s."date", 'YYYY-MM') = $1
+          AND NOT EXISTS (
+            SELECT 1 FROM shift_absences a
+             WHERE a."employeeId" = s."employeeId" AND a."date" = s."date")
+        GROUP BY s."employeeId", s."date"`,
+      [month],
+    );
+    const late = rows.filter(r => r.first > '09:30');
+    if (!late.length) return { ym: month, amountPerLate, items: [] };
+    const emps = await this.empRepo.find();
+    const byUser = new Map<string, { dates: string[] }>();
+    for (const r of late) {
+      const cur = byUser.get(r.employeeId) ?? { dates: [] };
+      cur.dates.push(r.date);
+      byUser.set(r.employeeId, cur);
+    }
+    const items = [...byUser.entries()].map(([userId, v]) => {
+      const emp = emps.find(e => e.userId === userId) || null;
+      const done = emp ? readDeductionEntries(emp as any, 'fineEntries', 'fines', month) : [];
+      const already = new Set(done.filter(d => LATE_NOTE_RE.test(d.note || '')).map(d => d.date));
+      const fresh = v.dates.filter(d => !already.has(d)).sort();
+      return {
+        userId,
+        employeeId: emp?.id ?? null,
+        name: emp?.name ?? null,
+        linked: !!emp,
+        dates: v.dates.sort(),
+        newDates: fresh,
+        amount: r2(fresh.length * amountPerLate),
+      };
+    }).filter(i => i.newDates.length > 0);
+    return { ym: month, amountPerLate, items };
+  }
+
+  /** Провести штрафы за опоздания. Считает система, решение — владельца:
+   *  молча списывать деньги за опоздание нельзя. */
+  async applyLateFines(ym: string | undefined, amountPerLate = 100, onlyUserIds?: string[]) {
+    const view = await this.lateOverview(ym, amountPerLate);
+    let created = 0;
+    for (const item of view.items) {
+      if (!item.employeeId) continue;
+      if (onlyUserIds?.length && !onlyUserIds.includes(item.userId)) continue;
+      for (const date of item.newDates) {
+        await this.addEmployeeDeduction(item.employeeId, {
+          kind: 'fine', ym: view.ym, amount: amountPerLate, date,
+          note: `Опоздание ${date.slice(8, 10)}.${date.slice(5, 7)}`,
+        });
+        created++;
+      }
+    }
+    return { ok: true, created, ym: view.ym };
+  }
 
   // ─── ЛИЧНАЯ ЗАРПЛАТА: сотрудник видит только свою строку ведомости ─────
   /** Ищем строку по привязке к аккаунту. Привязки нет — один раз

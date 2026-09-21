@@ -2,15 +2,17 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkShift } from './work-shift.entity';
 import { ShiftEditRequest } from './shift-edit-request.entity';
+import { ShiftAbsence } from './shift-absence.entity';
 import { User } from '../users/user.entity';
 import { WorkShiftsService } from './work-shifts.service';
 import { WorkShiftsController } from './work-shifts.controller';
 
-/** Рабочие смены. Зависимостей на другие модули нет намеренно: рассылки и
- *  уведомления сюда не тянем, чтобы не плодить кольца (см. историю с
- *  ContentPlan → Telegram → Tasks → Projects). */
+/** Рабочие смены. Своих импортов модулей по-прежнему нет: напоминания шлём
+ *  через TelegramService, а он доступен как @Global — нового ребра в графе
+ *  зависимостей не появляется и кольца (ContentPlan → Telegram → Tasks →
+ *  Projects) не повторяются. */
 @Module({
-  imports: [TypeOrmModule.forFeature([WorkShift, ShiftEditRequest, User])],
+  imports: [TypeOrmModule.forFeature([WorkShift, ShiftEditRequest, ShiftAbsence, User])],
   controllers: [WorkShiftsController],
   providers: [WorkShiftsService],
 })

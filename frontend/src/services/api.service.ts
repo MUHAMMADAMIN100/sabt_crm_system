@@ -311,6 +311,11 @@ export const workShiftsApi = {
   /** Очередь правок и решение по ним — руководству. */
   edits: () => api.get('/work-shifts/edits').then(r => r.data),
   decideEdit: (id: string, approve: boolean) => api.patch(`/work-shifts/edits/${id}`, { approve }).then(r => r.data),
+  /** Отгул, отпуск, больничный — ставит руководство. */
+  setAbsence: (body: { employeeId: string; date: string; kind: 'dayoff' | 'vacation' | 'sick' | 'holiday'; note?: string }) =>
+    api.post('/work-shifts/absence', body).then(r => r.data),
+  removeAbsence: (employeeId: string, date: string) =>
+    api.delete('/work-shifts/absence', { params: { employeeId, date } }).then(r => r.data),
   /** Сводка по команде (только руководству компании). */
   team: (date?: string) => api.get('/work-shifts/team', { params: date ? { date } : undefined }).then(r => r.data),
   /** Табель за месяц: часы по дням, итоги и отрезки смен. */
@@ -474,6 +479,10 @@ export const financeApi = {
   cancelProjectPayments: (id: string) => api.post(`/finance/projects/${id}/cancel-payments`, {}).then(r => r.data),
 
   // Сотрудники
+  /** Опоздания за месяц и проведение штрафов по ним. */
+  lateFines: (ym?: string, amount?: number) => api.get('/finance/late-fines', { params: { ym, amount } }).then(r => r.data),
+  applyLateFines: (body: { ym?: string; amount?: number; userIds?: string[] }) =>
+    api.post('/finance/late-fines', body).then(r => r.data),
   employees: () => api.get('/finance/employees').then(r => r.data),
   createEmployee: (data: any) => api.post('/finance/employees', data).then(r => r.data),
   updateEmployee: (id: string, data: any) => api.patch(`/finance/employees/${id}`, data).then(r => r.data),

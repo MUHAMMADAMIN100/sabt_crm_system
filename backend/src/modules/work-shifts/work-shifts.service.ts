@@ -4,7 +4,9 @@ import { IsNull, Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { WorkShift } from './work-shift.entity';
 import { ShiftEditRequest } from './shift-edit-request.entity';
+import { ShiftAbsence } from './shift-absence.entity';
 import { User, UserRole } from '../users/user.entity';
+import { TelegramService } from '../telegram/telegram.service';
 
 /** Рабочий день начинается в 09:00, опоздание — приход позже 09:30
  *  (решение владельца, 21.09.2026). Порог больше не круглый час, поэтому
@@ -41,7 +43,11 @@ export class WorkShiftsService {
   constructor(
     @InjectRepository(WorkShift) private repo: Repository<WorkShift>,
     @InjectRepository(ShiftEditRequest) private editRepo: Repository<ShiftEditRequest>,
+    @InjectRepository(ShiftAbsence) private absenceRepo: Repository<ShiftAbsence>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    // TelegramModule помечен @Global — сервис доступен без импорта модуля,
+    // то есть без нового ребра в графе зависимостей и без риска колец.
+    private telegram: TelegramService,
   ) {}
 
   /** Моя смена: идёт, на паузе или не начата, и сколько наработано сегодня.
@@ -198,6 +204,8 @@ export class WorkShiftsService {
       .createQueryBuilder('s')
       .where('s.date BETWEEN :from AND :to', { from: weekFrom, to: day })
       .getMany();
+    const absences = await this.absenceRepo.find({ where: { date: day } });
+    const absenceByUser = new Map(absences.map(a => [a.employeeId, a]));
 
     const byUser = new Map<string, WorkShift[]>();
     for (const s of rows) {
@@ -223,10 +231,12 @@ export class WorkShiftsService {
       const lastToday = today
         .filter(x => x.endedAt)
         .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime())[0];
-      const status: 'working' | 'paused' | 'closed' | 'absent' =
+      const absence = absenceByUser.get(u.id) ?? null;
+      const status: 'working' | 'paused' | 'closed' | 'absent' | 'off' =
         open ? 'working'
           : lastToday?.endReason === 'pause' ? 'paused'
           : today.length ? 'closed'
+          : absence ? 'off'
           : 'absent';
       return {
         id: u.id, name: u.name, role: u.role, avatar: u.avatar ?? null,
@@ -235,6 +245,8 @@ export class WorkShiftsService {
         late: isLateAt(first ? dushanbeTime(first) : null),
         // Чем занят перерыв: «на обеде» и «выехал на съёмку» — разные вещи.
         pauseKind: status === 'paused' ? (lastToday?.pauseKind ?? 'personal') : null,
+        absenceKind: absence?.kind ?? null,
+        absenceNote: absence?.note ?? null,
         normMinutes: NORM_MINUTES,
         autoClosed: today.some(s => s.autoClosed),
         todayMinutes: todayMin,
@@ -243,7 +255,7 @@ export class WorkShiftsService {
     });
 
     // Сначала те, кто на работе, потом опоздавшие, потом остальные.
-    const rank = (s: string) => (s === 'working' ? 0 : s === 'paused' ? 1 : s === 'closed' ? 2 : 3);
+    const rank = (s: string) => (s === 'working' ? 0 : s === 'paused' ? 1 : s === 'closed' ? 2 : s === 'off' ? 3 : 4);
     items.sort((a, b) => rank(a.status) - rank(b.status) || a.name.localeCompare(b.name, 'ru'));
 
     return {
@@ -281,6 +293,17 @@ export class WorkShiftsService {
       .createQueryBuilder('s')
       .where('s.date BETWEEN :from AND :to', { from, to })
       .getMany();
+    const monthAbsences = await this.absenceRepo
+      .createQueryBuilder('a')
+      .where('a.date BETWEEN :from AND :to', { from, to })
+      .getMany();
+    const absenceByUserDay = new Map<string, Record<number, string>>();
+    for (const a of monthAbsences) {
+      const dn = Number(String(a.date).slice(8, 10));
+      const m = absenceByUserDay.get(a.employeeId) ?? {};
+      m[dn] = a.kind;
+      absenceByUserDay.set(a.employeeId, m);
+    }
 
     const byUser = new Map<string, WorkShift[]>();
     for (const s of rows) {
@@ -339,6 +362,8 @@ export class WorkShiftsService {
         // считать по календарю нельзя, пока в системе нет графика и отгулов.
         normMinutes: workedDays * NORM_MINUTES,
         diffMinutes: totalMinutes - workedDays * NORM_MINUTES,
+        // Дни, которые НЕ прогул: отгул, отпуск, больничный, праздник.
+        absences: absenceByUserDay.get(u.id) ?? {},
       };
     });
 
@@ -354,6 +379,27 @@ export class WorkShiftsService {
       normMinutes: NORM_MINUTES,
       items,
     };
+  }
+
+  // ─── Отгул, отпуск, больничный ───────────────────────────────────────
+  /** Отметить день как нерабочий по уважительной причине. Повторная отметка
+   *  того же дня заменяет прежнюю — так проще исправить опечатку. */
+  async setAbsence(dto: { employeeId: string; date: string; kind: ShiftAbsence['kind']; note?: string }, byId: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dto.date || '')) throw new BadRequestException('Дата в формате ГГГГ-ММ-ДД');
+    const kinds = ['dayoff', 'vacation', 'sick', 'holiday'];
+    if (!kinds.includes(dto.kind)) throw new BadRequestException('Неизвестный тип');
+    const exist = await this.absenceRepo.findOne({ where: { employeeId: dto.employeeId, date: dto.date } });
+    const row = exist ?? this.absenceRepo.create({ employeeId: dto.employeeId, date: dto.date });
+    row.kind = dto.kind;
+    row.note = (dto.note || '').trim().slice(0, 200) || null;
+    row.createdById = byId;
+    await this.absenceRepo.save(row);
+    return { ok: true };
+  }
+
+  async removeAbsence(employeeId: string, date: string) {
+    await this.absenceRepo.delete({ employeeId, date });
+    return { ok: true };
   }
 
   // ─── «Забыл нажать»: правка времени через подтверждение ──────────────
@@ -463,6 +509,114 @@ export class WorkShiftsService {
         workedDays: 0, totalMinutes: 0, avgMinutes: 0,
       },
     };
+  }
+
+  // ═══ Напоминания. Канал уже есть — тот же бот, что шлёт утренний дайджест.
+  //     Сообщения без кнопок намеренно: нажатие в телеграме требует обработки
+  //     колбэков в боте, а человеку и так достаточно открыть CRM. ═══
+
+  /** Кому вообще шлём: активные сотрудники, кроме основателя. */
+  private async shiftPeople(): Promise<User[]> {
+    const users = await this.userRepo.find({ where: { isActive: true }, select: ['id', 'name', 'role'] });
+    return users.filter(u => u.role !== UserRole.FOUNDER);
+  }
+
+  /** 09:35 — смена не отмечена. Проверяем ровно один раз за утро. */
+  @Cron('35 9 * * *', { timeZone: TZ })
+  async remindToStart() {
+    const day = dushanbeDate();
+    const people = await this.shiftPeople();
+    if (!people.length) return;
+    const started = new Set(
+      (await this.repo.find({ where: { date: day }, select: ['employeeId'] })).map(s => s.employeeId),
+    );
+    let sent = 0;
+    for (const u of people) {
+      if (started.has(u.id)) continue;
+      await this.telegram.sendToUser(
+        u.id,
+        `Рабочий день начался в ${WORK_START}, а смена не отмечена.\n` +
+        'Откройте CRM и нажмите «Начать работу» — иначе день не попадёт в табель.',
+      ).catch(() => undefined);
+      sent++;
+    }
+    if (sent) this.logger.log(`Напоминаний «начни смену»: ${sent}`);
+  }
+
+  /** Долгий перерыв. Шлём ОДИН раз: только когда длительность перешла порог
+   *  в это окно крона, иначе сообщение повторялось бы каждые 15 минут. */
+  @Cron('*/15 10-20 * * *', { timeZone: TZ })
+  async remindFromBreak() {
+    const day = dushanbeDate();
+    const rows = await this.repo.find({ where: { date: day } });
+    if (!rows.length) return;
+    const byUser = new Map<string, WorkShift[]>();
+    for (const s of rows) {
+      if (!byUser.has(s.employeeId)) byUser.set(s.employeeId, []);
+      byUser.get(s.employeeId)!.push(s);
+    }
+    for (const [userId, list] of byUser) {
+      if (list.some(s => !s.endedAt)) continue;                    // работает, не на перерыве
+      const last = list.sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime())[0];
+      if (last.endReason !== 'pause') continue;                    // день закрыт
+      const mins = Math.round((Date.now() - new Date(last.endedAt!).getTime()) / 60000);
+      const limit = last.pauseKind === 'lunch' ? LUNCH_PAID_MAX : 45;
+      if (mins < limit || mins >= limit + 15) continue;            // порог пройден именно сейчас
+      const what = last.pauseKind === 'lunch' ? 'Обед' : last.pauseKind === 'work' ? 'Выезд по работе' : 'Перерыв';
+      await this.telegram.sendToUser(
+        userId,
+        `${what} идёт ${mins} минут.\n` +
+        (last.pauseKind === 'lunch'
+          ? `В часы засчитывается ${LUNCH_PAID_MAX} минут обеда — дальше время не идёт.`
+          : 'Вернулись? Нажмите «Продолжить» в CRM.'),
+      ).catch(() => undefined);
+    }
+  }
+
+  /** 18:05 — норма закрыта, а смена всё ещё идёт. */
+  @Cron('5 18 * * *', { timeZone: TZ })
+  async remindToFinish() {
+    const day = dushanbeDate();
+    const rows = await this.repo.find({ where: { date: day } });
+    const byUser = new Map<string, WorkShift[]>();
+    for (const s of rows) {
+      if (!byUser.has(s.employeeId)) byUser.set(s.employeeId, []);
+      byUser.get(s.employeeId)!.push(s);
+    }
+    for (const [userId, list] of byUser) {
+      if (!list.some(s => !s.endedAt)) continue;                   // смена уже закрыта
+      const total = this.dayStats(list).totalMinutes;
+      if (total < NORM_MINUTES) continue;
+      await this.telegram.sendToUser(
+        userId,
+        `Норма ${Math.round(NORM_MINUTES / 60)} часов отработана.\n` +
+        'Если закончили — нажмите «Завершить», чтобы день не закрылся автоматически.',
+      ).catch(() => undefined);
+    }
+  }
+
+  /** 10:00 — сводка руководству: кто на работе, кто опоздал, кого нет. */
+  @Cron('0 10 * * *', { timeZone: TZ })
+  async ownerMorningDigest() {
+    const data = await this.team();
+    if (!data.items.length) return;
+    const late = data.items.filter(i => i.late);
+    const absent = data.items.filter(i => i.status === 'absent');
+    const working = data.items.filter(i => i.status !== 'absent');
+    const lines = [
+      `Смены на ${new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}`,
+      `На работе: ${working.length} из ${data.items.length}`,
+    ];
+    if (late.length) lines.push(`Опоздали (после ${LATE_AFTER}): ` + late.map(i => `${i.name} — ${i.startedLabel}`).join(', '));
+    if (absent.length) lines.push('Не вышли: ' + absent.map(i => i.name).join(', '));
+    const chiefs = await this.userRepo.find({
+      where: { isActive: true },
+      select: ['id', 'role'],
+    });
+    for (const u of chiefs) {
+      if (u.role !== UserRole.FOUNDER && u.role !== UserRole.CO_FOUNDER) continue;
+      await this.telegram.sendToUser(u.id, lines.join('\n')).catch(() => undefined);
+    }
   }
 
   /** Полночь по Душанбе: закрываем забытые смены. Без этого один

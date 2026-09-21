@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { WorkShiftsService } from './work-shifts.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -58,6 +58,19 @@ export class WorkShiftsController {
   @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
   decideEdit(@Request() req, @Param('id') id: string, @Body() body: { approve: boolean }) {
     return this.service.decideEdit(id, !!body?.approve, req.user.id);
+  }
+
+  // ─── Отгул / отпуск / больничный — ставит руководство ──────────────
+  @Post('absence')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  setAbsence(@Request() req, @Body() body: { employeeId: string; date: string; kind: 'dayoff' | 'vacation' | 'sick' | 'holiday'; note?: string }) {
+    return this.service.setAbsence(body, req.user.id);
+  }
+
+  @Delete('absence')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  removeAbsence(@Query('employeeId') employeeId: string, @Query('date') date: string) {
+    return this.service.removeAbsence(employeeId, date);
   }
 
   /** Мой табель за месяц — личный профиль, только свои часы. */

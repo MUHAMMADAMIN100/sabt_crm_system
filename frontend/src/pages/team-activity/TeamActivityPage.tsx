@@ -5,7 +5,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { Loader2, ChevronDown, Radio, Clock } from 'lucide-react'
-import { activityLogApi, usersApi, workShiftsApi } from '@/services/api.service'
+import { activityLogApi, usersApi, workShiftsApi, financeApi } from '@/services/api.service'
 import { getRoleLabel } from '@/lib/permissions'
 import { useAuthStore } from '@/store/auth.store'
 import toast from 'react-hot-toast'
@@ -235,7 +235,7 @@ export default function TeamActivityPage() {
         </span>
       </div>
 
-      {tab === 'today' && <><ShiftEdits /><ShiftsToday /></>}
+      {tab === 'today' && <><LateFines /><ShiftEdits /><ShiftsToday /></>}
       {tab === 'timesheet' && <ShiftsTimesheet />}
 
       {tab === 'feed' && (<>
@@ -392,6 +392,59 @@ function Chip({ children, active, cofounder, onClick }: { children: ReactNode; a
 /** Смены за сегодня: кто на работе, во сколько начал, сколько отработал.
  *  Живёт здесь же, где лента активности: у основателя это одна страница
  *  «что происходит в команде», разносить по двум смысла нет. */
+/** Опоздания за месяц. Система их считает, но деньгами это становится
+ *  только по нажатию владельца — молча списывать нельзя. */
+function LateFines() {
+  const qc = useQueryClient()
+  const role = useAuthStore(s => s.user?.role)
+  const canFine = role === 'founder' || role === 'co_founder'
+  const { data } = useQuery({
+    queryKey: ['late-fines'],
+    queryFn: () => financeApi.lateFines(),
+    enabled: canFine,
+  })
+  const apply = useMutation({
+    mutationFn: () => financeApi.applyLateFines({ ym: data?.ym, amount: data?.amountPerLate }),
+    onSuccess: (r: any) => {
+      toast.success(`Штрафов проведено: ${r?.created ?? 0}`)
+      qc.invalidateQueries({ queryKey: ['late-fines'] })
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось провести'),
+  })
+  const items: any[] = data?.items ?? []
+  if (!canFine || !items.length) return null
+  const total = items.reduce((sum, i) => sum + (i.amount || 0), 0)
+  const unlinked = items.filter(i => !i.linked)
+  return (
+    <div className="rounded-2xl border border-red-500/35 bg-red-500/[0.06] p-4 mb-3">
+      <div className="text-sm font-semibold mb-1">Опоздания за месяц · не проведены</div>
+      <div className="text-xs text-gray-500 dark:text-gray-400 mb-2.5">
+        По {data?.amountPerLate ?? 100} с. за опоздание после 09:30. Дни с отгулом, отпуском и больничным не считаются.
+      </div>
+      <div className="flex flex-col gap-1.5 mb-3">
+        {items.map(i => (
+          <div key={i.userId} className="flex items-center gap-3 text-sm">
+            <span className="flex-1 min-w-0 truncate">
+              {i.name ?? 'Нет строки в ведомости'}
+              <span className="text-xs text-gray-500 dark:text-gray-400"> · {i.newDates.length} шт · {i.newDates.map((d: string) => d.slice(8, 10) + '.' + d.slice(5, 7)).join(', ')}</span>
+            </span>
+            <span className="shrink-0 font-semibold tabular-nums text-red-600 dark:text-red-400">−{i.amount} с.</span>
+          </div>
+        ))}
+      </div>
+      {unlinked.length > 0 && (
+        <div className="text-[11px] text-amber-600 dark:text-amber-400 mb-2">
+          У {unlinked.length} из них нет строки в зарплатной ведомости — их штрафы не проведутся, пока не свяжете аккаунт в «Финансы → Настройки → Сотрудники».
+        </div>
+      )}
+      <button disabled={apply.isPending} onClick={() => apply.mutate()}
+        className="h-11 px-4 rounded-xl bg-red-700 text-white text-sm font-bold disabled:opacity-60">
+        Провести штраф на {total} с.
+      </button>
+    </div>
+  )
+}
+
 /** Очередь правок времени: «забыл нажать в 9:00». До подтверждения в табеле
  *  остаётся то, что записала система, — поэтому решать надо здесь. */
 function ShiftEdits() {
@@ -440,11 +493,34 @@ function ShiftEdits() {
   )
 }
 
+const ABSENCE_LABEL: Record<string, string> = {
+  dayoff: 'отгул', vacation: 'отпуск', sick: 'больничный', holiday: 'праздник',
+}
+
 function ShiftsToday() {
+  const qc = useQueryClient()
   const { data } = useQuery({
     queryKey: ['work-shifts-team'],
     queryFn: () => workShiftsApi.team(),
     refetchInterval: 60_000,
+  })
+  // Пустой день сам по себе ничего не значит: отгул, отпуск и больничный
+  // должны отличаться от «забыл нажать».
+  const [marking, setMarking] = useState<string | null>(null)
+  const absence = useMutation({
+    mutationFn: ({ employeeId, kind }: { employeeId: string; kind: 'dayoff' | 'vacation' | 'sick' | 'holiday' }) =>
+      workShiftsApi.setAbsence({ employeeId, date: data?.date, kind }),
+    onSuccess: () => {
+      toast.success('Отмечено')
+      setMarking(null)
+      qc.invalidateQueries({ queryKey: ['work-shifts-team'] })
+      qc.invalidateQueries({ queryKey: ['late-fines'] })
+    },
+    onError: () => toast.error('Не удалось отметить'),
+  })
+  const clearAbsence = useMutation({
+    mutationFn: (employeeId: string) => workShiftsApi.removeAbsence(employeeId, data?.date),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['work-shifts-team'] }) },
   })
   const items: any[] = data?.items ?? []
   if (!items.length) return null
@@ -459,6 +535,7 @@ function ShiftsToday() {
     paused:  { text: 'на перерыве', cls: 'text-amber-600 dark:text-amber-400 bg-amber-500/12' },
     closed:  { text: 'смена закрыта', cls: 'text-gray-500 dark:text-gray-400 bg-gray-500/12' },
     absent:  { text: 'не выходил', cls: 'text-red-600 dark:text-red-400 bg-red-500/12' },
+    off:     { text: 'нерабочий день', cls: 'text-blue-600 dark:text-blue-400 bg-blue-500/12' },
   }
 
   return (
@@ -492,6 +569,28 @@ function ShiftsToday() {
                     опоздание
                   </span>
                 )}
+                {u.status === 'off' && (
+                  <button onClick={() => clearAbsence.mutate(u.id)}
+                    className="text-[10px] px-2 py-0.5 rounded shrink-0 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                    {ABSENCE_LABEL[u.absenceKind] ?? 'отмечен'} · снять
+                  </button>
+                )}
+                {u.status === 'absent' && (marking === u.id ? (
+                  <span className="flex gap-1 shrink-0">
+                    {(['dayoff', 'vacation', 'sick'] as const).map(k => (
+                      <button key={k} disabled={absence.isPending} onClick={() => absence.mutate({ employeeId: u.id, kind: k })}
+                        className="text-[10px] px-2 py-1 rounded bg-blue-500/12 text-blue-600 dark:text-blue-400 font-semibold disabled:opacity-60">
+                        {ABSENCE_LABEL[k]}
+                      </button>
+                    ))}
+                    <button onClick={() => setMarking(null)} className="text-[10px] px-2 py-1 rounded text-gray-400">×</button>
+                  </span>
+                ) : (
+                  <button onClick={() => setMarking(u.id)}
+                    className="text-[10px] px-2 py-1 rounded shrink-0 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                    отметить
+                  </button>
+                ))}
                 <span className="text-[11px] text-gray-500 tabular-nums w-[52px] text-right shrink-0">{u.startedLabel || '—'}</span>
                 <span className="text-[12px] font-semibold tabular-nums w-[92px] text-right shrink-0">{fmt(u.todayMinutes)}</span>
                 <span className="text-[11px] text-gray-400 tabular-nums w-[92px] text-right shrink-0 hidden sm:inline">
@@ -501,7 +600,7 @@ function ShiftsToday() {
             )
           })}
           <p className="px-4 py-2 text-[11px] text-gray-400">
-            Рабочий день начинается в {data?.workStart ?? '09:00'}, опозданием считается приход позже {data?.lateAfter ?? '09:30'}. Забытые смены закрываются автоматически в полночь.
+            Рабочий день {data?.workStart ?? '09:00'}–{data?.workEnd ?? '18:00'}, норма {Math.round((data?.normMinutes ?? 480) / 60)} часов; опоздание — приход позже {data?.lateAfter ?? '09:30'}. Забытую смену система закрывает последней активностью в CRM, а не полуночью.
           </p>
         </div>
       )}
