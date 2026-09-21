@@ -5,8 +5,15 @@ import { Cron } from '@nestjs/schedule';
 import { WorkShift } from './work-shift.entity';
 import { User, UserRole } from '../users/user.entity';
 
-/** Час, позже которого начало смены считается опозданием (по Душанбе). */
-const LATE_AFTER_HOUR = 10;
+/** Рабочий день начинается в 09:00, опоздание — приход позже 09:30
+ *  (решение владельца, 21.09.2026). Порог больше не круглый час, поэтому
+ *  сравниваем минуты, а не первые две цифры времени. */
+const WORK_START = '09:00';
+const LATE_AFTER = '09:30';
+const minutesOfTime = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+const LATE_AFTER_MIN = minutesOfTime(LATE_AFTER);
+/** Пришёл позже порога. Ровно в 09:30 — ещё не опоздание. */
+const isLateAt = (hhmm?: string | null) => !!hhmm && minutesOfTime(hhmm) > LATE_AFTER_MIN;
 const TZ = 'Asia/Dushanbe';
 
 /** Дата в календаре Душанбе: 'YYYY-MM-DD'. Считать по часовому поясу сервера
@@ -122,9 +129,6 @@ export class WorkShiftsService {
       const first = today.map(s => new Date(s.startedAt)).sort((a, b) => a.getTime() - b.getTime())[0];
       const todayMin = Math.round(today.reduce((sum, s) => sum + this.durationMs(s), 0) / 60000);
       const weekMin = Math.round(all.reduce((sum, s) => sum + this.durationMs(s), 0) / 60000);
-      const lateHour = first
-        ? Number(new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', hour12: false }).format(first))
-        : null;
       const lastToday = today
         .filter(x => x.endedAt)
         .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime())[0];
@@ -137,7 +141,7 @@ export class WorkShiftsService {
         id: u.id, name: u.name, role: u.role, avatar: u.avatar ?? null,
         status,
         startedLabel: first ? dushanbeTime(first) : null,
-        late: lateHour != null && lateHour >= LATE_AFTER_HOUR,
+        late: isLateAt(first ? dushanbeTime(first) : null),
         autoClosed: today.some(s => s.autoClosed),
         todayMinutes: todayMin,
         weekMinutes: weekMin,
@@ -150,7 +154,8 @@ export class WorkShiftsService {
 
     return {
       date: day,
-      lateAfter: `${String(LATE_AFTER_HOUR).padStart(2, '0')}:00`,
+      lateAfter: LATE_AFTER,
+      workStart: WORK_START,
       working: items.filter(i => i.status === 'working').length,
       paused: items.filter(i => i.status === 'paused').length,
       total: items.length,
@@ -212,7 +217,7 @@ export class WorkShiftsService {
       // Опоздание считаем по первому приходу за день.
       for (const dayNum of Object.keys(segments).map(Number)) {
         const first = segments[dayNum][0];
-        if (first && Number(first.from.slice(0, 2)) >= LATE_AFTER_HOUR) lateDays.add(dayNum);
+        if (isLateAt(first?.from)) lateDays.add(dayNum);
       }
 
       const workedDays = Object.values(days).filter(v => v > 0).length;
@@ -234,7 +239,8 @@ export class WorkShiftsService {
       ym: month,
       daysInMonth,
       today: dushanbeDate(),
-      lateAfter: `${String(LATE_AFTER_HOUR).padStart(2, '0')}:00`,
+      lateAfter: LATE_AFTER,
+      workStart: WORK_START,
       items,
     };
   }
@@ -247,6 +253,7 @@ export class WorkShiftsService {
     return {
       ym: res.ym, daysInMonth: res.daysInMonth, today: res.today,
       lateAfter: res.lateAfter,
+      workStart: res.workStart,
       item: mine ?? {
         id: userId, name: '', role: null, avatar: null,
         days: {}, segments: {}, lateDays: [], autoDays: [],

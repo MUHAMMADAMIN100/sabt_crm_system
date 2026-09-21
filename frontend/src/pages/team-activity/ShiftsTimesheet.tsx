@@ -146,7 +146,7 @@ export default function ShiftsTimesheet() {
       </div>
 
       <p className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100 dark:border-gray-800">
-        Нажмите на сотрудника — откроется его месяц с отрезками смен. Жёлтая обводка — приход позже {data?.lateAfter ?? '10:00'}.
+        Нажмите на сотрудника — откроется его месяц с отрезками смен. Жёлтая обводка — приход позже {data?.lateAfter ?? '09:30'} (рабочий день с {data?.workStart ?? '09:00'}).
       </p>
 
       {person && createPortal(
