@@ -46,6 +46,54 @@ import {
 // ─── helpers ────────────────────────────────────────────────────────
 const r2 = (n: any) => Math.round((Number(n) || 0) * 100) / 100;
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+// ─── Сопоставление «строка ведомости ↔ аккаунт CRM» по имени ──────────
+/** Слова имени: без регистра, без «ё», без лишних знаков и пробелов. */
+const nameWords = (s?: string | null): string[] =>
+  String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/gi, ' ').trim().split(/\s+/).filter(Boolean);
+/** Ключ имени — слова по алфавиту: «Зарипова Умрона» = «Умрона Зарипова». */
+const nameKey = (s?: string | null): string => nameWords(s).sort().join(' ');
+const isSubsetOf = (a: string[], b: string[]) => a.every(w => b.includes(w));
+
+/** Единственная строка ведомости, которой соответствует аккаунт.
+ *
+ *  Сначала полное совпадение набора слов (порядок и регистр не важны,
+ *  «ё» = «е»). Потом — «одно имя внутри другого»: в CRM человек может быть
+ *  записан с отчеством, а в ведомости без него. Оба шага срабатывают ТОЛЬКО
+ *  при единственном кандидате с обеих сторон: два «Умрона» лучше не угадать
+ *  вовсе, чем показать человеку чужую зарплату. Однословные имена не
+ *  сопоставляем — по одной фамилии легко попасть не в того.
+ */
+export function matchEmployeeToUser<T extends { id: string; userId?: string | null; name: string }>(
+  user: { id: string; name: string },
+  allUsers: Array<{ id: string; name: string }>,
+  employees: T[],
+): T | null {
+  const words = nameWords(user.name);
+  if (words.length < 2) return null;
+  const key = words.slice().sort().join(' ');
+  // Тёзка в CRM — не угадываем, кто из них.
+  if (allUsers.filter(u => nameKey(u.name) === key).length !== 1) return null;
+
+  const free = employees.filter(e => !e.userId);
+  const exact = free.filter(e => nameKey(e.name) === key);
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
+
+  const near = free.filter(e => {
+    const w = nameWords(e.name);
+    return w.length >= 2 && (isSubsetOf(w, words) || isSubsetOf(words, w));
+  });
+  if (near.length !== 1) return null;
+  // Сокращённое имя не должно подойти сразу двоим сотрудникам CRM.
+  const nearWords = nameWords(near[0].name);
+  const rivals = allUsers.filter(u => {
+    const w = nameWords(u.name);
+    return w.length >= 2 && (isSubsetOf(nearWords, w) || isSubsetOf(w, nearWords));
+  });
+  return rivals.length === 1 ? near[0] : null;
+}
+
 const NOTION_HISTORY_CUTOVER_YM = '2026-06';
 const NOTION_HISTORY_CUTOFF_DATE = '2026-06-01';
 // PostgreSQL advisory locks use signed int32 for this overload. Стабильный
@@ -362,6 +410,9 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "userId" uuid`);
     await run(`CREATE UNIQUE INDEX IF NOT EXISTS "ux_finance_employees_user"
       ON finance_employees ("userId") WHERE "userId" IS NOT NULL`);
+    // Колонка есть — достраиваем привязки по именам (идемпотентно).
+    try { await this.backfillEmployeeLinks(); }
+    catch (e: any) { this.logger.warn(`привязка ЗП к аккаунтам пропущена: ${String(e?.message || e).slice(0, 160)}`); }
     // Журнал активности финансов (кто/что/когда) — пишет интерцептор.
     await run(`CREATE TABLE IF NOT EXISTS finance_activity (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -3594,18 +3645,38 @@ export class FinanceService implements OnModuleInit {
     if (linked) return linked;
     const me: Array<{ name: string }> = await this.ds.query(
       `SELECT name FROM users WHERE id = $1`, [userId]);
-    const key = (me[0]?.name || '').trim().toLowerCase();
-    if (!key) return null;
-    const twins: Array<{ n: number }> = await this.ds.query(
-      `SELECT count(*)::int AS n FROM users WHERE lower(btrim(name)) = $1`, [key]);
-    if (Number(twins[0]?.n) !== 1) return null;
-    const matches = (await this.empRepo.find())
-      .filter(e => (e.name || '').trim().toLowerCase() === key);
-    if (matches.length !== 1 || matches[0].userId) return null;
-    matches[0].userId = userId;
-    try { await this.empRepo.save(matches[0]); } catch { return null; }
-    return matches[0];
+    const users: Array<{ id: string; name: string }> = await this.ds.query(
+      `SELECT id, name FROM users`);
+    const emps = await this.empRepo.find();
+    const found = matchEmployeeToUser({ id: userId, name: me[0]?.name || '' }, users, emps);
+    if (!found) return null;
+    found.userId = userId;
+    // Уникальный индекс: если этот аккаунт кто-то занял параллельно —
+    // просто считаем, что привязки нет, и ничего не ломаем.
+    try { await this.empRepo.save(found); } catch { return null; }
+    return found;
   }
+
+  /** Разовая достройка привязок при старте. Без неё человек увидит свою
+   *  зарплату только после того, как САМ откроет профиль, а владелец до
+   *  этого момента видит его как «не привязан» и идёт связывать руками. */
+  private async backfillEmployeeLinks() {
+    const emps = await this.empRepo.find();
+    if (!emps.some(e => !e.userId)) return;
+    const users: Array<{ id: string; name: string }> = await this.ds.query(
+      `SELECT u.id, u.name FROM users u
+        WHERE NOT EXISTS (SELECT 1 FROM finance_employees fe WHERE fe."userId" = u.id)`);
+    let linked = 0;
+    for (const u of users) {
+      const hit = matchEmployeeToUser(u, users, emps);
+      if (!hit) continue;
+      hit.userId = u.id;
+      try { await this.empRepo.save(hit); linked++; }
+      catch { hit.userId = null; }
+    }
+    if (linked) this.logger.log(`Зарплатные строки привязаны к аккаунтам: ${linked}`);
+  }
+
 
   /** Зарплата запрашивающего за месяц + история закрытых месяцев.
    *  Цифры считает та же ведомость, что видит владелец, — расхождений быть

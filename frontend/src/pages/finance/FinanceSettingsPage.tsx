@@ -9,7 +9,7 @@ import { money, todayISO, formatDate, INCOME_GROUPS, TYPE_LABEL, COLOR_PALETTE, 
 import FinIcon, { CatIcon, PICKER_ICONS } from './FinIcon';
 import { FinModal, FinLoading, FinLoadError, finConfirm, invalidateFinanceAll } from './FinKit';
 import { ProjectFormModal, EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
-import { financeApi } from '@/services/api.service';
+import { financeApi, usersApi } from '@/services/api.service';
 import { AccountLabel } from './AccountIdentity';
 
 const SETTINGS_TABS = [
@@ -41,6 +41,11 @@ export default function FinanceSettingsPage() {
   const categories = categoriesQ.data ?? [];
   const projects = projectsQ.data ?? [];
   const employees = employeesQ.data ?? [];
+  // Кто из сотрудников CRM вообще не заведён в ведомости: они не видят
+  // зарплату в профиле, и понять это иначе можно только с их слов.
+  const crmUsersQ = useQuery<any[]>({ queryKey: ['users'], queryFn: () => usersApi.list() });
+  const noPayroll = (crmUsersQ.data ?? []).filter(
+    (u: any) => u.isActive !== false && !employees.some((e: any) => e.userId === u.id));
   const subs = subsQ.data ?? [];
   const debts = debtsQ.data ?? [];
   const referenceQueries = [accountsQ, balancesQ, categoriesQ, projectsQ, employeesQ, subsQ, debtsQ];
@@ -218,12 +223,35 @@ export default function FinanceSettingsPage() {
       {activeTab === 'employees' &&
       <Directory title="Сотрудники" items={employees}
         head={['Имя', 'Роль', 'Оклад', 'Статус']}
-        cols={(e: any) => [e.name, e.role || '—', money(e.salary), e.status === 'active' ? 'активный' : 'уволен']}
+        cols={(e: any) => [
+          // Без привязки к аккаунту человек не видит свою зарплату в профиле —
+          // показываем это прямо в списке, иначе о проблеме узнаёшь от него.
+          <span className="flex" key="n" style={{ alignItems: 'center', gap: 8 }}>
+            {e.name}
+            {!e.userId && e.status === 'active' && (
+              <span className="mini" style={{ padding: '2px 7px', borderRadius: 6, background: 'rgba(238,152,13,0.14)', color: '#e0a458' }}>нет аккаунта</span>
+            )}
+          </span>,
+          e.role || '—', money(e.salary), e.status === 'active' ? 'активный' : 'уволен']}
         onAdd={() => setModal(<EmployeeFormModal categories={empCategories} onClose={() => setModal(null)} />)}
         onEdit={(e: any) => setModal(<EmployeeFormModal employee={e} categories={empCategories} onClose={() => setModal(null)} />)}
         canDelete={(e: any) => e.status === 'active'}
         addLabel="Добавить сотрудника"
-        onDel={async (e: any) => (await finConfirm(`Уволить сотрудника «${e.name}» сегодняшним числом? История зарплаты и операций сохранится.`, { confirmLabel: 'Уволить' })) && del(() => financeApi.removeEmployee(e.id))} />}
+        onDel={async (e: any) => (await finConfirm(`Уволить сотрудника «${e.name}» сегодняшним числом? История зарплаты и операций сохранится.`, { confirmLabel: 'Уволить' })) && del(() => financeApi.removeEmployee(e.id))} />
+      }
+      {activeTab === 'employees' && noPayroll.length > 0 && (
+        <div className="card" style={{ marginTop: 12 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Нет строки в ведомости — {noPayroll.length}</div>
+          <div className="mini muted" style={{ marginBottom: 10 }}>
+            Эти сотрудники заведены в CRM, но в зарплатной ведомости их нет — в своём профиле они видят «зарплата не привязана». Добавьте их кнопкой «Добавить сотрудника» и выберите учётную запись.
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {noPayroll.slice(0, 20).map((u: any) => (
+              <span key={u.id} className="mini" style={{ padding: '4px 9px', borderRadius: 7, background: 'rgba(148,163,184,0.14)' }}>{u.name}</span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {activeTab === 'regular' &&
       <Directory title="Аренда и подписки" items={subs}
