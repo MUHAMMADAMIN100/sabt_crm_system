@@ -34,6 +34,12 @@ export class WorkShiftsController {
     return this.service.pause(req.user.id);
   }
 
+  /** Мой табель за месяц — личный профиль, только свои часы. */
+  @Get('my-month')
+  myMonth(@Request() req, @Query('ym') ym?: string) {
+    return this.service.myMonth(req.user.id, ym);
+  }
+
   /** Табель за месяц: часы по дням, итоги и отрезки смен. */
   @Get('month')
   @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)

@@ -2,12 +2,12 @@
 // Раньше жили в двух расходящихся копиях (страницы направлений + Настройки).
 // Все формы: FinModal (Escape/фокус/aria), busy-guard от даблкликов, apiErr.
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { apiErr, todayISO, currentYm, monthLabel, money, INCOME_GROUPS } from './finlib';
 import { FinModal, finConfirm, invalidateFinanceAll } from './FinKit';
 import type { FinProject, FinEmployee, FinSubscription, FinDebt } from './types';
-import { financeApi } from '@/services/api.service';
+import { financeApi, usersApi } from '@/services/api.service';
 
 const num = (s: string) => parseFloat(String(s).replace(',', '.')) || 0;
 
@@ -119,6 +119,10 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
   const isEdit = !!employee;
   const [name, setName] = useState(employee?.name ?? '');
   const [role, setRole] = useState(employee?.role ?? '');
+  // Учётная запись: по ней сотрудник видит свою зарплату в личном профиле.
+  // Без привязки строка ведомости ничья — в профиле ЗП не появится.
+  const [userId, setUserId] = useState(employee?.userId ?? '');
+  const { data: crmUsers } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.list() });
   const [category, setCategory] = useState(employee?.category ?? '');
   const [hireDate, setHireDate] = useState(employee?.hireDate ?? '');
   const [terminationDate, setTerminationDate] = useState(employee?.terminationDate ?? '');
@@ -166,6 +170,7 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
       const salaryChanged = !isEdit || num(salary) !== Number(employee?.salary || 0);
       const p: any = {
         name: name.trim(), role: role.trim() || null, category: category.trim() || null,
+        userId: userId || null,
         hireDate: hireDate || null,
         terminationDate: status === 'fired' ? terminationDate || null : null,
         salary: num(salary), status,
@@ -218,6 +223,16 @@ export function EmployeeFormModal({ employee, categories = [], onClose }: {
           <input list="fin-emp-categories" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="SMM, Продажи…" />
           <datalist id="fin-emp-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
         </div>
+      </div>
+      <div className="field">
+        <label>Учётная запись в CRM</label>
+        <select value={userId} onChange={(e) => setUserId(e.target.value)}>
+          <option value="">— не привязана —</option>
+          {(crmUsers || []).map((u: any) => (
+            <option key={u.id} value={u.id}>{u.name}{u.email ? ` · ${u.email}` : ''}</option>
+          ))}
+        </select>
+        <span className="mini muted">Сотрудник увидит свою зарплату в личном профиле.</span>
       </div>
       <div className="form-grid">
         <div className="field"><label>ЗП / мес</label><input inputMode="decimal" value={salary} onChange={(e) => setSalary(e.target.value)} /></div>

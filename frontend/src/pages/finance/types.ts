@@ -41,6 +41,8 @@ export interface FinEmployee {
   id: string;
   name: string;
   role?: string | null;
+  /** Учётная запись в CRM: по ней сотрудник видит свою ЗП в профиле. */
+  userId?: string | null;
   category?: string | null;
   salary?: number;
   salaryHistory?: Record<string, number> | null;

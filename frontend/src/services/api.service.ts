@@ -307,6 +307,14 @@ export const workShiftsApi = {
   team: (date?: string) => api.get('/work-shifts/team', { params: date ? { date } : undefined }).then(r => r.data),
   /** Табель за месяц: часы по дням, итоги и отрезки смен. */
   month: (ym?: string) => api.get('/work-shifts/month', { params: ym ? { ym } : undefined }).then(r => r.data),
+  /** Мой табель за месяц — для личного профиля. */
+  myMonth: (ym?: string) => api.get('/work-shifts/my-month', { params: ym ? { ym } : undefined }).then(r => r.data),
+}
+
+// ─── Личные данные сотрудника ────────────────────────────
+export const meApi = {
+  /** Моя зарплата за месяц: только свои начисления и удержания. */
+  salary: (ym?: string) => api.get('/me/salary', { params: ym ? { ym } : undefined }).then(r => r.data),
 }
 
 // ─── Files ───────────────────────────────────────────────

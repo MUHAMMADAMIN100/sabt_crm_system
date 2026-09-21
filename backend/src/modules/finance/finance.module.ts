@@ -16,6 +16,7 @@ import { TelegramModule } from '../telegram/telegram.module';
 import { FinanceService } from './finance.service';
 import { FinanceScheduler } from './finance.scheduler';
 import { FinanceController } from './finance.controller';
+import { MySalaryController } from './my-salary.controller';
 import { FinanceActivity } from './entities/finance-activity.entity';
 import { FinanceActivityInterceptor } from './finance-activity.interceptor';
 import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustment.entity';
@@ -28,7 +29,7 @@ import { FinancePayrollPeriod } from './entities/finance-payroll-period.entity';
     FinancePlannedPayment, FinanceAsset, FinanceBackup, FinanceActivity,
     FinanceForecastAdjustment, FinancePayrollPeriod, User,
   ]), NotificationsModule, TelegramModule],
-  controllers: [FinanceController],
+  controllers: [FinanceController, MySalaryController],
   providers: [FinanceService, FinanceScheduler, FinanceActivityInterceptor],
   exports: [FinanceService],
 })

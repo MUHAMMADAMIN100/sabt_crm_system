@@ -13,6 +13,11 @@ export class FinanceEmployee {
   @Column({ type: 'varchar', length: 120, nullable: true })
   role: string | null;
 
+  /** Аккаунт в CRM. Нужен, чтобы сотрудник видел СВОЮ зарплату в профиле:
+   *  по имени опознавать деньги нельзя. NULL — строка ещё не привязана. */
+  @Column({ type: 'uuid', nullable: true })
+  userId: string | null;
+
   /** Категория/отдел для группировки зарплатной ведомости (SMM, Продакшн…). */
   @Column({ type: 'varchar', length: 80, nullable: true })
   category: string | null;

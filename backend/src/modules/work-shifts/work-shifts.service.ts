@@ -239,6 +239,22 @@ export class WorkShiftsService {
     };
   }
 
+  /** Мой табель за месяц — для личного профиля. Общий /month закрыт
+   *  руководством, здесь отдаём ровно одного человека: себя. */
+  async myMonth(userId: string, ym?: string) {
+    const res = await this.month(ym);
+    const mine = res.items.find(i => i.id === userId) || null;
+    return {
+      ym: res.ym, daysInMonth: res.daysInMonth, today: res.today,
+      lateAfter: res.lateAfter,
+      item: mine ?? {
+        id: userId, name: '', role: null, avatar: null,
+        days: {}, segments: {}, lateDays: [], autoDays: [],
+        workedDays: 0, totalMinutes: 0, avgMinutes: 0,
+      },
+    };
+  }
+
   /** Полночь по Душанбе: закрываем забытые смены. Без этого один
    *  забывчивый даёт 40 часов за сутки и ломает всю статистику. */
   @Cron('59 23 * * *', { timeZone: TZ })

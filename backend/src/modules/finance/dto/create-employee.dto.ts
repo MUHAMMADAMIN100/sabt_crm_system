@@ -1,4 +1,4 @@
-import { IsEnum, IsISO8601, IsNumber, IsObject, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
+import { IsEnum, IsISO8601, IsNumber, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateIf } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -13,6 +13,11 @@ export class CreateEmployeeDto {
 
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(120)
   role?: string;
+
+  /** Аккаунт в CRM: по нему сотрудник видит свою зарплату в личном профиле.
+   *  null — отвязать строку от аккаунта. */
+  @ApiPropertyOptional() @IsOptional() @ValidateIf(o => o.userId !== null) @IsUUID()
+  userId?: string | null;
 
   /** Категория/отдел для группировки зарплатной ведомости. */
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(80)

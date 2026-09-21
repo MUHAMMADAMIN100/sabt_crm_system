@@ -358,6 +358,10 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salarySnapshots" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "salaryHistory" jsonb`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "legacyPayrollHistory" jsonb`);
+    // Привязка к аккаунту CRM: сотрудник видит свою зарплату в профиле.
+    await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "userId" uuid`);
+    await run(`CREATE UNIQUE INDEX IF NOT EXISTS "ux_finance_employees_user"
+      ON finance_employees ("userId") WHERE "userId" IS NOT NULL`);
     // Журнал активности финансов (кто/что/когда) — пишет интерцептор.
     await run(`CREATE TABLE IF NOT EXISTS finance_activity (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2213,7 +2217,7 @@ export class FinanceService implements OnModuleInit {
           // показываем бонус-операции (для чтения истории).
           const bonusEntries = bonusJournal.length ? bonusJournal : txEntries(isBonusTx);
           return {
-            id: e.id, name: e.name, role: e.role, category: e.category ?? null,
+            id: e.id, name: e.name, role: e.role, userId: e.userId ?? null, category: e.category ?? null,
             hireDate: e.hireDate, terminationDate: e.terminationDate,
             salaryHistory: e.salaryHistory || {},
             salary: salaryForMonth(e, ym), advance: r2(Number(snap.advance) || 0),
@@ -2230,7 +2234,7 @@ export class FinanceService implements OnModuleInit {
         const fine = fineOf(e, ym);      // удерживается при финальной выплате
         const vacation = vacationOf(e, ym); // отпуск/невыходы — тоже удержание
         return {
-          id: e.id, name: e.name, role: e.role, category: e.category ?? null,
+          id: e.id, name: e.name, role: e.role, userId: e.userId ?? null, category: e.category ?? null,
           hireDate: e.hireDate, terminationDate: e.terminationDate,
           salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {},
           advance, bonus, fine, vacation, status: e.status, paid,
@@ -2262,7 +2266,7 @@ export class FinanceService implements OnModuleInit {
         // Полный набор полей: модалка редактирования открывается и из этой
         // таблицы — усечённая строка затирала category/hireDate.
         fired: emps.filter(e => e.status !== 'active').map(e => ({
-          id: e.id, name: e.name, role: e.role, category: e.category ?? null,
+          id: e.id, name: e.name, role: e.role, userId: e.userId ?? null, category: e.category ?? null,
           hireDate: e.hireDate, terminationDate: e.terminationDate,
           salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {}, advance: advanceOf(e, ym), status: e.status,
         })),
@@ -3579,7 +3583,82 @@ export class FinanceService implements OnModuleInit {
 
   // Сотрудники
   listEmployees() { return this.empRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } }); }
+
+  // ─── ЛИЧНАЯ ЗАРПЛАТА: сотрудник видит только свою строку ведомости ─────
+  /** Ищем строку по привязке к аккаунту. Привязки нет — один раз
+   *  сопоставляем по ТОЧНОМУ совпадению имени и запоминаем результат.
+   *  Совпадение должно быть единственным с обеих сторон: два одинаковых
+   *  имени не сопоставляем вовсе — пусть владелец свяжет вручную. */
+  private async resolveMyEmployee(userId: string): Promise<FinanceEmployee | null> {
+    const linked = await this.empRepo.findOne({ where: { userId } });
+    if (linked) return linked;
+    const me: Array<{ name: string }> = await this.ds.query(
+      `SELECT name FROM users WHERE id = $1`, [userId]);
+    const key = (me[0]?.name || '').trim().toLowerCase();
+    if (!key) return null;
+    const twins: Array<{ n: number }> = await this.ds.query(
+      `SELECT count(*)::int AS n FROM users WHERE lower(btrim(name)) = $1`, [key]);
+    if (Number(twins[0]?.n) !== 1) return null;
+    const matches = (await this.empRepo.find())
+      .filter(e => (e.name || '').trim().toLowerCase() === key);
+    if (matches.length !== 1 || matches[0].userId) return null;
+    matches[0].userId = userId;
+    try { await this.empRepo.save(matches[0]); } catch { return null; }
+    return matches[0];
+  }
+
+  /** Зарплата запрашивающего за месяц + история закрытых месяцев.
+   *  Цифры считает та же ведомость, что видит владелец, — расхождений быть
+   *  не может; наружу отдаём ровно одну строку и только нужные поля. */
+  async mySalary(userId: string, ym?: string) {
+    const month = YM_RE.test(ym || '') ? (ym as string) : currentYm();
+    const emp = await this.resolveMyEmployee(userId);
+    if (!emp) return { linked: false, ym: month, employee: null, row: null, history: [] };
+    const detail: any = await this.expenseDetail('salary', month);
+    const found = (detail.rows || []).find((r: any) => r.id === emp.id) || null;
+    const row = found ? {
+      ym: month,
+      salary: found.salary, advance: found.advance, bonus: found.bonus,
+      fine: found.fine, vacation: found.vacation, paid: found.paid,
+      toPay: found.toPay, frozen: found.frozen, paidAt: found.paidAt ?? null,
+      advanceEntries: found.advanceEntries || [],
+      bonusEntries: found.bonusEntries || [],
+      fineEntries: found.fineEntries || [],
+      vacationEntries: found.vacationEntries || [],
+    } : null;
+    const snaps = emp.salarySnapshots || {};
+    const history = Object.keys(snaps)
+      .filter(k => YM_RE.test(k) && k !== month)
+      .sort().reverse().slice(0, 12)
+      .map(k => {
+        const s: any = snaps[k] || {};
+        return {
+          ym: k,
+          salary: r2(Number(s.salary) || 0), bonus: r2(Number(s.bonus) || 0),
+          advance: r2(Number(s.advance) || 0), fine: r2(Number(s.fine) || 0),
+          vacation: r2(Number(s.vacation) || 0), paid: r2(Number(s.paid) || 0),
+          paidAt: s.paidAt ?? null,
+        };
+      });
+    return {
+      linked: true, ym: month,
+      employee: {
+        name: emp.name, role: emp.role, category: emp.category ?? null,
+        hireDate: emp.hireDate, status: emp.status,
+        salary: r2(Number(emp.salary) || 0),
+      },
+      row, history,
+    };
+  }
   private normStatus(v: any): 'active' | 'fired' { return v === 'fired' || v === 'inactive' ? 'fired' : 'active'; }
+  /** Аккаунт может стоять максимум у одной строки ведомости: иначе человек
+   *  в своём профиле увидит две разные «свои» зарплаты. */
+  private async assertUserLinkFree(userId: string, exceptId?: string) {
+    const taken = await this.empRepo.findOne({ where: { userId } });
+    if (taken && taken.id !== exceptId) {
+      throw new BadRequestException(`Этот аккаунт уже привязан к сотруднику «${taken.name}»`);
+    }
+  }
   /** Готовит salaryHistory с учётом плана будущих окладов. Прошлые/текущие
    * ставки (ym <= текущего месяца) сохраняются как есть, будущие (ym >
    * текущего) полностью заменяются переданным планом. Текущий оклад не
@@ -3627,8 +3706,10 @@ export class FinanceService implements OnModuleInit {
     const salaryHistory = dto.plannedSalaries !== undefined
       ? await this.applyPlannedSalaries({ [effectiveYm]: salary }, dto.plannedSalaries)
       : { [effectiveYm]: salary };
+    const userId = dto.userId || null;
+    if (userId) await this.assertUserLinkFree(userId);
     return this.empRepo.save(this.empRepo.create({
-      name: dto.name.trim(), role: dto.role ?? null, salary,
+      name: dto.name.trim(), role: dto.role ?? null, userId, salary,
       salaryHistory,
       advance: Number(dto.advance) || 0, hireDate,
       terminationDate, employmentHistory: null,
@@ -3644,6 +3725,11 @@ export class FinanceService implements OnModuleInit {
     const oldTerminationDate = e.terminationDate;
     if (dto.name !== undefined) e.name = String(dto.name).trim();
     if (dto.role !== undefined) e.role = dto.role;
+    if (dto.userId !== undefined) {
+      const userId = dto.userId || null;
+      if (userId) await this.assertUserLinkFree(userId, e.id);
+      e.userId = userId;
+    }
     if (dto.category !== undefined) e.category = String(dto.category ?? '').trim() || null;
     if (dto.salary !== undefined) {
       const salary = Number(dto.salary) || 0;
