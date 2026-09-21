@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth.store'
 import { usersApi, meApi, workShiftsApi } from '@/services/api.service'
-import { useTranslation } from '@/i18n'
 import { Avatar } from '@/components/ui'
 import { Camera, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getUserPositionLabel } from '@/lib/permissions'
@@ -21,16 +20,6 @@ function hoursOf(min: number): string {
   return m ? `${h} ч ${m} м` : `${h} ч`
 }
 
-/** Слово без числа: «2» + «опоздания» подписью под цифрой. */
-function wordOf(n: number, one: string, few: string, many: string): string {
-  const a = Math.abs(Math.trunc(Number(n) || 0)) % 100
-  const b = a % 10
-  if (a > 11 && a < 15) return many
-  if (b === 1) return one
-  if (b >= 2 && b <= 4) return few
-  return many
-}
-
 /** «сентябрь» — месяц без года, для заголовка суммы. */
 function monthOnly(ym: string): string {
   const [y, m] = ym.split('-').map(Number)
@@ -42,6 +31,14 @@ function monthOnly(ym: string): string {
 function payoutDay(ym: string): string {
   const [y, m] = ym.split('-').map(Number)
   return new Date(y, m, 10).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+}
+
+/** «5 сентября» — без года: год виден в названии месяца рядом. */
+function dayMonth(iso?: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso + (iso.length === 10 ? 'T00:00:00' : ''))
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
 }
 
 /** «12.09» — короткая дата начисления. */
@@ -108,7 +105,6 @@ function Detail({ entries, sign }: { entries: Entry[]; sign?: '−' }) {
 export default function ProfilePage() {
   const user = useAuthStore(s => s.user)
   const fetchMe = useAuthStore(s => s.fetchMe)
-  const { t } = useTranslation()
   const fileRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
 
@@ -180,14 +176,31 @@ export default function ProfilePage() {
   // переплатили, остаток обнуляется и сумма частей расходится с окладом.
   const barTotal = toPay + paid + fine + vacation
   const pct = (v: number) => (barTotal > 0 ? Math.round((v / barTotal) * 1000) / 10 : 0)
+  const accrued = salary + bonus
+
+  // Куда разошлось начисленное. Показываем ТОЛЬКО ненулевые части и рядом
+  // с каждой — сумму: без сумм полоса красивая, но ничего не объясняет.
+  const parts = [
+    { key: 'left', label: row?.frozen ? 'выплачено на руки' : 'остаток к выплате', value: row?.frozen ? paid : toPay, dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
+    { key: 'paid', label: 'уже получено', value: row?.frozen ? 0 : paid, dot: 'bg-primary-500', text: 'text-primary-600 dark:text-primary-400' },
+    { key: 'fine', label: 'удержано', value: fine + vacation, dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400' },
+  ].filter(p => p.value > 0)
+
+  // Чего в этом месяце не было — одной серой припиской вместо пустых строк.
+  const absent = [
+    bonus > 0 ? null : 'бонусов',
+    fine > 0 ? null : 'штрафов',
+    vacation > 0 ? null : 'отпускных',
+  ].filter(Boolean) as string[]
 
   const showSalary = !(isFounder && sal && !sal.linked)
 
   return (
     <div className="space-y-4">
-      <h1 className="page-title">{t('profile.title')}</h1>
 
-      {/* Шапка: кто я, с какого числа работаю */}
+      {/* Шапка. Заголовок страницы, почта и бейджи убраны: человек знает,
+          чей это профиль и чем он вошёл. Должность и дата прихода — одной
+          строкой. Статус показываем, только если доступ закрыт. */}
       <div className="card sm:p-5">
         <div className="flex items-center gap-4">
           <button
@@ -214,22 +227,15 @@ export default function ProfilePage() {
             className="hidden"
           />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h2 className="text-lg font-bold text-surface-900 dark:text-surface-100 truncate">{user?.name}</h2>
-              <span className="text-[13px] text-surface-500 dark:text-surface-400 truncate">{user?.email}</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5 mt-2">
-              <span className="badge bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400">{getUserPositionLabel(user)}</span>
-              <span className={`badge ${user?.isActive ? 'status-done' : 'status-cancelled'}`}>
-                {user?.isActive ? 'Работает' : 'Доступ закрыт'}
-              </span>
-              {emp?.hireDate && (
-                <span className="badge bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300">
-                  В команде с {formatDate(emp.hireDate)}
-                </span>
-              )}
-            </div>
+            <h1 className="text-xl font-bold text-surface-900 dark:text-surface-100 truncate">{user?.name}</h1>
+            <p className="text-[13px] text-surface-500 dark:text-surface-400 mt-1 truncate">
+              {getUserPositionLabel(user)}
+              {emp?.hireDate ? ` · в команде с ${formatDate(emp.hireDate)}` : ''}
+            </p>
           </div>
+          {!user?.isActive && (
+            <span className="badge status-cancelled shrink-0">Доступ закрыт</span>
+          )}
         </div>
       </div>
 
@@ -237,192 +243,180 @@ export default function ProfilePage() {
 
         <div className="space-y-4 min-w-0">
 
-        {/* Главная цифра: сколько причитается и когда придёт */}
-        {showSalary && (
-          <div className="card sm:p-5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-surface-500 dark:text-surface-400">
-                {row?.frozen ? 'Выплачено за месяц' : 'К выплате за месяц'}
-              </span>
-              {/* Месяц стоит МЕЖДУ стрелками: две стрелки в дальнем углу
-                  широкой карточки не объясняют, что они переключают. */}
-              <div className="flex items-center gap-1 shrink-0">
-                <button onClick={() => setYm(shiftYm(ym, -1))} aria-label="Предыдущий месяц"
-                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
-                  <ChevronLeft size={15} />
-                </button>
-                <span className="px-1 min-w-[112px] text-center text-[13px] font-medium text-surface-600 dark:text-surface-300 first-letter:uppercase whitespace-nowrap">
-                  {monthOnly(ym)} {ym.slice(0, 4)}
+          {/* Деньги одной карточкой: сумма, куда она разошлась, и разбор */}
+          {showSalary && (
+            <div className="card sm:p-5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] text-surface-500 dark:text-surface-400">
+                  {row?.frozen ? 'Выплачено за месяц' : 'К выплате за месяц'}
                 </span>
-                <button onClick={() => setYm(shiftYm(ym, 1))} aria-label="Следующий месяц"
-                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
-                  <ChevronRight size={15} />
-                </button>
-              </div>
-            </div>
-
-            {salLoading ? (
-              <p className="text-sm text-surface-400 dark:text-surface-500 py-6">Загружаю…</p>
-            ) : !sal?.linked ? (
-              <p className="text-sm text-surface-500 dark:text-surface-400 py-6">
-                Зарплата пока не привязана к твоей учётной записи.<br />
-                <span className="text-xs text-surface-400 dark:text-surface-500">Попроси руководство связать профиль с зарплатной ведомостью.</span>
-              </p>
-            ) : !row ? (
-              <p className="text-sm text-surface-400 dark:text-surface-500 py-6">За этот месяц начислений нет</p>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-2">
-                  <span className="text-4xl sm:text-[44px] leading-none font-bold text-surface-900 dark:text-surface-50 tabular-nums tracking-tight">
-                    {money(row.frozen ? paid : toPay)}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => setYm(shiftYm(ym, -1))} aria-label="Предыдущий месяц"
+                    className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
+                    <ChevronLeft size={15} />
+                  </button>
+                  <span className="px-1 min-w-[112px] text-center text-[13px] font-medium text-surface-600 dark:text-surface-300 first-letter:uppercase whitespace-nowrap">
+                    {monthOnly(ym)} {ym.slice(0, 4)}
                   </span>
-                  <span className="text-[13px] text-surface-500 dark:text-surface-400">
-                    {row.frozen
-                      ? (row.paidAt ? `выплачено ${formatDate(row.paidAt)}` : 'месяц закрыт')
-                      : `выплата ${payoutDay(ym)}`}
-                  </span>
+                  <button onClick={() => setYm(shiftYm(ym, 1))} aria-label="Следующий месяц"
+                    className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
+                    <ChevronRight size={15} />
+                  </button>
                 </div>
+              </div>
 
-                {barTotal > 0 && (
-                  <>
-                    <div className="flex gap-[3px] h-2.5 mt-4">
-                      {toPay > 0 && <div className="bg-emerald-500 rounded-full" style={{ width: `${pct(toPay)}%` }} />}
-                      {paid > 0 && <div className="bg-primary-500 rounded-full" style={{ width: `${pct(paid)}%` }} />}
-                      {(fine + vacation) > 0 && <div className="bg-red-500 rounded-full" style={{ width: `${pct(fine + vacation)}%` }} />}
+              {salLoading ? (
+                <p className="text-sm text-surface-400 dark:text-surface-500 py-6">Загружаю…</p>
+              ) : !sal?.linked ? (
+                <p className="text-sm text-surface-500 dark:text-surface-400 py-6">
+                  Зарплата пока не привязана к твоей учётной записи.<br />
+                  <span className="text-xs text-surface-400 dark:text-surface-500">Попроси руководство связать профиль с зарплатной ведомостью.</span>
+                </p>
+              ) : !row ? (
+                <p className="text-sm text-surface-400 dark:text-surface-500 py-6">За этот месяц начислений нет</p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-2">
+                    <span className="text-4xl sm:text-[44px] leading-none font-bold text-surface-900 dark:text-surface-50 tabular-nums tracking-tight">
+                      {money(row.frozen ? paid : toPay)}
+                    </span>
+                    <span className="text-[13px] text-surface-500 dark:text-surface-400">
+                      {row.frozen
+                        ? (row.paidAt ? `выплачено ${dayMonth(row.paidAt)}` : 'месяц закрыт')
+                        : `выплата ${payoutDay(ym)}`}
+                    </span>
+                  </div>
+
+                  {/* Полоса с суммами: видно, сколько ушло на каждую часть */}
+                  {barTotal > 0 && parts.length > 1 && (
+                    <div className="mt-5">
+                      <p className="text-[11px] text-surface-400 dark:text-surface-500">
+                        Из {money(accrued)} {bonus > 0 ? 'начислений' : 'оклада'} разошлись так:
+                      </p>
+                      <div className="flex gap-[3px] h-2.5 mt-2">
+                        {toPay > 0 && !row.frozen && <div className="bg-emerald-500 rounded-full" style={{ width: `${pct(toPay)}%` }} />}
+                        {paid > 0 && <div className={`${row.frozen ? 'bg-emerald-500' : 'bg-primary-500'} rounded-full`} style={{ width: `${pct(paid)}%` }} />}
+                        {(fine + vacation) > 0 && <div className="bg-red-500 rounded-full" style={{ width: `${pct(fine + vacation)}%` }} />}
+                      </div>
+                      <div className="flex flex-wrap gap-x-7 gap-y-2.5 mt-3">
+                        {parts.map(p => (
+                          <span key={p.key} className="min-w-0">
+                            <span className="flex items-center gap-2 text-[11px] text-surface-500 dark:text-surface-400">
+                              <span className={`w-2 h-2 rounded-sm shrink-0 ${p.dot}`} />{p.label}
+                            </span>
+                            <span className={`block mt-0.5 text-[15px] font-semibold tabular-nums whitespace-nowrap ${p.text}`}>{money(p.value)}</span>
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-3">
-                      {toPay > 0 && (
-                        <span className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400">
-                          <span className="w-2 h-2 rounded-sm bg-emerald-500" />Остаток к выплате {money(toPay)}
-                        </span>
-                      )}
-                      {paid > 0 && (
-                        <span className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400">
-                          <span className="w-2 h-2 rounded-sm bg-primary-500" />Уже получено {money(paid)}
-                        </span>
-                      )}
-                      {(fine + vacation) > 0 && (
-                        <span className="flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400">
-                          <span className="w-2 h-2 rounded-sm bg-red-500" />Удержано {money(fine + vacation)}
-                        </span>
-                      )}
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        )}
+                  )}
 
-        {/* Разбор: из чего сложилась сумма */}
-        {showSalary && sal?.linked && row && (
-          <div className="card sm:p-5">
-            <h3 className="section-title mb-1">Из чего сложилась сумма</h3>
+                  <div className="h-px bg-surface-200 dark:bg-surface-700 mt-5 mb-1" />
 
-            <Row label="Оклад за месяц" value={money(salary)} />
+                  <Row label="Оклад за месяц" value={money(salary)} />
 
-            {bonus > 0
-              ? <>
-                  <Row label="Бонусы" hint={bonusEntries.length ? pluralRu(bonusEntries.length, 'начисление', 'начисления', 'начислений') : null} value={`+${money(bonus)}`} tone="plus" open />
-                  <Detail entries={bonusEntries} />
+                  {bonus > 0 && (
+                    <>
+                      <Row label="Бонусы" hint={bonusEntries.length ? pluralRu(bonusEntries.length, 'начисление', 'начисления', 'начислений') : null} value={`+${money(bonus)}`} tone="plus" open />
+                      <Detail entries={bonusEntries} />
+                    </>
+                  )}
+
+                  {fine > 0 && (
+                    <>
+                      <Row label="Штрафы" hint={fineEntries.length ? pluralRu(fineEntries.length, 'удержание', 'удержания', 'удержаний') : null} value={`−${money(fine)}`} tone="minus" open />
+                      <Detail entries={fineEntries} sign="−" />
+                    </>
+                  )}
+
+                  {vacation > 0 && (
+                    <>
+                      <Row label="Отпускные и невыходы" value={`−${money(vacation)}`} tone="minus" open />
+                      <Detail entries={vacationEntries} sign="−" />
+                    </>
+                  )}
+
+                  {paid > 0 && (
+                    <>
+                      <Row label="Уже получено" hint={row.advance > 0 ? `в том числе аванс ${money(row.advance)}` : null} value={`−${money(paid)}`} tone="paid" open />
+                      <Detail entries={advanceEntries} />
+                    </>
+                  )}
+
+                  {/* Вместо пустых строк «Бонусы — не начислялись» */}
+                  {(absent.length > 0 || paid === 0) && (
+                    <p className="text-xs text-surface-400 dark:text-surface-500 mt-3">
+                      {absent.length > 0 && `В этом месяце не было ${absent.join(', ')}.`}
+                      {absent.length > 0 && paid === 0 ? ' ' : ''}
+                      {paid === 0 && 'Выплат по этому месяцу пока не было.'}
+                    </p>
+                  )}
                 </>
-              : <Row label="Бонусы" empty="не начислялись" />}
-
-            {fine > 0
-              ? <>
-                  <Row label="Штрафы" hint={fineEntries.length ? pluralRu(fineEntries.length, 'удержание', 'удержания', 'удержаний') : null} value={`−${money(fine)}`} tone="minus" open />
-                  <Detail entries={fineEntries} sign="−" />
-                </>
-              : <Row label="Штрафы" empty="нет" />}
-
-            {vacation > 0
-              ? <>
-                  <Row label="Отпускные и невыходы" value={`−${money(vacation)}`} tone="minus" open />
-                  <Detail entries={vacationEntries} sign="−" />
-                </>
-              : <Row label="Отпускные и невыходы" empty="нет" />}
-
-            {paid > 0
-              ? <>
-                  <Row label="Уже получено" hint={row.advance > 0 ? `в том числе аванс ${money(row.advance)}` : null} value={`−${money(paid)}`} tone="paid" open />
-                  <Detail entries={advanceEntries} />
-                </>
-              : <Row label="Уже получено" empty="выплат ещё не было" />}
-
-            <div className="mt-4 flex items-center justify-between gap-4 rounded-xl px-4 py-4 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/25">
-              <span className="text-[15px] font-semibold text-surface-900 dark:text-surface-100">
-                {row.frozen ? 'Выплачено за месяц' : 'Остаток к выплате'}
-              </span>
-              <span className="text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                {money(row.frozen ? paid : toPay)}
-              </span>
+              )}
             </div>
-          </div>
-        )}
-
+          )}
         </div>
 
         <div className="space-y-4 min-w-0">
 
-        {/* Смены за тот же месяц */}
-        {!isFounder && (
-          <div className="card sm:p-5">
-            <div className="flex items-baseline justify-between gap-2 mb-3">
+          {/* Смены: три строки вместо четырёх плиток, месяц общий со страницей */}
+          {!isFounder && (
+            <div className="card sm:p-5">
               <h3 className="section-title">Мои смены</h3>
-              <span className="text-xs text-surface-400 dark:text-surface-500">{monthOnly(ym)}</span>
+              <div className="flex items-center justify-between gap-3 py-3 mt-1 border-b border-surface-100 dark:border-surface-700/60">
+                <span className="text-sm text-surface-600 dark:text-surface-300">Отработано</span>
+                <span className="text-[15px] font-semibold tabular-nums whitespace-nowrap text-surface-900 dark:text-surface-100">{hoursOf(mine?.totalMinutes || 0)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-3 border-b border-surface-100 dark:border-surface-700/60">
+                <span className="text-sm text-surface-600 dark:text-surface-300">Рабочих дней</span>
+                <span className="text-[15px] font-semibold tabular-nums text-surface-900 dark:text-surface-100">{mine?.workedDays || 0}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-3">
+                <span className="text-sm text-surface-600 dark:text-surface-300">
+                  Опозданий
+                  {shifts?.lateAfter && <span className="text-surface-400 dark:text-surface-500"> · после {shifts.lateAfter}</span>}
+                </span>
+                <span className={`text-[15px] font-semibold tabular-nums ${(mine?.lateDays?.length || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-surface-900 dark:text-surface-100'}`}>
+                  {mine?.lateDays?.length || 0}
+                </span>
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { v: hoursOf(mine?.totalMinutes || 0), l: 'всего за месяц', warn: false },
-                { v: hoursOf(mine?.avgMinutes || 0), l: 'в среднем за смену', warn: false },
-                { v: String(mine?.workedDays || 0), l: wordOf(mine?.workedDays || 0, 'рабочий день', 'рабочих дня', 'рабочих дней'), warn: false },
-                { v: String(mine?.lateDays?.length || 0), l: wordOf(mine?.lateDays?.length || 0, 'опоздание', 'опоздания', 'опозданий'), warn: (mine?.lateDays?.length || 0) > 0 },
-              ].map(tile => (
-                <div key={tile.l} className="bg-surface-50 dark:bg-surface-700/50 rounded-xl px-3.5 py-3 min-w-0">
-                  {/* «110 ч 31 м» не должно переноситься посреди числа */}
-                  <p className={`text-lg font-bold tabular-nums whitespace-nowrap ${tile.warn ? 'text-amber-600 dark:text-amber-400' : 'text-surface-900 dark:text-surface-100'}`}>{tile.v}</p>
-                  <p className="text-[11px] leading-snug text-surface-400 dark:text-surface-500 mt-1">{tile.l}</p>
-                </div>
-              ))}
-            </div>
-            {shifts?.lateAfter && (
-              <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-2.5">Опоздание — начало смены после {shifts.lateAfter}</p>
-            )}
-          </div>
-        )}
+          )}
 
-        {/* История выплат */}
-        {history.length > 0 && (
-          <div className="card sm:p-5">
-            <h3 className="section-title mb-1">История выплат</h3>
-            <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
-              {history.map(h => (
-                <button
-                  key={h.ym}
-                  onClick={() => setYm(h.ym)}
-                  className="w-full text-left flex items-start justify-between gap-4 py-3 px-1 -mx-1 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-700/40 transition-colors"
-                >
-                  {/* Состав месяца переносится, а не обрезается: с бонусом и
-                      штрафом строка длиннее колонки и многоточие съедало смысл. */}
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-surface-900 dark:text-surface-100 first-letter:uppercase">{monthOnly(h.ym)} {h.ym.slice(0, 4)}</span>
-                    <span className="block text-[11px] leading-snug text-surface-400 dark:text-surface-500 mt-1">
-                      оклад {money(h.salary)}
-                      {h.bonus > 0 ? ` · бонус ${money(h.bonus)}` : ''}
-                      {h.fine > 0 ? ` · штраф ${money(h.fine)}` : ''}
-                      {h.vacation > 0 ? ` · отпускные ${money(h.vacation)}` : ''}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-right">
-                    <span className="block text-sm font-semibold text-surface-900 dark:text-surface-100 tabular-nums whitespace-nowrap">{money(h.paid)}</span>
-                    {h.paidAt && <span className="block text-[11px] text-surface-400 dark:text-surface-500 mt-1 whitespace-nowrap">{formatDate(h.paidAt)}</span>}
-                  </span>
-                </button>
-              ))}
+          {/* История: состав месяца — только когда выплата разошлась с окладом */}
+          {history.length > 0 && (
+            <div className="card sm:p-5">
+              <h3 className="section-title mb-1">История выплат</h3>
+              <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
+                {history.map(h => {
+                  const diff = [
+                    h.bonus > 0 ? `бонус ${money(h.bonus)}` : null,
+                    h.fine > 0 ? `штраф ${money(h.fine)}` : null,
+                    h.vacation > 0 ? `отпускные ${money(h.vacation)}` : null,
+                  ].filter(Boolean) as string[]
+                  const note = Number(h.paid) === Number(h.salary)
+                    ? ''
+                    : (diff.length ? diff.join(' · ') : `оклад был ${money(h.salary)}`)
+                  return (
+                    <button
+                      key={h.ym}
+                      onClick={() => setYm(h.ym)}
+                      className="w-full text-left flex items-start justify-between gap-4 py-3 px-1 -mx-1 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-700/40 transition-colors"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-surface-900 dark:text-surface-100 first-letter:uppercase">{monthOnly(h.ym)} {h.ym.slice(0, 4)}</span>
+                        {note && <span className="block text-[11px] leading-snug text-surface-400 dark:text-surface-500 mt-1">{note}</span>}
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block text-sm font-semibold text-surface-900 dark:text-surface-100 tabular-nums whitespace-nowrap">{money(h.paid)}</span>
+                        {h.paidAt && <span className="block text-[11px] text-surface-400 dark:text-surface-500 mt-1 whitespace-nowrap">{dayMonth(h.paidAt)}</span>}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        )}
-
+          )}
         </div>
       </div>
 
