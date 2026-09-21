@@ -1,48 +1,23 @@
-// Simple i18n system
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+// Интерфейс одноязычный — русский.
+//
+// Выбор языка убран из системы (решение владельца, 21.09.2026): английский
+// и таджикский переводы отставали от русского, половина экранов всё равно
+// была на русском, а переключатель только путал. Ключи и файлы переводов
+// оставлены — вернуть выбор можно, не переписывая экраны.
 import ru from './locales/ru.json'
-import en from './locales/en.json'
-import tj from './locales/tj.json'
 
-export type Locale = 'ru' | 'en' | 'tj'
+export type Locale = 'ru'
 
-const translations = { ru, en, tj }
-
-interface I18nStore {
-  locale: Locale
-  setLocale: (locale: Locale) => void
-}
-
-export const useI18nStore = create<I18nStore>()(
-  persist(
-    (set) => ({
-      locale: 'ru',
-      setLocale: (locale) => set({ locale }),
-    }),
-    { name: 'erp-locale' }
-  )
-)
-
-export const t = (key: string, locale?: Locale): string => {
-  const currentLocale = locale || useI18nStore.getState().locale
-  const keys = key.split('.')
-  let value: any = translations[currentLocale]
-  
-  for (const k of keys) {
-    value = value?.[k]
-  }
-  
+export const t = (key: string): string => {
+  let value: any = ru
+  for (const k of key.split('.')) value = value?.[k]
   return value || key
 }
 
-export const useTranslation = () => {
-  const locale = useI18nStore((s) => s.locale)
-  const setLocale = useI18nStore((s) => s.setLocale)
-  
-  return {
-    t: (key: string) => t(key, locale),
-    locale,
-    setLocale,
-  }
-}
+export const useTranslation = () => ({
+  t,
+  locale: 'ru' as Locale,
+  // Заглушка: язык больше не переключается. Оставлена, чтобы старый код,
+  // который её зовёт, не падал.
+  setLocale: (_locale?: Locale) => {},
+})

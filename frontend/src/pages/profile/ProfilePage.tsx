@@ -4,11 +4,10 @@ import { useAuthStore } from '@/store/auth.store'
 import { authApi, usersApi, meApi, workShiftsApi } from '@/services/api.service'
 import { useTranslation } from '@/i18n'
 import { Avatar } from '@/components/ui'
-import { Key, Camera, Globe, Wallet, Timer, ChevronLeft, ChevronRight, History } from 'lucide-react'
+import { Key, Camera, Wallet, Timer, ChevronLeft, ChevronRight, History } from 'lucide-react'
 import { getUserPositionLabel } from '@/lib/permissions'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
-import TwoFactorSection from '@/components/profile/TwoFactorSection'
 import TaskCelebrationSection from '@/components/profile/TaskCelebrationSection'
 import { prepareAvatar } from '@/lib/imageCompress'
 import { money, monthLabel, shiftYm, currentSalaryYm, pluralRu, formatDate } from '@/pages/finance/finlib'
@@ -74,17 +73,10 @@ export default function ProfilePage() {
   const user = useAuthStore(s => s.user)
   const fetchMe = useAuthStore(s => s.fetchMe)
   const [changingPass, setChangingPass] = useState(false)
-  const [pickingLang, setPickingLang] = useState(false)
   const { register, handleSubmit, reset } = useForm()
-  const { t, locale, setLocale } = useTranslation()
+  const { t } = useTranslation()
   const fileRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
-
-  const languages = [
-    { code: 'ru', name: 'Русский' },
-    { code: 'en', name: 'English' },
-    { code: 'tj', name: 'Тоҷикӣ' },
-  ]
 
   const uploadAvatarMut = useMutation({
     mutationFn: (file: File) => usersApi.uploadMyAvatar(file),
@@ -339,29 +331,14 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Настройки: язык и пароль — одной строкой */}
+      {/* Настройки: остался только пароль. Выбор языка и двухфакторная
+          аутентификация убраны из профиля (решение владельца, 21.09.2026). */}
       <div className="card">
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => setPickingLang(p => !p)} className="btn-secondary text-sm">
-            <Globe size={14} /> Язык: {languages.find(l => l.code === locale)?.name || 'Русский'}
-          </button>
           <button onClick={() => setChangingPass(p => !p)} className="btn-secondary text-sm">
             <Key size={14} /> {t('auth.changePassword')}
           </button>
         </div>
-
-        {pickingLang && (
-          <div className="grid grid-cols-3 gap-2 mt-3">
-            {languages.map(l => (
-              <button key={l.code} onClick={() => { setLocale(l.code as any); setPickingLang(false) }}
-                className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-colors ${locale === l.code
-                  ? 'bg-primary-600 border-primary-600 text-white'
-                  : 'bg-surface-50 dark:bg-surface-700/50 border-surface-200 dark:border-surface-700 text-surface-700 dark:text-surface-300 hover:border-primary-400'}`}>
-                {l.name}
-              </button>
-            ))}
-          </div>
-        )}
 
         {changingPass && (
           <form onSubmit={handleSubmit(onChangePassword)} className="space-y-3 mt-3">
@@ -387,9 +364,6 @@ export default function ProfilePage() {
 
       {/* «Печать успеха» за выполненную задачу — с ролевой проверкой внутри */}
       <TaskCelebrationSection />
-
-      {/* 2FA — двухфакторная аутентификация */}
-      <TwoFactorSection />
     </div>
   )
 }

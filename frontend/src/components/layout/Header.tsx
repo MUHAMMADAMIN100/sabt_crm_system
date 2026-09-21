@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Menu, Bell, Search, LogOut, User, ChevronDown, Globe, Moon, Sun, X, Check } from 'lucide-react'
+import { Menu, Bell, Search, LogOut, User, ChevronDown, Moon, Sun, X, Check } from 'lucide-react'
 import { useAuthStore } from '@/store/auth.store'
 import { useThemeStore } from '@/store/theme.store'
 import { useTranslation } from '@/i18n'
@@ -19,18 +19,16 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const logout = useAuthStore(s => s.logout)
   const navigate = useNavigate()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [langMenuOpen, setLangMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const langRef = useRef<HTMLDivElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLDivElement>(null)
   const qc = useQueryClient()
   const { theme, toggleTheme } = useThemeStore()
-  const { t, locale, setLocale } = useTranslation()
+  const { t } = useTranslation()
 
   const isFounderRole = user?.role === 'founder' || user?.role === 'co_founder'
 
@@ -63,7 +61,6 @@ export default function Header({ onMenuClick }: HeaderProps) {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setUserMenuOpen(false)
-      if (langRef.current && !langRef.current.contains(e.target as Node)) setLangMenuOpen(false)
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSearchOpen(false)
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
     }
@@ -108,12 +105,6 @@ export default function Header({ onMenuClick }: HeaderProps) {
     setSearchQuery('')
     setSearchOpen(false)
   }
-
-  const languages = [
-    { code: 'ru', name: 'Русский' },
-    { code: 'en', name: 'English' },
-    { code: 'tj', name: 'Тоҷикӣ' },
-  ]
 
   const searchResultsDropdown = searchOpen && searchResults && (
     <div className="absolute top-full left-0 right-0 mt-1 bg-surface-50 dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 z-50 max-h-[60vh] sm:max-h-[400px] overflow-y-auto animate-fade-in">
@@ -285,23 +276,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
         {/* Переключатель темы убран: тёмная тема зафиксирована на всю компанию. */}
 
-        {/* Language selector (hidden on very small screens) */}
-        <div className="relative hidden xs:block" ref={langRef}>
-          <button onClick={() => setLangMenuOpen(o => !o)} className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-surface-600 dark:text-surface-300">
-            <Globe size={18} />
-          </button>
-          {langMenuOpen && (
-            <div className="absolute right-0 top-full mt-1 w-40 bg-surface-50 dark:bg-surface-800 rounded-2xl shadow-modal border border-surface-100 dark:border-surface-700 py-1 z-50 animate-fade-in">
-              {languages.map((lang) => (
-                <button key={lang.code} onClick={() => { setLocale(lang.code as any); setLangMenuOpen(false) }}
-                  className={clsx('w-full px-4 py-2 text-sm text-left hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors',
-                    locale === lang.code && 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400')}>
-                  {lang.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Выбор языка убран: интерфейс одноязычный — русский. */}
       </div>
 
       {/* User menu */}
