@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkShift } from './work-shift.entity';
+import { ShiftEditRequest } from './shift-edit-request.entity';
 import { User } from '../users/user.entity';
 import { WorkShiftsService } from './work-shifts.service';
 import { WorkShiftsController } from './work-shifts.controller';
@@ -9,7 +10,7 @@ import { WorkShiftsController } from './work-shifts.controller';
  *  уведомления сюда не тянем, чтобы не плодить кольца (см. историю с
  *  ContentPlan → Telegram → Tasks → Projects). */
 @Module({
-  imports: [TypeOrmModule.forFeature([WorkShift, User])],
+  imports: [TypeOrmModule.forFeature([WorkShift, ShiftEditRequest, User])],
   controllers: [WorkShiftsController],
   providers: [WorkShiftsService],
 })

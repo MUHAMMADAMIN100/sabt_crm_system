@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { WorkShiftsService } from './work-shifts.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -28,10 +28,36 @@ export class WorkShiftsController {
     return this.service.stop(req.user.id);
   }
 
-  /** Пауза: отрезок закрывается, но день остаётся незакрытым. */
+  /** Перерыв: отрезок закрывается, день остаётся открытым. Причина решает,
+   *  идёт ли время в часы: обед — до лимита, выезд по работе — целиком,
+   *  личное — нет. */
   @Post('pause')
-  pause(@Request() req) {
-    return this.service.pause(req.user.id);
+  pause(@Request() req, @Body() body?: { kind?: 'lunch' | 'work' | 'personal' }) {
+    return this.service.pause(req.user.id, body?.kind);
+  }
+
+  // ─── «Забыл нажать»: правки времени ───────────────────────────────
+  @Post('edit-request')
+  requestEdit(@Request() req, @Body() body: { date?: string; field: 'start' | 'end'; time: string; note?: string }) {
+    return this.service.requestEdit(req.user.id, body);
+  }
+
+  @Get('my-edits')
+  myEdits(@Request() req) {
+    return this.service.myEdits(req.user.id);
+  }
+
+  /** Очередь правок и решение по ним — только руководству. */
+  @Get('edits')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  edits() {
+    return this.service.pendingEdits();
+  }
+
+  @Patch('edits/:id')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  decideEdit(@Request() req, @Param('id') id: string, @Body() body: { approve: boolean }) {
+    return this.service.decideEdit(id, !!body?.approve, req.user.id);
   }
 
   /** Мой табель за месяц — личный профиль, только свои часы. */

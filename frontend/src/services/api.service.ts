@@ -301,8 +301,16 @@ export const workShiftsApi = {
   my: () => api.get('/work-shifts/my').then(r => r.data),
   start: () => api.post('/work-shifts/start').then(r => r.data),
   stop: () => api.post('/work-shifts/stop').then(r => r.data),
-  /** Пауза: время не идёт, но день не закрыт — вернулся и продолжил. */
-  pause: () => api.post('/work-shifts/pause').then(r => r.data),
+  /** Перерыв. Причина решает, идёт ли время в часы: обед — до лимита,
+   *  выезд по работе — целиком, личное — нет. */
+  pause: (kind?: 'lunch' | 'work' | 'personal') => api.post('/work-shifts/pause', { kind }).then(r => r.data),
+  /** «Забыл нажать»: просьба поправить начало или конец смены. */
+  requestEdit: (body: { date?: string; field: 'start' | 'end'; time: string; note?: string }) =>
+    api.post('/work-shifts/edit-request', body).then(r => r.data),
+  myEdits: () => api.get('/work-shifts/my-edits').then(r => r.data),
+  /** Очередь правок и решение по ним — руководству. */
+  edits: () => api.get('/work-shifts/edits').then(r => r.data),
+  decideEdit: (id: string, approve: boolean) => api.patch(`/work-shifts/edits/${id}`, { approve }).then(r => r.data),
   /** Сводка по команде (только руководству компании). */
   team: (date?: string) => api.get('/work-shifts/team', { params: date ? { date } : undefined }).then(r => r.data),
   /** Табель за месяц: часы по дням, итоги и отрезки смен. */

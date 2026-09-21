@@ -3,11 +3,12 @@
 // пишется бэкендом на каждое изменение. Данные из /activity-log/team
 // (объединение общего журнала и финансового).
 import { useMemo, useState, type ReactNode } from 'react'
-import { useQuery, keepPreviousData } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { Loader2, ChevronDown, Radio, Clock } from 'lucide-react'
 import { activityLogApi, usersApi, workShiftsApi } from '@/services/api.service'
 import { getRoleLabel } from '@/lib/permissions'
 import { useAuthStore } from '@/store/auth.store'
+import toast from 'react-hot-toast'
 import ShiftsTimesheet from './ShiftsTimesheet'
 
 // ─── Ярлыки действий общего журнала (enum → человекочитаемо) ──────────
@@ -234,7 +235,7 @@ export default function TeamActivityPage() {
         </span>
       </div>
 
-      {tab === 'today' && <ShiftsToday />}
+      {tab === 'today' && <><ShiftEdits /><ShiftsToday /></>}
       {tab === 'timesheet' && <ShiftsTimesheet />}
 
       {tab === 'feed' && (<>
@@ -391,6 +392,54 @@ function Chip({ children, active, cofounder, onClick }: { children: ReactNode; a
 /** Смены за сегодня: кто на работе, во сколько начал, сколько отработал.
  *  Живёт здесь же, где лента активности: у основателя это одна страница
  *  «что происходит в команде», разносить по двум смысла нет. */
+/** Очередь правок времени: «забыл нажать в 9:00». До подтверждения в табеле
+ *  остаётся то, что записала система, — поэтому решать надо здесь. */
+function ShiftEdits() {
+  const qc = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['work-shift-edits'],
+    queryFn: () => workShiftsApi.edits(),
+    refetchInterval: 120_000,
+  })
+  const decide = useMutation({
+    mutationFn: ({ id, approve }: { id: string; approve: boolean }) => workShiftsApi.decideEdit(id, approve),
+    onSuccess: (_d, v) => {
+      toast.success(v.approve ? 'Время поправлено' : 'Отклонено')
+      qc.invalidateQueries({ queryKey: ['work-shift-edits'] })
+      qc.invalidateQueries({ queryKey: ['work-shifts-month'] })
+      qc.invalidateQueries({ queryKey: ['work-shifts-team'] })
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось'),
+  })
+  const items: any[] = data?.items ?? []
+  if (!items.length) return null
+  return (
+    <div className="rounded-2xl border border-amber-500/40 bg-amber-500/[0.06] p-4 mb-3">
+      <div className="text-sm font-semibold mb-2">Правки времени · {items.length}</div>
+      <div className="flex flex-col gap-2">
+        {items.map(r => (
+          <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2.5">
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-semibold truncate">{r.name}</span>
+              <span className="block text-xs text-gray-500 dark:text-gray-400">
+                {r.date.slice(8, 10)}.{r.date.slice(5, 7)} · {r.field === 'start' ? 'начало' : 'конец'}:{' '}
+                <span className="line-through">{r.currentTime ?? '—'}</span> → <b className="text-gray-700 dark:text-gray-200">{r.requestedTime}</b>
+                {r.note ? ` · ${r.note}` : ''}
+              </span>
+            </span>
+            <span className="flex gap-2 shrink-0">
+              <button disabled={decide.isPending} onClick={() => decide.mutate({ id: r.id, approve: true })}
+                className="h-9 px-3 rounded-lg bg-emerald-600 text-white text-xs font-semibold disabled:opacity-60">Подтвердить</button>
+              <button disabled={decide.isPending} onClick={() => decide.mutate({ id: r.id, approve: false })}
+                className="h-9 px-3 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-300 disabled:opacity-60">Отклонить</button>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ShiftsToday() {
   const { data } = useQuery({
     queryKey: ['work-shifts-team'],
@@ -407,7 +456,7 @@ function ShiftsToday() {
   }
   const TAG: Record<string, { text: string; cls: string }> = {
     working: { text: 'на работе', cls: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/12' },
-    paused:  { text: 'на паузе', cls: 'text-amber-600 dark:text-amber-400 bg-amber-500/12' },
+    paused:  { text: 'на перерыве', cls: 'text-amber-600 dark:text-amber-400 bg-amber-500/12' },
     closed:  { text: 'смена закрыта', cls: 'text-gray-500 dark:text-gray-400 bg-gray-500/12' },
     absent:  { text: 'не выходил', cls: 'text-red-600 dark:text-red-400 bg-red-500/12' },
   }

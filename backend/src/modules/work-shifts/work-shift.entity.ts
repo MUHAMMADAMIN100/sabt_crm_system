@@ -45,6 +45,19 @@ export class WorkShift {
   @Column({ type: 'varchar', length: 8, nullable: true })
   endReason: 'pause' | 'stop' | 'auto' | null;
 
+  /** Чем занят перерыв, который НАЧАЛСЯ после этого отрезка:
+   *    lunch    — обед, идёт в оплачиваемые часы (до лимита);
+   *    work     — выехал по работе: съёмка, встреча, банк — это работа;
+   *    personal — личное, в часы не идёт.
+   *  NULL — отрезок закончился не перерывом либо причина не указана. */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  pauseKind: 'lunch' | 'work' | 'personal' | null;
+
+  /** Последний раз, когда человек был в системе с открытой сменой. По нему
+   *  ночной крон закрывает забытую смену — иначе в табель шло 23:59. */
+  @Column({ type: 'timestamptz', nullable: true })
+  lastPingAt: Date | null;
+
   /** Дата начала смены в календаре Душанбе (YYYY-MM-DD). Хранится отдельно,
    *  чтобы группировка по дням не зависела от часового пояса сервера. */
   @Index()

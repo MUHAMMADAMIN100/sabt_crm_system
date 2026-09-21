@@ -3,12 +3,20 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { WorkShift } from './work-shift.entity';
+import { ShiftEditRequest } from './shift-edit-request.entity';
 import { User, UserRole } from '../users/user.entity';
 
 /** Рабочий день начинается в 09:00, опоздание — приход позже 09:30
  *  (решение владельца, 21.09.2026). Порог больше не круглый час, поэтому
  *  сравниваем минуты, а не первые две цифры времени. */
 const WORK_START = '09:00';
+const WORK_END = '18:00';
+/** Норма рабочего дня. Без неё нельзя сказать «осталось два часа», посчитать
+ *  недоработку и вовремя напомнить, что пора заканчивать. */
+const NORM_MINUTES = 8 * 60;
+/** Сколько обеда оплачивается. Перерыв «по работе» (съёмка, встреча, банк)
+ *  идёт в часы целиком, «личное» — не идёт вовсе. */
+const LUNCH_PAID_MAX = 60;
 const LATE_AFTER = '09:30';
 const minutesOfTime = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 const LATE_AFTER_MIN = minutesOfTime(LATE_AFTER);
@@ -32,6 +40,7 @@ export class WorkShiftsService {
 
   constructor(
     @InjectRepository(WorkShift) private repo: Repository<WorkShift>,
+    @InjectRepository(ShiftEditRequest) private editRepo: Repository<ShiftEditRequest>,
     @InjectRepository(User) private userRepo: Repository<User>,
   ) {}
 
@@ -42,25 +51,42 @@ export class WorkShiftsService {
     const open = await this.repo.findOne({ where: { employeeId, endedAt: IsNull() } });
     const today = dushanbeDate();
     const rows = await this.repo.find({ where: { employeeId, date: today } });
-    const todayMs = rows.reduce((sum, s) => sum + this.durationMs(s), 0);
+    // Отметка активности: по ней ночной крон закрывает забытую смену
+    // настоящим временем, а не полуночью.
+    if (open) {
+      open.lastPingAt = new Date();
+      await this.repo.update({ id: open.id }, { lastPingAt: open.lastPingAt });
+    }
     const last = rows
       .filter(r => r.endedAt)
       .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime())[0];
     const state: 'working' | 'paused' | 'idle' =
       open ? 'working' : last?.endReason === 'pause' ? 'paused' : 'idle';
-    // closedMinutes — только закрытые отрезки. Идущий отрезок фронт досчитывает
-    // сам от startedAt, иначе счётчик стоял бы до следующего запроса, а если
-    // прибавлять к todayMinutes — время удваивалось бы.
-    const closedMs = rows.filter(r => r.endedAt).reduce((sum, r) => sum + this.durationMs(r), 0);
+    const all = this.dayStats(rows);
+    // closedMinutes — без идущего отрезка: фронт досчитывает его сам, иначе
+    // счётчик стоял бы до следующего запроса, а суммируя — удваивался.
+    const closed = this.dayStats(rows.filter(r => r.endedAt));
+    const first = rows.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime())[0];
+    const startedLabel = first ? dushanbeTime(new Date(first.startedAt)) : null;
     return {
       state,
       open: open ? { id: open.id, startedAt: open.startedAt, startedLabel: dushanbeTime(open.startedAt) } : null,
       pausedSince: state === 'paused' && last?.endedAt ? dushanbeTime(new Date(last.endedAt)) : null,
-      todayMinutes: Math.round(todayMs / 60000),
-      closedMinutes: Math.round(closedMs / 60000),
+      pauseKind: state === 'paused' ? (last?.pauseKind ?? 'personal') : null,
+      todayMinutes: all.totalMinutes,
+      closedMinutes: closed.totalMinutes,
+      workMinutes: all.workMinutes,
+      paidBreakMinutes: all.paidBreakMinutes,
+      breakMinutes: all.breakMinutes,
       shiftsToday: rows.length,
+      dayStartedLabel: startedLabel,
+      isLate: isLateAt(startedLabel),
+      segments: this.daySegments(rows),
+      norm: { start: WORK_START, end: WORK_END, minutes: NORM_MINUTES },
+      leftMinutes: Math.max(0, NORM_MINUTES - all.totalMinutes),
     };
   }
+
 
   async start(employeeId: string) {
     const open = await this.repo.findOne({ where: { employeeId, endedAt: IsNull() } });
@@ -75,17 +101,75 @@ export class WorkShiftsService {
   /** Завершить день или уйти на паузу. Механика одна — закрываем отрезок,
    *  различает их только причина: после паузы человек вернётся и нажмёт
    *  «Продолжить», после завершения день закрыт. */
-  private async close(employeeId: string, reason: 'pause' | 'stop') {
+  private async close(employeeId: string, reason: 'pause' | 'stop', kind?: 'lunch' | 'work' | 'personal') {
     const open = await this.repo.findOne({ where: { employeeId, endedAt: IsNull() } });
     if (!open) throw new BadRequestException('Смена не начата');
     open.endedAt = new Date();
     open.endReason = reason;
+    // Причину помним на отрезке, ПОСЛЕ которого начинается перерыв: сам
+    // перерыв — это промежуток, своей строки в таблице у него нет.
+    open.pauseKind = reason === 'pause' ? (kind ?? 'personal') : null;
     await this.repo.save(open);
     return this.my(employeeId);
   }
 
   stop(employeeId: string) { return this.close(employeeId, 'stop'); }
-  pause(employeeId: string) { return this.close(employeeId, 'pause'); }
+  pause(employeeId: string, kind?: 'lunch' | 'work' | 'personal') { return this.close(employeeId, 'pause', kind); }
+
+  /** Часы дня по отрезкам. Работа — сами отрезки; между ними перерывы, и
+   *  их судьба зависит от причины: обед оплачивается до лимита, выезд по
+   *  работе — целиком, личное — никак. Раньше любой перерыв просто выпадал
+   *  из часов, и «отошёл на съёмку» стоило человеку рабочего времени. */
+  private dayStats(list: WorkShift[]) {
+    const sorted = [...list].sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+    let work = 0, paidBreak = 0, unpaidBreak = 0;
+    for (let i = 0; i < sorted.length; i++) {
+      work += this.durationMs(sorted[i]) / 60000;
+      const cur = sorted[i];
+      const next = sorted[i + 1];
+      if (!next || !cur.endedAt) continue;
+      const gap = Math.max(0, (new Date(next.startedAt).getTime() - new Date(cur.endedAt).getTime()) / 60000);
+      if (cur.pauseKind === 'work') paidBreak += gap;
+      else if (cur.pauseKind === 'lunch') {
+        paidBreak += Math.min(gap, LUNCH_PAID_MAX);
+        unpaidBreak += Math.max(0, gap - LUNCH_PAID_MAX);
+      } else unpaidBreak += gap;
+    }
+    return {
+      workMinutes: Math.round(work),
+      paidBreakMinutes: Math.round(paidBreak),
+      breakMinutes: Math.round(unpaidBreak),
+      totalMinutes: Math.round(work + paidBreak),
+    };
+  }
+
+  /** Отрезки дня для карточки смены: работа и перерывы вперемешку, по порядку. */
+  private daySegments(list: WorkShift[]) {
+    const sorted = [...list].sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+    const out: Array<{ type: 'work' | 'break'; kind?: string | null; from: string; to: string | null; minutes: number; paid?: boolean }> = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const cur = sorted[i];
+      out.push({
+        type: 'work',
+        from: dushanbeTime(new Date(cur.startedAt)),
+        to: cur.endedAt ? dushanbeTime(new Date(cur.endedAt)) : null,
+        minutes: Math.round(this.durationMs(cur) / 60000),
+      });
+      const next = sorted[i + 1];
+      if (!next || !cur.endedAt) continue;
+      const gap = Math.max(0, Math.round((new Date(next.startedAt).getTime() - new Date(cur.endedAt).getTime()) / 60000));
+      if (!gap) continue;
+      out.push({
+        type: 'break',
+        kind: cur.pauseKind ?? 'personal',
+        from: dushanbeTime(new Date(cur.endedAt)),
+        to: dushanbeTime(new Date(next.startedAt)),
+        minutes: gap,
+        paid: cur.pauseKind === 'work' || cur.pauseKind === 'lunch',
+      });
+    }
+    return out;
+  }
 
   private durationMs(s: WorkShift): number {
     const end = s.endedAt ? new Date(s.endedAt).getTime() : Date.now();
@@ -127,8 +211,15 @@ export class WorkShiftsService {
       const today = all.filter(s => String(s.date) === day);
       const open = today.find(s => !s.endedAt);
       const first = today.map(s => new Date(s.startedAt)).sort((a, b) => a.getTime() - b.getTime())[0];
-      const todayMin = Math.round(today.reduce((sum, s) => sum + this.durationMs(s), 0) / 60000);
-      const weekMin = Math.round(all.reduce((sum, s) => sum + this.durationMs(s), 0) / 60000);
+      const todayMin = this.dayStats(today).totalMinutes;
+      // Неделя — по дням: перерывы считаются внутри дня, а не через ночь.
+      const byDay = new Map<string, WorkShift[]>();
+      for (const s of all) {
+        const k = String(s.date);
+        if (!byDay.has(k)) byDay.set(k, []);
+        byDay.get(k)!.push(s);
+      }
+      const weekMin = [...byDay.values()].reduce((sum, list) => sum + this.dayStats(list).totalMinutes, 0);
       const lastToday = today
         .filter(x => x.endedAt)
         .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime())[0];
@@ -142,6 +233,9 @@ export class WorkShiftsService {
         status,
         startedLabel: first ? dushanbeTime(first) : null,
         late: isLateAt(first ? dushanbeTime(first) : null),
+        // Чем занят перерыв: «на обеде» и «выехал на съёмку» — разные вещи.
+        pauseKind: status === 'paused' ? (lastToday?.pauseKind ?? 'personal') : null,
+        normMinutes: NORM_MINUTES,
         autoClosed: today.some(s => s.autoClosed),
         todayMinutes: todayMin,
         weekMinutes: weekMin,
@@ -156,6 +250,8 @@ export class WorkShiftsService {
       date: day,
       lateAfter: LATE_AFTER,
       workStart: WORK_START,
+      workEnd: WORK_END,
+      normMinutes: NORM_MINUTES,
       working: items.filter(i => i.status === 'working').length,
       paused: items.filter(i => i.status === 'paused').length,
       total: items.length,
@@ -198,18 +294,27 @@ export class WorkShiftsService {
         (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(),
       );
       const days: Record<number, number> = {};
-      const segments: Record<number, { from: string; to: string | null; reason: string | null; minutes: number }[]> = {};
+      const segments: Record<number, { from: string; to: string | null; reason: string | null; pauseKind: string | null; minutes: number }[]> = {};
       const lateDays = new Set<number>();
       const autoDays = new Set<number>();
 
+      // Часы дня считаем по всем его отрезкам разом: оплачиваемые перерывы
+      // живут МЕЖДУ отрезками, по одному отрезку их не увидеть.
+      const byDayNum = new Map<number, WorkShift[]>();
+      for (const sh of all) {
+        const dn = Number(String(sh.date).slice(8, 10));
+        if (!byDayNum.has(dn)) byDayNum.set(dn, []);
+        byDayNum.get(dn)!.push(sh);
+      }
+      for (const [dn, list] of byDayNum) days[dn] = this.dayStats(list).totalMinutes;
       for (const sh of all) {
         const dayNum = Number(String(sh.date).slice(8, 10));
         const min = Math.round(this.durationMs(sh) / 60000);
-        days[dayNum] = (days[dayNum] || 0) + min;
         (segments[dayNum] ||= []).push({
           from: dushanbeTime(new Date(sh.startedAt)),
           to: sh.endedAt ? dushanbeTime(new Date(sh.endedAt)) : null,
           reason: sh.endReason ?? null,
+          pauseKind: sh.pauseKind ?? null,
           minutes: min,
         });
         if (sh.autoClosed) autoDays.add(dayNum);
@@ -230,6 +335,10 @@ export class WorkShiftsService {
         workedDays,
         totalMinutes,
         avgMinutes: workedDays ? Math.round(totalMinutes / workedDays) : 0,
+        // Недоработка/переработка считаются от нормы за отработанные дни:
+        // считать по календарю нельзя, пока в системе нет графика и отгулов.
+        normMinutes: workedDays * NORM_MINUTES,
+        diffMinutes: totalMinutes - workedDays * NORM_MINUTES,
       };
     });
 
@@ -241,8 +350,102 @@ export class WorkShiftsService {
       today: dushanbeDate(),
       lateAfter: LATE_AFTER,
       workStart: WORK_START,
+      workEnd: WORK_END,
+      normMinutes: NORM_MINUTES,
       items,
     };
+  }
+
+  // ─── «Забыл нажать»: правка времени через подтверждение ──────────────
+  /** Сотрудник просит поправить начало или конец своей смены. Сам он табель
+   *  не меняет — иначе учёт времени теряет смысл. */
+  async requestEdit(employeeId: string, dto: { date?: string; field: 'start' | 'end'; time: string; note?: string }) {
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(dto.date || '') ? dto.date! : dushanbeDate();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(dto.time || '')) throw new BadRequestException('Время в формате ЧЧ:ММ');
+    if (date > dushanbeDate()) throw new BadRequestException('Нельзя править будущий день');
+    const rows = await this.repo.find({ where: { employeeId, date } });
+    if (!rows.length) throw new BadRequestException('В этот день смены не было');
+    const sorted = rows.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+    const target = dto.field === 'start' ? sorted[0] : sorted[sorted.length - 1];
+    const current = dto.field === 'start'
+      ? dushanbeTime(new Date(target.startedAt))
+      : (target.endedAt ? dushanbeTime(new Date(target.endedAt)) : null);
+    // Один открытый запрос на день и поле — вторая просьба заменяет первую.
+    await this.editRepo.update(
+      { employeeId, date, field: dto.field, status: 'pending' },
+      { status: 'rejected', decidedAt: new Date() },
+    );
+    const saved = await this.editRepo.save(this.editRepo.create({
+      employeeId, date, field: dto.field,
+      requestedTime: dto.time,
+      currentTime: current,
+      note: (dto.note || '').trim().slice(0, 300) || null,
+      status: 'pending',
+      shiftId: target.id,
+    }));
+    return { ok: true, id: saved.id };
+  }
+
+  /** Мои правки за последний месяц — чтобы человек видел, что с ними стало. */
+  async myEdits(employeeId: string) {
+    const rows = await this.editRepo.find({ where: { employeeId }, order: { createdAt: 'DESC' }, take: 20 });
+    return rows.map(r => ({
+      id: r.id, date: r.date, field: r.field, requestedTime: r.requestedTime,
+      currentTime: r.currentTime, note: r.note, status: r.status,
+    }));
+  }
+
+  /** Очередь правок для руководства. */
+  async pendingEdits() {
+    const rows = await this.editRepo.find({ where: { status: 'pending' }, order: { createdAt: 'ASC' }, take: 100 });
+    if (!rows.length) return { items: [] };
+    const users = await this.userRepo.find({ select: ['id', 'name', 'role', 'avatar'] });
+    const byId = new Map(users.map(u => [u.id, u]));
+    return {
+      items: rows.map(r => ({
+        id: r.id, date: r.date, field: r.field,
+        requestedTime: r.requestedTime, currentTime: r.currentTime, note: r.note,
+        employeeId: r.employeeId,
+        name: byId.get(r.employeeId)?.name ?? '—',
+        role: byId.get(r.employeeId)?.role ?? null,
+        avatar: byId.get(r.employeeId)?.avatar ?? null,
+        createdAt: r.createdAt,
+      })),
+    };
+  }
+
+  /** Подтвердить правку: двигаем время отрезка и помечаем смену как
+   *  поправленную руками (autoClosed снимаем — время теперь подтверждённое). */
+  async decideEdit(id: string, approve: boolean, deciderId: string) {
+    const req = await this.editRepo.findOne({ where: { id } });
+    if (!req) throw new BadRequestException('Правка не найдена');
+    if (req.status !== 'pending') throw new BadRequestException('Правка уже обработана');
+    if (approve) {
+      const shift = req.shiftId ? await this.repo.findOne({ where: { id: req.shiftId } }) : null;
+      if (!shift) throw new BadRequestException('Смена не найдена');
+      const [h, m] = req.requestedTime.split(':').map(Number);
+      // Время приходит по Душанбе, а в базе лежит момент времени: берём день
+      // смены и подставляем час с учётом смещения самого дня.
+      const base = new Date(req.field === 'start' ? shift.startedAt : (shift.endedAt ?? shift.startedAt));
+      const shiftHM = dushanbeTime(base).split(':').map(Number);
+      const deltaMin = (h * 60 + m) - (shiftHM[0] * 60 + shiftHM[1]);
+      const moved = new Date(base.getTime() + deltaMin * 60000);
+      if (req.field === 'start') {
+        if (shift.endedAt && moved >= new Date(shift.endedAt)) throw new BadRequestException('Начало позже конца смены');
+        shift.startedAt = moved;
+      } else {
+        if (moved <= new Date(shift.startedAt)) throw new BadRequestException('Конец раньше начала смены');
+        shift.endedAt = moved;
+        shift.endReason = shift.endReason === 'auto' ? 'stop' : shift.endReason;
+        shift.autoClosed = false;
+      }
+      await this.repo.save(shift);
+    }
+    req.status = approve ? 'approved' : 'rejected';
+    req.decidedById = deciderId;
+    req.decidedAt = new Date();
+    await this.editRepo.save(req);
+    return { ok: true, status: req.status };
   }
 
   /** Мой табель за месяц — для личного профиля. Общий /month закрыт
@@ -268,13 +471,25 @@ export class WorkShiftsService {
   async closeForgotten() {
     const open = await this.repo.find({ where: { endedAt: IsNull() } });
     if (!open.length) return;
-    const now = new Date();
     for (const s of open) {
-      s.endedAt = now;
+      // Закрываем не полуночью, а последней активностью в системе: человек
+      // ушёл в 18:00 и забыл нажать — раньше ему писали 14 часов 59 минут.
+      // Активности не было вовсе (работал не за компьютером) — берём конец
+      // рабочего дня: это правдоподобнее полуночи, а пометка autoClosed
+      // честно говорит, что время не подтверждено нажатием.
+      const started = new Date(s.startedAt);
+      const ping = s.lastPingAt ? new Date(s.lastPingAt) : null;
+      const [wh, wm] = WORK_END.split(':').map(Number);
+      const endOfWork = new Date(started);
+      endOfWork.setHours(wh, wm, 0, 0);
+      let end = ping && ping > started ? ping : endOfWork;
+      if (end < started) end = started;
+      s.endedAt = end;
       s.autoClosed = true;
       s.endReason = 'auto';
     }
     await this.repo.save(open);
     this.logger.log(`Забытые смены закрыты автоматически: ${open.length}`);
   }
+
 }

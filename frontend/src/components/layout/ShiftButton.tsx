@@ -1,18 +1,22 @@
-// Кнопка рабочей смены: «Начать работу» → «Пауза» → «Продолжить» → «Завершить».
+// Кнопка рабочей смены: «Начать работу» → счётчик → «Завершить».
 //
-// Три состояния и два действия, поэтому кнопки две: главная переключает
-// работу и паузу, маленькая рядом закрывает день. Пауза и завершение сделаны
-// разными действиями намеренно: «ушёл на обед» и «закончил день» по-разному
-// выглядят в сводке у основателя.
+// Пока смена идёт, нажатие открывает КАРТОЧКУ смены (ShiftCard): там норма
+// дня, отрезки, перерыв с причиной и правка времени. Раньше главная кнопка
+// молча ставила паузу, и на компьютере об этом нельзя было догадаться —
+// подпись «Пауза» жила только во всплывающей подсказке.
+//
+// Быстрые действия остаются одним нажатием: «Начать» из простоя,
+// «Продолжить» с перерыва и квадрат «Завершить» рядом.
 //
 // Основателю не показывается вовсе: он смены не отмечает, а смотрит.
 // Используется в подвале меню на компьютере и первой строкой в листе «Ещё».
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Play, Pause, Square } from 'lucide-react'
+import { Play, Square, Coffee } from 'lucide-react'
 import clsx from 'clsx'
 import { workShiftsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import ShiftCard from './ShiftCard'
 
 /** «3 ч 12 мин» из минут. */
 function fmt(min: number): string {
@@ -78,20 +82,25 @@ export default function ShiftButton({ variant, collapsed = false }: {
   collapsed?: boolean
 }) {
   const s = useShift()
+  const [cardOpen, setCardOpen] = useState(false)
   if (!s.enabled) return null
 
   const working = s.state === 'working'
   const paused = s.state === 'paused'
-  const MainIcon = working ? Pause : Play
-  const mainLabel = working ? `Пауза · ${s.today}` : paused ? `Продолжить · ${s.today}` : 'Начать работу'
-  const mainAction: Action = working ? 'pause' : 'start'
-  const title = working ? `Смена с ${s.startedLabel}` : paused ? `На паузе с ${s.pausedSince}` : 'Начать рабочий день'
+  const MainIcon = working ? Coffee : Play
+  const mainLabel = working ? `${s.today} · перерыв` : paused ? `Продолжить · ${s.today}` : 'Начать работу'
+  // Идёт смена — открываем карточку (перерыв там, с причиной). Простой и
+  // перерыв — действие сразу, без лишнего экрана.
+  const onMain = () => (working ? setCardOpen(true) : s.run('start'))
+  const title = working ? `Смена с ${s.startedLabel} — открыть карточку` : paused ? `На перерыве с ${s.pausedSince}` : 'Начать рабочий день'
+  const card = cardOpen ? <ShiftCard onClose={() => setCardOpen(false)} /> : null
 
   if (variant === 'sheet') {
     return (
       <div className="flex items-center gap-2">
+        {card}
         <button
-          onClick={() => s.run(mainAction)}
+          onClick={onMain}
           disabled={s.busy}
           className={clsx('flex-1 flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-[15px] font-bold transition disabled:opacity-60',
             working ? 'bg-amber-500/12 text-amber-500 border border-amber-500/60' : 'bg-green-500 text-white')}
@@ -114,8 +123,9 @@ export default function ShiftButton({ variant, collapsed = false }: {
 
   return (
     <div className={clsx('flex items-center gap-1.5', collapsed && 'lg:flex-col lg:gap-1')}>
+      {card}
       <button
-        onClick={() => s.run(mainAction)}
+        onClick={onMain}
         disabled={s.busy}
         title={title}
         className={clsx(
@@ -133,7 +143,7 @@ export default function ShiftButton({ variant, collapsed = false }: {
           'truncate transition-all duration-300 overflow-hidden whitespace-nowrap',
           collapsed ? 'max-w-0 opacity-0' : 'max-w-[200px] opacity-100',
         )}>
-          {working ? s.today : paused ? 'Продолжить' : 'Начать работу'}
+          {working ? `${s.today} · перерыв` : paused ? 'Продолжить' : 'Начать работу'}
         </span>
       </button>
       {(working || paused) && (
