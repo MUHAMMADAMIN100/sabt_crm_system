@@ -108,16 +108,50 @@ export class WorkShiftsService {
    *  различает их только причина: после паузы человек вернётся и нажмёт
    *  «Продолжить», после завершения день закрыт. */
   private async close(employeeId: string, reason: 'pause' | 'stop', kind?: 'lunch' | 'work' | 'personal') {
+    const today = dushanbeDate();
     const open = await this.repo.findOne({ where: { employeeId, endedAt: IsNull() } });
-    if (!open) throw new BadRequestException('Смена не начата');
-    open.endedAt = new Date();
-    open.endReason = reason;
-    // Причину помним на отрезке, ПОСЛЕ которого начинается перерыв: сам
-    // перерыв — это промежуток, своей строки в таблице у него нет.
-    open.pauseKind = reason === 'pause' ? (kind ?? 'personal') : null;
-    await this.repo.save(open);
+    const dayRows = await this.repo.find({ where: { employeeId, date: open ? open.date : today } });
+    const byEndDesc = (a: WorkShift, b: WorkShift) =>
+      new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime();
+
+    if (open) {
+      const ms = Date.now() - new Date(open.startedAt).getTime();
+      const others = dayRows.filter(r => r.id !== open.id && r.endedAt);
+      // Отрезок короче минуты — это промах по кнопке, а не работа. Удаляем
+      // его и правим предыдущий, иначе в списке копятся строки «23:20 —
+      // 23:20 · 0 м», которые ничего не значат.
+      if (ms < 60_000 && others.length) {
+        await this.repo.delete({ id: open.id });
+        const prev = others.sort(byEndDesc)[0];
+        prev.endReason = reason;
+        prev.pauseKind = reason === 'pause' ? (kind ?? prev.pauseKind ?? 'personal') : null;
+        await this.repo.save(prev);
+        return this.my(employeeId);
+      }
+      open.endedAt = new Date();
+      open.endReason = reason;
+      // Причину помним на отрезке, ПОСЛЕ которого начинается перерыв: сам
+      // перерыв — это промежуток, своей строки в таблице у него нет.
+      open.pauseKind = reason === 'pause' ? (kind ?? 'personal') : null;
+      await this.repo.save(open);
+      return this.my(employeeId);
+    }
+
+    // Идущего отрезка нет. Для перерыва это ошибка — прерывать нечего.
+    if (reason !== 'stop') throw new BadRequestException('Смена не начата');
+    // А вот «Завершить» с перерыва — обычное дело: человек ушёл на обед и
+    // решил не возвращаться. Раньше кнопка в этом состоянии просто падала
+    // с «Смена не начата», и день оставался незакрытым до ночного крона.
+    const last = dayRows.filter(r => r.endedAt).sort(byEndDesc)[0];
+    if (!last) throw new BadRequestException('Сегодня смена не начиналась');
+    if (last.endReason !== 'stop') {
+      last.endReason = 'stop';
+      last.pauseKind = null;
+      await this.repo.save(last);
+    }
     return this.my(employeeId);
   }
+
 
   stop(employeeId: string) { return this.close(employeeId, 'stop'); }
   pause(employeeId: string, kind?: 'lunch' | 'work' | 'personal') { return this.close(employeeId, 'pause', kind); }
@@ -155,12 +189,17 @@ export class WorkShiftsService {
     const out: Array<{ type: 'work' | 'break'; kind?: string | null; from: string; to: string | null; minutes: number; paid?: boolean }> = [];
     for (let i = 0; i < sorted.length; i++) {
       const cur = sorted[i];
-      out.push({
-        type: 'work',
-        from: dushanbeTime(new Date(cur.startedAt)),
-        to: cur.endedAt ? dushanbeTime(new Date(cur.endedAt)) : null,
-        minutes: Math.round(this.durationMs(cur) / 60000),
-      });
+      const mins = Math.round(this.durationMs(cur) / 60000);
+      // Нулевой отрезок показываем, только если он в дне один: иначе это
+      // след промаха по кнопке, и в списке от него один мусор.
+      if (mins > 0 || sorted.length === 1) {
+        out.push({
+          type: 'work',
+          from: dushanbeTime(new Date(cur.startedAt)),
+          to: cur.endedAt ? dushanbeTime(new Date(cur.endedAt)) : null,
+          minutes: mins,
+        });
+      }
       const next = sorted[i + 1];
       if (!next || !cur.endedAt) continue;
       const gap = Math.max(0, Math.round((new Date(next.startedAt).getTime() - new Date(cur.endedAt).getTime()) / 60000));

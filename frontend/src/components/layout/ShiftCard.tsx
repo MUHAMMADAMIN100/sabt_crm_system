@@ -66,7 +66,7 @@ export default function ShiftCard({ onClose }: { onClose: () => void }) {
           : workShiftsApi.start(),
     onSuccess: (fresh: any) => { qc.setQueryData(['work-shift-my'], fresh); setPausing(false) },
     onSettled: () => { qc.invalidateQueries({ queryKey: ['work-shift-my'] }) },
-    onError: () => toast.error('Не получилось — попробуйте ещё раз'),
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не получилось — попробуйте ещё раз'),
   })
 
   const editMut = useMutation({

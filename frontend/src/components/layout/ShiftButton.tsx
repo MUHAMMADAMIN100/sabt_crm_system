@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Play, Square, Coffee } from 'lucide-react'
 import clsx from 'clsx'
+import toast from 'react-hot-toast'
 import { workShiftsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import ShiftCard from './ShiftCard'
@@ -43,6 +44,7 @@ function useShift() {
     mutationFn: (a: Action) =>
       a === 'start' ? workShiftsApi.start() : a === 'pause' ? workShiftsApi.pause() : workShiftsApi.stop(),
     onSuccess: (fresh: any) => qc.setQueryData(['work-shift-my'], fresh),
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не получилось — попробуйте ещё раз'),
     onSettled: () => qc.invalidateQueries({ queryKey: ['work-shift-my'] }),
   })
 
