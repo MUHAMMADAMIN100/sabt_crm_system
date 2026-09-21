@@ -243,8 +243,13 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     return { from: iso(new Date(y - 1, 0, 1)), to: iso(new Date(y + 1, 11, 31)) }
   }, [view, cursor])
 
+  // Ключ кэша один на всех: и запрос, и оптимистичные правки. Раньше правки
+  // адресовались в ['smm-calendar', from, to] — без section, то есть в ключ,
+  // которого нет: карточка «оживала» только после ответа сервера.
+  const calKey = useMemo(() => ['smm-calendar', section, from, to], [section, from, to])
+
   const { data, isLoading } = useQuery<CalData>({
-    queryKey: ['smm-calendar', section, from, to],
+    queryKey: calKey,
     queryFn: () => contentPlanApi.smmCalendar({ from, to, segment: section }),
     placeholderData: keepPreviousData,
   })
@@ -297,14 +302,32 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const markMut = useMutation({
     mutationFn: ({ ev, done }: { ev: Ev; done: boolean }) =>
       contentPlanApi.smartUpdate(ev.itemId!, { status: done ? 'published' : 'planned' }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Обновлено'); setDetail(null) },
-    onError: () => toast.error('Не удалось обновить'),
+    // Галочка должна срабатывать мгновенно: правим кэш на месте и закрываем
+    // карточку, запрос уходит фоном. Снимая отметку, гасим и статус задачи —
+    // иначе isDone() продолжал бы считать её выполненной.
+    onMutate: async ({ ev, done }) => {
+      setDetail(null)
+      await qc.cancelQueries({ queryKey: calKey })
+      const prev = qc.getQueryData<CalData>(calKey)
+      qc.setQueryData<CalData>(calKey, old => old ? {
+        ...old,
+        events: old.events.map(x => x.itemId && x.itemId === ev.itemId
+          ? { ...x, status: done ? 'published' : 'planned', taskStatus: done ? 'done' : null }
+          : x),
+      } : old)
+      return { prev }
+    },
+    onError: (_e, _v, ctx: any) => {
+      if (ctx?.prev) qc.setQueryData(calKey, ctx.prev)
+      toast.error('Не удалось обновить')
+    },
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }) },
   })
   // Длительность съёмки: оптимистично меняем в кэше — карточка сразу меняет высоту.
   const durMut = useMutation({
     mutationFn: ({ itemId, min }: { itemId: string; min: number }) => contentPlanApi.smartUpdate(itemId, { durationMin: min }),
     onMutate: async ({ itemId, min }) => {
-      const key = ['smm-calendar', from, to]
+      const key = calKey
       await qc.cancelQueries({ queryKey: key })
       const prev = qc.getQueryData<CalData>(key)
       qc.setQueryData<CalData>(key, old => old ? { ...old, events: old.events.map(e => e.itemId === itemId ? { ...e, durationMin: min } : e) } : old)
@@ -319,7 +342,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     mutationFn: ({ itemId, patch }: { itemId: string; patch: { topic?: string; scriptText?: string | null } }) =>
       contentPlanApi.update(itemId, patch),
     onMutate: async ({ itemId, patch }) => {
-      const key = ['smm-calendar', from, to]
+      const key = calKey
       await qc.cancelQueries({ queryKey: key })
       const prev = qc.getQueryData<CalData>(key)
       qc.setQueryData<CalData>(key, old => old ? {
@@ -367,7 +390,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         ? contentPlanApi.smartUpdate(ev.itemId, { publishDate: dateStr, ...(time !== undefined ? { publishTime: time } : {}) })
         : contentPlanApi.updateShootSession(ev.shootId!, { date: dateStr, ...(time !== undefined ? { time } : {}) }),
     onMutate: async ({ ev, dateStr, time }) => {
-      const key = ['smm-calendar', from, to]
+      const key = calKey
       await qc.cancelQueries({ queryKey: key })
       const prev = qc.getQueryData<CalData>(key)
       qc.setQueryData<CalData>(key, old => {
@@ -595,7 +618,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
           onMark={done => markMut.mutate({ ev: detail, done })}
           onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
           onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
-          onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }} />
+          onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }}
+          onOpenParent={detail.reelId && pubByItem.get(detail.reelId) ? () => setDetail(pubByItem.get(detail.reelId!)!) : undefined} />
       )}
 
       {projSettings && (
@@ -703,7 +727,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
           onMark={done => markMut.mutate({ ev: detail, done })}
           onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
           onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
-          onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }} />
+          onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }}
+          onOpenParent={detail.reelId && pubByItem.get(detail.reelId) ? () => setDetail(pubByItem.get(detail.reelId!)!) : undefined} />
       )}
 
       {projSettings && (
@@ -1810,7 +1835,7 @@ function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
 }
 
-function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo }: { e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void; onDuration?: (min: number) => void; onSaveInfo?: (patch: { topic?: string; scriptText?: string | null }) => void }) {
+function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo, onOpenParent }: { e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void; onDuration?: (min: number) => void; onSaveInfo?: (patch: { topic?: string; scriptText?: string | null }) => void; onOpenParent?: () => void }) {
   const isShoot = e.kind === 'shoot'
   const type = e.contentType || 'other'
   const done = isDone(e)
@@ -1832,18 +1857,18 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
   const lab = 'text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5'
   const returnBtn = e.date ? (
     <button onClick={onUnschedule}
-      className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+      className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
       <Inbox size={15} /> Вернуть
     </button>
   ) : null
   const primaryBtn = isShoot ? null : (done ? (
     <button disabled={marking} onClick={() => onMark(false)}
-      className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">
+      className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">
       <RotateCcw size={15} /> В работу
     </button>
   ) : (
     <button disabled={marking} onClick={() => onMark(true)}
-      className="flex items-center justify-center gap-2 rounded-lg bg-[#3f7a58] text-white py-2.5 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
+      className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#3f7a58] text-white py-2.5 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
       <Check size={15} /> Сделано
     </button>
   ))
@@ -1872,8 +1897,11 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
           </div>
         ) : (
           <>
-            {/* Карточка рилса — заголовок модалки съёмки (без дубля названия) */}
-            <div className="flex items-center gap-3 mt-1 rounded-xl border px-3 py-2.5"
+            {/* Карточка родителя: открывает сам рилс/пост. Раньше это был
+                просто блок со стрелкой — выглядел кнопкой и ничего не делал.
+                Стрелку рисуем только когда переход и правда возможен. */}
+            <button type="button" disabled={!onOpenParent} onClick={onOpenParent}
+              className={'w-full text-left flex items-center gap-3 mt-1 rounded-xl border px-3 py-2.5 ' + (onOpenParent ? 'transition hover:brightness-110 active:brightness-95' : 'cursor-default')}
               style={{ background: `color-mix(in srgb, ${projColor(e.projectId)} 12%, transparent)`, borderColor: `color-mix(in srgb, ${projColor(e.projectId)} 30%, transparent)` }}>
               <span className="w-9 h-9 rounded-lg grid place-items-center shrink-0"
                 style={{ background: `color-mix(in srgb, ${projColor(e.projectId)} 22%, transparent)`, color: projColor(e.projectId) }}><PIcon size={16} /></span>
@@ -1881,8 +1909,8 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
                 <div className="text-sm font-bold truncate text-gray-900 dark:text-gray-100">{e.title?.trim() || (prep ? prep.forWhat : '—')}</div>
                 <div className="text-[11.5px] text-gray-400">Публикация {prep?.forWhat}{e.reelDate ? ` · ${fmtDate(e.reelDate)}` : ''}</div>
               </div>
-              <span className="shrink-0" style={{ color: projColor(e.projectId) }}>→</span>
-            </div>
+              {onOpenParent && <span className="shrink-0" style={{ color: projColor(e.projectId) }}>→</span>}
+            </button>
 
             {/* Плитки: когда сделать/снять · длительность */}
             <div className="grid grid-cols-2 gap-2 mt-3">
