@@ -51,9 +51,12 @@ type Entry = { id: string; date: string; amount: number; note?: string | null; c
 
 /** Строка разбора: слева подпись, справа сумма. Пустая строка не кричит
  *  цветом и нулём — она просто говорит, что начислений не было. */
-function Row({ label, hint, value, empty, tone }: {
+function Row({ label, hint, value, empty, tone, open }: {
   label: string; hint?: string | null; value?: string
   empty?: string; tone?: 'plus' | 'minus' | 'paid'
+  /** Дальше идёт расшифровка: черту рисует она, иначе строка отделялась
+   *  бы от собственных начислений и они липли бы к следующему пункту. */
+  open?: boolean
 }) {
   const toneClass = tone === 'plus'
     ? 'text-emerald-600 dark:text-emerald-400'
@@ -63,33 +66,41 @@ function Row({ label, hint, value, empty, tone }: {
         ? 'text-primary-600 dark:text-primary-400'
         : 'text-surface-900 dark:text-surface-100'
   return (
-    <div className="flex items-center justify-between gap-3 py-3 border-b border-surface-100 dark:border-surface-700/60">
+    <div className={`flex items-center justify-between gap-4 py-3 ${open ? '' : 'border-b border-surface-100 dark:border-surface-700/60'}`}>
       <span className="min-w-0 text-sm">
         <span className={empty ? 'text-surface-400 dark:text-surface-500' : 'text-surface-700 dark:text-surface-200'}>{label}</span>
         {hint && <span className="text-surface-400 dark:text-surface-500"> · {hint}</span>}
       </span>
       {empty
         ? <span className="shrink-0 text-sm text-surface-400 dark:text-surface-500">{empty}</span>
-        : <span className={`shrink-0 text-[15px] font-semibold tabular-nums ${toneClass}`}>{value}</span>}
+        : <span className={`shrink-0 text-[15px] font-semibold tabular-nums whitespace-nowrap ${toneClass}`}>{value}</span>}
     </div>
   )
 }
 
 /** Расшифровка: дата, причина, сумма. Без причин «к выплате» не сходится
- *  и человек идёт спрашивать. */
-function Detail({ entries, sign }: { entries: Entry[]; sign: '+' | '−' }) {
+ *  и человек идёт спрашивать.
+ *
+ *  sign: минус у удержаний. У полученного знака НЕТ — сама строка уже
+ *  показывает «−500 с.», и «+500 с.» под ней противоречили бы ей. */
+function Detail({ entries, sign }: { entries: Entry[]; sign?: '−' }) {
   if (!entries.length) return null
   return (
-    <div className="ml-1 pl-3 border-l-2 border-surface-200 dark:border-surface-700 space-y-1.5 pb-3 -mt-1">
-      {entries.map(e => (
-        <div key={e.id} className="flex items-baseline gap-2.5 text-xs">
-          <span className="text-surface-400 dark:text-surface-500 tabular-nums shrink-0">{shortDate(e.date)}</span>
-          <span className="text-surface-600 dark:text-surface-300 flex-1 min-w-0 truncate">{e.note || e.comment || '—'}</span>
-          <span className={`tabular-nums shrink-0 ${sign === '+' ? 'text-primary-600 dark:text-primary-400' : 'text-red-600 dark:text-red-400'}`}>
-            {sign}{money(Math.abs(Number(e.amount) || 0))}
-          </span>
-        </div>
-      ))}
+    <div className="pb-3 border-b border-surface-100 dark:border-surface-700/60">
+      <div className="ml-1 pl-3 border-l-2 border-surface-200 dark:border-surface-700 space-y-1.5">
+        {entries.map(e => {
+          const reason = e.note || e.comment || '—'
+          return (
+            <div key={e.id} className="flex items-baseline gap-3 text-xs">
+              <span className="text-surface-400 dark:text-surface-500 tabular-nums shrink-0">{shortDate(e.date)}</span>
+              <span className="text-surface-600 dark:text-surface-300 flex-1 min-w-0 truncate" title={reason}>{reason}</span>
+              <span className={`tabular-nums shrink-0 whitespace-nowrap ${sign ? 'text-red-600 dark:text-red-400' : 'text-surface-500 dark:text-surface-400'}`}>
+                {sign}{money(Math.abs(Number(e.amount) || 0))}
+              </span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -177,7 +188,7 @@ export default function ProfilePage() {
       <h1 className="page-title">{t('profile.title')}</h1>
 
       {/* Шапка: кто я, с какого числа работаю */}
-      <div className="card">
+      <div className="card sm:p-5">
         <div className="flex items-center gap-4">
           <button
             type="button"
@@ -228,16 +239,21 @@ export default function ProfilePage() {
 
         {/* Главная цифра: сколько причитается и когда придёт */}
         {showSalary && (
-          <div className="card">
+          <div className="card sm:p-5">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[13px] text-surface-500 dark:text-surface-400">
-                {row?.frozen ? 'Выплачено за' : 'К выплате за'} {monthOnly(ym)}
+                {row?.frozen ? 'Выплачено за месяц' : 'К выплате за месяц'}
               </span>
-              <div className="flex items-center gap-1">
+              {/* Месяц стоит МЕЖДУ стрелками: две стрелки в дальнем углу
+                  широкой карточки не объясняют, что они переключают. */}
+              <div className="flex items-center gap-1 shrink-0">
                 <button onClick={() => setYm(shiftYm(ym, -1))} aria-label="Предыдущий месяц"
                   className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
                   <ChevronLeft size={15} />
                 </button>
+                <span className="px-1 min-w-[112px] text-center text-[13px] font-medium text-surface-600 dark:text-surface-300 first-letter:uppercase whitespace-nowrap">
+                  {monthOnly(ym)} {ym.slice(0, 4)}
+                </span>
                 <button onClick={() => setYm(shiftYm(ym, 1))} aria-label="Следующий месяц"
                   className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
                   <ChevronRight size={15} />
@@ -300,40 +316,40 @@ export default function ProfilePage() {
 
         {/* Разбор: из чего сложилась сумма */}
         {showSalary && sal?.linked && row && (
-          <div className="card">
+          <div className="card sm:p-5">
             <h3 className="section-title mb-1">Из чего сложилась сумма</h3>
 
             <Row label="Оклад за месяц" value={money(salary)} />
 
             {bonus > 0
               ? <>
-                  <Row label="Бонусы" hint={bonusEntries.length ? pluralRu(bonusEntries.length, 'начисление', 'начисления', 'начислений') : null} value={`+${money(bonus)}`} tone="plus" />
-                  <Detail entries={bonusEntries} sign="+" />
+                  <Row label="Бонусы" hint={bonusEntries.length ? pluralRu(bonusEntries.length, 'начисление', 'начисления', 'начислений') : null} value={`+${money(bonus)}`} tone="plus" open />
+                  <Detail entries={bonusEntries} />
                 </>
               : <Row label="Бонусы" empty="не начислялись" />}
 
             {fine > 0
               ? <>
-                  <Row label="Штрафы" hint={fineEntries.length ? pluralRu(fineEntries.length, 'удержание', 'удержания', 'удержаний') : null} value={`−${money(fine)}`} tone="minus" />
+                  <Row label="Штрафы" hint={fineEntries.length ? pluralRu(fineEntries.length, 'удержание', 'удержания', 'удержаний') : null} value={`−${money(fine)}`} tone="minus" open />
                   <Detail entries={fineEntries} sign="−" />
                 </>
               : <Row label="Штрафы" empty="нет" />}
 
             {vacation > 0
               ? <>
-                  <Row label="Отпускные и невыходы" value={`−${money(vacation)}`} tone="minus" />
+                  <Row label="Отпускные и невыходы" value={`−${money(vacation)}`} tone="minus" open />
                   <Detail entries={vacationEntries} sign="−" />
                 </>
               : <Row label="Отпускные и невыходы" empty="нет" />}
 
             {paid > 0
               ? <>
-                  <Row label="Уже получено" hint={row.advance > 0 ? `в том числе аванс ${money(row.advance)}` : null} value={`−${money(paid)}`} tone="paid" />
-                  <Detail entries={advanceEntries} sign="+" />
+                  <Row label="Уже получено" hint={row.advance > 0 ? `в том числе аванс ${money(row.advance)}` : null} value={`−${money(paid)}`} tone="paid" open />
+                  <Detail entries={advanceEntries} />
                 </>
               : <Row label="Уже получено" empty="выплат ещё не было" />}
 
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl px-4 py-3.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/25">
+            <div className="mt-4 flex items-center justify-between gap-4 rounded-xl px-4 py-4 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/25">
               <span className="text-[15px] font-semibold text-surface-900 dark:text-surface-100">
                 {row.frozen ? 'Выплачено за месяц' : 'Остаток к выплате'}
               </span>
@@ -350,7 +366,7 @@ export default function ProfilePage() {
 
         {/* Смены за тот же месяц */}
         {!isFounder && (
-          <div className="card">
+          <div className="card sm:p-5">
             <div className="flex items-baseline justify-between gap-2 mb-3">
               <h3 className="section-title">Мои смены</h3>
               <span className="text-xs text-surface-400 dark:text-surface-500">{monthOnly(ym)}</span>
@@ -362,9 +378,10 @@ export default function ProfilePage() {
                 { v: String(mine?.workedDays || 0), l: wordOf(mine?.workedDays || 0, 'рабочий день', 'рабочих дня', 'рабочих дней'), warn: false },
                 { v: String(mine?.lateDays?.length || 0), l: wordOf(mine?.lateDays?.length || 0, 'опоздание', 'опоздания', 'опозданий'), warn: (mine?.lateDays?.length || 0) > 0 },
               ].map(tile => (
-                <div key={tile.l} className="bg-surface-50 dark:bg-surface-700/50 rounded-xl p-3">
-                  <p className={`text-lg font-bold tabular-nums ${tile.warn ? 'text-amber-600 dark:text-amber-400' : 'text-surface-900 dark:text-surface-100'}`}>{tile.v}</p>
-                  <p className="text-[11px] text-surface-400 dark:text-surface-500 mt-0.5">{tile.l}</p>
+                <div key={tile.l} className="bg-surface-50 dark:bg-surface-700/50 rounded-xl px-3.5 py-3 min-w-0">
+                  {/* «110 ч 31 м» не должно переноситься посреди числа */}
+                  <p className={`text-lg font-bold tabular-nums whitespace-nowrap ${tile.warn ? 'text-amber-600 dark:text-amber-400' : 'text-surface-900 dark:text-surface-100'}`}>{tile.v}</p>
+                  <p className="text-[11px] leading-snug text-surface-400 dark:text-surface-500 mt-1">{tile.l}</p>
                 </div>
               ))}
             </div>
@@ -376,18 +393,20 @@ export default function ProfilePage() {
 
         {/* История выплат */}
         {history.length > 0 && (
-          <div className="card">
+          <div className="card sm:p-5">
             <h3 className="section-title mb-1">История выплат</h3>
             <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
               {history.map(h => (
                 <button
                   key={h.ym}
                   onClick={() => setYm(h.ym)}
-                  className="w-full text-left flex items-center justify-between gap-3 py-3 px-1 -mx-1 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-700/40 transition-colors"
+                  className="w-full text-left flex items-start justify-between gap-4 py-3 px-1 -mx-1 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-700/40 transition-colors"
                 >
-                  <span className="min-w-0">
+                  {/* Состав месяца переносится, а не обрезается: с бонусом и
+                      штрафом строка длиннее колонки и многоточие съедало смысл. */}
+                  <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium text-surface-900 dark:text-surface-100 first-letter:uppercase">{monthOnly(h.ym)} {h.ym.slice(0, 4)}</span>
-                    <span className="block text-[11px] text-surface-400 dark:text-surface-500 mt-0.5 truncate">
+                    <span className="block text-[11px] leading-snug text-surface-400 dark:text-surface-500 mt-1">
                       оклад {money(h.salary)}
                       {h.bonus > 0 ? ` · бонус ${money(h.bonus)}` : ''}
                       {h.fine > 0 ? ` · штраф ${money(h.fine)}` : ''}
@@ -395,8 +414,8 @@ export default function ProfilePage() {
                     </span>
                   </span>
                   <span className="shrink-0 text-right">
-                    <span className="block text-sm font-semibold text-surface-900 dark:text-surface-100 tabular-nums">{money(h.paid)}</span>
-                    {h.paidAt && <span className="block text-[11px] text-surface-400 dark:text-surface-500">{formatDate(h.paidAt)}</span>}
+                    <span className="block text-sm font-semibold text-surface-900 dark:text-surface-100 tabular-nums whitespace-nowrap">{money(h.paid)}</span>
+                    {h.paidAt && <span className="block text-[11px] text-surface-400 dark:text-surface-500 mt-1 whitespace-nowrap">{formatDate(h.paidAt)}</span>}
                   </span>
                 </button>
               ))}
