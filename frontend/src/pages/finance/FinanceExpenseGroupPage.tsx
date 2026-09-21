@@ -238,8 +238,12 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   async function cancelSalaryMonth(e: any) {
     if (!(await finConfirm('Отменить выплату? Зарплатные операции сотрудника за месяц будут удалены.', { danger: true, confirmLabel: 'Отменить выплату' }))) return;
     try {
-      await financeApi.removeMonthExpenses({ ym, employeeId: e.id });
+      const res: any = await financeApi.removeMonthExpenses({ ym, employeeId: e.id });
       invalidateFinance(qc);
+      // Молчать тут нельзя: если операций не было, на экране ничего не
+      // изменится, и кнопка выглядит сломанной.
+      if (!res?.removed) toast('Зарплатных операций за этот месяц нет — отменять нечего');
+      else toast.success(`Отменено операций: ${res.removed}`);
     } catch (err) { toast.error(apiErr(err)); }
   }
 
@@ -298,7 +302,10 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
         const sum = (f: (e: any) => number) => list.reduce((s, e) => s + (f(e) || 0), 0);
         const isPaidRow = (e: any) => {
           const g = Math.round(((Number(e.salary) || 0) + (Number(e.bonus) || 0)) * 100) / 100;
-          return e.frozen || (g > 0 && Number(e.toPay) <= 0.005);
+          // Ноль «к выплате» бывает по двум причинам: человеку заплатили либо
+          // весь оклад съели удержания. Вторую считать выплатой нельзя — денег
+          // не было, и отменять потом нечего.
+          return e.frozen || (g > 0 && Number(e.toPay) <= 0.005 && Number(e.paid) > 0);
         };
         const paidCount = list.filter(isPaidRow).length;
         return (
@@ -345,7 +352,11 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                     // аванс уже входит в «выплачено»). Раньше аванс считался
                     // дважды (в paid и вычетом из остатка) — одна выдача
                     // аванса ошибочно помечала сотрудника «выплачено».
-                    const isPaid = e.frozen || (gross > 0 && Number(e.toPay) <= 0.005);
+                    const isPaid = e.frozen || (gross > 0 && Number(e.toPay) <= 0.005 && Number(e.paid) > 0);
+                    // Оклад полностью закрыт удержаниями: платить нечего, но и
+                    // «выплачено» писать неправда — раньше строка выглядела
+                    // выплаченной, а кнопка отмены молча ничего не делала.
+                    const nothingToPay = !isPaid && gross > 0 && Number(e.toPay) <= 0.005;
                     const historyOpen = expandedEmployeeId === e.id;
                     return (
                       <Fragment key={e.id}>
@@ -372,7 +383,9 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                         <td>
                           {isPaid
                             ? <span className="flex"><span className="badge ok" title={e.paidAt ? `Выплачено ${formatDate(e.paidAt)} — месяц зафиксирован` : 'Месяц закрыт'}><FinIcon name="check" size={13} /> выплачено</span><button className="btn ghost sm" title="Отменить выплату" onClick={() => cancelSalaryMonth(e)}><FinIcon name="undo" size={15} /></button></span>
-                            : <button className="btn primary sm" onClick={() => setPayFor(e)}>Выплатить</button>}
+                            : nothingToPay
+                              ? <span className="badge" title={`Оклад ${money(e.salary)} полностью закрыт удержаниями — выплачивать нечего`}>к выплате 0</span>
+                              : <button className="btn primary sm" onClick={() => setPayFor(e)}>Выплатить</button>}
                         </td>
                         <td className="num"><button className="btn ghost sm" title="Редактировать" onClick={() => openEmp(e)}><FinIcon name="edit" size={15} /></button></td>
                       </tr>
