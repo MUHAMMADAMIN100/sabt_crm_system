@@ -2,7 +2,7 @@
 // Месяц / Неделя / День + таб «Сторисы» (мини-календари по проектам). Публикации
 // (зелёные) и съёмки (янтарные, со временем). Статус публикации: опубликовано —
 // ярко + галочка, нет — бледно. Drag-перенос на другой день.
-import { useMemo, useState, useRef, useEffect, useLayoutEffect, createContext, useContext, Fragment, type ReactNode, type DragEvent as RDragEvent } from 'react'
+import { useMemo, useState, useRef, useEffect, useLayoutEffect, createContext, useContext, Fragment, type ReactNode, type DragEvent as RDragEvent, type TouchEvent as RTouchEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
@@ -139,6 +139,21 @@ export function monthTitle(ym: string): string {
   const s = new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
+/** Телефон. Календарь-сетка на такой ширине не работает (7 колонок по 50px,
+ *  карточки в 16px, перенос — нативным drag&drop, которого на тач-устройствах
+ *  просто нет), поэтому ниже 640px рисуем отдельный планировщик. */
+function useIsPhone(): boolean {
+  const [phone, setPhone] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)')
+    const on = () => setPhone(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return phone
+}
+
 const iso = (d: Date) => format(d, 'yyyy-MM-dd')
 const todayIso = () => new Date().toLocaleDateString('en-CA')
 
@@ -193,6 +208,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   // Съёмки видят видеографы всегда; остальные — только когда выбран проект (фильтр по плитке).
   const isVideographer = ['videographer', 'video_director', 'video_editor'].includes(user?.role ?? '')
     || ['videographer', 'video_director', 'video_editor'].includes((user as any)?.secondaryRole ?? '')
+  const isPhone = useIsPhone()
   const [view, setView] = useState<View>('month')
   const [cursor, setCursor] = useState(new Date())
   // Счётчик явной навигации (стрелки/«Сегодня») — по нему непрерывный месячный вид прокручивается к месяцу.
@@ -558,6 +574,39 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     if (view === 'day') return [cursor]
     return []
   }, [view, cursor])
+
+  // ── Телефон: вместо сетки-календаря отдельный планировщик (вариант Б,
+  //    решение владельца 21.09.2026). Данные, фильтры и мутации те же —
+  //    меняется только способ показать и потрогать. ──
+  if (isPhone && view !== 'stories') return (
+    <>
+      <MobilePlanner
+        cursor={cursor} setCursor={setCursor} cells={cells} byDate={mainByDate} today={today}
+        backlogGroups={backlogGroups} selTypes={selTypes} toggleType={toggleType} clearTypes={clearTypes}
+        loading={isLoading}
+        onOpen={openDetail}
+        onMark={(e, done) => markMut.mutate({ ev: e, done })}
+        onMove={(e, dateStr) => moveMut.mutate({ ev: e, dateStr, time: null })}
+        cycleOf={cycleFor}
+        onSettings={openProjSettings} />
+
+      {detail && (
+        <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)}
+          onMark={done => markMut.mutate({ ev: detail, done })}
+          onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
+          onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
+          onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }} />
+      )}
+
+      {projSettings && (
+        <ProjectCycleModal p={projSettings} saving={cycleMut.isPending} clearing={clearMut.isPending}
+          onClose={() => setProjSettings(null)}
+          onSave={(day, normReels, normPosts, anchor) => cycleMut.mutate({ id: projSettings.id, day, normReels, normPosts, anchor })}
+          onClear={() => clearMut.mutate(projSettings.id)}
+          onOpen={() => navigate(`${SECTION_BASE[section]}/projects/${projSettings.id}`)} />
+      )}
+    </>
+  )
 
   return (
     // Календарные виды: страница на всю высоту (flex-колонка) — календарь растягивается на всё
@@ -1902,3 +1951,345 @@ function Row({ k, v }: { k: string; v: ReactNode }) {
   )
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════
+// Планировщик для телефона (вариант Б: месяц сверху, дела дня снизу).
+//
+// Почему отдельный компонент, а не адаптив поверх десктопной сетки:
+// на телефоне ломается не вёрстка, а способ работы. Перенос карточки был
+// сделан нативным HTML5 drag&drop, которого в мобильных браузерах нет
+// вообще, — то есть главное действие СММ-щика было недоступно. Здесь
+// перенос идёт «выбрал → указал день», и это единственный способ,
+// который работает пальцем.
+// ═══════════════════════════════════════════════════════════════════════
+function MobilePlanner({
+  cursor, setCursor, cells, byDate, today, backlogGroups,
+  selTypes, toggleType, clearTypes, loading,
+  onOpen, onMark, onMove, cycleOf, onSettings,
+}: {
+  cursor: Date; setCursor: (f: (d: Date) => Date) => void
+  cells: { label: number; inMonth: boolean; iso: string | null }[]
+  byDate: Map<string, Ev[]>; today: string
+  backlogGroups: { id: string; name: string; items: Ev[]; norm: number }[]
+  selTypes: Set<FKind>; toggleType: (k: FKind) => void; clearTypes: () => void
+  loading: boolean
+  onOpen: (e: Ev) => void
+  onMark: (e: Ev, done: boolean) => void
+  onMove: (e: Ev, dateStr: string | null) => void
+  cycleOf: (e: Ev) => { start: string; end: string } | null
+  onSettings: (projectId: string) => void
+}) {
+  const monthStr = format(cursor, 'yyyy-MM')
+  const [selDay, setSelDay] = useState<string>(today)
+  // Переключили месяц — выбираем сегодня (если оно тут) либо первое число.
+  useEffect(() => {
+    setSelDay(prev => prev.slice(0, 7) === monthStr
+      ? prev
+      : (today.slice(0, 7) === monthStr ? today : `${monthStr}-01`))
+  }, [monthStr, today])
+
+  const [sheet, setSheet] = useState<'none' | 'backlog' | 'filter'>('none')
+  const [backlogProj, setBacklogProj] = useState<string | null>(null)
+  // Режим переноса: выбранная карточка ждёт, на какой день её поставить.
+  const [moving, setMoving] = useState<Ev | null>(null)
+  const [pending, setPending] = useState<string | null>(null)
+  const range = moving ? cycleOf(moving) : null
+  const allowed = (d: string | null) => !!d && (!range || (d >= range.start && d <= range.end))
+
+  // Смахивание по сетке — соседний месяц.
+  const swipeRef = useRef<{ x: number; y: number } | null>(null)
+  const onTouchStart = (ev: RTouchEvent) => {
+    const t = ev.touches[0]
+    swipeRef.current = { x: t.clientX, y: t.clientY }
+  }
+  const onTouchEnd = (ev: RTouchEvent) => {
+    const s = swipeRef.current
+    swipeRef.current = null
+    if (!s) return
+    const t = ev.changedTouches[0]
+    const dx = t.clientX - s.x
+    const dy = t.clientY - s.y
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) setCursor(c => addMonths(c, dx < 0 ? 1 : -1))
+  }
+
+  // Долгое нажатие на карточке = перенести. Обычный тап открывает карточку,
+  // поэтому после срабатывания долгого нажатия гасим следующий клик.
+  const pressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const firedRef = useRef(false)
+  const pressStart = (e: Ev) => {
+    firedRef.current = false
+    pressRef.current = setTimeout(() => {
+      firedRef.current = true
+      setMoving(e); setPending(null); setSheet('none')
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(12)
+    }, 500)
+  }
+  const pressEnd = () => { if (pressRef.current) clearTimeout(pressRef.current); pressRef.current = null }
+  useEffect(() => () => { if (pressRef.current) clearTimeout(pressRef.current) }, [])
+
+  const dayEvents = byDate.get(selDay) ?? []
+  const backlogAll = backlogGroups.flatMap(g => g.items)
+  const backlogList = backlogProj ? (backlogGroups.find(g => g.id === backlogProj)?.items ?? []) : backlogAll
+
+  const titleOf = (e: Ev) => e.kind === 'shoot'
+    ? `${prepMeta(e).label} «${e.title || e.topic || 'без названия'}»`
+    : (e.topic || TYPE_LABEL[e.contentType || 'other'] || 'Публикация')
+  const IconOf = (e: Ev) => e.kind === 'shoot' ? prepMeta(e).Icon : (TYPE_ICON[e.contentType || 'other'] || AlignLeft)
+
+  /** Карточка дела: иконка типа, подпись, проект, отметка «сделано». */
+  const EventRow = ({ e }: { e: Ev }) => {
+    const Icon = IconOf(e)
+    const done = isDone(e)
+    const color = projColor(e.projectId)
+    return (
+      <div
+        onTouchStart={() => pressStart(e)}
+        onTouchEnd={pressEnd}
+        onTouchMove={pressEnd}
+        onClick={() => { if (firedRef.current) { firedRef.current = false; return } onOpen(e) }}
+        className="flex items-center gap-3 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 min-h-[62px] select-none"
+        style={{ borderLeft: `3px solid ${done ? '#9aa1ad' : color}` }}
+      >
+        <span className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center"
+          style={{ background: `color-mix(in srgb, ${color} 16%, transparent)` }}>
+          <Icon size={16} style={{ color }} />
+        </span>
+        <span className="flex-1 min-w-0 flex flex-col gap-0.5">
+          <span className={`text-sm font-semibold truncate ${done ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}>
+            {titleOf(e)}
+          </span>
+          <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+            {e.time ? `${e.time.slice(0, 5)} · ` : ''}{e.projectName}
+            {e.kind === 'shoot' && e.reelDate ? ` · выход ${e.reelDate.slice(8, 10)}.${e.reelDate.slice(5, 7)}` : ''}
+          </span>
+        </span>
+        {e.itemId && (
+          <button
+            onClick={ev => { ev.stopPropagation(); onMark(e, !done) }}
+            aria-label={done ? 'Снять отметку' : 'Отметить выполненной'}
+            className={`w-8 h-8 shrink-0 rounded-full border flex items-center justify-center ${done
+              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-500'
+              : 'border-gray-300 dark:border-gray-600 text-transparent'}`}>
+            <Check size={16} />
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2 h-[calc(100dvh-7rem)] min-h-0 select-none">
+
+      {/* Перенос: пока он идёт, шапка говорит, что мы двигаем и куда можно */}
+      {moving ? (
+        <div className="shrink-0 rounded-2xl border border-primary-500/40 bg-primary-500/10 px-3 py-2.5 flex items-center gap-3">
+          <span className="flex-1 min-w-0">
+            <span className="block text-[11px] text-gray-500 dark:text-gray-400">Переносим</span>
+            <span className="block text-sm font-semibold truncate text-gray-900 dark:text-gray-100">{titleOf(moving)}</span>
+          </span>
+          <button onClick={() => { setMoving(null); setPending(null) }}
+            className="h-9 px-3 rounded-xl border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300">
+            Отмена
+          </button>
+        </div>
+      ) : (
+        <div className="shrink-0 flex items-center gap-2">
+          <h1 className="text-xl font-bold tracking-tight flex-1 min-w-0 truncate">{monthTitle(monthStr)}</h1>
+          {loading && <Loader2 size={16} className="animate-spin text-gray-400 shrink-0" />}
+          <button onClick={() => setSheet('filter')} aria-label="Фильтр по типам"
+            className={`w-11 h-11 shrink-0 rounded-xl border flex items-center justify-center ${selTypes.size
+              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+              : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'}`}>
+            <CalendarRange size={18} />
+          </button>
+          <button onClick={() => { setCursor(() => new Date()); setSelDay(today) }}
+            className="h-11 px-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200">
+            Сегодня
+          </button>
+        </div>
+      )}
+
+      {/* Месяц: клетки 50px, события — цветные полоски. Смахивание меняет месяц */}
+      <div className="shrink-0" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <div className="grid grid-cols-7 mb-1">
+          {['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'].map(d => (
+            <span key={d} className="text-center text-[11px] text-gray-400 dark:text-gray-500">{d}</span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-[2px]">
+          {cells.map((c, i) => {
+            const evs = c.iso ? (byDate.get(c.iso) ?? []) : []
+            const isToday = c.iso === today
+            const isSel = c.iso === selDay
+            const isPending = c.iso === pending
+            const blocked = !!moving && !allowed(c.iso)
+            return (
+              <button key={i} disabled={!c.iso || blocked}
+                onClick={() => { if (!c.iso) return; if (moving) setPending(c.iso); else setSelDay(c.iso) }}
+                className={`h-[50px] rounded-xl flex flex-col items-center pt-1.5 gap-1 transition-colors
+                  ${isPending ? 'ring-2 ring-primary-500 bg-primary-500/10' : isSel && !moving ? 'ring-2 ring-primary-500/70' : ''}
+                  ${moving && allowed(c.iso) && !isPending ? 'bg-emerald-500/10 ring-1 ring-emerald-500/30' : ''}
+                  ${blocked ? 'opacity-25' : ''}`}>
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[13px] font-semibold
+                  ${isToday ? 'bg-[#eb5757] text-white' : c.inMonth ? 'text-gray-700 dark:text-gray-200' : 'text-gray-300 dark:text-gray-600'}`}>
+                  {c.label}
+                </span>
+                <span className="flex gap-[2px] h-[3px]">
+                  {evs.slice(0, 3).map(e => (
+                    <span key={e.id} className="w-3 h-[3px] rounded-sm"
+                      style={{ background: isDone(e) ? '#9aa1ad' : projColor(e.projectId) }} />
+                  ))}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        {!moving && <p className="text-center text-[11px] text-gray-400 dark:text-gray-500 mt-1.5">Смахните влево-вправо, чтобы листать месяцы</p>}
+        {moving && <p className="text-center text-[11px] text-gray-400 dark:text-gray-500 mt-1.5">Зелёные дни — окно цикла проекта. Нажмите день.</p>}
+      </div>
+
+      {/* Дела выбранного дня */}
+      <div className="flex-1 min-h-0 overflow-y-auto border-t border-gray-100 dark:border-gray-800 pt-2.5">
+        <div className="flex items-baseline gap-2 mb-2">
+          <span className="text-[15px] font-bold first-letter:uppercase">
+            {new Date(`${selDay}T00:00:00`).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric' })}
+          </span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            {dayEvents.length ? `${dayEvents.length} ${dayEvents.length === 1 ? 'дело' : dayEvents.length < 5 ? 'дела' : 'дел'}` : 'пусто'}
+          </span>
+        </div>
+        {dayEvents.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500 py-6 text-center">На этот день ничего не запланировано</p>
+        ) : (
+          <div className="flex flex-col gap-2 pb-2">
+            {dayEvents.map(e => <EventRow key={e.id} e={e} />)}
+          </div>
+        )}
+      </div>
+
+      {/* Подтверждение переноса либо вход в «Не запланировано» */}
+      {moving ? (
+        <div className="shrink-0 flex flex-col gap-2">
+          <button disabled={!pending} onClick={() => { if (!pending) return; onMove(moving, pending); setSelDay(pending); setMoving(null); setPending(null) }}
+            className={`w-full min-h-[52px] rounded-2xl text-[15px] font-bold ${pending
+              ? 'bg-primary-600 text-white'
+              : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'}`}>
+            {pending
+              ? `Поставить на ${new Date(`${pending}T00:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}`
+              : 'Выберите день в календаре'}
+          </button>
+          {moving.date && (
+            <button onClick={() => { onMove(moving, null); setMoving(null); setPending(null) }}
+              className="w-full h-11 rounded-2xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-600 dark:text-gray-300">
+              Убрать из календаря
+            </button>
+          )}
+        </div>
+      ) : (
+        <button onClick={() => setSheet('backlog')}
+          className="shrink-0 w-full min-h-[52px] rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3.5 flex items-center gap-2.5">
+          <ChevronUp size={16} className="text-gray-400" />
+          <span className="flex-1 text-left text-sm font-semibold">Не запланировано</span>
+          <span className="min-w-[26px] h-6 px-2 rounded-full bg-[#eb5757] text-white text-xs font-bold flex items-center justify-center">
+            {backlogAll.length}
+          </span>
+        </button>
+      )}
+
+      {/* Нижний лист: «Не запланировано» или фильтр по типам */}
+      {sheet !== 'none' && createPortal(
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/45" onClick={() => setSheet('none')}>
+          <div onClick={ev => ev.stopPropagation()}
+            className="rounded-t-3xl border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 max-h-[78dvh] flex flex-col">
+            <div className="py-2 flex justify-center shrink-0">
+              <span className="w-10 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
+            </div>
+
+            {sheet === 'backlog' ? (
+              <>
+                <div className="px-4 pb-2 flex items-center gap-2 shrink-0">
+                  <span className="text-[17px] font-bold flex-1">Не запланировано</span>
+                  <span className="text-xs text-gray-400">{backlogList.length}</span>
+                </div>
+                <div className="px-4 pb-3 flex gap-2 overflow-x-auto shrink-0">
+                  <button onClick={() => setBacklogProj(null)}
+                    className={`h-9 px-3 rounded-full text-[13px] font-semibold whitespace-nowrap ${!backlogProj
+                      ? 'bg-primary-500/15 text-primary-600 dark:text-primary-400'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+                    Все {backlogAll.length}
+                  </button>
+                  {backlogGroups.map(g => (
+                    <button key={g.id} onClick={() => setBacklogProj(g.id === backlogProj ? null : g.id)}
+                      className={`h-9 px-3 rounded-full text-[13px] flex items-center gap-2 whitespace-nowrap ${g.id === backlogProj
+                        ? 'bg-primary-500/15 text-primary-600 dark:text-primary-400'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+                      <span className="w-2 h-2 rounded-full" style={{ background: projColor(g.id) }} />
+                      {g.name} {g.items.length}
+                    </button>
+                  ))}
+                </div>
+                <div className="px-4 pb-4 overflow-y-auto flex flex-col gap-2">
+                  {backlogList.length === 0 ? (
+                    <p className="text-sm text-gray-400 py-8 text-center">Здесь пусто — всё разложено по дням</p>
+                  ) : backlogList.map(b => {
+                    const Icon = IconOf(b)
+                    const color = projColor(b.projectId)
+                    return (
+                      <button key={b.id} onClick={() => { setMoving(b); setPending(null); setSheet('none') }}
+                        className="flex items-center gap-3 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 min-h-[60px] text-left">
+                        <span className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center"
+                          style={{ background: `color-mix(in srgb, ${color} 16%, transparent)` }}>
+                          <Icon size={16} style={{ color }} />
+                        </span>
+                        <span className="flex-1 min-w-0 flex flex-col gap-0.5">
+                          <span className="text-sm font-semibold truncate">{titleOf(b)}</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{b.projectName}</span>
+                        </span>
+                        <CalendarRange size={17} className="text-gray-400 shrink-0" />
+                      </button>
+                    )
+                  })}
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500 pt-1">
+                    Нажмите карточку — дальше выберите день в календаре.
+                  </p>
+                  {backlogGroups.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+                      {backlogGroups.map(g => (
+                        <button key={g.id} onClick={() => { setSheet('none'); onSettings(g.id) }}
+                          className="h-9 px-3 rounded-xl border border-gray-200 dark:border-gray-700 text-[12px] text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                          <Settings size={13} /> {g.name} {g.items.length}/{g.norm}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="px-4 pb-3 flex items-center gap-2 shrink-0">
+                  <span className="text-[17px] font-bold flex-1">Показывать</span>
+                  {selTypes.size > 0 && (
+                    <button onClick={clearTypes} className="text-[13px] text-primary-600 dark:text-primary-400 font-semibold">Все типы</button>
+                  )}
+                </div>
+                <div className="px-4 pb-6 overflow-y-auto flex flex-col gap-1.5">
+                  {FKINDS.map(k => {
+                    const Icon = FKIND_ICON[k]
+                    const on = selTypes.size === 0 || selTypes.has(k)
+                    return (
+                      <button key={k} onClick={() => toggleType(k)}
+                        className="flex items-center gap-3 min-h-[52px] px-3 rounded-2xl border border-gray-200 dark:border-gray-700">
+                        <Icon size={17} className="text-gray-500 dark:text-gray-400 shrink-0" />
+                        <span className="flex-1 text-left text-sm font-medium">{FKIND_LABEL[k]}</span>
+                        {on && <Check size={17} className="text-primary-600 dark:text-primary-400 shrink-0" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </div>, document.body)}
+    </div>
+  )
+}
