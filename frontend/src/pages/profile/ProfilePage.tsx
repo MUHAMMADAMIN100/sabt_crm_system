@@ -201,7 +201,7 @@ export default function ProfilePage() {
       {/* Шапка. Заголовок страницы, почта и бейджи убраны: человек знает,
           чей это профиль и чем он вошёл. Должность и дата прихода — одной
           строкой. Статус показываем, только если доступ закрыт. */}
-      <div className="card sm:p-5">
+      <div className="card p-4 sm:p-5">
         <div className="flex items-center gap-4">
           <button
             type="button"
@@ -228,7 +228,9 @@ export default function ProfilePage() {
           />
           <div className="min-w-0 flex-1">
             <h1 className="text-xl font-bold text-surface-900 dark:text-surface-100 truncate">{user?.name}</h1>
-            <p className="text-[13px] text-surface-500 dark:text-surface-400 mt-1 truncate">
+            {/* На телефоне строка не влезает в одну: обрезалось на «в коман…».
+                Переносим, а на широком экране оставляем одну строку. */}
+            <p className="text-[13px] leading-snug text-surface-500 dark:text-surface-400 mt-1 sm:truncate">
               {getUserPositionLabel(user)}
               {emp?.hireDate ? ` · в команде с ${formatDate(emp.hireDate)}` : ''}
             </p>
@@ -245,7 +247,7 @@ export default function ProfilePage() {
 
           {/* Деньги одной карточкой: сумма, куда она разошлась, и разбор */}
           {showSalary && (
-            <div className="card sm:p-5">
+            <div className="card p-4 sm:p-5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[13px] text-surface-500 dark:text-surface-400">
                   {row?.frozen ? 'Выплачено за месяц' : 'К выплате за месяц'}
@@ -361,8 +363,15 @@ export default function ProfilePage() {
 
           {/* Смены: три строки вместо четырёх плиток, месяц общий со страницей */}
           {!isFounder && (
-            <div className="card sm:p-5">
-              <h3 className="section-title">Мои смены</h3>
+            <div className="card p-4 sm:p-5">
+              <div className="flex items-baseline justify-between gap-2">
+                <h3 className="section-title">Мои смены</h3>
+                {/* Месяц подписываем, только когда листают прошлое: для
+                    текущего он и так написан в переключателе выше. */}
+                {ym !== currentSalaryYm() && (
+                  <span className="text-xs text-surface-400 dark:text-surface-500 first-letter:uppercase whitespace-nowrap">{monthOnly(ym)}</span>
+                )}
+              </div>
               <div className="flex items-center justify-between gap-3 py-3 mt-1 border-b border-surface-100 dark:border-surface-700/60">
                 <span className="text-sm text-surface-600 dark:text-surface-300">Отработано</span>
                 <span className="text-[15px] font-semibold tabular-nums whitespace-nowrap text-surface-900 dark:text-surface-100">{hoursOf(mine?.totalMinutes || 0)}</span>
@@ -385,7 +394,7 @@ export default function ProfilePage() {
 
           {/* История: состав месяца — только когда выплата разошлась с окладом */}
           {history.length > 0 && (
-            <div className="card sm:p-5">
+            <div className="card p-4 sm:p-5">
               <h3 className="section-title mb-1">История выплат</h3>
               <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
                 {history.map(h => {
