@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Coffee, Car, User as UserIcon, Square, Play, Clock, X, Check, CalendarClock } from 'lucide-react'
+import { Coffee, MapPin, User as UserIcon, Square, Play, Clock, X, Check, CalendarRange } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { workShiftsApi } from '@/services/api.service'
 
@@ -24,7 +24,7 @@ type PauseKind = 'lunch' | 'work' | 'personal'
 
 const PAUSE_META: Record<PauseKind, { label: string; hint: string; Icon: any }> = {
   lunch: { label: 'Обед', hint: 'до 60 минут идёт в часы', Icon: Coffee },
-  work: { label: 'По работе — выехал', hint: 'съёмка, встреча, банк · идёт в часы', Icon: Car },
+  work: { label: 'По работе — выехал', hint: 'съёмка, встреча, банк · идёт в часы', Icon: MapPin },
   personal: { label: 'Личное', hint: 'в часы не идёт', Icon: UserIcon },
 }
 
@@ -286,7 +286,7 @@ export default function ShiftCard({ onClose }: { onClose: () => void }) {
           ) : (
             <button onClick={() => setAsking(true)}
               className="min-h-[46px] rounded-2xl border border-gray-200 dark:border-gray-700 text-[13px] text-gray-500 dark:text-gray-400 flex items-center justify-center gap-2">
-              <CalendarClock size={15} /> Приду позже — предупредить заранее
+              <CalendarRange size={15} /> Приду позже — предупредить заранее
             </button>
           )}
 

@@ -169,7 +169,7 @@ export default function TeamActivityPage() {
   // прокручивать весь табель.
   // Первым открываем табель: за день его смотрят чаще, а «кто сейчас на
   // работе» видно и по сегодняшней колонке (решение владельца, 19.09.2026).
-  const [tab, setTab] = useState<'today' | 'timesheet' | 'feed'>('timesheet')
+  const [tab, setTab] = useState<'today' | 'timesheet' | 'schedule' | 'feed'>('timesheet')
   const [userId, setUserId] = useState<string | undefined>(undefined)
   const [section, setSection] = useState('all')
   const [period, setPeriod] = useState('all')
