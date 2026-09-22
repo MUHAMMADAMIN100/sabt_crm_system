@@ -1,15 +1,16 @@
 // Вкладка «График работы»: одно правило вместо одиннадцати одинаковых строк.
 //
-// Раньше здесь была таблица на 7 колонок, где у всех стояло одно и то же:
+// Сначала здесь была таблица на 7 колонок, где у всех стояло одно и то же:
 // 09:00 · 18:00 · 8 ч · 30 мин · пн–сб — пятьдесят пять одинаковых значений
-// и ни одного сигнала. Теперь сверху общий график компании, ниже — только
-// те, у кого он ДРУГОЙ, а остальные живут строкой имён.
+// и ни одного сигнала. Потом — три карточки высотой в 880 px. Теперь всё
+// умещается в 560: общий график строкой, ниже один список, где сверху те,
+// кто работает иначе, а под чертой остальные именами.
 //
 // График действует С ДАТЫ: прошлые дни считаются по графику того дня,
 // поэтому правка сентябрём не переписывает августовские опоздания.
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, X, Check, Plus, Clock } from 'lucide-react'
+import { Loader2, X, Check, ChevronRight, MoreHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { workShiftsApi } from '@/services/api.service'
 import { getRoleLabel } from '@/lib/permissions'
@@ -30,10 +31,11 @@ const addMin = (t: string, add: number) => {
   const x = (toMin(t) + add + 24 * 60) % (24 * 60)
   return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`
 }
-/** Норма = смена минус час обеда: то же правило, что на сервере. */
+/** Норма = смена минус час обеда, но только у полного дня: в смене
+ *  13:30–18:30 обеда нет. То же правило, что на сервере. */
 const normOf = (start: string, end: string) => {
   const span = (toMin(end) - toMin(start) + 24 * 60) % (24 * 60)
-  return Math.max(0, span > 60 ? span - 60 : span)
+  return Math.max(0, span >= 7 * 60 ? span - 60 : span)
 }
 const daysLabel = (workdays: string) => {
   const set = String(workdays).split(',').filter(Boolean)
@@ -46,6 +48,8 @@ const daysLabel = (workdays: string) => {
 }
 const dateLabel = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+/** Отчество в списке ни к чему — от него строки расползаются на полэкрана. */
+const shortName = (name: string) => String(name).trim().split(/\s+/).slice(0, 2).join(' ')
 
 type Draft = {
   startTime: string
@@ -71,7 +75,6 @@ export default function ShiftSchedules() {
   const [editing, setEditing] = useState<{ id: string | null; name: string; role?: string } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [pickOpen, setPickOpen] = useState(false)
 
   const done = () => {
     setEditing(null)
@@ -133,163 +136,133 @@ export default function ShiftSchedules() {
   return (
     <div className="flex flex-col gap-3">
 
-      {/* ── Авто-штраф: одна строка вместо формы из четырёх полей ───────── */}
+      {/* ── Авто-штраф: одна строка. Подробности — только когда он работает ── */}
       {canSettings && st && (
-        <div className="card flex flex-wrap items-center gap-x-4 gap-y-3">
+        <div className="card !py-3 flex items-center gap-3">
           <button type="button" role="switch" aria-checked={!!st.autoFine}
             onClick={() => saveSettings.mutate({ autoFine: !st.autoFine })}
             className={`w-11 h-6 rounded-full relative shrink-0 transition-colors ${st.autoFine ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-700'}`}>
             <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${st.autoFine ? 'left-[22px]' : 'left-0.5'}`} />
           </button>
-          <div className="flex-1 min-w-[220px]">
+          <div className="flex-1 min-w-0">
             <div className="text-[13.5px] font-semibold">
               Авто-штраф за опоздание {st.autoFine ? 'включён' : 'выключен'}
             </div>
-            <div className="text-[11.5px] text-gray-500 dark:text-gray-400 mt-0.5">
-              {Number(st.fineAmount)} сомони · итог дня в {String(st.runHour).padStart(2, '0')}:00 ·{' '}
-              {st.noticeDaysBefore > 0
-                ? `не штрафует, если предупредили за ${st.noticeDaysBefore} дн.`
-                : 'предупреждать заранее не обязательно'}
+            <div className="text-[11.5px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+              {st.autoFine
+                ? `${Number(st.fineAmount)} сомони · итог дня в ${String(st.runHour).padStart(2, '0')}:00${st.noticeDaysBefore > 0 ? ` · не штрафует, если предупредили за ${st.noticeDaysBefore} дн.` : ''}`
+                : 'опоздания видно, но деньги не удерживаются'}
             </div>
           </div>
-          <button onClick={() => setSettingsOpen(true)}
-            className="h-9 px-3.5 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-300">
-            Настроить
+          <button onClick={() => setSettingsOpen(true)} aria-label="Настроить авто-штраф"
+            className="h-9 px-3.5 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-300 shrink-0">
+            <span className="hidden sm:inline">Настроить</span>
+            <MoreHorizontal className="w-4 h-4 sm:hidden" />
           </button>
         </div>
       )}
 
-      {/* ── Общий график компании ───────────────────────────────────────── */}
+      {/* ── Общий график — одна строка ──────────────────────────────────── */}
       {company && (
-        <div className="card">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
-            <div className="w-full sm:w-auto sm:min-w-[190px]">
-              <div className="text-[11px] uppercase tracking-wide font-semibold text-gray-400 dark:text-gray-500">
-                Общий график
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
-                по нему работают {common.length} из {items.length}
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold tabular-nums">{company.startTime}</span>
-              <span className="text-gray-400">→</span>
-              <span className="text-2xl font-bold tabular-nums">{company.endTime}</span>
-            </div>
-            <Fact value={hoursLabel(company.normMinutes)} label="норма за день" />
-            <Fact value={`до ${addMin(company.startTime, company.graceMinutes)}`} label="без опоздания" />
-            <Fact value={daysLabel(company.workdays)} label="рабочие дни" />
-            <div className="flex-1" />
+        <div className="card !py-3.5">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <span className="hidden md:block w-[116px] shrink-0 text-[11px] uppercase tracking-wide font-semibold text-gray-400 dark:text-gray-500">
+              Общий график
+            </span>
+            <span className="flex items-baseline gap-1.5 shrink-0">
+              <span className="text-[17px] font-bold tabular-nums">{company.startTime}</span>
+              <span className="text-gray-400 text-xs">→</span>
+              <span className="text-[17px] font-bold tabular-nums">{company.endTime}</span>
+            </span>
+            <span className="hidden sm:block flex-1 min-w-0 text-[12.5px] text-gray-500 dark:text-gray-400 truncate">
+              {hoursLabel(company.normMinutes)} · без опоздания до {addMin(company.startTime, company.graceMinutes)} · {daysLabel(company.workdays)}
+            </span>
+            <span className="sm:hidden flex-1" />
             {canSettings && (
               <button onClick={() => open({ id: null, name: 'Общий график компании' }, company)}
-                className="h-9 px-4 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-semibold">
+                className="h-8 px-3.5 shrink-0 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-semibold">
                 Изменить
               </button>
             )}
           </div>
+          {/* На телефоне подробности переносим под время, чтобы не резать. */}
+          <div className="sm:hidden mt-1.5 text-[11.5px] text-gray-500 dark:text-gray-400">
+            {hoursLabel(company.normMinutes)} · без опоздания до {addMin(company.startTime, company.graceMinutes)} · {daysLabel(company.workdays)}
+          </div>
           {!!company.upcoming?.length && (
-            <div className="mt-3 text-[11.5px] text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" />
+            <div className="mt-2 text-[11.5px] text-amber-600 dark:text-amber-400">
               с {dateLabel(company.upcoming[0].validFrom)} — {company.upcoming[0].startTime}–{company.upcoming[0].endTime}
             </div>
           )}
         </div>
       )}
 
-      {/* ── Только те, у кого график отличается ─────────────────────────── */}
-      <div className="card">
-        <div className="flex items-center gap-3 pb-2.5 border-b border-gray-100 dark:border-gray-800">
-          <h3 className="text-[11px] uppercase tracking-wide font-semibold text-gray-400 dark:text-gray-500">
-            Свой график · {own.length}
-          </h3>
-          <div className="flex-1" />
-          <button onClick={() => setPickOpen(true)}
-            className="h-8 px-3 rounded-lg border border-gray-200 dark:border-gray-700 text-[11.5px] font-semibold text-gray-600 dark:text-gray-300 flex items-center gap-1">
-            <Plus className="w-3.5 h-3.5" /> задать кому-то свой
-          </button>
+      {/* ── Один список: сверху отличия, под чертой остальные ───────────── */}
+      <div className="card !pt-0">
+        <div className="py-3 text-[11px] uppercase tracking-wide font-semibold text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-gray-800">
+          Работают иначе · {own.length}
         </div>
 
         {!own.length ? (
-          <p className="py-5 text-center text-[12.5px] text-gray-500 dark:text-gray-400">
-            Пока у всех одинаковое время. Отличия появятся здесь.
+          <p className="py-4 text-[12.5px] text-gray-500 dark:text-gray-400">
+            У всех одинаковое время. Нажмите на имя ниже, чтобы задать кому-то своё.
           </p>
         ) : (
           <div className="flex flex-col divide-y divide-gray-100 dark:divide-gray-800">
             {own.map(u => (
-              <div key={u.id} className="py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-                <div className="min-w-[180px] flex-1">
-                  <div className="text-[13.5px] font-semibold truncate">{u.name}</div>
-                  <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{getRoleLabel(u.role)}</div>
-                </div>
-                <div className="min-w-[150px]">
-                  {u.floating ? (
-                    <span className="text-[13.5px] font-semibold text-amber-600 dark:text-amber-400">свободное начало</span>
-                  ) : (
-                    <span className="text-[15px] font-semibold tabular-nums text-primary-600 dark:text-primary-400">
-                      {u.startTime} <span className="text-gray-400 font-normal">→</span> {u.endTime}
+              <button key={u.id} onClick={() => open({ id: u.id, name: u.name, role: u.role }, u)}
+                className="py-3 text-left flex items-center gap-3 sm:gap-4 group">
+                <span className="min-w-0 flex-1 sm:flex-none sm:w-[230px]">
+                  <span className="block text-[13.5px] font-semibold truncate">{shortName(u.name)}</span>
+                  <span className="block text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                    <span className="sm:hidden">
+                      {u.floating ? 'свободное начало' : `${hoursLabel(u.normMinutes)} · до ${addMin(u.startTime, u.graceMinutes)}`}
+                      {' · '}{daysLabel(u.workdays)}
                     </span>
-                  )}
-                </div>
-                <div className="flex-1 min-w-[200px] text-[12px] text-gray-500 dark:text-gray-400">
+                    <span className="hidden sm:inline">{getRoleLabel(u.role)}</span>
+                  </span>
+                </span>
+                <span className="shrink-0 text-[13.5px] sm:text-[14.5px] font-semibold tabular-nums text-primary-600 dark:text-primary-400 whitespace-nowrap">
+                  {u.floating
+                    ? <span className="text-amber-600 dark:text-amber-400">свободное начало</span>
+                    : <>{u.startTime} <span className="text-gray-400 font-normal">→</span> {u.endTime}</>}
+                </span>
+                <span className="hidden sm:block flex-1 min-w-0 text-[12px] text-gray-500 dark:text-gray-400 truncate">
                   {hoursLabel(u.normMinutes)}
                   {u.floating ? ' · опоздания не считаются' : ` · без опоздания до ${addMin(u.startTime, u.graceMinutes)}`}
                   {' · '}{daysLabel(u.workdays)}
-                  {u.since && u.since > '2000-01-01' && ` · с ${dateLabel(u.since)}`}
-                </div>
-                <div className="flex gap-1.5">
-                  <button onClick={() => open({ id: u.id, name: u.name, role: u.role }, u)}
-                    className="h-8 px-3 rounded-lg border border-gray-200 dark:border-gray-700 text-[11.5px] font-semibold">
-                    Изменить
-                  </button>
-                  <button onClick={() => reset.mutate(u.id)} disabled={reset.isPending}
-                    className="h-8 px-2.5 rounded-lg border border-gray-100 dark:border-gray-800 text-[11.5px] text-gray-500 dark:text-gray-400 disabled:opacity-50">
-                    Сбросить
-                  </button>
-                </div>
-                {!!u.upcoming?.length && (
-                  <div className="w-full text-[11.5px] text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5" />
-                    с {dateLabel(u.upcoming[0].validFrom)} —{' '}
-                    {u.upcoming[0].followsCompany
-                      ? 'по общему графику'
-                      : `${u.upcoming[0].startTime}–${u.upcoming[0].endTime}`}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ── Остальные — просто имена ────────────────────────────────────── */}
-      {!!common.length && (
-        <div className="card">
-          <div className="flex items-center gap-3 mb-3">
-            <h3 className="text-[11px] uppercase tracking-wide font-semibold text-gray-400 dark:text-gray-500">
-              По общему графику · {common.length}
-            </h3>
-            <span className="text-[11.5px] text-gray-400 dark:text-gray-500 hidden sm:inline">
-              нажмите на имя, чтобы задать свой
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {common.map(u => (
-              <button key={u.id} onClick={() => open({ id: u.id, name: u.name, role: u.role }, u)}
-                className="h-9 px-3 rounded-xl border border-gray-200 dark:border-gray-700 text-[12.5px] text-gray-700 dark:text-gray-200 hover:border-primary-400">
-                {u.name}
+                  {!!u.upcoming?.length && ` · с ${dateLabel(u.upcoming[0].validFrom)} другой`}
+                </span>
+                <ChevronRight className="w-4 h-4 shrink-0 text-gray-300 dark:text-gray-600 group-hover:text-gray-500" />
               </button>
             ))}
           </div>
-        </div>
-      )}
+        )}
 
-      <p className="text-[11.5px] text-gray-500 dark:text-gray-400 px-1">
-        Новый график действует со дня изменения — прошлые дни в табеле не пересчитываются.
-      </p>
+        {!!common.length && (
+          <>
+            <div className="pt-4 pb-2.5 text-[11px] uppercase tracking-wide font-semibold text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-800 mt-1">
+              Остальные {common.length} — по общему
+              <span className="hidden sm:inline normal-case tracking-normal font-normal text-gray-400 dark:text-gray-500 ml-2.5">
+                нажмите на имя, чтобы задать свой
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {common.map(u => (
+                <button key={u.id} onClick={() => open({ id: u.id, name: u.name, role: u.role }, u)}
+                  className="h-8 px-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-[12px] text-gray-600 dark:text-gray-300 hover:border-primary-400">
+                  {shortName(u.name)}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* ── Шторка правки ───────────────────────────────────────────────── */}
       {editing && draft && (
-        <Sheet title={editing.name} subtitle={editing.role ? getRoleLabel(editing.role) : 'по нему живут все, кому личный не задавали'}
+        <Sheet title={editing.id === null ? editing.name : shortName(editing.name)}
+          subtitle={editing.role ? getRoleLabel(editing.role) : 'по нему живут все, кому личный не задавали'}
           onClose={() => { setEditing(null); setDraft(null) }}>
 
           <Block title="Смена">
@@ -312,8 +285,15 @@ export default function ShiftSchedules() {
               <span className="text-gray-500 dark:text-gray-400">Норма за день</span>
               <span className="font-semibold">{hoursLabel(norm)}</span>
               {draft.normMinutes === null ? (
-                <button onClick={() => patch({ normMinutes: normOf(draft.startTime, draft.endTime) })}
-                  className="text-[11.5px] text-primary-600 dark:text-primary-400">задать вручную</button>
+                <>
+                  <button onClick={() => patch({ normMinutes: normOf(draft.startTime, draft.endTime) })}
+                    className="text-[11.5px] text-primary-600 dark:text-primary-400">задать вручную</button>
+                  <span className="text-[11.5px] text-gray-400 dark:text-gray-500">
+                    {normOf(draft.startTime, draft.endTime) === (toMin(draft.endTime) - toMin(draft.startTime) + 1440) % 1440
+                      ? 'вся смена, обед не вычитается'
+                      : 'смена минус час обеда'}
+                  </span>
+                </>
               ) : (
                 <>
                   <input type="number" min={0} max={16} step={0.5}
@@ -324,9 +304,6 @@ export default function ShiftSchedules() {
                   <button onClick={() => patch({ normMinutes: null })}
                     className="text-[11.5px] text-primary-600 dark:text-primary-400">считать самой</button>
                 </>
-              )}
-              {draft.normMinutes === null && (
-                <span className="text-[11.5px] text-gray-400 dark:text-gray-500">смена минус час обеда</span>
               )}
             </div>
           </Block>
@@ -392,7 +369,7 @@ export default function ShiftSchedules() {
                   return (
                     <button key={id} onClick={() => patch({ alsoUserIds: draft.alsoUserIds.filter(x => x !== id) })}
                       className="h-8 px-3 rounded-lg border border-primary-500 bg-primary-500/10 text-primary-600 dark:text-primary-400 text-[12px] flex items-center gap-1.5">
-                      {u?.name ?? '—'} <X className="w-3 h-3" />
+                      {shortName(u?.name ?? '—')} <X className="w-3 h-3" />
                     </button>
                   )
                 })}
@@ -401,7 +378,7 @@ export default function ShiftSchedules() {
                   <option value="">+ добавить</option>
                   {items
                     .filter(u => u.id !== editing.id && !draft.alsoUserIds.includes(u.id))
-                    .map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    .map(u => <option key={u.id} value={u.id}>{shortName(u.name)}</option>)}
                 </select>
               </div>
             </Block>
@@ -449,21 +426,6 @@ export default function ShiftSchedules() {
         </Sheet>
       )}
 
-      {/* ── Кому задать свой график ─────────────────────────────────────── */}
-      {pickOpen && (
-        <Sheet title="Кому задать свой график" subtitle="выберите человека" onClose={() => setPickOpen(false)}>
-          <div className="flex flex-wrap gap-2">
-            {items.map(u => (
-              <button key={u.id}
-                onClick={() => { setPickOpen(false); open({ id: u.id, name: u.name, role: u.role }, u) }}
-                className="h-10 px-3.5 rounded-xl border border-gray-200 dark:border-gray-700 text-[12.5px]">
-                {u.name}
-              </button>
-            ))}
-          </div>
-        </Sheet>
-      )}
-
       {/* ── Настройки авто-штрафа ───────────────────────────────────────── */}
       {settingsOpen && st && (
         <Sheet title="Авто-штраф за опоздание" subtitle="когда и на сколько" onClose={() => setSettingsOpen(false)}>
@@ -481,15 +443,6 @@ export default function ShiftSchedules() {
             className="h-11 rounded-xl bg-primary-600 text-white text-[13px] font-semibold">Готово</button>
         </Sheet>
       )}
-    </div>
-  )
-}
-
-function Fact({ value, label }: { value: string; label: string }) {
-  return (
-    <div>
-      <div className="text-[15px] font-semibold">{value}</div>
-      <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{label}</div>
     </div>
   )
 }

@@ -517,11 +517,13 @@ export class WorkShiftsService {
     return this.toSched(this.rowFor(rows, null, dateIso));
   }
 
-  /** Норма за день считается сама: смена минус час обеда. Явно присланное
-   *  значение важнее — иногда норму задают вручную. */
+  /** Норма за день считается сама: смена минус час обеда. Но обед вычитаем
+   *  только из полного дня — у смены 13:30–18:30 обеда нет, и вычитая час,
+   *  мы бы каждый день рисовали человеку ложную переработку.
+   *  Явно присланное значение важнее: иногда норму задают вручную. */
   private normOf(startTime: string, endTime: string): number {
     const span = (minutesOfTime(endTime) - minutesOfTime(startTime) + 24 * 60) % (24 * 60);
-    return Math.max(0, span > LUNCH_PAID_MAX ? span - LUNCH_PAID_MAX : span);
+    return Math.max(0, span >= 7 * 60 ? span - LUNCH_PAID_MAX : span);
   }
 
   /** Графики всей команды — вкладка «График работы». */
