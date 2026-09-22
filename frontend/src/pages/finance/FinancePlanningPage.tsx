@@ -150,7 +150,18 @@ export default function FinancePlanningPage() {
   // зарплате/подписке/долгу, чтобы не задваивать эти источники).
   const txMonthQ = useQuery({
     queryKey: ['finance', 'transactions', 'month-plan', calYm],
-    queryFn: () => financeApi.transactions({ from: `${calYm}-01`, to: `${calYm}-31`, status: 'all', pageSize: 1000 }),
+    queryFn: () => {
+      // Последний день месяца считаем, а не пишем «31»: в сентябре такой даты
+      // нет, Postgres отвергал ВЕСЬ запрос — и календарь терял и разовые
+      // операции, и отметки об оплате подписок.
+      const [y, m] = calYm.split('-').map(Number);
+      const last = new Date(y, m, 0).getDate();
+      return financeApi.transactions({
+        from: `${calYm}-01`,
+        to: `${calYm}-${String(last).padStart(2, '0')}`,
+        status: 'all', pageSize: 1000,
+      });
+    },
     enabled: showCalendar,
   });
   const projById = useMemo(() => {
@@ -236,7 +247,11 @@ export default function FinancePlanningPage() {
         t.subscriptionId === s.id && t.status !== 'cancelled');
       const paidViaTx = subTx.reduce((acc: number, t: any) => acc + (Number(t.amount) || 0), 0);
       const done = !!mark || paidViaTx >= Number(s.amount) - 0.005;
-      const day = Math.min(Number(s.dueDay) || 1, lastDay);
+      // День платежа: заданный день месяца, иначе день начала подписки
+      // («каждый месяц в день начала»), и только потом 1-е. Server и Gpt Plus
+      // без дня оплаты падали на 1-е число, хотя начались в середине месяца.
+      const startDay = s.dueDate ? Number(String(s.dueDate).slice(8, 10)) : 0;
+      const day = Math.min(Number(s.dueDay) || startDay || 1, lastDay);
       const paidDate = mark?.date ? String(mark.date).slice(0, 10)
         : (subTx.length ? String(subTx[subTx.length - 1].date).slice(0, 10) : null);
       const date = done && paidDate ? paidDate : `${calYm}-${String(day).padStart(2, '0')}`;

@@ -2738,8 +2738,23 @@ export class FinanceService implements OnModuleInit {
     }
     if (f.type) qb.andWhere('t.type = :type', { type: f.type });
     if (f.projectId) qb.andWhere('t."projectId" = :pid', { pid: f.projectId });
-    if (f.from) qb.andWhere('t.date >= :from', { from: f.from });
-    if (f.to) qb.andWhere('t.date <= :to', { to: f.to });
+    // Дату границы подрезаем до последнего дня её месяца: «2026-09-31» такого
+    // дня не существует, и Postgres отвергал ВЕСЬ запрос, а не одну границу.
+    // Экран планирования из-за этого терял разовые операции месяца целиком.
+    const safeDay = (d?: string): string | undefined => {
+      if (!d) return undefined;
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d));
+      if (!m) return undefined;
+      const [, y, mo, day] = m;
+      if (Number(mo) < 1 || Number(mo) > 12) return undefined;
+      const last = new Date(Number(y), Number(mo), 0).getDate();
+      const dd = Math.min(Math.max(Number(day) || 1, 1), last);
+      return `${y}-${mo}-${String(dd).padStart(2, '0')}`;
+    };
+    const from = safeDay(f.from);
+    const to = safeDay(f.to);
+    if (from) qb.andWhere('t.date >= :from', { from });
+    if (to) qb.andWhere('t.date <= :to', { to });
     if (f.search) qb.andWhere('(t.comment ILIKE :s OR t.category ILIKE :s)', { s: `%${f.search}%` });
     // Уволенный со-основатель не видит операции дохода по Development с 1 августа.
     if (this.hidesDevIncome(f.viewerRole)) {
