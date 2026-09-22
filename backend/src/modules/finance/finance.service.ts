@@ -3651,8 +3651,9 @@ export class FinanceService implements OnModuleInit {
    *
    *  Смены читаем прямым запросом: зависимость от модуля смен ради одного
    *  списка не нужна, а кольца в графе модулей нам уже дорого обходились.
-   *  Порог тот же, что в табеле, — 09:30 по Душанбе; дни с отгулом,
-   *  отпуском и больничным не считаются опозданием вовсе. */
+   *  Порог тот же, что в табеле: начало смены этого человека плюс допуск —
+   *  по графику, который действовал В ЭТОТ ДЕНЬ. Дни с отгулом, отпуском и
+   *  больничным не считаются опозданием вовсе. */
   async lateOfDay(date?: string, amountPerLate = 100) {
     const day = /^\d{4}-\d{2}-\d{2}$/.test(date || '')
       ? (date as string)
@@ -3663,21 +3664,37 @@ export class FinanceService implements OnModuleInit {
     const rows: Array<{ userId: string; name: string; role: string; first: string; startTime: string; grace: number; floating: boolean; workdays: string; excused: boolean }> = await this.ds.query(
       `SELECT s."employeeId" AS "userId", u."name", u."role",
               to_char(min(s."startedAt") AT TIME ZONE 'Asia/Dushanbe', 'HH24:MI') AS first,
-              COALESCE(w."startTime", '09:00') AS "startTime",
-              COALESCE(w."graceMinutes", 30) AS grace,
-              COALESCE(w."floating", false) AS floating,
-              COALESCE(w."workdays", '1,2,3,4,5,6') AS workdays,
+              COALESCE(CASE WHEN p."followsCompany" THEN NULL ELSE p."startTime" END, c."startTime", '09:00') AS "startTime",
+              COALESCE(CASE WHEN p."followsCompany" THEN NULL ELSE p."graceMinutes" END, c."graceMinutes", 30) AS grace,
+              COALESCE(CASE WHEN p."followsCompany" THEN NULL ELSE p."floating" END, c."floating", false) AS floating,
+              COALESCE(CASE WHEN p."followsCompany" THEN NULL ELSE p."workdays" END, c."workdays", '1,2,3,4,5,6') AS workdays,
               EXISTS (SELECT 1 FROM late_notices n
                        WHERE n."userId" = s."employeeId" AND n."date" = s."date"
                          AND n."status" = 'approved') AS excused
          FROM work_shifts s
          JOIN users u ON u.id = s."employeeId"
-         LEFT JOIN work_schedules w ON w."userId" = s."employeeId"
+         -- График, действовавший В ЭТОТ ДЕНЬ: из строк с "validFrom" не позже
+         -- дня берём самую свежую. p — личная, c — общая (у общей "userId"
+         -- пустой). Личная сильнее, а пометка "followsCompany" возвращает
+         -- человека к общей. Без этого сентябрьская правка меняла бы
+         -- августовские опоздания.
+         LEFT JOIN LATERAL (
+           SELECT x."startTime", x."graceMinutes", x."floating", x."workdays", x."followsCompany"
+             FROM work_schedules x
+            WHERE x."userId" = s."employeeId" AND x."validFrom" <= $1
+            ORDER BY x."validFrom" DESC LIMIT 1) p ON true
+         LEFT JOIN LATERAL (
+           SELECT x."startTime", x."graceMinutes", x."floating", x."workdays"
+             FROM work_schedules x
+            WHERE x."userId" IS NULL AND x."validFrom" <= $1
+            ORDER BY x."validFrom" DESC LIMIT 1) c ON true
         WHERE s."date" = $1
           AND NOT EXISTS (
             SELECT 1 FROM shift_absences a
              WHERE a."employeeId" = s."employeeId" AND a."date" = s."date")
-        GROUP BY s."employeeId", u."name", u."role", w."startTime", w."graceMinutes", w."floating", w."workdays"`,
+        GROUP BY s."employeeId", u."name", u."role",
+                 p."startTime", p."graceMinutes", p."floating", p."workdays", p."followsCompany",
+                 c."startTime", c."graceMinutes", c."floating", c."workdays"`,
       [day],
     );
     const dow = (() => { const d = new Date(`${day}T00:00:00`).getDay(); return d === 0 ? 7 : d; })();

@@ -314,6 +314,8 @@ export const workShiftsApi = {
   /** Личный график смены и настройки авто-штрафа. */
   schedules: () => api.get('/work-shifts/schedules').then(r => r.data),
   setSchedule: (userId: string, body: any) => api.patch(`/work-shifts/schedules/${userId}`, body).then(r => r.data),
+  setCompanySchedule: (body: any) => api.patch('/work-shifts/schedules/company', body).then(r => r.data),
+  resetSchedule: (userId: string, body: any) => api.delete(`/work-shifts/schedules/${userId}`, { data: body }).then(r => r.data),
   setShiftSettings: (body: any) => api.patch('/work-shifts/settings', body).then(r => r.data),
   /** «Приду позже»: предупредить заранее, чтобы опоздание не считалось. */
   createNotice: (body: { date: string; time: string; reason?: string }) =>
