@@ -170,6 +170,9 @@ export default function TeamActivityPage() {
   // Первым открываем табель: за день его смотрят чаще, а «кто сейчас на
   // работе» видно и по сегодняшней колонке (решение владельца, 19.09.2026).
   const [tab, setTab] = useState<'today' | 'timesheet' | 'schedule' | 'feed'>('timesheet')
+  // Блок штрафов раскрывается плиткой «Разобрать»: раньше он занимал
+  // пол-экрана раньше, чем видно главное — кто на работе, а кого нет.
+  const [finesOpen, setFinesOpen] = useState(false)
   const [userId, setUserId] = useState<string | undefined>(undefined)
   const [section, setSection] = useState('all')
   const [period, setPeriod] = useState('all')
@@ -237,7 +240,13 @@ export default function TeamActivityPage() {
         </span>
       </div>
 
-      {tab === 'today' && <><LateNotices /><LateFines /><ShiftEdits /><ShiftsToday /></>}
+      {tab === 'today' && (
+        <>
+          <ShiftsToday finesOpen={finesOpen} onToggleFines={() => setFinesOpen(o => !o)} />
+          {finesOpen && <div className="mt-3"><LateFines /></div>}
+          <div className="mt-3"><LateNotices /><ShiftEdits /></div>
+        </>
+      )}
       {tab === 'timesheet' && <ShiftsTimesheet />}
       {tab === 'schedule' && <ShiftSchedules />}
 
@@ -616,19 +625,30 @@ function ShiftEdits() {
   )
 }
 
+const PAUSE_LABEL: Record<string, string> = {
+  lunch: 'обед', work: 'выехал по работе', personal: 'личное',
+}
+
 const ABSENCE_LABEL: Record<string, string> = {
   dayoff: 'отгул', vacation: 'отпуск', sick: 'больничный', holiday: 'праздник',
 }
 
-function ShiftsToday() {
+function ShiftsToday({ finesOpen, onToggleFines }: { finesOpen: boolean; onToggleFines: () => void }) {
   const qc = useQueryClient()
+  const role = useAuthStore(s => s.user?.role)
+  const canFine = role === 'founder' || role === 'co_founder'
   const { data } = useQuery({
     queryKey: ['work-shifts-team'],
     queryFn: () => workShiftsApi.team(),
     refetchInterval: 60_000,
   })
-  // Пустой день сам по себе ничего не значит: отгул, отпуск и больничный
-  // должны отличаться от «забыл нажать».
+  // Счётчик неразобранных опозданий для плитки — тот же запрос, что у блока
+  // штрафов, поэтому лишнего похода на сервер нет.
+  const fines = useQuery({
+    queryKey: ['late-fines'],
+    queryFn: () => financeApi.lateFines(),
+    enabled: canFine,
+  })
   const [marking, setMarking] = useState<string | null>(null)
   const absence = useMutation({
     mutationFn: ({ employeeId, kind }: { employeeId: string; kind: 'dayoff' | 'vacation' | 'sick' | 'holiday' }) =>
@@ -645,96 +665,160 @@ function ShiftsToday() {
     mutationFn: (employeeId: string) => workShiftsApi.removeAbsence(employeeId, data?.date),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['work-shifts-team'] }) },
   })
+
   const items: any[] = data?.items ?? []
   if (!items.length) return null
 
-  const fmt = (min: number) => {
+  /** «2:48» — часы:минуты, чтобы колонка читалась в столбик. */
+  const hm = (min: number) => {
     if (!min) return '—'
-    const h = Math.floor(min / 60), m = min % 60
-    return h ? (m ? `${h} ч ${m} мин` : `${h} ч`) : `${m} мин`
+    return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, '0')}`
   }
-  const TAG: Record<string, { text: string; cls: string }> = {
-    working: { text: 'на работе', cls: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/12' },
-    paused:  { text: 'на перерыве', cls: 'text-amber-600 dark:text-amber-400 bg-amber-500/12' },
-    closed:  { text: 'смена закрыта', cls: 'text-gray-500 dark:text-gray-400 bg-gray-500/12' },
-    absent:  { text: 'не выходил', cls: 'text-red-600 dark:text-red-400 bg-red-500/12' },
-    off:     { text: 'нерабочий день', cls: 'text-blue-600 dark:text-blue-400 bg-blue-500/12' },
+  const dayLabel = data?.date
+    ? new Date(`${data.date}T00:00:00`).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })
+    : ''
+  const pendingFines = (fines.data?.pending ?? []).length
+
+  // Порядок групп — как читают утром: кто на месте, кто отошёл, кого нет.
+  const GROUPS: Array<{ key: string; label: string; cls: string }> = [
+    { key: 'working', label: 'На работе', cls: 'text-emerald-600 dark:text-emerald-400' },
+    { key: 'paused', label: 'На перерыве', cls: 'text-amber-600 dark:text-amber-400' },
+    { key: 'closed', label: 'Смена закрыта', cls: 'text-gray-500 dark:text-gray-400' },
+    { key: 'off', label: 'Нерабочий день', cls: 'text-blue-600 dark:text-blue-400' },
+    { key: 'absent', label: 'Не вышли', cls: 'text-red-600 dark:text-red-400' },
+  ]
+  const countOf = (k: string) => items.filter(u => u.status === k).length
+
+  /** Подпись под именем: должность плюс то, что важно именно сейчас. */
+  const subOf = (u: any) => {
+    const role = getRoleLabel(u.role)
+    if (u.status === 'paused') return `${role} · ${PAUSE_LABEL[u.pauseKind] ?? 'перерыв'} с ${u.startedLabel ?? '—'}`
+    if (u.status === 'off') return `${role} · ${ABSENCE_LABEL[u.absenceKind] ?? 'нерабочий день'}`
+    if (u.floating) return `${role} · свободное начало`
+    return u.startsAt ? `${role} · смена с ${u.startsAt}` : role
   }
 
   return (
-    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl mb-5 overflow-hidden">
-      {/* Сворачивать больше нечего: раздел стал отдельной вкладкой. */}
-      <div className="flex items-center gap-2.5 px-4 py-3">
-        <Clock size={15} className="text-emerald-500 shrink-0" />
-        <b className="text-sm font-bold">Смены сегодня</b>
-        <span className="text-xs text-gray-500">
-          на работе {data?.working ?? 0} из {data?.total ?? 0}
-          {(data?.paused ?? 0) > 0 && <> · на паузе {data.paused}</>}
-        </span>
+    <div className="flex flex-col gap-3">
+
+      {/* Четыре цифры вместо простыни: главное видно, не читая список */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {[
+          { n: countOf('working'), l: 'на работе', cls: '' },
+          { n: countOf('paused'), l: 'на перерыве', cls: 'text-amber-600 dark:text-amber-400' },
+          { n: countOf('absent'), l: 'не вышли', cls: 'text-red-600 dark:text-red-400' },
+        ].map(t => (
+          <div key={t.l} className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3.5 py-3">
+            <div className={`text-xl font-bold tabular-nums ${t.cls}`}>{t.n}</div>
+            <div className="text-[11.5px] text-gray-500 dark:text-gray-400 mt-0.5">{t.l}</div>
+          </div>
+        ))}
+        {canFine && (
+          <button onClick={onToggleFines}
+            className={`rounded-xl border px-3.5 py-3 text-left flex items-center gap-3 transition-colors ${pendingFines
+              ? 'border-red-500/40 bg-red-500/[0.07]'
+              : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
+            <span className="flex-1 min-w-0">
+              <span className={`block text-xl font-bold tabular-nums ${pendingFines ? 'text-red-600 dark:text-red-400' : ''}`}>{pendingFines}</span>
+              <span className="block text-[11.5px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                {pendingFines ? 'опоздания · не разобраны' : 'опозданий нет'}
+              </span>
+            </span>
+            {pendingFines > 0 && (
+              <span className="shrink-0 text-[12.5px] font-semibold text-red-600 dark:text-red-400">
+                {finesOpen ? 'Свернуть' : 'Разобрать →'}
+              </span>
+            )}
+          </button>
+        )}
       </div>
-      {(
-        <div className="border-t border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
-          {items.map(u => {
-            const tag = TAG[u.status] || TAG.absent
+
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+        <div className="flex items-center gap-2.5 px-4 pt-3.5 pb-2">
+          <Clock size={15} className="text-emerald-500 shrink-0" />
+          <b className="text-sm font-bold">Смены сегодня</b>
+          <span className="text-xs text-gray-500 first-letter:uppercase">{dayLabel}</span>
+        </div>
+
+        {/* Заголовки колонок: раньше приходилось догадываться, что есть что */}
+        <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_92px_92px_104px] gap-3 px-4 pb-2 border-b border-gray-100 dark:border-gray-800">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">Сотрудник</span>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500 text-right">Пришёл</span>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500 text-right">Сегодня</span>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500 text-right">За неделю</span>
+        </div>
+
+        <div className="px-4 pb-3">
+          {GROUPS.map(g => {
+            const list = items.filter(u => u.status === g.key)
+            if (!list.length) return null
             return (
-              <div key={u.id} className="flex items-center gap-3 px-4 py-2.5">
-                <div className="w-8 h-8 rounded-full grid place-items-center text-white font-bold text-[11px] shrink-0"
-                  style={{ background: avColor(u.id) }}>{initials(u.name)}</div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-semibold truncate">{u.name}</p>
-                  <p className="text-[11px] text-gray-500 truncate">
-                    {getRoleLabel(u.role)}
-                    {u.floating ? ' · свободное начало' : u.startsAt ? ` · смена с ${u.startsAt}` : ''}
-                  </p>
+              <div key={g.key}>
+                <div className={`text-[10.5px] font-bold uppercase tracking-wide pt-3 pb-1 ${g.cls}`}>
+                  {g.label} · {list.length}
                 </div>
-                <span className={'text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded shrink-0 ' + tag.cls}>
-                  {tag.text}
-                </span>
-                {u.late && (
-                  <span className="text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded shrink-0 text-amber-600 dark:text-amber-400 bg-amber-500/12">
-                    опоздание
-                  </span>
-                )}
-                {u.excused && (
-                  <span className="text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded shrink-0 text-blue-600 dark:text-blue-400 bg-blue-500/12">
-                    предупредил
-                  </span>
-                )}
-                {u.status === 'off' && (
-                  <button onClick={() => clearAbsence.mutate(u.id)}
-                    className="text-[10px] px-2 py-0.5 rounded shrink-0 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
-                    {ABSENCE_LABEL[u.absenceKind] ?? 'отмечен'} · снять
-                  </button>
-                )}
-                {u.status === 'absent' && (marking === u.id ? (
-                  <span className="flex gap-1 shrink-0">
-                    {(['dayoff', 'vacation', 'sick'] as const).map(k => (
-                      <button key={k} disabled={absence.isPending} onClick={() => absence.mutate({ employeeId: u.id, kind: k })}
-                        className="text-[10px] px-2 py-1 rounded bg-blue-500/12 text-blue-600 dark:text-blue-400 font-semibold disabled:opacity-60">
-                        {ABSENCE_LABEL[k]}
-                      </button>
-                    ))}
-                    <button onClick={() => setMarking(null)} className="text-[10px] px-2 py-1 rounded text-gray-400">×</button>
-                  </span>
-                ) : (
-                  <button onClick={() => setMarking(u.id)}
-                    className="text-[10px] px-2 py-1 rounded shrink-0 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
-                    отметить
-                  </button>
+                {list.map(u => (
+                  <div key={u.id} className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_92px_92px_104px] gap-x-3 gap-y-1.5 items-center py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-7 h-7 rounded-full grid place-items-center text-white font-bold text-[10px] shrink-0"
+                        style={{ background: u.status === 'absent' || u.status === 'off' ? '#4b5563' : avColor(u.id) }}>
+                        {initials(u.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-[13px] font-semibold truncate ${u.status === 'absent' || u.status === 'off' ? 'text-gray-500 dark:text-gray-400' : ''}`}>
+                          {u.name}
+                        </p>
+                        <p className="text-[11px] text-gray-500 truncate">{subOf(u)}</p>
+                      </div>
+                    </div>
+
+                    {u.status === 'absent' ? (
+                      <div className="sm:col-span-3 flex justify-end gap-1.5">
+                        {marking === u.id ? (
+                          <>
+                            {(['dayoff', 'vacation', 'sick'] as const).map(k => (
+                              <button key={k} disabled={absence.isPending} onClick={() => absence.mutate({ employeeId: u.id, kind: k })}
+                                className="h-8 px-2.5 rounded-lg bg-blue-500/12 text-blue-600 dark:text-blue-400 text-[11.5px] font-semibold disabled:opacity-60">
+                                {ABSENCE_LABEL[k]}
+                              </button>
+                            ))}
+                            <button onClick={() => setMarking(null)} className="h-8 px-2 rounded-lg text-[11.5px] text-gray-400">×</button>
+                          </>
+                        ) : (
+                          <button onClick={() => setMarking(u.id)}
+                            className="h-8 px-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-[11.5px] text-gray-500 dark:text-gray-400">
+                            отметить отгул
+                          </button>
+                        )}
+                      </div>
+                    ) : u.status === 'off' ? (
+                      <div className="sm:col-span-3 flex justify-end">
+                        <button onClick={() => clearAbsence.mutate(u.id)}
+                          className="h-8 px-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-[11.5px] text-gray-500 dark:text-gray-400">
+                          снять отметку
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className={`text-[13px] tabular-nums text-right ${u.late ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-gray-600 dark:text-gray-300'}`}>
+                          {u.startedLabel || '—'}
+                          {u.excused && <span className="block text-[9.5px] text-blue-500">предупредил</span>}
+                        </span>
+                        <span className="text-[13px] font-semibold tabular-nums text-right">{hm(u.todayMinutes)}</span>
+                        <span className="text-[12px] text-gray-400 tabular-nums text-right">{hm(u.weekMinutes)}</span>
+                      </>
+                    )}
+                  </div>
                 ))}
-                <span className="text-[11px] text-gray-500 tabular-nums w-[52px] text-right shrink-0">{u.startedLabel || '—'}</span>
-                <span className="text-[12px] font-semibold tabular-nums w-[92px] text-right shrink-0">{fmt(u.todayMinutes)}</span>
-                <span className="text-[11px] text-gray-400 tabular-nums w-[92px] text-right shrink-0 hidden sm:inline">
-                  за неделю {fmt(u.weekMinutes)}
-                </span>
               </div>
             )
           })}
-          <p className="px-4 py-2 text-[11px] text-gray-400">
-            Рабочий день {data?.workStart ?? '09:00'}–{data?.workEnd ?? '18:00'}, норма {Math.round((data?.normMinutes ?? 480) / 60)} часов; опоздание — приход позже {data?.lateAfter ?? '09:30'}. Забытую смену система закрывает последней активностью в CRM, а не полуночью.
+
+          <p className="pt-3 text-[11px] text-gray-400 dark:text-gray-500">
+            Время прихода янтарным — опоздание по личному графику сотрудника. График правится во вкладке «График работы».
           </p>
         </div>
-      )}
+      </div>
     </div>
   )
 }
