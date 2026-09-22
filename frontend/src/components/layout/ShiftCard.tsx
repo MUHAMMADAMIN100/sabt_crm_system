@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Coffee, Car, User as UserIcon, Square, Play, Clock, X, Check } from 'lucide-react'
+import { Coffee, Car, User as UserIcon, Square, Play, Clock, X, Check, CalendarClock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { workShiftsApi } from '@/services/api.service'
 
@@ -45,6 +45,14 @@ export default function ShiftCard({ onClose }: { onClose: () => void }) {
   const [fixField, setFixField] = useState<'start' | 'end'>('start')
   const [fixTime, setFixTime] = useState('09:00')
   const [fixNote, setFixNote] = useState('')
+  // «Приду позже» — предупредить заранее, чтобы опоздание не считалось.
+  const [asking, setAsking] = useState(false)
+  const [askDate, setAskDate] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 1)
+    return d.toLocaleDateString('en-CA')
+  })
+  const [askTime, setAskTime] = useState('11:00')
+  const [askReason, setAskReason] = useState('')
 
   // Счётчик тикает сам, не дожидаясь следующего запроса.
   const [, setTick] = useState(0)
@@ -67,6 +75,20 @@ export default function ShiftCard({ onClose }: { onClose: () => void }) {
     onSuccess: (fresh: any) => { qc.setQueryData(['work-shift-my'], fresh); setPausing(false) },
     onSettled: () => { qc.invalidateQueries({ queryKey: ['work-shift-my'] }) },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не получилось — попробуйте ещё раз'),
+  })
+
+  const notices = useQuery({
+    queryKey: ['work-shift-my-notices'],
+    queryFn: () => workShiftsApi.myNotices(),
+  })
+  const askMut = useMutation({
+    mutationFn: () => workShiftsApi.createNotice({ date: askDate, time: askTime, reason: askReason || undefined }),
+    onSuccess: () => {
+      toast.success('Отправлено руководителю')
+      setAsking(false); setAskReason('')
+      qc.invalidateQueries({ queryKey: ['work-shift-my-notices'] })
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось отправить'),
   })
 
   const editMut = useMutation({
@@ -235,6 +257,54 @@ export default function ShiftCard({ onClose }: { onClose: () => void }) {
                   </span>
                 </span>
               </div>
+            </div>
+          )}
+
+          {/* Приду позже — предупреждение заранее */}
+          {asking ? (
+            <div className="flex flex-col gap-2.5 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <span className="text-sm font-semibold">Приду позже</span>
+              <span className="text-[12px] text-gray-500 dark:text-gray-400">
+                Смена начинается в {data?.norm?.start ?? '09:00'}. Предупредите заранее — тогда опоздание не считается и штрафа не будет.
+              </span>
+              <div className="flex gap-2">
+                <input type="date" value={askDate} onChange={e => setAskDate(e.target.value)}
+                  className="flex-1 h-12 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent px-3 text-[15px]" />
+                <input type="time" value={askTime} onChange={e => setAskTime(e.target.value)}
+                  className="w-[130px] h-12 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent px-3 text-[15px]" />
+              </div>
+              <input value={askReason} onChange={e => setAskReason(e.target.value)} maxLength={300}
+                placeholder="Причина — например, съёмка у клиента"
+                className="h-12 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent px-3 text-sm" />
+              <div className="flex gap-2">
+                <button disabled={askMut.isPending} onClick={() => askMut.mutate()}
+                  className="flex-1 min-h-[48px] rounded-xl bg-primary-600 text-white text-sm font-bold disabled:opacity-60">Отправить</button>
+                <button onClick={() => setAsking(false)}
+                  className="flex-1 min-h-[48px] rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-600 dark:text-gray-300">Отмена</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setAsking(true)}
+              className="min-h-[46px] rounded-2xl border border-gray-200 dark:border-gray-700 text-[13px] text-gray-500 dark:text-gray-400 flex items-center justify-center gap-2">
+              <CalendarClock size={15} /> Приду позже — предупредить заранее
+            </button>
+          )}
+
+          {(notices.data ?? []).length > 0 && (
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold mb-1">Мои просьбы</span>
+              {(notices.data as any[]).slice(0, 4).map(n => (
+                <div key={n.id} className="flex items-center gap-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${n.status === 'approved' ? 'bg-emerald-500' : n.status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                  <span className="flex-1 min-w-0 text-[13px] text-gray-600 dark:text-gray-300 truncate">
+                    {n.date.slice(8, 10)}.{n.date.slice(5, 7)} · приду в {n.plannedTime}
+                    {n.reason ? ` · ${n.reason}` : ''}
+                  </span>
+                  <span className={`text-[11px] font-semibold shrink-0 ${n.status === 'approved' ? 'text-emerald-500' : n.status === 'rejected' ? 'text-red-500' : 'text-amber-500'}`}>
+                    {n.status === 'approved' ? 'одобрено' : n.status === 'rejected' ? 'отказано' : 'ждёт ответа'}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
 

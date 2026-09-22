@@ -60,6 +60,48 @@ export class WorkShiftsController {
     return this.service.decideEdit(id, !!body?.approve, req.user.id);
   }
 
+  // ─── Личный график смены ───────────────────────────────────────────
+  @Get('schedules')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  schedules() {
+    return this.service.schedules();
+  }
+
+  @Patch('schedules/:userId')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  setSchedule(@Request() req, @Param('userId') userId: string, @Body() body: any) {
+    return this.service.setSchedule(userId, body || {}, req.user.id);
+  }
+
+  @Patch('settings')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  setSettings(@Body() body: any) {
+    return this.service.setSettings(body || {});
+  }
+
+  // ─── «Приду позже» ─────────────────────────────────────────────────
+  @Post('notices')
+  createNotice(@Request() req, @Body() body: { date: string; time: string; reason?: string }) {
+    return this.service.createNotice(req.user.id, body);
+  }
+
+  @Get('my-notices')
+  myNotices(@Request() req) {
+    return this.service.myNotices(req.user.id);
+  }
+
+  @Get('notices')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  notices() {
+    return this.service.notices();
+  }
+
+  @Patch('notices/:id')
+  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  decideNotice(@Request() req, @Param('id') id: string, @Body() body: { approve: boolean }) {
+    return this.service.decideNotice(id, !!body?.approve, req.user.id);
+  }
+
   // ─── Отгул / отпуск / больничный — ставит руководство ──────────────
   @Post('absence')
   @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)

@@ -23,6 +23,7 @@ import { FinancePayrollPeriod } from './entities/finance-payroll-period.entity';
 import { LateFineDecision } from './entities/late-fine-decision.entity';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
+import { TelegramService } from '../telegram/telegram.service';
 import {
   isEarningFinanceProject as isEarning,
   isPostedFinanceTransaction,
@@ -345,6 +346,9 @@ export class FinanceService implements OnModuleInit {
     @InjectRepository(LateFineDecision) private lateRepo: Repository<LateFineDecision>,
     private ds: DataSource,
     private scheduler: FinanceScheduler,
+    // TelegramModule помечен @Global — берём сервис без импорта модуля,
+    // то есть без нового ребра в графе зависимостей.
+    private telegram: TelegramService,
   ) {}
 
   // ─── SCHEMA: таблицы/колонки создаём вручную (на проде synchronize off) ──
@@ -3653,19 +3657,36 @@ export class FinanceService implements OnModuleInit {
     const day = /^\d{4}-\d{2}-\d{2}$/.test(date || '')
       ? (date as string)
       : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dushanbe' });
-    const rows: Array<{ userId: string; name: string; role: string; first: string }> = await this.ds.query(
+    // Порог у каждого свой: смена начинается когда начинается ИМЕННО у него,
+    // «плавающим» (выездные съёмки) опоздание не считается вовсе, а день с
+    // отгулом или одобренной заранее просьбой «приду позже» не считается.
+    const rows: Array<{ userId: string; name: string; role: string; first: string; startTime: string; grace: number; floating: boolean; workdays: string; excused: boolean }> = await this.ds.query(
       `SELECT s."employeeId" AS "userId", u."name", u."role",
-              to_char(min(s."startedAt") AT TIME ZONE 'Asia/Dushanbe', 'HH24:MI') AS first
+              to_char(min(s."startedAt") AT TIME ZONE 'Asia/Dushanbe', 'HH24:MI') AS first,
+              COALESCE(w."startTime", '09:00') AS "startTime",
+              COALESCE(w."graceMinutes", 30) AS grace,
+              COALESCE(w."floating", false) AS floating,
+              COALESCE(w."workdays", '1,2,3,4,5,6') AS workdays,
+              EXISTS (SELECT 1 FROM late_notices n
+                       WHERE n."userId" = s."employeeId" AND n."date" = s."date"
+                         AND n."status" = 'approved') AS excused
          FROM work_shifts s
          JOIN users u ON u.id = s."employeeId"
+         LEFT JOIN work_schedules w ON w."userId" = s."employeeId"
         WHERE s."date" = $1
           AND NOT EXISTS (
             SELECT 1 FROM shift_absences a
              WHERE a."employeeId" = s."employeeId" AND a."date" = s."date")
-        GROUP BY s."employeeId", u."name", u."role"`,
+        GROUP BY s."employeeId", u."name", u."role", w."startTime", w."graceMinutes", w."floating", w."workdays"`,
       [day],
     );
-    const late = rows.filter(r => r.first > '09:30');
+    const dow = (() => { const d = new Date(`${day}T00:00:00`).getDay(); return d === 0 ? 7 : d; })();
+    const mins = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+    const late = rows.filter(r => {
+      if (r.floating || r.excused) return false;
+      if (!String(r.workdays).split(',').map(x => Number(x.trim())).includes(dow)) return false;
+      return mins(r.first) > mins(r.startTime) + Number(r.grace || 0);
+    });
     const decisions = await this.lateRepo.find({ where: { date: day } });
     const emps = await this.empRepo.find();
     const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
@@ -3677,7 +3698,8 @@ export class FinanceService implements OnModuleInit {
         name: r.name,
         role: r.role,
         arrivedAt: r.first,
-        lateMinutes: toMin(r.first) - toMin('09:00'),
+        startsAt: r.startTime,
+        lateMinutes: toMin(r.first) - toMin(r.startTime),
         employeeId: emp?.id ?? null,
         // Без строки в ведомости штраф провести некуда — говорим об этом
         // прямо, а не молча пропускаем человека.
@@ -3738,6 +3760,35 @@ export class FinanceService implements OnModuleInit {
       forgiven++;
     }
     return { ok: true, forgiven, date: view.date };
+  }
+
+  /** Итог дня: штрафуем тех, кто опоздал и не предупредил заранее.
+   *
+   *  Час запуска и сумма — в настройках смен; крон ходит каждый час и
+   *  делает работу только в свой час. Человеку сразу уходит сообщение:
+   *  узнавать о штрафе в день зарплаты — худшее, что может быть. */
+  @Cron('5 * * * *', { timeZone: 'Asia/Dushanbe' })
+  async autoFineLate() {
+    const cfg: Array<{ autoFine: boolean; fineAmount: string; runHour: number; noticeDaysBefore: number }> =
+      await this.ds.query(`SELECT "autoFine", "fineAmount", "runHour", "noticeDaysBefore" FROM shift_settings LIMIT 1`);
+    const st = cfg[0];
+    if (!st?.autoFine) return;
+    const nowHour = Number(new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dushanbe', hour: '2-digit', hour12: false }));
+    if (nowHour !== Number(st.runHour)) return;
+    const amount = r2(Number(st.fineAmount) || 100);
+    const view = await this.lateOfDay(undefined, amount);
+    if (!view.pending.length) return;
+    const res = await this.applyLateFines({ date: view.date, amount });
+    // Сообщение только тем, кому штраф реально прошёл.
+    for (const item of view.pending) {
+      if (!item.employeeId) continue;
+      await this.telegram.sendToUser(
+        item.userId,
+        `Штраф за опоздание ${view.date.slice(8, 10)}.${view.date.slice(5, 7)} — ${amount} с.\n` +
+        `Смена начинается в ${item.startsAt}, вы отметились в ${item.arrivedAt}. Предупреждать о позднем приходе нужно заранее — тогда штрафа нет.`,
+      ).catch(() => undefined);
+    }
+    this.logger.log(`Авто-штрафы за ${view.date}: ${res.created}`);
   }
 
   /** Отменить решение: штраф уходит из журнала, человек снова в списке. */

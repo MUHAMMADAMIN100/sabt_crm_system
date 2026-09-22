@@ -311,6 +311,17 @@ export const workShiftsApi = {
   /** Очередь правок и решение по ним — руководству. */
   edits: () => api.get('/work-shifts/edits').then(r => r.data),
   decideEdit: (id: string, approve: boolean) => api.patch(`/work-shifts/edits/${id}`, { approve }).then(r => r.data),
+  /** Личный график смены и настройки авто-штрафа. */
+  schedules: () => api.get('/work-shifts/schedules').then(r => r.data),
+  setSchedule: (userId: string, body: any) => api.patch(`/work-shifts/schedules/${userId}`, body).then(r => r.data),
+  setShiftSettings: (body: any) => api.patch('/work-shifts/settings', body).then(r => r.data),
+  /** «Приду позже»: предупредить заранее, чтобы опоздание не считалось. */
+  createNotice: (body: { date: string; time: string; reason?: string }) =>
+    api.post('/work-shifts/notices', body).then(r => r.data),
+  myNotices: () => api.get('/work-shifts/my-notices').then(r => r.data),
+  notices: () => api.get('/work-shifts/notices').then(r => r.data),
+  decideNotice: (id: string, approve: boolean) =>
+    api.patch(`/work-shifts/notices/${id}`, { approve }).then(r => r.data),
   /** Отгул, отпуск, больничный — ставит руководство. */
   setAbsence: (body: { employeeId: string; date: string; kind: 'dayoff' | 'vacation' | 'sick' | 'holiday'; note?: string }) =>
     api.post('/work-shifts/absence', body).then(r => r.data),

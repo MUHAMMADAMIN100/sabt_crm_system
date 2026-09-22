@@ -5,6 +5,9 @@ import { Cron } from '@nestjs/schedule';
 import { WorkShift } from './work-shift.entity';
 import { ShiftEditRequest } from './shift-edit-request.entity';
 import { ShiftAbsence } from './shift-absence.entity';
+import { WorkSchedule } from './work-schedule.entity';
+import { LateNotice } from './late-notice.entity';
+import { ShiftSettings } from './shift-settings.entity';
 import { User, UserRole } from '../users/user.entity';
 import { TelegramService } from '../telegram/telegram.service';
 
@@ -24,6 +27,26 @@ const minutesOfTime = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(h
 const LATE_AFTER_MIN = minutesOfTime(LATE_AFTER);
 /** Пришёл позже порога. Ровно в 09:30 — ещё не опоздание. */
 const isLateAt = (hhmm?: string | null) => !!hhmm && minutesOfTime(hhmm) > LATE_AFTER_MIN;
+
+/** График по умолчанию — им живёт тот, кому личный не задавали. */
+const DEFAULT_SCHEDULE = {
+  startTime: WORK_START, endTime: WORK_END, normMinutes: NORM_MINUTES,
+  graceMinutes: 30, workdays: '1,2,3,4,5,6', floating: false,
+};
+type Sched = typeof DEFAULT_SCHEDULE;
+const addMin = (hhmm: string, add: number) => {
+  const t = minutesOfTime(hhmm) + add;
+  return `${String(Math.floor(t / 60) % 24).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
+/** Порог опоздания этого человека: начало смены + допуск. У «плавающих»
+ *  порога нет вовсе — им опоздание не считается. */
+const lateThreshold = (s: Sched): string | null => (s.floating ? null : addMin(s.startTime, s.graceMinutes));
+/** Рабочий ли это день по его графику (1 — понедельник … 7 — воскресенье). */
+const isWorkday = (s: Sched, dateIso: string): boolean => {
+  const d = new Date(`${dateIso}T00:00:00`);
+  const dow = d.getDay() === 0 ? 7 : d.getDay();
+  return s.workdays.split(',').map(x => Number(x.trim())).includes(dow);
+};
 const TZ = 'Asia/Dushanbe';
 
 /** Дата в календаре Душанбе: 'YYYY-MM-DD'. Считать по часовому поясу сервера
@@ -44,6 +67,9 @@ export class WorkShiftsService {
     @InjectRepository(WorkShift) private repo: Repository<WorkShift>,
     @InjectRepository(ShiftEditRequest) private editRepo: Repository<ShiftEditRequest>,
     @InjectRepository(ShiftAbsence) private absenceRepo: Repository<ShiftAbsence>,
+    @InjectRepository(WorkSchedule) private schedRepo: Repository<WorkSchedule>,
+    @InjectRepository(LateNotice) private noticeRepo: Repository<LateNotice>,
+    @InjectRepository(ShiftSettings) private settingsRepo: Repository<ShiftSettings>,
     @InjectRepository(User) private userRepo: Repository<User>,
     // TelegramModule помечен @Global — сервис доступен без импорта модуля,
     // то есть без нового ребра в графе зависимостей и без риска колец.
@@ -68,6 +94,9 @@ export class WorkShiftsService {
       .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime())[0];
     const state: 'working' | 'paused' | 'idle' =
       open ? 'working' : last?.endReason === 'pause' ? 'paused' : 'idle';
+    const sched = this.schedOf(await this.schedRepo.find({ where: { userId: employeeId } }), employeeId);
+    const norm = sched.normMinutes;
+    const threshold = lateThreshold(sched);
     const all = this.dayStats(rows);
     // closedMinutes — без идущего отрезка: фронт досчитывает его сам, иначе
     // счётчик стоял бы до следующего запроса, а суммируя — удваивался.
@@ -86,10 +115,11 @@ export class WorkShiftsService {
       breakMinutes: all.breakMinutes,
       shiftsToday: rows.length,
       dayStartedLabel: startedLabel,
-      isLate: isLateAt(startedLabel),
+      // Опоздание — от НАЧАЛА ЕГО смены плюс допуск, а не от общих 09:30.
+      isLate: !!threshold && !!startedLabel && startedLabel > threshold && isWorkday(sched, today),
       segments: this.daySegments(rows),
-      norm: { start: WORK_START, end: WORK_END, minutes: NORM_MINUTES },
-      leftMinutes: Math.max(0, NORM_MINUTES - all.totalMinutes),
+      norm: { start: sched.startTime, end: sched.endTime, minutes: norm, lateAfter: threshold, floating: sched.floating },
+      leftMinutes: Math.max(0, norm - all.totalMinutes),
     };
   }
 
@@ -245,6 +275,11 @@ export class WorkShiftsService {
       .getMany();
     const absences = await this.absenceRepo.find({ where: { date: day } });
     const absenceByUser = new Map(absences.map(a => [a.employeeId, a]));
+    const scheds = await this.schedRepo.find();
+    // Одобренная заранее просьба снимает опоздание за этот день.
+    const excused = new Set(
+      (await this.noticeRepo.find({ where: { date: day, status: 'approved' } })).map(n => n.userId),
+    );
 
     const byUser = new Map<string, WorkShift[]>();
     for (const s of rows) {
@@ -281,7 +316,15 @@ export class WorkShiftsService {
         id: u.id, name: u.name, role: u.role, avatar: u.avatar ?? null,
         status,
         startedLabel: first ? dushanbeTime(first) : null,
-        late: isLateAt(first ? dushanbeTime(first) : null),
+        late: (() => {
+          const sc = this.schedOf(scheds, u.id);
+          const th = lateThreshold(sc);
+          const at = first ? dushanbeTime(first) : null;
+          return !!th && !!at && at > th && isWorkday(sc, day) && !excused.has(u.id);
+        })(),
+        excused: excused.has(u.id),
+        startsAt: this.schedOf(scheds, u.id).startTime,
+        floating: this.schedOf(scheds, u.id).floating,
         // Чем занят перерыв: «на обеде» и «выехал на съёмку» — разные вещи.
         pauseKind: status === 'paused' ? (lastToday?.pauseKind ?? 'personal') : null,
         absenceKind: absence?.kind ?? null,
@@ -336,6 +379,14 @@ export class WorkShiftsService {
       .createQueryBuilder('a')
       .where('a.date BETWEEN :from AND :to', { from, to })
       .getMany();
+    const monthScheds = await this.schedRepo.find();
+    const excusedDays = new Set(
+      (await this.noticeRepo
+        .createQueryBuilder('n')
+        .where('n.date BETWEEN :from AND :to', { from, to })
+        .andWhere("n.status = 'approved'")
+        .getMany()).map(n => `${n.userId}:${n.date}`),
+    );
     const absenceByUserDay = new Map<string, Record<number, string>>();
     for (const a of monthAbsences) {
       const dn = Number(String(a.date).slice(8, 10));
@@ -381,10 +432,17 @@ export class WorkShiftsService {
         });
         if (sh.autoClosed) autoDays.add(dayNum);
       }
-      // Опоздание считаем по первому приходу за день.
+      // Опоздание считаем по первому приходу за день и по ЕГО графику:
+      // у монтажёра смена с 14:00, и общий порог 09:30 делал бы его
+      // опоздавшим каждый день.
+      const sc = this.schedOf(monthScheds, u.id);
+      const th = lateThreshold(sc);
       for (const dayNum of Object.keys(segments).map(Number)) {
         const first = segments[dayNum][0];
-        if (isLateAt(first?.from)) lateDays.add(dayNum);
+        const dIso = `${month}-${String(dayNum).padStart(2, '0')}`;
+        if (th && first?.from && first.from > th && isWorkday(sc, dIso) && !excusedDays.has(`${u.id}:${dIso}`)) {
+          lateDays.add(dayNum);
+        }
       }
 
       const workedDays = Object.values(days).filter(v => v > 0).length;
@@ -418,6 +476,146 @@ export class WorkShiftsService {
       normMinutes: NORM_MINUTES,
       items,
     };
+  }
+
+  // ─── Личный график смены ─────────────────────────────────────────────
+  /** График человека: свой, если задан, иначе общий по компании. */
+  private schedOf(rows: WorkSchedule[], userId: string): Sched {
+    const r = rows.find(x => x.userId === userId);
+    if (!r) return DEFAULT_SCHEDULE;
+    return {
+      startTime: r.startTime || DEFAULT_SCHEDULE.startTime,
+      endTime: r.endTime || DEFAULT_SCHEDULE.endTime,
+      normMinutes: Number(r.normMinutes) || DEFAULT_SCHEDULE.normMinutes,
+      graceMinutes: Number(r.graceMinutes ?? DEFAULT_SCHEDULE.graceMinutes),
+      workdays: r.workdays || DEFAULT_SCHEDULE.workdays,
+      floating: !!r.floating,
+    };
+  }
+
+  /** Графики всей команды — таблица во вкладке «График работы». */
+  async schedules() {
+    const users = await this.userRepo.find({
+      where: { isActive: true },
+      select: ['id', 'name', 'role', 'avatar'],
+    });
+    const rows = await this.schedRepo.find();
+    const settings = await this.settings();
+    return {
+      defaults: DEFAULT_SCHEDULE,
+      settings,
+      items: users
+        .filter(u => u.role !== UserRole.FOUNDER)
+        .map(u => ({
+          id: u.id, name: u.name, role: u.role, avatar: u.avatar ?? null,
+          custom: rows.some(r => r.userId === u.id),
+          ...this.schedOf(rows, u.id),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+    };
+  }
+
+  async setSchedule(userId: string, dto: Partial<Sched>, byId: string) {
+    const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (dto.startTime && !hhmm.test(dto.startTime)) throw new BadRequestException('Начало в формате ЧЧ:ММ');
+    if (dto.endTime && !hhmm.test(dto.endTime)) throw new BadRequestException('Конец в формате ЧЧ:ММ');
+    const row = (await this.schedRepo.findOne({ where: { userId } })) ?? this.schedRepo.create({ userId, ...DEFAULT_SCHEDULE });
+    if (dto.startTime !== undefined) row.startTime = dto.startTime;
+    if (dto.endTime !== undefined) row.endTime = dto.endTime;
+    if (dto.normMinutes !== undefined) row.normMinutes = Math.max(0, Math.min(16 * 60, Number(dto.normMinutes) || 0));
+    if (dto.graceMinutes !== undefined) row.graceMinutes = Math.max(0, Math.min(240, Number(dto.graceMinutes) || 0));
+    if (dto.workdays !== undefined) {
+      const days = String(dto.workdays).split(',').map(x => Number(x.trim())).filter(n => n >= 1 && n <= 7);
+      row.workdays = [...new Set(days)].sort().join(',') || '1,2,3,4,5,6';
+    }
+    if (dto.floating !== undefined) row.floating = !!dto.floating;
+    row.updatedById = byId;
+    row.updatedAt = new Date();
+    await this.schedRepo.save(row);
+    return { ok: true };
+  }
+
+  /** Настройки смен и авто-штрафа — одна строка на компанию. */
+  async settings(): Promise<ShiftSettings> {
+    const row = await this.settingsRepo.findOne({ where: { id: true } });
+    if (row) return row;
+    return this.settingsRepo.save(this.settingsRepo.create({ id: true }));
+  }
+
+  async setSettings(dto: Partial<ShiftSettings>) {
+    const row = await this.settings();
+    if (dto.autoFine !== undefined) row.autoFine = !!dto.autoFine;
+    if (dto.fineAmount !== undefined) row.fineAmount = Math.max(0, Number(dto.fineAmount) || 0);
+    if (dto.graceMinutes !== undefined) row.graceMinutes = Math.max(0, Math.min(240, Number(dto.graceMinutes) || 0));
+    if (dto.runHour !== undefined) row.runHour = Math.max(0, Math.min(23, Number(dto.runHour) || 0));
+    if (dto.noticeDaysBefore !== undefined) row.noticeDaysBefore = Math.max(0, Math.min(7, Number(dto.noticeDaysBefore) || 0));
+    row.updatedAt = new Date();
+    await this.settingsRepo.save(row);
+    return { ok: true };
+  }
+
+  // ─── «Приду позже»: предупредить заранее ─────────────────────────────
+  /** Просьба от сотрудника. Поданная в тот же день от штрафа не спасает —
+   *  об этом написано в форме, и решает это правило noticeDaysBefore. */
+  async createNotice(userId: string, dto: { date: string; time: string; reason?: string }) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dto.date || '')) throw new BadRequestException('Дата в формате ГГГГ-ММ-ДД');
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(dto.time || '')) throw new BadRequestException('Время в формате ЧЧ:ММ');
+    if (dto.date < dushanbeDate()) throw new BadRequestException('Этот день уже прошёл');
+    await this.noticeRepo.update(
+      { userId, date: dto.date, status: 'pending' },
+      { status: 'rejected', decidedAt: new Date() },
+    );
+    const saved = await this.noticeRepo.save(this.noticeRepo.create({
+      userId, date: dto.date, plannedTime: dto.time,
+      reason: (dto.reason || '').trim().slice(0, 300) || null,
+      status: 'pending',
+    }));
+    return { ok: true, id: saved.id };
+  }
+
+  async myNotices(userId: string) {
+    const rows = await this.noticeRepo.find({ where: { userId }, order: { date: 'DESC' }, take: 10 });
+    return rows.map(r => ({
+      id: r.id, date: r.date, plannedTime: r.plannedTime, reason: r.reason, status: r.status,
+    }));
+  }
+
+  /** Очередь просьб для руководства + одобренные на будущее. */
+  async notices() {
+    const rows = await this.noticeRepo
+      .createQueryBuilder('n')
+      .where("n.date >= :from", { from: dushanbeDate() })
+      .orderBy('n.date', 'ASC')
+      .getMany();
+    if (!rows.length) return { items: [] };
+    const users = await this.userRepo.find({ select: ['id', 'name', 'role'] });
+    const scheds = await this.schedRepo.find();
+    return {
+      items: rows.map(r => ({
+        id: r.id, date: r.date, plannedTime: r.plannedTime, reason: r.reason, status: r.status,
+        userId: r.userId,
+        name: users.find(u => u.id === r.userId)?.name ?? '—',
+        role: users.find(u => u.id === r.userId)?.role ?? null,
+        startTime: this.schedOf(scheds, r.userId).startTime,
+      })),
+    };
+  }
+
+  async decideNotice(id: string, approve: boolean, byId: string) {
+    const row = await this.noticeRepo.findOne({ where: { id } });
+    if (!row) throw new BadRequestException('Просьба не найдена');
+    row.status = approve ? 'approved' : 'rejected';
+    row.decidedById = byId;
+    row.decidedAt = new Date();
+    await this.noticeRepo.save(row);
+    // Человек должен узнать ответ сразу, а не гадать до утра.
+    await this.telegram.sendToUser(
+      row.userId,
+      approve
+        ? `Ваша просьба на ${row.date} одобрена: приходите к ${row.plannedTime}, опоздание не начислится.`
+        : `Просьба прийти позже ${row.date} отклонена. Смена начинается как обычно.`,
+    ).catch(() => undefined);
+    return { ok: true, status: row.status };
   }
 
   // ─── Отгул, отпуск, больничный ───────────────────────────────────────

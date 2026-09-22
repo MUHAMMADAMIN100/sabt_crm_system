@@ -10,6 +10,7 @@ import { getRoleLabel } from '@/lib/permissions'
 import { useAuthStore } from '@/store/auth.store'
 import toast from 'react-hot-toast'
 import ShiftsTimesheet from './ShiftsTimesheet'
+import ShiftSchedules from './ShiftSchedules'
 
 // ─── Ярлыки действий общего журнала (enum → человекочитаемо) ──────────
 const ACTION_LABELS: Record<string, string> = {
@@ -220,6 +221,7 @@ export default function TeamActivityPage() {
         {([
           ['timesheet', 'Табель месяца'],
           ['today', 'Смены сегодня'],
+          ['schedule', 'График работы'],
           ['feed', 'Лента событий'],
         ] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
@@ -235,8 +237,9 @@ export default function TeamActivityPage() {
         </span>
       </div>
 
-      {tab === 'today' && <><LateFines /><ShiftEdits /><ShiftsToday /></>}
+      {tab === 'today' && <><LateNotices /><LateFines /><ShiftEdits /><ShiftsToday /></>}
       {tab === 'timesheet' && <ShiftsTimesheet />}
+      {tab === 'schedule' && <ShiftSchedules />}
 
       {tab === 'feed' && (<>
       {/* Filters: who */}
@@ -516,6 +519,55 @@ function LateFines() {
   )
 }
 
+/** Просьбы «приду позже». Одобренная снимает опоздание за день — поэтому
+ *  отвечать на них надо до того, как система подведёт итог. */
+function LateNotices() {
+  const qc = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['work-shift-notices'],
+    queryFn: () => workShiftsApi.notices(),
+    refetchInterval: 120_000,
+  })
+  const decide = useMutation({
+    mutationFn: ({ id, approve }: { id: string; approve: boolean }) => workShiftsApi.decideNotice(id, approve),
+    onSuccess: (_d, v) => {
+      toast.success(v.approve ? 'Одобрено' : 'Отклонено')
+      qc.invalidateQueries({ queryKey: ['work-shift-notices'] })
+      qc.invalidateQueries({ queryKey: ['late-fines'] })
+      qc.invalidateQueries({ queryKey: ['work-shifts-team'] })
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось'),
+  })
+  const items: any[] = (data?.items ?? []).filter((n: any) => n.status === 'pending')
+  if (!items.length) return null
+  return (
+    <div className="rounded-2xl border border-blue-500/35 bg-blue-500/[0.06] p-4 mb-3">
+      <div className="text-sm font-semibold mb-2.5">Просьбы прийти позже · {items.length}</div>
+      <div className="flex flex-col gap-2">
+        {items.map(n => (
+          <div key={n.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2.5">
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-semibold truncate">
+                {n.name} · {n.date.slice(8, 10)}.{n.date.slice(5, 7)}
+              </span>
+              <span className="block text-xs text-gray-500 dark:text-gray-400 truncate">
+                придёт в {n.plannedTime} вместо {n.startTime}
+                {n.reason ? ` · ${n.reason}` : ''}
+              </span>
+            </span>
+            <span className="flex gap-2 shrink-0">
+              <button disabled={decide.isPending} onClick={() => decide.mutate({ id: n.id, approve: true })}
+                className="h-9 px-3 rounded-lg bg-emerald-600 text-white text-xs font-semibold disabled:opacity-60">Одобрить</button>
+              <button disabled={decide.isPending} onClick={() => decide.mutate({ id: n.id, approve: false })}
+                className="h-9 px-3 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-300 disabled:opacity-60">Отказать</button>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /** Очередь правок времени: «забыл нажать в 9:00». До подтверждения в табеле
  *  остаётся то, что записала система, — поэтому решать надо здесь. */
 function ShiftEdits() {
@@ -630,7 +682,10 @@ function ShiftsToday() {
                   style={{ background: avColor(u.id) }}>{initials(u.name)}</div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-semibold truncate">{u.name}</p>
-                  <p className="text-[11px] text-gray-500 truncate">{getRoleLabel(u.role)}</p>
+                  <p className="text-[11px] text-gray-500 truncate">
+                    {getRoleLabel(u.role)}
+                    {u.floating ? ' · свободное начало' : u.startsAt ? ` · смена с ${u.startsAt}` : ''}
+                  </p>
                 </div>
                 <span className={'text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded shrink-0 ' + tag.cls}>
                   {tag.text}
@@ -638,6 +693,11 @@ function ShiftsToday() {
                 {u.late && (
                   <span className="text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded shrink-0 text-amber-600 dark:text-amber-400 bg-amber-500/12">
                     опоздание
+                  </span>
+                )}
+                {u.excused && (
+                  <span className="text-[9.5px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded shrink-0 text-blue-600 dark:text-blue-400 bg-blue-500/12">
+                    предупредил
                   </span>
                 )}
                 {u.status === 'off' && (
