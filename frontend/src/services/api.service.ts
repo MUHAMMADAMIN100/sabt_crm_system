@@ -479,10 +479,14 @@ export const financeApi = {
   cancelProjectPayments: (id: string) => api.post(`/finance/projects/${id}/cancel-payments`, {}).then(r => r.data),
 
   // Сотрудники
-  /** Опоздания за месяц и проведение штрафов по ним. */
-  lateFines: (ym?: string, amount?: number) => api.get('/finance/late-fines', { params: { ym, amount } }).then(r => r.data),
-  applyLateFines: (body: { ym?: string; amount?: number; userIds?: string[] }) =>
+  /** Опоздания за ДЕНЬ: кто опоздал и что с ним решено. */
+  lateFines: (date?: string, amount?: number) => api.get('/finance/late-fines', { params: { date, amount } }).then(r => r.data),
+  applyLateFines: (body: { date?: string; amount?: number; userIds?: string[] }) =>
     api.post('/finance/late-fines', body).then(r => r.data),
+  forgiveLate: (body: { date?: string; userIds?: string[] }) =>
+    api.post('/finance/late-fines/forgive', body).then(r => r.data),
+  cancelLateFine: (date: string, userId: string) =>
+    api.delete('/finance/late-fines', { params: { date, userId } }).then(r => r.data),
   employees: () => api.get('/finance/employees').then(r => r.data),
   createEmployee: (data: any) => api.post('/finance/employees', data).then(r => r.data),
   updateEmployee: (id: string, data: any) => api.patch(`/finance/employees/${id}`, data).then(r => r.data),

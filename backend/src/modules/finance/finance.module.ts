@@ -21,13 +21,14 @@ import { FinanceActivity } from './entities/finance-activity.entity';
 import { FinanceActivityInterceptor } from './finance-activity.interceptor';
 import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustment.entity';
 import { FinancePayrollPeriod } from './entities/finance-payroll-period.entity';
+import { LateFineDecision } from './entities/late-fine-decision.entity';
 
 @Module({
   imports: [TypeOrmModule.forFeature([
     FinanceTransaction, FinanceAccount, FinanceCategory,
     FinanceProject, FinanceEmployee, FinanceSubscription, FinanceDebt,
     FinancePlannedPayment, FinanceAsset, FinanceBackup, FinanceActivity,
-    FinanceForecastAdjustment, FinancePayrollPeriod, User,
+    FinanceForecastAdjustment, FinancePayrollPeriod, LateFineDecision, User,
   ]), NotificationsModule, TelegramModule],
   controllers: [FinanceController, MySalaryController],
   providers: [FinanceService, FinanceScheduler, FinanceActivityInterceptor],

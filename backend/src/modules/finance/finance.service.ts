@@ -20,6 +20,7 @@ import { FinanceBackup } from './entities/finance-backup.entity';
 import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustment.entity';
 import { FinanceActivity } from './entities/finance-activity.entity';
 import { FinancePayrollPeriod } from './entities/finance-payroll-period.entity';
+import { LateFineDecision } from './entities/late-fine-decision.entity';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
 import {
@@ -46,9 +47,6 @@ import {
 // ─── helpers ────────────────────────────────────────────────────────
 const r2 = (n: any) => Math.round((Number(n) || 0) * 100) / 100;
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
-/** По этой пометке узнаём штрафы, уже проведённые за опоздание: второй раз
- *  за тот же день система их не предложит. */
-const LATE_NOTE_RE = /^опоздание/i;
 
 // ─── Сопоставление «строка ведомости ↔ аккаунт CRM» по имени ──────────
 /** Слова имени: без регистра, без «ё», без лишних знаков и пробелов. */
@@ -344,6 +342,7 @@ export class FinanceService implements OnModuleInit {
     @InjectRepository(FinanceBackup) private backupRepo: Repository<FinanceBackup>,
     @InjectRepository(FinanceForecastAdjustment) private forecastAdjRepo: Repository<FinanceForecastAdjustment>,
     @InjectRepository(FinancePayrollPeriod) private payrollPeriodRepo: Repository<FinancePayrollPeriod>,
+    @InjectRepository(LateFineDecision) private lateRepo: Repository<LateFineDecision>,
     private ds: DataSource,
     private scheduler: FinanceScheduler,
   ) {}
@@ -3638,72 +3637,121 @@ export class FinanceService implements OnModuleInit {
   // Сотрудники
   listEmployees() { return this.empRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } }); }
 
-  // ─── Опоздания → штраф одной кнопкой ─────────────────────────────────
-  /** Кто сколько раз опоздал за месяц и на какую сумму это тянет.
+  // ─── Опоздания: решение по каждому дню ───────────────────────────────
+  //
+  //  Копилка за месяц не работала: провести можно было только всё разом,
+  //  отменить — никак. Теперь день разбирается в тот же день, и по каждому
+  //  человеку остаётся решение: оштрафован или прощён.
+
+  /** Кто опоздал в этот день и что с ним решено.
    *
-   *  Смены читаем напрямую запросом: заводить ради этого зависимость от
-   *  модуля смен не хочется, а кольца в графе модулей нам уже дорого
-   *  обходились. Порог опоздания тот же, что в табеле, — 09:30 по Душанбе;
-   *  дни, отмеченные как отгул/отпуск/больничный, не считаются.
-   *  Уже проведённые штрафы за тот же день второй раз не предлагаются. */
-  async lateOverview(ym?: string, amountPerLate = 100) {
-    const month = YM_RE.test(ym || '') ? (ym as string) : currentYm();
-    const rows: Array<{ employeeId: string; date: string; first: string }> = await this.ds.query(
-      `SELECT s."employeeId",
-              to_char(s."date", 'YYYY-MM-DD') AS date,
+   *  Смены читаем прямым запросом: зависимость от модуля смен ради одного
+   *  списка не нужна, а кольца в графе модулей нам уже дорого обходились.
+   *  Порог тот же, что в табеле, — 09:30 по Душанбе; дни с отгулом,
+   *  отпуском и больничным не считаются опозданием вовсе. */
+  async lateOfDay(date?: string, amountPerLate = 100) {
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(date || '')
+      ? (date as string)
+      : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dushanbe' });
+    const rows: Array<{ userId: string; name: string; role: string; first: string }> = await this.ds.query(
+      `SELECT s."employeeId" AS "userId", u."name", u."role",
               to_char(min(s."startedAt") AT TIME ZONE 'Asia/Dushanbe', 'HH24:MI') AS first
          FROM work_shifts s
-        WHERE to_char(s."date", 'YYYY-MM') = $1
+         JOIN users u ON u.id = s."employeeId"
+        WHERE s."date" = $1
           AND NOT EXISTS (
             SELECT 1 FROM shift_absences a
              WHERE a."employeeId" = s."employeeId" AND a."date" = s."date")
-        GROUP BY s."employeeId", s."date"`,
-      [month],
+        GROUP BY s."employeeId", u."name", u."role"`,
+      [day],
     );
     const late = rows.filter(r => r.first > '09:30');
-    if (!late.length) return { ym: month, amountPerLate, items: [] };
+    const decisions = await this.lateRepo.find({ where: { date: day } });
     const emps = await this.empRepo.find();
-    const byUser = new Map<string, { dates: string[] }>();
-    for (const r of late) {
-      const cur = byUser.get(r.employeeId) ?? { dates: [] };
-      cur.dates.push(r.date);
-      byUser.set(r.employeeId, cur);
-    }
-    const items = [...byUser.entries()].map(([userId, v]) => {
-      const emp = emps.find(e => e.userId === userId) || null;
-      const done = emp ? readDeductionEntries(emp as any, 'fineEntries', 'fines', month) : [];
-      const already = new Set(done.filter(d => LATE_NOTE_RE.test(d.note || '')).map(d => d.date));
-      const fresh = v.dates.filter(d => !already.has(d)).sort();
+    const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+    const items = late.map(r => {
+      const emp = emps.find(e => e.userId === r.userId) || null;
+      const d = decisions.find(x => x.userId === r.userId) || null;
       return {
-        userId,
+        userId: r.userId,
+        name: r.name,
+        role: r.role,
+        arrivedAt: r.first,
+        lateMinutes: toMin(r.first) - toMin('09:00'),
         employeeId: emp?.id ?? null,
-        name: emp?.name ?? null,
+        // Без строки в ведомости штраф провести некуда — говорим об этом
+        // прямо, а не молча пропускаем человека.
         linked: !!emp,
-        dates: v.dates.sort(),
-        newDates: fresh,
-        amount: r2(fresh.length * amountPerLate),
+        decision: d?.decision ?? null,
+        amount: d ? r2(Number(d.amount) || 0) : amountPerLate,
       };
-    }).filter(i => i.newDates.length > 0);
-    return { ym: month, amountPerLate, items };
+    }).sort((a, b) => b.lateMinutes - a.lateMinutes);
+    return {
+      date: day,
+      amountPerLate,
+      pending: items.filter(i => !i.decision),
+      fined: items.filter(i => i.decision === 'fined'),
+      forgiven: items.filter(i => i.decision === 'forgiven'),
+    };
   }
 
-  /** Провести штрафы за опоздания. Считает система, решение — владельца:
-   *  молча списывать деньги за опоздание нельзя. */
-  async applyLateFines(ym: string | undefined, amountPerLate = 100, onlyUserIds?: string[]) {
-    const view = await this.lateOverview(ym, amountPerLate);
+  /** Оштрафовать выбранных за этот день. */
+  async applyLateFines(dto: { date?: string; amount?: number; userIds?: string[] }, byId?: string) {
+    const amount = r2(Number(dto.amount) || 100);
+    const view = await this.lateOfDay(dto.date, amount);
+    const ym = view.date.slice(0, 7);
     let created = 0;
-    for (const item of view.items) {
+    for (const item of view.pending) {
+      if (dto.userIds?.length && !dto.userIds.includes(item.userId)) continue;
       if (!item.employeeId) continue;
-      if (onlyUserIds?.length && !onlyUserIds.includes(item.userId)) continue;
-      for (const date of item.newDates) {
-        await this.addEmployeeDeduction(item.employeeId, {
-          kind: 'fine', ym: view.ym, amount: amountPerLate, date,
-          note: `Опоздание ${date.slice(8, 10)}.${date.slice(5, 7)}`,
-        });
-        created++;
-      }
+      const note = `Опоздание ${view.date.slice(8, 10)}.${view.date.slice(5, 7)} — пришёл в ${item.arrivedAt}`;
+      await this.addEmployeeDeduction(item.employeeId, {
+        kind: 'fine', ym, amount, date: view.date, note,
+      });
+      // id записи журнала нужен для отмены: находим свежесозданную по дате и
+      // комментарию — разбирать текст при отмене потом не придётся.
+      const emp = await this.empRepo.findOne({ where: { id: item.employeeId } });
+      const entry = readDeductionEntries(emp as any, 'fineEntries', 'fines', ym)
+        .filter(e => e.date === view.date && e.note === note)
+        .slice(-1)[0];
+      await this.lateRepo.save(this.lateRepo.create({
+        userId: item.userId, date: view.date, decision: 'fined',
+        employeeId: item.employeeId, entryId: entry?.id ?? null,
+        amount, ym, createdById: byId ?? null,
+      }));
+      created++;
     }
-    return { ok: true, created, ym: view.ym };
+    return { ok: true, created, date: view.date };
+  }
+
+  /** Простить: день разобран, завтра в списке не всплывёт. */
+  async forgiveLate(dto: { date?: string; userIds?: string[] }, byId?: string) {
+    const view = await this.lateOfDay(dto.date);
+    let forgiven = 0;
+    for (const item of view.pending) {
+      if (dto.userIds?.length && !dto.userIds.includes(item.userId)) continue;
+      await this.lateRepo.save(this.lateRepo.create({
+        userId: item.userId, date: view.date, decision: 'forgiven',
+        employeeId: item.employeeId, entryId: null, amount: 0,
+        ym: view.date.slice(0, 7), createdById: byId ?? null,
+      }));
+      forgiven++;
+    }
+    return { ok: true, forgiven, date: view.date };
+  }
+
+  /** Отменить решение: штраф уходит из журнала, человек снова в списке. */
+  async cancelLateDecision(dto: { date: string; userId: string }) {
+    const row = await this.lateRepo.findOne({ where: { date: dto.date, userId: dto.userId } });
+    if (!row) throw new BadRequestException('Решение не найдено');
+    if (row.decision === 'fined' && row.employeeId && row.entryId) {
+      // Закрытый месяц не трогаем: после выплаты зарплата зафиксирована
+      // снапшотом, и удаление записи ничего бы не изменило.
+      await this.assertPayrollPeriodOpen(row.ym || dto.date.slice(0, 7));
+      await this.removeEmployeeDeduction(row.employeeId, row.entryId, { kind: 'fine', ym: row.ym || undefined });
+    }
+    await this.lateRepo.delete({ id: row.id });
+    return { ok: true };
   }
 
   // ─── ЛИЧНАЯ ЗАРПЛАТА: сотрудник видит только свою строку ведомости ─────

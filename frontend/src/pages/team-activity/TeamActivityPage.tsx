@@ -392,8 +392,9 @@ function Chip({ children, active, cofounder, onClick }: { children: ReactNode; a
 /** Смены за сегодня: кто на работе, во сколько начал, сколько отработал.
  *  Живёт здесь же, где лента активности: у основателя это одна страница
  *  «что происходит в команде», разносить по двум смысла нет. */
-/** Опоздания за месяц. Система их считает, но деньгами это становится
- *  только по нажатию владельца — молча списывать нельзя. */
+/** Опоздания за день. Система их считает, но деньгами это становится только
+ *  по нажатию владельца — молча списывать нельзя. Разбираем в тот же день:
+ *  копилка за месяц не работала, провести можно было только всё разом. */
 function LateFines() {
   const qc = useQueryClient()
   const role = useAuthStore(s => s.user?.role)
@@ -402,45 +403,115 @@ function LateFines() {
     queryKey: ['late-fines'],
     queryFn: () => financeApi.lateFines(),
     enabled: canFine,
+    refetchInterval: 120_000,
   })
+  const pending: any[] = data?.pending ?? []
+  const fined: any[] = data?.fined ?? []
+  const amount = Number(data?.amountPerLate) || 100
+
+  // По умолчанию отмечены все, кого вообще можно оштрафовать.
+  const [off, setOff] = useState<Set<string>>(new Set())
+  const chosen = pending.filter(i => i.linked && !off.has(i.userId))
+  const toggle = (id: string) => setOff(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+
+  const after = (msg: string) => {
+    toast.success(msg)
+    setOff(new Set())
+    qc.invalidateQueries({ queryKey: ['late-fines'] })
+    qc.invalidateQueries({ queryKey: ['finance'] })
+  }
   const apply = useMutation({
-    mutationFn: () => financeApi.applyLateFines({ ym: data?.ym, amount: data?.amountPerLate }),
-    onSuccess: (r: any) => {
-      toast.success(`Штрафов проведено: ${r?.created ?? 0}`)
-      qc.invalidateQueries({ queryKey: ['late-fines'] })
-    },
+    mutationFn: () => financeApi.applyLateFines({ date: data?.date, amount, userIds: chosen.map(i => i.userId) }),
+    onSuccess: (r: any) => after(`Штрафов проведено: ${r?.created ?? 0}`),
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось провести'),
   })
-  const items: any[] = data?.items ?? []
-  if (!canFine || !items.length) return null
-  const total = items.reduce((sum, i) => sum + (i.amount || 0), 0)
-  const unlinked = items.filter(i => !i.linked)
+  const forgive = useMutation({
+    mutationFn: () => financeApi.forgiveLate({ date: data?.date }),
+    onSuccess: () => after('День разобран'),
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось'),
+  })
+  const cancel = useMutation({
+    mutationFn: (userId: string) => financeApi.cancelLateFine(data?.date, userId),
+    onSuccess: () => after('Штраф отменён'),
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось отменить'),
+  })
+
+  if (!canFine || (!pending.length && !fined.length)) return null
+  const dayLabel = data?.date
+    ? new Date(`${data.date}T00:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+    : 'сегодня'
+  const total = chosen.length * amount
+
   return (
-    <div className="rounded-2xl border border-red-500/35 bg-red-500/[0.06] p-4 mb-3">
-      <div className="text-sm font-semibold mb-1">Опоздания за месяц · не проведены</div>
-      <div className="text-xs text-gray-500 dark:text-gray-400 mb-2.5">
-        По {data?.amountPerLate ?? 100} с. за опоздание после 09:30. Дни с отгулом, отпуском и больничным не считаются.
-      </div>
-      <div className="flex flex-col gap-1.5 mb-3">
-        {items.map(i => (
-          <div key={i.userId} className="flex items-center gap-3 text-sm">
-            <span className="flex-1 min-w-0 truncate">
-              {i.name ?? 'Нет строки в ведомости'}
-              <span className="text-xs text-gray-500 dark:text-gray-400"> · {i.newDates.length} шт · {i.newDates.map((d: string) => d.slice(8, 10) + '.' + d.slice(5, 7)).join(', ')}</span>
-            </span>
-            <span className="shrink-0 font-semibold tabular-nums text-red-600 dark:text-red-400">−{i.amount} с.</span>
+    <div className="flex flex-col gap-3 mb-3">
+      {pending.length > 0 && (
+        <div className="rounded-2xl border border-red-500/35 bg-red-500/[0.06] p-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2.5">
+            <span className="text-sm font-semibold">Опоздали {dayLabel} · {pending.length}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">приход после {data?.lateAfter ?? '09:30'} · по {amount} с.</span>
           </div>
-        ))}
-      </div>
-      {unlinked.length > 0 && (
-        <div className="text-[11px] text-amber-600 dark:text-amber-400 mb-2">
-          У {unlinked.length} из них нет строки в зарплатной ведомости — их штрафы не проведутся, пока не свяжете аккаунт в «Финансы → Настройки → Сотрудники».
+          <div className="flex flex-col gap-1.5 mb-3">
+            {pending.map(i => (
+              <label key={i.userId}
+                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 ${i.linked ? 'cursor-pointer' : 'opacity-60'}`}>
+                <input type="checkbox" disabled={!i.linked} checked={i.linked && !off.has(i.userId)}
+                  onChange={() => toggle(i.userId)}
+                  className="w-[18px] h-[18px] shrink-0 accent-primary-600" />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-semibold truncate">
+                    {i.name}
+                    {!i.linked && <span className="ml-2 text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">нет строки в ведомости</span>}
+                  </span>
+                  <span className="block text-xs text-gray-500 dark:text-gray-400">
+                    {getRoleLabel(i.role)} · пришёл в {i.arrivedAt}
+                    {!i.linked && ' · штраф провести некуда'}
+                  </span>
+                </span>
+                <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400 tabular-nums">+{i.lateMinutes} мин</span>
+                <span className="shrink-0 w-[70px] text-right text-sm font-semibold tabular-nums text-red-600 dark:text-red-400">−{amount} с.</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button disabled={apply.isPending || !chosen.length} onClick={() => apply.mutate()}
+              className="h-11 px-4 rounded-xl bg-red-700 text-white text-sm font-bold disabled:opacity-50">
+              {chosen.length ? `Провести штраф на ${total} с.` : 'Никто не выбран'}
+            </button>
+            <button disabled={forgive.isPending} onClick={() => forgive.mutate()}
+              className="h-11 px-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-600 dark:text-gray-300 disabled:opacity-60">
+              Простить всем
+            </button>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              выбрано {chosen.length} из {pending.length}
+            </span>
+          </div>
         </div>
       )}
-      <button disabled={apply.isPending} onClick={() => apply.mutate()}
-        className="h-11 px-4 rounded-xl bg-red-700 text-white text-sm font-bold disabled:opacity-60">
-        Провести штраф на {total} с.
-      </button>
+
+      {fined.length > 0 && (
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-700 p-4">
+          <div className="text-sm font-semibold mb-2.5">Оштрафованы {dayLabel} · {fined.length}</div>
+          <div className="flex flex-col gap-1.5">
+            {fined.map(i => (
+              <div key={i.userId} className="flex items-center gap-3 rounded-xl px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-semibold truncate">{i.name}</span>
+                  <span className="block text-xs text-gray-500 dark:text-gray-400">пришёл в {i.arrivedAt} · опоздание {i.lateMinutes} мин</span>
+                </span>
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-red-600 dark:text-red-400">−{i.amount} с.</span>
+                <button disabled={cancel.isPending} onClick={() => cancel.mutate(i.userId)}
+                  className="shrink-0 h-9 px-3 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-300 disabled:opacity-60">
+                  Отменить
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -182,17 +182,30 @@ export class FinanceController {
 
   @Get('employees') listEmployees() { return this.service.listEmployees(); }
 
-  /** Опоздания за месяц: кого и на сколько можно оштрафовать. Считает
-   *  система, решение остаётся за владельцем. */
+  /** Опоздания за день: кто опоздал и что с ним решено. Считает система,
+   *  решение — владельца: молча списывать деньги за опоздание нельзя. */
   @Get('late-fines')
-  lateFines(@Query('ym') ym?: string, @Query('amount') amount?: string) {
-    return this.service.lateOverview(ym, Number(amount) || 100);
+  lateFines(@Query('date') date?: string, @Query('amount') amount?: string) {
+    return this.service.lateOfDay(date, Number(amount) || 100);
   }
 
   @Post('late-fines')
-  applyLateFines(@Body() body: { ym?: string; amount?: number; userIds?: string[] }) {
-    return this.service.applyLateFines(body?.ym, Number(body?.amount) || 100, body?.userIds);
+  applyLateFines(@Request() req, @Body() body: { date?: string; amount?: number; userIds?: string[] }) {
+    return this.service.applyLateFines(body || {}, req.user?.id);
   }
+
+  /** Простить — день разобран и завтра в списке не всплывёт. */
+  @Post('late-fines/forgive')
+  forgiveLate(@Request() req, @Body() body: { date?: string; userIds?: string[] }) {
+    return this.service.forgiveLate(body || {}, req.user?.id);
+  }
+
+  /** Отмена решения: штраф уходит из журнала, человек снова в списке. */
+  @Delete('late-fines')
+  cancelLate(@Query('date') date: string, @Query('userId') userId: string) {
+    return this.service.cancelLateDecision({ date, userId });
+  }
+
   @Post('employees') createEmployee(@Body() dto: CreateEmployeeDto) { return this.service.createEmployee(dto); }
   @Patch('employees/:id') updateEmployee(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) { return this.service.updateEmployee(id, dto); }
   @Delete('employees/:id') removeEmployee(@Param('id') id: string) { return this.service.removeEmployee(id); }
