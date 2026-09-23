@@ -579,22 +579,13 @@ export default function SmmProjectPage() {
                 )}
               </div>
             </div>
-            {/* Команда производства: съёмка → видеограф, монтаж → монтажёр,
-                макет → дизайнер. Пусто — карточки уйдут единственному в
-                агентстве человеку с такой ролью, а если их несколько,
-                останутся у СММ-специалиста. */}
-            {CREW_ROWS.map(r => (
-              <CrewRow
-                key={r.field}
-                label={r.label}
-                assigned={profile?.[r.out] ?? []}
-                fallback={profile?.crewDefaults?.[r.out] ?? null}
-                candidates={profile?.crewCandidates?.[r.out] ?? []}
-                canAssign={r.roles ? r.roles.includes((user as any)?.role ?? '') : canAssignCrew}
-                onToggle={uid => toggleCrew(r.field, r.out, uid)}
-                rowCls={fRow}
-              />
-            ))}
+            {/* Видеографа, монтажёра и дизайнера здесь НЕ показываем (решение
+                владельца, 23.09.2026): специалист каждой роли в агентстве один,
+                съёмка, монтаж и дизайн уходят ему сами, и три одинаковые строки
+                в карточке ничего не сообщали. Логика назначения на месте —
+                вернуть строки можно этим же блоком, когда появится второй
+                видеограф или дизайнер. Компонент CrewRow и toggleCrew для этого
+                оставлены. */}
             <div className={fRow}><span className="text-sm text-gray-500">День старта цикла</span>
               {cycEditing
                 ? <input type="number" min={1} max={31} value={cycDraft.day} onChange={e => setCycDraft(d => ({ ...d, day: e.target.value }))} className={editIn + ' w-16 text-center'} />
