@@ -31,6 +31,8 @@ const CREW_ROWS: { field: CrewField; out: CrewOut; label: string; roles?: string
 type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNote: string | null; collabSince: string | null; preferences: string | null; metrics: MPoint[]; smmSpecialistIds?: string[]; smmSpecialists?: SmmSpec[] }
   & Partial<Record<CrewField, string[]>> & Partial<Record<CrewOut, SmmSpec[]>>
   & { crewCandidates?: Partial<Record<CrewOut, SmmSpec[]>> }
+  // Кто закроет этап, если на проекте никого не назначали — подстановка с сервера.
+  & { crewDefaults?: Partial<Record<CrewOut, SmmSpec>> }
 
 const EDIT_ROLES = ['founder', 'co_founder', 'admin', 'smm_director', 'smm_specialist']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
