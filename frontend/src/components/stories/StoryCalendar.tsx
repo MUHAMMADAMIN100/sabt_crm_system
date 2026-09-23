@@ -41,7 +41,12 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
   const qc = useQueryClient()
   // Track latest storiesCount per project+date to ignore stale mutation responses
   const latestCount = useRef<Record<string, number>>({})
-  const isReadonly = !!employeeId || !!adminAll
+  // Кто вправе отмечать — тот же список, что проверяет сервер. Раньше галочки
+  // были кликабельны у всех, а сохранение отвечало 403: кнопка есть, толку нет.
+  const STORY_WRITE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist']
+  const canWriteStories = [user?.role, user?.secondaryRole]
+    .some(r => !!r && STORY_WRITE_ROLES.includes(r))
+  const isReadonly = !!employeeId || !!adminAll || !canWriteStories
   // ВСЕ авторизованные видят все отметки команды — иначе:
   //  - менеджер не видит отметки участников (фикс был раньше)
   //  - участник не видит отметки менеджера (этот фикс — асимметрия)
@@ -78,14 +83,11 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
 
       qc.setQueryData(['stories', cacheKey, from, to], (old: any[]) => {
         if (!old) return old
-        const exists = old.some((s: any) => s.projectId === projectId && s.date?.split('T')[0] === dateKey)
-        if (exists) {
-          return old.map((s: any) =>
-            s.projectId === projectId && s.date?.split('T')[0] === dateKey
-              ? { ...s, storiesCount }
-              : s
-          )
-        }
+        // Совпадение ищем И по сотруднику: раньше черновик переписывал ЧУЖУЮ
+        // строку за тот же день, и после ответа сервера цифра прыгала.
+        const mine = (s: any) => s.projectId === projectId
+          && s.date?.split('T')[0] === dateKey && s.employeeId === userId
+        if (old.some(mine)) return old.map((s: any) => (mine(s) ? { ...s, storiesCount } : s))
         return [...old, { projectId, date: dateKey, storiesCount, employeeId: userId, id: `temp-${Date.now()}` }]
       })
       return { previous, trackKey, storiesCount }
@@ -104,10 +106,17 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
         const dateKey = serverData.date?.split('T')[0]
         return old.map((s: any) =>
           s.projectId === serverData.projectId && s.date?.split('T')[0] === dateKey
+            && s.employeeId === serverData.employeeId
             ? { ...s, ...serverData }
             : s
         )
       })
+    },
+    // Сторис кормят ещё и «Сторисы», и карточку проекта — их ключ другой,
+    // без этого отметка доезжала не на все экраны.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['smm-calendar'] })
+      qc.invalidateQueries({ queryKey: ['stories-check'] })
     },
   })
 
@@ -164,21 +173,30 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось сохранить'),
   })
 
-  // Build story map: projectId -> dateKey -> count
-  const storyMap = useMemo(() => {
+  /** projectId → дата → сумма отметок из выбранного набора строк. */
+  const buildMap = (src: any[]) => {
     const map: Record<string, Record<string, number>> = {}
-    const src = (adminAll)
-      ? stories || []
-      : isReadonly
-        ? stories?.filter((s: any) => s.employeeId === employeeId || s.userId === employeeId) || []
-        : stories || []
     src.forEach((s: any) => {
       const dateKey = typeof s.date === 'string' ? s.date.split('T')[0] : format(new Date(s.date), 'yyyy-MM-dd')
       if (!map[s.projectId]) map[s.projectId] = {}
       map[s.projectId][dateKey] = (map[s.projectId][dateKey] || 0) + (s.storiesCount || s.count || 0)
     })
     return map
-  }, [stories, employeeId, isReadonly])
+  }
+
+  // Сумма ВСЕЙ команды — ею красится день: сторис делают вместе, и день
+  // закрыт, когда норму выполнили сообща.
+  const teamMap = useMemo(() => buildMap(stories || []), [stories])
+
+  // Только СВОИ отметки — ими управляют галочки. Раньше в клетке стояла
+  // сумма команды, а сохранялась она в личную строку: коллега отметил 5,
+  // вы жали шестую — и в дне получалось 11. Теперь показываем и пишем одно
+  // и то же. В обзоре руководителя (adminAll) по-прежнему сумма команды.
+  const storyMap = useMemo(() => {
+    if (adminAll) return teamMap
+    const owner = employeeId || user?.id
+    return buildMap((stories || []).filter((s: any) => s.employeeId === owner))
+  }, [stories, employeeId, adminAll, teamMap, user?.id])
 
   // Build per-employee story map: projectId -> employeeId -> { name, avatar, total, byDate }
   const empStoryMap = useMemo(() => {
@@ -201,11 +219,11 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
   const projectTotals = useMemo(() => {
     const totals: Record<string, number> = {}
     activeProjects.forEach((p: any) => {
-      const pm = storyMap[p.id] || {}
+      const pm = teamMap[p.id] || {}
       totals[p.id] = Object.values(pm).reduce((sum: number, c: any) => sum + c, 0)
     })
     return totals
-  }, [activeProjects, storyMap])
+  }, [activeProjects, teamMap])
 
   const monthStart = startOfMonth(current)
   const monthEnd = endOfMonth(current)
@@ -324,7 +342,9 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
           <div className="space-y-2">
             {(archiveView ? storiesArchivedProjects : activeProjects).map((project: any) => {
               const total = projectTotals[project.id] || 0
-              const pm = storyMap[project.id] || {}
+              // Список проектов отвечает на вопрос «закрыт ли день по проекту»,
+              // поэтому здесь сумма команды, а не личные отметки.
+              const pm = teamMap[project.id] || {}
               const daysWithStories = Object.values(pm).filter((c: any) => c > 0).length
               const todayKey = format(new Date(), 'yyyy-MM-dd')
               const todayCount = pm[todayKey] || 0
@@ -441,11 +461,14 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
   }
 
   // Project calendar view
-  const projectStories = storyMap[selectedProject.id] || {}
+  const projectStories = storyMap[selectedProject.id] || {}      // мои отметки — ими управляют галочки
+  const projectTeam = teamMap[selectedProject.id] || {}          // сумма команды — ею красится день
   const dailyTarget = getDailyTarget(selectedProject, current)
   // Календарь стартует от project.startDate, если он внутри текущего месяца —
   // дни до старта проекта не рендерим (раньше там были пустые клетки).
   const { days: projectDays, startPad: projectPad } = projectDaysFor(selectedProject)
+  const myTotalMonth = Object.values(projectStories).reduce((a: number, b: any) => a + b, 0)
+  const teamTotalMonth = Object.values(projectTeam).reduce((a: number, b: any) => a + b, 0)
 
   return (
     <div className={clsx('card', compact && 'p-3')}>
@@ -492,7 +515,8 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
         {Array.from({ length: projectPad }).map((_, i) => <div key={`pad-${i}`} />)}
         {projectDays.map(day => {
           const dateKey = format(day, 'yyyy-MM-dd')
-          const count = projectStories[dateKey] || 0
+          const count = projectStories[dateKey] || 0             // моё за день
+          const teamCount = projectTeam[dateKey] || 0            // вместе с коллегами
           const past = day < new Date() && !isToday(day)
           const future = day > new Date() && !isToday(day)
           // allowFuture (сторисмейкер) снимает блокировку будущих дней —
@@ -505,7 +529,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
               className={clsx(
                 'rounded-lg p-0.5 flex flex-col items-center gap-0.5',
                 isToday(day) && 'ring-1 ring-primary-400',
-                past && count === 0 && 'bg-red-50 dark:bg-red-900/20',
+                past && teamCount === 0 && 'bg-red-50 dark:bg-red-900/20',
                 blockedFuture && 'opacity-50',
               )}
             >
@@ -550,6 +574,15 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
                     )
                   })}
                 </div>
+                {/* Вклад коллег за этот день: галочки показывают только своё,
+                    а день закрывается командой — без этой подписи было бы
+                    непонятно, почему клетка не красная. */}
+                {!adminAll && teamCount > count && (
+                  <span title={`Всего по проекту за день: ${teamCount}`}
+                    className="text-[9px] font-semibold text-surface-400 dark:text-surface-500 leading-none">
+                    +{teamCount - count}
+                  </span>
+                )}
                 {/* Больше плана — чекбоксов свыше dailyTarget не рисуем, показываем число. */}
                 {count > dailyTarget && (
                   <span className="text-[9px] font-bold text-green-600 dark:text-green-400 leading-none">
@@ -595,6 +628,9 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
         <span className="text-surface-400 dark:text-surface-500">Итого за месяц</span>
         <span className="font-semibold text-surface-700 dark:text-surface-300">
           {Object.values(projectStories).reduce((s: number, c: any) => s + c, 0)} историй
+          {!adminAll && teamTotalMonth > myTotalMonth && (
+            <span className="font-normal text-surface-400 dark:text-surface-500"> · у команды {teamTotalMonth}</span>
+          )}
         </span>
       </div>
 

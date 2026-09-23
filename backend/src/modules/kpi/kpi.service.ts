@@ -149,13 +149,22 @@ export class KpiService {
         FROM bounds b WHERE b.d_to >= b.d_from
       ),
       proj AS (
-        SELECT p.id, p."createdAt"::date AS since
+        -- Ждём сторис с НАЧАЛА РАБОТЫ с клиентом; дата записи проекта в CRM —
+        -- запасной вариант (проект могли завести задним числом).
+        SELECT p.id, COALESCE(p."startDate"::date, p."createdAt"::date) AS since
         FROM projects p
         WHERE p."isArchived" = false
           AND COALESCE(p."storiesArchived", false) = false
           AND p."projectType" = 'SMM'
-          AND CASE WHEN p."smmData"->>'storiesPerDay' ~ '^[0-9]+$'
-                   THEN (p."smmData"->>'storiesPerDay')::int ELSE 3 END > 0
+          -- Ждёт ли проект сторис вообще. Правило то же, что на всех экранах:
+          -- решает МЕСЯЧНАЯ норма, дневная — только запасной вариант. Раньше
+          -- смотрели одну дневную, и проект с «0 сторис в месяц» попадал в
+          -- план как 3 в день.
+          AND CASE
+                WHEN p."smmData"->>'storiesPerMonth' ~ '^[0-9]+$' THEN (p."smmData"->>'storiesPerMonth')::int
+                WHEN p."smmData"->>'storiesPerDay' ~ '^[0-9]+$' THEN (p."smmData"->>'storiesPerDay')::int
+                ELSE 3
+              END > 0
           AND (
             $5::boolean
             OR EXISTS (SELECT 1 FROM project_members pm
@@ -531,12 +540,15 @@ export class KpiService {
              FROM bounds b WHERE b.d_to >= b.d_from
            ),
            proj AS (
-             SELECT p.id, p.name, p."createdAt"::date AS since FROM projects p
+             SELECT p.id, p.name, COALESCE(p."startDate"::date, p."createdAt"::date) AS since FROM projects p
              WHERE p."isArchived" = false
                AND COALESCE(p."storiesArchived", false) = false
                AND p."projectType" = 'SMM'
-               AND CASE WHEN p."smmData"->>'storiesPerDay' ~ '^[0-9]+$'
-                        THEN (p."smmData"->>'storiesPerDay')::int ELSE 3 END > 0
+               AND CASE
+                     WHEN p."smmData"->>'storiesPerMonth' ~ '^[0-9]+$' THEN (p."smmData"->>'storiesPerMonth')::int
+                     WHEN p."smmData"->>'storiesPerDay' ~ '^[0-9]+$' THEN (p."smmData"->>'storiesPerDay')::int
+                     ELSE 3
+                   END > 0
                AND ($5::boolean OR EXISTS (
                  SELECT 1 FROM project_members pm
                  WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid)

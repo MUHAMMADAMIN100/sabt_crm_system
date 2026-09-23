@@ -788,6 +788,10 @@ export class ContentPlanService {
         // и дата, с которой проект ждёт сторис.
         storiesPerMonth: p.smmData ? num((p.smmData as any).storiesPerMonth) : null,
         storiesPerDay: p.smmData ? num((p.smmData as any).storiesPerDay) : null,
+        // Архив историй — проект больше не требует сторис. Страница «Сторисы»
+        // без этого флага красила такие проекты каждый день.
+        storiesArchived: !!(p as any).storiesArchived,
+        isArchived: !!(p as any).isArchived,
         since: dOnly((p as any).createdAt),
       }))
       .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));

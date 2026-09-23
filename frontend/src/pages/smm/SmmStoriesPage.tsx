@@ -10,7 +10,7 @@ import { StoriesTab, buildCells, monthTitle, assignProjectColors, type Ev, type 
 
 const iso = (d: Date) => format(d, 'yyyy-MM-dd')
 // Проект со страницы «Сторисы»: месячная/дневная норма сторис (цель) + окно, когда проект ждёт сторис.
-type StoryProj = { id: string; name: string; storiesPerMonth?: number | null; storiesPerDay?: number | null; startDate?: string | null; since?: string | null; endDate?: string | null }
+type StoryProj = { id: string; name: string; storiesPerMonth?: number | null; storiesPerDay?: number | null; startDate?: string | null; since?: string | null; endDate?: string | null; storiesArchived?: boolean; isArchived?: boolean }
 // Фактически опубликовано за день (поле count с бэка; фолбэк — парсинг «Сторис ×N» из topic).
 const storyCount = (e: Ev): number => {
   if (typeof e.count === 'number') return e.count
@@ -31,7 +31,10 @@ export default function SmmStoriesPage() {
     placeholderData: keepPreviousData,
   })
   const allEvents: Ev[] = data?.events ?? []
-  const projects = (data?.projects ?? []) as StoryProj[]
+  // Проект в архиве историй сторис больше не ждёт — как в «Проверке сторис»
+  // и в вечерней сводке. Раньше он краснел здесь каждый день.
+  const projects = ((data?.projects ?? []) as StoryProj[])
+    .filter(p => !p.storiesArchived && !p.isArchived)
   const today = new Date().toLocaleDateString('en-CA')
 
   // Цвета проектов — тот же модульный map, что и в календаре (единые цвета).

@@ -97,8 +97,10 @@ export function storiesDailyTarget(
     const n = Number(m)
     if (n <= 0) return 0
     const dim = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
-    return Math.min(12, Math.max(1, Math.round(n / dim)))
+    // Потолка нет: сервер (проверка сторис, сводка 18:00) его не знает, и при
+    // большой норме день выходил «сделан» в степпере и «частично» в проверке.
+    return Math.max(1, Math.round(n / dim))
   }
   const d = Number((p as any)?.storiesPerDay ?? sd.storiesPerDay)
-  return Number.isFinite(d) && d > 0 ? Math.min(d, 12) : 3
+  return Number.isFinite(d) && d > 0 ? d : 3
 }

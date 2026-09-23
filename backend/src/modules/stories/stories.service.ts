@@ -176,6 +176,14 @@ export class StoriesService {
       return val;
     };
 
+    // С какого дня с проекта вообще спрашивают сторис: начало работы с
+    // клиентом, иначе дата появления записи в CRM. То же правило, что в KPI и
+    // на странице «Сторисы».
+    const dOnly = (v: any): string | null =>
+      !v ? null : (typeof v === 'string' ? v.slice(0, 10) : new Date(v).toISOString().slice(0, 10));
+    const startsAt = (p: Project): string | null =>
+      dOnly((p as any).startDate) || dOnly((p as any).createdAt);
+
     // Факт из story_logs: отдельно по человеку и суммарно по проекту за день.
     const logs = await this.repo.createQueryBuilder('s')
       .select(['s.id', 's.projectId', 's.employeeId', 's.date', 's.storiesCount'])
@@ -203,10 +211,14 @@ export class StoriesService {
     const projectRows = projects.map(p => {
       const byDay: Record<string, CheckDay> = {};
       let marked = 0, expected = 0;
+      const from0 = startsAt(p);
       for (const d of past) {
         const target = targetOf(p, d);
         if (target <= 0) continue;                 // проект без сторис — дни не красим
         const actual = byProject.get(`${p.id}|${d}`) || 0;
+        // До начала работы с клиентом спрашивать не с кого. Факт всё равно
+        // показываем: если сторис в этот день были, день не прячем.
+        if (from0 && d < from0 && actual === 0) continue;
         byDay[d] = statusOf(actual, target);
         marked += actual; expected += target;
       }
@@ -236,8 +248,11 @@ export class StoriesService {
         for (const p of list) {
           const t = targetOf(p, d);
           if (t <= 0) continue;
+          const mine = byPerson.get(`${p.id}|${d}|${uid}`) || 0;
+          const s0 = startsAt(p);
+          if (s0 && d < s0 && mine === 0) continue;   // проект ещё не начался
           target += t;
-          actual += byPerson.get(`${p.id}|${d}|${uid}`) || 0;
+          actual += mine;
         }
         if (target <= 0) continue;
         byDay[d] = statusOf(actual, target);
@@ -288,7 +303,10 @@ export class StoriesService {
   async notifyManagerAboutMissingStories() {
     this.logger.log('Running 18:00 stories check...');
 
-    const today = new Date().toISOString().split('T')[0];
+    // Дата по Душанбе, как во всех остальных суточных сравнениях. По UTC в
+    // 18:00 она пока совпадает, но сдвинь крон на вечер — и сводка ушла бы
+    // за вчерашний день.
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
 
     // Берём все активные SMM-проекты с менеджером и участниками
     const projects = await this.projectRepo.createQueryBuilder('p')

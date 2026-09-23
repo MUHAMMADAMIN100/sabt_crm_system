@@ -139,6 +139,11 @@ export function useSocket(authMarker: string | null) {
       qc.invalidateQueries({ queryKey: ['stories-all'] })
       qc.invalidateQueries({ queryKey: ['project-stories'] })   // ProjectDetailPage SMM heatmap
       qc.invalidateQueries({ queryKey: ['stories-global'] })    // Global calendar (Founder/HeadSMM)
+      qc.invalidateQueries({ queryKey: ['stories-my-month'] })  // степпер в кабинете SMM-специалиста
+      qc.invalidateQueries({ queryKey: ['stories-check'] })     // «Проверка сторис»
+      // Умный календарь кормит страницу «Сторисы» и «Сторис за месяц» в
+      // карточке проекта — без него отметка доезжала не на все экраны.
+      qc.invalidateQueries({ queryKey: ['smm-calendar'] })
       // Активный refetch — чтобы данные пришли мгновенно, не по визиту
       qc.refetchQueries({ queryKey: ['project-stories'], type: 'active' })
       qc.refetchQueries({ queryKey: ['stories-global'], type: 'active' })

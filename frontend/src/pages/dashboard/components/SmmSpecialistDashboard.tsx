@@ -262,12 +262,18 @@ export default function SmmSpecialistDashboard() {
   const storyMut = useMutation({
     mutationFn: (v: { projectId: string; storiesCount: number }) =>
       storiesApi.upsert({ projectId: v.projectId, date: selKey, storiesCount: v.storiesCount }),
-    onSettled: () => qc.invalidateQueries({ queryKey: ['stories-my-month'] }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['stories-my-month'] })
+      qc.invalidateQueries({ queryKey: ['smm-calendar'] })
+      qc.invalidateQueries({ queryKey: ['stories-check'] })
+      qc.invalidateQueries({ queryKey: ['stories'] })
+    },
   })
   const storyCountOf = (pid: string) => (pid in pendingStory ? pendingStory[pid] : (storyByDay[selKey]?.[pid] || 0))
   const setStory = (pid: string, next: number) => {
     const target = dailyTarget(myProjects.find((p: any) => p.id === pid), sel)
-    const n = Math.max(0, Math.min(Math.max(target + 5, 30), next))
+    // Сервер режет всё выше 30 — выше и не даём, иначе введённое тихо терялось.
+    const n = Math.max(0, Math.min(30, next))
     setPendingStory(prev => ({ ...prev, [pid]: n }))
     storyMut.mutate({ projectId: pid, storiesCount: n })
   }
