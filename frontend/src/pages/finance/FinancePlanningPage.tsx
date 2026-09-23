@@ -468,7 +468,7 @@ export default function FinancePlanningPage() {
       {showCalendar ? (
       <div className="fin-plan-payments-cal" style={{ marginTop: 16 }}>
         <div className="page-head" style={{ marginBottom: 8 }}>
-          <p className="muted mini" style={{ margin: 0 }}>Всё движение денег по датам: приходы от клиентов (+) и расходы — долги, аренда/подписки, зарплаты, разовые платежи (−). Приглушённые строки уже прошли. Справа в дне — остаток на счетах на конец этого дня; красная обводка означает, что в этот день денег не хватит.</p>
+          <p className="muted mini" style={{ margin: 0 }}>Всё движение денег по датам: приходы от клиентов (+) и расходы — долги, аренда/подписки, зарплаты, разовые платежи (−). Суммы на дне.</p>
           <MonthNav ym={calYm} onChange={setCalYm} />
         </div>
         {(plannedQ.isLoading || subsQ.isLoading || txMonthQ.isLoading || salaryQ.isLoading) ? <FinLoading /> : (

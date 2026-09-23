@@ -408,28 +408,16 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
     <>
       <div className="tx-cal-wrap">
         <div className="tx-cal-top">
-          {planMode ? (
-            <div className="sums">
-              <span className="mini muted">уже прошло</span>
-              <span className="pos">+{moneyBare(totals.inc)}</span>
-              <span className="neg">−{moneyBare(totals.exp)}</span>
-              <span className="mini muted">осталось по плану</span>
-              <span className="pos">+{moneyBare(totals.plannedInc)}</span>
-              <span className="neg">−{moneyBare(totals.plannedExp)}</span>
-              <span className={'net ' + (net >= 0 ? 'pos' : 'neg')}>за месяц {money(net, true)}</span>
-            </div>
-          ) : (
-            <div className="sums">
-              <span className="pos">+{money(totals.inc)}</span>
-              <span className="neg">−{money(totals.exp)}</span>
-              <span className={'net ' + (net >= 0 ? 'pos' : 'neg')}>{money(net, true)}</span>
-              {(totals.plannedInc > 0 || totals.plannedExp > 0) && (
-                <span className="muted mini">
-                  план: +{moneyBare(totals.plannedInc)} / −{moneyBare(totals.plannedExp)}
-                </span>
-              )}
-            </div>
-          )}
+          <div className="sums">
+            <span className="pos">+{money(totals.inc)}</span>
+            <span className="neg">−{money(totals.exp)}</span>
+            <span className={'net ' + (net >= 0 ? 'pos' : 'neg')}>{money(net, true)}</span>
+            {(totals.plannedInc > 0 || totals.plannedExp > 0) && (
+              <span className="muted mini">
+                план: +{moneyBare(totals.plannedInc)} / −{moneyBare(totals.plannedExp)}
+              </span>
+            )}
+          </div>
           <span className="mini muted">{pluralRu(totals.count, 'операция', 'операции', 'операций')} за месяц</span>
         </div>
         <div className="tx-cal">
