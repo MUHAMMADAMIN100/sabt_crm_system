@@ -7,6 +7,10 @@ import type { NextFunction, Request, Response } from 'express';
  * own Vercel deployment and issue credentialed requests from it.
  */
 export const KNOWN_PRODUCTION_FRONTENDS = [
+  // Основной адрес. Раньше он держался только на переменной FRONTEND_URL:
+  // стёрли переменную — и рабочий домен переставал пускать вход. Теперь
+  // он вшит, как и запасной vercel-адрес.
+  'https://crm.webrand.tj',
   'https://sabt-crm-system-frontend.vercel.app',
 ] as const;
 

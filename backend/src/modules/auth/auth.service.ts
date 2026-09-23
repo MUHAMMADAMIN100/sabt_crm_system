@@ -119,6 +119,27 @@ export class AuthService implements OnModuleInit {
    *  Возвращает {accessToken, refreshToken, user}. Если предъявлен
    *  уже-отозванный токен — это сигнал кражи: отзываем ВСЕ refresh'ы
    *  пользователя и логируем. */
+  /** Отозвать цепочку ротаций, выросшую из этого токена: он сам и все, кем
+   *  его последовательно заменяли. Так кража гасится целиком, но сессии на
+   *  других устройствах (у них своя цепочка) остаются живы. */
+  private async revokeChain(start: RefreshToken): Promise<number> {
+    const now = new Date();
+    let current: RefreshToken | null = start;
+    const seen = new Set<string>();
+    let count = 0;
+    // Ограничение на длину прохода — защита от кольца в данных.
+    while (current && !seen.has(current.id) && seen.size < 500) {
+      seen.add(current.id);
+      if (!current.revokedAt) {
+        await this.refreshRepo.update({ id: current.id }, { revokedAt: now });
+      }
+      count++;
+      const nextId: string | null = current.replacedBy;
+      current = nextId ? await this.refreshRepo.findOne({ where: { id: nextId } }) : null;
+    }
+    return count;
+  }
+
   async refresh(rawRefreshToken: string, req?: Request | null) {
     if (!rawRefreshToken) throw new UnauthorizedException('No refresh token');
     const hash = this.hashToken(rawRefreshToken);
@@ -143,24 +164,28 @@ export class AuthService implements OnModuleInit {
       //  2) Настоящее повторное использование спустя время — признак
       //     украденного токена: отзываем все сессии пользователя.
       const ageMs = Date.now() - new Date(found.revokedAt).getTime();
-      // Окно с большим запасом: вкладка может «спать» часами (закрыл крышку
-      // ноутбука, ушёл на встречу) и проснуться со своим прошлым токеном.
-      // Минуты не хватало — человека выбрасывало на экран входа. Кража
-      // токена всё равно ловится: настоящий злоумышленник использует его
-      // не в те же сутки, а позже, и там ниже отзыв всех сессий.
-      const GRACE_MS = 24 * 60 * 60 * 1000;
+      // Окно с большим запасом: вкладка может «спать» неделями — закрыл
+      // крышку ноутбука в пятницу, открыл в понедельник; уехал в отпуск и
+      // вернулся. Сутки не хватало: вкладка просыпалась со своим прошлым
+      // токеном, и человека выбрасывало со ВСЕХ устройств разом.
+      const GRACE_MS = 30 * 24 * 60 * 60 * 1000;
       // Грейс — ТОЛЬКО для токена, отозванного ротацией (replacedBy заполнен).
       // Токены, отозванные logout/блокировкой/сменой пароля, идут без
       // replacedBy — им грейс давать нельзя, иначе «Выйти» не выходил бы.
       if (!found.replacedBy || ageMs > GRACE_MS) {
-        await this.refreshRepo.update({ userId: found.userId, revokedAt: IsNull() }, { revokedAt: new Date() });
+        // Гасим ТОЛЬКО эту цепочку ротаций, а не все сессии человека.
+        // Раньше один протухший токен с забытой вкладки выкидывал сотрудника
+        // и с телефона, и со второго компьютера — цена ошибки была куда выше
+        // пользы. Украденный токен всё равно обезврежен: и он сам, и всё, что
+        // из него выросло, отозвано.
+        const revoked = await this.revokeChain(found);
         await this.audit.log({
           type: SecurityEventType.REFRESH_REUSE,
           userId: found.userId,
           req,
-          details: { reason: 'reuse_of_revoked' },
+          details: { reason: 'reuse_of_revoked', revokedInChain: revoked },
         });
-        throw new UnauthorizedException('Refresh token reused — all sessions revoked');
+        throw new UnauthorizedException('Refresh token reused — session revoked');
       }
       // Внутри грейс-окна продолжаем как с валидным токеном: обе вкладки
       // получают свои свежие пары и живут дальше.

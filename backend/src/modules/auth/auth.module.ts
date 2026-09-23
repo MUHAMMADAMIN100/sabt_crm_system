@@ -32,9 +32,11 @@ import { GatewayModule } from '../gateway/gateway.module';
         // базой (jwt.strategy), поэтому заблокированный или уволенный
         // отсекается мгновенно, а токены, выданные до смены пароля, отвергаются
         // по метке passwordChangedAt.
-        signOptions: config.get('JWT_ACCESS_TTL')
-          ? { expiresIn: config.get('JWT_ACCESS_TTL') }
-          : {},
+        // Срок НЕ берём из окружения намеренно: стоит кому-то выставить
+        // JWT_ACCESS_TTL в Railway — и вся команда снова начнёт вылетать по
+        // таймеру, а искать причину придётся неделю. Решение «токен
+        // бессрочный» живёт в коде, где его видно.
+        signOptions: {},
       }),
       inject: [ConfigService],
     }),
