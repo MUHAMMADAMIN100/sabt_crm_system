@@ -1832,6 +1832,19 @@ export class ProjectsService implements OnModuleInit {
     { key: 'designerIds',     out: 'designers',     roles: [UserRole.DESIGNER] },
   ] as const;
 
+  /** Единственный активный сотрудник с такой ролью (вторая роль тоже считается).
+   *  Несколько или ни одного — null: угадывать за людей не беремся. */
+  private async soleActiveByRole(roles: readonly UserRole[]): Promise<User | null> {
+    const users = await this.userRepo.find({
+      where: [
+        { role: In(roles as any), isActive: true },
+        { secondaryRole: In(roles as any), isActive: true },
+      ],
+      take: 3,
+    }).catch(() => [] as User[]);
+    return users.length === 1 ? users[0] : null;
+  }
+
   async getSmmProfile(id: string) {
     const project = await this.repo.findOne({ where: { id } });
     if (!project) throw new NotFoundException('Project not found');
@@ -1866,6 +1879,26 @@ export class ProjectsService implements OnModuleInit {
       crew[f.key] = people.map(u => u.id);
       crew[f.out] = people;
     }
+    // Кого работа найдёт сама, если на проекте никого не назначали: главного
+    // видеографа, а для монтажа и дизайна — единственного в агентстве человека
+    // с этой ролью. Ровно та же логика, по которой content-plan раздаёт
+    // карточки подготовки, — экран должен показывать того, кто реально получит
+    // работу, а не «Не назначен». Данные не трогаем: сменится специалист —
+    // подставится новый сам собой.
+    const crewDefaults: Record<string, any> = {};
+    for (const f of ProjectsService.CREW_FIELDS) {
+      if ((crew[f.key] as string[]).length) continue;   // назначен вручную
+      let u: User | null = null;
+      if (f.out === 'videographers') {
+        u = await this.userRepo.findOne({ where: { isDefaultVideographer: true, isActive: true } }).catch(() => null);
+        if (!u) u = await this.soleActiveByRole([UserRole.VIDEOGRAPHER]);
+        if (!u) u = await this.soleActiveByRole([UserRole.VIDEO_DIRECTOR]);
+      } else {
+        u = await this.soleActiveByRole(f.roles as readonly UserRole[]);
+      }
+      if (u) crewDefaults[f.out] = { id: u.id, name: u.name, avatar: u.avatar || null, role: u.role };
+    }
+
     // Кандидаты для назначения отдаём прямо тут: список /users закрыт ролями,
     // а назначать команду должен и СММ-специалист по своему проекту.
     const candRoles = ProjectsService.CREW_FIELDS.flatMap(f => f.roles as readonly UserRole[]);
@@ -1882,7 +1915,7 @@ export class ProjectsService implements OnModuleInit {
         .filter(u => roles.includes(u.role) || (u.secondaryRole && roles.includes(u.secondaryRole)))
         .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }));
     }
-    return { ...base, smmSpecialistIds: smmSpecialists.map(u => u.id), smmSpecialists, ...crew, crewCandidates };
+    return { ...base, smmSpecialistIds: smmSpecialists.map(u => u.id), smmSpecialists, ...crew, crewCandidates, crewDefaults };
   }
 
   async setSmmProfile(

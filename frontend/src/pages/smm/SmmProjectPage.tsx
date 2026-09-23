@@ -586,6 +586,7 @@ export default function SmmProjectPage() {
                 key={r.field}
                 label={r.label}
                 assigned={profile?.[r.out] ?? []}
+                fallback={profile?.crewDefaults?.[r.out] ?? null}
                 candidates={profile?.crewCandidates?.[r.out] ?? []}
                 canAssign={r.roles ? r.roles.includes((user as any)?.role ?? '') : canAssignCrew}
                 onToggle={uid => toggleCrew(r.field, r.out, uid)}
@@ -824,9 +825,13 @@ function PlanBar({ icon, label, done, total, color }: { icon: ReactNode; label: 
  *  показывает назначенных, а по кнопке открывает список кандидатов.
  *  Кандидатов отдаёт профиль проекта — список /users закрыт ролями, а
  *  назначать команду должен и СММ-специалист. */
-function CrewRow({ label, assigned, candidates, canAssign, onToggle, rowCls }: {
+function CrewRow({ label, assigned, fallback, candidates, canAssign, onToggle, rowCls }: {
   label: string
   assigned: SmmSpec[]
+  /** Кто закроет этап, если на проекте никого не назначали: главный видеограф
+   *  или единственный в агентстве монтажёр/дизайнер. Работа и так уходит ему —
+   *  показываем его, а не «Не назначен». */
+  fallback?: SmmSpec | null
   candidates: SmmSpec[]
   canAssign: boolean
   onToggle: (uid: string) => void
@@ -839,7 +844,15 @@ function CrewRow({ label, assigned, candidates, canAssign, onToggle, rowCls }: {
       <span className="text-sm text-gray-500">{label}</span>
       <div className="flex items-center gap-2 min-w-0">
         {assigned.length === 0 ? (
-          <span className="text-sm text-gray-400">Не назначен</span>
+          fallback ? (
+            <span className="inline-flex items-center gap-1.5 min-w-0">
+              <Avatar name={fallback.name} src={fallback.avatar || undefined} size={20} />
+              <span className="text-sm font-semibold truncate max-w-[160px] text-gray-500 dark:text-gray-400">{fallback.name}</span>
+              <span className="text-[11px] text-gray-400 whitespace-nowrap">по умолчанию</span>
+            </span>
+          ) : (
+            <span className="text-sm text-gray-400">Не назначен</span>
+          )
         ) : assigned.length === 1 ? (
           <span className="inline-flex items-center gap-1.5 min-w-0">
             <Avatar name={assigned[0].name} src={assigned[0].avatar || undefined} size={20} />
@@ -863,7 +876,7 @@ function CrewRow({ label, assigned, candidates, canAssign, onToggle, rowCls }: {
               onClick={() => setOpen(o => !o)}
               className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
             >
-              <Pencil size={12} /> {assigned.length ? 'Изменить' : 'Назначить'}
+              <Pencil size={12} /> {assigned.length || fallback ? 'Изменить' : 'Назначить'}
             </button>
             {open && (
               <>
