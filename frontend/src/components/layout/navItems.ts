@@ -7,6 +7,7 @@ import {
 import {
   LayoutDashboard, Wallet, Megaphone, StickyNote, ClipboardCheck, Calendar,
   Archive, Users, ShieldCheck, Contact, UserPlus, Tag, Shield, Sparkles, Code2, UserCheck,
+  FileText,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -49,6 +50,7 @@ export function useNavItems(): NavItem[] {
     { to: '/tariffs',         icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/security-log',    icon: Shield,          label: 'Журнал безопасности', permission: 'security-log.view' },
     { to: '/ai',              icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
+    { to: '/test-new',        icon: FileText,        label: 'Тест новый',        permission: 'dashboard' },
   ]
 
   return items.filter(item => {
@@ -61,6 +63,8 @@ export function useNavItems(): NavItem[] {
     if (item.to === '/smm') return canSeeSmmSection(role)
     if (item.to === '/dev') return canSeeDevSection(role)
     if (item.to === '/tasks') return !isTopExec
+    // «Тест новый» — пока только для руководства, это черновой раздел.
+    if (item.to === '/test-new') return isTopExec || role === 'admin'
     return userCan(user, item.permission)
   })
 }

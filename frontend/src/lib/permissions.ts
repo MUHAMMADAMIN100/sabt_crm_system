@@ -536,6 +536,8 @@ export function canAccessRoute(
   // «Активность команды» — мониторинг для основателя/админа. Сооснователь
   // (за которым в т.ч. и следят) эту страницу не видит.
   if (route === '/team-activity') return role === 'founder' || role === 'admin'
+  // «Тест новый» — черновой раздел: основатель, сооснователь и админ.
+  if (route === '/test-new') return role === 'founder' || role === 'co_founder' || role === 'admin'
   // Финансы и все подстраницы — по гранту finance.manage.
   if (route === '/finance' || route.startsWith('/finance/')) return userCan(u, 'finance.manage')
   // Справочники организатора съёмок (клиенты/модели/места).

@@ -90,6 +90,7 @@ const AiChatPage        = lazy(() => import('@/pages/ai/AiChatPage'))
 const ClientsPage       = lazy(() => import('@/pages/clients/ClientsPage'))
 const OnboardingPage    = lazy(() => import('@/pages/onboarding/OnboardingPage'))
 const TariffsPage       = lazy(() => import('@/pages/tariffs/TariffsPage'))
+const TestNewPage       = lazy(() => import('@/pages/test-new/TestNewPage'))
 const RisksPage         = lazy(() => import('@/pages/risks/RisksPage'))
 const SecurityLogPage   = lazy(() => import('@/pages/security/SecurityLogPage'))
 // Fin System · WebRand — финансовый раздел (Обзор/Доход/Расход/Транзакции/Настройки)
@@ -204,6 +205,7 @@ export default function App() {
           <Route path="clients" element={<RoleGuard><ClientsPage /></RoleGuard>} />
           <Route path="onboarding" element={<RoleGuard><OnboardingPage /></RoleGuard>} />
           <Route path="tariffs" element={<RoleGuard><TariffsPage /></RoleGuard>} />
+          <Route path="test-new" element={<RoleGuard><TestNewPage /></RoleGuard>} />
           <Route path="risks" element={<RoleGuard><RisksPage /></RoleGuard>} />
           <Route path="security-log" element={<RoleGuard><SecurityLogPage /></RoleGuard>} />
           {/* «Активность команды» переехала вкладкой на страницу «Сотрудники»
