@@ -1741,8 +1741,6 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const done = e.kind === 'publication' && isDone(e)
   // Подпись карточки — название позиции (topic); у задачи подготовки — название её родителя (e.title).
   const label = prep ? (e.title?.trim() || e.projectName || prep.label) : (e.topic?.trim() || `${TYPE_LABEL[type] || 'Контент'} · ${e.projectName}`)
-  // «Призрак» — задача подготовки, которую показываем бледно (резервирует слот по
-  // порядку); при наведении (on) — ярко. Иначе прежняя логика прозрачности.
   // Дата выхода на карточке подготовки: число дня публикации её рилса или поста.
   // Красное — выход завтра или сегодня, прочерк — выход ещё не поставлен в
   // календарь, галочка — публикация уже вышла.
@@ -1752,8 +1750,11 @@ function EventChip({ e, onOpen, onDragStart }: { e: Ev; onOpen?: (e: Ev) => void
   const parentDone = !!parentPub && isDone(parentPub)
   const outDate = parentPub?.date ?? e.reelDate ?? null
   const outHot = !parentDone && !!outDate && outDate <= pub.soon
-  const isGhost = e.kind === 'shoot' && !!sel.ghosts?.has(e.id)
-  const op = on ? 1 : isGhost ? 0.26 : dim ? 0.24 : (e.reelId ? 0.85 : 1)
+  // Съёмка, монтаж и дизайн рисуются как обычные карточки (решение владельца,
+  // 23.09.2026). Раньше они были «призраками» на 0.26 и просто не читались —
+  // в потоке дня их не было видно. Приглушаем только то, что не попало в
+  // выбранную цепочку: это подсветка связей, а не постоянное состояние.
+  const op = on ? 1 : dim ? 0.24 : 1
   return (
     <span data-ev={e.id} data-proj={e.projectId} data-reel={e.reelId ? `item:${e.reelId}` : undefined}
           onClick={ev => { ev.stopPropagation(); sel.onSelect(e) }} onDoubleClick={ev => { ev.stopPropagation(); onOpen?.(e) }}
