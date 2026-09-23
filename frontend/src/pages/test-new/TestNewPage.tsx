@@ -34,9 +34,26 @@ export default function TestNewPage() {
       pdfMake.vfs = f.vfs || f.default?.vfs || f.default?.pdfMake?.vfs || f.pdfMake?.vfs
 
       const heading = title.trim() || 'Без названия'
-      // Пустая строка = новый абзац. Иначе весь текст слипся бы в одну простыню.
-      const paragraphs = body.replace(/\r/g, '').split(/\n{2,}/)
-        .map(p => p.trim()).filter(Boolean)
+      // Пустая строка = новый блок. Иначе весь текст слипся бы в одну простыню.
+      const blocks = body.replace(/\r/g, '').split(/\n{2,}/)
+        .map(b => b.trim()).filter(Boolean)
+
+      // Блок, где КАЖДАЯ строка начинается с маркера, становится настоящим
+      // списком на листе: с отступом и висячей строкой, а не строкой,
+      // начинающейся с дефиса.
+      const BULLET = /^[-*•–—]\s+/
+      const NUMBER = /^\d+[.)]\s+/
+      const P = { fontSize: 11.5, lineHeight: 1.45, color: '#27272a', margin: [0, 0, 0, 12] }
+      const content = blocks.map((block) => {
+        const lines = block.split('\n').map(l => l.trim()).filter(Boolean)
+        if (lines.length && lines.every(l => BULLET.test(l))) {
+          return { ...P, ul: lines.map(l => l.replace(BULLET, '')), markerColor: '#71717a' }
+        }
+        if (lines.length && lines.every(l => NUMBER.test(l))) {
+          return { ...P, ol: lines.map(l => l.replace(NUMBER, '')), markerColor: '#71717a' }
+        }
+        return { ...P, text: block, alignment: 'justify', preserveLeadingSpaces: true }
+      })
 
       const doc: any = {
         pageSize: 'A4',
@@ -58,15 +75,7 @@ export default function TestNewPage() {
             { text: `${page} из ${total}`, fontSize: 9, color: '#a1a1aa', alignment: 'right' },
           ],
         }),
-        content: paragraphs.map(p => ({
-          text: p,
-          fontSize: 11.5,
-          lineHeight: 1.45,
-          color: '#27272a',
-          alignment: 'justify',
-          margin: [0, 0, 0, 12],
-          preserveLeadingSpaces: true,
-        })),
+        content,
         defaultStyle: { font: 'Roboto' },
       }
       const safeName = heading.replace(/[\\/:*?"<>|]/g, ' ').slice(0, 60).trim() || 'Документ'
@@ -102,7 +111,7 @@ export default function TestNewPage() {
             value={body}
             onChange={e => setBody(e.target.value)}
             rows={16}
-            placeholder={'Пишите здесь.\n\nПустая строка начинает новый абзац.'}
+            placeholder={'Пишите здесь.\n\nПустая строка начинает новый абзац.\n\nСтроки с «-» станут маркированным списком, строки с «1.» — нумерованным.'}
             className="input resize-y min-h-[280px] leading-relaxed"
           />
         </label>
