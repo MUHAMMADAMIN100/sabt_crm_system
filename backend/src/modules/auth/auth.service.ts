@@ -115,10 +115,6 @@ export class AuthService implements OnModuleInit {
     return raw;
   }
 
-  /** Использовать refresh: проверить, отозвать старый, выпустить новый.
-   *  Возвращает {accessToken, refreshToken, user}. Если предъявлен
-   *  уже-отозванный токен — это сигнал кражи: отзываем ВСЕ refresh'ы
-   *  пользователя и логируем. */
   /** Отозвать цепочку ротаций, выросшую из этого токена: он сам и все, кем
    *  его последовательно заменяли. Так кража гасится целиком, но сессии на
    *  других устройствах (у них своя цепочка) остаются живы. */
@@ -140,6 +136,10 @@ export class AuthService implements OnModuleInit {
     return count;
   }
 
+  /** Использовать refresh: проверить, отозвать старый, выпустить новый.
+   *  Возвращает {accessToken, refreshToken, user}. Предъявлен уже-отозванный
+   *  токен — гасим цепочку, из которой он вырос (см. revokeChain); сессии на
+   *  других устройствах при этом не трогаем. */
   async refresh(rawRefreshToken: string, req?: Request | null) {
     if (!rawRefreshToken) throw new UnauthorizedException('No refresh token');
     const hash = this.hashToken(rawRefreshToken);
