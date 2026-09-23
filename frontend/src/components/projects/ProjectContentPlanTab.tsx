@@ -218,7 +218,7 @@ export default function ProjectContentPlanTab({ projectId }: { projectId: string
                         <select
                           value={item.status}
                           onChange={e => quickStatusMut.mutate({ id: item.id, status: e.target.value })}
-                          className={clsx('text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer', statusOpt.color)}
+                          className={clsx('text-sm px-2 py-1 rounded-full font-medium border-0 cursor-pointer', statusOpt.color)}
                         >
                           {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>

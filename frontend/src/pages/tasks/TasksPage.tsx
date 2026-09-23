@@ -448,7 +448,7 @@ export default function TasksPage() {
             <select
               defaultValue=""
               onChange={e => e.target.value && bulkMut.mutate({ action: 'status', value: e.target.value })}
-              className="text-xs input py-1 w-auto"
+              className="text-sm input py-1 w-auto"
             >
               <option value="">Изменить статус...</option>
               {['new','in_progress','review','returned','done','cancelled'].map(s => (
@@ -554,7 +554,7 @@ export default function TasksPage() {
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       {canChangeStatus ? (
                         <select value={task.status} onChange={e => updateStatusMut.mutate({ id: task.id, status: e.target.value })}
-                          className="text-xs border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-surface-100 dark:bg-surface-700/60 dark:text-surface-200">
+                          className="text-sm border border-surface-200 dark:border-surface-600 rounded-lg px-2 py-1 bg-surface-100 dark:bg-surface-700/60 dark:text-surface-200">
                           {ALL_STATUSES.map(s => (
                             <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>
                           ))}

@@ -374,7 +374,7 @@ export default function ShiftSchedules() {
                   )
                 })}
                 <select value="" onChange={e => { if (e.target.value) patch({ alsoUserIds: [...draft.alsoUserIds, e.target.value] }) }}
-                  className="h-8 px-2 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-transparent text-[12px] text-gray-500 dark:text-gray-400">
+                  className="h-8 px-2 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-transparent text-sm text-gray-500 dark:text-gray-400">
                   <option value="">+ добавить</option>
                   {items
                     .filter(u => u.id !== editing.id && !draft.alsoUserIds.includes(u.id))

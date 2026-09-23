@@ -1742,7 +1742,7 @@ function FounderQuickTaskForm({
                   <select
                     value={s.assigneeId || ''}
                     onChange={e => setSubtaskAssignee(s.id, e.target.value)}
-                    className="text-xs bg-surface-100 dark:bg-surface-700/60 border border-surface-200 dark:border-surface-600 rounded px-1.5 py-1 max-w-[140px] shrink-0"
+                    className="text-sm bg-surface-100 dark:bg-surface-700/60 border border-surface-200 dark:border-surface-600 rounded px-1.5 py-1 max-w-[140px] shrink-0"
                     title={s.assigneeId ? `Исполнитель: ${empName(s.assigneeId)}` : 'Без исполнителя'}
                   >
                     <option value="">— исполнитель —</option>

@@ -293,7 +293,7 @@ export default function ProductionDashboard() {
             value={defaultVideographerId ?? ''}
             onChange={e => setDefault.mutate(e.target.value || null)}
             disabled={setDefault.isPending}
-            className="input py-1 px-2 text-[13px] font-semibold min-h-0 w-auto"
+            className="input py-1 px-2 text-sm font-semibold min-h-0 w-auto"
           >
             <option value="">— не выбран —</option>
             {candidates.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}

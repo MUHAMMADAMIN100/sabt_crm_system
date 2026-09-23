@@ -156,7 +156,7 @@
 .fin-root .row-actions { opacity: 0; transition: opacity .12s; white-space: nowrap; }
 .fin-root tr:hover .row-actions, .fin-root tr:focus-within .row-actions { opacity: 1; }
 .fin-root tfoot td { border-top: 2px solid var(--border); background: var(--surface-2); font-variant-numeric: tabular-nums; font-weight: 600; }
-.fin-root .cell-input { border: 1px solid transparent; background: transparent; padding: 5px 7px; font-size: 13px; width: 100%; min-width: 90px; border-radius: 6px; color: var(--text); }
+.fin-root .cell-input { border: 1px solid transparent; background: transparent; padding: 5px 7px; font-size: 14px; width: 100%; min-width: 90px; border-radius: 6px; color: var(--text); }
 .fin-root .cell-input:hover { border-color: var(--border); }
 
 /* Если таблица всё же шире окна — тонкий, не «системный» скроллбар. */

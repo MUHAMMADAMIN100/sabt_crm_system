@@ -161,7 +161,7 @@ export default function AiChatPage() {
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
-                className="bg-transparent text-xs font-medium text-surface-700 dark:text-surface-200 outline-none border-0 cursor-pointer pr-1"
+                className="bg-transparent text-sm font-medium text-surface-700 dark:text-surface-200 outline-none border-0 cursor-pointer pr-1"
                 title="Выбрать модель ИИ"
               >
                 {modelsData.models.map(m => (
