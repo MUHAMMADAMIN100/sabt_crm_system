@@ -10,7 +10,7 @@ import { StoriesTab, buildCells, monthTitle, assignProjectColors, type Ev, type 
 
 const iso = (d: Date) => format(d, 'yyyy-MM-dd')
 // Проект со страницы «Сторисы»: месячная/дневная норма сторис (цель) + окно, когда проект ждёт сторис.
-type StoryProj = { id: string; name: string; storiesPerMonth?: number | null; storiesPerDay?: number | null; since?: string | null; endDate?: string | null }
+type StoryProj = { id: string; name: string; storiesPerMonth?: number | null; storiesPerDay?: number | null; startDate?: string | null; since?: string | null; endDate?: string | null }
 // Фактически опубликовано за день (поле count с бэка; фолбэк — парсинг «Сторис ×N» из topic).
 const storyCount = (e: Ev): number => {
   if (typeof e.count === 'number') return e.count
@@ -57,7 +57,7 @@ export default function SmmStoriesPage() {
     return m
   }, [allEvents])
 
-  // Статус дня: факт vs дневная норма (storiesPerDay, по умолч. 3) в окне [создан проекта .. сегодня].
+  // Статус дня: факт vs дневная норма (storiesPerDay, по умолч. 3) в окне [начало работы .. сегодня].
   // done — норма достигнута; partial — что-то есть, но меньше нормы; none — плановый день без сторис.
   const statusByProject = useMemo(() => {
     const inMonthDates = cells.filter(c => c.inMonth && c.iso).map(c => c.iso as string)
@@ -71,11 +71,19 @@ export default function SmmStoriesPage() {
       const dm = new Map<string, SDay>()
       if (target > 0) {
         const actual = actualByProject.get(p.id) ?? new Map<string, number>()
+        // Окно «с какого дня ждём сторис» — от НАЧАЛА РАБОТЫ с клиентом, а не от
+        // даты, когда проект завели в CRM: проект, заведённый задним числом,
+        // иначе прятал весь месяц.
+        const startsAt = p.startDate || p.since || null
         for (const date of inMonthDates) {
           if (date > today) continue                       // будущее — не оцениваем
-          if (p.since && date < p.since) continue          // до появления проекта в системе
-          if (p.endDate && date > p.endDate) continue      // после завершения проекта
           const n = actual.get(date) ?? 0
+          // Факт сильнее рамок: если сторис в этот день были, показываем их
+          // всегда — иначе реальная работа пропадала с экрана.
+          if (n === 0) {
+            if (startsAt && date < startsAt) continue      // до начала работы с клиентом
+            if (p.endDate && date > p.endDate) continue    // после завершения проекта
+          }
           if (n >= target) dm.set(date, 'done')
           else if (n > 0) dm.set(date, 'partial')
           else if (date < today) dm.set(date, 'none')      // прошедший плановый день без сторис; сегодня не «красним»
