@@ -6,7 +6,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { TYPE_LABEL, money, moneyBare, currentYm, todayISO, formatDate, monthLabel, apiErr, downloadCsv , useYmParam } from './finlib';
+import { TYPE_LABEL, money, moneyBare, currentYm, todayISO, formatDate, monthLabel, apiErr, downloadCsv, pluralRu, useYmParam } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import TransactionModal from './TransactionModal';
@@ -304,7 +304,7 @@ export default function FinanceTransactionsPage() {
  *  Клик по строке — подробности, «+» в дне — новая операция этой датой,
  *  длинные дни сворачиваются до 5 строк («ещё N»). */
 const CAL_DAY_LIMIT = 5;
-export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, renderStatusControl, onMoveItem, canMoveItem }: {
+export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, renderStatusControl, onMoveItem, canMoveItem, dayBalance }: {
   ym: string; txns: any[]; onAdd: (iso: string) => void;
   /** Скрыть кнопку «＋ добавить операцию» в дне — для read-only календарей
    *  (например, план выплат на странице «Планирование»). */
@@ -323,6 +323,9 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
   onMoveItem?: (item: any, dateISO: string) => void;
   /** Можно ли тащить операцию (по умолчанию — да, если onMoveItem задан). */
   canMoveItem?: (item: any) => boolean;
+  /** Остаток денег на конец каждого дня ('YYYY-MM-DD' → сумма). Ради него в
+   *  планирование и заходят: видно, в какой день денег не хватит. */
+  dayBalance?: Map<string, number>;
 }) {
   // Клик по операции в дне открывает модалку с краткой информацией.
   const [detail, setDetail] = useState<any>(null);
@@ -373,39 +376,61 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
       const t = { inc: 0, exp: 0 };
       for (const x of list) {
         if (x.status === 'cancelled') continue;
+        const amount = Number(x.amount) || 0;
         const future = String(x.date || '').slice(0, 10) > todayISO();
-        if (x.type === 'income') {
-          if (future && !planMode) plannedInc += Number(x.amount) || 0;
-          else t.inc += Number(x.amount) || 0;
+        if (planMode) {
+          // «Уже прошло» отделяем по ФЛАГУ done, а не по дате: полученная
+          // оплата и оплаченная подписка — уже факт, даже если стоят впереди,
+          // а неоплаченный счёт из начала месяца фактом так и не стал.
+          // Итог дня по-прежнему считает всё движение — и факт, и план.
+          if (x.type === 'income') { t.inc += amount; if (x.done) inc += amount; else plannedInc += amount; }
+          else if (x.type === 'expense') { t.exp += amount; if (x.done) exp += amount; else plannedExp += amount; }
+        } else if (x.type === 'income') {
+          if (future) plannedInc += amount; else { t.inc += amount; inc += amount; }
         } else if (x.type === 'expense') {
-          if (future && !planMode) plannedExp += Number(x.amount) || 0;
-          else t.exp += Number(x.amount) || 0;
+          if (future) plannedExp += amount; else { t.exp += amount; exp += amount; }
         }
       }
       day.set(k, t);
-      inc += t.inc; exp += t.exp; count += list.length;
+      count += list.length;
     }
     return { day, inc, exp, plannedInc, plannedExp, count };
   }, [byDay, planMode]);
 
   const today = todayISO();
-  const net = totals.inc - totals.exp;
+  // В режиме плана итог месяца — это всё движение вместе: то, что уже прошло,
+  // плюс то, что ещё должно случиться.
+  const net = planMode
+    ? (totals.inc + totals.plannedInc) - (totals.exp + totals.plannedExp)
+    : totals.inc - totals.exp;
 
   return (
     <>
       <div className="tx-cal-wrap">
         <div className="tx-cal-top">
-          <div className="sums">
-            <span className="pos">+{money(totals.inc)}</span>
-            <span className="neg">−{money(totals.exp)}</span>
-            <span className={'net ' + (net >= 0 ? 'pos' : 'neg')}>{money(net, true)}</span>
-            {(totals.plannedInc > 0 || totals.plannedExp > 0) && (
-              <span className="muted mini">
-                план: +{moneyBare(totals.plannedInc)} / −{moneyBare(totals.plannedExp)}
-              </span>
-            )}
-          </div>
-          <span className="mini muted">{totals.count} операций за месяц</span>
+          {planMode ? (
+            <div className="sums">
+              <span className="mini muted">уже прошло</span>
+              <span className="pos">+{moneyBare(totals.inc)}</span>
+              <span className="neg">−{moneyBare(totals.exp)}</span>
+              <span className="mini muted">осталось по плану</span>
+              <span className="pos">+{moneyBare(totals.plannedInc)}</span>
+              <span className="neg">−{moneyBare(totals.plannedExp)}</span>
+              <span className={'net ' + (net >= 0 ? 'pos' : 'neg')}>за месяц {money(net, true)}</span>
+            </div>
+          ) : (
+            <div className="sums">
+              <span className="pos">+{money(totals.inc)}</span>
+              <span className="neg">−{money(totals.exp)}</span>
+              <span className={'net ' + (net >= 0 ? 'pos' : 'neg')}>{money(net, true)}</span>
+              {(totals.plannedInc > 0 || totals.plannedExp > 0) && (
+                <span className="muted mini">
+                  план: +{moneyBare(totals.plannedInc)} / −{moneyBare(totals.plannedExp)}
+                </span>
+              )}
+            </div>
+          )}
+          <span className="mini muted">{pluralRu(totals.count, 'операция', 'операции', 'операций')} за месяц</span>
         </div>
         <div className="tx-cal">
           {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d, i) => (
@@ -418,8 +443,13 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
             const collapsible = list.length > CAL_DAY_LIMIT;
             const visible = collapsible && !open ? list.slice(0, CAL_DAY_LIMIT) : list;
             const dt = iso ? totals.day.get(iso) : undefined;
+            // Остаток на конец дня. Ушёл в минус — обводим день: это день,
+            // когда денег не хватит.
+            const bal = iso && dayBalance ? dayBalance.get(iso) : undefined;
+            const short = bal == null ? null : (bal < 0 ? '−' : '') + moneyBare(Math.abs(bal));
             return (
               <div key={i}
+                style={bal != null && bal < 0 ? { boxShadow: 'inset 0 0 0 1px rgba(239,68,68,0.45)' } : undefined}
                 className={'tx-cal-cell' + (iso ? '' : ' off') + (iso === today ? ' today' : '') + (i % 7 >= 5 ? ' wknd' : '') + (iso && dragId && overIso === iso ? ' drop-over' : '')}
                 onDragOver={iso ? (e) => { if (dragId) { e.preventDefault(); if (overIso !== iso) setOverIso(iso); } } : undefined}
                 onDrop={iso ? (e) => {
@@ -440,6 +470,12 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
                   <>
                     <div className="tx-cal-day">
                       <span className="n">{Number(iso.slice(8))}</span>
+                      {short != null && (
+                        <span className="mini" title={`Остаток на конец дня · ${money(bal as number)}`}
+                          style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', opacity: 0.75, color: (bal as number) < 0 ? '#ef4444' : undefined }}>
+                          {short}
+                        </span>
+                      )}
                       {!hideAdd && <button className="tx-cal-add" title="Добавить операцию этой датой" onClick={() => onAdd(iso)}>＋</button>}
                     </div>
                     {dt && (dt.inc > 0 || dt.exp > 0) && (

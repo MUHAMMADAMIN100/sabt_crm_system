@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { apiErr, currentYm, formatDate, money, monthLabel, shiftYm, todayISO } from './finlib';
+import { apiErr, currentYm, formatDate, money, monthLabel, pluralRu, shiftYm, todayISO } from './finlib';
 import { FinLoadError, FinLoading, FinModal, invalidateFinanceAll } from './FinKit';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
@@ -179,6 +179,12 @@ export default function FinancePlanningPage() {
     for (const d of (debtsQ.data || [])) m.set(d.id, d);
     return m;
   }, [debtsQ.data]);
+  // Операции месяца по id — чтобы поставить полученную оплату на день прихода.
+  const txById = useMemo(() => {
+    const m = new Map<string, any>();
+    for (const t of ((txMonthQ.data?.items) || [])) m.set(t.id, t);
+    return m;
+  }, [txMonthQ.data]);
 
   // Единый список движения денег за месяц для TxCalendar: приходы (оплаты
   // клиентов) + расходы (долги, аренда/подписки, зарплаты, разовые операции).
@@ -199,7 +205,12 @@ export default function FinancePlanningPage() {
       if (planYm !== calYm) continue;
       if (p.receivedTxId) linkedTxIds.add(p.receivedTxId);
       const done = p.status === 'received';
-      let date = p.dueDate ? String(p.dueDate).slice(0, 10) : '';
+      // Полученную оплату ставим на день, когда деньги ДЕЙСТВИТЕЛЬНО пришли, а
+      // не на плановый срок: иначе приход 7-го висел на 1-м, и остаток на
+      // счетах по дням врал всю первую неделю.
+      const paidTx = done && p.receivedTxId ? txById.get(p.receivedTxId) : null;
+      let date = paidTx?.date ? String(paidTx.date).slice(0, 10)
+        : (p.dueDate ? String(p.dueDate).slice(0, 10) : '');
       if (p.projectId) {
         const proj = projById.get(p.projectId);
         // Проект на паузе — ПЛАНОВЫЙ доход не актуален; уже полученный оставляем.
@@ -263,30 +274,46 @@ export default function FinancePlanningPage() {
           { label: 'День оплаты', value: s.dueDay ? `${s.dueDay}-го` : null },
         ]) });
     }
-    // 3. Зарплата за ПРЕДЫДУЩИЙ месяц выплачивается 10-го числа. Показываем сумму,
-    // уходящую ИМЕННО в этот день = обязательство месяца (фонд + бонусы − штрафы)
-    // минус авансы (они ушли в своём месяце и здесь не считаются). Строка видна
-    // ВСЕГДА; если остаток к выплате 0 — приглушённо («уже выплачено»).
+    // 3. Зарплата. Деньги уходят НЕ одним платежом 10-го: авансы и выплаты
+    // разбросаны по всему месяцу десятками операций. Раньше календарь прятал
+    // их все и рисовал одну глыбу на 10-е — и врал про самый крупный расход
+    // компании, и по дате, и по сумме дня. Теперь показываем фактические
+    // выплаты на их днях (одной строкой на день), а остаток обязательства —
+    // отдельной строкой впереди.
     const salCards = salaryQ.data?.cards || {};
-    const salAdvances = Number(salCards.advances || 0);
-    const salPaid = Number(salCards.paid || 0);
-    const salToPay = Number(salCards.toPay || 0);
-    const salDone = salToPay <= 0.005; // остаток 0 → уже выплачено (приглушённо)
-    // Пока не выплачено — показываем остаток «к выплате» (совпадает с карточкой
-    // «Расход»). Когда выплачено — сумму, ушедшую ~10-го = выплаты без авансов
-    // прошлого месяца (авансы ушли в своём месяце и здесь не считаются).
-    const salPaidTenth = Math.max(0, Math.round((salPaid - salAdvances) * 100) / 100);
-    const salAmount = salDone ? salPaidTenth : Math.round(salToPay * 100) / 100;
-    if (salAmount > 0.005) {
+    const salToPay = Math.max(0, Math.round(Number(salCards.toPay || 0) * 100) / 100);
+    const salByDay = new Map<string, { sum: number; rows: { label: string; value: any }[] }>();
+    for (const t of ((txMonthQ.data?.items) || [])) {
+      if (t.status === 'cancelled' || t.type !== 'expense' || !t.employeeId) continue;
+      const d = String(t.date || '').slice(0, 10);
+      if (!d) continue;
+      const cur = salByDay.get(d) || { sum: 0, rows: [] };
+      cur.sum += Number(t.amount) || 0;
+      cur.rows.push({ label: t.employeeName || t.comment || 'Выплата', value: money(Number(t.amount) || 0) });
+      salByDay.set(d, cur);
+    }
+    for (const [d, v] of salByDay) {
+      items.push({ id: `salpaid-${d}`, date: d, amount: Math.round(v.sum * 100) / 100,
+        type: 'expense', status: 'completed', done: d <= today,
+        comment: v.rows.length > 1 ? `Зарплаты · ${pluralRu(v.rows.length, 'выплата', 'выплаты', 'выплат')}` : 'Зарплата',
+        details: detailList([{ label: 'Всего за день', value: money(v.sum) }, ...v.rows]) });
+    }
+    if (salToPay > 0.005) {
+      // Просроченный остаток не рисуем в прошлом: деньги, которые ещё не ушли,
+      // уйдут начиная с сегодняшнего дня — иначе остаток по дням считался бы
+      // от несуществующего платежа.
+      const planned = `${calYm}-10`;
+      const salDate = calYm === currentYm() && planned < today ? today : planned;
       const empCount = (salaryQ.data?.rows || []).length;
-      items.push({ id: `salary-${calYm}`, date: `${calYm}-10`, amount: salAmount, type: 'expense', status: 'completed', done: salDone,
-        comment: `Зарплаты за ${monthLabel(salaryYm)}`,
+      items.push({ id: `salary-${calYm}`, date: salDate, amount: salToPay, type: 'expense', status: 'completed', done: false,
+        comment: `Зарплаты за ${monthLabel(salaryYm)} · осталось`,
         details: detailList([
           { label: 'За месяц', value: monthLabel(salaryYm, true) },
           { label: 'Сотрудников', value: empCount ? String(empCount) : null },
           { label: 'Фонд', value: salCards.fund ? money(Number(salCards.fund)) : null },
-          { label: 'Авансы (в прошлом мес.)', value: salAdvances ? money(salAdvances) : null },
-          { label: salDone ? 'Выплачено 10-го' : 'К выплате 10-го', value: money(salAmount) },
+          { label: 'Уже выплачено', value: salCards.paid ? money(Number(salCards.paid)) : null },
+          { label: 'Осталось доплатить', value: money(salToPay) },
+          { label: 'Плановый день', value: `${monthLabel(calYm, true)}, 10-е` },
         ]) });
     }
     // 4. Прочие операции журнала за месяц (без привязки к ЗП/подписке/долгу/
@@ -342,8 +369,61 @@ export default function FinancePlanningPage() {
           ]) });
       }
     }
-    return items;
-  }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, projById, debtNameById, debtById, calYm, calYear, salaryYm]);
+    // Мелочь в одну строку: «Транспорт −20» занимал строку наравне с арендой
+    // на 6 000, и за ними не было видно обязательств. Сворачиваем, только если
+    // мелких расходов за день набралось несколько.
+    const MINOR_MAX = 300;
+    const byDate = new Map<string, any[]>();
+    for (const it of items) {
+      const d = String(it.date || '').slice(0, 10);
+      if (!byDate.has(d)) byDate.set(d, []);
+      byDate.get(d)!.push(it);
+    }
+    const out: any[] = [];
+    for (const [d, list] of byDate) {
+      const minor = list.filter(x => String(x.id).startsWith('tx-') && x.type === 'expense'
+        && (Number(x.amount) || 0) <= MINOR_MAX);
+      if (minor.length < 2) { out.push(...list); continue; }
+      const rest = list.filter(x => !minor.includes(x));
+      const sum = minor.reduce((a, x) => a + (Number(x.amount) || 0), 0);
+      out.push(...rest);
+      out.push({ id: `misc-${d}`, date: d, amount: Math.round(sum * 100) / 100,
+        type: 'expense', status: 'completed', done: minor.every(x => x.done),
+        comment: `Прочее · ${pluralRu(minor.length, 'операция', 'операции', 'операций')}`,
+        details: detailList(minor.map(x => ({ label: x.comment, value: money(Number(x.amount) || 0) }))) });
+    }
+    return out;
+  }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, txById, projById, debtNameById, debtById, calYm, calYear, salaryYm]);
+
+  // Остаток денег на конец каждого дня. Считаем только для ТЕКУЩЕГО месяца:
+  // «Текущий баланс» — это деньги на сейчас, от него можно честно пойти вперёд
+  // (прибавляя то, что ещё не сделано) и назад (вычитая то, что уже прошло).
+  // Для других месяцев точки отсчёта нет — и цифру не выдумываем.
+  const dayBalance = useMemo(() => {
+    if (calYm !== currentYm()) return undefined;
+    const open = Number(query.data?.openingBalance);
+    if (!Number.isFinite(open)) return undefined;
+    const lastDay = new Date(Number(calYear), Number(calYm.slice(5, 7)), 0).getDate();
+    const days: string[] = [];
+    for (let d = 1; d <= lastDay; d++) days.push(`${calYm}-${String(d).padStart(2, '0')}`);
+    const net = new Map<string, { done: number; plan: number }>();
+    for (const it of calTxns) {
+      const d = String(it.date || '').slice(0, 10);
+      if (!net.has(d)) net.set(d, { done: 0, plan: 0 });
+      const v = (it.type === 'income' ? 1 : -1) * (Number(it.amount) || 0);
+      const cur = net.get(d)!;
+      if (it.done) cur.done += v; else cur.plan += v;
+    }
+    const today = todayISO();
+    let idx = days.indexOf(today);
+    if (idx < 0) idx = days.length - 1;
+    const out = new Map<string, number>();
+    let run = open;
+    for (let i = idx; i < days.length; i++) { run += (net.get(days[i])?.plan || 0); out.set(days[i], Math.round(run * 100) / 100); }
+    let back = open;
+    for (let i = idx - 1; i >= 0; i--) { back -= (net.get(days[i + 1])?.done || 0); out.set(days[i], Math.round(back * 100) / 100); }
+    return out;
+  }, [calTxns, query.data, calYm, calYear]);
 
   // Перетаскивание операции на другой день сохраняет дату в записи:
   // разовая → дата операции, план-платёж → срок оплаты, подписка → день оплаты.
@@ -388,11 +468,11 @@ export default function FinancePlanningPage() {
       {showCalendar ? (
       <div className="fin-plan-payments-cal" style={{ marginTop: 16 }}>
         <div className="page-head" style={{ marginBottom: 8 }}>
-          <p className="muted mini" style={{ margin: 0 }}>Всё движение денег по датам: приходы от клиентов (+) и расходы — долги, аренда/подписки, зарплаты, разовые платежи (−). Суммы на дне.</p>
+          <p className="muted mini" style={{ margin: 0 }}>Всё движение денег по датам: приходы от клиентов (+) и расходы — долги, аренда/подписки, зарплаты, разовые платежи (−). Приглушённые строки уже прошли. Справа в дне — остаток на счетах на конец этого дня; красная обводка означает, что в этот день денег не хватит.</p>
           <MonthNav ym={calYm} onChange={setCalYm} />
         </div>
         {(plannedQ.isLoading || subsQ.isLoading || txMonthQ.isLoading || salaryQ.isLoading) ? <FinLoading /> : (
-          <TxCalendar ym={calYm} txns={calTxns} onAdd={() => {}} hideAdd planMode
+          <TxCalendar ym={calYm} txns={calTxns} onAdd={() => {}} hideAdd planMode dayBalance={dayBalance}
             renderStatusControl={(item, close) => <PlanningStatusControl item={item} ym={calYm} onClose={close} />}
             onMoveItem={movePlanItem} canMoveItem={canMovePlanItem} />
         )}
