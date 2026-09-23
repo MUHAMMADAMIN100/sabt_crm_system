@@ -102,6 +102,26 @@ function Detail({ entries, sign }: { entries: Entry[]; sign?: '−' }) {
   )
 }
 
+/** Переключатель месяца. Вынесен из денежной карточки: на компьютере её
+ *  больше нет, а «Мои смены» без выбора месяца остались бы немыми. */
+function MonthNav({ ym, setYm }: { ym: string; setYm: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-1 shrink-0">
+      <button onClick={() => setYm(shiftYm(ym, -1))} aria-label="Предыдущий месяц"
+        className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
+        <ChevronLeft size={15} />
+      </button>
+      <span className="px-1 min-w-[112px] text-center text-[13px] font-medium text-surface-600 dark:text-surface-300 first-letter:uppercase whitespace-nowrap">
+        {monthOnly(ym)} {ym.slice(0, 4)}
+      </span>
+      <button onClick={() => setYm(shiftYm(ym, 1))} aria-label="Следующий месяц"
+        className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
+        <ChevronRight size={15} />
+      </button>
+    </div>
+  )
+}
+
 export default function ProfilePage() {
   const user = useAuthStore(s => s.user)
   const fetchMe = useAuthStore(s => s.fetchMe)
@@ -241,9 +261,12 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,1fr)_340px]">
+      {/* Деньги — только на телефоне (решение владельца, 23.09.2026): за
+          компьютером экран видят соседи по кабинету, зарплата на нём не место.
+          На компьютере остаётся одна узкая колонка со сменами. */}
+      <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,420px)]">
 
-        <div className="space-y-4 min-w-0">
+        <div className="space-y-4 min-w-0 lg:hidden">
 
           {/* Деньги одной карточкой: сумма, куда она разошлась, и разбор */}
           {showSalary && (
@@ -252,19 +275,7 @@ export default function ProfilePage() {
                 <span className="text-[13px] text-surface-500 dark:text-surface-400">
                   {row?.frozen ? 'Выплачено за месяц' : 'К выплате за месяц'}
                 </span>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => setYm(shiftYm(ym, -1))} aria-label="Предыдущий месяц"
-                    className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
-                    <ChevronLeft size={15} />
-                  </button>
-                  <span className="px-1 min-w-[112px] text-center text-[13px] font-medium text-surface-600 dark:text-surface-300 first-letter:uppercase whitespace-nowrap">
-                    {monthOnly(ym)} {ym.slice(0, 4)}
-                  </span>
-                  <button onClick={() => setYm(shiftYm(ym, 1))} aria-label="Следующий месяц"
-                    className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
-                    <ChevronRight size={15} />
-                  </button>
-                </div>
+                <MonthNav ym={ym} setYm={setYm} />
               </div>
 
               {salLoading ? (
@@ -364,12 +375,15 @@ export default function ProfilePage() {
           {/* Смены: три строки вместо четырёх плиток, месяц общий со страницей */}
           {!isFounder && (
             <div className="card p-4 sm:p-5">
-              <div className="flex items-baseline justify-between gap-2">
+              <div className="flex items-center justify-between gap-2">
                 <h3 className="section-title">Мои смены</h3>
+                {/* На телефоне месяц переключают в денежной карточке выше;
+                    на компьютере её нет — ставим переключатель сюда. */}
+                <div className="hidden lg:block"><MonthNav ym={ym} setYm={setYm} /></div>
                 {/* Месяц подписываем, только когда листают прошлое: для
                     текущего он и так написан в переключателе выше. */}
                 {ym !== currentSalaryYm() && (
-                  <span className="text-xs text-surface-400 dark:text-surface-500 first-letter:uppercase whitespace-nowrap">{monthOnly(ym)}</span>
+                  <span className="lg:hidden text-xs text-surface-400 dark:text-surface-500 first-letter:uppercase whitespace-nowrap">{monthOnly(ym)}</span>
                 )}
               </div>
               <div className="flex items-center justify-between gap-3 py-3 mt-1 border-b border-surface-100 dark:border-surface-700/60">
@@ -391,9 +405,10 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {/* История: состав месяца — только когда выплата разошлась с окладом */}
+          {/* История: состав месяца — только когда выплата разошлась с окладом.
+              Это тоже деньги, поэтому на компьютере её нет. */}
           {history.length > 0 && (
-            <div className="card p-4 sm:p-5">
+            <div className="card p-4 sm:p-5 lg:hidden">
               <h3 className="section-title mb-1">История выплат</h3>
               <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
                 {history.map(h => {
