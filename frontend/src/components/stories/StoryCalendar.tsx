@@ -529,7 +529,9 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
               className={clsx(
                 'rounded-lg p-0.5 flex flex-col items-center gap-0.5',
                 isToday(day) && 'ring-1 ring-primary-400',
-                past && teamCount === 0 && 'bg-red-50 dark:bg-red-900/20',
+                // Сегодня краснеет наравне с прошедшими днями: экран нужен,
+                // чтобы видеть незакрытый день сегодня, а не завтра.
+                (past || isToday(day)) && teamCount === 0 && 'bg-red-50 dark:bg-red-900/20',
                 blockedFuture && 'opacity-50',
               )}
             >

@@ -60,8 +60,9 @@ export default function SmmStoriesPage() {
     return m
   }, [allEvents])
 
-  // Статус дня: факт vs дневная норма (storiesPerDay, по умолч. 3) в окне [начало работы .. сегодня].
-  // done — норма достигнута; partial — что-то есть, но меньше нормы; none — плановый день без сторис.
+  // Статус дня: факт vs дневная норма (месячная / дни месяца, фолбэк storiesPerDay).
+  // done — норма достигнута; partial — меньше нормы; none — сторис не было. Сегодня
+  // оценивается наравне с прошедшими днями.
   const statusByProject = useMemo(() => {
     const inMonthDates = cells.filter(c => c.inMonth && c.iso).map(c => c.iso as string)
     const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate()
@@ -74,22 +75,18 @@ export default function SmmStoriesPage() {
       const dm = new Map<string, SDay>()
       if (target > 0) {
         const actual = actualByProject.get(p.id) ?? new Map<string, number>()
-        // Окно «с какого дня ждём сторис» — от НАЧАЛА РАБОТЫ с клиентом, а не от
-        // даты, когда проект завели в CRM: проект, заведённый задним числом,
-        // иначе прятал весь месяц.
-        const startsAt = p.startDate || p.since || null
         for (const date of inMonthDates) {
           if (date > today) continue                       // будущее — не оцениваем
           const n = actual.get(date) ?? 0
-          // Факт сильнее рамок: если сторис в этот день были, показываем их
-          // всегда — иначе реальная работа пропадала с экрана.
-          if (n === 0) {
-            if (startsAt && date < startsAt) continue      // до начала работы с клиентом
-            if (p.endDate && date > p.endDate) continue    // после завершения проекта
-          }
+          // После завершения проекта сторис не ждём. Во всём остальном — день
+          // без сторис красный, и СЕГОДНЯШНИЙ тоже (решение владельца,
+          // 23.09.2026): экран для того и нужен, чтобы видеть незакрытый день
+          // сегодня, а не завтра. Окна «с какого дня ждём» больше нет — оно
+          // съедало красные дни у проектов, заведённых в CRM задним числом.
+          if (n === 0 && p.endDate && date > p.endDate) continue
           if (n >= target) dm.set(date, 'done')
           else if (n > 0) dm.set(date, 'partial')
-          else if (date < today) dm.set(date, 'none')      // прошедший плановый день без сторис; сегодня не «красним»
+          else dm.set(date, 'none')
         }
       }
       res.set(p.id, dm)
