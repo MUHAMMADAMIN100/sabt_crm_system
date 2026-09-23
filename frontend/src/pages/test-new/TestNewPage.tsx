@@ -15,10 +15,11 @@ export default function TestNewPage() {
   const [busy, setBusy] = useState(false)
 
   const words = body.trim() ? body.trim().split(/\s+/).length : 0
-  const canDownload = !!body.trim() && !busy
+  const canDownload = !busy
 
   async function download() {
-    if (!canDownload) return
+    if (busy) return
+    if (!body.trim()) { toast.error('Сначала напишите текст'); return }
     setBusy(true)
     try {
       // Грузим pdfmake по требованию: он весит прилично, и незачем тянуть его
@@ -28,10 +29,25 @@ export default function TestNewPage() {
         import('pdfmake/build/vfs_fonts'),
       ])
       const pdfMake: any = (pdfModule as any).default || pdfModule
-      // Шрифты у pdfmake лежат по-разному в зависимости от сборки — перебираем
-      // все три известных места, иначе кириллица молча не отрисуется.
-      const f: any = fontsModule
-      pdfMake.vfs = f.vfs || f.default?.vfs || f.default?.pdfMake?.vfs || f.pdfMake?.vfs
+      // Шрифты подключаются по-разному в зависимости от версии pdfmake:
+      // в 0.3 это addVirtualFileSystem(модуль), в 0.2 — присваивание vfs.
+      // Поддерживаем оба, иначе сборка документа падает на первом же шрифте.
+      const f: any = (fontsModule as any).default ?? fontsModule
+      if (typeof pdfMake.addVirtualFileSystem === 'function') {
+        pdfMake.addVirtualFileSystem(f)
+      } else {
+        pdfMake.vfs = f.vfs ?? f.pdfMake?.vfs ?? f
+      }
+      // В 0.3 карта шрифтов больше не зашита внутрь — объявляем сами.
+      // Лишним не будет и в 0.2: имена файлов те же.
+      pdfMake.fonts = pdfMake.fonts || {
+        Roboto: {
+          normal: 'Roboto-Regular.ttf',
+          bold: 'Roboto-Medium.ttf',
+          italics: 'Roboto-Italic.ttf',
+          bolditalics: 'Roboto-MediumItalic.ttf',
+        },
+      }
 
       const heading = title.trim() || 'Без названия'
       // Пустая строка = новый блок. Иначе весь текст слипся бы в одну простыню.
@@ -79,9 +95,27 @@ export default function TestNewPage() {
         defaultStyle: { font: 'Roboto' },
       }
       const safeName = heading.replace(/[\\/:*?"<>|]/g, ' ').slice(0, 60).trim() || 'Документ'
-      pdfMake.createPdf(doc).download(`${safeName}.pdf`)
+      const file = `${safeName}.pdf`
+      const built = pdfMake.createPdf(doc)
+      if (typeof built.download === 'function') {
+        built.download(file)
+      } else {
+        // Запасной путь: собираем файл сами и кликаем по ссылке.
+        built.getBlob((blob: Blob) => {
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = file
+          a.click()
+          setTimeout(() => URL.revokeObjectURL(url), 5000)
+        })
+      }
     } catch (e: any) {
-      toast.error(e?.message || 'Не удалось собрать PDF')
+      // Показываем НАСТОЯЩУЮ причину: «не работает кнопка» без текста ошибки
+      // не даёт понять, что именно сломалось.
+      // eslint-disable-next-line no-console
+      console.error('PDF:', e)
+      toast.error(`Не удалось собрать PDF: ${e?.message || e}`)
     } finally {
       setBusy(false)
     }
