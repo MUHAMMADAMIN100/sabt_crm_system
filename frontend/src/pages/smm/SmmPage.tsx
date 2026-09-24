@@ -62,9 +62,9 @@ export const prepStageOf = (e: { prepStage?: string | null; parentKind?: string 
 // Задача подготовки (kind 'shoot'): съёмка (Camera), монтаж (Scissors), дизайн (Palette).
 // parentIcon — иконка родителя (для карточки в модалке), forWhat — «рилса»/«поста».
 const PREP_META = {
-  shoot:  { label: 'Съёмка', Icon: Camera,   parentIcon: Film,      forWhat: 'рилса', verb: 'Снять' },
-  edit:   { label: 'Монтаж', Icon: Scissors, parentIcon: Film,      forWhat: 'рилса', verb: 'Смонтировать' },
-  design: { label: 'Дизайн', Icon: Palette,  parentIcon: ImageIcon, forWhat: 'поста', verb: 'Сделать' },
+  shoot:  { label: 'Съёмка', Icon: Camera,   parentIcon: Film,      forWhat: 'рилса', verb: 'Снять',        doneLabel: 'Снято' },
+  edit:   { label: 'Монтаж', Icon: Scissors, parentIcon: Film,      forWhat: 'рилса', verb: 'Смонтировать', doneLabel: 'Смонтировано' },
+  design: { label: 'Дизайн', Icon: Palette,  parentIcon: ImageIcon, forWhat: 'поста', verb: 'Сделать',      doneLabel: 'Готово' },
 } as const
 function prepMeta(e: { prepStage?: string | null; parentKind?: string | null }) {
   return PREP_META[prepStageOf(e)]
@@ -1862,7 +1862,10 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
       <Inbox size={15} /> Вернуть
     </button>
   ) : null
-  const primaryBtn = isShoot ? null : (done ? (
+  // Съёмку, монтаж и дизайн тоже отмечают выполненными. Раньше кнопки здесь
+  // не было вовсе: в списке дня галочка есть, а откроешь карточку — отметить
+  // нечем. Операция та же, что в кабинете производства, — статус «выполнено».
+  const primaryBtn = (done ? (
     <button disabled={marking} onClick={() => onMark(false)}
       className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">
       <RotateCcw size={15} /> В работу
@@ -1870,7 +1873,7 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
   ) : (
     <button disabled={marking} onClick={() => onMark(true)}
       className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#3f7a58] text-white py-2.5 text-sm font-semibold hover:brightness-110 disabled:opacity-60">
-      <Check size={15} /> Сделано
+      <Check size={15} /> {prep ? prep.doneLabel : 'Сделано'}
     </button>
   ))
   const both = returnBtn && primaryBtn
