@@ -6,7 +6,7 @@
 import type { UserRole, User } from '@/store/auth.store'
 
 /** Maps role enum to a Russian display label */
-const ROLE_LABELS: Record<string, string> = {
+export const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   founder: 'Основатель',
   co_founder: 'Сооснователь',

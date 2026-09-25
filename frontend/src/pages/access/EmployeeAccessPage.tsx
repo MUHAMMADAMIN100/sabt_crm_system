@@ -1,9 +1,9 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usersApi } from '@/services/api.service'
-import { getRoleLabel } from '@/lib/permissions'
+import { getRoleLabel, ROLE_LABELS } from '@/lib/permissions'
 import { Avatar, Modal } from '@/components/ui'
-import { ShieldCheck, Search, SlidersHorizontal, AlertTriangle } from 'lucide-react'
+import { ShieldCheck, Search, SlidersHorizontal, AlertTriangle, Users, ChevronDown } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 
@@ -55,6 +55,8 @@ export default function EmployeeAccessPage() {
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск сотрудника…" className="input pl-9" />
       </div>
 
+      {!isLoading && <RolesAudit users={users} />}
+
       {isLoading ? (
         <p className="text-sm text-surface-400 animate-pulse">Загрузка…</p>
       ) : filtered.length === 0 ? (
@@ -92,6 +94,80 @@ export default function EmployeeAccessPage() {
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); qc.invalidateQueries({ queryKey: ['access-users'] }) }}
         />
+      )}
+    </div>
+  )
+}
+
+// ─── «Роли: кто на них сидит» ────────────────────────────────────────────
+/**
+ * Сводка по ролям для ревизии должностей: на каждой роли — сколько людей и
+ * кто именно (основная роль и вторая считаются вместе, вторая помечена
+ * «2-я»). Пустые роли вынесены отдельно: такую роль можно убирать из
+ * списка должностей, никого не задев.
+ *
+ * Считаем только активных сотрудников — уволенные роль уже не занимают.
+ */
+function RolesAudit({ users }: { users: AccessUser[] }) {
+  const [open, setOpen] = useState(true)
+
+  const { busy, empty } = useMemo(() => {
+    const map = new Map<string, { main: string[]; second: string[] }>()
+    const bucket = (role: string) => {
+      let b = map.get(role)
+      if (!b) { b = { main: [], second: [] }; map.set(role, b) }
+      return b
+    }
+    // Сначала все известные роли — чтобы пустые тоже попали в список.
+    Object.keys(ROLE_LABELS).forEach(r => bucket(r))
+    ;(users || []).filter(u => u.isActive).forEach(u => {
+      bucket(u.role).main.push(u.name)
+      if (u.secondaryRole) bucket(u.secondaryRole).second.push(u.name)
+    })
+    const rows = [...map.entries()].map(([role, v]) => ({
+      role, main: v.main, second: v.second, total: v.main.length + v.second.length,
+    }))
+    return {
+      busy: rows.filter(r => r.total > 0).sort((a, b) => b.total - a.total),
+      empty: rows.filter(r => r.total === 0).sort((a, b) => getRoleLabel(a.role).localeCompare(getRoleLabel(b.role))),
+    }
+  }, [users])
+
+  return (
+    <div className="card">
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 w-full text-left">
+        <Users size={16} className="text-primary-600 shrink-0" />
+        <span className="text-sm font-semibold text-surface-900 dark:text-surface-100">Роли: кто на них сидит</span>
+        <span className="text-xs text-surface-500 dark:text-surface-400">
+          занято {busy.length} · пустых {empty.length}
+        </span>
+        <ChevronDown size={16} className={clsx('ml-auto text-surface-400 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-1">
+          {busy.map(r => (
+            <div key={r.role} className="flex items-start gap-2 py-1.5 border-t border-surface-100 dark:border-surface-700">
+              <span className="text-sm text-surface-700 dark:text-surface-200 w-48 shrink-0">{getRoleLabel(r.role)}</span>
+              <span className="text-xs font-semibold text-surface-500 dark:text-surface-400 w-6 shrink-0 tabular-nums">{r.total}</span>
+              <span className="text-xs text-surface-600 dark:text-surface-300 min-w-0 flex-1">
+                {[...r.main, ...r.second.map(n => `${n} (2-я)`)].join(', ')}
+              </span>
+            </div>
+          ))}
+
+          {empty.length > 0 && (
+            <div className="pt-3 mt-1 border-t border-surface-200 dark:border-surface-600">
+              <p className="text-xs font-semibold text-surface-500 dark:text-surface-400 mb-1.5">
+                Никого нет — роль можно убрать
+              </p>
+              <p className="text-xs text-surface-600 dark:text-surface-300 leading-relaxed">
+                {empty.map(r => getRoleLabel(r.role)).join(' · ')}
+              </p>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
