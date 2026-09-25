@@ -8,7 +8,7 @@ import { AppGateway } from '../gateway/app.gateway';
 
 // Руководитель разработки — такой же приёмщик работ, как руководители SMM
 // и видео: может приложить/снять результат по задаче своего направления.
-const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director'];
+const PM_ROLES = ['admin', 'founder', 'smm_director', 'dev_director'];
 
 @Injectable()
 export class TaskResultsService {

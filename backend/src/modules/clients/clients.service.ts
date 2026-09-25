@@ -443,7 +443,7 @@ export class ClientsService implements OnModuleInit {
     dto: Partial<ClientLead>,
     user: { id: string; role: string; name?: string },
   ) {
-    const isAdmin = ['admin', 'founder', 'co_founder'].includes(user.role);
+    const isAdmin = ['admin', 'founder'].includes(user.role);
     const before = await this.repo.findOne({ where: { id } });
     if (!before) throw new NotFoundException('Client lead not found');
     if (!isAdmin && before.ownerId && before.ownerId !== user.id) {
@@ -480,7 +480,7 @@ export class ClientsService implements OnModuleInit {
     flag: boolean,
     actor: { id: string; role: string; name?: string },
   ) {
-    const isBoss = ['admin', 'founder', 'co_founder'].includes(actor.role);
+    const isBoss = ['admin', 'founder'].includes(actor.role);
     if (flag && !isBoss) {
       throw new ForbiddenException('Назначать звонки может только руководитель');
     }
@@ -566,7 +566,7 @@ export class ClientsService implements OnModuleInit {
 
   /** Remove с ownership-проверкой. */
   async removeWithAuth(id: string, user: { id: string; role: string }) {
-    const isAdmin = ['admin', 'founder', 'co_founder'].includes(user.role);
+    const isAdmin = ['admin', 'founder'].includes(user.role);
     if (!isAdmin) {
       const lead = await this.repo.findOne({ where: { id } });
       if (!lead) throw new NotFoundException('Client lead not found');

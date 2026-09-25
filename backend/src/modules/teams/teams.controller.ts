@@ -21,10 +21,9 @@ import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard'
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
 
-const TOP = [UserRole.FOUNDER, UserRole.CO_FOUNDER];
+const TOP = [UserRole.FOUNDER];
 const VIEWERS = [
-  UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-  UserRole.VIDEO_DIRECTOR,
+  UserRole.ADMIN, UserRole.FOUNDER,
 ];
 
 @ApiTags('Teams')

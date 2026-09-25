@@ -23,10 +23,12 @@ export interface AiUserContext {
 }
 
 /** Пользователи, которым доступна полная картина по БД. */
-const FULL_ACCESS_ROLES: ReadonlySet<UserRole> = new Set([UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER]);
+const FULL_ACCESS_ROLES: ReadonlySet<UserRole> = new Set([UserRole.ADMIN, UserRole.FOUNDER]);
 
-/** Пользователи, которые видят только свои проекты (плюс команду и задачи в них). */
-const PROJECT_SCOPED_ROLES: ReadonlySet<UserRole> = new Set([UserRole.VIDEO_DIRECTOR]);
+/** Пользователи, которые видят только свои проекты (плюс команду и задачи в них).
+ *  Пусто с 25.09.2026: роль «руководитель по видеографии» убрана, а других
+ *  ролей с таким охватом нет. Список оставлен — ветки ниже на него опираются. */
+const PROJECT_SCOPED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>();
 
 // Default fallback chain (used when user doesn't pick a specific model)
 const GEMINI_MODEL_CHAIN = [

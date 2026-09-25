@@ -44,7 +44,7 @@ const fmt = (v: number | string | null | undefined) => {
   return new Intl.NumberFormat('ru-RU').format(n) + ' сомони'
 }
 
-const FINANCE_ROLES = ['founder', 'co_founder']
+const FINANCE_ROLES = ['founder']
 
 export default function ProjectFinanceTab({ project }: { project: FinanceProject }) {
   const role = useAuthStore(s => s.user?.role)

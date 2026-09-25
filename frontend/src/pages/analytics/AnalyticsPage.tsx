@@ -53,7 +53,7 @@ export default function AnalyticsPage() {
   if (isLoading) return <PageLoader />
 
   const smmPositions = ['SMM специалист', 'Руководитель SMM', 'Сторисмейкер']
-  const smmRoles = ['smm_specialist', 'storymaker']
+  const smmRoles = ['smm_specialist']
   const isSMMEmployee = (emp: any) => smmRoles.includes(emp?.user?.role || emp?.role || '') || smmPositions.includes(emp?.position || '')
 
   // Filter workload & efficiency for smm_director — include both position and role check

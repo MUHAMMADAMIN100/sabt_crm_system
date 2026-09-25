@@ -27,7 +27,7 @@ export function useNavItems(): NavItem[] {
 
   const role = user?.role
   const secondaryRole = user?.secondaryRole
-  const isTopExec = role === 'founder' || role === 'co_founder'
+  const isTopExec = role === 'founder'
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
 
   // «Аналитика» и «Риски» убраны из меню 19.09.2026 (решение владельца).
@@ -55,7 +55,7 @@ export function useNavItems(): NavItem[] {
 
   return items.filter(item => {
     if (item.to === '/onboarding' && role !== 'sales_manager_dev') return false
-    if (item.to === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(user, 'notes.use')
+    if (item.to === '/my-notes') return canSeeProjectStories(user?.isStoryMaker) && userCan(user, 'notes.use')
     if (item.to === '/employee-access') return canManageAccess(role)
     if (item.to === '/stories-check') return canCheckStories(role, secondaryRole) && userCan(user, 'stories.view')
     // Проверяющему сторис «Панель» не нужна: главная сразу ведёт на его страницу.

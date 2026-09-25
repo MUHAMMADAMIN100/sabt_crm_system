@@ -152,11 +152,11 @@ export class SmmTariffsService implements OnModuleInit {
   }
 
   /** Цены тарифа видят только founder/co_founder. Все остальные
-   *  (admin, smm_director, video_director, sales_manager и т.д.)
+   *  (admin, smm_director, sales_manager и т.д.)
    *  могут смотреть состав тарифа (stories/reels/posts/designs/...) и
    *  редактировать всё кроме цены, но саму цену не видят. */
   stripPrice<T extends SmmTariff | SmmTariff[]>(data: T, role?: string): T {
-    const isFinance = role === 'founder' || role === 'co_founder';
+    const isFinance = role === 'founder';
     if (isFinance) return data;
     const strip = (t: any) => {
       if (!t) return t;
@@ -195,11 +195,11 @@ export class SmmTariffsService implements OnModuleInit {
   }
 
   async create(dto: Partial<SmmTariff>, createdById?: string, role?: string) {
-    // Цену задаёт только founder/co_founder. Для остальных ролей при
+    // Цену задаёт только founder. Для остальных ролей при
     // создании тариф будет с monthlyPrice = 0 — финансовый владелец
     // потом проставит цену в редактировании.
     const cleanDto = { ...dto } as any;
-    if (role !== 'founder' && role !== 'co_founder') {
+    if (role !== 'founder') {
       cleanDto.monthlyPrice = 0;
     }
     const t = this.repo.create({ ...cleanDto, createdById: cleanDto.createdById ?? createdById });
@@ -211,10 +211,10 @@ export class SmmTariffsService implements OnModuleInit {
     await this.findOneInternal(id);
     // Не позволяем перезаписать поле createdById через update
     const { createdById, id: _ignore, createdAt, updatedAt, ...patch } = dto as any;
-    // Цену могут менять ТОЛЬКО founder/co_founder. Остальным просто
+    // Цену могут менять ТОЛЬКО founder. Остальным просто
     // удаляем поле из патча, не падая 403, чтобы UI без поля цены
     // мог сохранять остальные изменения.
-    if (role !== 'founder' && role !== 'co_founder') {
+    if (role !== 'founder') {
       delete (patch as any).monthlyPrice;
     }
     await this.repo.update(id, patch);

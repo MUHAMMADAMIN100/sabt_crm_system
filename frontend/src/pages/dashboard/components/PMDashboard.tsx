@@ -13,7 +13,7 @@ import { PmWidgets, HeadSmmWidgets } from './RiskWidgets'
 const GlobalStoriesCalendar = lazy(() => import('./GlobalStoriesCalendar'))
 
 const SMM_POSITIONS = ['SMM специалист', 'Руководитель SMM', 'Сторисмейкер']
-const SMM_ROLES = ['smm_specialist', 'storymaker']
+const SMM_ROLES = ['smm_specialist']
 
 export default function PMDashboard() {
   const user = useAuthStore(s => s.user)

@@ -10,7 +10,7 @@ import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-const MANAGE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director']
+const MANAGE_ROLES = ['admin', 'founder', 'smm_director']
 
 interface Props { projectId: string }
 

@@ -12,7 +12,7 @@ import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
 
-const PM_ROLES = new Set(['admin', 'founder', 'co_founder', 'smm_director', 'video_director']);
+const PM_ROLES = new Set(['admin', 'founder', 'smm_director']);
 
 @Injectable()
 export class CommentsService {

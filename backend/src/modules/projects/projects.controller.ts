@@ -40,7 +40,7 @@ export class ProjectsController {
    *  и сам СММ-специалист (он ВИДИТ схему, но переставлять проекты не может —
    *  переназначение через setSmmProfile ему запрещено). Объявлено ДО ':id'. */
   @Get('smm-specialist-load')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   smmSpecialistLoad() {
     return this.service.smmSpecialistLoad();
   }
@@ -65,7 +65,7 @@ export class ProjectsController {
   /** Этап разработки на доске «Разработка» ([10%]…[100%]). Доступ уже, чем
    *  projects.edit: pm_dev двигает карточки, не имея права редактировать проект. */
   @Patch(':id/dev-stage')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
   setDevStage(@Param('id') id: string, @Body() dto: SetDevStageDto, @Request() req) {
     return this.service.setDevStage(id, dto.devStage, req.user);
   }
@@ -73,7 +73,7 @@ export class ProjectsController {
   /** Архив историй сторисмейкера (не настоящий архив проекта). Доступ:
    *  сторисмейкер (двигает свой кабинет) + руководитель SMM + топ. */
   @Patch(':id/stories-archive')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.STORYMAKER, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   setStoriesArchived(@Param('id') id: string, @Body() dto: SetStoriesArchiveDto, @Request() req) {
     return this.service.setStoriesArchived(id, dto.archived, req.user);
   }
@@ -83,7 +83,7 @@ export class ProjectsController {
    *  Разделы «СММ» и «Разработка» пользуются одним календарём, поэтому
    *  помимо SMM-ролей допущена команда разработки. */
   @Patch(':id/smm-cycle')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
   setSmmCycle(
     @Param('id') id: string,
     @Body() body: { day?: number | null; normReels?: number | null; normPosts?: number | null; storiesPerMonth?: number | null },
@@ -101,7 +101,7 @@ export class ProjectsController {
 
   /** Редактируют SMM/разработка и владелец/руководство. */
   @Patch(':id/smm-profile')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
   setSmmProfile(
     @Param('id') id: string,
     @Body() body: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[];
@@ -203,8 +203,8 @@ export class ProjectsController {
    *  клиента — по этой ссылке он заполнит бриф без авторизации. */
   @Post(':id/brief/share-link')
   @Roles(
-    UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-    UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR,
+    UserRole.ADMIN, UserRole.FOUNDER,
+    UserRole.SMM_DIRECTOR,
     UserRole.SMM_SPECIALIST,
     UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV,
   )

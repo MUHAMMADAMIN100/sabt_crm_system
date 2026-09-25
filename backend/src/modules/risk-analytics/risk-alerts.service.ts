@@ -42,14 +42,13 @@ export class RiskAlertsService {
     ]);
   }
 
-  /** Получатели операционных алертов. Основатель/сооснователь исключены
-   *  по требованию — алёрты идут руководителю СММ, организатору и админу. */
+  /** Получатели операционных алертов. Основатель исключён по требованию —
+   *  алёрты идут руководителю СММ и админу. */
   private async getTopAdmins(): Promise<User[]> {
     return this.userRepo.find({
       where: [
         { role: UserRole.ADMIN, isActive: true, isBlocked: false },
         { role: UserRole.SMM_DIRECTOR, isActive: true, isBlocked: false },
-        { role: UserRole.ORGANIZER, isActive: true, isBlocked: false },
       ],
     });
   }
@@ -76,7 +75,7 @@ export class RiskAlertsService {
     const admins = await this.getTopAdmins();
     for (const u of users) {
       // Не алертим админов о самих себе
-      if ([UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN].includes(u.role as UserRole)) continue;
+      if ([UserRole.FOUNDER, UserRole.ADMIN].includes(u.role as UserRole)) continue;
       if (activeSet.has(u.id)) continue;
 
       // Шлём админам и самому сотруднику

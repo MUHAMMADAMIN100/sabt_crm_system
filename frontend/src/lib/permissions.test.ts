@@ -7,10 +7,8 @@ import type { UserRole } from '@/store/auth.store'
 // существуют, и permission 'tasks.view' должен пускать КАЖДУЮ роль.
 describe('canAccessRoute — /tasks (раздел «Задачи от руководителя»)', () => {
   const ALL_ROLES: UserRole[] = [
-    'admin', 'founder', 'co_founder', 'smm_director', 'video_director',
-    'smm_specialist', 'designer', 'sales_manager_smm', 'sales_manager_dev',
-    'pm_dev', 'developer', 'videographer', 'video_editor', 'organizer',
-    'storymaker', 'scriptwriter', 'qa', 'publisher', 'targetologist', 'employee',
+    'admin', 'founder', 'smm_director', 'smm_specialist', 'designer', 'sales_manager_smm', 'sales_manager_dev',
+    'pm_dev', 'developer', 'videographer', 'video_editor', 'targetologist', 'employee',
   ]
 
   it.each(ALL_ROLES)('role "%s" has the tasks.view permission (RoleGuard must not block /tasks)', (role) => {

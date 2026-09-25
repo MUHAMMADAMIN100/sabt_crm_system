@@ -12,7 +12,7 @@ import { directionScopeOf } from '../../common/direction-scope';
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.VIDEO_DIRECTOR, UserRole.SMM_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
 @Controller('analytics')
 @UseInterceptors(UserScopedCacheInterceptor)
 export class AnalyticsController {
@@ -154,7 +154,7 @@ export class AnalyticsController {
   @Get('stories-global')
   // smm_director — руководитель SMM, должен видеть истории всей SMM-команды
   // (без него глобальный календарь у него на дашборде не загружается).
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN, UserRole.SMM_DIRECTOR)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN, UserRole.SMM_DIRECTOR)
   getStoriesGlobal(
     @Query('from') from: string,
     @Query('to') to: string,

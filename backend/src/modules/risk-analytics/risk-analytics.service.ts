@@ -238,10 +238,8 @@ export class RiskAnalyticsService {
     // Для руководителя направления «PM» — это менеджеры его команды
     // (проект-менеджер и руководитель разработки), а не топ-менеджмент.
     const pmRoles: string[] = scope ? scope.teamRoles : [
-      UserRole.VIDEO_DIRECTOR,
       UserRole.ADMIN,
       UserRole.FOUNDER,
-      UserRole.CO_FOUNDER,
     ];
     const qb = this.userRepo.createQueryBuilder('u')
       .where('(u.role IN (:...roles) OR u."secondaryRole" IN (:...roles))', { roles: pmRoles })
@@ -297,7 +295,7 @@ export class RiskAnalyticsService {
          JOIN users u ON u.id = pm."usersId"
          WHERE p."isArchived" = false
            AND p."managerId" = ANY($1::uuid[])
-           AND u.role IN ('smm_specialist','storymaker')
+           AND u.role = 'smm_specialist'
          GROUP BY p."managerId"`,
         [pmIds],
       );

@@ -9,9 +9,7 @@ import type { UserRole, User } from '@/store/auth.store'
 export const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   founder: 'Основатель',
-  co_founder: 'Сооснователь',
   smm_director: 'Руководитель SMM',
-  video_director: 'Руководитель по видеографии',
   smm_specialist: 'SMM специалист',
   designer: 'Дизайнер',
   sales_manager_smm: 'Менеджер продаж (СММ)',
@@ -21,11 +19,6 @@ export const ROLE_LABELS: Record<string, string> = {
   developer: 'Разработчик',
   videographer: 'Видеограф',
   video_editor: 'Монтажёр',
-  organizer: 'Организатор',
-  storymaker: 'Сторисмейкер',
-  scriptwriter: 'Сценарист / SMM-менеджер',
-  qa: 'Контролёр качества',
-  publisher: 'Публикатор',
   targetologist: 'Таргетолог',
   stories_checker: 'Проверяющий сторис',
   employee: 'Сотрудник',
@@ -128,37 +121,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
     'team-activity.view',
     'dev-tracker.view', 'dev-tracker.manage',
-  ],
-  co_founder: [
-    'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
-    'projects.archive', 'projects.members.manage', 'projects.manager.change',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
-    'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',
-    'employees.view', 'employees.create', 'employees.edit', 'employees.delete',
-    'employees.role.change', 'users.manage',
-    'analytics.view', 'reports.view', 'reports.create', 'reports.edit.all',
-    'calendar.view', 'calendar.create', 'archive.view',
-    'files.view', 'files.upload', 'files.delete.any',
-    'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
-    'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
-    'dev-tracker.view', 'dev-tracker.manage',
-  ],
-  // Руководитель по видеографии — менеджерский уровень для видео-
-  // направления: управление задачами, аналитика, отчёты, риски.
-  // Руководитель видеографии ведёт съёмки, а не отчётность: меню у него
-  // такое же, как у дизайнера (решение владельца, 18.09.2026). Убраны
-  // «Сотрудники», «Аналитика», «Архив» и «Риски» — вместе с правами, иначе
-  // страницы остались бы доступны по прямой ссылке.
-  video_director: [
-    'dashboard', 'projects.view', 'projects.edit',
-    'projects.members.manage',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
-    'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',
-    'reports.view', 'reports.create',
-    'calendar.view', 'calendar.create',
-    'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
-    'ai.chat',
   ],
   // Руководитель SMM — полный доступ ко ВСЕМ SMM-проектам
   // (создание/удаление/архив/смена менеджера), но без финансов.
@@ -282,56 +244,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
-  // Организатор — исполнитель (организация съёмок/мероприятий).
-  organizer: [
-    'dashboard', 'projects.view',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
-    'reports.view', 'reports.create',
-    'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
-    'ai.chat', 'organizer.directory',
-  ],
-  // Сторисмейкер — ведение историй SMM-проектов. Доска проектов и Отчёты у
-  // него убраны: его рабочий экран — «Истории по проектам».
-  storymaker: [
-    'dashboard', 'projects.view',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
-    'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
-    'ai.chat',
-  ],
-  // Сценарист / SMM-менеджер — владелец Контент-плана workflow-доски.
-  scriptwriter: [
-    'dashboard', 'projects.view',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
-    'reports.view', 'reports.create',
-    'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
-    'ai.chat',
-  ],
-  // Контролёр качества — этап «Внутренняя проверка».
-  qa: [
-    'dashboard', 'projects.view',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
-    'reports.view', 'reports.create',
-    'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
-    'ai.chat',
-  ],
-  // Публикатор — сбор материалов и публикация.
-  publisher: [
-    'dashboard', 'projects.view',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
-    'reports.view', 'reports.create',
-    'files.view', 'files.upload',
-    'notifications.view', 'profile.view', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
-    'ai.chat',
-  ],
   // Таргетолог — запуск рекламы (этап «Реклама»).
   targetologist: [
     'dashboard', 'projects.view',
@@ -411,22 +323,22 @@ export function userCan(user: GrantUser, permission: string): boolean {
   return false
 }
 
-/** Управлять доступами сотрудников могут только основатель/сооснователь/админ. */
+/** Управлять доступами сотрудников могут только основатель и админ. */
 export function canManageAccess(role?: string | null): boolean {
-  return role === 'admin' || role === 'founder' || role === 'co_founder'
+  return role === 'admin' || role === 'founder'
 }
 
 /** Страница «Проверка сторис» — контролёр сторис и руководство.
  *  Обычный SMM-специалист сюда не ходит: у него своя отметка в кабинете. */
 export function canCheckStories(role?: string | null, secondaryRole?: string | null): boolean {
-  const CHECKERS = ['stories_checker', 'admin', 'founder', 'co_founder', 'smm_director']
+  const CHECKERS = ['stories_checker', 'admin', 'founder', 'smm_director']
   return [role, secondaryRole].some(r => !!r && CHECKERS.includes(r))
 }
 
 /** Раздел «СММ» (Умный календарь / Сторисы / Проекты) — вся СММ-команда
  *  и топ-менеджмент. Роли совпадают с бэкендом (эндпоинт smm-calendar). */
 export function canSeeSmmSection(role?: string | null): boolean {
-  return ['founder', 'co_founder', 'admin', 'smm_director', 'smm_specialist'].includes(role || '')
+  return ['founder', 'admin', 'smm_director', 'smm_specialist'].includes(role || '')
 }
 
 /** Раздел «Разработка» (Умный календарь / Проекты) — команда разработки
@@ -438,7 +350,7 @@ export function canSeeSmmSection(role?: string | null): boolean {
  *  Доска открывается только грантом dev-tracker.view. Не добавлять его сюда
  *  без выдачи права — иначе меню покажется, а гард userCan не пустит. */
 export function canSeeDevSection(role?: string | null): boolean {
-  return ['founder', 'co_founder', 'admin', 'dev_director', 'pm_dev', 'developer'].includes(role || '')
+  return ['founder', 'admin', 'dev_director', 'pm_dev', 'developer'].includes(role || '')
 }
 
 /** Комбинированный лейбл ролей: «Видеограф / Монтажёр». */
@@ -485,10 +397,11 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
   'dev-tracker.view': '/dev-board',
 }
 
-/** «Истории по проектам» — пункт только для сторисмейкера (отметка сторис по
- *  всем SMM-проектам). Остальные роли его не видят. */
-export function canSeeProjectStories(role?: string | null, secondaryRole?: string | null): boolean {
-  return role === 'storymaker' || secondaryRole === 'storymaker'
+/** «Заметки» — пункт для того, у кого на карточке сотрудника стоит флаг
+ *  «сторисмейкер» (он же открывает истории всех SMM-проектов). Роль
+ *  storymaker убрана 25.09.2026, флаг остался. */
+export function canSeeProjectStories(isStoryMaker?: boolean | null): boolean {
+  return !!isStoryMaker
 }
 
 /** Руководитель направления разработки — основной ролью или второй (у Сабрины
@@ -518,6 +431,7 @@ export function canAccessRoute(
   secondaryRole?: UserRole | null,
   extraPermissions?: string[] | null,
   deniedPermissions?: string[] | null,
+  isStoryMaker?: boolean | null,
 ): boolean {
   if (!role) return false
   const u = { role, secondaryRole, extraPermissions, deniedPermissions }
@@ -532,10 +446,10 @@ export function canAccessRoute(
   // Общий список «Проекты» (/projects) убран из приложения у всех. Детальная
   // карточка /projects/:id остаётся (ссылки из уведомлений и пр.).
   if (route === '/projects') return false
-  // «Истории по проектам» и «Заметки» — только сторисмейкер, и лишь пока
+  // «Заметки» — только сторисмейкер (по флагу на карточке), и лишь пока
   // соответствующую возможность у него не отняли в «Доступах сотрудников».
-  if (route === '/my-notes') return canSeeProjectStories(role, secondaryRole) && userCan(u, 'notes.use')
-  // «Доступы сотрудников» — только основатель/сооснователь/админ.
+  if (route === '/my-notes') return canSeeProjectStories(isStoryMaker) && userCan(u, 'notes.use')
+  // «Доступы сотрудников» — только основатель/админ.
   if (route === '/employee-access') return canManageAccess(role)
   // «Отчёты СММ» (ежедневный автоотчёт) удалены полностью.
   if (route === '/smm-daily') return false
@@ -561,11 +475,10 @@ export function canAccessRoute(
   // отчётов: только manage (как алиас /dev/reports, меню и API).
   if (route === '/dev-board/reports') return userCan(u, 'dev-tracker.manage')
   if (route === '/dev-board' || route.startsWith('/dev-board/')) return userCan(u, 'dev-tracker.view')
-  // «Активность команды» — мониторинг для основателя/админа. Сооснователь
-  // (за которым в т.ч. и следят) эту страницу не видит.
+  // «Активность команды» — мониторинг для основателя/админа.
   if (route === '/team-activity') return role === 'founder' || role === 'admin'
-  // «Тест новый» — черновой раздел: основатель, сооснователь и админ.
-  if (route === '/test-new') return role === 'founder' || role === 'co_founder' || role === 'admin'
+  // «Тест новый» — черновой раздел: основатель и админ.
+  if (route === '/test-new') return role === 'founder' || role === 'admin'
   // Финансы и все подстраницы — по гранту finance.manage.
   if (route === '/finance' || route.startsWith('/finance/')) return userCan(u, 'finance.manage')
   // Справочники организатора съёмок (клиенты/модели/места).

@@ -9,7 +9,7 @@ import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { UserRole } from '../users/user.entity';
 // PM_ROLES convenience list for decorator
-const { ADMIN, FOUNDER, CO_FOUNDER, VIDEO_DIRECTOR, SMM_DIRECTOR } = UserRole;
+const { ADMIN, FOUNDER, SMM_DIRECTOR } = UserRole;
 import { TaskStatus, TaskPriority } from './task.entity';
 
 @ApiTags('Tasks')

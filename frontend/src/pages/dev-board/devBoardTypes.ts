@@ -254,7 +254,7 @@ export interface DevWebhookDelivery {
 
 /** Исполнителя назначаем из dev-команды и руководства.
  *  Единый список для доски и деталки (фильтр тот же). */
-export const ASSIGNEE_ROLES = ['developer', 'pm_dev', 'dev_director', 'founder', 'co_founder', 'admin']
+export const ASSIGNEE_ROLES = ['developer', 'pm_dev', 'dev_director', 'founder', 'admin']
 
 /** Пользователь для селектов исполнителей (доска + деталка).
  *  Единый тип модуля: локальные копии BoardUser в страницах запрещены

@@ -13,8 +13,8 @@ import { User } from '../users/user.entity';
 import { AppGateway } from '../gateway/app.gateway';
 
 /** Роли, которым разрешено ОТМЕЧАТЬ сторис (решение владельца, сент. 2026). Остальные — только чтение. */
-const STORY_WRITE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist'];
-const STORY_MGMT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director'];
+const STORY_WRITE_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist'];
+const STORY_MGMT_ROLES = ['admin', 'founder', 'smm_director'];
 /** Статус дня в сводке проверки: выполнено / частично / не отмечено. */
 type CheckDay = 'done' | 'partial' | 'none';
 /** Число дней в месяце даты 'YYYY-MM-DD' — дневная норма = месячная / дни месяца. */

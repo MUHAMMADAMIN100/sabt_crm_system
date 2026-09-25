@@ -14,9 +14,7 @@ import { directionScopeOf } from '../../common/direction-scope';
 const VIEW_ROLES = [
   UserRole.ADMIN,
   UserRole.FOUNDER,
-  UserRole.CO_FOUNDER,
   UserRole.SMM_DIRECTOR,
-  UserRole.VIDEO_DIRECTOR,
   UserRole.DEV_DIRECTOR,
 ];
 

@@ -76,7 +76,7 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   findAll(@Query('role') role?: UserRole) {
     return this.usersService.findAll(role);
   }
@@ -87,7 +87,7 @@ export class UsersController {
    *  сотрудника уже есть НАТИВНО по роли. Без этого у основателя (у которого
    *  есть всё) матрица выглядела пустой — ни одной галочки. */
   @Get('access/catalog')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   accessCatalog() {
     return Object.entries(GRANTABLE).map(([key, def]) => ({
       key, label: def.label, category: def.category, roles: def.roles,
@@ -97,14 +97,14 @@ export class UsersController {
 
   /** Список сотрудников с их ролью и персональными доступами. */
   @Get('access')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   listAccess() {
     return this.usersService.listAccess();
   }
 
   /** Выдать/снять персональные доступы сотруднику. */
   @Patch(':id/access')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   setAccess(
     @Param('id') id: string,
     @Body() body: { permissions?: string[]; denied?: string[] },
@@ -119,19 +119,19 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   update(@Param('id') id: string, @Body() dto: UpdateUserDto, @Request() req) {
     return this.usersService.update(id, dto, req.user?.role);
   }
 
   @Patch(':id/toggle-active')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   toggleActive(@Param('id') id: string, @Request() req) {
     return this.usersService.toggleActive(id, req.user?.role, req.user?.id);
   }
 
   @Patch(':id/block')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   async block(@Param('id') id: string, @Body() body: BlockUserDto, @Request() req) {
     try {
       return await this.usersService.block(id, req.user, body?.reason);
@@ -141,7 +141,7 @@ export class UsersController {
   }
 
   @Patch(':id/reset-password')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   async resetPassword(@Param('id') id: string, @Body() body: ResetUserPasswordDto, @Request() req) {
     try {
       return await this.usersService.resetPassword(id, req.user, body?.newPassword);
@@ -151,19 +151,19 @@ export class UsersController {
   }
 
   @Patch(':id/unblock')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   unblock(@Param('id') id: string, @Request() req) {
     return this.usersService.unblock(id, req.user);
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   remove(@Param('id') id: string, @Request() req) {
     return this.usersService.remove(id, req.user?.role, req.user?.id);
   }
 
   @Post('cleanup-orphans')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   cleanupOrphanedUsers() {
     return this.usersService.cleanupOrphanedUsers();
   }
@@ -239,7 +239,7 @@ export class UsersController {
    *  Внутри updateAvatar() сработает assertCanManage(target, actor.role) —
    *  не даст admin'у трогать founder/co_founder. */
   @Patch(':id/avatar')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   @UseInterceptors(FileInterceptor('avatar', AVATAR_MULTER_CONFIG))
   updateAvatarFor(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Request() req) {
     if (!file) throw new BadRequestException('Файл не загружен');

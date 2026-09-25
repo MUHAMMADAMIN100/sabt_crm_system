@@ -326,7 +326,7 @@ export function TariffAnalyticsSection() {
   // Цены и выручку по тарифу видят ТОЛЬКО founder/co_founder.
   // Остальные могут смотреть распределение проектов по тарифам — это
   // чисто организационная информация, не финансовая.
-  const canSeeFinance = role === 'founder' || role === 'co_founder'
+  const canSeeFinance = role === 'founder'
   const { data: tariffs, isLoading } = useQuery({ queryKey: ['smm-tariffs'], queryFn: () => smmTariffsApi.list() })
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
 

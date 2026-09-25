@@ -20,7 +20,7 @@ interface LaunchState {
   isComplete: boolean
 }
 
-const EDIT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director']
+const EDIT_ROLES = ['admin', 'founder', 'smm_director']
 
 export default function LaunchChecklistTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient()

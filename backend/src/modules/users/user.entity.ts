@@ -13,13 +13,9 @@ import { DailyReport } from '../reports/daily-report.entity';
 export enum UserRole {
   ADMIN           = 'admin',
   FOUNDER         = 'founder',
-  CO_FOUNDER      = 'co_founder',
   /** Руководитель СММ — полный доступ ко ВСЕМ SMM-проектам (создание/
    *  редактирование/удаление, задачи, участники), но БЕЗ финансов. */
   SMM_DIRECTOR    = 'smm_director',
-  /** Руководитель по видеографии — менеджерский уровень для видео-
-   *  направления (approve/return задач, аналитика, отчёты, риски). */
-  VIDEO_DIRECTOR  = 'video_director',
   SMM_SPECIALIST  = 'smm_specialist',
   DESIGNER        = 'designer',
   /** Менеджер продаж по SMM-направлению. */
@@ -38,18 +34,6 @@ export enum UserRole {
   VIDEOGRAPHER    = 'videographer',
   /** Монтажёр — исполнитель видео-продакшна. */
   VIDEO_EDITOR    = 'video_editor',
-  /** Организатор — исполнитель (организация съёмок/мероприятий). */
-  ORGANIZER       = 'organizer',
-  /** Сторисмейкер — исполнитель, ведёт истории SMM-проектов
-   *  (права как у smm_specialist по историям). */
-  STORYMAKER      = 'storymaker',
-  /** Сценарист / SMM-менеджер — владелец Контент-плана (темы, сценарии,
-   *  даты публикации). Workflow-доска SMM. */
-  SCRIPTWRITER    = 'scriptwriter',
-  /** Контролёр качества — этап «Внутренняя проверка» на workflow-доске. */
-  QA              = 'qa',
-  /** Публикатор — сбор материалов и публикация (этап «Готово к публикации»). */
-  PUBLISHER       = 'publisher',
   /** Таргетолог — запуск рекламы (этап «Реклама»). */
   TARGETOLOGIST   = 'targetologist',
   /** Проверяющий сторис — контролёр: ТОЛЬКО смотрит, кто отметил сторис,
@@ -59,7 +43,15 @@ export enum UserRole {
   EMPLOYEE        = 'employee',
 }
 
-/* Удалённые роли (12.06.2026): project_manager, head_smm, targetologist,
+/* Удалённые роли (25.09.2026): co_founder, video_director, storymaker,
+ * organizer, scriptwriter, qa, publisher. Существующие пользователи
+ * мигрируются (RemoveUnusedRoles):
+ *   video_director → videographer; storymaker → smm_specialist;
+ *   co_founder → admin; остальные → employee.
+ * «Сторисмейкер» как доступ ко всем SMM-проектам остался флагом
+ * employees.isStoryMaker, а не ролью.
+ *
+ * Удалённые роли (12.06.2026): project_manager, head_smm, targetologist,
  * marketer. Существующие пользователи мигрируются:
  *   head_smm → smm_director; остальные → employee.
  * «Менеджер проекта» теперь назначается ЛЮБОМУ сотруднику в форме проекта

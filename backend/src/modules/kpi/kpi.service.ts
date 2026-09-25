@@ -35,23 +35,23 @@ export interface UserKpi {
 }
 
 const TOP_ROLES = new Set<string>([
-  UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
+  UserRole.ADMIN, UserRole.FOUNDER,
 ]);
 const PM_ROLES = new Set<string>([
-  UserRole.VIDEO_DIRECTOR, UserRole.SMM_DIRECTOR,
+  UserRole.SMM_DIRECTOR,
 ]);
 const SALES_ROLES = new Set<string>([
   UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV,
 ]);
 const SMM_ROLES = new Set<string>([
-  UserRole.SMM_SPECIALIST, UserRole.STORYMAKER,
+  UserRole.SMM_SPECIALIST,
 ]);
 
 /** Истории ведут SMM-специалисты (роль сторисмейкера упразднена, оставлена
  *  для совместимости) — метрика «План сторис» показывается им (основная или
  *  вторая роль). */
 function isStoryMaker(user: { role?: string | null; secondaryRole?: string | null }): boolean {
-  const STORY_ROLES: string[] = [UserRole.STORYMAKER, UserRole.SMM_SPECIALIST];
+  const STORY_ROLES: string[] = [UserRole.SMM_SPECIALIST];
   return STORY_ROLES.includes(user.role || '') || STORY_ROLES.includes(user.secondaryRole || '');
 }
 

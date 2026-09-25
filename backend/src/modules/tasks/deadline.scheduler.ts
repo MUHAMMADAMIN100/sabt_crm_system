@@ -155,11 +155,10 @@ export class DeadlineScheduler implements OnModuleInit {
     })
     const overdue = overdueRaw.filter(t => (t as any).originStage !== 'kp_creation')
 
-    // Получатели эскалации просрочек: руководитель СММ + организатор
-    // (основателя/сооснователя по требованию исключили).
+    // Получатели эскалации просрочек: руководитель СММ
+    // (основателя по требованию исключили).
     const escalationRecipients = await this.userRepo.find({ where: [
       { role: UserRole.SMM_DIRECTOR, isActive: true },
-      { role: UserRole.ORGANIZER, isActive: true },
     ] })
 
     let sent = 0
@@ -771,14 +770,12 @@ export class DeadlineScheduler implements OnModuleInit {
       ).catch(() => {})
     }
 
-    // ── 2. Сводный недельный отчёт — админу/смм-руку/видео-руку/организатору
-    // (основателя/сооснователя по требованию исключили).
+    // ── 2. Сводный недельный отчёт — админу и руководителю СММ
+    // (основателя по требованию исключили).
     const supervisors = await this.userRepo.find({
       where: [
         { role: UserRole.ADMIN, isActive: true },
         { role: UserRole.SMM_DIRECTOR, isActive: true },
-        { role: UserRole.VIDEO_DIRECTOR, isActive: true },
-        { role: UserRole.ORGANIZER, isActive: true },
       ],
     })
 
@@ -858,12 +855,11 @@ export class DeadlineScheduler implements OnModuleInit {
       return
     }
 
-    // Кому слать о днях рождения: руководитель СММ + организатор
-    // (основателя/сооснователя по требованию исключили).
+    // Кому слать о днях рождения: руководитель СММ
+    // (основателя по требованию исключили).
     const leaders = await this.userRepo.find({
       where: [
         { role: UserRole.SMM_DIRECTOR, isActive: true },
-        { role: UserRole.ORGANIZER, isActive: true },
       ],
     })
 

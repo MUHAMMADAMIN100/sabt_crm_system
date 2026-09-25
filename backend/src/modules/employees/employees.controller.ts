@@ -51,13 +51,13 @@ export class EmployeesController {
   }
 
   @Patch(':id/toggle-sub-admin')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   toggleSubAdmin(@Param('id') id: string) {
     return this.service.toggleSubAdmin(id);
   }
 
   @Patch(':id/toggle-story-maker')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   toggleStoryMaker(@Param('id') id: string) {
     return this.service.toggleStoryMaker(id);
   }

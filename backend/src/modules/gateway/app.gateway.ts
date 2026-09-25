@@ -24,7 +24,7 @@ const ALLOWED_WS_ORIGINS = [...buildTrustedOrigins()];
  *   - комнаты проектов где они участники / менеджер
  *   - комнаты задач где они исполнители / создатели */
 const WS_ADMIN_ROLES = new Set([
-  'admin', 'founder', 'co_founder', 'smm_director', 'video_director',
+  'admin', 'founder', 'smm_director',
 ]);
 
 @WebSocketGateway({

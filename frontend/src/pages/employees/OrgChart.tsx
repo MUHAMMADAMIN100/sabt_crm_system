@@ -7,14 +7,14 @@ import { Avatar } from '@/components/ui'
 import { getRoleLabel } from '@/lib/permissions'
 import clsx from 'clsx'
 
-const OWNER_ROLES = ['founder', 'co_founder']
+const OWNER_ROLES = ['founder']
 
 /** Отделы: руководитель (head) и роли команды (members). Порядок важен —
  *  первый подходящий отдел забирает сотрудника (пересечений ролей нет). */
 const DEPARTMENTS: { key: string; title: string; head: string | null; members: string[] }[] = [
-  { key: 'smm',   title: 'SMM',          head: 'smm_director',   members: ['smm_specialist', 'storymaker', 'scriptwriter', 'publisher', 'targetologist', 'designer'] },
-  { key: 'video', title: 'Видеография',  head: 'video_director', members: ['videographer', 'video_editor', 'organizer'] },
-  { key: 'dev',   title: 'Разработка',   head: 'dev_director',   members: ['pm_dev', 'developer', 'qa'] },
+  { key: 'smm',   title: 'SMM',          head: 'smm_director',   members: ['smm_specialist', 'targetologist', 'designer'] },
+  { key: 'video', title: 'Видеография',  head: null,             members: ['videographer', 'video_editor'] },
+  { key: 'dev',   title: 'Разработка',   head: 'dev_director',   members: ['pm_dev', 'developer'] },
   { key: 'sales', title: 'Продажи',      head: null,             members: ['sales_manager_smm', 'sales_manager_dev'] },
 ]
 

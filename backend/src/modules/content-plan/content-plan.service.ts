@@ -172,8 +172,6 @@ export class ContentPlanService {
         const main = await this.repo.manager.getRepository(User)
           .findOne({ where: { isDefaultVideographer: true, isActive: true }, select: ['id'] });
         if (main) return main.id;
-        const head = await this.soleUserWithRole(UserRole.VIDEO_DIRECTOR);
-        if (head) return head;
       }
       return await this.soleUserWithRole(ContentPlanService.PREP_ROLE[stage]);
     } catch (e) {
@@ -182,12 +180,10 @@ export class ContentPlanService {
     }
   }
 
-  /** Кто распоряжается съёмками вообще: руководитель видеографии; основатель
-   *  и админ — запасной ключ, чтобы работа не вставала в его отсутствие
-   *  (полный доступ у них и так есть — они могут поменять роли). */
+  /** Кто распоряжается съёмками вообще: основатель и админ. */
   private canReassignShoot(user?: { role?: string | null; secondaryRole?: string | null }): boolean {
     const roles = [user?.role, user?.secondaryRole].filter(Boolean) as string[];
-    return roles.some(r => [UserRole.VIDEO_DIRECTOR, UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(r as UserRole));
+    return roles.some(r => [UserRole.ADMIN, UserRole.FOUNDER].includes(r as UserRole));
   }
 
   /** Видеографы агентства — кому руководитель может передать съёмку.
@@ -197,8 +193,6 @@ export class ContentPlanService {
       where: [
         { role: UserRole.VIDEOGRAPHER as any, isActive: true },
         { secondaryRole: UserRole.VIDEOGRAPHER as any, isActive: true },
-        { role: UserRole.VIDEO_DIRECTOR as any, isActive: true },
-        { secondaryRole: UserRole.VIDEO_DIRECTOR as any, isActive: true },
       ],
     });
     // Кому передать — видит и сам исполнитель съёмки: список людей не секрет,
@@ -226,7 +220,7 @@ export class ContentPlanService {
       const user = await users.findOne({ where: { id: userId } });
       const roles = [user?.role, user?.secondaryRole].filter(Boolean) as string[];
       const ok = user?.isActive !== false
-        && roles.some(r => (r as UserRole) === UserRole.VIDEOGRAPHER || (r as UserRole) === UserRole.VIDEO_DIRECTOR);
+        && roles.some(r => (r as UserRole) === UserRole.VIDEOGRAPHER);
       if (!ok) throw new BadRequestException('Основным можно назначить только видеографа');
     }
     // Основной ровно один: снимаем флаг со всех, ставим одному.
@@ -273,7 +267,7 @@ export class ContentPlanService {
       const user = await this.repo.manager.getRepository(User).findOne({ where: { id: userId } });
       const roles = [user?.role, user?.secondaryRole].filter(Boolean) as string[];
       const ok = user?.isActive !== false
-        && roles.some(r => (r as UserRole) === UserRole.VIDEOGRAPHER || (r as UserRole) === UserRole.VIDEO_DIRECTOR);
+        && roles.some(r => (r as UserRole) === UserRole.VIDEOGRAPHER);
       if (!ok) throw new BadRequestException('Съёмку можно передать только видеографу');
     }
     await this.repo.update(itemId, { assigneeId: userId });

@@ -43,7 +43,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
   const latestCount = useRef<Record<string, number>>({})
   // Кто вправе отмечать — тот же список, что проверяет сервер. Раньше галочки
   // были кликабельны у всех, а сохранение отвечало 403: кнопка есть, толку нет.
-  const STORY_WRITE_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist']
+  const STORY_WRITE_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist']
   const canWriteStories = [user?.role, user?.secondaryRole]
     .some(r => !!r && STORY_WRITE_ROLES.includes(r))
   const isReadonly = !!employeeId || !!adminAll || !canWriteStories
@@ -138,12 +138,11 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
         p.members?.some((m: any) => m.id === employeeId) || p.managerId === employeeId,
       )
     }
-    if (['admin', 'founder', 'co_founder'].includes(user?.role || '')) return base
-    // Сторисмейкер — видит все SMM-проекты, может вносить отметки в любой
-    // (по роли storymaker или по флагу isStoryMaker). СММ-специалист теперь тоже
-    // отвечает за сторисы (роль сторисмейкера упразднена) — видит все SMM-проекты.
-    if (user?.isStoryMaker || user?.role === 'storymaker' || user?.secondaryRole === 'storymaker'
-        || user?.role === 'smm_specialist') return base
+    if (['admin', 'founder'].includes(user?.role || '')) return base
+    // Флаг «сторисмейкер» на карточке сотрудника — видит все SMM-проекты и
+    // может вносить отметки в любой. СММ-специалист тоже отвечает за сторис
+    // (роль сторисмейкера упразднена) — видит все SMM-проекты.
+    if (user?.isStoryMaker || user?.role === 'smm_specialist') return base
     // Everyone else (PM, SMM, designer, etc.): projects where they are member OR manager
     return base.filter((p: any) =>
       p.members?.some((m: any) => m.id === user?.id) || p.managerId === user?.id,
@@ -160,8 +159,8 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
   // Кто может архивировать истории: сторисмейкер + руководитель SMM + топ.
   const canArchiveStories = !employeeId && (
     user?.isStoryMaker
-    || ['storymaker', 'smm_specialist', 'smm_director', 'admin', 'founder', 'co_founder'].includes(user?.role || '')
-    || ['storymaker', 'smm_director'].includes(user?.secondaryRole || '')
+    || ['smm_specialist', 'smm_director', 'admin', 'founder'].includes(user?.role || '')
+    || ['smm_director'].includes(user?.secondaryRole || '')
   )
   const archiveMut = useMutation({
     mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>

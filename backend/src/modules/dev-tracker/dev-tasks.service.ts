@@ -1918,7 +1918,7 @@ export class DevTasksService {
     const users = await this.userRepo.find({
       where: {
         isActive: true,
-        role: In(['developer', 'pm_dev', 'dev_director', 'founder', 'co_founder', 'admin'] as any),
+        role: In(['developer', 'pm_dev', 'dev_director', 'founder', 'admin'] as any),
       },
       order: { name: 'ASC' },
     });

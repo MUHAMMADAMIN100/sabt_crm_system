@@ -17,7 +17,7 @@ export class KpiController {
    *  направления (в т.ч. второй ролью) — только свою команду: сервис
    *  урезает выборку по скоупу, роль сама по себе всех не открывает. */
   @Get('all')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.DEV_DIRECTOR)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.DEV_DIRECTOR)
   getAll(@Query('from') from?: string, @Query('to') to?: string, @Request() req?) {
     return this.kpi.getAllKpi(from, to, directionScopeOf(req?.user));
   }
@@ -26,7 +26,7 @@ export class KpiController {
    *  руководитель направления — своей команды, остальные — только свой. */
   private async canSeeKpiOf(req: any, userId: string): Promise<boolean> {
     const role = req?.user?.role;
-    if (['admin', 'founder', 'co_founder'].includes(role)) return true;
+    if (['admin', 'founder'].includes(role)) return true;
     if (req?.user?.id === userId) return true;
     const scope = directionScopeOf(req?.user);
     if (!scope) return false;

@@ -52,7 +52,7 @@ export class ProjectAdsService implements OnModuleInit {
    *  или участник проекта. Иначе 403 (кросс-проектный доступ закрыт). */
   private async assertProjectAccess(projectId: string, user?: { id: string; role: string }) {
     if (!user) throw new ForbiddenException('Нет доступа');
-    const PRIVILEGED = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'];
+    const PRIVILEGED = ['admin', 'founder', 'smm_director'];
     if (PRIVILEGED.includes(user.role)) return;
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Проект не найден');

@@ -164,11 +164,12 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   const secondaryRole = useAuthStore(s => s.user?.secondaryRole)
   const extraPermissions = useAuthStore(s => s.user?.extraPermissions)
   const deniedPermissions = useAuthStore(s => s.user?.deniedPermissions)
+  const isStoryMaker = useAuthStore(s => s.user?.isStoryMaker)
   const location = useLocation()
   // Strip query/hash, get pathname
   const path = location.pathname
   // Build canonical path: /projects/:id → /projects/abc treated as /projects/abc
-  if (role && !canAccessRoute(role, path, secondaryRole, extraPermissions, deniedPermissions)) {
+  if (role && !canAccessRoute(role, path, secondaryRole, extraPermissions, deniedPermissions, isStoryMaker)) {
     return <Navigate to="/" replace />
   }
   return <>{children}</>

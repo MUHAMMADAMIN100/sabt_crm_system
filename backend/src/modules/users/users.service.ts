@@ -124,14 +124,14 @@ export class UsersService implements OnModuleInit {
     return { id, extraPermissions: clean, deniedPermissions: cleanDenied };
   }
 
-  /** Защита: основателем/сооснователем может управлять только основатель
-   *  или сооснователь. Админ — НЕТ. Бросает ForbiddenException. */
+  /** Защита: учётной записью основателя может управлять только он сам.
+   *  Админ — НЕТ. Бросает ForbiddenException. */
   private assertCanManage(target: User, actorRole?: string) {
-    const isTargetTop = target.role === UserRole.FOUNDER || target.role === UserRole.CO_FOUNDER;
-    const isActorTop = actorRole === 'founder' || actorRole === 'co_founder';
+    const isTargetTop = target.role === UserRole.FOUNDER;
+    const isActorTop = actorRole === 'founder';
     if (isTargetTop && !isActorTop) {
       throw new ForbiddenException(
-        'Управлять учётной записью основателя или сооснователя может только сам основатель/сооснователь',
+        'Управлять учётной записью основателя может только сам основатель',
       );
     }
   }
@@ -141,23 +141,13 @@ export class UsersService implements OnModuleInit {
     this.assertCanManage(user, actorRole);
     const oldRole = user.role;
 
-    // Enforce single founder / co-founder in the system when role is changed.
+    // Enforce single founder in the system when role is changed.
     if (dto.role && dto.role !== user.role) {
-      // Only founder can grant the co_founder role — not admin, not co_founder.
-      if (dto.role === UserRole.CO_FOUNDER && actorRole !== 'founder') {
-        throw new ForbiddenException('Назначить сооснователя может только основатель');
-      }
       if (dto.role === UserRole.FOUNDER) {
         const [{ count }] = await this.repo.manager.query(
           `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'founder'`,
         );
         if (count > 0) throw new ConflictException('В системе уже зарегистрирован основатель');
-      }
-      if (dto.role === UserRole.CO_FOUNDER) {
-        const [{ count }] = await this.repo.manager.query(
-          `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'co_founder'`,
-        );
-        if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
       }
     }
 
@@ -240,8 +230,8 @@ export class UsersService implements OnModuleInit {
     this.assertCanManage(user, resetBy.role);
     // Дополнительно: даже founder не может сбросить пароль другому admin
     // (только тот сам себе и founder/co_founder себе или другому top-tier).
-    if (['admin', 'founder', 'co_founder'].includes(user.role) && user.id !== resetBy.id
-        && !['founder', 'co_founder'].includes(resetBy.role)) {
+    if (['admin', 'founder'].includes(user.role) && user.id !== resetBy.id
+        && !['founder'].includes(resetBy.role)) {
       throw new ForbiddenException('Нельзя сбросить пароль другого администратора');
     }
     // Validate custom password length (auto-generated is always 10 chars)
@@ -294,7 +284,7 @@ export class UsersService implements OnModuleInit {
     this.assertCanManage(user, blockedBy.role);
     // Админа никто не блокирует автоматом — только основатель/сооснователь
     // (защита от перехвата системы при компрометации одного админа).
-    if (user.role === UserRole.ADMIN && !['founder', 'co_founder'].includes(blockedBy.role)) {
+    if (user.role === UserRole.ADMIN && !['founder'].includes(blockedBy.role)) {
       throw new ForbiddenException('Заблокировать администратора может только основатель/сооснователь');
     }
 

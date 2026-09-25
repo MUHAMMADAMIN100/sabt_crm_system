@@ -17,9 +17,7 @@ import { directionScopeOf, isInDirectory } from '../../common/direction-scope';
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   founder: 'Основатель',
-  co_founder: 'Сооснователь',
   smm_director: 'Руководитель SMM',
-  video_director: 'Руководитель по видеографии',
   smm_specialist: 'SMM специалист',
   designer: 'Дизайнер',
   sales_manager_smm: 'Менеджер продаж (СММ)',
@@ -27,11 +25,6 @@ const ROLE_LABELS: Record<string, string> = {
   developer: 'Разработчик',
   videographer: 'Видеограф',
   video_editor: 'Монтажёр',
-  organizer: 'Организатор',
-  storymaker: 'Сторисмейкер',
-  scriptwriter: 'Сценарист / SMM-менеджер',
-  qa: 'Контролёр качества',
-  publisher: 'Публикатор',
   targetologist: 'Таргетолог',
   employee: 'Сотрудник',
 };
@@ -114,7 +107,7 @@ export class EmployeesService implements OnModuleInit {
 
   /** Привилегированные роли — их выдача равносильна передаче ключей от всей
    *  системы, поэтому назначать их может только руководство. */
-  private static readonly ELEVATED_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER];
+  private static readonly ELEVATED_ROLES = [UserRole.ADMIN, UserRole.FOUNDER];
 
   /** Актор — руководство (admin/founder/co_founder), а не сотрудник, которому
    *  доступ к разделу «Сотрудники» выдали персональным грантом. */
@@ -122,16 +115,16 @@ export class EmployeesService implements OnModuleInit {
     return EmployeesService.ELEVATED_ROLES.includes(actor?.role as UserRole);
   }
 
-  /** Учётку основателя/со-основателя трогает только основатель/со-основатель.
+  /** Учётку основателя трогает только сам основатель.
    *  Раньше эти эндпоинты были закрыты ролью, и проверка была не нужна; теперь
    *  доступ к ним выдаётся галочкой в «Доступах сотрудников», поэтому защита
    *  обязана быть внутри сервиса. */
   private assertCanTouch(targetRole: string | undefined, actor?: { id?: string; role?: string }) {
-    const targetIsTop = targetRole === UserRole.FOUNDER || targetRole === UserRole.CO_FOUNDER;
-    const actorIsTop = actor?.role === 'founder' || actor?.role === 'co_founder';
+    const targetIsTop = targetRole === UserRole.FOUNDER;
+    const actorIsTop = actor?.role === 'founder';
     if (targetIsTop && !actorIsTop) {
       throw new ForbiddenException(
-        'Изменять учётную запись основателя или сооснователя может только основатель/сооснователь',
+        'Изменять учётную запись основателя может только сам основатель',
       );
     }
   }
@@ -159,7 +152,7 @@ export class EmployeesService implements OnModuleInit {
     // Вторая роль при создании — валидируем значение (привилегированные
     // вторые роли запрещены всем, см. forbiddenSecondary).
     const rawSecondary = (dto as any).secondaryRole as string | undefined;
-    const forbiddenSecondary = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER];
+    const forbiddenSecondary = [UserRole.ADMIN, UserRole.FOUNDER];
     const newSecondary: UserRole | null =
       rawSecondary
       && Object.values(UserRole).includes(rawSecondary as UserRole)
@@ -263,43 +256,32 @@ export class EmployeesService implements OnModuleInit {
         throw new ForbiddenException('Менять роль сотрудника может только администратор или основатель');
       }
       if (newRoleParam) {
-        // Only founder can explicitly set co_founder role — admin/co_founder cannot.
-        // Only founder/co_founder can set admin/founder roles.
-        const isElevated = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(newRoleParam as UserRole);
-        const isCoFounder = newRoleParam === UserRole.CO_FOUNDER;
+        // Роли admin/founder назначает только основатель.
+        const isElevated = [UserRole.ADMIN, UserRole.FOUNDER].includes(newRoleParam as UserRole);
         const actorIsFounder = actor?.role === 'founder';
-        const actorCanElevate = actorIsFounder || actor?.role === 'co_founder';
-        if (isCoFounder && !actorIsFounder) {
-          // Only founder may grant co_founder — silently ignore
-        } else if (isElevated && !actorCanElevate) {
+        if (isElevated && !actorIsFounder) {
           // Silently ignore escalation attempts from non-founder
         } else {
           resolvedRole = newRoleParam as UserRole;
         }
       } else if (dto.position && dto.position !== oldPosition) {
         const derived = this.positionToRole(dto.position);
-        // Block escalation to admin/founder/co_founder through position text — only explicit role
+        // Block escalation to admin/founder through position text — only explicit role
         // param from founder can grant these. Ignore silently, flag as unmatched.
-        if (derived && ![UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(derived)) {
+        if (derived && ![UserRole.ADMIN, UserRole.FOUNDER].includes(derived)) {
           resolvedRole = derived;
         } else if (!derived) {
           positionDidntMatchRole = true;
         }
       }
       if (resolvedRole && resolvedRole !== oldRole) {
-        // Enforce single founder / co-founder in the system.
+        // Enforce single founder in the system.
         // Use ::text cast to avoid enum resolution errors if migration hasn't run.
         if (resolvedRole === UserRole.FOUNDER) {
           const [{ count }] = await this.userRepo.manager.query(
             `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'founder'`,
           );
           if (count > 0) throw new ConflictException('В системе уже зарегистрирован основатель');
-        }
-        if (resolvedRole === UserRole.CO_FOUNDER) {
-          const [{ count }] = await this.userRepo.manager.query(
-            `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'co_founder'`,
-          );
-          if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
         }
         userUpdate.role = resolvedRole;
         // Если новая основная роль совпала с текущей второй — снимаем
@@ -314,10 +296,10 @@ export class EmployeesService implements OnModuleInit {
       // Привилегированные роли второй ролью не назначаются; вторая роль
       // не может совпадать с основной. Пустая строка/null — снять.
       if (secondaryRoleParam !== undefined) {
-        const actorCanAssign = ['admin', 'founder', 'co_founder'].includes(actor?.role || '');
+        const actorCanAssign = ['admin', 'founder'].includes(actor?.role || '');
         if (actorCanAssign) {
           const value = (secondaryRoleParam || null) as UserRole | null;
-          const forbidden = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER];
+          const forbidden = [UserRole.ADMIN, UserRole.FOUNDER];
           const primary = resolvedRole || oldRole;
           if (value === null) {
             userUpdate.secondaryRole = null;
@@ -506,19 +488,11 @@ export class EmployeesService implements OnModuleInit {
     // руководящие SMM-должности теперь дают smm_director.
     if (norm.includes('руководительsmm') || norm.includes('главныйsmm') || norm.includes('headsmm')
       || (norm.includes('smm') && (norm.includes('главн') || norm.includes('head') || norm.includes('руковод')))) return UserRole.SMM_DIRECTOR;
-    if (norm.includes('видео') && norm.includes('руковод')) return UserRole.VIDEO_DIRECTOR;
-    if (norm.includes('сторисмейкер') || norm.includes('storymaker')) return UserRole.STORYMAKER;
-    // Workflow-роли SMM-доски. Сценарист содержит «smm» в названии —
-    // проверяем ДО общего smm-фолбэка ниже.
-    if (norm.includes('сценарист') || norm.includes('scriptwriter')) return UserRole.SCRIPTWRITER;
-    if (norm.includes('контролёр') || norm.includes('контролер') || norm.includes('качества') || norm === 'qa') return UserRole.QA;
-    if (norm.includes('публикатор') || norm.includes('publisher')) return UserRole.PUBLISHER;
     if (norm.includes('таргетолог') || norm.includes('targetolog')) return UserRole.TARGETOLOGIST;
     if (norm.includes('smm')) return UserRole.SMM_SPECIALIST;
     if (norm.includes('дизайнер') || norm.includes('designer')) return UserRole.DESIGNER;
     if (norm.includes('монтаж') || norm.includes('editor')) return UserRole.VIDEO_EDITOR;
     if (norm.includes('видеограф') || norm.includes('videograph')) return UserRole.VIDEOGRAPHER;
-    if (norm.includes('организатор') || norm.includes('organiz')) return UserRole.ORGANIZER;
     if (norm.includes('продаж') || norm.includes('sales'))
       return norm.includes('разработ') || norm.includes('dev')
         ? UserRole.SALES_MANAGER_DEV

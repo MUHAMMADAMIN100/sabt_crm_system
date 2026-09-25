@@ -71,19 +71,19 @@ export default function ProjectDetailPage() {
   // что и назначенный менеджер (создавать задачи, редактировать, управлять
   // составом). Бэкенд отдельно проверит направление проекта и вернёт 403 для
   // чужих. Вторая роль тоже даёт право — зеркально RolesGuard бэка.
-  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director']
+  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'smm_director', 'dev_director']
   const isManagerPlus = MANAGER_PLUS_ROLES.includes(user?.role || '') || MANAGER_PLUS_ROLES.includes(user?.secondaryRole || '')
   // Данные клиента заполняет тот, кто общается с клиентом, — прежде всего
   // менеджер продаж. Право берём то же, что проверяет сервер на PATCH
   // проекта: список ролей в интерфейсе успел разойтись с бэкендом, и
   // менеджер продаж по СММ видел карточку без кнопки «Добавить».
   const canEditClientInfo = userCan(user as any, 'projects.edit')
-  const canManagePayment = user?.role === 'founder' || user?.role === 'co_founder'
-  const canSeePayment = ['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
-  const canRequestPayment = ['admin', 'founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
+  const canManagePayment = user?.role === 'founder'
+  const canSeePayment = ['admin', 'founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
+  const canRequestPayment = ['admin', 'founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
   // Бюджет — может редактировать sales_manager (его прерогатива), а также
   // назначенный менеджер проекта, руководители направлений и top-tier (founder/co_founder/admin).
-  const canEditBudget = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
+  const canEditBudget = ['admin', 'founder', 'smm_director', 'sales_manager_smm', 'sales_manager_dev'].includes(user?.role || '')
 
   // Detect desktop (lg and up) — mobile/tablet use select instead of drag
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)

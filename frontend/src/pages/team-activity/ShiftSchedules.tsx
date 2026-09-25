@@ -65,7 +65,7 @@ type Draft = {
 export default function ShiftSchedules() {
   const qc = useQueryClient()
   const role = useAuthStore(s => s.user?.role)
-  const canSettings = role === 'founder' || role === 'co_founder'
+  const canSettings = role === 'founder'
   const { data, isLoading } = useQuery({
     queryKey: ['work-shift-schedules'],
     queryFn: () => workShiftsApi.schedules(),

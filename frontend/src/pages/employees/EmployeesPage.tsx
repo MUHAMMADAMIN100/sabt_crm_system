@@ -43,7 +43,7 @@ export default function EmployeesPage() {
   // Wave 14: общий период для KPI всех карточек на странице.
   const [kpiPeriod, setKpiPeriod] = useState<KpiPeriod>('month')
   const user = useAuthStore(s => s.user)
-  const canManage = user?.role === 'admin' || user?.role === 'founder' || user?.role === 'co_founder'
+  const canManage = user?.role === 'admin' || user?.role === 'founder'
   const canViewSalesKpi = canManage // те же роли, что и canManage
   const isAdmin = canManage  // alias for backward compat
   const isFounderUser = user?.role === 'founder'
@@ -52,7 +52,7 @@ export default function EmployeesPage() {
     // Admin cannot edit founder/co-founder employees
     const pos = emp.position?.toLowerCase() || ''
     const empRole = emp.user?.role || ''
-    if (['founder', 'co_founder'].includes(empRole) || pos === 'основатель' || pos === 'сооснователь') return false
+    if (['founder'].includes(empRole) || pos === 'основатель' || pos === 'сооснователь') return false
     return canManage
   }
   const qc = useQueryClient()
@@ -65,16 +65,12 @@ export default function EmployeesPage() {
   // entered through free-text elsewhere are merged in.
   const POSITION_CANON = [
     'Основатель',
-    'Сооснователь',
     'Администратор',
     'Руководитель SMM',
-    'Руководитель по видеографии',
     'SMM специалист',
     'Дизайнер',
     'Видеограф',
     'Монтажёр',
-    'Организатор',
-    'Сторисмейкер',
     'Проверяющий сторис',
     'Менеджер продаж (СММ)',
     'Менеджер продаж (Разработка)',
@@ -91,10 +87,10 @@ export default function EmployeesPage() {
 
   // Руководитель SMM видит только SMM-сотрудников в списке.
   const isSmmLead = user?.role === 'smm_director'
-  const smmPositions = ['SMM специалист', 'Руководитель SMM', 'Сторисмейкер']
+  const smmPositions = ['SMM специалист', 'Руководитель SMM']
 
   const employees = allEmployees?.filter((emp: any) => {
-    if (isSmmLead && !smmPositions.includes(emp.position || '') && !['smm_specialist', 'smm_director', 'storymaker'].includes(emp.user?.role || '')) return false
+    if (isSmmLead && !smmPositions.includes(emp.position || '') && !['smm_specialist', 'smm_director'].includes(emp.user?.role || '')) return false
     const matchesSearch = !search || emp.fullName?.toLowerCase().includes(search.toLowerCase()) || emp.email?.toLowerCase().includes(search.toLowerCase()) || emp.position?.toLowerCase().includes(search.toLowerCase())
     const matchesPosition = !position || emp.position === position
     return matchesSearch && matchesPosition
@@ -694,7 +690,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
   const actorRole = useAuthStore(s => s.user?.role)
   const isFounderActor = actorRole === 'founder'
   // Вторую роль могут назначать только admin / founder / co_founder.
-  const canAssignSecondRole = ['admin', 'founder', 'co_founder'].includes(actorRole || '')
+  const canAssignSecondRole = ['admin', 'founder'].includes(actorRole || '')
 
   useEffect(() => {
     if (initial) {
@@ -724,16 +720,10 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
     const positionToRoleMap: Record<string, string> = {
       'SMM специалист': 'smm_specialist',
       'Руководитель SMM': 'smm_director',
-      'Руководитель по видеографии': 'video_director',
       'Дизайнер': 'designer',
       'Видеограф': 'videographer',
       'Монтажёр': 'video_editor',
-      'Организатор': 'organizer',
-      'Сторисмейкер': 'storymaker',
       'Проверяющий сторис': 'stories_checker',
-      'Сценарист / SMM-менеджер': 'scriptwriter',
-      'Контролёр качества': 'qa',
-      'Публикатор': 'publisher',
       'Таргетолог': 'targetologist',
       'Менеджер продаж (СММ)': 'sales_manager_smm',
       'Менеджер продаж (Разработка)': 'sales_manager_dev',
@@ -741,7 +731,6 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
       'Разработчик': 'developer',
       'Сотрудник': 'employee',
       'Основатель': 'founder',
-      'Сооснователь': 'co_founder',
       'Администратор': 'admin',
     }
     const role = positionToRoleMap[data.position]
@@ -780,17 +769,11 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
               <option value="">Выберите должность</option>
               {[
                 'Руководитель SMM',
-                'Руководитель по видеографии',
                 'SMM специалист',
                 'Дизайнер',
                 'Видеограф',
                 'Монтажёр',
-                'Организатор',
-                'Сторисмейкер',
                 'Проверяющий сторис',
-                'Сценарист / SMM-менеджер',
-                'Контролёр качества',
-                'Публикатор',
                 'Таргетолог',
                 'Менеджер продаж (СММ)',
                 'Менеджер продаж (Разработка)',
@@ -798,9 +781,8 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
                 'Разработчик',
                 'Администратор',
                 'Основатель',
-                'Сооснователь',
               ]
-                .filter(p => isFounderActor || (p !== 'Сооснователь' && p !== 'Основатель') || p === initial?.position)
+                .filter(p => isFounderActor || p !== 'Основатель' || p === initial?.position)
                 .map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}
@@ -808,7 +790,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
             {errors.position && <p className="text-xs text-red-400 mt-1">{String(errors.position.message)}</p>}
           </div>
           {/* Вторая (дополнительная) роль — например «Видеограф / Монтажёр».
-              Видна и назначается только admin / founder / co_founder.
+              Видна и назначается только admin / founder.
               Права сотрудника = объединение обеих ролей. */}
           {canAssignSecondRole && (
           <div className="sm:col-span-2">
@@ -819,16 +801,10 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
               <option value="designer">Дизайнер</option>
               <option value="videographer">Видеограф</option>
               <option value="video_editor">Монтажёр</option>
-              <option value="organizer">Организатор</option>
-              <option value="storymaker">Сторисмейкер</option>
               <option value="stories_checker">Проверяющий сторис</option>
-              <option value="scriptwriter">Сценарист / SMM-менеджер</option>
-              <option value="qa">Контролёр качества</option>
-              <option value="publisher">Публикатор</option>
               <option value="targetologist">Таргетолог</option>
               <option value="developer">Разработчик</option>
               <option value="smm_director">Руководитель SMM</option>
-              <option value="video_director">Руководитель по видеографии</option>
               <option value="sales_manager_smm">Менеджер продаж (СММ)</option>
               <option value="sales_manager_dev">Менеджер продаж (Разработка)</option>
               <option value="dev_director">Руководитель разработки</option>

@@ -6,7 +6,7 @@ import { TimeTrackerService } from './time-tracker.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 
-const PM_ROLES = new Set(['admin', 'founder', 'co_founder', 'smm_director', 'video_director']);
+const PM_ROLES = new Set(['admin', 'founder', 'smm_director']);
 
 class StartTimerDto {
   @ApiProperty() @IsUUID()

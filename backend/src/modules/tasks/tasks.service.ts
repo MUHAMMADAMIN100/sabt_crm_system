@@ -28,7 +28,7 @@ import { directionScopeOf } from '../../common/direction-scope';
 // без проекта молча переназначалась на него самого. Область видимости при этом
 // ограничена направлением (outOfDirection + directionScopeOf), поэтому SMM ему
 // по-прежнему недоступен.
-const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR, UserRole.DEV_DIRECTOR, UserRole.PM_DEV];
+const PM_ROLES = [UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.DEV_DIRECTOR, UserRole.PM_DEV];
 
 /** PM-полномочия учитывают и ВТОРУЮ роль: руководитель разработки назначен
  *  Сабрине второй ролью поверх менеджера продаж, и без этого проверки ниже
@@ -54,15 +54,15 @@ const outOfDirection = (
 /** Управляющие роли — их задачи попадают в раздел «Задачи от руководителя».
  *  Массив строк: подставляется в SQL-параметр (u.role = ANY(...)). */
 const MANAGEMENT_ROLES: string[] = [
-  UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
-  UserRole.SMM_DIRECTOR, UserRole.VIDEO_DIRECTOR, UserRole.DEV_DIRECTOR,
+  UserRole.ADMIN, UserRole.FOUNDER,
+  UserRole.SMM_DIRECTOR, UserRole.DEV_DIRECTOR,
 ];
 /** Кто вправе ставить задачу «от основателя» и рассылать общую задачу всей
  *  компании (сайт + email + Telegram каждому активному сотруднику). */
 const BROADCAST_ROLES: string[] = [
-  UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER,
+  UserRole.ADMIN, UserRole.FOUNDER,
 ];
-const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.VIDEO_EDITOR, UserRole.ORGANIZER, UserRole.STORYMAKER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.VIDEOGRAPHER, UserRole.SCRIPTWRITER, UserRole.QA, UserRole.PUBLISHER, UserRole.TARGETOLOGIST, UserRole.EMPLOYEE];
+const WORKER_ROLES = [UserRole.SMM_SPECIALIST, UserRole.DESIGNER, UserRole.VIDEO_EDITOR, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.VIDEOGRAPHER, UserRole.TARGETOLOGIST, UserRole.EMPLOYEE];
 
 @Injectable()
 export class TasksService implements OnModuleInit {
@@ -672,7 +672,7 @@ export class TasksService implements OnModuleInit {
         // Если задача назначена основателю/со-основателю не им самим — это
         // отдельный важный кейс. Хотим, чтобы он чётко знал: «У вас задача
         // от <имя сотрудника>» по всем трём каналам с одинаковым tone.
-        const toFounder = !!assignee && [UserRole.FOUNDER, UserRole.CO_FOUNDER].includes(assignee.role as UserRole);
+        const toFounder = !!assignee && [UserRole.FOUNDER].includes(assignee.role as UserRole);
 
         await this.notificationsService.create({
           userId: aid,
@@ -900,14 +900,13 @@ export class TasksService implements OnModuleInit {
       }
     }
 
-    // SCOPE менять может ТОЛЬКО основатель/сооснователь (это их фича
+    // SCOPE менять может ТОЛЬКО основатель (это его фича
     // редактирования типа задачи). Для остальных ролей попытка смены
     // scope тихо игнорируется — поле убирается из dto, без 403.
     // Смена scope НЕ рассылает ретроспективных уведомлений.
     if ((dto as any).scope && (dto as any).scope !== task.scope) {
       const canChangeScope =
         user.role === 'founder' ||
-        user.role === 'co_founder' ||
         isSalesManager(user.role);
       if (!canChangeScope) {
         delete (dto as any).scope;
@@ -1300,23 +1299,13 @@ export class TasksService implements OnModuleInit {
     // видеть sales-задачи в «Просроченных». Это автозадачи-встречи
     // менеджеров продаж (scope=personal, без project'а) — они к
     // SMM-сегменту не относятся, мешают читать виджет.
-    // video_director видит только задачи СВОИХ проектов (где он manager
-    // или member), а не всё подряд.
     const role = viewer?.role || '';
-    const isSmmRole = ['smm_director', 'smm_specialist', 'storymaker'].includes(role);
-    const isPm = role === 'video_director';
+    const isSmmRole = ['smm_director', 'smm_specialist'].includes(role);
     if (isSmmRole) {
       qb.andWhere(`(t.scope <> 'personal' OR t.scope IS NULL)`);
       qb.andWhere(`(project."projectType" IS NULL OR project."projectType" = 'SMM')`);
-    } else if (isPm && viewer?.id) {
-      qb.andWhere(
-        `(project."managerId" = :uid OR project.id IN (
-          SELECT pm."projectsId" FROM project_members pm WHERE pm."usersId" = :uid
-        ))`,
-        { uid: viewer.id },
-      );
     }
-    // admin / founder / co_founder — без фильтров (видят всё).
+    // admin / founder — без фильтров (видят всё).
     // Руководитель направления видит просрочки только своей сферы: грант
     // tasks.overdue.view приходит вместе со второй ролью, а веток по этой
     // роли в фильтрах выше нет — без отсечки он получал бы всю компанию.

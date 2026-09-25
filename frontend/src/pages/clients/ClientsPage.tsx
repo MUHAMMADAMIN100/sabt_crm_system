@@ -150,9 +150,9 @@ export default function ClientsPage() {
   // у остальных ролей — 5.
   const role = useAuthStore(s => s.user?.role)
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
-  const isTopExec = role === 'founder' || role === 'co_founder' || role === 'admin'
+  const isTopExec = role === 'founder' || role === 'admin'
   // Руководитель (может назначать звонки менеджерам через чекбоксы).
-  const isBoss = role === 'admin' || role === 'founder' || role === 'co_founder'
+  const isBoss = role === 'admin' || role === 'founder'
   const PAGE_SIZE = (isSalesManager || isTopExec) ? 10 : 5
 
   // «Позвонить»: руководитель отмечает лида галочкой — звонок назначается

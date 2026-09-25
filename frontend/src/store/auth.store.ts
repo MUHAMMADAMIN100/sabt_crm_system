@@ -7,9 +7,7 @@ import { queryClient } from '@/lib/queryClient'
 export type UserRole =
   | 'admin'
   | 'founder'
-  | 'co_founder'
   | 'smm_director'
-  | 'video_director'
   | 'smm_specialist'
   | 'designer'
   | 'sales_manager_smm'
@@ -19,11 +17,6 @@ export type UserRole =
   | 'developer'
   | 'videographer'
   | 'video_editor'
-  | 'organizer'
-  | 'storymaker'
-  | 'scriptwriter'
-  | 'qa'
-  | 'publisher'
   | 'targetologist'
   /** Проверяющий сторис — только смотрит, кто отметил сторис, а кто нет. */
   | 'stories_checker'
@@ -246,17 +239,17 @@ export function useIsAdmin() {
 }
 
 export function useIsFounder() {
-  return useAuthStore(s => ['admin', 'founder', 'co_founder'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['admin', 'founder'].includes(s.user?.role || ''))
 }
 
 export function useIsPM() {
-  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['admin', 'founder', 'smm_director'].includes(s.user?.role || ''))
 }
 
 export function useIsWorker() {
-  return useAuthStore(s => ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'scriptwriter', 'qa', 'publisher', 'targetologist', 'employee'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['smm_specialist', 'designer', 'video_editor', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'targetologist', 'employee'].includes(s.user?.role || ''))
 }
 
 export function useCanManageTasks() {
-  return useAuthStore(s => ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(s.user?.role || ''))
+  return useAuthStore(s => ['admin', 'founder', 'smm_director'].includes(s.user?.role || ''))
 }

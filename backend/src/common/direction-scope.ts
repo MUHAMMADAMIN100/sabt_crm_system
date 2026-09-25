@@ -24,7 +24,7 @@ export const DEV_TEAM_ROLES = [
  *  команда), но в СПРАВОЧНИКЕ людей должно быть видно — основатель и админ
  *  бывают менеджерами dev-проектов и участниками команд, иначе руководитель
  *  направления не сможет ни выбрать их менеджером, ни отфильтровать по ним. */
-export const TOP_ROLES = ['admin', 'founder', 'co_founder'];
+export const TOP_ROLES = ['admin', 'founder'];
 
 export interface DirectionScope {
   /** Типы проектов направления (Project.projectType). */

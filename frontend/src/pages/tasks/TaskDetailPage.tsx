@@ -20,8 +20,8 @@ import clsx from 'clsx'
 import { isTaskOverdue } from '@/lib/taskStatus'
 import { stripLeadingEmoji } from '@/lib/stripEmoji'
 
-const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director']
-const WORKER_ROLES = ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'scriptwriter', 'qa', 'publisher', 'targetologist', 'employee']
+const PM_ROLES = ['admin', 'founder', 'smm_director', 'dev_director']
+const WORKER_ROLES = ['smm_specialist', 'designer', 'video_editor', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'targetologist', 'employee']
 
 /** Доступные tech tags + их цвета. Можно вводить и свои — fallback цвет
  *  применяется в render'е. */
@@ -96,7 +96,7 @@ export default function TaskDetailPage() {
   const [editingComment, setEditingComment] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
   const [activeTab, setActiveTab] = useState<'comments' | 'files' | 'results' | 'checklist'>(
-    ['founder', 'co_founder', 'developer'].includes(user?.role || '') ? 'comments' : 'results',
+    ['founder', 'developer'].includes(user?.role || '') ? 'comments' : 'results',
   )
   const [returnReason, setReturnReason] = useState('')
   const [showReturnModal, setShowReturnModal] = useState(false)
@@ -116,7 +116,7 @@ export default function TaskDetailPage() {
   // показываем только заголовок + описание + комментарии. Без вкладок
   // результатов/чек-листа/файлов, без action-блоков и без правого
   // сайдбара (критерии/тех.детали/теги/прогресс).
-  const simplifiedView = ['founder', 'co_founder', 'developer'].includes(role)
+  const simplifiedView = ['founder', 'developer'].includes(role)
 
   // Computed later once task is loaded — assignee + creator may also edit checklist
   const canEditChecklist = (task: any) => isPM ||

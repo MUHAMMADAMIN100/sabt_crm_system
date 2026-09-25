@@ -106,14 +106,14 @@ export default function CalendarPage() {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   // Вторая роль тоже даёт управленческий уровень — зеркально RolesGuard бэка.
-  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director']
+  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'smm_director', 'dev_director']
   const isManagerPlus = MANAGER_PLUS_ROLES.includes(user?.role || '') || MANAGER_PLUS_ROLES.includes(user?.secondaryRole || '')
   // МП по продажам получают календарь как у основателя, но без типа «Общая».
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
   // Проект-менеджер по разработке ведёт в календаре свои задачи: форма с
   // переключателем «Личная / Для бизнеса» (как у МП), без типа «Общая».
   const isPmDev = user?.role === 'pm_dev'
-  const isFounderView = user?.role === 'founder' || user?.role === 'co_founder'
+  const isFounderView = user?.role === 'founder'
     || isSalesManager || isPmDev
   // Роли, которые ведут в календаре СВОИ задачи: форма без типа «Общая»,
   // с выбором проекта и без пометки «от основателя».
@@ -215,7 +215,7 @@ export default function CalendarPage() {
   const isApprovableStatus = (status?: string) =>
     !!status && status === 'in_progress'
   /** Может ли текущий пользователь подтверждать задачи. */
-  const canApprove = ['founder', 'co_founder', 'admin'].includes(user?.role || '')
+  const canApprove = ['founder', 'admin'].includes(user?.role || '')
 
   /** Может ли текущий пользователь переключать статус задачи одним кликом
    *  прямо на карточке события в календаре. Зеркалит серверные правила
@@ -316,9 +316,8 @@ export default function CalendarPage() {
   // (где он исполнитель или создатель). Без старт/конец проектов и без чужих
   // задач команды. См. оригинальный комментарий выше.
   const PERSONAL_VIEW_ROLES = [
-    'founder', 'co_founder',
-    'developer', 'designer', 'videographer', 'smm_specialist',
-    'video_editor', 'organizer', 'storymaker', 'employee', 'sales_manager_smm', 'sales_manager_dev',
+    'founder', 'developer', 'designer', 'videographer', 'smm_specialist',
+    'video_editor', 'employee', 'sales_manager_smm', 'sales_manager_dev',
     // ПМ по разработке ведёт личный календарь: только свои задачи (где он
     // исполнитель или автор), без чужих задач команды.
     'pm_dev',

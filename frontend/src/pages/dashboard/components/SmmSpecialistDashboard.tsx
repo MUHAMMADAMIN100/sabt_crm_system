@@ -116,7 +116,7 @@ export default function SmmSpecialistDashboard() {
     () => (projectsList || []).filter((p: any) => !p.isArchived && (p.projectType || 'SMM') === 'SMM'),
     [projectsList],
   )
-  const isMgmt = ['admin', 'founder', 'co_founder', 'smm_director'].includes(user?.role || '')
+  const isMgmt = ['admin', 'founder', 'smm_director'].includes(user?.role || '')
   const canMark = (p: any) => isMgmt ||
     p.members?.some((m: any) => m.id === user?.id) ||
     p.managerId === user?.id || p.manager?.id === user?.id ||

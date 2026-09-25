@@ -167,7 +167,7 @@ export class CalendarService {
     //   • остальным ролям встречи клиентов не показываем.
     // Закрытые сделки (won/lost) и записи без даты — пропускаем.
     const role = viewerRole || '';
-    const isTop = ['admin', 'founder', 'co_founder'].includes(role);
+    const isTop = ['admin', 'founder'].includes(role);
     const showClientMeetings = !scope || scope === 'personal';
     let leads: ClientLead[] = [];
     if (showClientMeetings && (salesSegment || isTop)) {
@@ -215,8 +215,7 @@ export class CalendarService {
     // поэтому показываем всей производственной/управленческой команде (не МП
     // и не разработчикам), и не при фильтре по конкретному сотруднику/личном.
     const SHOOT_ROLES = [
-      'admin', 'founder', 'co_founder', 'smm_director', 'video_director',
-      'smm_specialist', 'videographer', 'video_editor', 'organizer', 'storymaker', 'designer',
+      'admin', 'founder', 'smm_director', 'smm_specialist', 'videographer', 'video_editor', 'designer',
     ];
     const showShoots = !employeeId && scope !== 'personal'
       && (SHOOT_ROLES.includes(role) || (!!viewerSecondaryRole && SHOOT_ROLES.includes(viewerSecondaryRole)));

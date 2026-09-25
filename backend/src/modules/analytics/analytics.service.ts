@@ -253,7 +253,7 @@ export class AnalyticsService {
       .addSelect("SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END)", 'doneTasks')
       .addSelect('SUM(tl.timeSpent)', 'totalHours')
       .where('u.isActive = true')
-      .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder', 'co_founder'] })
+      .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] })
       .groupBy('u.id, u.name, e.fullName, e.position, e.id')
       .orderBy('"doneTasks"', 'DESC')
       .limit(limit)
@@ -265,7 +265,7 @@ export class AnalyticsService {
       .createQueryBuilder('u')
       .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
       .where('u.isActive = true')
-      .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder', 'co_founder'] });
+      .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] });
     this.scopeTeam(countQb, 'u', scope);
     const totalCount = await countQb.getCount();
 
@@ -306,7 +306,7 @@ export class AnalyticsService {
           WHERE cpi."taskId" = t.id AND cpi."contentType" = 'story'
         ) THEN 1 ELSE 0 END)`, 'overdueTasks')
       .where('u.isActive = true')
-      .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder', 'co_founder'] })
+      .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] })
       .groupBy('e.id, u.id, u.name, e.fullName, e.position, e.department, u.avatar')
       .orderBy('"activeTasks"', 'DESC');
     this.scopeTeam(qb, 'u', scope);
@@ -425,7 +425,7 @@ export class AnalyticsService {
       relations: ['user'],
     });
     // Exclude top management from payroll — they're owners, not regular staff
-    const TOP_ROLES = ['founder', 'co_founder', 'admin'];
+    const TOP_ROLES = ['founder', 'admin'];
     const employees = allEmployees.filter(e => !TOP_ROLES.includes(e.user?.role || ''));
 
     // Include both active and archived projects when looking at history,
@@ -708,7 +708,7 @@ export class AnalyticsService {
       where: { status: EmployeeStatus.ACTIVE },
       relations: ['user'],
     });
-    const TOP_ROLES = ['founder', 'co_founder', 'admin'];
+    const TOP_ROLES = ['founder', 'admin'];
     let employees = allEmployees.filter(e => !TOP_ROLES.includes(e.user?.role || ''));
 
     // If filtering by project — only include employees who are members of that project
@@ -1099,7 +1099,7 @@ export class AnalyticsService {
     }));
 
     // Skip top management from list view (but allow single fetch)
-    const TOP_ROLES = ['founder', 'co_founder', 'admin'];
+    const TOP_ROLES = ['founder', 'admin'];
     const filtered = employeeId
       ? result
       : result.filter(r => !TOP_ROLES.includes((r as any).role || ''));

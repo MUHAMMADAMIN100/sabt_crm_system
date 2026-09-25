@@ -25,7 +25,7 @@ type CrewOut = 'videographers' | 'videoEditors' | 'designers'
 const CREW_ROWS: { field: CrewField; out: CrewOut; label: string; roles?: string[] }[] = [
   // Видеографа за проектом закрепляет только руководитель видеографии: съёмки
   // по умолчанию его, и раздавать их — его работа (решение владельца, 18.09).
-  { field: 'videographerIds', out: 'videographers', label: 'Видеограф', roles: ['video_director', 'admin', 'founder', 'co_founder'] },
+  { field: 'videographerIds', out: 'videographers', label: 'Видеограф', roles: ['admin', 'founder'] },
   { field: 'videoEditorIds',  out: 'videoEditors',  label: 'Монтажёр' },
   { field: 'designerIds',     out: 'designers',     label: 'Дизайнер' },
 ]
@@ -36,7 +36,7 @@ type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNot
   // Кто закроет этап, если на проекте никого не назначали — подстановка с сервера.
   & { crewDefaults?: Partial<Record<CrewOut, SmmSpec>> }
 
-const EDIT_ROLES = ['founder', 'co_founder', 'admin', 'smm_director', 'smm_specialist']
+const EDIT_ROLES = ['founder', 'admin', 'smm_director', 'smm_specialist']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 const MON_SHORT = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
 const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
@@ -205,7 +205,7 @@ export default function SmmProjectPage() {
   const canEdit = EDIT_ROLES.includes((user as any)?.role ?? '')
   // Переименование проекта идёт через общий PATCH /projects/:id (право projects.edit),
   // где smm_specialist не проходит — поэтому у имени более узкий набор ролей.
-  const canRename = ['admin', 'founder', 'co_founder', 'smm_director'].includes((user as any)?.role ?? '')
+  const canRename = ['admin', 'founder', 'smm_director'].includes((user as any)?.role ?? '')
 
   const now = new Date()
   const from = iso(new Date(now.getFullYear(), now.getMonth(), 1))
@@ -340,7 +340,7 @@ export default function SmmProjectPage() {
   // ── SMM-специалист проекта ──
   // Назначает руководство (у него есть доступ к списку /users); руководитель SMM
   // и сам специалист видят назначенных, но не меняют. Выбор — только специалисты.
-  const canAssignSpec = ['admin', 'founder', 'co_founder'].includes((user as any)?.role ?? '')
+  const canAssignSpec = ['admin', 'founder'].includes((user as any)?.role ?? '')
   const { data: specialistUsers } = useQuery<SmmSpec[]>({
     queryKey: ['users', 'smm_specialist'],
     queryFn: () => usersApi.list('smm_specialist'),
@@ -368,7 +368,7 @@ export default function SmmProjectPage() {
   // Производственная команда проекта: кто снимает, монтирует и рисует. От
   // этого зависит, в чей кабинет попадёт карточка подготовки. Назначает и
   // СММ-специалист — распределить работу по своему проекту его задача.
-  const canAssignCrew = ['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist'].includes((user as any)?.role ?? '')
+  const canAssignCrew = ['admin', 'founder', 'smm_director', 'smm_specialist'].includes((user as any)?.role ?? '')
   const crewMut = useMutation({
     // Приведение нужно из-за вычисляемого ключа: TS не сопоставляет его с
     // конкретными полями dto, хотя набор ключей ограничен типом CrewField.

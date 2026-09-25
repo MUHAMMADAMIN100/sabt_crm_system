@@ -3,7 +3,7 @@ import { hasGrant } from '../auth/permissions';
 
 /**
  * Доступ к финансовому модулю: право `finance.manage` (нативно у FOUNDER /
- * CO_FOUNDER либо персональным грантом extraPermissions).
+ * либо персональным грантом extraPermissions).
  *
  * Нужен отдельным guard'ом, потому что RolesGuard/PermissionsGuard читают
  * метаданные только с обработчика (getHandler) — классовые @Roles/@RequirePerm

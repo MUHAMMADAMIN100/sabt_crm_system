@@ -129,9 +129,9 @@ export default function ProductionDashboard() {
   // админ — запасной ключ). Передать же СВОЮ съёмку может сам исполнитель:
   // ради этого всё и затевалось — основной отдаёт напарнику то, что не
   // успевает. Оба правила проверяются и на сервере.
-  const canManage = ['video_director', 'admin', 'founder', 'co_founder']
+  const canManage = ['admin', 'founder']
     .some(r => r === user?.role || r === user?.secondaryRole)
-  const isVideo = ['videographer', 'video_director']
+  const isVideo = ['videographer']
     .some(r => r === user?.role || r === user?.secondaryRole)
   const { data: assignees } = useQuery({
     queryKey: ['shoot-assignees'],

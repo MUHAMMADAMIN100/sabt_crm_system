@@ -7,7 +7,7 @@ import { ActivityAction } from './activity-log.entity';
 
 @Controller('activity-log')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+@Roles(UserRole.ADMIN, UserRole.FOUNDER)
 export class ActivityLogController {
   constructor(private service: ActivityLogService) {}
 
@@ -36,7 +36,7 @@ export class ActivityLogController {
   }
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   findAll(
     @Query('userId')  userId?: string,
     @Query('action')  action?: ActivityAction,

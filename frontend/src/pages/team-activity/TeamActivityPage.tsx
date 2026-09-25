@@ -86,7 +86,6 @@ const AV_COLORS = ['#0ea5e9', '#8b5cf6', '#0d9f6e', '#d97706', '#2563eb', '#7c3a
 function avColor(id: string) { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return AV_COLORS[h % AV_COLORS.length] }
 function initials(name?: string | null) { const p = String(name || '?').trim().split(/\s+/); return ((p[0]?.[0] || '') + (p[1]?.[0] || '')).toUpperCase() || '?' }
 const money = (n: any) => Number(n || 0).toLocaleString('ru-RU')
-const isCofounder = (role?: string | null) => role === 'co_founder'
 
 function actionLabel(item: Item): string {
   if (item.source === 'finance') return String(item.action || '').replace(/\s*\(финансы\)\s*$/i, '').replace(/\s*\(ЗП\)\s*$/i, '')
@@ -256,13 +255,12 @@ export default function TeamActivityPage() {
         <div className="flex items-center gap-1.5 flex-wrap">
           <Chip active={!userId} onClick={() => setUserId(undefined)}>Все сотрудники</Chip>
           {users.map(u => (
-            <Chip key={u.id} active={userId === u.id} cofounder={isCofounder(u.role)} onClick={() => setUserId(u.id)}>
+            <Chip key={u.id} active={userId === u.id} onClick={() => setUserId(u.id)}>
               <span className="rounded-full grid place-items-center text-[9px] font-bold text-white shrink-0"
-                    style={{ width: 18, height: 18, background: isCofounder(u.role) ? '#dc2626' : avColor(u.id) }}>
+                    style={{ width: 18, height: 18, background: avColor(u.id) }}>
                 {initials(u.name)}
               </span>
               {u.name}
-              {isCofounder(u.role) && <span className="text-[10px] font-bold text-red-600 dark:text-red-400">Сооснователь</span>}
             </Chip>
           ))}
         </div>
@@ -305,23 +303,21 @@ export default function TeamActivityPage() {
               <div className="flex flex-col gap-2">
                 {g.items.map(it => {
                   const sec = sectionOf(it)
-                  const cof = isCofounder(it.userRole)
                   const fin = it.source === 'finance' ? financeMeta(it.details) : null
                   const pairs = collectPairs(it.details)
                   const isOpen = expanded.has(it.id)
                   return (
                     <div key={it.id}
-                         className={'bg-white dark:bg-gray-900 border rounded-xl px-4 py-3 flex gap-3 items-start transition '
-                           + (cof ? 'border-l-[3px] border-l-red-500 border-gray-200 dark:border-gray-700' : 'border-gray-200 dark:border-gray-700')}>
+                         className="bg-white dark:bg-gray-900 border rounded-xl px-4 py-3 flex gap-3 items-start transition border-gray-200 dark:border-gray-700">
                       <div className="w-9 h-9 rounded-full grid place-items-center text-white font-bold text-sm shrink-0"
-                           style={{ background: cof ? '#dc2626' : avColor(it.userId || it.id) }}>
+                           style={{ background: avColor(it.userId || it.id) }}>
                         {initials(it.userName)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-sm">{it.userName || 'Система'}</span>
-                          <span className={'text-[11px] font-semibold ' + (cof ? 'text-red-600 dark:text-red-400' : 'text-gray-400')}>
-                            {cof ? 'Сооснователь' : getRoleLabel(it.userRole)}
+                          <span className="text-[11px] font-semibold text-gray-400">
+                            {getRoleLabel(it.userRole)}
                           </span>
                           <span className={'text-[10.5px] font-bold px-2 py-0.5 rounded-md tracking-wide ' + (SECTION_BADGE[sec.key] || SECTION_BADGE.other)}>
                             {sec.label.toUpperCase()}
@@ -387,15 +383,13 @@ export default function TeamActivityPage() {
   )
 }
 
-function Chip({ children, active, cofounder, onClick }: { children: ReactNode; active?: boolean; cofounder?: boolean; onClick?: () => void }) {
+function Chip({ children, active, onClick }: { children: ReactNode; active?: boolean; onClick?: () => void }) {
   return (
     <button onClick={onClick}
             className={'inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-full border transition '
               + (active
                 ? 'bg-surface-500 border-surface-500 text-white'
-                : cofounder
-                  ? 'bg-white dark:bg-gray-900 border-red-300 dark:border-red-800 text-gray-600 dark:text-gray-300 hover:border-red-400'
-                  : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300')}>
+                : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300')}>
       {children}
     </button>
   )
@@ -410,7 +404,7 @@ function Chip({ children, active, cofounder, onClick }: { children: ReactNode; a
 function LateFines() {
   const qc = useQueryClient()
   const role = useAuthStore(s => s.user?.role)
-  const canFine = role === 'founder' || role === 'co_founder'
+  const canFine = role === 'founder'
   const { data } = useQuery({
     queryKey: ['late-fines'],
     queryFn: () => financeApi.lateFines(),
@@ -636,7 +630,7 @@ const ABSENCE_LABEL: Record<string, string> = {
 function ShiftsToday({ finesOpen, onToggleFines }: { finesOpen: boolean; onToggleFines: () => void }) {
   const qc = useQueryClient()
   const role = useAuthStore(s => s.user?.role)
-  const canFine = role === 'founder' || role === 'co_founder'
+  const canFine = role === 'founder'
   const { data } = useQuery({
     queryKey: ['work-shifts-team'],
     queryFn: () => workShiftsApi.team(),

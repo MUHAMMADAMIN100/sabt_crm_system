@@ -206,8 +206,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const section = useSmmSection()
   const user = useAuthStore(s => s.user)
   // Съёмки видят видеографы всегда; остальные — только когда выбран проект (фильтр по плитке).
-  const isVideographer = ['videographer', 'video_director', 'video_editor'].includes(user?.role ?? '')
-    || ['videographer', 'video_director', 'video_editor'].includes((user as any)?.secondaryRole ?? '')
+  const isVideographer = ['videographer', 'video_editor'].includes(user?.role ?? '')
+    || ['videographer', 'video_editor'].includes((user as any)?.secondaryRole ?? '')
   const isPhone = useIsPhone()
   const [view, setView] = useState<View>('month')
   const [cursor, setCursor] = useState(new Date())

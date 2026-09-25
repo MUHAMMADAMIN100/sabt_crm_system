@@ -1576,7 +1576,9 @@ export class FinanceService implements OnModuleInit {
   // направлению Development с 1 августа 2026 — ни как операции, ни в итогах/
   // сводках/прогнозе. Для всех остальных ролей данные без изменений.
   private static readonly COFOUNDER_DEV_INCOME_FROM = '2026-08-01';
-  private hidesDevIncome(role?: string): boolean { return role === 'co_founder'; }
+  /** Раньше доход разработки скрывался от сооснователя. Роль убрана
+   *  25.09.2026 — скрывать больше не от кого. */
+  private hidesDevIncome(_role?: string): boolean { return false; }
   /** Убрать операции дохода по Development с 1 августа (для co_founder). */
   private scopeIncomeTx(txs: FinanceTransaction[], m: FinMaps, role?: string): FinanceTransaction[] {
     if (!this.hidesDevIncome(role)) return txs;

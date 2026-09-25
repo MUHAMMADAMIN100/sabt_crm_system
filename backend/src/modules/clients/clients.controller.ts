@@ -20,7 +20,7 @@ function leadDirectionFor(role?: string): ClientLeadDirection | undefined {
 @ApiTags('Client Leads')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+@Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
 @Controller('clients')
 export class ClientsController {
   constructor(private service: ClientsService) {}
@@ -64,7 +64,7 @@ export class ClientsController {
     @Query('to') to?: string,
   ) {
     const role = req.user?.role;
-    const isPrivileged = ['admin', 'founder', 'co_founder'].includes(role);
+    const isPrivileged = ['admin', 'founder'].includes(role);
     if (!isPrivileged && req.user?.id !== userId) {
       // Тихо вернём пустой ответ — не палим существование других МП.
       return null;

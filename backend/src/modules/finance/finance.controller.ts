@@ -42,7 +42,7 @@ import { FinanceActivityInterceptor } from './finance-activity.interceptor';
 // только с обработчиков, поэтому классовые @Roles/@RequirePerm сами по себе
 // доступ не ограничивают.
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard, FinanceAccessGuard)
-@Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
+@Roles(UserRole.FOUNDER)
 @RequirePerm('finance.manage')
 // Журнал активности: каждый успешный POST/PATCH/DELETE пишется в
 // finance_activity (кто/что/когда) — вкладка «Активность».

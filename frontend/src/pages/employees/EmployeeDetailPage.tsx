@@ -18,7 +18,7 @@ import EmployeeKpiCard from '@/components/kpi/EmployeeKpiCard'
 
 /** Wave 13: KPI считается для всех «рабочих» ролей. */
 const hasKpi = (role?: string | null): boolean =>
-  !!role && !['admin', 'founder', 'co_founder'].includes(role)
+  !!role && !['admin', 'founder'].includes(role)
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
@@ -30,12 +30,12 @@ export default function EmployeeDetailPage() {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
-  const canView = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(user?.role || '')
-  const isAdminOrFounder = user?.role === 'founder' || user?.role === 'co_founder'
-  const canEditSalary = user?.role === 'founder' || user?.role === 'co_founder'
+  const canView = ['admin', 'founder', 'smm_director'].includes(user?.role || '')
+  const isAdminOrFounder = user?.role === 'founder'
+  const canEditSalary = user?.role === 'founder'
   // admin/founder/co_founder могут менять аватар сотрудника
-  const canEditAvatar = ['admin', 'founder', 'co_founder'].includes(user?.role || '')
-  const canViewSalesKpi = ['admin', 'founder', 'co_founder'].includes(user?.role || '')
+  const canEditAvatar = ['admin', 'founder'].includes(user?.role || '')
+  const canViewSalesKpi = ['admin', 'founder'].includes(user?.role || '')
   const avatarFileRef = useRef<HTMLInputElement>(null)
   const uploadAvatarMut = useMutation({
     mutationFn: ({ userId, file }: { userId: string; file: File }) => usersApi.uploadAvatarFor(userId, file),

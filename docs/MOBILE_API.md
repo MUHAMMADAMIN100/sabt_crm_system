@@ -61,17 +61,14 @@ POST /auth/refresh
 
 | role | Название |
 |---|---|
-| founder / co_founder | Основатель / Сооснователь |
+| founder | Основатель |
 | admin | Администратор |
 | smm_director | Руководитель SMM |
-| video_director | Руководитель по видеографии |
 | smm_specialist | SMM специалист |
-| storymaker | Сторисмейкер |
 | designer | Дизайнер |
 | videographer / video_editor | Видеограф / Монтажёр |
-| organizer | Организатор |
-| scriptwriter | Сценарист / SMM-менеджер |
-| qa / publisher / targetologist | Контролёр / Публикатор / Таргетолог |
+| targetologist | Таргетолог |
+| stories_checker | Проверяющий сторис |
 | sales_manager_smm / sales_manager_dev | Менеджеры продаж |
 | pm_dev / developer | ПМ разработки / Разработчик |
 | employee | Сотрудник (базовая) |

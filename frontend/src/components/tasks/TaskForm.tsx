@@ -13,19 +13,14 @@ import clsx from 'clsx'
  *  Имя группы показывается в форме как «🎨 Дизайнеры». */
 const ASSIGNEE_GROUPS: Array<{ id: string; label: string; roles: string[] }> = [
   { id: 'smm',        label: '📱 SMM-специалисты',      roles: ['smm_specialist'] },
-  { id: 'stories',    label: '📸 Сторисмейкеры',        roles: ['storymaker'] },
-  { id: 'scripts',    label: '✍️ Сценаристы',           roles: ['scriptwriter'] },
   { id: 'design',     label: '🎨 Дизайнеры',           roles: ['designer'] },
   { id: 'video',      label: '🎬 Видеографы',           roles: ['videographer'] },
   { id: 'editors',    label: '🎞 Монтажёры',            roles: ['video_editor'] },
-  { id: 'organizers', label: '📋 Организаторы',         roles: ['organizer'] },
   { id: 'targeting',  label: '🎯 Таргетологи',          roles: ['targetologist'] },
-  { id: 'publishers', label: '📤 Публикаторы',          roles: ['publisher'] },
-  { id: 'qa',         label: '✅ Контроль качества',    roles: ['qa'] },
   { id: 'dev',        label: '💻 Разработка',           roles: ['developer', 'pm_dev'] },
   { id: 'sales',      label: '💰 Менеджеры по продажам',roles: ['sales_manager_smm', 'sales_manager_dev'] },
-  { id: 'directors',  label: '👔 Руководители направлений', roles: ['smm_director', 'video_director'] },
-  { id: 'leadership', label: '👑 Руководство',          roles: ['admin', 'founder', 'co_founder'] },
+  { id: 'directors',  label: '👔 Руководители направлений', roles: ['smm_director'] },
+  { id: 'leadership', label: '👑 Руководство',          roles: ['admin', 'founder'] },
 ]
 const OTHER_GROUP = { id: 'other', label: '👤 Прочие сотрудники' }
 

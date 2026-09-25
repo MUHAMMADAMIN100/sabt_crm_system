@@ -56,7 +56,7 @@ export default function TasksPage() {
   const user = useAuthStore(s => s.user)
   const isHeadSMM = user?.role === 'smm_director'
   // Вторая роль тоже даёт управленческий уровень — зеркально RolesGuard бэка.
-  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director']
+  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'smm_director', 'dev_director']
   const isManagerPlus = MANAGER_PLUS_ROLES.includes(user?.role || '') || MANAGER_PLUS_ROLES.includes(user?.secondaryRole || '')
   // МП по продажам: видят задачи своего направления и могут создавать
   // задачи в доступных им проектах (сервер фильтрует /tasks и /projects).
@@ -66,7 +66,7 @@ export default function TasksPage() {
   //  - sales_manager_smm / sales_manager_dev — продажники, не публикуют контент;
   //  - developer — разработчик, тоже не публикует контент.
   // Admin виджет видит (он сам попросил вернуть).
-  const showStoryWidget = !['founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev', 'developer'].includes(user?.role || '')
+  const showStoryWidget = !['founder', 'sales_manager_smm', 'sales_manager_dev', 'developer'].includes(user?.role || '')
   const isSMM = user?.role === 'smm_specialist'
   const qc = useQueryClient()
   const { t } = useTranslation()
@@ -382,7 +382,7 @@ export default function TasksPage() {
               <select value={assigneeUserId} onChange={e => setAssigneeUserId(e.target.value)} className="input w-48">
                 <option value="">Все исполнители</option>
                 {(isHeadSMM
-                  ? employees?.filter((e: any) => ['smm_specialist', 'smm_director', 'storymaker'].includes(e.user?.role || '') || ['SMM специалист', 'Руководитель SMM', 'Сторисмейкер'].includes(e.position || ''))
+                  ? employees?.filter((e: any) => ['smm_specialist', 'smm_director'].includes(e.user?.role || '') || ['SMM специалист', 'Руководитель SMM', 'Сторисмейкер'].includes(e.position || ''))
                   : employees
                 )?.map((e: any) => (
                   <option key={e.userId || e.id} value={e.userId || e.id}>{e.fullName}</option>

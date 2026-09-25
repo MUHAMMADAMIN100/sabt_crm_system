@@ -49,20 +49,20 @@ export class WorkShiftsController {
 
   /** Очередь правок и решение по ним — только руководству. */
   @Get('edits')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN)
   edits() {
     return this.service.pendingEdits();
   }
 
   @Patch('edits/:id')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN)
   decideEdit(@Request() req, @Param('id') id: string, @Body() body: { approve: boolean }) {
     return this.service.decideEdit(id, !!body?.approve, req.user.id);
   }
 
   // ─── Личный график смены ───────────────────────────────────────────
   @Get('schedules')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN)
   schedules() {
     return this.service.schedules();
   }
@@ -70,26 +70,26 @@ export class WorkShiftsController {
   /** Общий график компании — по нему живут все, кому личный не задавали.
    *  Путь стоит ВЫШЕ 'schedules/:userId', иначе 'company' поймается как id. */
   @Patch('schedules/company')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.FOUNDER)
   setCompanySchedule(@Request() req, @Body() body: any) {
     return this.service.setCompanySchedule(body || {}, req.user.id);
   }
 
   @Patch('schedules/:userId')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN)
   setSchedule(@Request() req, @Param('userId') userId: string, @Body() body: any) {
     return this.service.setSchedule(userId, body || {}, req.user.id);
   }
 
   /** «Сбросить к общему» — с даты, а не задним числом. */
   @Delete('schedules/:userId')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN)
   resetSchedule(@Request() req, @Param('userId') userId: string, @Body() body: any) {
     return this.service.resetSchedule(userId, body || {}, req.user.id);
   }
 
   @Patch('settings')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER)
+  @Roles(UserRole.FOUNDER)
   setSettings(@Body() body: any) {
     return this.service.setSettings(body || {});
   }
@@ -106,26 +106,26 @@ export class WorkShiftsController {
   }
 
   @Get('notices')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN)
   notices() {
     return this.service.notices();
   }
 
   @Patch('notices/:id')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN)
   decideNotice(@Request() req, @Param('id') id: string, @Body() body: { approve: boolean }) {
     return this.service.decideNotice(id, !!body?.approve, req.user.id);
   }
 
   // ─── Отгул / отпуск / больничный — ставит руководство ──────────────
   @Post('absence')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN)
   setAbsence(@Request() req, @Body() body: { employeeId: string; date: string; kind: 'dayoff' | 'vacation' | 'sick' | 'holiday'; note?: string }) {
     return this.service.setAbsence(body, req.user.id);
   }
 
   @Delete('absence')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN)
   removeAbsence(@Query('employeeId') employeeId: string, @Query('date') date: string) {
     return this.service.removeAbsence(employeeId, date);
   }
@@ -138,14 +138,14 @@ export class WorkShiftsController {
 
   /** Табель за месяц: часы по дням, итоги и отрезки смен. */
   @Get('month')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN)
   month(@Query('ym') ym?: string) {
     return this.service.month(ym);
   }
 
   /** Сводка по команде — только руководству компании. */
   @Get('team')
-  @Roles(UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN)
+  @Roles(UserRole.FOUNDER, UserRole.ADMIN)
   team(@Query('date') date?: string) {
     return this.service.team(date);
   }

@@ -32,7 +32,7 @@ import { effectiveLimits, sanitizeCustomTariff, TariffLimits } from './tariff-li
  *  по-прежнему не видны. Admin в списке нет: ему, как и по остальным
  *  финансовым полям, деньги проекта не показываются. */
 const CUSTOM_PRICE_ROLES = [
-  'founder', 'co_founder', 'smm_director', 'sales_manager_smm',
+  'founder', 'smm_director', 'sales_manager_smm',
 ];
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
@@ -176,7 +176,7 @@ export class ProjectsService implements OnModuleInit {
        FROM project_members pm
        JOIN users u ON u.id = pm."usersId"
        WHERE pm."projectsId" = $1
-         AND u.role IN ('smm_specialist','smm_director','storymaker')`,
+         AND u.role IN ('smm_specialist','smm_director')`,
       [projectId],
     );
     // + назначенные специалисты проекта (smmData.smmSpecialistIds) — они закрывают
@@ -313,7 +313,7 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const PM_OR_ADMIN = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
+    const PM_OR_ADMIN = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
     const isAllowed = PM_OR_ADMIN.includes(user.role)
       || project.managerId === user.id
       || (project as any).salesManagerId === user.id;
@@ -349,7 +349,7 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const ADMIN_PM = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
+    const ADMIN_PM = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
     const isAllowed = ADMIN_PM.includes(user.role)
       || project.managerId === user.id
       || (project as any).salesManagerId === user.id;
@@ -473,7 +473,7 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const ADMIN_PM = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'];
+    const ADMIN_PM = ['admin', 'founder', 'smm_director'];
     const isAllowed = ADMIN_PM.includes(user.role) || project.managerId === user.id;
     if (!isAllowed) {
       throw new ForbiddenException('Нет прав на удаление брифа этого проекта');
@@ -756,10 +756,10 @@ export class ProjectsService implements OnModuleInit {
    *  (планирование объёма работ), всё остальное финансовое — скрыто.
    *  Прочие роли — финансы полностью скрыты. */
   stripFinance<T extends Project | Project[]>(data: T, role?: string): T {
-    const isFinance = role === 'founder' || role === 'co_founder';
+    const isFinance = role === 'founder';
     if (isFinance) return data;
     const isSales = role === 'sales_manager_smm' || role === 'sales_manager_dev';
-    const isProjectManager = role === 'video_director' || role === 'smm_director' || role === 'dev_director';
+    const isProjectManager = role === 'smm_director' || role === 'dev_director';
     const strip = (p: any) => {
       if (!p) return p;
       // Поля связанные с маржой/прибыльностью — только finance role видит
@@ -837,21 +837,10 @@ export class ProjectsService implements OnModuleInit {
         where: { userId },
         select: ['id', 'isStoryMaker'] as any,
       }).catch(() => null);
-      // Роль storymaker (основная или вторая) равнозначна флагу isStoryMaker:
-      // раньше роль без флага давала усечённый список — сторисмейкер не видел
-      // все SMM-проекты для отметки историй. secondaryRole добираем ЛЕНИВО —
-      // только когда ветка вообще может сработать (не привилегированная роль,
-      // не сегмент продаж), чтобы не добавлять запрос каждому вызову списка.
-      let isStoryMaker = !!emp?.isStoryMaker || role === 'storymaker';
-      if (!isStoryMaker
-        && !['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist', 'organizer', 'pm_dev', 'dev_director', 'video_director'].includes(role)
-        && !getSalesSegment(role)) {
-        const userRow = await this.userRepo.findOne({
-          where: { id: userId },
-          select: ['id', 'secondaryRole'] as any,
-        }).catch(() => null);
-        isStoryMaker = (userRow as any)?.secondaryRole === 'storymaker';
-      }
+      // Роль «сторисмейкер» убрана (25.09.2026) — остался флаг isStoryMaker
+      // на карточке сотрудника: он и даёт доступ ко всем SMM-проектам для
+      // отметки историй.
+      const isStoryMaker = !!emp?.isStoryMaker;
 
       // ВАЖНО: направление проверяется ПЕРВЫМ и грантом не обходится. Роли
       // ниже имеют 'projects.view' нативно, и раньше грант срабатывал раньше
@@ -864,12 +853,11 @@ export class ProjectsService implements OnModuleInit {
         qb.andWhere('p.projectType IN (:...salesTypes)', {
           salesTypes: getSalesSegment(role)!.projectTypes,
         });
-      } else if (role === 'smm_director' || role === 'organizer' || role === 'video_director' || role === 'smm_specialist') {
+      } else if (role === 'smm_director' || role === 'smm_specialist') {
         // smm_specialist видит ВСЕ SMM-проекты (решение владельца, сент. 2026); отмечать сторис
         // может только по своим — это проверяет StoriesService.upsert.
-        // Руководители SMM и видео + организатор видят ВСЕ SMM-проекты
-        // компании (управляющие роли производства; видеопродакшн живёт
-        // внутри SMM-проектов). Проекты разработки им не показываем.
+        // Руководитель SMM видит ВСЕ SMM-проекты компании. Проекты
+        // разработки им не показываем.
         qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
       } else if (role === 'pm_dev' || role === 'developer' || role === 'dev_director') {
         // Команда разработки видит ВСЕ dev-проекты компании без членства:
@@ -884,7 +872,7 @@ export class ProjectsService implements OnModuleInit {
         // Сторисмейкер (флаг на Employee) — все активные SMM-проекты,
         // вне зависимости от членства. Как smm_director, но только в SMM.
         qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
-      } else if (!['admin', 'founder', 'co_founder'].includes(role)) {
+      } else if (!['admin', 'founder'].includes(role)) {
         // All other roles: видят проекты где они member ИЛИ менеджер
         // (project.managerId === userId). Раньше учитывалось только
         // membership — sm­m_specialist'а, повышенного до manager'а отдельного
@@ -1253,7 +1241,7 @@ export class ProjectsService implements OnModuleInit {
     // Доступно ролям, которые могут создавать/редактировать проект (включая
     // руководителей направлений — в т.ч. второй ролью, как dev_director у
     // Сабрины).
-    const PAYMENT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director'];
+    const PAYMENT_ROLES = ['admin', 'founder', 'smm_director', 'dev_director'];
     if (Array.isArray((dto as any).initialPayments) && (dto as any).initialPayments.length > 0
         && (PAYMENT_ROLES.includes(userRole as string)
             || PAYMENT_ROLES.includes(userSecondaryRole as string))) {
@@ -1368,7 +1356,7 @@ export class ProjectsService implements OnModuleInit {
     // может редактировать его данные независимо от своей роли. Отдельной
     // роли project_manager больше нет.
     const isAssignedManager = project.managerId === user.id;
-    const canEdit = ['admin', 'founder', 'co_founder'].includes(user.role) ||
+    const canEdit = ['admin', 'founder'].includes(user.role) ||
       isSmmDirectorOnSmm ||
       isSalesOnOwnSegment ||
       isAssignedManager ||
@@ -1411,7 +1399,7 @@ export class ProjectsService implements OnModuleInit {
     // paidAmount раньше мог менять только founder/co_founder. Теперь оба МП
     // по продажам (СММ и разработка) могут фиксировать оплату по своим
     // проектам — это часть их работы, чтобы вести воронку до победного.
-    const canEditPaid = ['founder', 'co_founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user.role);
+    const canEditPaid = ['founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user.role);
     if ('paidAmount' in dto && !canEditPaid) {
       const sameValue = Number(dto.paidAmount ?? 0) === Number(project.paidAmount ?? 0);
       if (!sameValue) {
@@ -1422,7 +1410,7 @@ export class ProjectsService implements OnModuleInit {
 
     // Wave 13: финансовые поля могут менять только founder/co_founder.
     // Если не founder — молча отбрасываем поля с реальными изменениями.
-    const isFinanceRole = ['founder', 'co_founder'].includes(user.role);
+    const isFinanceRole = ['founder'].includes(user.role);
     if (!isFinanceRole) {
       for (const field of this.FINANCE_FIELDS) {
         if (field in dto) {
@@ -1563,7 +1551,7 @@ export class ProjectsService implements OnModuleInit {
     // Существующие платежи редактируются через отдельный финансовый таб
     // и здесь не трогаются. Доступно ролям с правом редактирования проекта
     // (вторая роль тоже даёт право — dev_director у Сабрины).
-    const UPD_PAYMENT_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director', 'dev_director'];
+    const UPD_PAYMENT_ROLES = ['admin', 'founder', 'smm_director', 'dev_director'];
     if (Array.isArray((dto as any).initialPayments)
         && (UPD_PAYMENT_ROLES.includes(user.role)
             || UPD_PAYMENT_ROLES.includes((user as any).secondaryRole)
@@ -2001,7 +1989,6 @@ export class ProjectsService implements OnModuleInit {
       if (f.out === 'videographers') {
         u = await this.userRepo.findOne({ where: { isDefaultVideographer: true, isActive: true } }).catch(() => null);
         if (!u) u = await this.soleActiveByRole([UserRole.VIDEOGRAPHER]);
-        if (!u) u = await this.soleActiveByRole([UserRole.VIDEO_DIRECTOR]);
       } else {
         u = await this.soleActiveByRole(f.roles as readonly UserRole[]);
       }
@@ -2252,7 +2239,7 @@ export class ProjectsService implements OnModuleInit {
     // smm_director — только SMM-проекты. Прочие роли — нельзя.
     if (user) {
       const role = user.role;
-      const isTopAdmin = ['admin', 'founder', 'co_founder'].includes(role);
+      const isTopAdmin = ['admin', 'founder'].includes(role);
       const isSmmDirOnSmm = role === 'smm_director' && p.projectType === 'SMM';
       const removeSegment = getSalesSegment(role);
       const isSalesOnOwnSegment = !!removeSegment

@@ -976,7 +976,7 @@ export class WorkShiftsService {
       select: ['id', 'role'],
     });
     for (const u of chiefs) {
-      if (u.role !== UserRole.FOUNDER && u.role !== UserRole.CO_FOUNDER) continue;
+      if (u.role !== UserRole.FOUNDER) continue;
       await this.telegram.sendToUser(u.id, lines.join('\n')).catch(() => undefined);
     }
   }

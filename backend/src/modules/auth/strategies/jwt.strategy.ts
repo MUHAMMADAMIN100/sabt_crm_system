@@ -46,11 +46,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       this.logger.warn(`JWT validate: user_blocked sub=${user.id}`);
       const blockedByLabel = user.blockedByRole === 'founder'
         ? 'основатель компании'
-        : user.blockedByRole === 'co_founder'
-          ? 'сооснователь компании'
-          : user.blockedByRole === 'admin'
-            ? 'администратор'
-            : (user.blockedByName || 'администрация');
+        : user.blockedByRole === 'admin'
+          ? 'администратор'
+          : (user.blockedByName || 'администрация');
       throw new UnauthorizedException(`BLOCKED: Вас заблокировал ${blockedByLabel}${user.blockedByName ? ` (${user.blockedByName})` : ''}`);
     }
     // Рабочий токен бессрочный, поэтому смена пароля отзывает его так:

@@ -46,9 +46,9 @@ function periodRange(p: Period): { from: string; to: string } {
 const ROLE_GROUPS: { value: string; label: string; roles: string[] }[] = [
   { value: 'all',      label: 'Все',                roles: [] },
   { value: 'sales',    label: 'Менеджеры продаж',   roles: ['sales_manager_smm', 'sales_manager_dev'] },
-  { value: 'smm',      label: 'SMM',                roles: ['smm_specialist', 'storymaker'] },
-  { value: 'pm',       label: 'Руководители',       roles: ['video_director', 'smm_director'] },
-  { value: 'design',   label: 'Продакшн',           roles: ['designer', 'videographer', 'video_editor', 'organizer'] },
+  { value: 'smm',      label: 'SMM',                roles: ['smm_specialist'] },
+  { value: 'pm',       label: 'Руководители',       roles: ['smm_director'] },
+  { value: 'design',   label: 'Продакшн',           roles: ['designer', 'videographer', 'video_editor'] },
   { value: 'dev',      label: 'Разработчики',       roles: ['developer'] },
 ]
 
@@ -57,19 +57,16 @@ const ROLE_LABEL: Record<string, string> = {
   sales_manager_dev: 'МП (Разработка)',
   smm_specialist:    'SMM',
   smm_director:      'Рук. SMM',
-  video_director:    'Рук. видео',
   designer:          'Дизайнер',
   developer:         'Разработчик',
   videographer:      'Видеограф',
   video_editor:      'Монтажёр',
-  organizer:         'Организатор',
-  storymaker:        'Сторисмейкер',
   employee:          'Сотрудник',
 }
 
 /**
  * Виджет «KPI команды» — для дашборда основателя.
- * Все сотрудники (кроме admin/founder/co_founder), сортировка по % ↓.
+ * Все сотрудники (кроме admin/founder), сортировка по % ↓.
  * Фильтр по группе ролей, переключатель периода.
  */
 export default function EmployeesKpiWidget() {

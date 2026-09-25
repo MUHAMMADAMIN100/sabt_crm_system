@@ -37,7 +37,7 @@ export default function TariffsPage() {
   // Цены тарифов видят и могут редактировать ТОЛЬКО founder/co_founder.
   // Остальные (admin, smm_director и т.д.) видят состав тарифа,
   // но саму цену не показываем.
-  const canSeeFinance = role === 'founder' || role === 'co_founder'
+  const canSeeFinance = role === 'founder'
 
   const qc = useQueryClient()
   const [search, setSearch] = useState('')

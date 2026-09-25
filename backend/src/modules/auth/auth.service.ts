@@ -240,13 +240,12 @@ export class AuthService implements OnModuleInit {
     if (exists) throw new ConflictException('Email already in use');
 
     // SECURITY: запрещаем self-register на привилегированные роли.
-    // ADMIN, SMM_DIRECTOR, VIDEO_DIRECTOR, менеджеры продаж —
+    // ADMIN, SMM_DIRECTOR, менеджеры продаж —
     // назначаются администратором/основателем через /users, а не
     // выдаются открытой формой регистрации.
     const PRIVILEGED_ROLES_BLOCKED_FROM_REGISTER = [
       UserRole.ADMIN,
       UserRole.SMM_DIRECTOR,
-      UserRole.VIDEO_DIRECTOR,
       UserRole.SALES_MANAGER_SMM,
       UserRole.SALES_MANAGER_DEV,
     ];
@@ -262,14 +261,6 @@ export class AuthService implements OnModuleInit {
         `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'founder'`,
       );
       if (count > 0) throw new ConflictException('В системе уже зарегистрирован основатель');
-    }
-
-    // Enforce single co-founder per system
-    if (dto.role === UserRole.CO_FOUNDER) {
-      const [{ count }] = await this.userRepo.manager.query(
-        `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'co_founder'`,
-      );
-      if (count > 0) throw new ConflictException('В системе уже зарегистрирован сооснователь');
     }
 
     const user = this.userRepo.create({
@@ -396,11 +387,9 @@ export class AuthService implements OnModuleInit {
       await this.audit.log({ type: SecurityEventType.LOGIN_BLOCKED, userId: user.id, email: user.email, req });
       const blockedByLabel = user.blockedByRole === 'founder'
         ? 'основатель компании'
-        : user.blockedByRole === 'co_founder'
-          ? 'сооснователь компании'
-          : user.blockedByRole === 'admin'
-            ? 'администратор'
-            : (user.blockedByName || 'администрация');
+        : user.blockedByRole === 'admin'
+          ? 'администратор'
+          : (user.blockedByName || 'администрация');
       const reasonText = user.blockReason ? `\nПричина: ${user.blockReason}` : '';
       throw new UnauthorizedException(`Вас заблокировал ${blockedByLabel}${user.blockedByName ? ` (${user.blockedByName})` : ''}.${reasonText}`);
     }
@@ -419,7 +408,7 @@ export class AuthService implements OnModuleInit {
 
     // Check if employee is sub-admin — grant admin access (but don't downgrade founder/co_founder)
     const employee = await this.employeeRepo.findOne({ where: { userId: user.id } });
-    const topRoles = [UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN];
+    const topRoles = [UserRole.FOUNDER, UserRole.ADMIN];
     const effectiveRole = employee?.isSubAdmin && !topRoles.includes(user.role) ? UserRole.ADMIN : user.role;
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: effectiveRole });
@@ -574,18 +563,11 @@ export class AuthService implements OnModuleInit {
     return count > 0;
   }
 
-  async coFounderExists(): Promise<boolean> {
-    const [{ count }] = await this.userRepo.manager.query(
-      `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'co_founder'`,
-    );
-    return count > 0;
-  }
-
   async getMe(userId: string) {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     const employee = await this.employeeRepo.findOne({ where: { userId } });
-    const topRoles = [UserRole.FOUNDER, UserRole.CO_FOUNDER, UserRole.ADMIN];
+    const topRoles = [UserRole.FOUNDER, UserRole.ADMIN];
     const effectiveRole = employee?.isSubAdmin && !topRoles.includes(user.role) ? UserRole.ADMIN : user.role;
     const sanitized = this.sanitize(user);
     // Единая тема оформления на всю компанию — цвета основателя. Персональный

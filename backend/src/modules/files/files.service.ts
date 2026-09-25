@@ -9,7 +9,7 @@ import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { AppGateway } from '../gateway/app.gateway';
 
-const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'];
+const PM_ROLES = ['admin', 'founder', 'smm_director'];
 const PM_ROLES_SET = new Set(PM_ROLES);
 
 @Injectable()
@@ -107,7 +107,7 @@ export class FilesService {
   async remove(id: string, userId?: string, userRole?: string) {
     const file = await this.repo.findOne({ where: { id } });
     if (!file) throw new NotFoundException('File not found');
-    if (userId && file.uploadedById !== userId && !['admin', 'founder', 'co_founder'].includes(userRole || '')) {
+    if (userId && file.uploadedById !== userId && !['admin', 'founder'].includes(userRole || '')) {
       throw new ForbiddenException('Not allowed to delete this file');
     }
 

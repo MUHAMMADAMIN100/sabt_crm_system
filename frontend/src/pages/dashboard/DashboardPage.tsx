@@ -139,7 +139,7 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
 function DashboardContent() {
   const user = useAuthStore(s => s.user)
   const role = user?.role || 'employee'
-  const isFounderView = ['admin', 'founder', 'co_founder'].includes(role)
+  const isFounderView = ['admin', 'founder'].includes(role)
   // Руководитель видеографии работает как производственник: у него съёмки,
   // а не сводка РМ — панель и меню такие же, как у дизайнера (решение
   // владельца, 18.09.2026). Сводка РМ остаётся у руководителя SMM.
@@ -151,9 +151,9 @@ function DashboardContent() {
   const navigate = useNavigate()
   // Команда разработки — разработчики и проект-менеджер по разработке.
   const isDevTeam = role === 'developer' || role === 'pm_dev'
-  const isWorkerView = ['smm_specialist', 'designer', 'video_editor', 'organizer', 'storymaker', 'developer', 'videographer', 'video_director', 'scriptwriter', 'qa', 'publisher', 'targetologist', 'employee'].includes(role)
-  const isManagerPlus = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'].includes(role)
-  const isAdmin = ['admin', 'founder', 'co_founder'].includes(role)
+  const isWorkerView = ['smm_specialist', 'designer', 'video_editor', 'developer', 'videographer', 'targetologist', 'employee'].includes(role)
+  const isManagerPlus = ['admin', 'founder', 'smm_director'].includes(role)
+  const isAdmin = ['admin', 'founder'].includes(role)
   const { t } = useTranslation()
   // Палитра графиков следует персональному цвету системы.
   const PIE_COLORS = useChartColors()
@@ -197,9 +197,9 @@ function DashboardContent() {
     )
   }
 
-  // Сторисмейкер — оперативная сводка по сторис всех SMM-проектов (его дашборд
-  // не про карточки доски, а про истории). Проверяем ДО isWorkerView.
-  if (role === 'storymaker' || user?.isStoryMaker) {
+  // Сторисмейкер (флаг на карточке сотрудника) — оперативная сводка по сторис
+  // всех SMM-проектов, а не карточки доски. Проверяем ДО isWorkerView.
+  if (user?.isStoryMaker) {
     return (
       <div className="space-y-6">
         <Suspense fallback={<PageLoader />}>
@@ -214,7 +214,7 @@ function DashboardContent() {
     // Производство (видеограф / монтажёр / дизайнер) — карточки, назначенные
     // лично. Вторую роль тоже учитываем: «Видеограф / Монтажёр» — обычная
     // связка, и тогда в одном списке и съёмки, и монтаж.
-    const PROD_ROLES = ['videographer', 'video_editor', 'designer', 'video_director']
+    const PROD_ROLES = ['videographer', 'video_editor', 'designer']
     const isProduction = PROD_ROLES.includes(role) || PROD_ROLES.includes(user?.secondaryRole || '')
     return (
       <div className="space-y-6">

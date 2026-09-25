@@ -18,13 +18,13 @@ import SmmSpecialistBoard from './SmmSpecialistBoard'
 // СММ-специалист тоже может добавлять проект (по просьбе владельца); в
 // «Разработке» — только роли с нативным правом projects.create.
 const CREATE_ROLES: Record<'smm' | 'dev', string[]> = {
-  smm: ['admin', 'founder', 'co_founder', 'smm_director', 'sales_manager_smm', 'smm_specialist'],
-  dev: ['admin', 'founder', 'co_founder', 'dev_director', 'sales_manager_dev'],
+  smm: ['admin', 'founder', 'smm_director', 'sales_manager_smm', 'smm_specialist'],
+  dev: ['admin', 'founder', 'dev_director', 'sales_manager_dev'],
 }
 // Кто видит схему нагрузки СММ (кто ведёт какие проекты). Специалист её ВИДИТ,
 // но переставлять проекты не может (DnD-переназначение отключено в доске).
 // Схема — про СММ-специалистов, в разделе «Разработка» не показывается.
-const LOAD_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'smm_specialist']
+const LOAD_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist']
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }

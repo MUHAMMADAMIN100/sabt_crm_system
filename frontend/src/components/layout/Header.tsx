@@ -30,7 +30,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const { theme, toggleTheme } = useThemeStore()
   const { t } = useTranslation()
 
-  const isFounderRole = user?.role === 'founder' || user?.role === 'co_founder'
+  const isFounderRole = user?.role === 'founder'
 
   const { data: unreadData } = useQuery({
     queryKey: ['unread-count'],

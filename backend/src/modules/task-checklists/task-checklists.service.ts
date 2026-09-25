@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { TaskChecklistItem } from './task-checklist-item.entity';
 import { Task } from '../tasks/task.entity';
 
-const PM_ROLES = ['admin', 'founder', 'co_founder', 'smm_director', 'video_director'];
+const PM_ROLES = ['admin', 'founder', 'smm_director'];
 
 @Injectable()
 export class TaskChecklistsService {
