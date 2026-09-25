@@ -18,6 +18,24 @@ const SETTINGS_TABS = [
   ['debts', 'Долги'], ['backups', 'Резервные копии'],
 ] as const;
 
+// Кто из сотрудников не видит свою зарплату и чем это лечится.
+// Правила ровно те же, что на сервере (matchEmployeeToUser): таджикские
+// буквы приводим к русским, порядок слов не важен, «ё» = «е».
+const TJ_TO_RU: Record<string, string> = { 'ғ': 'г', 'ӣ': 'и', 'қ': 'к', 'ӯ': 'у', 'ҳ': 'х', 'ҷ': 'ч' };
+const nameWords = (v?: string | null): string[] =>
+  String(v || '').toLowerCase().replace(/ё/g, 'е')
+    .replace(/[ғӣқӯҳҷ]/g, (c) => TJ_TO_RU[c] || c)
+    .replace(/[^a-zа-я0-9]+/gi, ' ').trim().split(/\s+/).filter(Boolean);
+/** Насколько строка ведомости похожа на аккаунт: чем больше, тем ближе. */
+function nameCloseness(userName: string, rowName: string): number {
+  const a = nameWords(userName), b = nameWords(rowName);
+  if (a.length < 2 || b.length < 2) return 0;
+  const shared = a.filter((w) => b.includes(w)).length;
+  if (shared === a.length && shared === b.length) return 100;          // полное совпадение
+  if (shared === Math.min(a.length, b.length)) return 80;              // одно внутри другого
+  return shared >= 2 ? 60 : 0;                                          // фамилия и имя сошлись
+}
+
 export default function FinanceSettingsPage() {
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -50,6 +68,7 @@ export default function FinanceSettingsPage() {
   const debts = debtsQ.data ?? [];
   const referenceQueries = [accountsQ, balancesQ, categoriesQ, projectsQ, employeesQ, subsQ, debtsQ];
 
+  const [linking, setLinking] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState('');
   const [modal, setModal] = useState<ReactNode>(null);
@@ -241,14 +260,49 @@ export default function FinanceSettingsPage() {
       }
       {activeTab === 'employees' && noPayroll.length > 0 && (
         <div className="card" style={{ marginTop: 12 }}>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Нет строки в ведомости — {noPayroll.length}</div>
-          <div className="mini muted" style={{ marginBottom: 10 }}>
-            Эти сотрудники заведены в CRM, но в зарплатной ведомости их нет — в своём профиле они видят «зарплата не привязана». Добавьте их кнопкой «Добавить сотрудника» и выберите учётную запись.
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Не видят свою зарплату — {noPayroll.length}</div>
+          <div className="mini muted" style={{ marginBottom: 12 }}>
+            У этих сотрудников нет привязанной строки в ведомости, и в своём профиле они видят
+            «зарплата не привязана». Если строка есть — она подсказана рядом, привязывается одной кнопкой.
+            Если строки нет — заведите её кнопкой «Добавить сотрудника» и выберите учётную запись.
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {noPayroll.slice(0, 20).map((u: any) => (
-              <span key={u.id} className="mini" style={{ padding: '4px 9px', borderRadius: 7, background: 'rgba(148,163,184,0.14)' }}>{u.name}</span>
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {noPayroll.slice(0, 20).map((u: any) => {
+              // Ищем среди НЕпривязанных строк самую похожую по имени.
+              const free = employees.filter((e: any) => !e.userId && e.status === 'active');
+              const best = free
+                .map((e: any) => ({ e, score: nameCloseness(u.name, e.name) }))
+                .filter((x: any) => x.score > 0)
+                .sort((a: any, b: any) => b.score - a.score)[0];
+              // Подсказываем, только если кандидат один: двух одинаково похожих
+              // угадывать нельзя — чужая зарплата хуже, чем никакой.
+              const rivals = best ? free.filter((e: any) => nameCloseness(u.name, e.name) === best.score).length : 0;
+              const suggest = best && rivals === 1 ? best.e : null;
+              return (
+                <div key={u.id} className="flex" style={{ alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span className="mini" style={{ padding: '4px 9px', borderRadius: 7, background: 'rgba(148,163,184,0.14)' }}>{u.name}</span>
+                  {suggest ? (
+                    <>
+                      <span className="mini muted">строка в ведомости: <b>{suggest.name}</b></span>
+                      <button className="btn sm" disabled={linking === u.id}
+                        onClick={async () => {
+                          setLinking(u.id);
+                          try {
+                            await financeApi.updateEmployee(suggest.id, { userId: u.id });
+                            invalidateFinanceAll(qc);
+                            toast.success(`${u.name} — зарплата привязана`);
+                          } catch (e) { toast.error(apiErr(e)); }
+                          finally { setLinking(null); }
+                        }}>
+                        Привязать
+                      </button>
+                    </>
+                  ) : (
+                    <span className="mini muted">подходящей строки нет — заведите её</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

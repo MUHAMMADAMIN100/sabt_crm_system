@@ -100,14 +100,47 @@ export function matchEmployeeToUser<T extends { id: string; userId?: string | nu
     const w = nameWords(e.name);
     return w.length >= 2 && (isSubsetOf(w, words) || isSubsetOf(words, w));
   });
-  if (near.length !== 1) return null;
-  // Сокращённое имя не должно подойти сразу двоим сотрудникам CRM.
-  const nearWords = nameWords(near[0].name);
-  const rivals = allUsers.filter(u => {
+  if (near.length === 1) {
+    // Сокращённое имя не должно подойти сразу двоим сотрудникам CRM.
+    const nearWords = nameWords(near[0].name);
+    const rivals = allUsers.filter(u => {
+      const w = nameWords(u.name);
+      return w.length >= 2 && (isSubsetOf(nearWords, w) || isSubsetOf(w, nearWords));
+    });
+    return rivals.length === 1 ? near[0] : null;
+  }
+  if (near.length > 1) return null;
+
+  // Последняя попытка: совпало всё, кроме ОДНОГО слова, и это слово —
+  // другое написание того же: «Сирожиддиновна» против «Сироджиддиновна»,
+  // «Шаймарданович» против «Шаймардонович». Из-за одной буквы человек не
+  // видел своей зарплаты.
+  //
+  // Строго: расходиться может ровно одно слово с каждой стороны, и у этих
+  // слов должно совпасть начало. Без этого условия под правило попал бы
+  // однофамилец с тем же именем — «Сафоев Мухаммад Фарходович» и «Сафоев
+  // Мухаммад Алиевич» — а показать чужую зарплату хуже, чем не показать
+  // никакую. Плюс кандидат должен быть единственным с обеих сторон.
+  const VARIANT_PREFIX = 4;
+  const sameStart = (a: string, b: string) =>
+    a.slice(0, VARIANT_PREFIX) === b.slice(0, VARIANT_PREFIX)
+    && a.length >= VARIANT_PREFIX && b.length >= VARIANT_PREFIX;
+  /** Отличается ровно одним словом, и это слово похоже на то же самое. */
+  const oneWordApart = (a: string[], b: string[]): boolean => {
+    const restA = a.filter(w => !b.includes(w));
+    const restB = b.filter(w => !a.includes(w));
+    if (restA.length !== 1 || restB.length !== 1) return false;
+    if (a.length - restA.length < 2) return false;   // общего меньше двух слов
+    return sameStart(restA[0], restB[0]);
+  };
+  const kin = free.filter(e => oneWordApart(words, nameWords(e.name)));
+  if (kin.length !== 1) return null;
+  const kinWords = nameWords(kin[0].name);
+  const kinRivals = allUsers.filter(u => {
     const w = nameWords(u.name);
-    return w.length >= 2 && (isSubsetOf(nearWords, w) || isSubsetOf(w, nearWords));
+    return w.length >= 2 && (nameKey(u.name) === nameKey(kin[0].name) || oneWordApart(w, kinWords));
   });
-  return rivals.length === 1 ? near[0] : null;
+  return kinRivals.length === 1 ? kin[0] : null;
 }
 
 const NOTION_HISTORY_CUTOVER_YM = '2026-06';
