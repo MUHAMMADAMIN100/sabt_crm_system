@@ -613,3 +613,212 @@ export const notesApi = {
   remove: (id: string) => api.delete(`/my-notes/${id}`).then(r => r.data),
 }
 
+// ─── Dev Tracker (канбан «Доска разработки») ─────────────────────────
+/** Канбан-доска задач команды разработки (Jira/Notion-стиль).
+ *  Типы DevTask/DevTaskComment живут в @/pages/dev-board/devBoardTypes. */
+
+/** Точка CFD-потока: GET /dev-tracker/kpi/flow?days=30. */
+export interface DevTrackerFlowPoint {
+  day: string
+  backlog: number
+  todo: number
+  in_progress: number
+  in_review: number
+  testing: number
+  done: number
+}
+
+/** Компактное превью задачи для unfurl в Markdown: GET /dev-tracker/preview/:id. */
+export interface DevTrackerPreview {
+  id: string
+  title: string
+  status: string
+  priority: string
+  assignee: { id: string; name: string } | null
+  deadline: string | null
+  project: { id: string; name: string } | null
+  subtasksDone: number
+  subtasksCount: number
+}
+
+/** Отчёт для руководства: GET /dev-tracker/reports.
+ *  Бэк-агент делает endpoint параллельно — поля сверх контракта трактуем
+ *  как опциональные, страница обязана graceful degrade (пусто → EmptyState,
+ *  404 → тост, ничего не падает). */
+export interface DevTrackerReportStats {
+  created: number
+  done: number
+  doneOnTime: number
+  overdue: number
+  blocked: number
+  open: number
+  /** Может отсутствовать, пока бэк не считает SLA — карточку тогда прячем. */
+  slaBreached?: number | null
+}
+
+export interface DevTrackerReportBlocker {
+  id: string
+  title: string
+  reason?: string | null
+  assignee?: string | { id?: string; name?: string | null } | null
+  status?: string | null
+}
+
+export interface DevTrackerReportMember {
+  assigneeId?: string
+  name?: string | null
+  total?: number
+  done?: number
+  doneOnTime?: number
+  overdue?: number
+}
+
+export interface DevTrackerReportVelocityPoint {
+  week?: string
+  points?: number
+  count?: number
+}
+
+export interface DevTrackerReport {
+  title: string
+  period?: string | null
+  stats?: DevTrackerReportStats | null
+  blockers?: DevTrackerReportBlocker[] | null
+  members?: DevTrackerReportMember[] | null
+  velocity?: DevTrackerReportVelocityPoint[] | null
+  markdown?: string | null
+}
+
+/** Параметры GET /dev-tracker/reports: type=week&days=7(+projectId?) |
+ *  type=sprint&sprintId= | type=project&projectId=. */
+export interface DevTrackerReportQuery {
+  type: 'week' | 'sprint' | 'project'
+  days?: number
+  sprintId?: string
+  projectId?: string
+}
+
+export const devTrackerApi = {
+  /** Список задач доски. projectId — фильтр по проекту «Разработка»
+   *  (используется вкладкой «Задачи» на странице проекта).
+   *  tags — фильтр по тегам (ANY-совпадение), отправляется как `tags=a,b`.
+   *  opts.blocked — только заблокированные (`?blocked=true`).
+   *  opts.sprint — фильтр по спринту (`?sprint=`).
+   *  Совместимость: `list(projectId)` и `list(undefined, tags)` работают как раньше. */
+  list: (
+    projectId?: string,
+    tags?: string[],
+    opts?: { blocked?: boolean; sprint?: string } | boolean,
+    sprintParam?: string,
+  ) => {
+    const params: Record<string, string> = {}
+    if (projectId) params.projectId = projectId
+    if (tags?.length) params.tags = tags.join(',')
+    let blocked: boolean | undefined
+    let sprint: string | undefined
+    if (typeof opts === 'boolean') {
+      blocked = opts
+    } else if (opts && typeof opts === 'object') {
+      blocked = opts.blocked
+      sprint = opts.sprint
+    }
+    if (typeof sprintParam === 'string' && sprintParam) sprint = sprintParam
+    // blocked отправляем только как ?blocked=true — иначе бэк без поддержки
+    // флага мог бы отфильтровать всё в пусто.
+    if (blocked) params.blocked = 'true'
+    if (sprint) params.sprint = sprint
+    return api.get('/dev-tracker', { params: Object.keys(params).length ? params : undefined }).then(r => r.data)
+  },
+  kpi: () => api.get('/dev-tracker/kpi').then(r => r.data),
+  /** CFD-поток по 6 статусам за N дней. Бэка может ещё не быть — вызывающий
+   *  код обязан graceful degrade (retry:false, пустой массив → EmptyState). */
+  getFlow: (days = 30): Promise<DevTrackerFlowPoint[]> =>
+    api.get('/dev-tracker/kpi/flow', { params: { days } }).then(r => r.data),
+  /** Компактное превью задачи для unfurl ссылок /dev-board/task/:id в Markdown. */
+  getPreview: (id: string): Promise<DevTrackerPreview> =>
+    api.get(`/dev-tracker/preview/${id}`).then(r => r.data),
+  /** Отчёт для руководства: GET /dev-tracker/reports?type=week&days=7 |
+   *  type=sprint&sprintId= | type=project&projectId=. Бэк может быть ещё не
+   *  готов — вызывающий код обязан graceful degrade (тост, ничего не падает). */
+  getReports: (params: DevTrackerReportQuery, signal?: AbortSignal): Promise<DevTrackerReport> =>
+    api.get('/dev-tracker/reports', { params, signal }).then(r => r.data),
+  /** Вебхуки доски (UI — WebhooksModal в DevBoardPage). События — строго
+   *  из DEV_WEBHOOK_EVENTS (task.created/moved/done/commented), иначе 400. */
+  getWebhooks: (): Promise<any[]> => api.get('/dev-tracker/webhooks').then(r => r.data),
+  createWebhook: (data: any): Promise<any> => api.post('/dev-tracker/webhooks', data).then(r => r.data),
+  deleteWebhook: (id: string): Promise<any> => api.delete(`/dev-tracker/webhooks/${id}`).then(r => r.data),
+  testWebhook: (id: string): Promise<any> => api.post(`/dev-tracker/webhooks/${id}/test`, {}).then(r => r.data),
+  getDeliveries: (id: string, params?: any): Promise<any[]> =>
+    api.get(`/dev-tracker/webhooks/${id}/deliveries`, { params }).then(r => r.data),
+  /** Спринты доски (UI — в DevBoardPage, здесь только API). */
+  getSprints: (params?: any): Promise<any[]> =>
+    api.get('/dev-tracker/sprints', { params }).then(r => r.data),
+  /** Исполнители для селектов доски: скоупнутый список активных dev-ролей.
+   *  GET /users требует employees.view (у PM — 403), поэтому доска ходит
+   *  сюда первым, usersApi.list — fallback. */
+  assignees: (): Promise<{ id: string; name: string; role?: string; avatar?: string | null; avatarUrl?: string | null }[]> =>
+    api.get('/dev-tracker/assignees').then(r => r.data),
+  completeSprint: (id: string, moveTo?: string | null): Promise<any> =>
+    api.post(`/dev-tracker/sprints/${id}/complete`, moveTo !== undefined ? { moveTo } : {}).then(r => r.data),
+  /** Разбор просрочки (bulk-переносы/переназначения). Body — по контракту бэка. */
+  triageOverdue: (body: any): Promise<any> =>
+    api.post('/dev-tracker/triage-overdue', body ?? {}).then(r => r.data),
+  get: (id: string) => api.get(`/dev-tracker/${id}`).then(r => r.data),
+  create: (data: {
+    title: string
+    description?: string
+    status?: string
+    priority?: string
+    taskType?: string
+    assigneeId?: string | null
+    storyPoints?: number | null
+    tags?: string[]
+    deadline?: string | null
+    /** Дата начала (timeline-вид), 'YYYY-MM-DD'. */
+    startDate?: string | null
+    parentTaskId?: string | null
+    /** Привязка к проекту раздела «Разработка» (/dev/projects/:id). */
+    projectId?: string | null
+    /** Спринт доски (GET /dev-tracker/sprints). */
+    sprintId?: string | null
+    position?: number
+    isBlocked?: boolean
+    blockedReason?: string | null
+    attachments?: string[] | null
+  }) => api.post('/dev-tracker', data).then(r => r.data),
+  update: (id: string, data: Partial<{
+    title: string
+    description: string | null
+    status: string
+    priority: string
+    taskType: string
+    assigneeId: string | null
+    storyPoints: number | null
+    tags: string[]
+    deadline: string | null
+    startDate: string | null
+    parentTaskId: string | null
+    projectId: string | null
+    sprintId: string | null
+    position: number
+    attachments: string[] | null
+    /** Блокер задачи (manage): флаг + причина. */
+    isBlocked: boolean
+    blockedReason: string | null
+  }>) => api.patch(`/dev-tracker/${id}`, data).then(r => r.data),
+  move: (id: string, data: { status: string; position: number }) =>
+    api.patch(`/dev-tracker/${id}/move`, data).then(r => r.data),
+  // Массовые операции табличного вида (статус/приоритет/исполнитель/дедлайн/блокер/удаление).
+  // assignee: value = UUID или '' (снять); deadline: value = 'YYYY-MM-DD' или '' (очистить).
+  // blocked: value = 'true' / 'false' (+ blockedReason отдельным PATCH при нужде).
+  bulk: (ids: string[], action: 'status' | 'priority' | 'delete' | 'assignee' | 'deadline' | 'blocked', value: string) =>
+    api.post('/dev-tracker/bulk', { ids, action, value }).then(r => r.data),
+  addComment: (id: string, text: string) =>
+    api.post(`/dev-tracker/${id}/comments`, { text }).then(r => r.data),
+  remove: (id: string) => api.delete(`/dev-tracker/${id}`).then(r => r.data),
+  /** Клонирование задачи (деталка: кнопка «Клонировать»).
+   *  withSubtasks — тянуть подзадачи в копию. */
+  clone: (id: string, withSubtasks?: boolean) =>
+    api.post(`/dev-tracker/${id}/clone`, withSubtasks !== undefined ? { withSubtasks } : {}).then(r => r.data),
+}
+

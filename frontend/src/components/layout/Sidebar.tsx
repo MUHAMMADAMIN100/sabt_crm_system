@@ -10,7 +10,7 @@ import {
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
   Wallet, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal, MoreHorizontal, CalendarRange,
   Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck, LineChart, Megaphone,
-  Activity,
+  Activity, KanbanSquare,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useNavItems } from './navItems'
@@ -28,23 +28,39 @@ const FINANCE_SUBNAV = [
   { to: '/finance/settings', label: 'Настройки', icon: SlidersHorizontal },
 ]
 
+/** Подпункт раскрывающегося раздела («СММ», «Разработка»).
+ *  perm — опциональный грант: без него подпункт виден всем, у кого виден
+ *  сам раздел (как раньше); с ним — только через userCan(user, perm). */
+interface SubNavItem {
+  to: string
+  label: string
+  icon: any
+  exact?: boolean
+  perm?: 'dev-tracker.view' | 'dev-tracker.manage'
+}
+
 /** Подпункты раздела «СММ». */
-const SMM_SUBNAV = [
+const SMM_SUBNAV: SubNavItem[] = [
   { to: '/smm', label: 'Умный календарь', icon: CalendarRange, exact: true },
   { to: '/smm/stories', label: 'Сторисы', icon: ImageIcon },
   { to: '/smm/projects', label: 'Проекты', icon: FolderKanban },
 ]
 
-/** Подпункты раздела «Разработка» — устроен точь-в-точь как «СММ»,
- *  только без «Сторисов» (для dev-проектов они не нужны). */
-const DEV_SUBNAV = [
+/** Подпункты раздела «Разработка» — один заголовок с пятью подпунктами:
+ *  календарь и проекты видны всем из раздела, доска/KPI — по view,
+ *  отчёты — по manage. Трекерные маршруты (/dev-board*) живут под ним же,
+ *  отдельного top-level пункта «Доска разработки» больше нет. */
+const DEV_SUBNAV: SubNavItem[] = [
   { to: '/dev', label: 'Умный календарь', icon: CalendarRange, exact: true },
   { to: '/dev/projects', label: 'Проекты', icon: FolderKanban },
+  { to: '/dev-board', label: 'Доска', icon: KanbanSquare, exact: true, perm: 'dev-tracker.view' },
+  { to: '/dev-board/kpi', label: 'KPI', icon: BarChart3, perm: 'dev-tracker.view' },
+  { to: '/dev-board/reports', label: 'Отчёты', icon: FileText, perm: 'dev-tracker.manage' },
 ]
 
 /** Раскрывающиеся разделы с подпунктами: путь пункта меню → его подменю.
  *  «СММ» и «Разработка» рендерятся одним и тем же блоком. */
-const SECTION_SUBNAV: Record<string, typeof SMM_SUBNAV> = {
+const SECTION_SUBNAV: Record<string, SubNavItem[]> = {
   '/smm': SMM_SUBNAV,
   '/dev': DEV_SUBNAV,
 }
@@ -68,7 +84,14 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
   const [financeOpen, setFinanceOpen] = useState(financeActive)
   // Раскрытость разделов с подменю («СММ», «Разработка») — по одному флагу
   // на раздел; изначально раскрыт тот, внутри которого находится страница.
-  const sectionActive = (base: string) => location.pathname === base || location.pathname.startsWith(base + '/')
+  // Раздел считается активным внутри своего base; «Разработка» (/dev)
+  // покрывает и трекерные маршруты /dev-board* (иначе на доске/KPI/отчётах
+  // раздел не подсвечен и не раскрыт). openSections-инит подхватит сам.
+  const sectionActive = (base: string) => {
+    if (location.pathname === base || location.pathname.startsWith(base + '/')) return true
+    if (base === '/dev' && (location.pathname === '/dev-board' || location.pathname.startsWith('/dev-board/'))) return true
+    return false
+  }
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(Object.keys(SECTION_SUBNAV).map(base => [base, sectionActive(base)])))
   const toggleSection = (base: string) => setOpenSections(prev => ({ ...prev, [base]: !prev[base] }))
@@ -271,7 +294,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                   </button>
                   {open && isSecOpen && (
                     <ul className="mt-1 ml-3 pl-3 border-l border-white/10 space-y-0.5">
-                      {SECTION_SUBNAV[item.to].map(sub => (
+                      {SECTION_SUBNAV[item.to].filter(sub => !sub.perm || userCan(user, sub.perm)).map(sub => (
                         <li key={sub.to}>
                           <NavLink
                             to={sub.to}

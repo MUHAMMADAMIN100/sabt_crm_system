@@ -134,10 +134,27 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'archive.view':      { label: 'Архив — просмотр',            category: 'Настройки', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },
   'security-log.view': { label: 'Журнал безопасности — доступ', category: 'Настройки', roles: [...TOP], danger: true },
   'ai.chat':           { label: 'ИИ-помощник — доступ',         category: 'Настройки', roles: [...TOP] },
+
+  // ─── Dev-tracker (доска задач разработки) ────────────────────────────
+  // Просмотр доски — у всей dev-команды (руководитель, PM, разработчики).
+  // Move карточки и комментарии тоже закрыты этим ключом: исполнитель сам
+  // двигает свою карточку, не дожидаясь руководителя.
+  'dev-tracker.view':   { label: 'Dev-tracker — просмотр доски',   category: 'Разработка', roles: [...TOP, 'dev_director', 'pm_dev', 'developer'] },
+  // Создание/редактирование/удаление и массовые операции — CEO (TOP),
+  // руководитель разработки и проект-менеджер разработки: именно они
+  // ставят задачи команде и назначают исполнителей.
+  'dev-tracker.manage': { label: 'Dev-tracker — управление задачами', category: 'Разработка', roles: [...TOP, 'dev_director', 'pm_dev'] },
 };
 
 /** Все валидные ключи грантов (для валидации входящих данных). */
 export const GRANT_KEYS = Object.keys(GRANTABLE);
+
+/** Импликации прав: у кого есть manage, тот видит раздел (manage ⇒ view).
+ *  Только для dev-tracker.* — другие гранты не трогаем, чтобы не менять
+ *  существующую ролевую модель. */
+const GRANT_IMPLICATIONS: Record<string, string[]> = {
+  'dev-tracker.view': ['dev-tracker.manage'],
+};
 
 /** ВАЖНО: deniedPermissions обязателен. Поле нарочно НЕ опционально — иначе
  *  легко собрать объект вручную, забыть про запреты, и запрет молча перестанет
@@ -157,6 +174,15 @@ export function hasGrant(user: GrantUser, key: string): boolean {
   if (!def || !user) return false;
   const denied = Array.isArray(user.deniedPermissions) ? user.deniedPermissions : [];
   if (denied.includes(key)) return false;
+  // manage ⇒ view: у кого есть dev-tracker.manage (роль/вторая роль/грант),
+  // тот проходит проверку dev-tracker.view. Запрет на view выше уже сработал,
+  // так что отнятый view не откроется через manage.
+  const impliedBy = GRANT_IMPLICATIONS[key];
+  if (impliedBy) {
+    for (const parent of impliedBy) {
+      if (parent !== key && hasGrant(user, parent)) return true;
+    }
+  }
   if (def.roles.includes(user.role || '')) return true;
   if (user.secondaryRole && def.roles.includes(user.secondaryRole)) return true;
   const extra = Array.isArray(user.extraPermissions) ? user.extraPermissions : [];

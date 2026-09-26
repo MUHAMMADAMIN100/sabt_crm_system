@@ -10,6 +10,8 @@ import { Avatar } from '@/components/ui'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, useSmmSection, SECTION_BASE, type SmmProj } from './smmShared'
 import SmmPage from './SmmPage'
+import { DevTasksTab } from '@/pages/dev/components/DevTasksTab'
+import { DevTeamBlock } from '@/pages/dev/components/DevTeamBlock'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
@@ -213,6 +215,15 @@ export default function SmmProjectPage() {
   const monthTitle = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`
   const { data, isLoading } = useQuery<CalData>({ queryKey: ['smm-calendar', section, from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to, segment: section }) })
   const { data: profile } = useQuery<SmmProfile>({ queryKey: ['smm-profile', id], queryFn: () => projectsApi.getSmmProfile(id!), enabled: !!id })
+  // Состав dev-проекта (только раздел «Разработка»): кто ведёт (PM) и команда.
+  // Источник — GET /projects/:id (manager/members по контракту). SMM-ветка
+  // запрос не выполняет, её рендер не меняется.
+  const { data: devProject, isLoading: devTeamLoading } = useQuery<any>({
+    queryKey: ['dev-project', id],
+    queryFn: () => projectsApi.get(id!),
+    enabled: section === 'dev' && !!id,
+    retry: false,
+  })
 
   const saveMut = useMutation({
     mutationFn: (patch: Partial<SmmProfile>) => projectsApi.setSmmProfile(id!, patch as any),
@@ -317,7 +328,7 @@ export default function SmmProjectPage() {
   // ── Отчёт ──
   const [reportOpen, setReportOpen] = useState(false)
   // ── Вкладки страницы: обзор / аналитика / клиент / контент-план ──
-  const [tab, setTab] = useState<'overview' | 'analytics' | 'client' | 'plan'>('overview')
+  const [tab, setTab] = useState<'overview' | 'analytics' | 'client' | 'plan' | 'tasks'>('overview')
   // ── Меню ⋯ в шапке + подтверждение завершения сотрудничества ──
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
@@ -386,7 +397,7 @@ export default function SmmProjectPage() {
   if (isLoading) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
   if (!info || !p) return (
     <div className="space-y-4">
-      <Link to="/smm/projects" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
+      <Link to={`${base}/projects`} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
       <p className="text-gray-400">Проект не найден.</p>
     </div>
   )
@@ -452,7 +463,7 @@ export default function SmmProjectPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <Link to="/smm/projects" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
+        <Link to={`${base}/projects`} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
         <div className="flex items-center gap-2">
           <button onClick={() => setReportOpen(true)} className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl bg-[#3068D8] text-white hover:brightness-110"><FileText size={16} /> Получить отчёт</button>
           {canRename && (
@@ -483,14 +494,14 @@ export default function SmmProjectPage() {
                 value={nameDraft}
                 onChange={e => setNameDraft(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setNameEditing(false) }}
-                className="text-2xl font-bold tracking-tight bg-transparent border-b-2 border-gray-300 dark:border-gray-600 focus:border-[#3f7a58] outline-none px-0.5 min-w-[220px]"
+                className="page-title bg-transparent border-b-2 border-gray-300 dark:border-gray-600 focus:border-[#3f7a58] outline-none px-0.5 min-w-[220px]"
               />
               <button onClick={saveName} disabled={renameMut.isPending || !nameDraft.trim()} className="p-1.5 rounded-lg bg-[#3f7a58] text-white hover:brightness-110 disabled:opacity-60" title="Сохранить">{renameMut.isPending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}</button>
               <button onClick={() => setNameEditing(false)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" title="Отмена"><X size={16} /></button>
             </div>
           ) : (
             <>
-              <h1 className="text-2xl font-bold tracking-tight">{p.name}</h1>
+              <h1 className="page-title">{p.name}</h1>
               {canRename && (
                 <button onClick={() => { setNameDraft(p.name); setNameEditing(true) }} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" title="Переименовать проект"><Pencil size={15} /></button>
               )}
@@ -498,8 +509,14 @@ export default function SmmProjectPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-1 overflow-x-auto">
-          {([['overview', 'Обзор'], ['analytics', 'Аналитика'], ['client', 'Клиент'], ['plan', 'Контент-план']] as const).map(([k, l]) => (
+        {/* Табы проекта: на mobile свайп без видимого скроллбара */}
+        <div className="flex items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {([
+            ['overview', 'Обзор'], ['analytics', 'Аналитика'], ['client', 'Клиент'], ['plan', 'Контент-план'],
+            // «Задачи» — только в разделе «Разработка»: вкладка показывает
+            // задачи с канбан-доски dev-tracker, привязанные к этому проекту.
+            ...(section === 'dev' ? [['tasks', 'Задачи'] as const] : []),
+          ] as const).map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)}
               className={'px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition whitespace-nowrap ' + (tab === k ? 'border-primary-600 text-gray-900 dark:text-gray-100' : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-200')}>
               {l}
@@ -511,6 +528,19 @@ export default function SmmProjectPage() {
       {/* ОБЗОР — цикл/норма + выполнение плана */}
       {tab === 'overview' && (
       <div className="grid gap-4 lg:grid-cols-2 items-start">
+        {/* Команда dev-проекта: кто ведёт (PM) и разработчики. Только раздел
+            «Разработка» — в SMM-ветке условие ложно и DOM не меняется. */}
+        {section === 'dev' && (
+          <div className="lg:col-span-2 min-w-0">
+            <DevTeamBlock
+              projectId={id!}
+              manager={(devProject as any)?.manager ?? null}
+              members={Array.isArray((devProject as any)?.members) ? (devProject as any).members : []}
+              canEdit={canEdit}
+              loading={devTeamLoading}
+            />
+          </div>
+        )}
         {/* Цикл и норма */}
         <div className={card}>
           <div className="flex items-center justify-between gap-2 mb-3">
@@ -714,6 +744,7 @@ export default function SmmProjectPage() {
 
       {/* Контент-план проекта — Умный календарь, ограниченный этим проектом (DnD «Не запланировано» → даты) */}
       {tab === 'plan' && id && <SmmPage embeddedProjectId={id} />}
+      {tab === 'tasks' && id && <DevTasksTab projectId={id} />}
 
       {/* Подтверждение завершения сотрудничества (архив) */}
       {confirmArchive && createPortal(
@@ -903,3 +934,5 @@ function CrewRow({ label, assigned, fallback, candidates, canAssign, onToggle, r
     </div>
   )
 }
+
+

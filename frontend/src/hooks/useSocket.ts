@@ -256,6 +256,14 @@ export function useSocket(authMarker: string | null) {
       qc.refetchQueries({ queryKey: ['calendar'], type: 'active' })
     })
 
+    // Доска разработки: любое изменение (карточку двинули, задачу создали,
+    // комментарий добавили) → сразу обновляем кэши доски и KPI у всех,
+    // у кого она открыта. Без F5.
+    socket.on('dev-tracker:changed', () => {
+      qc.invalidateQueries({ queryKey: ['dev-tracker'] })
+      qc.refetchQueries({ queryKey: ['dev-tracker'], type: 'active' })
+    })
+
     // Сервер принудительно рвёт сокет при протухшем JWT ('io server
     // disconnect') — в этом случае socket.io НЕ переподключается сам, и
     // реалтайм умирал до перезагрузки страницы. Пробуем вернуться сами.

@@ -10,6 +10,8 @@ import { isDevProjectType } from '@/lib/projectType'
 import { assignProjectColors, projColor, useSmmSection, SECTION_BASE, type SmmProj } from './smmShared'
 import SmmProjectCreateModal from './SmmProjectCreateModal'
 import { SmmProjectCardBox, CARD_CLS, type SmmCard } from './SmmProjectCard'
+import { DevTeamStack } from '@/pages/dev/components/DevTeamStack'
+import type { DevTeamPerson } from '@/pages/dev/devTeam'
 import SmmSpecialistBoard from './SmmSpecialistBoard'
 
 // Кто может создавать проекты (как на основной странице «Проекты») — по разделам.
@@ -107,15 +109,41 @@ export default function SmmProjectsPage() {
   }, [projects, backlog, events])
   const cardById = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards])
 
+  // Состав dev-проектов для стека аватаров (только раздел «Разработка»).
+  // GET /projects отдаёт manager + members (до 5) + membersCount по контракту.
+  // SMM-ветка запрос не делает, её рендер не меняется.
+  const { data: devTeamList } = useQuery<any[]>({
+    queryKey: ['projects', 'dev-team'],
+    queryFn: () => projectsApi.list(),
+    enabled: section === 'dev',
+    retry: false,
+  })
+  const devTeamById = useMemo(() => {
+    const m = new Map<string, { manager: DevTeamPerson | null; members: DevTeamPerson[]; membersCount: number }>()
+    if (!Array.isArray(devTeamList)) return m
+    for (const p of devTeamList) {
+      if (!p?.id) continue
+      const ms = Array.isArray(p.members) ? p.members : []
+      m.set(p.id, {
+        manager: p.manager ?? null,
+        members: ms,
+        membersCount: typeof p.membersCount === 'number' ? p.membersCount : ms.length,
+      })
+    }
+    return m
+  }, [devTeamList])
+
   const layerCls = (active: boolean) =>
     clsx('transition-all duration-300 ease-out', active
       ? 'opacity-100 scale-100'
       : 'opacity-0 scale-[.99] pointer-events-none absolute inset-0')
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* Навигация по разделу «Разработка» — в сайдбаре (DEV_SUBNAV),
+          in-page полосы табов нет (убрана как дубль). */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-bold tracking-tight">Проекты</h1>
+        <h1 className="page-title">Проекты</h1>
         <div className="flex items-center gap-2">
           {canSeeLoad && (
             <button onClick={toggleSchema} title="Кто ведёт какие проекты"
@@ -168,12 +196,22 @@ export default function SmmProjectsPage() {
             <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
           ) : (
             <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
-              {cards.map(c => (
-                <button key={c.id} type="button" onClick={() => navigate(`${base}/projects/${c.id}`)}
-                  className={CARD_CLS + ' text-left w-full hover:border-gray-300 dark:hover:border-gray-600'}>
-                  <SmmProjectCardBox c={c} />
-                </button>
-              ))}
+              {cards.map(c => {
+                const team = devTeamById.get(c.id)
+                return (
+                  <button key={c.id} type="button" onClick={() => navigate(`${base}/projects/${c.id}`)}
+                    className={CARD_CLS + ' text-left w-full hover:border-gray-300 dark:hover:border-gray-600'}>
+                    <SmmProjectCardBox c={c} />
+                    {/* Состав dev-проекта: стек команды + кто ведёт. Только раздел
+                        «Разработка» — в SMM-ветке условие ложно и DOM не меняется. */}
+                    {section === 'dev' && team && (
+                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 min-w-0">
+                        <DevTeamStack manager={team.manager} members={team.members} membersCount={team.membersCount} />
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>

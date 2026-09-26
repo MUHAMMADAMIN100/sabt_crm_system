@@ -81,6 +81,12 @@ const SmmPage           = lazy(() => import('@/pages/smm/SmmPage'))
 const DevSection = ({ children }: { children: React.ReactNode }) => (
   <SmmSectionContext.Provider value="dev">{children}</SmmSectionContext.Provider>
 )
+// Алиасы раздела «Разработка» вида /dev/board → /dev-board: сохраняют
+// location.search, чтобы фильтр `?project=` не терялся при переходе.
+function DevAlias({ to }: { to: string }) {
+  const { search } = useLocation()
+  return <Navigate to={`${to}${search}`} replace />
+}
 const AnalyticsPage     = lazy(() => import('@/pages/analytics/AnalyticsPage'))
 const NotificationsPage = lazy(() => import('@/pages/notifications/NotificationsPage'))
 const ProfilePage       = lazy(() => import('@/pages/profile/ProfilePage'))
@@ -106,6 +112,11 @@ const FinanceActivityPage     = lazy(() => import('@/pages/finance/FinanceActivi
 const FinanceSettingsPage     = lazy(() => import('@/pages/finance/FinanceSettingsPage'))
 const EmployeeSalaryPage      = lazy(() => import('@/pages/finance/EmployeeSalaryPage'))
 const PublicBriefPage   = lazy(() => import('@/pages/public/PublicBriefPage'))
+// «Доска разработки» — канбан dev-трекера (Jira/Notion-стиль).
+const DevBoardPage      = lazy(() => import('@/pages/dev-board/DevBoardPage'))
+const DevTaskDetailPage = lazy(() => import('@/pages/dev-board/DevTaskDetailPage'))
+const DevBoardKpiPage   = lazy(() => import('@/pages/dev-board/DevBoardKpiPage'))
+const DevBoardReportsPage = lazy(() => import('@/pages/dev-board/DevBoardReportsPage'))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   // `authenticated` — это локальная подсказка. Реальная авторизация —
@@ -196,6 +207,16 @@ export default function App() {
           <Route path="dev" element={<RoleGuard><DevSection><SmmPage /></DevSection></RoleGuard>} />
           <Route path="dev/projects" element={<RoleGuard><DevSection><SmmProjectsPage /></DevSection></RoleGuard>} />
           <Route path="dev/projects/:id" element={<RoleGuard><DevSection><SmmProjectPage /></DevSection></RoleGuard>} />
+          {/* Алиасы «Разработки» на каноническую доску (сохраняют ?project=).
+              Канонические остаются /dev-board*. Гард — тот же, что у /dev. */}
+          <Route path="dev/board" element={<RoleGuard><DevAlias to="/dev-board" /></RoleGuard>} />
+          <Route path="dev/kpi" element={<RoleGuard><DevAlias to="/dev-board/kpi" /></RoleGuard>} />
+          <Route path="dev/reports" element={<RoleGuard><DevAlias to="/dev-board/reports" /></RoleGuard>} />
+          {/* «Доска разработки» — канбан-трекер задач команды разработки. */}
+          <Route path="dev-board" element={<RoleGuard><DevBoardPage /></RoleGuard>} />
+          <Route path="dev-board/kpi" element={<RoleGuard><DevBoardKpiPage /></RoleGuard>} />
+          <Route path="dev-board/reports" element={<RoleGuard><DevBoardReportsPage /></RoleGuard>} />
+          <Route path="dev-board/task/:id" element={<RoleGuard><DevTaskDetailPage /></RoleGuard>} />
           <Route path="analytics" element={<RoleGuard><AnalyticsPage /></RoleGuard>} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="profile" element={<ProfilePage />} />

@@ -982,10 +982,29 @@ export class ProjectsService implements OnModuleInit {
       }
     }
 
-    return this.stripFinance(projects, requestUser?.role);
+    const stripped = this.stripFinance(projects, requestUser?.role);
+    // Лёгкий состав для списка (фронт рисует стек без второго запроса):
+    // manager в том же виде, что в карточке + membersCount + первые 5.
+    // members уже загружены одним join выше — новых запросов нет (N+1 нет).
+    // Пагинации/фильтров здесь нет — порядок/фильтры выше не трогаем.
+    return (stripped as any[]).map((p: any) => {
+      const all = Array.isArray(p.members) ? p.members : [];
+      return {
+        ...p,
+        manager: this.toManagerView(p.manager),
+        members: all
+          .slice(0, 5)
+          .map((m: any) => ({ id: m.id, name: m.name, avatar: m.avatar ?? null })),
+        membersCount: all.length,
+      };
+    });
   }
 
   async findOne(id: string, requestUserRole?: string) {
+    // Мусорный UUID в :id → 400, а не 500 от Postgres (invalid input syntax).
+    if (typeof id !== 'string' || !ProjectsService.UUID_RE.test(id)) {
+      throw new BadRequestException(`Некорректный UUID проекта: ${String(id)}`);
+    }
     const project = await this.repo.findOne({
       where: { id },
       relations: ['manager', 'members', 'tasks', 'tasks.assignee', 'files'],
@@ -1023,7 +1042,21 @@ export class ProjectsService implements OnModuleInit {
     ).catch(() => [] as any[]);
     (project as any).lastPaymentAt = payRow?.[0]?.last ?? null;
 
-    return requestUserRole ? this.stripFinance(project, requestUserRole) : project;
+    // Состав проекта: manager {id,name,role,avatar}|null и
+    // members [{id,name,role,avatar}]. Маппим по УЖЕ загруженным relations
+    // (один запрос выше) — N+1 не плодим. Остальные поля (tasks/files/smm…)
+    // не трогаем.
+    const withFinance = requestUserRole ? this.stripFinance(project, requestUserRole) : project;
+    const rawMembers = Array.isArray((withFinance as any).members)
+      ? (withFinance as any).members
+      : [];
+    return {
+      ...(withFinance as any),
+      manager: this.toManagerView((withFinance as any).manager),
+      members: rawMembers
+        .map((m: any) => this.toMemberView(m))
+        .filter((m: any) => !!m),
+    };
   }
 
   /** Guard: smm_director может быть менеджером только SMM-проектов.
@@ -1043,6 +1076,70 @@ export class ProjectsService implements OnModuleInit {
         'Руководитель разработки может быть менеджером только проектов разработки',
       );
     }
+  }
+
+  /** Состав dev-проекта: кто ведёт (PM) и кто вовлечён (members).
+   *  Только additive — SMM-логику не затрагивает. Все маппинги работают по
+   *  УЖЕ загруженным relations (findOne/findAll грузят manager+members одним
+   *  запросом), новых запросов на проект не добавляется — N+1 нет. */
+  private static readonly UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  /** Мусорный UUID → 400 (не 500 от Postgres). Вызывается до любых запросов
+   *  с этим id, чтобы невалидный формат не уходил в SQL. */
+  private assertUuidOr400(id: unknown, field: string): asserts id is string {
+    if (typeof id !== 'string' || !ProjectsService.UUID_RE.test(id)) {
+      throw new BadRequestException(`Некорректный UUID в поле ${field}: ${String(id)}`);
+    }
+  }
+
+  /** managerId: undefined = не менять, null = снять, UUID = назначить.
+   *  Проверяет существование и isActive (нет → 400). */
+  private async validateTeamManagerId(managerId: string | null | undefined): Promise<void> {
+    if (managerId === undefined || managerId === null) return;
+    this.assertUuidOr400(managerId, 'managerId');
+    const mgr = await this.userRepo.findOne({ where: { id: managerId } });
+    if (!mgr) throw new BadRequestException(`Менеджер не найден: ${managerId}`);
+    if (!mgr.isActive) throw new BadRequestException(`Менеджер деактивирован: ${mgr.name || managerId}`);
+  }
+
+  /** memberIds: дедуп, cap 30, UUID-формат, существование + isActive.
+   *  Возвращает дедупнутый список. Пустой массив = очистить состав (это
+   *  валидно и отличается от undefined = поле не передано). */
+  private async resolveTeamMemberIds(raw: unknown): Promise<string[]> {
+    if (!Array.isArray(raw)) {
+      throw new BadRequestException('memberIds должен быть массивом UUID');
+    }
+    for (const v of raw) {
+      if (typeof v !== 'string') throw new BadRequestException(`Некорректный UUID в поле memberIds: ${String(v)}`);
+      this.assertUuidOr400(v, 'memberIds');
+    }
+    const uniq = [...new Set(raw as string[])];
+    if (uniq.length > 30) {
+      throw new BadRequestException('memberIds: не более 30 участников');
+    }
+    if (uniq.length === 0) return [];
+    // Один запрос на всех (In) — N+1 нет.
+    const users = await this.userRepo.find({ where: { id: In(uniq) } });
+    const byId = new Map(users.map(u => [u.id, u] as const));
+    for (const id of uniq) {
+      const u = byId.get(id);
+      if (!u) throw new BadRequestException(`Пользователь не найден: ${id}`);
+      if (!u.isActive) throw new BadRequestException(`Пользователь деактивирован: ${u.name || id}`);
+    }
+    return uniq;
+  }
+
+  /** manager → {id,name,role,avatar}|null для GET /projects и GET /projects/:id. */
+  private toManagerView(u: any): { id: string; name: string; role: string; avatar: string | null } | null {
+    if (!u || !u.id) return null;
+    return { id: u.id, name: u.name, role: u.role, avatar: u.avatar ?? null };
+  }
+
+  /** member для карточки (GET :id): {id,name,role,avatar}. */
+  private toMemberView(u: any): { id: string; name: string; role: string; avatar: string | null } | null {
+    if (!u || !u.id) return null;
+    return { id: u.id, name: u.name, role: u.role, avatar: u.avatar ?? null };
   }
 
   /** Индивидуальные лимиты имеют смысл только на тарифе с пометкой
@@ -1278,6 +1375,18 @@ export class ProjectsService implements OnModuleInit {
       hasGrant(user as any, 'projects.edit'); // персональный грант
     if (!canEdit) {
       throw new ForbiddenException('Not allowed');
+    }
+
+    // ─── Состав dev-проекта (additive, SMM не трогаем) ────────────────
+    // Гарды выше уже прошли (не ослабляем). Семантика:
+    // managerId: undefined = не менять, null = снять, UUID = назначить;
+    // memberIds: undefined = не трогать, [] = очистить, иначе заменить.
+    // Проверяем существование + isActive (нет → 400), мусорные UUID → 400.
+    if ('managerId' in dto) {
+      await this.validateTeamManagerId(dto.managerId as any);
+    }
+    if ((dto as any).memberIds !== undefined) {
+      (dto as any).memberIds = await this.resolveTeamMemberIds((dto as any).memberIds);
     }
 
     // Wave 7: блок перевода проекта в IN_PROGRESS пока launch-чеклист не закрыт.

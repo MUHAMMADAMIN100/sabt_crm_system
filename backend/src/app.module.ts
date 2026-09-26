@@ -44,6 +44,7 @@ import { OrganizerDirectoryModule } from './modules/organizer-directory/organize
 import { TeamsModule } from './modules/teams/teams.module';
 import { KpiModule } from './modules/kpi/kpi.module';
 import { NotesModule } from './modules/notes/notes.module';
+import { DevTrackerModule } from './modules/dev-tracker/dev-tracker.module';
 import { DbIndexesService } from './common/db-indexes.service';
 
 @Module({
@@ -125,6 +126,7 @@ import { DbIndexesService } from './common/db-indexes.service';
     KpiModule,
     NotesModule,
     OrganizerDirectoryModule,
+    DevTrackerModule,
   ],
 })
 export class AppModule {}

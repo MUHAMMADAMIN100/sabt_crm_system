@@ -635,11 +635,13 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   return (
     // Календарные виды: страница на всю высоту (flex-колонка) — календарь растягивается на всё
     // свободное место, чтобы при сворачивании бэклога снизу не оставалось пустоты. Сторисы — обычный поток.
-    <div className={view === 'stories' ? 'space-y-3' : ('flex flex-col gap-3 min-h-0 ' + (embeddedProjectId ? 'h-[calc(100vh-15rem)] min-h-[540px]' : 'h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)]'))}>
+    <div className={view === 'stories' ? 'space-y-5' : ('flex flex-col gap-5 min-h-0 ' + (embeddedProjectId ? 'h-[calc(100vh-15rem)] min-h-[540px]' : 'h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)]'))}>
+      {/* Навигация по разделу «Разработка» — в сайдбаре (DEV_SUBNAV),
+          in-page полосы табов нет (убрана как дубль). */}
       {/* ── шапка ── */}
       <header className="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-2.5 flex-wrap">
-          <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+          <h1 className="page-title">{title}</h1>
           <div className="relative">
             <button onClick={() => setFilterOpen(o => !o)}
               className="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300">

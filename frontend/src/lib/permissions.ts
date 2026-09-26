@@ -95,6 +95,8 @@ export type Permission =
   | 'teams.manage'
   | 'security-log.view'
   | 'team-activity.view'
+  | 'dev-tracker.view'
+  | 'dev-tracker.manage'
 
 const PERMISSIONS: Record<UserRole, Permission[]> = {
   admin: [
@@ -110,6 +112,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'clients.view', 'security-log.view', 'organizer.directory',
     'team-activity.view',
+    'dev-tracker.view', 'dev-tracker.manage',
   ],
   founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -124,6 +127,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
     'team-activity.view',
+    'dev-tracker.view', 'dev-tracker.manage',
   ],
   co_founder: [
     'dashboard', 'projects.view', 'projects.create', 'projects.edit', 'projects.delete',
@@ -137,6 +141,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
+    'dev-tracker.view', 'dev-tracker.manage',
   ],
   // Руководитель по видеографии — менеджерский уровень для видео-
   // направления: управление задачами, аналитика, отчёты, риски.
@@ -230,6 +235,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
+    'dev-tracker.view', 'dev-tracker.manage',
   ],
   // Проект-менеджер по разработке — «тестировщик» направления: все
   // dev-проекты компании, задачи-замечания, календарь и отчёты.
@@ -244,6 +250,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
+    'dev-tracker.view', 'dev-tracker.manage',
   ],
   developer: [
     'dashboard', 'projects.view',
@@ -253,6 +260,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
+    'dev-tracker.view',
   ],
   // Видеограф — исполнитель производства контента, права как у дизайнера.
   videographer: [
@@ -375,6 +383,10 @@ export const GRANTABLE_FE: Record<string, { implies: string[] }> = {
   'projects.create': { implies: ['projects.view'] },
   'projects.edit':   { implies: ['projects.view'] },
   'clients.create':  { implies: ['clients.view'] },
+  // dev-tracker.manage ⇒ dev-tracker.view (зеркало бэкенда hasGrant):
+  // у кого есть управление, тот видит доску. Нужно, чтобы гард
+  // /dev-board через userCan пропускал по персональному гранту manage.
+  'dev-tracker.manage': { implies: ['dev-tracker.view'] },
 }
 
 type GrantUser = {
@@ -419,7 +431,12 @@ export function canSeeSmmSection(role?: string | null): boolean {
 
 /** Раздел «Разработка» (Умный календарь / Проекты) — команда разработки
  *  и топ-менеджмент. Зеркально canSeeSmmSection; роли совпадают с бэкендом
- *  (эндпоинт smm-calendar c segment=dev). */
+ *  (эндпоинт smm-calendar c segment=dev).
+ *  NOTE: sales_manager_dev есть в DEV_TEAM_ROLES ниже (скоп данных: видит
+ *  dev-проекты в списках/KPI), но доступа к «Доске разработки» у него НЕТ —
+ *  ни здесь, ни в PERMISSIONS (dev-tracker.view), ни в бэкенде (GRANTABLE).
+ *  Доска открывается только грантом dev-tracker.view. Не добавлять его сюда
+ *  без выдачи права — иначе меню покажется, а гард userCan не пустит. */
 export function canSeeDevSection(role?: string | null): boolean {
   return ['founder', 'co_founder', 'admin', 'dev_director', 'pm_dev', 'developer'].includes(role || '')
 }
@@ -465,6 +482,7 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
   'teams.manage': '/teams',
   'security-log.view': '/security-log',
   'team-activity.view': '/team-activity',
+  'dev-tracker.view': '/dev-board',
 }
 
 /** «Истории по проектам» — пункт только для сторисмейкера (отметка сторис по
@@ -532,7 +550,16 @@ export function canAccessRoute(
   // «СММ» и все подстраницы (Умный календарь / Сторисы / Проекты) — СММ-команда + топ.
   if (route === '/smm' || route.startsWith('/smm/')) return canSeeSmmSection(role)
   // «Разработка» и подстраницы (Умный календарь / Проекты) — dev-команда + топ.
+  // Алиасы доски идут по тем же грантам, что каноника /dev-board* (иначе
+  // два URL одной страницы имели бы разный гард): board/kpi — view, reports — manage.
+  if (route === '/dev/board' || route === '/dev/kpi') return userCan(u, 'dev-tracker.view')
+  if (route === '/dev/reports') return userCan(u, 'dev-tracker.manage')
   if (route === '/dev' || route.startsWith('/dev/')) return canSeeDevSection(role)
+  // «Доска разработки» (канбан dev-трекера) и подстраницы — по гранту
+  // dev-tracker.view через userCan (как /tasks/:id ниже), чтобы работали
+  // extraPermissions/deniedPermissions/secondaryRole. Подпункты сайдбара
+  // фильтруются тем же userCan (Доска/KPI — view, Отчёты — manage).
+  if (route === '/dev-board' || route.startsWith('/dev-board/')) return userCan(u, 'dev-tracker.view')
   // «Активность команды» — мониторинг для основателя/админа. Сооснователь
   // (за которым в т.ч. и следят) эту страницу не видит.
   if (route === '/team-activity') return role === 'founder' || role === 'admin'

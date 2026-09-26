@@ -1,7 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as admin from 'firebase-admin';
+// Firebase Admin v14: namespace-импорт больше не несёт apps/credential/messaging
+// как свойства — они экспортируются функциями из lib/index (getApps, cert, ...).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const admin: any = require('firebase-admin');
 import * as fs from 'fs';
 import * as path from 'path';
 import { Notification, NotificationType } from './notification.entity';
