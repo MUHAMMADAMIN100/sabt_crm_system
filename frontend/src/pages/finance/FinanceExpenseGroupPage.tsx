@@ -1008,6 +1008,7 @@ function SubsList({ ym }: { ym: string }) {
 
   const rows: any[] = data?.rows ?? [];
   const monthly: number = data?.monthly ?? 0;
+  const hidden: number = data?.hiddenCount ?? 0;
 
   /** Отметить оплаченным без операции: денег по счетам не двигает. */
   async function markPaid(s: any) {
@@ -1108,6 +1109,13 @@ function SubsList({ ym }: { ym: string }) {
           </tfoot>
         </table>
       </div>
+
+      {hidden > 0 && (
+        <p className="mini muted" style={{ marginTop: 8 }}>
+          Ещё {hidden} {hidden === 1 ? 'позиция не действует' : 'позиции не действуют'} в этом месяце —
+          вне срока «с даты начала по дату окончания». Они не попадают ни сюда, ни в Планирование.
+        </p>
+      )}
 
       {editFor && <SubFormModal sub={editFor === 'new' ? undefined : editFor} onClose={() => setEditFor(null)} />}
       {payFor && <SubscriptionPaymentModal sub={payFor} ym={ym} onClose={() => setPayFor(null)} />}

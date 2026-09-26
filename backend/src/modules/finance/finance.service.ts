@@ -2380,7 +2380,22 @@ export class FinanceService implements OnModuleInit {
     }
 
     if (kind === 'subscriptions') {
-      const subs = await this.subRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
+      const all = await this.subRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
+      // Подписка относится к месяцу, только пока действует: с «даты начала»
+      // (первое списание) по «дату окончания». Раньше список брал все подряд,
+      // и переключатель месяца ни на что не влиял: строка висела в месяцах,
+      // где календарь планирования её не рисует, и всё равно попадала в
+      // «Аренда + подписки / мес». Правило теперь то же, что в планировании.
+      const liveInMonth = (s: FinanceSubscription) => {
+        const startYm = s.dueDate ? String(s.dueDate).slice(0, 7) : null;
+        const endYm = s.endDate ? String(s.endDate).slice(0, 7) : null;
+        if (startYm && ym < startYm) return false;
+        if (endYm && ym > endYm) return false;
+        return true;
+      };
+      // Оплаченное за месяц показываем даже вне окна: деньги ушли, и прятать
+      // строку нельзя — иначе таблица не сходится с журналом операций.
+      const subs = all.filter(s => liveInMonth(s) || monthExp.some(t => t.subscriptionId === s.id));
       const rows = subs.map(s => {
         const txs = monthExp.filter(t => t.subscriptionId === s.id);
         const dates = txs.map(t => t.date).sort();
@@ -2388,12 +2403,21 @@ export class FinanceService implements OnModuleInit {
         const mark = (s.paidMarks || []).find(x => x.ym === ym) ?? null;
         return {
           id: s.id, name: s.name, kind: s.kind, amount: Number(s.amount), active: s.active,
-          dueDay: s.dueDay ?? null,
+          // dueDate/endDate нужны форме редактирования: без них модалка
+          // открывалась с пустыми датами и сохранение стирало и окно
+          // действия, и день оплаты.
+          dueDay: s.dueDay ?? null, dueDate: s.dueDate ?? null, endDate: s.endDate ?? null,
           paidMonth: this.sum(txs), lastPaidDate: dates.length ? dates[dates.length - 1] : null,
           paidMark: mark ? mark.date : null,
         };
       });
-      return { kind: 'subscriptions', rows, monthly: r2(subs.filter(s => s.active).reduce((s, x) => s + Number(x.amount), 0)) };
+      return {
+        kind: 'subscriptions', rows,
+        monthly: r2(subs.filter(s => s.active).reduce((sum, x) => sum + Number(x.amount), 0)),
+        // Сколько позиций не действует в этом месяце — иначе строка просто
+        // пропадает из таблицы, и непонятно, потерялась она или так надо.
+        hiddenCount: all.length - subs.length,
+      };
     }
 
     if (kind === 'debts') {
