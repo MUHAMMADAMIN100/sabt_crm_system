@@ -557,8 +557,9 @@ export function canAccessRoute(
   if (route === '/dev' || route.startsWith('/dev/')) return canSeeDevSection(role)
   // «Доска разработки» (канбан dev-трекера) и подстраницы — по гранту
   // dev-tracker.view через userCan (как /tasks/:id ниже), чтобы работали
-  // extraPermissions/deniedPermissions/secondaryRole. Подпункты сайдбара
-  // фильтруются тем же userCan (Доска/KPI — view, Отчёты — manage).
+  // extraPermissions/deniedPermissions/secondaryRole. Исключение — страница
+  // отчётов: только manage (как алиас /dev/reports, меню и API).
+  if (route === '/dev-board/reports') return userCan(u, 'dev-tracker.manage')
   if (route === '/dev-board' || route.startsWith('/dev-board/')) return userCan(u, 'dev-tracker.view')
   // «Активность команды» — мониторинг для основателя/админа. Сооснователь
   // (за которым в т.ч. и следят) эту страницу не видит.

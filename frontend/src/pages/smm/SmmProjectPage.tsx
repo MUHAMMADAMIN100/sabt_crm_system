@@ -329,6 +329,10 @@ export default function SmmProjectPage() {
   const [reportOpen, setReportOpen] = useState(false)
   // ── Вкладки страницы: обзор / аналитика / клиент / контент-план ──
   const [tab, setTab] = useState<'overview' | 'analytics' | 'client' | 'plan' | 'tasks'>('overview')
+  // dev: SMM-вкладки (Аналитика, Контент-план) скрыты — откат глубокой ссылки на Обзор.
+  useEffect(() => {
+    if (section === 'dev' && (tab === 'analytics' || tab === 'plan')) setTab('overview')
+  }, [section, tab])
   // ── Меню ⋯ в шапке + подтверждение завершения сотрудничества ──
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
@@ -512,7 +516,11 @@ export default function SmmProjectPage() {
         {/* Табы проекта: на mobile свайп без видимого скроллбара */}
         <div className="flex items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {([
-            ['overview', 'Обзор'], ['analytics', 'Аналитика'], ['client', 'Клиент'], ['plan', 'Контент-план'],
+            ['overview', 'Обзор'],
+            // dev: SMM-вкладки скрыты — в dev остаются Обзор / Клиент / Задачи.
+            ...(section === 'dev' ? [] : [['analytics', 'Аналитика'] as const]),
+            ['client', 'Клиент'],
+            ...(section === 'dev' ? [] : [['plan', 'Контент-план'] as const]),
             // «Задачи» — только в разделе «Разработка»: вкладка показывает
             // задачи с канбан-доски dev-tracker, привязанные к этому проекту.
             ...(section === 'dev' ? [['tasks', 'Задачи'] as const] : []),
@@ -541,7 +549,8 @@ export default function SmmProjectPage() {
             />
           </div>
         )}
-        {/* Цикл и норма */}
+        {/* Цикл и норма — в dev скрыт (SMM-нормы/специалист бессмысленны) */}
+        {section !== 'dev' && (
         <div className={card}>
           <div className="flex items-center justify-between gap-2 mb-3">
             <h2 className={secLabel}>Цикл и норма</h2>
@@ -637,6 +646,7 @@ export default function SmmProjectPage() {
             <div className={fRow}><span className="text-sm text-gray-500">Осталось в «Не запланировано»</span><span className="text-sm font-semibold text-right">{left}</span></div>
           </div>
         </div>
+        )}
 
         {/* Выполнение плана */}
         <div className={card}>
@@ -653,8 +663,8 @@ export default function SmmProjectPage() {
       </div>
       )}
 
-      {/* АНАЛИТИКА — метрики по месяцам + запись */}
-      {tab === 'analytics' && (
+      {/* АНАЛИТИКА — метрики по месяцам + запись (в dev скрыта) */}
+      {tab === 'analytics' && section !== 'dev' && (
       <div className={card + ' max-w-3xl'}>
         <h2 className={secLabel + ' mb-3'}>Метрики · история по месяцам</h2>
         <div className="flex flex-wrap gap-1.5 mb-3">
@@ -742,8 +752,8 @@ export default function SmmProjectPage() {
       </div>
       )}
 
-      {/* Контент-план проекта — Умный календарь, ограниченный этим проектом (DnD «Не запланировано» → даты) */}
-      {tab === 'plan' && id && <SmmPage embeddedProjectId={id} />}
+      {/* Контент-план проекта — Умный календарь, ограниченный этим проектом (DnD «Не запланировано» → даты) (в dev скрыт) */}
+      {tab === 'plan' && section !== 'dev' && id && <SmmPage embeddedProjectId={id} />}
       {tab === 'tasks' && id && <DevTasksTab projectId={id} />}
 
       {/* Подтверждение завершения сотрудничества (архив) */}
