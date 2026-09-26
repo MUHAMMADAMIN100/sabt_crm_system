@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
-import { MoreHorizontal, Plus, X, LogOut, User as UserIcon, ClipboardCheck, FolderKanban, Image as ImageIcon } from 'lucide-react'
+import { MoreHorizontal, Plus, X, LogOut, User as UserIcon, ClipboardCheck, FolderKanban, Image as ImageIcon, KanbanSquare, BarChart3, FileText, CalendarRange } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
-import { canSeeSmmSection, userCan } from '@/lib/permissions'
+import { canSeeSmmSection, canSeeDevSection, userCan } from '@/lib/permissions'
 import { tasksApi } from '@/services/api.service'
 import { useNavItems } from './navItems'
 import ShiftButton from './ShiftButton'
@@ -85,12 +85,59 @@ export default function BottomNav() {
 
   const tabCls = 'relative flex flex-col items-center gap-[3px] pt-1.5 pb-1 min-h-[44px] rounded-xl'
 
+  // Подразделы «Разработки» для шторки «Ещё»: top-level пункта доски в меню
+  // больше нет (один раздел в сайдбаре), а субменю панель не умеет —
+  // иначе с телефона до доски/KPI/отчётов не добраться.
+  const devLinks = useMemo(() => {
+    if (!canSeeDevSection(user?.role)) return []
+    const list = [
+      { to: '/dev', label: 'Умный календарь', icon: CalendarRange, perm: 'dev-tracker.view' as const },
+      { to: '/dev/projects', label: 'Проекты', icon: FolderKanban, perm: 'dev-tracker.view' as const },
+      { to: '/dev-board', label: 'Доска', icon: KanbanSquare, perm: 'dev-tracker.view' as const },
+      { to: '/dev-board/kpi', label: 'KPI', icon: BarChart3, perm: 'dev-tracker.view' as const },
+    ] as { to: string; label: string; icon: any; perm: 'dev-tracker.view' | 'dev-tracker.manage' }[]
+    if (userCan(user, 'dev-tracker.manage')) {
+      list.push({ to: '/dev-board/reports', label: 'Отчёты', icon: FileText, perm: 'dev-tracker.manage' })
+    }
+    return list.filter(l => userCan(user, l.perm))
+  }, [user])
+
   // Кнопка создания стоит в средней колонке, поэтому разделы делятся на две
   // части: два слева от неё, остальное справа.
   const left = pinned.slice(0, 2)
   const right = pinned.slice(2)
 
-  const renderTab = (i: ReturnType<typeof useNavItems>[number]) => (
+  // Таб «Разработка» ведёт не только на /dev: запоминаем последний открытый
+  // подраздел (доска/KPI/проекты/календарь) и возвращаем туда; повторный тап
+  // внутри раздела открывает шторку «Ещё» со всеми пятью подразделами.
+  const isDevRoute =
+    location.pathname === '/dev' || location.pathname.startsWith('/dev/') ||
+    location.pathname === '/dev-board' || location.pathname.startsWith('/dev-board/')
+  useEffect(() => {
+    if (isDevRoute) {
+      try { localStorage.setItem('last-dev-route', location.pathname + location.search) } catch {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname])
+  const openDevTab = () => {
+    if (isDevRoute) { setFan(false); setMore(true); return }
+    let last = '/dev-board'
+    try { last = localStorage.getItem('last-dev-route') || '/dev-board' } catch {}
+    navigate(last)
+  }
+
+  const renderTab = (i: ReturnType<typeof useNavItems>[number]) => {
+    if (i.to === '/dev') {
+      return (
+        <button key={i.to} type="button" onClick={openDevTab} aria-label="Разработка"
+          className={clsx(tabCls, isDevRoute ? 'text-white' : 'text-white/45')}>
+          {isDevRoute && <span className="absolute top-0.5 w-9 h-[26px] rounded-[9px] bg-primary-500/20" />}
+          <span className="relative"><i.icon size={20} /></span>
+          <span className="relative text-[9.5px] font-semibold">Разработка</span>
+        </button>
+      )
+    }
+    return (
     <NavLink key={i.to} to={i.to} end={i.exact}
       className={({ isActive }) => clsx(tabCls, isActive ? 'text-white' : 'text-white/45')}>
       {({ isActive }) => (
@@ -108,7 +155,8 @@ export default function BottomNav() {
         </>
       )}
     </NavLink>
-  )
+    )
+  }
 
   return (
     <>
@@ -155,6 +203,21 @@ export default function BottomNav() {
                     <span className="text-surface-300 dark:text-surface-600">›</span>
                   </NavLink>
                 ))}
+                {devLinks.length > 0 && (
+                  <>
+                    <div className="px-3 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500">
+                      Разработка
+                    </div>
+                    {devLinks.map(l => (
+                      <NavLink key={l.to} to={l.to} onClick={() => setMore(false)}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-surface-800 dark:text-surface-200">
+                        <l.icon size={17} className="text-surface-400 shrink-0" />
+                        <b className="text-[13px] font-semibold flex-1">{l.label}</b>
+                        <span className="text-surface-300 dark:text-surface-600">›</span>
+                      </NavLink>
+                    ))}
+                  </>
+                )}
                 <NavLink to="/profile" onClick={() => setMore(false)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-surface-800 dark:text-surface-200 border-t border-surface-100 dark:border-surface-800 mt-1 pt-3">
                   <UserIcon size={17} className="text-surface-400 shrink-0" />

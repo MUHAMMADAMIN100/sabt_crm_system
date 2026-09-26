@@ -1,0 +1,68 @@
+/**
+ * Анимации модуля «Разработка» (dev-board).
+ * Сдержанно и быстро (150–250ms, ease-out): появление контента,
+ * подъём карточек, подсветка DnD. Никаких бесконечных эффектов.
+ * Всё отключается при prefers-reduced-motion.
+ */
+@keyframes dev-fade-slide {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes dev-pop {
+  from { opacity: 0; transform: scale(0.97) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes dev-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Смена вида доски/таблицы/календаря/таймлайна */
+.dev-view-enter {
+  animation: dev-fade-slide 0.22s ease-out both;
+}
+
+/* Появление карточек и строк (задачи, пилюли, лента) */
+.dev-item-enter {
+  animation: dev-fade-slide 0.22s ease-out both;
+}
+
+/* Модалки и поповеры модуля */
+.dev-pop-enter {
+  animation: dev-pop 0.16s ease-out both;
+}
+
+/* Плавное появление графиков/пустых состояний */
+.dev-fade-enter {
+  animation: dev-fade 0.25s ease-out both;
+}
+
+/* Подъём карточки при наведении */
+.dev-lift {
+  transition: transform 0.16s ease-out, box-shadow 0.16s ease-out, border-color 0.16s ease-out;
+}
+.dev-lift:hover {
+  transform: translateY(-2px);
+}
+
+/* Подсветка колонки под дропом */
+.dev-drop-glow {
+  transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out, background-color 0.15s ease-out;
+}
+
+/* Уважение к настройкам пользователя: всё выключаем */
+@media (prefers-reduced-motion: reduce) {
+  .dev-board-root .dev-view-enter,
+  .dev-board-root .dev-item-enter,
+  .dev-board-root .dev-pop-enter,
+  .dev-board-root .dev-fade-enter,
+  .dev-board-root .dev-lift,
+  .dev-board-root .dev-lift:hover,
+  .dev-board-root .dev-drop-glow {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}
