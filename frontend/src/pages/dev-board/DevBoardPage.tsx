@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import {
@@ -384,11 +385,30 @@ function TaskCard({ task, dragging, onDragStart, onDragEnd, onTagClick, sprintNa
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuBtnRef = useRef<HTMLButtonElement>(null)
+  // Позиция меню в портале: под кнопкой, вверх если внизу мало места.
+  // Закрываем при скролле/ресайзе (иначе меню «отрывается» от карточки),
+  // клике мимо (кнопка тоже вне меню) и Esc с возвратом фокуса.
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
   useEffect(() => {
-    if (!menuOpen) return
-    const close = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    if (!menuOpen) { setMenuPos(null); return }
+    const place = () => {
+      const r = menuBtnRef.current?.getBoundingClientRect()
+      if (!r) return
+      const W = 208 // w-52
+      const H = 400 // ~заголовок + 6 пунктов + разделитель + «Открыть»
+      const up = window.innerHeight - r.bottom < H + 12 && r.top > H + 12
+      setMenuPos({
+        top: up ? Math.max(8, r.top - H - 4) : r.bottom + 4,
+        left: Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8)),
+      })
     }
+    place()
+    const close = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node) && !menuBtnRef.current?.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    const onScrollResize = () => setMenuOpen(false)
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setMenuOpen(false)
@@ -398,9 +418,13 @@ function TaskCard({ task, dragging, onDragStart, onDragEnd, onTagClick, sprintNa
     }
     document.addEventListener('mousedown', close)
     document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onScrollResize, true)
+    window.addEventListener('resize', onScrollResize)
     return () => {
       document.removeEventListener('mousedown', close)
       document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScrollResize, true)
+      window.removeEventListener('resize', onScrollResize)
     }
   }, [menuOpen])
   const pickStatus = (s: DevTaskStatus) => {
@@ -430,7 +454,7 @@ function TaskCard({ task, dragging, onDragStart, onDragEnd, onTagClick, sprintNa
         <p className="flex-1 min-w-0 pt-2 text-sm font-medium text-surface-900 dark:text-surface-100 leading-snug break-words">
           {task.title}
         </p>
-        <div ref={menuRef} className="relative shrink-0">
+        <div className="relative shrink-0">
           <button
             ref={menuBtnRef}
             type="button"
@@ -443,11 +467,13 @@ function TaskCard({ task, dragging, onDragStart, onDragEnd, onTagClick, sprintNa
           >
             <MoreHorizontal size={18} />
           </button>
-          {menuOpen && (
+          {menuOpen && menuPos && createPortal(
             <div
+              ref={menuRef}
               role="menu"
               aria-label="Переместить задачу"
-              className="absolute right-0 z-40 mt-1 w-52 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-xl p-1 dev-pop-enter"
+              style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
+              className="z-[70] w-52 max-h-[min(70vh,430px)] overflow-y-auto rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 shadow-xl p-1 dev-pop-enter"
             >
               <p className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-surface-400 dark:text-surface-500">
                 Переместить:
@@ -479,7 +505,8 @@ function TaskCard({ task, dragging, onDragStart, onDragEnd, onTagClick, sprintNa
               >
                 Открыть
               </button>
-            </div>
+            </div>,
+            document.body,
           )}
         </div>
       </div>
