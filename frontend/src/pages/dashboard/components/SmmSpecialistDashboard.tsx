@@ -765,7 +765,7 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
                 )}
                 <label className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-800 cursor-pointer">
                   <CalendarDays size={14} className="text-surface-400" /> Выбрать дату
-                  <input type="date" min={moveWindow?.min} max={moveWindow?.max || undefined} className="ml-auto w-[104px] bg-transparent text-sm text-surface-500 dark:text-surface-400 outline-none"
+                  <input type="date" min={moveWindow?.min} max={moveWindow?.max || undefined} className="ml-auto w-[104px] bg-transparent text-base text-surface-500 dark:text-surface-400 outline-none"
                     onChange={ev => { const v = ev.target.value; if (v) { setMenu(false); onMove!(new Date(v + 'T00:00:00')) } }} />
                 </label>
                 <div className="h-px bg-surface-100 dark:bg-surface-800 my-1.5 mx-2" />

@@ -179,13 +179,13 @@
      Работает и на будущее: новое поле без своего размера уже не окажется
      мельче 14px. */
   input, textarea, select, [contenteditable="true"] {
-    font-size: max(14px, 1em);
+    font-size: max(16px, 1em);
   }
 
   /* Поле ввода — белое с чёткой границей: в плотной вёрстке серая заливка
      сливалась бы с подложкой блока. Фокус — сплошная рамка без свечения. */
   .input {
-    @apply w-full px-3 py-1.5 bg-white border border-surface-300 rounded-lg text-sm text-surface-900
+    @apply w-full px-3 py-1.5 bg-white border border-surface-300 rounded-lg text-base text-surface-900
            placeholder:text-surface-400 min-h-[34px]
            focus:outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-600/25;
     transition: border-color 120ms ease, box-shadow 120ms ease;
@@ -204,7 +204,7 @@
   input.input[type="datetime-local"],
   input.input[type="month"],
   input.input[type="week"] {
-    @apply text-sm min-h-[42px];
+    @apply text-base min-h-[42px];
     line-height: 1.4;
     -webkit-appearance: none;
   }
@@ -953,7 +953,7 @@ aside {
   .btn { @apply text-xs px-3 py-1.5; }
 
   /* Full-width inputs on mobile */
-  .input { @apply text-sm; }
+  .input { @apply text-base; }
 
   /* Compact table cells */
   table th, table td { @apply px-2 py-1.5 text-xs; }
