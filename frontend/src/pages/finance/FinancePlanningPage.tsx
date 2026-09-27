@@ -7,7 +7,7 @@ import { apiErr, currentYm, formatDate, money, monthLabel, pluralRu, shiftYm, to
 import { FinLoadError, FinLoading, FinModal, invalidateFinanceAll } from './FinKit';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
-import { TxCalendar } from './FinanceTransactionsPage';
+import PlanCalendar from './PlanCalendar';
 import ImportedArchiveBadge, { isImportedArchive } from './ImportedArchiveBadge';
 import { floatingPosition, scrollableAncestors, type FloatingPosition } from './floatingPosition';
 import './finance.css';
@@ -186,7 +186,7 @@ export default function FinancePlanningPage() {
     return m;
   }, [txMonthQ.data]);
 
-  // Единый список движения денег за месяц для TxCalendar: приходы (оплаты
+  // Единый список движения денег за месяц для календаря: приходы (оплаты
   // клиентов) + расходы (долги, аренда/подписки, зарплаты, разовые операции).
   const calTxns = useMemo(() => {
     const items: any[] = [];
@@ -472,7 +472,7 @@ export default function FinancePlanningPage() {
           <MonthNav ym={calYm} onChange={setCalYm} />
         </div>
         {(plannedQ.isLoading || subsQ.isLoading || txMonthQ.isLoading || salaryQ.isLoading) ? <FinLoading /> : (
-          <TxCalendar ym={calYm} txns={calTxns} onAdd={() => {}} hideAdd planMode dayBalance={dayBalance}
+          <PlanCalendar ym={calYm} txns={calTxns} dayBalance={dayBalance}
             renderStatusControl={(item, close) => <PlanningStatusControl item={item} ym={calYm} onClose={close} />}
             onMoveItem={movePlanItem} canMoveItem={canMovePlanItem} />
         )}
