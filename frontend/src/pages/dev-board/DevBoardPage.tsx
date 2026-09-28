@@ -22,7 +22,7 @@ import { userCan } from '@/lib/permissions'
 import {
   DEV_TASK_STATUSES, DEV_STATUS_LABELS, DEV_STATUS_COLORS,
   DEV_PRIORITY_LABELS, DEV_PRIORITY_CLASSES,
-  DEV_TASK_TYPE_LABELS, DEV_STORY_POINTS, DEV_PRIORITY_RANK,
+  DEV_TASK_TYPE_LABELS, DEV_PRIORITY_RANK,
   TYPE_ICONS, PRIORITY_DOTS, DEV_WEBHOOK_EVENTS,
   isDevTaskOverdue, fmtDeadline, hasSubtasks, isSlaBreached,
   ASSIGNEE_ROLES, selectDevProjects,
@@ -120,7 +120,6 @@ function CreateTaskModal({ open, status, users, projects, initialProjectId, init
   const [priority, setPriority] = useState<DevTaskPriority>('medium')
   const [assigneeId, setAssigneeId] = useState('')
   const [projectId, setProjectId] = useState('')
-  const [storyPoints, setStoryPoints] = useState('')
   const [deadline, setDeadline] = useState('')
   const [tags, setTags] = useState('')
 
@@ -133,10 +132,9 @@ function CreateTaskModal({ open, status, users, projects, initialProjectId, init
   const applyTemplate = (t: CreateTemplate) => {
     setTemplate(t)
     if (t === 'empty') {
-      // Сброс к дефолтам; заголовок/исполнителя/проект/дедлайн не трогаем.
+      // Сброс к дефолтам; заголовок/исполнитель/проект/дедлайн не трогаем.
       setTaskType('feature')
       setPriority('medium')
-      setStoryPoints('')
       setTags('')
       setDescription('')
       return
@@ -169,7 +167,7 @@ function CreateTaskModal({ open, status, users, projects, initialProjectId, init
 
   const reset = () => {
     setTitle(''); setDescription(''); setTaskType('feature'); setPriority('medium')
-    setAssigneeId(''); setProjectId(''); setStoryPoints(''); setDeadline(''); setTags('')
+    setAssigneeId(''); setProjectId(''); setDeadline(''); setTags('')
     setTemplate('empty')
   }
 
@@ -207,7 +205,6 @@ function CreateTaskModal({ open, status, users, projects, initialProjectId, init
       taskType,
       assigneeId: assigneeId || undefined,
       projectId: projectId || undefined,
-      storyPoints: storyPoints ? Number(storyPoints) : undefined,
       deadline: deadline || undefined,
       tags: tagList,
     })
@@ -219,6 +216,10 @@ function CreateTaskModal({ open, status, users, projects, initialProjectId, init
       onClose={() => { reset(); onClose() }}
       title={`Новая задача — «${DEV_STATUS_LABELS[status]}»`}
       size="lg"
+      // Случайный клик мимо модалки или Escape не должны терять набранный
+      // текст — закрытие только через «Отмена»/крестик/успешное создание.
+      closeOnBackdropClick={false}
+      closeOnEscape={false}
     >
       <div className="space-y-4 dev-pop-enter">
         {canCreate === false && (
@@ -321,20 +322,12 @@ function CreateTaskModal({ open, status, users, projects, initialProjectId, init
               />
             </FormField>
           )}
-          <FormField label="Story points">
-            <Select
-              value={storyPoints}
-              onChange={setStoryPoints}
-              placeholder="Не оценено"
-              options={DEV_STORY_POINTS.map(sp => ({ value: String(sp), label: String(sp) }))}
-            />
-          </FormField>
           <FormField label="Дедлайн">
-            <BoardDatePicker value={deadline} onChange={setDeadline} placeholder="Без дедлайна" />
+            <BoardDatePicker value={deadline} onChange={setDeadline} placeholder="Без дедлайна" className="[&>button]:h-[42px]" />
           </FormField>
           <FormField label="Теги (через запятую)">
             <input
-              className="input"
+              className="input h-[42px]"
               value={tags}
               onChange={e => setTags(e.target.value)}
               placeholder="frontend, срочно"
@@ -586,14 +579,6 @@ function TaskCard({ task, dragging, onDragStart, onDragEnd, onTagClick, sprintNa
         <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded', DEV_PRIORITY_CLASSES[task.priority] || DEV_PRIORITY_CLASSES.medium)}>
           {DEV_PRIORITY_LABELS[task.priority] || task.priority}
         </span>
-        {task.storyPoints != null && (
-          <span
-            className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400"
-            title="Story points"
-          >
-            {task.storyPoints} SP
-          </span>
-        )}
         {task.deadline && (
           <span
             className={clsx(
@@ -734,14 +719,13 @@ function TasksTable({ rows, users, canManage, sortKey, sortDir, onToggleSort, on
             <th className={th}>
               <SortHeader label="Дедлайн" active={sortKey === 'deadline'} dir={sortDir} onClick={() => onToggleSort('deadline')} />
             </th>
-            <th className={clsx(th, 'font-medium text-surface-500 dark:text-surface-400 text-center')}>SP</th>
             <th className={clsx(th, 'font-medium text-surface-500 dark:text-surface-400')}>Теги</th>
           </tr>
         </thead>
         <tbody>
           {canManage && (
             <tr className="border-b border-surface-100 dark:border-surface-800/60">
-              <td className="px-3 py-2" colSpan={canManage ? 8 : 7}>
+              <td className="px-3 py-2" colSpan={canManage ? 7 : 6}>
                 <QuickAdd placeholder="+ Новая задача" onSubmit={onQuickAdd} disabled={quickAddPending} />
               </td>
             </tr>
@@ -868,11 +852,6 @@ function TasksTable({ rows, users, canManage, sortKey, sortDir, onToggleSort, on
                     )
                   )}
                 </td>
-                <td className="px-3 py-1.5 text-center">
-                  {task.storyPoints != null
-                    ? <span className="text-xs font-semibold text-primary-600 dark:text-primary-400">{task.storyPoints}</span>
-                    : <span className="text-xs text-surface-400">—</span>}
-                </td>
                 <td className="px-3 py-1.5">
                   {Array.isArray(task.tags) && task.tags.length ? (
                     <div className="flex flex-wrap gap-1">
@@ -895,15 +874,15 @@ function TasksTable({ rows, users, canManage, sortKey, sortDir, onToggleSort, on
           })}
           {!rows.length && (
             <tr>
-              <td colSpan={canManage ? 8 : 7} className="px-3 py-10 text-center text-sm text-surface-400 dark:text-surface-500">Задач нет</td>
+              <td colSpan={canManage ? 7 : 6} className="px-3 py-10 text-center text-sm text-surface-400 dark:text-surface-500">Задач нет</td>
             </tr>
           )}
         </tbody>
       </table>
       </div>
       {/* Mobile: компактные карточки вместо широкой таблицы — всё видно
-          без горизонтального скролла: название, статус, приоритет,
-          исполнитель, дедлайн, SP, теги. Статус меняется тем же /move. */}
+           без горизонтального скролла: название, статус, приоритет,
+           исполнитель, дедлайн, теги. Статус меняется тем же /move. */}
       <div className="md:hidden card !p-2 min-h-0 flex-1 space-y-2">
         {canManage && (
           <QuickAdd placeholder="+ Новая задача" onSubmit={onQuickAdd} disabled={quickAddPending} />
@@ -1008,11 +987,6 @@ function TasksTable({ rows, users, canManage, sortKey, sortDir, onToggleSort, on
                     <CalendarDays size={11} /> {fmtDeadline(task.deadline)}
                   </span>
                 ) : null}
-                {task.storyPoints != null && (
-                  <span className="font-semibold text-primary-600 dark:text-primary-400 tabular-nums">
-                    SP {task.storyPoints}
-                  </span>
-                )}
               </div>
               {!!(Array.isArray(task.tags) && task.tags.length) && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
@@ -1790,7 +1764,8 @@ function TimelineView({ tasks, users, groupBy, onOpen, onDatesChange, canManage 
   const [monthOffset, setMonthOffset] = useState(0)
 
   // Диапазон дней: неделя — строго Пн–Вс (со смещением стрелками);
-  // месяц — min..max спанов ±3 дня.
+  // месяц — строго с 1-го по последнее число текущего месяца
+  // (со смещением стрелками), без захвата соседних месяцев.
   const days = useMemo(() => {
     if (!dated.length) return [] as string[]
     if (zoom === 'week') {
@@ -1823,8 +1798,6 @@ function TimelineView({ tasks, users, groupBy, onOpen, onDatesChange, canManage 
       max = addDays(max, 3)
     }
     if (!min || !max) return [] as string[]
-    min = addDays(min, -3)
-    max = addDays(max, 3)
     const out: string[] = []
     let cur = min
     let guard = 0
@@ -1838,8 +1811,10 @@ function TimelineView({ tasks, users, groupBy, onOpen, onDatesChange, canManage 
   }, [dated, zoom, weekOffset, monthOffset])
 
   const dayIndex = useMemo(() => new Map(days.map((d, i) => [d, i])), [days])
-  /** Ширина скролл-контейнера: в режиме недели делим её на 7 дней,
-   *  чтобы полоса не болталась слева, а занимала всю ширину. */
+  /** Ширина дня: и неделя (7 дней), и месяц (28–31 день) делят ширину
+   *  контейнера поровну, чтобы сетка занимала всю ширину без пустоты
+   *  справа. Минимумы (88/32) — чтобы на узких экранах включался
+   *  горизонтальный скролл, а не сжималось в кашу. */
   const scrollRef = useRef<HTMLDivElement>(null)
   const [wrapW, setWrapW] = useState(0)
   useEffect(() => {
@@ -1854,7 +1829,7 @@ function TimelineView({ tasks, users, groupBy, onOpen, onDatesChange, canManage 
   }, [zoom])
   const dayW = zoom === 'week'
     ? Math.max(88, Math.floor(((wrapW || 0) - 232) / 7) || 88)
-    : 40
+    : Math.max(32, Math.floor(((wrapW || 0) - 232) / (days.length || 1)) || 32)
   /** В режиме недели шрифт и строки крупнее — места хватает. */
   const barText = zoom === 'week' ? 'text-xs' : 'text-[10px]'
   const barH = zoom === 'week' ? 26 : 20
@@ -2059,8 +2034,12 @@ function TimelineView({ tasks, users, groupBy, onOpen, onDatesChange, canManage 
               </div>
               {g.tasks.map(t => {
                 const { s, e, approx } = spanOf(t)
+                // Строгий месяц: задача целиком вне видимого диапазона —
+                // полосу не рисуем (строка с названием остаётся, счётчики групп не врут).
+                const outside = e < days[0] || s > days[days.length - 1]
+                // Края за пределами месяца прижимаем к видимому диапазону.
                 const si = dayIndex.get(s) ?? 0
-                const ei = dayIndex.get(e) ?? si
+                const ei = dayIndex.get(e) ?? (days.length - 1)
                 const left = Math.min(si, ei) * dayW
                 const width = (Math.abs(ei - si) + 1) * dayW - 6
                 const overdue = isDevTaskOverdue(t)
@@ -2089,30 +2068,32 @@ function TimelineView({ tasks, users, groupBy, onOpen, onDatesChange, canManage 
                           />
                         ))}
                       </div>
-                      <div
-                        draggable={canManage !== false}
-                        onDragStart={e => {
-                          e.dataTransfer.setData('text/plain', t.id)
-                          e.dataTransfer.effectAllowed = 'move'
-                        }}
-                        onClick={() => onOpen(t.id)}
-                        className={clsx(
-                          `absolute top-[3px] rounded-md px-2 truncate transition-colors ${barText} dev-fade-enter`,
-                          canManage !== false ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
-                          approx && 'border border-dashed border-current opacity-90',
-                          t.status === 'done'
-                            ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
-                            : overdue
-                              ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
-                              : 'bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/60',
-                        )}
-                        style={{ left, width: Math.max(width, 96), height: barH, lineHeight: `${barH}px` }}
-                        title={approx
-                          ? `${t.title} — дедлайн ${e} (startDate нет, показана условная неделя; тяните, чтобы задать даты)`
-                          : `${t.title} — ${s} → ${e} (тяните, чтобы сменить даты)`}
-                      >
-                        {t.title}
-                      </div>
+                      {!outside && (
+                        <div
+                          draggable={canManage !== false}
+                          onDragStart={e => {
+                            e.dataTransfer.setData('text/plain', t.id)
+                            e.dataTransfer.effectAllowed = 'move'
+                          }}
+                          onClick={() => onOpen(t.id)}
+                          className={clsx(
+                            `absolute top-[3px] rounded-md px-2 truncate transition-colors ${barText} dev-fade-enter`,
+                            canManage !== false ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
+                            approx && 'border border-dashed border-current opacity-90',
+                            t.status === 'done'
+                              ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
+                              : overdue
+                                ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+                                : 'bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/60',
+                          )}
+                          style={{ left, width: Math.max(width, 96), height: barH, lineHeight: `${barH}px` }}
+                          title={approx
+                            ? `${t.title} — дедлайн ${e} (startDate нет, показана условная неделя; тяните, чтобы задать даты)`
+                            : `${t.title} — ${s} → ${e} (тяните, чтобы сменить даты)`}
+                        >
+                          {t.title}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -3315,15 +3296,6 @@ export default function DevBoardPage() {
                   { value: 'none', label: 'Без проекта' },
                 ]}
               />
-              <Select
-                value={sprintFilter}
-                onChange={setSprintFilter}
-                placeholder="Все спринты"
-                options={[
-                  { value: 'none', label: 'Без спринта' },
-                  ...sprints.map(s => ({ value: s.id, label: s.name })),
-                ]}
-              />
               {view === 'board' && (
                 <div className="col-span-2">
                   <Select
@@ -3580,18 +3552,6 @@ export default function DevBoardPage() {
             )}
           </div>
         )}
-        {/* Фильтр по спринту: все / без спринта / конкретный. */}
-        <div className="w-44">
-          <Select
-            value={sprintFilter}
-            onChange={setSprintFilter}
-            placeholder="Все спринты"
-            options={[
-              { value: 'none', label: 'Без спринта' },
-              ...sprints.map(s => ({ value: s.id, label: s.name })),
-            ]}
-          />
-        </div>
         {canManage && sprintFilter !== '' && sprintFilter !== 'none' && (
           <div className="relative">
             <button

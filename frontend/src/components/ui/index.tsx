@@ -81,9 +81,16 @@ interface ModalProps {
   /** Произвольный контент в правом верхнем углу заголовка (например,
    *  быстрая кнопка действия). Появляется между title и X-кнопкой. */
   titleAction?: ReactNode
+  /** false — клик по подложке не закрывает окно (формы создания: случайный
+   *  клик мимо не должен терять набранный текст). Закрытие — только через
+   *  крестик/кнопки внутри. По умолчанию true. */
+  closeOnBackdropClick?: boolean
+  /** false — Escape не закрывает окно (та же защита черновика, что и выше).
+   *  По умолчанию true. */
+  closeOnEscape?: boolean
 }
 
-export function Modal({ open, onClose, title, children, size = 'md', titleAction }: ModalProps) {
+export function Modal({ open, onClose, title, children, size = 'md', titleAction, closeOnBackdropClick = true, closeOnEscape = true }: ModalProps) {
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
 
@@ -112,12 +119,14 @@ export function Modal({ open, onClose, title, children, size = 'md', titleAction
 
   // Escape закрывает окно — привычно и позволяет выйти с клавиатуры, не
   // целясь мышью в крестик. Клик по подложке уже работает.
+  // Оба поведения отключаемы (closeOnEscape/closeOnBackdropClick = false)
+  // для форм создания, где случайное закрытие теряет черновик.
   useEffect(() => {
-    if (!open) return
+    if (!open || !closeOnEscape) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, onClose, closeOnEscape])
 
   if (!mounted) return null
 
@@ -131,7 +140,7 @@ export function Modal({ open, onClose, title, children, size = 'md', titleAction
           'absolute inset-0 bg-black/50 transition-opacity duration-200 ease-out',
           visible ? 'opacity-100' : 'opacity-0',
         )}
-        onClick={onClose}
+        onClick={closeOnBackdropClick ? onClose : undefined}
       />
       {/* Panel — спокойный fade + лёгкий slide-up без overshoot. */}
       <div

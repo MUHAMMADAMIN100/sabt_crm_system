@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Briefcase, Plus, Trash2, CalendarDays, Send,
   Check, ChevronDown, CircleDot, CornerDownRight, Copy, Eye, FileText, Flag,
-  Hash, History, Link2, ListChecks, Loader2, Paperclip, Pencil, Tags, Type,
+  History, Link2, ListChecks, Loader2, Paperclip, Pencil, Tags, Type,
   AlignLeft, X, Ban, User as UserIcon,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -20,7 +20,7 @@ import { useAuthStore } from '@/store/auth.store'
 import { userCan } from '@/lib/permissions'
 import {
   DEV_TASK_STATUSES, DEV_STATUS_LABELS, DEV_STATUS_COLORS,
-  DEV_PRIORITY_LABELS, DEV_TASK_TYPE_LABELS, DEV_STORY_POINTS,
+  DEV_PRIORITY_LABELS, DEV_TASK_TYPE_LABELS,
   TYPE_ICONS, PRIORITY_DOTS,
   isDevTaskOverdue, fmtDeadline,
   ASSIGNEE_ROLES, selectDevProjects,
@@ -39,7 +39,7 @@ import { boardUrl, taskUrl, projectUrl } from '@/pages/dev/devLinks'
  *  - смена статуса и отметка подзадач идут через PATCH /dev-tracker/:id/move —
  *    доступно всем, у кого есть право просмотра доски;
  *  - остальные поля (title/description/priority/taskType/assigneeId/
- *    storyPoints/tags/deadline) и удаление — только dev-tracker.manage
+ *    tags/deadline) и удаление — только dev-tracker.manage
  *    (обычный PATCH /dev-tracker/:id).
  *
  * Типы и константы — общие из ./devBoardTypes (единый источник модуля),
@@ -82,7 +82,6 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   blockedReason: 'причину блокера',
   isBlocked: 'блокер',
   tags: 'теги',
-  storyPoints: 'story points',
   taskType: 'тип задачи',
   projectId: 'проект',
   parentTaskId: 'родительскую задачу',
@@ -798,11 +797,6 @@ export default function DevTaskDetailPage() {
     ...selectDevProjects(Array.isArray(rawProjects) ? rawProjects : [])
       .map((p: any) => ({ value: String(p.id), label: String(p.name ?? 'Без названия').trim() || 'Без названия' })),
   ]
-  const pointsOptions: SelectOption[] = [
-    { value: '', label: 'Не оценено' },
-    ...DEV_STORY_POINTS.map(sp => ({ value: String(sp), label: String(sp) })),
-  ]
-
   /** Поля, доступные только с правом управления: без него — предупреждение. */
   const guardedUpdate = (data: any) => {
     if (!requireManage()) return
@@ -1197,17 +1191,6 @@ export default function DevTaskDetailPage() {
           ) : (
             <span className="text-sm text-surface-400 dark:text-surface-500">—</span>
           )}
-        </PropRow>
-
-        <PropRow icon={Hash} label="Story points">
-          <NotionSelect
-            label="Story points"
-            value={task.storyPoints != null ? String(task.storyPoints) : ''}
-            options={pointsOptions}
-            canEdit={canManage}
-            placeholder="Не оценено"
-            onChange={v => guardedUpdate({ storyPoints: v ? Number(v) : null })}
-          />
         </PropRow>
 
         <PropRow icon={Tags} label="Теги">
