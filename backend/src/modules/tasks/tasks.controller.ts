@@ -28,11 +28,14 @@ export class TasksController {
     @Query('priority') priority?: TaskPriority,
     @Query('search') search?: string,
     @Query('deadlineBefore') deadlineBefore?: string,
+    /** Нижняя граница срока — сетка «Задачи недели» берёт ровно свою неделю,
+     *  иначе пришлось бы тянуть всю историю и отсекать её на клиенте. */
+    @Query('deadlineFrom') deadlineFrom?: string,
     @Query('scope') scope?: 'personal' | 'business' | 'general',
     @Request() req?,
   ) {
     return this.service.findAll({
-      projectId, assigneeId, status, priority, search, deadlineBefore, scope,
+      projectId, assigneeId, status, priority, search, deadlineBefore, deadlineFrom, scope,
       viewerId: req?.user?.id,
       viewerRole: req?.user?.role,
       viewerSecondaryRole: req?.user?.secondaryRole,

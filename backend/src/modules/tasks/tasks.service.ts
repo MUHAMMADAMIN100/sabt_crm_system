@@ -390,6 +390,8 @@ export class TasksService implements OnModuleInit {
     priority?: TaskPriority;
     search?: string;
     deadlineBefore?: string;
+    /** Нижняя граница срока (YYYY-MM-DD) — для недельной сетки. */
+    deadlineFrom?: string;
     /** Фильтр по scope: 'personal' | 'business' | 'general'. */
     scope?: 'personal' | 'business' | 'general';
     /** ID текущего пользователя — нужен для скрытия чужих PERSONAL-задач. */
@@ -424,6 +426,7 @@ export class TasksService implements OnModuleInit {
     if (filters.priority) qb.andWhere('t.priority = :priority', { priority: filters.priority });
     if (filters.search) qb.andWhere('t.title ILIKE :search', { search: `%${filters.search}%` });
     if (filters.deadlineBefore) qb.andWhere('t.deadline <= :deadline', { deadline: filters.deadlineBefore });
+    if (filters.deadlineFrom) qb.andWhere('t.deadline >= :deadlineFrom', { deadlineFrom: filters.deadlineFrom });
 
     // Фильтр по scope: явный фильтр от клиента.
     if (filters.scope) {

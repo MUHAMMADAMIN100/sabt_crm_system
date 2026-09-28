@@ -798,7 +798,7 @@ export class ContentPlanService {
 
     // Публикации — из собственного хранилища (content_plan_items), по publishDate.
     const pubs: any[] = await this.repo.manager.query(
-      `SELECT ci."projectId" AS "projectId", ci.id AS "itemId",
+      `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."assigneeId" AS "assigneeId",
               ci."contentType" AS "itemKind", ci.topic AS title, ci."scriptText" AS "scriptText",
               ci.status AS status, ci."taskId" AS "taskId",
               ci.caption AS caption, ci."fileLink" AS "fileLink",
@@ -817,7 +817,7 @@ export class ContentPlanService {
     // Авто-съёмки под рилсы — тоже content_plan_items, но со shootForItemId (= id рилса).
     // Отдельны от рилсов; двигаются независимо. reelId нужен для линии-связки на фронте.
     const shootItems: any[] = await this.repo.manager.query(
-      `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."shootForItemId" AS "reelId",
+      `SELECT ci."projectId" AS "projectId", ci.id AS "itemId", ci."assigneeId" AS "assigneeId", ci."shootForItemId" AS "reelId",
               ci."prepStage" AS "prepStage",
               ci.status AS status, ci."fileLink" AS "fileLink",
               to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS "changedAt",
@@ -866,6 +866,9 @@ export class ContentPlanService {
       })),
       ...pubs.map(p => ({
         id: `item:${p.itemId}`, itemId: p.itemId, kind: 'publication', date: p.date,
+        // Исполнитель нужен сетке «Задачи недели»: без него SMM-специалист
+        // выглядит незагруженным, хотя у него восемь рилсов за неделю.
+        assigneeId: p.assigneeId || null,
         projectId: p.projectId, projectName: nameById.get(p.projectId) || '',
         contentType: p.itemKind === 'reel' ? 'reel' : 'design',
         topic: p.title || null, scriptText: p.scriptText || null, status: p.status || undefined, taskId: p.taskId || null,
@@ -874,6 +877,7 @@ export class ContentPlanService {
       })),
       ...shootItems.map(s => ({
         id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot', date: s.date, changedAt: s.changedAt || null,
+        assigneeId: s.assigneeId || null,
         fileLink: s.fileLink || null,
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
         title: s.reelTopic || null, time: s.time || null,   // название родителя (рилс/пост) = название задачи подготовки
