@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
-import { MoreHorizontal, Plus, X, LogOut, User as UserIcon, ClipboardCheck, FolderKanban, Image as ImageIcon, KanbanSquare, BarChart3, FileText, CalendarRange } from 'lucide-react'
+import { MoreHorizontal, Plus, X, LogOut, User as UserIcon, ClipboardCheck, FolderKanban, Image as ImageIcon,
+  KanbanSquare, BarChart3, FileText, CalendarRange, Search, Wallet, TrendingUp, TrendingDown, Users,
+  Building2, Package, Activity, Settings } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
 import { canSeeSmmSection, canSeeDevSection, userCan } from '@/lib/permissions'
@@ -27,6 +29,7 @@ export default function BottomNav() {
   const items = useNavItems()
 
   const [more, setMore] = useState(false)
+  const [q, setQ] = useState('')
   const [fan, setFan] = useState(false)
   const [hidden, setHidden] = useState(false)
 
@@ -34,7 +37,7 @@ export default function BottomNav() {
   const rest = items.slice(PINNED)
 
   // Закрываем всё при переходе: иначе лист остаётся открытым над новой страницей.
-  useEffect(() => { setMore(false); setFan(false) }, [location.pathname])
+  useEffect(() => { setMore(false); setFan(false); setQ('') }, [location.pathname])
 
   // Панель уезжает вниз при прокрутке вперёд и возвращается при прокрутке
   // назад — на маленьком экране это заметная прибавка полезной высоты.
@@ -101,6 +104,37 @@ export default function BottomNav() {
     }
     return list.filter(l => userCan(user, l.perm))
   }, [user])
+
+  // Подразделы Финансов для шторки «Ещё». На компьютере в них заходят
+  // плитками с обзора, а на телефоне обзор — длинная простыня, и до
+  // «Зарплаты» или «Транзакций» приходилось прокручивать её целиком.
+  const financeLinks = useMemo(() => {
+    if (!userCan(user, 'finance.manage')) return []
+    return [
+      { to: '/finance', label: 'Обзор', icon: Wallet },
+      { to: '/finance/income', label: 'Доходы', icon: TrendingUp },
+      { to: '/finance/expense', label: 'Расходы', icon: TrendingDown },
+      { to: '/finance/planning', label: 'Планирование', icon: CalendarRange },
+      { to: '/finance/transactions', label: 'Транзакции', icon: FileText },
+      { to: '/finance/expense/salary', label: 'Зарплата', icon: Users },
+      { to: '/finance/expense/rent_subs', label: 'Аренда и подписки', icon: Building2 },
+      { to: '/finance/expense/debts', label: 'Долги', icon: BarChart3 },
+      { to: '/finance/inventory', label: 'Инвентарь', icon: Package },
+      { to: '/finance/activity', label: 'Активность', icon: Activity },
+      { to: '/finance/settings', label: 'Настройки финансов', icon: Settings },
+    ]
+  }, [user])
+
+  // Поиск по шторке: разделов вместе с подразделами больше двадцати, и
+  // пролистывать их глазами дольше, чем набрать два слога.
+  const match = (label: string) => {
+    const s = q.trim().toLowerCase()
+    return !s || label.toLowerCase().includes(s)
+  }
+  const restF = rest.filter(i => match(i.label))
+  const financeF = financeLinks.filter(l => match(l.label))
+  const devF = devLinks.filter(l => match(l.label))
+  const nothingFound = !!q.trim() && !restF.length && !financeF.length && !devF.length
 
   // Кнопка создания стоит в средней колонке, поэтому разделы делятся на две
   // части: два слева от неё, остальное справа.
@@ -190,45 +224,60 @@ export default function BottomNav() {
                 <button onClick={() => setMore(false)} className="ml-auto w-7 h-7 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 flex items-center justify-center"><X size={14} /></button>
               </div>
               <div className="px-2 pb-1">
-                {/* Рабочая смена — первой строкой и крупной кнопкой: начало
-                    и конец дня попадаются пальцем не глядя. */}
+                {/* Поиск: разделов с подразделами больше двадцати. */}
                 <div className="px-1 pb-2">
-                  <ShiftButton variant="sheet" />
+                  <label className="flex items-center gap-2.5 h-12 px-3 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800">
+                    <Search size={17} className="text-surface-400 shrink-0" />
+                    <span className="sr-only">Поиск по разделам</span>
+                    <input value={q} onChange={e => setQ(e.target.value)} placeholder="Найти раздел"
+                      className="flex-1 min-w-0 bg-transparent border-0 outline-none text-surface-900 dark:text-surface-100 placeholder:text-surface-400" />
+                    {q && (
+                      <button type="button" onClick={() => setQ('')} aria-label="Очистить поиск"
+                        className="w-7 h-7 rounded-lg bg-surface-200 dark:bg-surface-700 text-surface-500 flex items-center justify-center shrink-0">
+                        <X size={13} />
+                      </button>
+                    )}
+                  </label>
                 </div>
-                {rest.map(i => (
-                  <NavLink key={i.to} to={i.to} onClick={() => setMore(false)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-surface-800 dark:text-surface-200">
-                    <i.icon size={17} className="text-surface-400 shrink-0" />
-                    <b className="text-[13px] font-semibold flex-1">{i.label}</b>
-                    <span className="text-surface-300 dark:text-surface-600">›</span>
-                  </NavLink>
+                {/* Рабочая смена — крупной кнопкой: начало и конец дня
+                    попадаются пальцем не глядя. В поиске её не прячем. */}
+                {!q.trim() && (
+                  <div className="px-1 pb-2">
+                    <ShiftButton variant="sheet" />
+                  </div>
+                )}
+                {nothingFound && (
+                  <p className="px-3 py-6 text-center text-[13.5px] text-surface-400">
+                    Ничего не нашлось. Попробуйте короче — например, «зар» или «план».
+                  </p>
+                )}
+                {restF.length > 0 && <SheetGroup title="Разделы" />}
+                {restF.map(i => (
+                  <SheetLink key={i.to} to={i.to} icon={i.icon} label={i.label} onGo={() => setMore(false)} />
                 ))}
-                {devLinks.length > 0 && (
+                {financeF.length > 0 && <SheetGroup title="Финансы" />}
+                {financeF.map(l => (
+                  <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} end />
+                ))}
+                {devF.length > 0 && <SheetGroup title="Разработка" />}
+                {devF.map(l => (
+                  <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} />
+                ))}
+                {!q.trim() && (
                   <>
-                    <div className="px-3 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500">
-                      Разработка
-                    </div>
-                    {devLinks.map(l => (
-                      <NavLink key={l.to} to={l.to} onClick={() => setMore(false)}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-surface-800 dark:text-surface-200">
-                        <l.icon size={17} className="text-surface-400 shrink-0" />
-                        <b className="text-[13px] font-semibold flex-1">{l.label}</b>
-                        <span className="text-surface-300 dark:text-surface-600">›</span>
-                      </NavLink>
-                    ))}
+                    <NavLink to="/profile" onClick={() => setMore(false)}
+                      className="flex items-center gap-3 px-3 min-h-[48px] rounded-xl text-surface-800 dark:text-surface-200 border-t border-surface-100 dark:border-surface-800 mt-1 pt-3">
+                      <UserIcon size={18} className="text-surface-400 shrink-0" />
+                      <b className="text-[14px] font-semibold flex-1">{user?.name || 'Профиль'}</b>
+                      <span className="text-surface-300 dark:text-surface-600">›</span>
+                    </NavLink>
+                    <button onClick={() => { setMore(false); logout() }}
+                      className="w-full flex items-center gap-3 px-3 min-h-[48px] rounded-xl text-red-600 dark:text-red-400">
+                      <LogOut size={18} className="shrink-0" />
+                      <b className="text-[14px] font-semibold flex-1 text-left">Выйти</b>
+                    </button>
                   </>
                 )}
-                <NavLink to="/profile" onClick={() => setMore(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-surface-800 dark:text-surface-200 border-t border-surface-100 dark:border-surface-800 mt-1 pt-3">
-                  <UserIcon size={17} className="text-surface-400 shrink-0" />
-                  <b className="text-[13px] font-semibold flex-1">{user?.name || 'Профиль'}</b>
-                  <span className="text-surface-300 dark:text-surface-600">›</span>
-                </NavLink>
-                <button onClick={() => { setMore(false); logout() }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-600 dark:text-red-400">
-                  <LogOut size={17} className="shrink-0" />
-                  <b className="text-[13px] font-semibold flex-1 text-left">Выйти</b>
-                </button>
               </div>
             </div>
           )}
@@ -269,5 +318,39 @@ export default function BottomNav() {
         </button>
       </nav>
     </>
+  )
+}
+
+/** Заголовок группы в шторке «Ещё». */
+function SheetGroup({ title }: { title: string }) {
+  return (
+    <div className="px-3 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500">
+      {title}
+    </div>
+  )
+}
+
+/** Строка-ссылка в шторке. Высота 48 — по ней попадают пальцем не целясь;
+ *  текущий раздел подсвечен, иначе в списке из двадцати пунктов не понять,
+ *  где ты находишься. */
+function SheetLink({ to, icon: Icon, label, onGo, end }: {
+  to: string; icon: any; label: string; onGo: () => void; end?: boolean
+}) {
+  return (
+    <NavLink to={to} end={end} onClick={onGo}
+      className={({ isActive }) => clsx(
+        'flex items-center gap-3 px-3 min-h-[48px] rounded-xl',
+        isActive
+          ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300'
+          : 'text-surface-800 dark:text-surface-200',
+      )}>
+      {({ isActive }) => (
+        <>
+          <Icon size={18} className={clsx('shrink-0', isActive ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400')} />
+          <b className="text-[14px] font-semibold flex-1">{label}</b>
+          <span className="text-surface-300 dark:text-surface-600">›</span>
+        </>
+      )}
+    </NavLink>
   )
 }
