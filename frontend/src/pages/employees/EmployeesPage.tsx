@@ -5,9 +5,10 @@ import { employeesApi, usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import TeamActivity from '@/pages/team-activity/TeamActivityPage'
 import { getRoleLabel } from '@/lib/permissions'
+import WeekTasks from './WeekTasks'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, Network, Activity, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal } from 'lucide-react'
+import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, Network, Activity, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal, CalendarRange } from 'lucide-react'
 import OrgChart from './OrgChart'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -20,7 +21,7 @@ import EmployeeKpiCard, { KpiPeriod, KPI_PERIOD_LABELS } from '@/components/kpi/
 export default function EmployeesPage() {
   const [search, setSearch] = useState('')
   const [position, setPosition] = useState('')
-  const [view, setView] = useState<'cards' | 'table' | 'org' | 'activity'>('cards')
+  const [view, setView] = useState<'cards' | 'table' | 'org' | 'activity' | 'week'>('cards')
   // Ленту событий и смены видят те же, кому была доступна страница
   // «Активность команды»: основатель и админ.
   const meRole = useAuthStore(s => s.user?.role)
@@ -235,6 +236,13 @@ export default function EmployeesPage() {
             <button onClick={() => setView('cards')} title="Карточки" className={clsx('p-1.5 rounded-lg', view==='cards' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><LayoutGrid size={16}/></button>
             <button onClick={() => setView('table')} title="Таблица" className={clsx('p-1.5 rounded-lg', view==='table' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><List size={16}/></button>
             <button onClick={() => setView('org')} title="Оргструктура" className={clsx('p-1.5 rounded-lg', view==='org' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><Network size={16}/></button>
+            {/* «Задачи недели» — экран руководства: кто чем занят и кто не
+                загружен. Сотрудникам он не нужен, свои задачи они видят
+                в собственной панели. */}
+            {canManage && (
+              <button onClick={() => setView('week')} title="Задачи недели"
+                className={clsx('p-1.5 rounded-lg', view==='week' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><CalendarRange size={16}/></button>
+            )}
             {/* «Активность команды» переехала сюда отдельной страницей не
                 осталась: смены и лента событий — это про людей, им место
                 рядом со списком сотрудников (решение владельца, 19.09.2026). */}
@@ -248,8 +256,9 @@ export default function EmployeesPage() {
       </div>
 
       {view === 'activity' && <TeamActivity />}
+      {view === 'week' && <WeekTasks />}
 
-      {view !== 'activity' && (
+      {view !== 'activity' && view !== 'week' && (
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
@@ -288,7 +297,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {view === 'activity' ? null : !employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'org' ? (
+      {view === 'activity' || view === 'week' ? null : !employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'org' ? (
         <OrgChart employees={employees} />
       ) : view === 'cards' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
