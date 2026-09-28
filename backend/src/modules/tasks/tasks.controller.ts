@@ -142,6 +142,14 @@ export class TasksController {
     return this.service.returnTask(id, req.user, reason || 'Требует доработки');
   }
 
+  /** «Повторить прошлую неделю» из сетки «Задачи недели»: копии задач
+   *  предыдущей недели на указанную. weekStart — понедельник целевой. */
+  @Post('repeat-week')
+  @RequirePerm('tasks.bulk')
+  repeatWeek(@Body('weekStart') weekStart: string, @Request() req) {
+    return this.service.repeatWeek(weekStart, req.user.id);
+  }
+
   @Post('bulk')
   @RequirePerm('tasks.bulk')
   bulk(

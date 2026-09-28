@@ -111,6 +111,16 @@ export class Task {
   @Column({ default: false })
   fromFounder: boolean;
 
+  /** «Повторять каждую неделю» — галочка в форме выдачи. По понедельникам
+   *  задание создаёт копию на новую неделю со сдвигом срока на 7 дней. */
+  @Column({ default: false })
+  repeatWeekly: boolean;
+
+  /** У копии — ссылка на задачу-источник. По ней задание понимает, что копия
+   *  за эту неделю уже создана, и не плодит дубли. */
+  @Column({ type: 'uuid', nullable: true })
+  repeatedFromId: string | null;
+
   /** Скоуп задачи (личная / бизнес / общая). См. enum TaskScope.
    *  Личные задачи видны ТОЛЬКО создателю — это его приватные заметки. */
   @Column({ type: 'enum', enum: TaskScope, default: TaskScope.BUSINESS })

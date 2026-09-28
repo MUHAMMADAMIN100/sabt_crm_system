@@ -10,6 +10,8 @@ export class CreateTaskDto {
   /** Если true — задача прямая от основателя, шлёт усиленное уведомление
    *  исполнителю и помечается специальным баджем в UI. */
   @ApiProperty({ required: false }) @IsOptional() @IsBoolean() fromFounder?: boolean;
+  /** Повторять каждую неделю: копия появится в тот же день следующей недели. */
+  @ApiProperty({ required: false }) @IsOptional() @IsBoolean() repeatWeekly?: boolean;
   /** Скоуп задачи: personal (только создатель видит), business (default),
    *  general (видит вся компания). Используется основателем для разделения
    *  личных заметок от рабочих задач. */

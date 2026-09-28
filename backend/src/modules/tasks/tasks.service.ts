@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, Between, Not } from 'typeorm';
 import { Task, TaskStatus, TaskPriority, TaskKind, TASK_CLOSED_FOR_OVERDUE } from './task.entity';
 
 /** Вся компания живёт по Душанбе — даты в напоминаниях считаем в этой зоне. */
@@ -1201,6 +1201,110 @@ export class TasksService implements OnModuleInit {
    *   - задачи где он в task_assignees (multi-assignee workflow)
    *   - его личные заметки из календаря (scope=personal, createdById=я)
    *  Сортировка по дедлайну (NULL в конце). */
+  /** Дата + n дней, обе стороны в 'YYYY-MM-DD'. Сроки у задач — DATE, без
+   *  времени и часового пояса, поэтому и считаем по строке. */
+  private shiftDate(d: string, days: number): string {
+    const [y, m, dd] = d.slice(0, 10).split('-').map(Number);
+    const x = new Date(Date.UTC(y, m - 1, dd));
+    x.setUTCDate(x.getUTCDate() + days);
+    return x.toISOString().slice(0, 10);
+  }
+
+  /** Понедельник недели, в которую попадает дата. */
+  private mondayOf(d: string): string {
+    const [y, m, dd] = d.slice(0, 10).split('-').map(Number);
+    const x = new Date(Date.UTC(y, m - 1, dd));
+    x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7));
+    return x.toISOString().slice(0, 10);
+  }
+
+  /**
+   * Копия задачи на неделю вперёд. Возвращает null, если копия уже есть —
+   * повтор запускается и кнопкой, и по расписанию, и дважды создавать одно
+   * и то же нельзя.
+   *
+   * Корень цепочки (repeatedFromId) сохраняется у всех копий: так задача,
+   * повторённая двадцать раз, остаётся одной цепочкой, а не деревом.
+   */
+  private async cloneToNextWeek(task: Task, createdById: string): Promise<Task | null> {
+    if (!task.deadline) return null;
+    const deadline = this.shiftDate(String(task.deadline), 7);
+    const rootId = task.repeatedFromId || task.id;
+
+    const exists = await this.repo.findOne({
+      where: { repeatedFromId: rootId, deadline: deadline as any },
+      select: ['id'] as any,
+    });
+    if (exists) return null;
+
+    const copy = this.repo.create({
+      title: task.title,
+      description: task.description,
+      projectId: task.projectId,
+      assigneeId: task.assigneeId,
+      priority: task.priority,
+      scope: task.scope,
+      kind: task.kind,
+      fromFounder: task.fromFounder,
+      repeatWeekly: task.repeatWeekly,
+      repeatedFromId: rootId,
+      deadline: deadline as any,
+      status: TaskStatus.NEW,
+      createdById,
+    });
+    const saved = await this.repo.save(copy);
+    // Соисполнители переносятся вместе с задачей: без них копия достаётся
+    // одному человеку, хотя на прошлой неделе работали вдвоём.
+    const helpers = await this.loadAssignees([task.id]);
+    const ids = (helpers.get(task.id) || []).map((u: any) => u.id).filter((id: string) => id !== task.assigneeId);
+    if (ids.length) await this.syncAssignees(saved.id, [saved.assigneeId, ...ids].filter(Boolean) as string[]);
+    return saved;
+  }
+
+  /**
+   * «Повторить прошлую неделю» — кнопка в сетке «Задачи недели».
+   * Копирует задачи предыдущей недели на указанную (weekStart — понедельник
+   * целевой недели). Отменённые не копируем: их закрыли намеренно.
+   */
+  async repeatWeek(weekStart: string, actorId: string) {
+    const target = this.mondayOf(weekStart);
+    const from = this.shiftDate(target, -7);
+    const to = this.shiftDate(target, -1);
+
+    const source = await this.repo.find({
+      where: { deadline: Between(from, to) as any, status: Not(TaskStatus.CANCELLED) },
+    });
+    let created = 0, skipped = 0;
+    for (const t of source) {
+      if (!t.assigneeId) { skipped += 1; continue; }
+      const copy = await this.cloneToNextWeek(t, actorId);
+      if (copy) created += 1; else skipped += 1;
+    }
+    this.logger.log(`repeatWeek ${from}..${to} → ${target}: создано ${created}, пропущено ${skipped}`);
+    return { week: target, created, skipped };
+  }
+
+  /**
+   * Еженедельный повтор: задачи с галочкой «повторять каждую неделю»
+   * переносятся на новую неделю. Запускается по понедельникам.
+   */
+  async runWeeklyRepeats(today: string) {
+    const thisMonday = this.mondayOf(today);
+    const from = this.shiftDate(thisMonday, -7);
+    const to = this.shiftDate(thisMonday, -1);
+
+    const source = await this.repo.find({
+      where: { repeatWeekly: true, deadline: Between(from, to) as any, status: Not(TaskStatus.CANCELLED) },
+    });
+    let created = 0;
+    for (const t of source) {
+      if (!t.assigneeId) continue;
+      const copy = await this.cloneToNextWeek(t, t.createdById);
+      if (copy) created += 1;
+    }
+    return { week: thisMonday, created, source: source.length };
+  }
+
   async getMyTasks(userId: string) {
     const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')

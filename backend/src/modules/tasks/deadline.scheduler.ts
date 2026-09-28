@@ -11,6 +11,7 @@ import { NotificationType } from '../notifications/notification.entity'
 import { MailService } from '../mail/mail.service'
 import { TelegramService } from '../telegram/telegram.service'
 import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity'
+import { TasksService } from './tasks.service'
 
 const STATUS_LABELS: Record<string, string> = {
   new: 'Новая',
@@ -71,6 +72,10 @@ export class DeadlineScheduler implements OnModuleInit {
     private notificationsService: NotificationsService,
     private mailService: MailService,
     private telegramService: TelegramService,
+    /** Повтор задач недели живёт в сервисе задач — расписание только
+     *  дёргает его по понедельникам. Оба провайдера в одном модуле,
+     *  кольцевой зависимости нет. */
+    private tasksService: TasksService,
   ) {}
 
   // ── 1. Deadline reminder (daily at 9am) ───────────────────────────────────
@@ -703,6 +708,23 @@ export class DeadlineScheduler implements OnModuleInit {
   /** Every Monday 08:00 Dushanbe: for every active employee, send their weekly
    *  "what I did last 7 days" digest to them + to all admin/founder/PM users
    *  (one consolidated letter per recipient, employees grouped inside). */
+  /**
+   * Повторяющиеся задачи: по понедельникам создаём копии на новую неделю.
+   * Раньше дайджеста — чтобы в сводке уже были задачи этой недели.
+   */
+  @Cron('10 6 * * 1', { timeZone: 'Asia/Dushanbe' })
+  async weeklyRepeats() {
+    try {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dushanbe' })
+      const res = await this.tasksService.runWeeklyRepeats(today)
+      if (res.created > 0) {
+        this.logger.log(`Weekly repeats ${res.week}: создано ${res.created} из ${res.source}`)
+      }
+    } catch (e: any) {
+      this.logger.warn(`Weekly repeats failed: ${e?.message}`)
+    }
+  }
+
   @Cron('0 8 * * 1', { timeZone: 'Asia/Dushanbe' })
   async weeklyDigest() {
     this.logger.log('Running weekly digest cron (Monday 08:00 Dushanbe)...')
