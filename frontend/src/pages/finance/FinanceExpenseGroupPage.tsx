@@ -316,7 +316,10 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                 <span className="mini muted nowrap" style={{ marginLeft: 'auto' }}>{paidCount} / {list.length} выплачено</span>
               </div>
             )}
-            <div className="table-wrap fin-wide-table">
+            {/* На телефоне ведомость превращается в карточки: десять колонок
+                в 390 px не помещаются. Итог по категории и история месяца
+                остаются видимыми — их правила ниже в finance.css. */}
+            <div className="table-wrap fin-wide-table fin-mobile-cards fin-salary-table">
               <table style={{ tableLayout: 'fixed', width: '100%' }}>
                 <colgroup>
                   <col style={{ width: '20%' }} />{/* ФИО */}
@@ -370,24 +373,24 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                         onClick={(event) => toggleEmployeeHistoryFromRow(event, e.id)}
                         onKeyDown={(event) => toggleEmployeeHistoryFromKeyboard(event, e.id)}
                       >
-                        <td>
+                        <td data-label="" className="fin-name-cell">
                           <b className="fin-employee-name" title={e.name}>{shortName(e.name)}</b>
                         </td>
-                        <td className="muted fin-role-cell">{e.role ?? '—'}</td>
-                        <td className="num">{money(e.salary)}</td>
-                        <td className="num">{Number(e.advance) ? money(e.advance) : <span className="muted">—</span>}</td>
-                        <td className="num">{Number(e.bonus) ? money(e.bonus) : <span className="muted">—</span>}</td>
-                        <td className="num">{Number(e.fine) ? <span style={{ color: 'var(--red)' }}>{money(e.fine)}</span> : <span className="muted">—</span>}</td>
-                        <td className="num">{Number(e.vacation) ? <span style={{ color: 'var(--red)' }}>{money(e.vacation)}</span> : <span className="muted">—</span>}</td>
-                        <td className="num">{isPaid ? <span className="muted">—</span> : <b style={{ color: 'var(--accent)' }}>{money(e.toPay)}</b>}</td>
-                        <td>
+                        <td data-label="Должность" className="muted fin-role-cell">{e.role ?? '—'}</td>
+                        <td data-label="ЗП" className="num">{money(e.salary)}</td>
+                        <td data-label="Аванс" className="num">{Number(e.advance) ? money(e.advance) : <span className="muted">—</span>}</td>
+                        <td data-label="Бонус" className="num">{Number(e.bonus) ? money(e.bonus) : <span className="muted">—</span>}</td>
+                        <td data-label="Штраф" className="num">{Number(e.fine) ? <span style={{ color: 'var(--red)' }}>{money(e.fine)}</span> : <span className="muted">—</span>}</td>
+                        <td data-label="Отпускные" className="num">{Number(e.vacation) ? <span style={{ color: 'var(--red)' }}>{money(e.vacation)}</span> : <span className="muted">—</span>}</td>
+                        <td data-label="К выплате" className="num">{isPaid ? <span className="muted">—</span> : <b style={{ color: 'var(--accent)' }}>{money(e.toPay)}</b>}</td>
+                        <td data-label="" className="fin-pay-cell">
                           {isPaid
                             ? <span className="flex"><span className="badge ok" title={e.paidAt ? `Выплачено ${formatDate(e.paidAt)} — месяц зафиксирован` : 'Месяц закрыт'}><FinIcon name="check" size={13} /> выплачено</span><button className="btn ghost sm" title="Отменить выплату" onClick={() => cancelSalaryMonth(e)}><FinIcon name="undo" size={15} /></button></span>
                             : nothingToPay
                               ? <span className="badge" title={`Оклад ${money(e.salary)} полностью закрыт удержаниями — выплачивать нечего`}>к выплате 0</span>
                               : <button className="btn primary sm" onClick={() => setPayFor(e)}>Выплатить</button>}
                         </td>
-                        <td className="num"><button className="btn ghost sm" title="Редактировать" onClick={() => openEmp(e)}><FinIcon name="edit" size={15} /></button></td>
+                        <td data-label="" className="num fin-edit-cell"><button className="btn ghost sm" title="Редактировать" onClick={() => openEmp(e)}><FinIcon name="edit" size={15} /></button></td>
                       </tr>
                       {historyOpen && (
                         <tr className="fin-employee-history-row">
@@ -1042,7 +1045,9 @@ function SubsList({ ym }: { ym: string }) {
         <button className="btn primary" onClick={() => setEditFor('new')}><FinIcon name="plus" size={16} /> Добавить расход</button>
       </div>
 
-      <div className="table-wrap fin-wide-table">
+      {/* На телефоне таблица превращается в карточки (fin-mobile-cards, ≤720px):
+          шесть колонок в 390 px не помещаются, и строку листали вбок. */}
+      <div className="table-wrap fin-wide-table fin-mobile-cards fin-subs-table">
         <table>
           {/* Колонка действий держит до трёх кнопок («оплатить» — с подписью). */}
           <thead><tr><th style={{ minWidth: 170 }}>Позиция</th><th>Тип</th><th className="num" style={{ width: 110 }}>Сумма/мес</th><th style={{ width: 110 }}>День оплаты</th><th style={{ minWidth: 200 }}>Статус месяца</th><th style={{ width: 190 }} /></tr></thead>
@@ -1055,10 +1060,10 @@ function SubsList({ ym }: { ym: string }) {
               const paidDate = s.lastPaidDate ?? s.paidMark;
               return (
                 <tr key={s.id} style={{ opacity: s.active ? 1 : 0.5 }} onDoubleClick={() => setEditFor(s)}>
-                  <td><b>{s.name}</b></td>
-                  <td className="muted">{s.kind === 'rent' ? 'Аренда' : 'Подписка'}</td>
-                  <td className="num">{money(s.amount)}</td>
-                  <td className="muted nowrap">{(() => {
+                  <td data-label="Позиция"><b>{s.name}</b></td>
+                  <td data-label="Тип" className="muted">{s.kind === 'rent' ? 'Аренда' : 'Подписка'}</td>
+                  <td data-label="Сумма/мес" className="num">{money(s.amount)}</td>
+                  <td data-label="День оплаты" className="muted nowrap">{(() => {
                     if (s.dueDate) {
                       const day = Number(String(s.dueDate).slice(8, 10));
                       const [yy, mm] = ym.split('-').map(Number);
@@ -1067,7 +1072,7 @@ function SubsList({ ym }: { ym: string }) {
                     }
                     return s.dueDay ? `до ${s.dueDay}-го` : '—';
                   })()}</td>
-                  <td>
+                  <td data-label="Статус месяца">
                     {isPaid ? (
                       <span className="flex">
                         <span className="badge ok"><FinIcon name="check" size={13} /> оплачено</span>
@@ -1081,7 +1086,7 @@ function SubsList({ ym }: { ym: string }) {
                       </span>
                     ) : <span className="badge wait">не оплачено</span>}
                   </td>
-                  <td className="num">
+                  <td data-label="" className="num">
                     <span className="flex" style={{ justifyContent: 'flex-end' }}>
                       {isPaid
                         ? <button className="btn ghost sm" disabled={busyId === s.id} title="Отменить оплату" onClick={() => cancelMonth(s)}><FinIcon name="undo" size={15} /></button>

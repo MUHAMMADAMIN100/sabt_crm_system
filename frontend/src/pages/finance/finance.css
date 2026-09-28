@@ -2173,6 +2173,43 @@
     font-weight: 550;
     text-align: left;
   }
+  /* ── Ведомость зарплаты и подписки на телефоне ──────────────────────
+     Общее правило карточек делает из каждой строки сетку в две колонки.
+     Этим двум таблицам нужны три поправки, иначе карточка ломается. */
+
+  /* 1. Имя, кнопка выплаты и правка — во всю ширину карточки, без подписи:
+        «ФИО» и «Выплатить» в половинке колонки не помещаются. */
+  .fin-root .fin-salary-table tbody > tr > td.fin-name-cell,
+  .fin-root .fin-salary-table tbody > tr > td.fin-pay-cell,
+  .fin-root .fin-subs-table tbody > tr > td[data-label="Позиция"],
+  .fin-root .fin-subs-table tbody > tr > td[data-label="Статус месяца"] { grid-column: 1 / -1; }
+  .fin-root .fin-salary-table tbody > tr > td.fin-name-cell { padding-bottom: 2px; }
+  .fin-root .fin-salary-table tbody > tr > td.fin-name-cell .fin-employee-name { font-size: 15px; }
+  .fin-root .fin-salary-table tbody > tr > td.fin-pay-cell,
+  .fin-root .fin-salary-table tbody > tr > td.fin-edit-cell,
+  .fin-root .fin-subs-table tbody > tr > td[data-label=""] { justify-content: flex-end; }
+  .fin-root .fin-salary-table tbody > tr > td.fin-pay-cell .btn,
+  .fin-root .fin-subs-table tbody > tr > td[data-label=""] .btn { min-height: 44px; }
+
+  /* 2. История месяца раскрывается под карточкой — это не строка-карточка,
+        а вложенный блок, и делить его на две колонки нельзя. */
+  .fin-root .fin-salary-table tbody > tr.fin-employee-history-row {
+    display: block; width: 100%; padding: 0; border: 0; background: transparent; border-radius: 0;
+  }
+  .fin-root .fin-salary-table tbody > tr.fin-employee-history-row > td { display: block; width: 100%; padding: 0; }
+  .fin-root .fin-salary-table tbody > tr.fin-employee-history-row > td::before { content: none; }
+
+  /* 3. Итог по категории общим правилом прятался вместе со всеми tfoot —
+        а это цифра, ради которой в ведомость и заходят. Возвращаем карточкой. */
+  .fin-root .fin-salary-table tfoot { display: block; }
+  .fin-root .fin-salary-table tfoot > tr {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 16px;
+    background: var(--surface-2);
+  }
+  .fin-root .fin-salary-table tfoot > tr > td { display: block; padding: 0; border: 0; background: transparent !important; }
+  .fin-root .fin-salary-table tfoot > tr > td:empty { display: none; }
+
   .fin-root .fin-mobile-cards tbody > tr > td[data-label="Название"],
   .fin-root .fin-mobile-cards tbody > tr > td[data-label="Описание"],
   .fin-root .fin-mobile-cards tbody > tr > td[data-label="Кратко"] { grid-column: 1 / -1; }
