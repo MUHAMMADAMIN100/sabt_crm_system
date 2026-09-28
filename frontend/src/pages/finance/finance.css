@@ -2572,3 +2572,58 @@
 @media (max-width: 900px) {
   .fin-root .pcal-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ─── Долги на телефоне: карточка вместо матрицы «долг × месяцы» ─────────
+   Шесть месяцев колонками в 390 px не помещаются, а подписи к ячейкам дали бы
+   шесть строк «сен 26: 2 350». Поэтому окно месяцев — полоска сегментов,
+   ближайший платёж — строкой с кнопкой, раскладка — по нажатию. */
+.fin-root .fin-debt-cards { display: flex; flex-direction: column; gap: 10px; }
+.fin-root .fin-debt-card {
+  border: 1px solid var(--border); border-radius: 16px; background: var(--surface);
+  padding: 13px 14px; display: flex; flex-direction: column; gap: 8px;
+}
+.fin-root .fin-debt-head {
+  display: flex; align-items: baseline; gap: 10px; min-height: 44px;
+  border: 0; background: none; padding: 0; text-align: left; cursor: pointer; color: var(--text);
+}
+.fin-root .fin-debt-head b { font-size: 16px; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .fin-debt-head .num { margin-left: auto; font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* Окно месяцев: цвет сегмента — состояние, подпись — месяц. */
+.fin-root .fin-debt-year { display: flex; gap: 4px; }
+.fin-root .fin-debt-year .seg { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.fin-root .fin-debt-year .seg i { width: 100%; height: 18px; border-radius: 5px; border: 1px solid var(--border); background: transparent; }
+.fin-root .fin-debt-year .seg em { font-size: 10px; font-style: normal; color: var(--muted); white-space: nowrap; }
+.fin-root .fin-debt-year .seg.paid i { background: var(--green-plan); border-color: var(--green); }
+.fin-root .fin-debt-year .seg.plan i { background: var(--surface-2); border-color: var(--border); }
+.fin-root .fin-debt-year .seg.now i { box-shadow: 0 0 0 2px var(--accent-soft); }
+.fin-root .fin-debt-year .seg.now em { color: var(--accent); font-weight: 700; }
+
+.fin-root .fin-debt-next {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.fin-root .fin-debt-next .num { margin-left: auto; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.fin-root .fin-debt-next .btn { min-height: 44px; }
+
+.fin-root .fin-debt-more {
+  align-self: flex-start; min-height: 44px; border: 0; background: none; padding: 0;
+  color: var(--accent); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.fin-root .fin-debt-plan { display: flex; flex-direction: column; gap: 7px; }
+.fin-root .fin-debt-plan-row {
+  display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  min-height: 52px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 13px;
+  background: var(--surface-2); cursor: pointer; text-align: left; color: var(--text);
+}
+.fin-root .fin-debt-plan-row .m { font-size: 14px; font-weight: 600; text-transform: capitalize; }
+.fin-root .fin-debt-plan-row .badge { justify-self: start; }
+.fin-root .fin-debt-plan-row .num { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.fin-root .fin-debt-add {
+  min-height: 48px; border: 1px dashed var(--border); border-radius: 13px; background: transparent;
+  color: var(--accent); font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.fin-root .fin-debt-total {
+  flex-direction: row; align-items: baseline; gap: 10px; background: var(--surface-2);
+}
+.fin-root .fin-debt-total b { margin-left: auto; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }

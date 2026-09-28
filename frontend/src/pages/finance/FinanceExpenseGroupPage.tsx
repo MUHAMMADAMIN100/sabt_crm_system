@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
 import { money, currentYm, todayISO, formatDate, monthLabel, shiftYm, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP, useYmParam, salaryComment, withYm } from './finlib';
 import { FinLoading, FinLoadError, FinModal, useModalKeys, finConfirm, invalidateFinance } from './FinKit';
+import useNarrow from '@/hooks/useNarrow';
 import { EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
@@ -1204,6 +1205,9 @@ function SubscriptionPaymentModal({ sub, ym, onClose }: { sub: any; ym: string; 
 // ─── 4.4 Долги ───────────────────────────────────────────
 
 function DebtsList({ ym }: { ym: string }) {
+  // Матрицу «долг × месяцы» на телефоне подписями ячеек не спасти: карточка
+  // превратилась бы в список из шести строк «сентябрь: 2 350». Там свой вид.
+  const narrow = useNarrow(720);
   const [start, setStart] = useState<string | null>(null);
   const [cellFor, setCellFor] = useState<{ debt: any; ym: string; payment?: any } | null>(null);
   const [debtFor, setDebtFor] = useState<any | 'new' | null>(null);
@@ -1243,6 +1247,18 @@ function DebtsList({ ym }: { ym: string }) {
 
       {rows.length === 0 ? (
         <div className="card empty"><div className="big"><FinIcon name="checkCircle" size={30} /></div>Долгов нет — нажмите «＋ Долг»</div>
+      ) : narrow ? (
+        <div className="fin-debt-cards">
+          {rows.map((r: any) => (
+            <DebtCard key={r.debt.id} row={r} months={months}
+              onPay={(cellYm, payment) => setCellFor({ debt: r.debt, ym: cellYm, payment })}
+              onEdit={() => setDebtFor(r.debt)} />
+          ))}
+          <div className="fin-debt-card fin-debt-total">
+            <span>Итого по долгам</span>
+            <b>{money(totals.total)}</b>
+          </div>
+        </div>
       ) : (
         <div className="table-wrap fin-wide-table">
           <table>
@@ -1426,6 +1442,94 @@ function DebtCellModal({ debt, ym, payment, onClose }: { debt: any; ym: string; 
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Долг на телефоне. Матрица «долг × шесть месяцев» в 390 px не помещается,
+ * а подписи к ячейкам дали бы карточку из шести строк «сен 26: 2 350» —
+ * формально не таблица, но читать невозможно. Поэтому свой вид:
+ * итог и остаток сверху, месяцы окна — полоской, ближайший платёж с кнопкой
+ * «Погасить», а помесячная раскладка раскрывается по нажатию и показывает
+ * только заполненные месяцы (пустые на компьютере — ячейки с «плюсом»,
+ * на телефоне они съели бы весь экран).
+ */
+function DebtCard({ row, months, onPay, onEdit }: {
+  row: any; months: string[];
+  onPay: (ym: string, payment?: any) => void; onEdit: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const cells: any[] = row.cells ?? [];
+  const byYm = new Map<string, any>(cells.map((c: any) => [c.ym, c] as [string, any]));
+  const stateOf = (m: string) => {
+    const plans = byYm.get(m)?.plans ?? [];
+    if (!plans.length) return 'none';
+    return plans.every((p: any) => p.status === 'received') ? 'paid' : 'plan';
+  };
+  // Ближайшее, что предстоит заплатить: первый месяц окна с неоплаченным платежом.
+  let next: { ym: string; payment: any } | null = null;
+  for (const m of months) {
+    const p = (byYm.get(m)?.plans ?? []).find((x: any) => x.status !== 'received');
+    if (p) { next = { ym: m, payment: p }; break; }
+  }
+  const filled = cells.filter((c: any) => (c.plans ?? []).length > 0);
+  const addYm = months.includes(currentYm()) ? currentYm() : (months[0] ?? currentYm());
+
+  return (
+    <div className="fin-debt-card">
+      <button type="button" className="fin-debt-head" onClick={onEdit}>
+        <b>{row.debt.name}</b>
+        <span className="num">{money(row.debt.totalAmount)}</span>
+      </button>
+
+      <div className="progress"><i style={{ width: (row.progress ?? 0) + '%', background: 'var(--amber)' }} /></div>
+      <span className="mini muted">осталось {money(row.remaining)} из {money(row.debt.totalAmount)}</span>
+
+      <div className="fin-debt-year">
+        {months.map((m) => (
+          <span key={m} className={`seg ${stateOf(m)}${m === currentYm() ? ' now' : ''}`}>
+            <i />
+            <em>{monthLabel(m).split(' ')[0]}</em>
+          </span>
+        ))}
+      </div>
+
+      <div className="fin-debt-next">
+        {next ? (
+          <>
+            <span className="mini muted">ближайший платёж · {monthLabel(next.ym)}</span>
+            <b className="num">{money(next.payment.amount)}</b>
+            <button className="btn sm" onClick={() => onPay(next!.ym, next!.payment)}>Погасить</button>
+          </>
+        ) : (
+          <>
+            <span className="mini muted">в этом окне платежей нет</span>
+            <button className="btn ghost sm" onClick={() => onPay(addYm)}>Добавить платёж</button>
+          </>
+        )}
+      </div>
+
+      {filled.length > 0 && (
+        <button type="button" className="fin-debt-more" onClick={() => setOpen((v) => !v)}>
+          {open ? 'Скрыть платежи' : `Платежи по месяцам · ${filled.length}`}
+        </button>
+      )}
+
+      {open && (
+        <div className="fin-debt-plan">
+          {filled.map((c: any) => (c.plans ?? []).map((p: any) => (
+            <button key={p.id} type="button" className="fin-debt-plan-row" onClick={() => onPay(c.ym, p)}>
+              <span className="m">{monthLabel(c.ym)}</span>
+              <span className={'badge ' + (p.status === 'received' ? 'ok' : 'wait')}>
+                {p.status === 'received' ? 'оплачено' : 'ждёт оплаты'}
+              </span>
+              <span className="num">{money(p.amount)}</span>
+            </button>
+          )))}
+          <button type="button" className="fin-debt-add" onClick={() => onPay(addYm)}>+ Добавить платёж</button>
+        </div>
+      )}
     </div>
   );
 }
