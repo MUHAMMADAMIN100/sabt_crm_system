@@ -598,7 +598,7 @@ export default function ClientsPage() {
       ) : (
         <>
         <div className="card p-0 overflow-x-auto animate-fade-in stagger-rows" style={{ WebkitOverflowScrolling: 'touch' }}>
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full md:min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-surface-100 dark:border-surface-700 text-left">
                 <th className="px-2 sm:px-3 py-3 text-xs font-semibold text-surface-400 dark:text-surface-500 w-10 text-center">#</th>
@@ -684,6 +684,13 @@ export default function ClientsPage() {
                           </span>
                         )}
                       </div>
+                      {l.contactPhone && (
+                        <a href={`tel:${String(l.contactPhone).replace(/[^+\d]/g, '')}`}
+                          onClick={e => e.stopPropagation()}
+                          className="md:hidden mt-1.5 inline-flex items-center gap-2 min-h-[44px] px-3 rounded-xl border border-surface-200 dark:border-surface-700 text-primary-600 dark:text-primary-400 font-semibold">
+                          <Phone size={15} /> {l.contactPhone}
+                        </a>
+                      )}
                       {l.sphere && <div className="text-[11px] text-surface-400 dark:text-surface-500 mt-0.5">{l.sphere}</div>}
                       {l.problem && <div className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5 italic truncate max-w-[200px]">{l.problem}</div>}
                       {/* mobile: contact inline */}
