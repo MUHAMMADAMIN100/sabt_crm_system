@@ -2180,6 +2180,8 @@
   /* 1. Имя, кнопка выплаты и правка — во всю ширину карточки, без подписи:
         «ФИО» и «Выплатить» в половинке колонки не помещаются. */
   .fin-root .fin-salary-table tbody > tr > td.fin-name-cell,
+  .fin-root .fin-simple-table tbody > tr > td.fin-name-cell,
+  .fin-root .fin-simple-table tbody > tr > td[data-label="Комментарий"],
   .fin-root .fin-salary-table tbody > tr > td.fin-pay-cell,
   .fin-root .fin-subs-table tbody > tr > td[data-label="Позиция"],
   .fin-root .fin-subs-table tbody > tr > td[data-label="Статус месяца"] { grid-column: 1 / -1; }
@@ -2573,7 +2575,8 @@
   .fin-root .pcal-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* ─── Долги на телефоне: карточка вместо матрицы «долг × месяцы» ─────────
+/* ─── Матрицы на телефоне: карточка вместо «строка × месяцы» ────────────
+   Общий блок для долгов и обслуживания сайтов.
    Шесть месяцев колонками в 390 px не помещаются, а подписи к ячейкам дали бы
    шесть строк «сен 26: 2 350». Поэтому окно месяцев — полоска сегментов,
    ближайший платёж — строкой с кнопкой, раскладка — по нажатию. */
@@ -2596,6 +2599,9 @@
 .fin-root .fin-debt-year .seg em { font-size: 10px; font-style: normal; color: var(--muted); white-space: nowrap; }
 .fin-root .fin-debt-year .seg.paid i { background: var(--green-plan); border-color: var(--green); }
 .fin-root .fin-debt-year .seg.plan i { background: var(--surface-2); border-color: var(--border); }
+/* Пропущенный месяц — единственное красное в карточке: всё остальное
+   нейтральное, и просрочка видна сразу. */
+.fin-root .fin-debt-year .seg.over i { background: var(--red-plan); border-color: var(--red); }
 .fin-root .fin-debt-year .seg.now i { box-shadow: 0 0 0 2px var(--accent-soft); }
 .fin-root .fin-debt-year .seg.now em { color: var(--accent); font-weight: 700; }
 

@@ -10,6 +10,7 @@ import MonthNav from './MonthNav';
 import { FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinanceAll } from './FinKit';
 import { ProjectFormModal } from './FinForms';
 import { financeApi } from '@/services/api.service';
+import useNarrow from '@/hooks/useNarrow';
 
 function useAccounts(): any[] {
   const { data } = useQuery({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
@@ -679,6 +680,10 @@ function DevSection({ data, direction, archived, onShift }: { data: any; directi
 const MAINT_MONTH_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
 function MaintenanceSection({ data, direction, archived, onShift }: { data: any; direction: string; archived: any[]; onShift: (months: string[], d: number) => void }) {
+  // «Сайт × шесть месяцев» на телефоне не помещается — там карточка на сайт
+  // с полоской месяцев, как у долгов.
+  const narrow = useNarrow(720);
+  const [openRow, setOpenRow] = useState<string | null>(null);
   const qc = useQueryClient();
   const [cellFor, setCellFor] = useState<{ row: any; ym?: string; plan?: any } | null>(null);
   const [editProject, setEditProject] = useState<any>(null);
@@ -726,7 +731,79 @@ function MaintenanceSection({ data, direction, archived, onShift }: { data: any;
             <span className="mini muted">Строка — сайт, столбец — месяц. Нажмите ячейку, чтобы отметить оплату.</span>
           </div>
 
-          <div className="table-wrap fin-wide-table">
+          {narrow && (
+            <div className="fin-debt-cards">
+              {rows.map((r: any) => {
+                const p = r.project;
+                const day = dayOf(r);
+                const planOf = (m: string) => ((cellOf(r, m)?.plans || [])[0]);
+                const filled = months.map((m) => ({ ym: m, plan: planOf(m) })).filter((x) => x.plan);
+                const paidCount = filled.filter((x) => x.plan.status === 'received').length;
+                const next = filled.find((x) => x.plan.status !== 'received') || null;
+                const open = openRow === p.id;
+                const mName = (m: string) => MAINT_MONTH_SHORT[Number(m.slice(5, 7)) - 1];
+                return (
+                  <div key={p.id} className="fin-debt-card">
+                    <button type="button" className="fin-debt-head" onClick={() => setEditProject(p)}>
+                      <b>{p.name}</b>
+                      <span className="num">{money(p.tariff)}</span>
+                    </button>
+                    <span className="mini muted">тариф в месяц · оплата до {day}-го числа</span>
+
+                    <div className="fin-debt-year">
+                      {months.map((m) => {
+                        const pl = planOf(m);
+                        const st = !pl ? 'none' : pl.status === 'received' ? 'paid' : m < cm ? 'over' : 'plan';
+                        return (
+                          <span key={m} className={`seg ${st}${m === cm ? ' now' : ''}`}>
+                            <i />
+                            <em>{mName(m)}</em>
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    <div className="fin-debt-next">
+                      {next ? (
+                        <>
+                          <span className="mini muted">
+                            {next.ym < cm ? 'просрочено · ' : 'ожидается · '}{mName(next.ym)}
+                          </span>
+                          <b className="num">{money(next.plan.amount)}</b>
+                          <button className="btn sm" onClick={() => setCellFor({ row: r, ym: next.ym, plan: next.plan })}>Получено</button>
+                        </>
+                      ) : (
+                        <span className="mini muted">все месяцы окна оплачены</span>
+                      )}
+                    </div>
+
+                    {filled.length > 0 && (
+                      <button type="button" className="fin-debt-more" onClick={() => setOpenRow(open ? null : p.id)}>
+                        {open ? 'Скрыть месяцы' : `Месяцы · оплачено ${paidCount} из ${filled.length}`}
+                      </button>
+                    )}
+
+                    {open && (
+                      <div className="fin-debt-plan">
+                        {filled.map((x) => (
+                          <button key={x.ym} type="button" className="fin-debt-plan-row"
+                            onClick={() => setCellFor({ row: r, ym: x.ym, plan: x.plan })}>
+                            <span className="m">{mName(x.ym)}</span>
+                            <span className={'badge ' + (x.plan.status === 'received' ? 'ok' : x.ym < cm ? 'over' : 'wait')}>
+                              {x.plan.status === 'received' ? 'оплачено' : x.ym < cm ? 'просрочено' : 'ждёт оплаты'}
+                            </span>
+                            <span className="num">{money(x.plan.amount)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="table-wrap fin-wide-table" style={narrow ? { display: 'none' } : undefined}>
             <table className="fin-maint">
               <thead>
                 <tr>
@@ -1060,7 +1137,8 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
       {simple.length === 0 ? (
         <div className="card empty" style={{ padding: 28 }}>Нет разовых работ — нажмите «＋ Добавить работу»</div>
       ) : (
-        <div className="table-wrap fin-wide-table">
+        /* На телефоне строки становятся карточками (fin-mobile-cards, ≤720px). */
+        <div className="table-wrap fin-wide-table fin-mobile-cards fin-simple-table">
           <table>
             <thead>
               <tr>
@@ -1075,10 +1153,10 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
             <tbody>
               {simple.map((r) => (
                 <tr key={r.project.id} onDoubleClick={() => setWorkFor(r)}>
-                  <td><b>{r.project.name}</b></td>
-                  <td className="muted">{r.project.contractDate ? formatDate(r.project.contractDate) : '—'}</td>
-                  <td className="num">{money(r.project.tariff)}</td>
-                  <td><NoteCell project={r.project} /></td>
+                  <td data-label="" className="fin-name-cell"><b>{r.project.name}</b></td>
+                  <td data-label="Дата" className="muted">{r.project.contractDate ? formatDate(r.project.contractDate) : '—'}</td>
+                  <td data-label="Сумма" className="num">{money(r.project.tariff)}</td>
+                  <td data-label="Комментарий"><NoteCell project={r.project} /></td>
                   <td>
                     {/* «Оплачено» — только при полной сумме; частичная оплата оставляет кнопку. */}
                     {r.project.tariff > 0 && (Number(r.paid) || 0) >= r.project.tariff
