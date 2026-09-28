@@ -2633,3 +2633,19 @@
   flex-direction: row; align-items: baseline; gap: 10px; background: var(--surface-2);
 }
 .fin-root .fin-debt-total b { margin-left: auto; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Карточка SMM-проекта на телефоне: две части оплаты строками и остаток. */
+.fin-root .fin-part-card {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  min-height: 52px; padding: 9px 12px; border: 1px solid var(--border);
+  border-radius: 13px; background: var(--surface-2);
+}
+.fin-root .fin-part-card .m { font-size: 13px; font-weight: 700; min-width: 66px; }
+.fin-root .fin-part-card .btn { min-height: 44px; margin-left: auto; }
+.fin-root .fin-rest-row {
+  width: 100%; border: 0; border-top: 1px solid var(--border); background: none;
+  padding: 10px 0 0; text-align: left; cursor: pointer; color: var(--text);
+}
+.fin-root .fin-rest-row:disabled { cursor: default; }
+.fin-root .fin-rest-row .num { margin-left: auto; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.fin-root .fin-rest-row .num.neg { color: var(--red); }

@@ -385,6 +385,9 @@ function ProjectStateSections({ direction, archived }: { direction: string; arch
 // ---------- SMM ----------
 
 function SmmSection({ data, ym }: { data: any; ym: string }) {
+  // Восемь колонок (проект, дата, тариф, две части, остаток, комментарий,
+  // действия) в 390 px не помещаются — на телефоне карточка на проект.
+  const narrow = useNarrow(720);
   const qc = useQueryClient();
   const inv = useInvalidate();
   const [planFor, setPlanFor] = useState<{ row: any; partNo: 1 | 2 } | null>(null);
@@ -443,7 +446,69 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
         <button className="btn sm" onClick={exportCsv}>Экспорт CSV</button>
       </div>
 
-      <div className="table-wrap fin-wide-table">
+      {narrow && (
+        <div className="fin-debt-cards">
+          {rows.map((r: any) => {
+            const parts = [1, 2].map((n) => ({ n, p: n === 1 ? r.part1 : r.part2 }));
+            return (
+              <div key={r.project.id} className="fin-debt-card">
+                <button type="button" className="fin-debt-head" onClick={() => setEditProject(r.project)}>
+                  <b>{r.project.name}</b>
+                  <span className="num">{money(r.project.tariff)}</span>
+                </button>
+                <span className="mini muted">
+                  тариф в месяц · договор {r.cycleDate ? formatDate(r.cycleDate) : (r.project.contractDate ? formatDate(r.project.contractDate) : '—')}
+                </span>
+                {r.alert === 'pay' && <span className="badge wait" style={{ alignSelf: 'flex-start' }}>получить оплату</span>}
+
+                <div className="fin-debt-plan">
+                  {parts.map(({ n, p }) => (
+                    <div key={n} className="fin-part-card">
+                      <span className="m">Часть {n}</span>
+                      {!p ? (
+                        <button className="btn ghost sm" onClick={() => setPlanFor({ row: r, partNo: n as 1 | 2 })}>
+                          <FinIcon name="plus" size={14} /> записать оплату
+                        </button>
+                      ) : p.status === 'received' ? (
+                        <>
+                          <span className="badge ok"><FinIcon name="check" size={13} /> {money(p.amount)}</span>
+                          <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPart(p)}><FinIcon name="undo" size={15} /></button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="badge wait">{money(p.amount)}</span>
+                          {p.dueDate && (
+                            <span className={'mini nowrap ' + (p.dueDate < todayISO() ? 'neg' : 'muted')}>
+                              до {formatDate(p.dueDate)}
+                            </span>
+                          )}
+                          <button className="btn primary sm" onClick={() => setReceive(p)}>Получено</button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <button type="button" className="fin-debt-next fin-rest-row" disabled={!r.nextDue}
+                  onClick={() => r.nextDue && setRestFor(r)}>
+                  {r.fullyPaid
+                    ? <span className="badge ok">оплачено полностью</span>
+                    : <span className="mini muted">получено {money(r.monthPaid ?? r.paidLife)} из {money(r.project.tariff)}</span>}
+                  {r.nextDue && (
+                    <span className={'num ' + ((daysUntil(r.nextDue.dueDate) ?? 1) < 0 ? 'neg' : '')}>
+                      {r.fullyPaid ? 'след.' : 'остаток'} {money(r.nextDue.amount)}
+                    </span>
+                  )}
+                </button>
+
+                <NoteCell project={r.project} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="table-wrap fin-wide-table" style={narrow ? { display: 'none' } : undefined}>
         <table>
           <thead>
             <tr>
