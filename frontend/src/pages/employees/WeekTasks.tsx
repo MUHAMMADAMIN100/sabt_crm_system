@@ -8,11 +8,13 @@
 // Если показывать только выданное, сетка врёт: SMM-специалист с восемью
 // рилсами выглядит незагруженным.
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { ChevronLeft, ChevronRight, Plus, RotateCcw } from 'lucide-react'
 import { employeesApi, tasksApi, contentPlanApi } from '@/services/api.service'
+import { Modal } from '@/components/ui'
 import useNarrow from '@/hooks/useNarrow'
 
 const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -49,8 +51,12 @@ type Item = {
 
 export default function WeekTasks() {
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const narrow = useNarrow(900)
   const [offset, setOffset] = useState(0)
+  /** Кому и на какой день выдаём — открывается «плюсом» в клетке. */
+  const [issue, setIssue] = useState<{ userId: string; date: string } | null>(null)
+  const [repeating, setRepeating] = useState(false)
 
   const start = useMemo(() => {
     const d = monday(new Date())
@@ -153,6 +159,23 @@ export default function WeekTasks() {
     return { all, done, plan, task }
   }
 
+  async function repeatLastWeek() {
+    if (repeating) return
+    setRepeating(true)
+    try {
+      const res = await tasksApi.repeatWeek(from)
+      const n = Number(res?.created) || 0
+      toast.success(n > 0
+        ? `Перенесено задач: ${n}`
+        : 'Переносить нечего — на прошлой неделе задач нет или они уже скопированы')
+      qc.invalidateQueries({ queryKey: ['week-tasks'] })
+    } catch {
+      toast.error('Не удалось повторить неделю')
+    } finally {
+      setRepeating(false)
+    }
+  }
+
   const label = `${start.getDate()} — ${new Date(start.getTime() + 6 * 864e5).getDate()} ${MON[new Date(start.getTime() + 6 * 864e5).getMonth()]}`
 
   const nav = (
@@ -172,6 +195,12 @@ export default function WeekTasks() {
           Эта неделя
         </button>
       )}
+      <button onClick={repeatLastWeek} disabled={repeating}
+        title="Скопировать задачи прошлой недели на эту"
+        className="min-h-[44px] px-3 rounded-xl border border-surface-200 dark:border-surface-700 text-[13px] font-semibold text-surface-600 dark:text-surface-300 inline-flex items-center gap-2 disabled:opacity-50">
+        <RotateCcw size={15} />
+        {repeating ? 'Копирую…' : 'Повторить прошлую неделю'}
+      </button>
     </div>
   )
 
@@ -241,12 +270,22 @@ export default function WeekTasks() {
                     })}
                   </div>
                   <div className="text-[11px] text-surface-500">{s.plan} план · {s.task} выдано</div>
+                  <button type="button" onClick={() => setIssue({ userId: e.userId, date: today })}
+                    className="w-full min-h-[44px] rounded-xl border border-dashed border-surface-300 dark:border-surface-600
+                               text-[13px] font-semibold text-primary-600 dark:text-primary-400">
+                    + Выдать задачу
+                  </button>
                 </div>
               )
             })}
           </div>
         ))}
         {legend}
+        {issue && (
+          <IssueTask who={issue} days={days} employees={employees}
+            onClose={() => setIssue(null)}
+            onDone={() => { setIssue(null); qc.invalidateQueries({ queryKey: ['week-tasks'] }) }} />
+        )}
       </div>
     )
   }
@@ -302,9 +341,17 @@ export default function WeekTasks() {
                       </span>
                     </div>
                     {days.map((d, i) => (
-                      <div key={d} className={clsx('px-1.5 py-1.5 border-b border-r border-surface-100 dark:border-surface-700 flex flex-col gap-1 min-w-0',
+                      <div key={d} className={clsx('group relative px-1.5 py-1.5 border-b border-r border-surface-100 dark:border-surface-700 flex flex-col gap-1 min-w-0',
                         i >= 5 && 'bg-surface-50 dark:bg-surface-800/50')}>
                         {(byPerson.get(e.userId)?.get(d) ?? []).map(chip)}
+                        <button type="button" onClick={() => setIssue({ userId: e.userId, date: d })}
+                          title="Выдать задачу на этот день"
+                          className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity
+                                     self-start mt-auto w-7 h-7 rounded-lg border border-dashed
+                                     border-surface-300 dark:border-surface-600 text-surface-400
+                                     flex items-center justify-center">
+                          <Plus size={14} />
+                        </button>
                       </div>
                     ))}
                     <div className="flex flex-col items-end justify-center gap-1 px-2 py-2 border-b border-surface-100 dark:border-surface-700">
@@ -327,6 +374,128 @@ export default function WeekTasks() {
       </div>
 
       {legend}
+
+      {issue && (
+        <IssueTask who={issue} days={days} employees={employees}
+          onClose={() => setIssue(null)}
+          onDone={() => { setIssue(null); qc.invalidateQueries({ queryKey: ['week-tasks'] }) }} />
+      )}
     </div>
+  )
+}
+
+/**
+ * Выдача задачи из сетки. Открывается «плюсом» в клетке, поэтому человек и
+ * день уже выбраны — их можно поменять, но чаще менять не нужно.
+ *
+ * Нескольким сразу: одна и та же задача («обзвон базы», «отчёт») часто
+ * выдаётся отделу целиком, и заводить её по одному — лишняя работа.
+ */
+function IssueTask({ who, days, employees, onClose, onDone }: {
+  who: { userId: string; date: string }
+  days: string[]
+  employees: any[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [title, setTitle] = useState('')
+  const [date, setDate] = useState(who.date)
+  const [ids, setIds] = useState<string[]>([who.userId])
+  const [repeat, setRepeat] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const people = useMemo(
+    () => (Array.isArray(employees) ? employees : []).filter((e: any) => e.status === 'active' && e.userId),
+    [employees],
+  )
+  const toggle = (id: string) => setIds(v => (v.includes(id) ? v.filter(x => x !== id) : [...v, id]))
+
+  async function save() {
+    const name = title.trim()
+    if (!name || !ids.length || busy) return
+    setBusy(true)
+    try {
+      // По задаче на человека: у каждого свой статус, и в сетке видно, кто
+      // сделал, а кто нет. Одна задача на всех такой картины не даёт.
+      await Promise.all(ids.map(id => tasksApi.create({
+        title: name,
+        assigneeId: id,
+        deadline: date,
+        fromFounder: true,
+        repeatWeekly: repeat,
+      })))
+      toast.success(ids.length > 1 ? `Выдано ${ids.length} сотрудникам` : 'Задача выдана')
+      onDone()
+    } catch {
+      toast.error('Не удалось выдать задачу')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Выдать задачу" size="md">
+      <div className="space-y-4">
+        <label className="block space-y-1.5">
+          <span className="text-[12px] font-semibold text-surface-500">Что сделать</span>
+          <input value={title} onChange={e => setTitle(e.target.value)} autoFocus
+            placeholder="Например, обзвонить базу по холодным лидам"
+            className="input min-h-[48px]" />
+        </label>
+
+        <div className="space-y-1.5">
+          <span className="text-[12px] font-semibold text-surface-500">Когда</span>
+          <div className="flex gap-1.5">
+            {days.map(d => (
+              <button key={d} type="button" onClick={() => setDate(d)}
+                className={clsx('flex-1 min-h-[48px] rounded-xl border flex flex-col items-center justify-center gap-0.5',
+                  d === date
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
+                    : 'border-surface-200 dark:border-surface-700 text-surface-500')}>
+                <span className="text-[10px]">{WD[(new Date(d + 'T00:00:00').getDay() + 6) % 7].toLowerCase()}</span>
+                <b className="text-[14px]">{Number(d.slice(8))}</b>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <span className="text-[12px] font-semibold text-surface-500">Кому · выбрано {ids.length}</span>
+          <div className="flex flex-wrap gap-1.5 max-h-[180px] overflow-y-auto">
+            {people.map((e: any) => {
+              const on = ids.includes(e.userId)
+              return (
+                <button key={e.id} type="button" onClick={() => toggle(e.userId)}
+                  className={clsx('inline-flex items-center gap-2 min-h-[44px] px-3 rounded-full border text-[13px] font-semibold',
+                    on
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
+                      : 'border-surface-200 dark:border-surface-700 text-surface-600 dark:text-surface-300')}>
+                  <i className="w-5 h-5 rounded-lg bg-surface-200 dark:bg-surface-700 not-italic text-[9px] font-bold flex items-center justify-center">
+                    {initials(e.fullName)}
+                  </i>
+                  {String(e.fullName || '').split(' ')[0]}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <label className="flex items-center gap-3 min-h-[48px] px-3 rounded-xl border border-primary-500/30 bg-primary-50/60 dark:bg-primary-500/10">
+          <input type="checkbox" checked={repeat} onChange={e => setRepeat(e.target.checked)}
+            className="w-5 h-5 accent-primary-600" />
+          <span className="flex flex-col">
+            <b className="text-[13.5px]">Повторять каждую неделю</b>
+            <span className="text-[11.5px] text-surface-500">копия появится в тот же день следующей недели</span>
+          </span>
+        </label>
+
+        <div className="flex gap-2">
+          <button onClick={save} disabled={!title.trim() || !ids.length || busy}
+            className="btn-primary flex-1 min-h-[48px] disabled:opacity-50">
+            {busy ? 'Выдаю…' : ids.length > 1 ? `Выдать ${ids.length} сотрудникам` : 'Выдать'}
+          </button>
+          <button onClick={onClose} className="btn-secondary min-h-[48px] px-5">Отмена</button>
+        </div>
+      </div>
+    </Modal>
   )
 }

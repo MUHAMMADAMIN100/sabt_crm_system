@@ -126,6 +126,10 @@ export const tasksApi = {
   stats: (projectId?: string) => api.get('/tasks/stats', { params: { projectId } }).then(r => r.data),
   approve: (id: string) => api.post(`/tasks/${id}/approve`).then(r => r.data),
   returnTask: (id: string, reason: string) => api.post(`/tasks/${id}/return`, { reason }).then(r => r.data),
+  /** «Повторить прошлую неделю» в сетке «Задачи недели»: копии задач
+   *  предыдущей недели на указанную. weekStart — понедельник целевой. */
+  repeatWeek: (weekStart: string) =>
+    api.post('/tasks/repeat-week', { weekStart }).then(r => r.data),
   bulk: (ids: string[], action: 'status' | 'delete' | 'assign', value?: string) =>
     api.post('/tasks/bulk', { ids, action, value }).then(r => {
       // Закрыли пачку — печать одна: двадцать подряд превратят награду
