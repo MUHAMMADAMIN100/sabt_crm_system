@@ -3122,7 +3122,19 @@ export default function DevBoardPage() {
 
 
   return (
-    <div ref={pageRef} className="dev-board-root flex flex-col h-full min-h-0">
+    <div
+      ref={pageRef}
+      className={clsx(
+        'dev-board-root flex min-h-0 flex-col',
+        // Вид «Доска»: строгая высота вьюпорта (main даёт p-4/pb-24 на mobile
+        // и p-6 на desktop — вычитаем их, остальное отдаём колонкам), чтобы
+        // каждая колонка скроллилась сама, а страница стояла. Остальные виды
+        // (таблица/календарь/таймлайн) — как раньше, растут вместе со страницей.
+        view === 'board'
+          ? 'h-[calc(100vh-7rem)] overflow-y-auto lg:h-[calc(100vh-3rem)]'
+          : 'h-full',
+      )}
+    >
       {/* Стабильный gutter скроллбара: виды разной высоты то показывают
           вертикальный скролл main, то нет — без резерва места весь интерфейс
           прыгает на ширину скроллбара при каждом переключении. :has scoped
@@ -3837,7 +3849,7 @@ export default function DevBoardPage() {
           canManage={canManage}
         />
       ) : (
-        <div className="flex gap-3 overflow-x-auto pb-4 items-start min-h-0 flex-1 snap-x snap-proximity md:snap-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex gap-3 overflow-x-auto overflow-y-hidden pb-4 items-stretch min-h-0 flex-1 snap-x snap-proximity md:snap-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {boardColumns.map(col => (
             <div
               key={col.key}
@@ -3845,7 +3857,7 @@ export default function DevBoardPage() {
               onDragLeave={() => setDragOverKey(k => (k === col.key ? null : k))}
               onDrop={e => onColumnDrop(e, col)}
               className={clsx(
-                'shrink-0 snap-start w-[85vw] max-w-[20rem] md:w-72 md:max-w-none rounded-lg bg-surface-100/70 dark:bg-surface-900/40 border dev-drop-glow',
+                'flex min-h-0 flex-col shrink-0 snap-start w-[85vw] max-w-[20rem] md:w-72 md:max-w-none rounded-lg bg-surface-100/70 dark:bg-surface-900/40 border dev-drop-glow',
                 dragOverKey === col.key
                   ? 'border-primary-500 dark:border-primary-400'
                   : 'border-surface-200 dark:border-surface-800',
@@ -3892,7 +3904,7 @@ export default function DevBoardPage() {
                 )}
               </div>
 
-              <div className="px-2 pb-2 space-y-2 min-h-[60px]">
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-2 pb-2">
                 {canManage && (
                   <QuickAdd
                     placeholder="Новая задача…"
