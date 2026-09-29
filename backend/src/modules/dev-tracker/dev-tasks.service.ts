@@ -32,7 +32,6 @@ const STATUS_LABELS: Record<DevTaskStatus, string> = {
   [DevTaskStatus.BACKLOG]: 'Бэклог',
   [DevTaskStatus.TODO]: 'К выполнению',
   [DevTaskStatus.IN_PROGRESS]: 'В работе',
-  [DevTaskStatus.IN_REVIEW]: 'На ревью',
   [DevTaskStatus.TESTING]: 'Тестирование',
   [DevTaskStatus.DONE]: 'Готово',
 };
@@ -44,7 +43,6 @@ const STATUS_ORDER: DevTaskStatus[] = [
   DevTaskStatus.BACKLOG,
   DevTaskStatus.TODO,
   DevTaskStatus.IN_PROGRESS,
-  DevTaskStatus.IN_REVIEW,
   DevTaskStatus.TESTING,
   DevTaskStatus.DONE,
 ];
@@ -1171,7 +1169,7 @@ export class DevTasksService {
     }
 
     // Исполнителю полезно знать, что его задачу кто-то подвинул (например,
-    // руководитель взял на ревью или вернул из тестирования). Автору задачи —
+    // руководитель взял в работу или вернул из тестирования). Автору задачи —
     // что её завершили. Самому актору уведомления не нужны.
     if (actorId && oldStatus !== status) {
       if (status === DevTaskStatus.DONE) {
@@ -2120,7 +2118,7 @@ export class DevTasksService {
 
   /**
    * CFD-поток по дням (контракт F): [{day: 'YYYY-MM-DD', backlog, todo,
-   * in_progress, in_review, testing, done}]. days 7..90, default 30.
+   * in_progress, testing, done}]. days 7..90, default 30.
    *
    * ДОПУЩЕНИЯ (метод приближённый — точного event-sourcing нет):
    *  1. Внутридневные переходы схлопываются до статуса на конец дня
@@ -2167,12 +2165,12 @@ export class DevTasksService {
 
     const KNOWN = [
       DevTaskStatus.BACKLOG, DevTaskStatus.TODO, DevTaskStatus.IN_PROGRESS,
-      DevTaskStatus.IN_REVIEW, DevTaskStatus.TESTING, DevTaskStatus.DONE,
+      DevTaskStatus.TESTING, DevTaskStatus.DONE,
     ] as string[];
     return dayList.map(day => {
       const eod = dushanbeEndOfDay(day);
       const row: Record<string, string | number> = {
-        day, backlog: 0, todo: 0, in_progress: 0, in_review: 0, testing: 0, done: 0,
+        day, backlog: 0, todo: 0, in_progress: 0, testing: 0, done: 0,
       };
       for (const t of tasks) {
         if (!t?.id) continue;

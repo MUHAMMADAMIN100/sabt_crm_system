@@ -627,7 +627,6 @@ export interface DevTrackerFlowPoint {
   backlog: number
   todo: number
   in_progress: number
-  in_review: number
   testing: number
   done: number
 }

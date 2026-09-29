@@ -49,7 +49,6 @@ type BoardView = 'board' | 'table' | 'calendar' | 'timeline'
 const WIP_KEY = 'dev-board-wip'
 const DEFAULT_WIP: Partial<Record<DevTaskStatus, number>> = {
   in_progress: 3,
-  in_review: 2,
   testing: 2,
 }
 /** Валидация лимитов из localStorage: только известные статусы и целые ≥0 —
@@ -1428,7 +1427,7 @@ function matchSlashStatus(token: string): DevTaskStatus | null {
   }
   // Короткие алиасы на всякий случай.
   const alias: Record<string, DevTaskStatus> = {
-    review: 'in_review', test: 'testing', backlog: 'backlog', todo: 'todo',
+    test: 'testing', backlog: 'backlog', todo: 'todo',
     progress: 'in_progress', done: 'done',
   }
   return alias[t] || null
@@ -1576,7 +1575,7 @@ function QuickSearchModal({ open, tasks, users, canManage, onClose, onPick, onCr
       const rest = body.slice(4).trim()
       const [statusToken, ...queryParts] = rest.split(/\s+/)
       const status = matchSlashStatus(statusToken || '')
-      if (!status) { setSlashError('Укажите статус: /move <статус> <текст> (backlog, todo, in_progress, in_review, testing, done)'); return }
+      if (!status) { setSlashError('Укажите статус: /move <статус> <текст> (backlog, todo, in_progress, testing, done)'); return }
       const query = queryParts.join(' ').trim()
       if (!query) { setSlashError('Укажите текст поиска: /move done название задачи'); return }
       const target = searchTasksByText(tasks, query)[0]

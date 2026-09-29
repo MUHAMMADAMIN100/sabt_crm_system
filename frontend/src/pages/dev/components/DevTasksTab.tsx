@@ -27,7 +27,6 @@ const DEV_STATUS_BADGE_CLS: Record<string, string> = {
   backlog:     'bg-surface-200 text-surface-600 dark:bg-surface-700 dark:text-surface-300',
   todo:        'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
   in_progress: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
-  in_review:   'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
   testing:     'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   done:        'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
 }

@@ -255,8 +255,8 @@ export default function DevBoardKpiPage() {
     // Опциональные ключи от бэка могут отсутствовать — коалесцим к 0 через num()
     // (?? пропустил бы NaN → Recharts получил бы NaN).
     // РАСХОЖДЕНИЕ С БЭКОМ: team.inProgress — только статус in_progress
-    // (review/testing бэк туда не включает). Поэтому сегмент «В работе»
-    // уже́, чем весь WIP, а review/testing падают в «Очередь / ревью / тест».
+    // (testing бэк туда не включает). Поэтому сегмент «В работе»
+    // уже́, чем весь WIP, а testing падает в «Очередь / тест».
     // Математику бэка не трогаем — честность только подписями.
     const total = Math.max(0, num(team.total))
     const done = Math.max(0, num(team.done))
@@ -265,7 +265,7 @@ export default function DevBoardKpiPage() {
     return [
       { name: 'Выполнено', value: done, color: '#22c55e' },
       { name: 'В работе', value: inProgress, color: '#6366f1' },
-      { name: 'Очередь / ревью / тест', value: other, color: '#94a3b8' },
+      { name: 'Очередь / тест', value: other, color: '#94a3b8' },
     ].filter(s => s.value > 0)
   }, [team])
 
@@ -334,7 +334,6 @@ export default function DevBoardKpiPage() {
       'Бэклог': num(d.backlog),
       'К выполнению': num(d.todo),
       'В работе': num(d.in_progress),
-      'На ревью': num(d.in_review),
       'Тестирование': num(d.testing),
       'Готово': num(d.done),
     }))
@@ -343,7 +342,7 @@ export default function DevBoardKpiPage() {
     flowData.length > 0 &&
     flowData.every(d =>
       (d['Бэклог'] as number) === 0 && (d['К выполнению'] as number) === 0 &&
-      (d['В работе'] as number) === 0 && (d['На ревью'] as number) === 0 &&
+      (d['В работе'] as number) === 0 &&
       (d['Тестирование'] as number) === 0 && (d['Готово'] as number) === 0,
     )
 
@@ -691,7 +690,6 @@ export default function DevBoardKpiPage() {
                     <Area type="monotone" dataKey="Бэклог" stackId="flow" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.35} strokeWidth={2} />
                     <Area type="monotone" dataKey="К выполнению" stackId="flow" stroke="#38bdf8" fill="#38bdf8" fillOpacity={0.35} strokeWidth={2} />
                     <Area type="monotone" dataKey="В работе" stackId="flow" stroke="#6366f1" fill="#6366f1" fillOpacity={0.35} strokeWidth={2} />
-                    <Area type="monotone" dataKey="На ревью" stackId="flow" stroke="#a78bfa" fill="#a78bfa" fillOpacity={0.35} strokeWidth={2} />
                     <Area type="monotone" dataKey="Тестирование" stackId="flow" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.35} strokeWidth={2} />
                     <Area type="monotone" dataKey="Готово" stackId="flow" stroke="#22c55e" fill="#22c55e" fillOpacity={0.35} strokeWidth={2} />
                   </AreaChart>

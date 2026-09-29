@@ -1337,7 +1337,7 @@ describe('DevTasksService', () => {
       expect(flow).toHaveLength(7);
       for (const row of flow) {
         expect(Object.keys(row).sort()).toEqual(
-          ['backlog', 'day', 'done', 'in_progress', 'in_review', 'testing', 'todo'].sort(),
+          ['backlog', 'day', 'done', 'in_progress', 'testing', 'todo'].sort(),
         );
         expect(row.day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       }
@@ -1348,7 +1348,7 @@ describe('DevTasksService', () => {
       // Первый день окна (6 дней назад): переход f1 уже был 5 дней назад…
       // проверяем инвариант: сумма колонок = числу созданных к этому дню задач.
       for (const row of flow as any[]) {
-        const sum = row.backlog + row.todo + row.in_progress + row.in_review + row.testing + row.done;
+        const sum = row.backlog + row.todo + row.in_progress + row.testing + row.done;
         expect(sum).toBe(2);
       }
     });
@@ -1898,7 +1898,7 @@ describe('DevTasksService', () => {
       // вчера по Душанбе задача ещё не была создана
       const prev = flow[flow.length - 2] as any;
       expect(prev.todo).toBe(0);
-      expect(prev.backlog + prev.in_progress + prev.in_review + prev.testing + prev.done).toBe(0);
+      expect(prev.backlog + prev.in_progress + prev.testing + prev.done).toBe(0);
     });
 
     it('flow: переход в 00:10 по Душанбе относится к сегодняшнему дню', async () => {

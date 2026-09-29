@@ -12,7 +12,6 @@ export type DevTaskStatus =
   | 'backlog'
   | 'todo'
   | 'in_progress'
-  | 'in_review'
   | 'testing'
   | 'done'
 
@@ -97,7 +96,6 @@ export const DEV_TASK_STATUSES: DevTaskStatus[] = [
   'backlog',
   'todo',
   'in_progress',
-  'in_review',
   'testing',
   'done',
 ]
@@ -106,7 +104,6 @@ export const DEV_STATUS_LABELS: Record<DevTaskStatus, string> = {
   backlog: 'Бэклог',
   todo: 'К выполнению',
   in_progress: 'В работе',
-  in_review: 'На ревью',
   testing: 'Тестирование',
   done: 'Готово',
 }
@@ -116,7 +113,6 @@ export const DEV_STATUS_COLORS: Record<DevTaskStatus, string> = {
   backlog: 'bg-surface-400',
   todo: 'bg-sky-500',
   in_progress: 'bg-primary-500',
-  in_review: 'bg-violet-500',
   testing: 'bg-amber-500',
   done: 'bg-emerald-500',
 }
