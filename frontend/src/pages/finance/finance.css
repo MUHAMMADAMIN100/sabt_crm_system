@@ -2347,8 +2347,13 @@
 
 .fin-root .pcal-chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .fin-root .pcal-chip {
-  display: flex; flex-direction: column; gap: 3px;
-  padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  display: flex; flex-direction: column; gap: 3px; padding: 10px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+  background: var(--surface);
+}
+/* Подпись плитки — та же, что у шапки дней в «Транзакциях». */
+.fin-root .pcal-chip > span:first-child {
+  font-size: 11px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--muted);
 }
 .fin-root .pcal-chip strong { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--text); }
 .fin-root .pcal-chip strong.red { color: var(--red); }
@@ -2357,11 +2362,16 @@
 
 /* ── Кривая остатка ── */
 .fin-root .pcal-curve {
-  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
-  padding: 12px 16px 8px; display: flex; flex-direction: column; gap: 6px;
+  border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+  background: var(--surface);
+  padding: 0 16px 8px; display: flex; flex-direction: column; gap: 6px;
 }
-.fin-root .pcal-curve-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.fin-root .pcal-curve-head b { font-size: 13px; }
+/* Заголовок кривой отделён линией — как полоса итогов в «Транзакциях». */
+.fin-root .pcal-curve-head {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 -16px 6px; padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.fin-root .pcal-curve-head b { font-size: 13.5px; }
 .fin-root .pcal-curve-legend { margin-left: auto; display: inline-flex; gap: 14px; color: var(--muted); }
 .fin-root .pcal-curve-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .fin-root .pcal-curve .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
@@ -2387,41 +2397,49 @@
 .fin-root .pcal-mark.accent line, .fin-root .pcal-mark.accent circle { stroke: var(--accent); }
 .fin-root .pcal-mark.accent .lbl { fill: var(--accent); }
 
-/* ── Сетка месяца ── */
+/* ── Сетка месяца ──
+   Вид и плотность — как в «Транзакциях» (решение владельца 28.09.2026):
+   те же размеры ячейки, пилюля номера дня, пунктир под итогом дня и
+   строки-операции с точкой. Отличия Планирования — остаток дня, полоса
+   уровня и колонка недели — оставлены: ради них в раздел и заходят. */
 .fin-root .pcal-grid {
-  border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); overflow: hidden;
   background: var(--surface); display: flex; flex-direction: column;
 }
 .fin-root .pcal-row-head,
 .fin-root .pcal-wrow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)) 138px; }
 .fin-root .pcal-row-head { border-bottom: 1px solid var(--border); }
 .fin-root .pcal-h {
-  padding: 7px 10px; font-size: 11px; font-weight: 700; letter-spacing: .1em;
+  padding: 8px 10px; font-size: 11px; font-weight: 600; letter-spacing: .4px;
   text-transform: uppercase; color: var(--muted);
 }
-.fin-root .pcal-h.wknd, .fin-root .pcal-h.wk { background: var(--surface-2); }
+.fin-root .pcal-h.wknd, .fin-root .pcal-h.wk { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
 .fin-root .pcal-wrow { border-bottom: 1px solid var(--border); }
 .fin-root .pcal-wrow:last-child { border-bottom: 0; }
 .fin-root .pcal-cell {
-  position: relative; box-sizing: border-box; min-height: 142px; padding: 7px 9px 8px;
+  position: relative; box-sizing: border-box; min-height: 128px; padding: 6px;
   border-right: 1px solid var(--border); background: var(--surface);
-  display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow: hidden;
 }
-.fin-root .pcal-cell.wknd { background: var(--surface-2); }
+.fin-root .pcal-cell.wknd { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
 /* День в минусе не красим тревогой — он просто темнее: провал читается
    как просевшая полоса по сетке, а не как пятнадцать аварий подряд. */
 .fin-root .pcal-cell.neg { background: var(--surface-hover); }
-.fin-root .pcal-cell.today { background: var(--accent-soft); }
-.fin-root .pcal-cell.off { background: var(--surface-2); opacity: .55; }
-.fin-root .pcal-cell.over { outline: 2px dashed var(--accent); outline-offset: -3px; }
+.fin-root .pcal-cell.today { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.fin-root .pcal-cell.off { background: var(--surface-2); }
+.fin-root .pcal-cell.over { outline: 2px dashed var(--accent); outline-offset: -3px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .fin-root .pcal-gaprail { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--amber); }
-.fin-root .pcal-dayhead { display: flex; align-items: baseline; gap: 6px; }
-.fin-root .pcal-dayhead .n { font-size: 12px; font-weight: 700; color: var(--text); }
-.fin-root .pcal-cell.today .pcal-dayhead .n {
-  background: var(--accent); color: #fff; border-radius: 5px; padding: 1px 5px;
+.fin-root .pcal-dayhead { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+/* Номер дня — пилюля, как в «Транзакциях»; сегодня — акцентная. */
+.fin-root .pcal-dayhead .n {
+  min-width: 21px; height: 21px; padding: 0 4px; display: inline-flex; align-items: center;
+  justify-content: center; border-radius: 999px; font-size: 11.5px; font-weight: 650; color: var(--muted);
 }
+.fin-root .pcal-cell.today .pcal-dayhead .n { background: var(--accent); color: #fff; }
 .fin-root .pcal-dayhead .bal {
-  margin-left: auto; font-size: 15px; font-weight: 650; letter-spacing: -.01em;
+  margin-left: auto; font-size: 13.5px; font-weight: 700;
   font-variant-numeric: tabular-nums; color: var(--text);
 }
 .fin-root .pcal-dayhead .bal.neg { color: var(--red); }
@@ -2431,22 +2449,37 @@
 .fin-root .pcal-level i { display: block; height: 3px; border-radius: 2px; background: var(--green-plan); }
 .fin-root .pcal-level.neg i { background: var(--red-plan); }
 .fin-root .pcal-gapnote { font-size: 10.5px; font-weight: 700; color: var(--amber); }
-.fin-root .pcal-sums { display: flex; gap: 8px; font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+/* Итог дня отделён пунктиром от операций — как в «Транзакциях». */
+.fin-root .pcal-sums {
+  display: flex; gap: 8px; padding: 0 2px 4px; margin-bottom: 2px;
+  font-size: 10.5px; font-weight: 650; font-variant-numeric: tabular-nums;
+  border-bottom: 1px dashed var(--border);
+}
 .fin-root .pcal-sums .pos { color: var(--green); }
 .fin-root .pcal-sums .out { color: var(--muted); }
 
+/* Строка операции — точка вместо полоски, как .tx-row в «Транзакциях».
+   Точка занимает 7 px вместо 3 px полоски, зато приход и расход видно
+   одинаково в двух разделах, и клик по строке подсвечивается. */
 .fin-root .pcal-row {
-  display: grid; grid-template-columns: 3px minmax(0, 1fr) auto; align-items: center; gap: 6px;
-  border: 0; background: none; padding: 0; text-align: left; cursor: pointer;
+  display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0;
+  border: 0; background: none; padding: 3px 5px; border-radius: 7px;
+  text-align: left; cursor: pointer;
 }
-.fin-root .pcal-row .bar { height: 11px; border-radius: 2px; background: var(--border); }
+.fin-root .pcal-row:hover { background: var(--surface-hover); }
+.fin-root .pcal-row .bar {
+  width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--muted);
+}
 .fin-root .pcal-row.inc .bar { background: var(--green); }
 .fin-root .pcal-row .t {
-  font-size: 11.5px; line-height: 1.25; color: var(--muted);
+  flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.25; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.fin-root .pcal-row .a { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--text); }
-.fin-root .pcal-row.inc .a { color: var(--green); font-weight: 600; }
+.fin-root .pcal-row .a {
+  flex: none; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+  white-space: nowrap; color: var(--text);
+}
+.fin-root .pcal-row.inc .a { color: var(--green); }
 /* Выполненное — приглушённый текст и зачёркнутая сумма, а не прозрачность:
    при opacity .4 в тёмной теме строка просто пропадала. */
 .fin-root .pcal-row.done .t, .fin-root .pcal-row.done .a { color: var(--muted); opacity: .75; }
@@ -2454,32 +2487,48 @@
 .fin-root .pcal-row.done .bar { background: var(--border); }
 .fin-root .pcal-row.movable { cursor: grab; }
 .fin-root .pcal-row.dragging { opacity: .45; }
-.fin-root .pcal-row:hover .t { color: var(--text); }
-.fin-root .pcal-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.fin-root .pcal-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .fin-root .pcal-more {
   align-self: flex-start; border: 0; background: none; padding: 0; cursor: pointer;
   font-size: 11px; font-weight: 600; color: var(--muted); text-decoration: underline;
 }
+/* ── Верхняя полоса сетки: итог месяца ──
+   Один в один полоса из «Транзакций» — там она и есть главный ориентир
+   «сколько пришло, сколько ушло, сколько осталось». */
+.fin-root .pcal-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.fin-root .pcal-top .sums {
+  display: flex; align-items: baseline; gap: 14px;
+  font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.fin-root .pcal-top .sums .pos { color: var(--green); }
+.fin-root .pcal-top .sums .neg { color: var(--red); }
+.fin-root .pcal-top .sums .net { padding-left: 14px; border-left: 1px solid var(--border); color: var(--text); }
+.fin-root .pcal-top .sums .net.neg { color: var(--red); }
+
 .fin-root .pcal-week {
-  box-sizing: border-box; padding: 9px 11px; background: var(--surface-2);
+  box-sizing: border-box; padding: 6px 10px; background: var(--surface-2);
   display: flex; flex-direction: column; gap: 3px;
 }
-.fin-root .pcal-week .delta { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--muted); }
+.fin-root .pcal-week .delta { font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--muted); }
 /* Потратили больше, чем пришло, — это не авария; красным только остаток. */
 .fin-root .pcal-week .delta.pos { color: var(--green); }
 .fin-root .pcal-week .end-label { margin-top: auto; }
-.fin-root .pcal-week .end { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--text); }
+.fin-root .pcal-week .end { font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
 .fin-root .pcal-week .end.neg { color: var(--red); }
 
 .fin-root .pcal-legend { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; color: var(--muted); }
 .fin-root .pcal-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .fin-root .pcal-legend .sw { width: 3px; height: 11px; border-radius: 2px; display: inline-block; }
+/* Приход/расход в легенде — такие же точки, как в строках операций. */
+.fin-root .pcal-legend .sw.inc, .fin-root .pcal-legend .sw.out { width: 7px; height: 7px; border-radius: 50%; }
 .fin-root .pcal-legend .sw.inc { background: var(--green); }
-.fin-root .pcal-legend .sw.out { background: var(--border); }
+.fin-root .pcal-legend .sw.out { background: var(--muted); }
 .fin-root .pcal-legend .sw.lvl { width: 11px; height: 3px; background: var(--red-plan); }
 .fin-root .pcal-legend .sw.gap { background: var(--amber); }
 .fin-root .pcal-legend .pcal-legend-note { margin-left: auto; }
-.fin-root .pcal-legend .pcal-legend-count { white-space: nowrap; }
 
 /* ── Телефон ── */
 .fin-root .pcal-narrow { gap: 12px; }

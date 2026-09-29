@@ -113,7 +113,7 @@ export default function PlanCalendar({ ym, txns, dayBalance, renderStatusControl
 
   const dayTot = useMemo(() => {
     const map = new Map<string, { inc: number; exp: number }>();
-    let count = 0;
+    let count = 0, inc = 0, exp = 0;
     for (const [k, list] of byDay) {
       const t = { inc: 0, exp: 0 };
       for (const x of list) {
@@ -123,9 +123,12 @@ export default function PlanCalendar({ ym, txns, dayBalance, renderStatusControl
         else if (x.type === 'expense') t.exp += amount;
       }
       map.set(k, t);
+      inc += t.inc; exp += t.exp;
       count += list.length;
     }
-    return { map, count };
+    // Итог месяца — всё движение вместе, и факт, и план: в «Планировании»
+    // смысл ровно в этом, отделять прошедшее незачем.
+    return { map, count, inc, exp };
   }, [byDay]);
 
   // ── Остатки по дням: без них нет ни кривой, ни плиток ────────────────
@@ -467,6 +470,18 @@ export default function PlanCalendar({ ym, txns, dayBalance, renderStatusControl
       {curveNode}
 
       <div className="pcal-grid">
+        <div className="pcal-top">
+          <div className="sums">
+            <span className="pos">+{money(dayTot.inc)}</span>
+            <span className="neg">−{money(dayTot.exp)}</span>
+            <span className={'net' + (dayTot.inc - dayTot.exp < 0 ? ' neg' : '')}>
+              {money(dayTot.inc - dayTot.exp, true)}
+            </span>
+          </div>
+          <span className="mini muted">
+            {dayTot.count} {pluralRu(dayTot.count, 'операция', 'операции', 'операций')} за месяц
+          </span>
+        </div>
         <div className="pcal-row-head">
           {WD.map((d, i) => <div key={d} className={'pcal-h' + (i >= 5 ? ' wknd' : '')}>{d}</div>)}
           <div className="pcal-h wk">Неделя</div>
@@ -550,7 +565,6 @@ export default function PlanCalendar({ ym, txns, dayBalance, renderStatusControl
           Красный означает только одно — денег не хватает. Выполненное зачёркнуто.
           {onMoveItem ? ' Перетащите операцию на другой день, чтобы перенести срок.' : ''}
         </span>
-        <span className="pcal-legend-count">{dayTot.count} {pluralRu(dayTot.count, 'операция', 'операции', 'операций')} за месяц</span>
       </div>
 
       {detail && <CalendarItemModal item={detail} planMode renderStatusControl={renderStatusControl}
