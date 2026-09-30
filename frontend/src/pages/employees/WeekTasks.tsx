@@ -7,6 +7,15 @@
 //   • задачи, выданные руководством (фиолетовая полоска).
 // Если показывать только выданное, сетка врёт: SMM-специалист с восемью
 // рилсами выглядит незагруженным.
+//
+// Перетаскивание (было в утверждённом дизайне — «перетащите на человека и
+// день», — но в первой версии не сделано):
+//   • задачу — любому сотруднику и на любой день;
+//   • карточку подготовки — на другой день или человеку той же роли:
+//     съёмку видеографу, монтаж монтажёру, дизайн дизайнеру;
+//   • публикацию — только на другой день: исполнитель у неё от проекта;
+//   • сделанное не двигается.
+// Куда нельзя, клетки гаснут сразу при захвате — не надо угадывать.
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -38,6 +47,9 @@ const initials = (name?: string | null) => {
 
 /** Этап подготовки словом — в чипе иначе не понять, что за карточка. */
 const PREP: Record<string, string> = { shoot: 'Съёмка', edit: 'Монтаж', design: 'Дизайн' }
+/** Кому по роли можно отдать карточку этого этапа. */
+const STAGE_ROLE: Record<string, string> = { shoot: 'videographer', edit: 'video_editor', design: 'designer' }
+const STAGE_WHO: Record<string, string> = { shoot: 'видеографу', edit: 'монтажёру', design: 'дизайнеру' }
 
 type Item = {
   id: string
@@ -47,6 +59,21 @@ type Item = {
   src: 'plan' | 'task'
   state: 'done' | 'late' | 'open'
   to?: string
+  /** Как двигать: задача, карточка подготовки или публикация. */
+  kind: 'task' | 'prep' | 'pub'
+  /** id задачи или карточки контент-плана. */
+  refId: string
+  /** Кто исполнитель сейчас (null — никто). */
+  ownerId: string | null
+  stage?: string
+  /** Все исполнители задачи по порядку: при переносе меняем одного. */
+  team?: string[]
+}
+
+/** Текст ошибки сервера — чтобы сказать, почему не получилось. */
+const errText = (e: any, fallback: string) => {
+  const m = e?.response?.data?.message
+  return Array.isArray(m) ? m.join(', ') : (typeof m === 'string' && m) || fallback
 }
 
 export default function WeekTasks() {
@@ -57,6 +84,12 @@ export default function WeekTasks() {
   /** Кому и на какой день выдаём — открывается «плюсом» в клетке. */
   const [issue, setIssue] = useState<{ userId: string; date: string } | null>(null)
   const [repeating, setRepeating] = useState(false)
+  // Перетаскивание: что тащим и над какой клеткой (`userId|дата`).
+  const [drag, setDrag] = useState<Item | null>(null)
+  const [over, setOver] = useState<string | null>(null)
+  // Оптимистичный перенос: чип сразу стоит на новом месте, пока сервер
+  // не ответит; при ошибке возвращается обратно.
+  const [moved, setMoved] = useState<Record<string, { userId: string; date: string }>>({})
 
   const start = useMemo(() => {
     const d = monday(new Date())
@@ -86,43 +119,55 @@ export default function WeekTasks() {
   // ── Раскладываем обе ленты по людям и дням ─────────────────────────
   const { byPerson, pool } = useMemo(() => {
     const map = new Map<string, Map<string, Item[]>>()
-    const put = (userId: string, it: Item) => {
-      if (!map.has(userId)) map.set(userId, new Map())
-      const d = map.get(userId)!
+    const unassigned: Item[] = []
+    const place = (it: Item) => {
+      const o = moved[it.id]
+      if (o) { it.ownerId = o.userId; it.date = o.date }
+      if (!it.ownerId) { unassigned.push(it); return }
+      if (!map.has(it.ownerId)) map.set(it.ownerId, new Map())
+      const d = map.get(it.ownerId)!
       if (!d.has(it.date)) d.set(it.date, [])
       d.get(it.date)!.push(it)
     }
-    const unassigned: Item[] = []
 
     for (const t of (Array.isArray(tasks) ? tasks : [])) {
       if (t.status === 'cancelled') continue
       const date = String(t.deadline || '').slice(0, 10)
       if (!date || date < from || date > to) continue
       const done = t.status === 'done'
-      const it: Item = {
-        id: `t:${t.id}`, date, src: 'task',
+      place({
+        id: `t:${t.id}`, date, src: 'task', kind: 'task', refId: t.id,
         title: t.title || 'Задача',
         state: done ? 'done' : date < today ? 'late' : 'open',
         to: `/tasks/${t.id}`,
-      }
-      if (t.assigneeId) put(t.assigneeId, it)
-      else unassigned.push(it)
+        ownerId: t.assigneeId || null,
+        team: (Array.isArray(t.assignees) ? t.assignees : []).map((a: any) => a.userId).filter(Boolean),
+      })
     }
 
     for (const e of ((cal?.events ?? []) as any[])) {
       const date = String(e.date || '').slice(0, 10)
-      if (!date || date < from || date > to || !e.assigneeId) continue
+      if (!date || date < from || date > to || !e.itemId) continue
+      const prep = !!e.prepStage
+      // Публикация без исполнителя — это норма (ведёт проект целиком), в
+      // «Не распределено» её не несём. Карточка подготовки без исполнителя —
+      // это дыра: съёмку или монтаж никто не сделает.
+      if (!e.assigneeId && !prep) continue
       const done = e.status === 'done' || e.status === 'published'
-      const stage = e.prepStage ? PREP[e.prepStage] || '' : ''
+      const stage = prep ? PREP[e.prepStage] || '' : ''
       const name = e.title || e.topic || (e.kind === 'shoot' ? 'Съёмка' : 'Публикация')
-      put(e.assigneeId, {
-        id: `p:${e.id}`, date, src: 'plan',
-        title: stage ? `${stage} · ${name}` : name,
+      const title = stage ? `${stage} · ${name}` : name
+      place({
+        id: `p:${e.id}`, date, src: 'plan', kind: prep ? 'prep' : 'pub', refId: e.itemId,
+        // В «Не распределено» без проекта не понять, чья это съёмка.
+        title: !e.assigneeId && e.projectName ? `${title} · ${e.projectName}` : title,
         state: done ? 'done' : date < today ? 'late' : 'open',
+        ownerId: e.assigneeId || null,
+        stage: prep ? e.prepStage : undefined,
       })
     }
     return { byPerson: map, pool: unassigned }
-  }, [tasks, cal, from, to, today])
+  }, [tasks, cal, from, to, today, moved])
 
   // ── Люди по отделам, как в оргструктуре ────────────────────────────
   const groups = useMemo(() => {
@@ -143,6 +188,54 @@ export default function WeekTasks() {
     }
     return order.filter(k => out.has(k)).map(k => ({ dep: k, people: out.get(k)! }))
   }, [employees])
+
+  // Роли человека (основная и вторая) — кому можно отдать карточку этапа.
+  const rolesOf = useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const e of (Array.isArray(employees) ? employees : [])) {
+      if (e.userId) m.set(e.userId, [e.user?.role, e.user?.secondaryRole].filter(Boolean))
+    }
+    return m
+  }, [employees])
+
+  const canDrop = (it: Item, userId: string) => {
+    if (it.kind === 'task') return true
+    if (it.ownerId === userId) return true
+    if (it.kind === 'prep' && it.stage) return (rolesOf.get(userId) ?? []).includes(STAGE_ROLE[it.stage])
+    return false
+  }
+
+  async function dropOn(userId: string, date: string) {
+    const it = drag
+    setDrag(null); setOver(null)
+    if (!it || !canDrop(it, userId)) return
+    if (it.ownerId === userId && it.date === date) return
+    setMoved(m => ({ ...m, [it.id]: { userId, date } }))
+    try {
+      if (it.kind === 'task') {
+        const patch: any = { deadline: date }
+        if (it.ownerId !== userId) {
+          // Меняем ОДНОГО исполнителя — того, из чьей строки тащили;
+          // остальные исполнители задачи остаются при ней.
+          const team = it.team && it.team.length ? it.team : (it.ownerId ? [it.ownerId] : [])
+          const next = it.ownerId ? team.map(x => (x === it.ownerId ? userId : x)) : [userId, ...team]
+          patch.assigneeIds = Array.from(new Set(next.length ? next : [userId]))
+        }
+        await tasksApi.update(it.refId, patch)
+      } else {
+        if (it.ownerId !== userId) await contentPlanApi.assignPrep(it.refId, userId)
+        if (it.date !== date) await contentPlanApi.smartUpdate(it.refId, { publishDate: date })
+      }
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['week-tasks'] }),
+        qc.invalidateQueries({ queryKey: ['week-plan'] }),
+      ])
+    } catch (e) {
+      toast.error(errText(e, 'Не удалось перенести'))
+    } finally {
+      setMoved(m => { const n = { ...m }; delete n[it.id]; return n })
+    }
+  }
 
   const statsOf = (userId: string) => {
     const byDay = byPerson.get(userId)
@@ -176,7 +269,12 @@ export default function WeekTasks() {
     }
   }
 
-  const label = `${start.getDate()} — ${new Date(start.getTime() + 6 * 864e5).getDate()} ${MON[new Date(start.getTime() + 6 * 864e5).getMonth()]}`
+  // Неделя на стыке месяцев — оба месяца: «28 сентября — 4 октября»,
+  // а не «28 — 4 октября».
+  const end = new Date(start.getTime() + 6 * 864e5)
+  const label = start.getMonth() === end.getMonth()
+    ? `${start.getDate()} — ${end.getDate()} ${MON[end.getMonth()]}`
+    : `${start.getDate()} ${MON[start.getMonth()]} — ${end.getDate()} ${MON[end.getMonth()]}`
 
   const nav = (
     <div className="flex items-center gap-2">
@@ -184,7 +282,7 @@ export default function WeekTasks() {
         className="w-11 h-11 rounded-xl border border-surface-200 dark:border-surface-700 flex items-center justify-center text-surface-500">
         <ChevronLeft size={18} />
       </button>
-      <span className="min-w-[164px] text-center text-[15px] font-bold">{label}</span>
+      <span className="min-w-[164px] px-1 text-center text-[15px] font-bold whitespace-nowrap">{label}</span>
       <button onClick={() => setOffset(o => o + 1)} aria-label="Следующая неделя"
         className="w-11 h-11 rounded-xl border border-surface-200 dark:border-surface-700 flex items-center justify-center text-surface-500">
         <ChevronRight size={18} />
@@ -204,11 +302,33 @@ export default function WeekTasks() {
     </div>
   )
 
+  /** Подсказка при наведении: что будет, если потащить. */
+  const dragHint = (it: Item) => it.state === 'done' ? ''
+    : it.kind === 'task' ? ' · перетащите на другой день или человека'
+      : it.kind === 'prep' ? ` · перетащите на другой день или ${STAGE_WHO[it.stage || ''] || 'сотруднику той же роли'}`
+        : ' · перетащите на другой день'
+
+  /** Захват чипа мышью. div, а не button: нативный drag на <button> в
+   *  Chrome не стартует. */
+  const dragProps = (it: Item) => it.state === 'done' ? {} : {
+    draggable: true,
+    onDragStart: (ev: any) => {
+      setDrag(it)
+      ev.dataTransfer.effectAllowed = 'move'
+      try { ev.dataTransfer.setData('text/plain', it.id) } catch { /* noop */ }
+    },
+    onDragEnd: () => { setDrag(null); setOver(null) },
+  }
+
   const chip = (it: Item) => (
-    <button key={it.id} type="button" onClick={() => it.to && navigate(it.to)}
-      title={it.title}
+    <div key={it.id} role="button" tabIndex={0} {...dragProps(it)}
+      onClick={() => it.to && navigate(it.to)}
+      onKeyDown={ev => { if ((ev.key === 'Enter' || ev.key === ' ') && it.to) { ev.preventDefault(); navigate(it.to) } }}
+      title={it.title + dragHint(it)}
       className={clsx(
-        'w-full flex items-center gap-1.5 px-1.5 py-1 rounded-lg border text-left',
+        'w-full flex items-center gap-1.5 px-1.5 py-1 rounded-lg border text-left select-none',
+        it.state !== 'done' && 'cursor-grab active:cursor-grabbing',
+        drag?.id === it.id && 'opacity-40',
         it.state === 'done' ? 'border-green-500/30 bg-green-500/10'
           : it.state === 'late' ? 'border-red-500/30 bg-red-500/10'
             : 'border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60',
@@ -218,7 +338,7 @@ export default function WeekTasks() {
         it.state === 'done' ? 'line-through text-green-700 dark:text-green-400'
           : it.state === 'late' ? 'text-red-700 dark:text-red-400'
             : 'text-surface-700 dark:text-surface-200')}>{it.title}</span>
-    </button>
+    </div>
   )
 
   const legend = (
@@ -227,6 +347,7 @@ export default function WeekTasks() {
       <span className="inline-flex items-center gap-1.5"><i className="w-[3px] h-3 rounded-sm bg-primary-500" />выдана вами</span>
       <span className="inline-flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-sm bg-green-500/40" />сделано</span>
       <span className="inline-flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-sm bg-red-500/40" />просрочено</span>
+      {!narrow && <span className="md:ml-auto">Задачу можно перетащить на другой день или другому сотруднику</span>}
     </div>
   )
 
@@ -300,14 +421,20 @@ export default function WeekTasks() {
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold uppercase tracking-wide text-surface-400">Не распределено</span>
             <span className="px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[11.5px] font-bold tabular-nums">{pool.length}</span>
-            <span className="text-[12px] text-surface-500">задачи без исполнителя</span>
+            <span className="text-[12px] text-surface-500">без исполнителя · перетащите на человека и день</span>
           </div>
           <div className="flex flex-wrap gap-2">
             {pool.map(it => (
-              <button key={it.id} type="button" onClick={() => it.to && navigate(it.to)}
-                className="px-2.5 py-1.5 rounded-xl border border-dashed border-surface-300 dark:border-surface-600 text-[12px] font-medium">
+              <div key={it.id} role="button" tabIndex={0} {...dragProps(it)}
+                onClick={() => it.to && navigate(it.to)}
+                onKeyDown={ev => { if ((ev.key === 'Enter' || ev.key === ' ') && it.to) { ev.preventDefault(); navigate(it.to) } }}
+                title={it.title + dragHint(it)}
+                className={clsx('px-2.5 py-1.5 rounded-xl border border-dashed border-surface-300 dark:border-surface-600 text-[12px] font-medium select-none',
+                  it.state !== 'done' && 'cursor-grab active:cursor-grabbing',
+                  it.state === 'late' && 'border-red-500/45 text-red-700 dark:text-red-400',
+                  drag?.id === it.id && 'opacity-40')}>
                 {it.title}
-              </button>
+              </div>
             ))}
           </div>
         </div>
@@ -340,9 +467,20 @@ export default function WeekTasks() {
                         <span className="block text-[10.5px] text-surface-500 truncate">{e.position || '—'}</span>
                       </span>
                     </div>
-                    {days.map((d, i) => (
-                      <div key={d} className={clsx('group relative px-1.5 py-1.5 border-b border-r border-surface-100 dark:border-surface-700 flex flex-col gap-1 min-w-0',
-                        i >= 5 && 'bg-surface-50 dark:bg-surface-800/50')}>
+                    {days.map((d, i) => {
+                      const key = `${e.userId}|${d}`
+                      const ok = !!drag && canDrop(drag, e.userId)
+                      return (
+                      <div key={d}
+                        onDragOver={drag ? ev => {
+                          if (ok) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; if (over !== key) setOver(key) }
+                          else if (over !== null) setOver(null)
+                        } : undefined}
+                        onDrop={drag ? ev => { ev.preventDefault(); dropOn(e.userId, d) } : undefined}
+                        className={clsx('group relative px-1.5 py-1.5 border-b border-r border-surface-100 dark:border-surface-700 flex flex-col gap-1 min-w-0 transition-opacity',
+                          i >= 5 && 'bg-surface-50 dark:bg-surface-800/50',
+                          drag && !ok && 'opacity-40',
+                          over === key && ok && 'outline-dashed outline-2 outline-primary-500 [outline-offset:-3px] bg-primary-500/10')}>
                         {(byPerson.get(e.userId)?.get(d) ?? []).map(chip)}
                         <button type="button" onClick={() => setIssue({ userId: e.userId, date: d })}
                           title="Выдать задачу на этот день"
@@ -353,7 +491,8 @@ export default function WeekTasks() {
                           <Plus size={14} />
                         </button>
                       </div>
-                    ))}
+                      )
+                    })}
                     <div className="flex flex-col items-end justify-center gap-1 px-2 py-2 border-b border-surface-100 dark:border-surface-700">
                       <span className={clsx('text-[13px] font-semibold tabular-nums',
                         s.all > 0 && s.done === s.all ? 'text-green-600 dark:text-green-400' : 'text-surface-700 dark:text-surface-200')}>

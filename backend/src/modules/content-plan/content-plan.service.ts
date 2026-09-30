@@ -275,6 +275,44 @@ export class ContentPlanService {
     return { id: itemId, assigneeId: userId };
   }
 
+  /** Назначить исполнителя карточке подготовки — перетаскиванием в «Задачах
+   *  недели» у основателя. Этап задаёт роль: съёмка — видеографу, монтаж —
+   *  монтажёру, дизайн — дизайнеру. Промахнулся строкой при перетаскивании —
+   *  сервер не даст отдать монтаж дизайнеру. Только админ и основатель:
+   *  исполнитель передаёт свою съёмку через reassignShoot. */
+  async assignPrep(
+    itemId: string, userId: string | null,
+    actor: { id: string; role?: string | null; secondaryRole?: string | null },
+  ) {
+    const item = await this.repo.findOne({ where: { id: itemId } });
+    if (!item || !item.shootForItemId) throw new BadRequestException('Карточка подготовки не найдена');
+    if (!this.canReassignShoot(actor)) throw new ForbiddenException('Назначать исполнителя может только руководство');
+    let stage = (item.prepStage as string | null) || null;
+    if (!stage) {
+      // Легаси-карточки без этапа: под пост — дизайн, остальное — съёмка
+      // (так же их показывает календарь).
+      const parent = await this.repo.findOne({ where: { id: item.shootForItemId } });
+      stage = String(parent?.contentType) === 'post' ? 'design' : 'shoot';
+    }
+    const need: Record<string, UserRole> = {
+      shoot: UserRole.VIDEOGRAPHER, edit: UserRole.VIDEO_EDITOR, design: UserRole.DESIGNER,
+    };
+    const refuse: Record<string, string> = {
+      shoot: 'Съёмку можно назначить только видеографу',
+      edit: 'Монтаж можно назначить только монтажёру',
+      design: 'Дизайн можно назначить только дизайнеру',
+    };
+    if (userId) {
+      const user = await this.repo.manager.getRepository(User).findOne({ where: { id: userId } });
+      const roles = [user?.role, user?.secondaryRole].filter(Boolean) as string[];
+      const ok = !!user && user.isActive !== false && roles.some(r => r === need[stage as string]);
+      if (!ok) throw new BadRequestException(refuse[stage as string] || 'Этому сотруднику карточку назначить нельзя');
+    }
+    await this.repo.update(itemId, { assigneeId: userId });
+    this.emitTasksChanged(item.projectId);
+    return { id: itemId, assigneeId: userId };
+  }
+
   /** «Мои задачи производства» за период: всё, где человек назначен
    *  исполнителем — съёмки, монтаж, макеты. Публикации тоже попадут, если
    *  когда-нибудь начнём назначать исполнителя и на них.

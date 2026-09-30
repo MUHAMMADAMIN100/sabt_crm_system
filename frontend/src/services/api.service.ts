@@ -417,6 +417,9 @@ export const contentPlanApi = {
   /** Назначить основного видеографа (за ним закрепляются новые съёмки). */
   setDefaultVideographer: (userId: string | null) =>
     api.patch('/content-plan/default-videographer', { userId }).then(r => r.data),
+  /** Назначить исполнителя карточке подготовки (съёмка/монтаж/дизайн) — только руководство. */
+  assignPrep: (id: string, userId: string | null) =>
+    api.patch(`/content-plan/prep/${id}/assignee`, { userId }).then(r => r.data),
   /** Передать съёмку другому видеографу (null — оставить у себя). */
   reassignShoot: (id: string, userId: string | null) =>
     api.patch(`/content-plan/shoot/${id}/assignee`, { userId }).then(r => r.data),

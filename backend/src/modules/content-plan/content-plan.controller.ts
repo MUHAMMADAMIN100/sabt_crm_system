@@ -71,6 +71,14 @@ export class ContentPlanController {
     return this.service.reassignShoot(id, body?.userId ?? null, req.user);
   }
 
+  /** Назначить исполнителя карточке подготовки (съёмка / монтаж / дизайн) —
+   *  перетаскиванием в «Задачах недели». Роль по этапу и право — в сервисе.
+   *  Литеральный сегмент объявлен ДО ':id'. */
+  @Patch('prep/:id/assignee')
+  assignPrep(@Request() req, @Param('id') id: string, @Body() body: { userId?: string | null }) {
+    return this.service.assignPrep(id, body?.userId ?? null, req.user);
+  }
+
   /** Своя карточка: отметка «готово/не готово» и перенос на другой день.
    *  Только эти два действия и только у своей — поэтому это не smart-item,
    *  закрытый ролями СММ. Отмена задачи исполнителю не даётся. */
