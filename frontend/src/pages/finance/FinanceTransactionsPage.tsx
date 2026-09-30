@@ -16,6 +16,8 @@ import CalendarItemModal from './CalendarItemModal';
 import { FinLoading, FinLoadError, finConfirm, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
 import { AccountLabel } from './AccountIdentity';
+import BalanceCurve from './BalanceCurve';
+import useNarrow from '@/hooks/useNarrow';
 
 const TYPES = ['income', 'expense', 'transfer', 'saving'];
 const PAGE_SIZE = 50;
@@ -95,6 +97,9 @@ export default function FinanceTransactionsPage() {
   const [editTx, setEditTx] = useState<any>(null);
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
   const [addDate, setAddDate] = useState<string | null>(null);
+  // День под курсором на кривой остатка — подсвечиваем его в календаре.
+  const [hoverIso, setHoverIso] = useState<string | null>(null);
+  const narrow = useNarrow();
 
   useEffect(() => {
     const t = setTimeout(() => { setDq(q.trim()); setPage(1); }, 350);
@@ -147,6 +152,38 @@ export default function FinanceTransactionsPage() {
     enabled: view === 'calendar',
   });
   const calData = calQ.data;
+  // Остаток на счетах на конец каждого дня — кривая над календарём. Только
+  // факт: считает сервер по тем же правилам, что и баланс счетов.
+  const balQ = useQuery({
+    queryKey: ['finance', 'balance-days', calYm],
+    queryFn: () => financeApi.balanceDays(calYm),
+    enabled: view === 'calendar',
+  });
+  const factBalance = useMemo(() => {
+    const map = new Map<string, number | null>();
+    for (const d of (balQ.data?.days ?? []) as Array<{ date: string; balance: number | null }>) map.set(d.date, d.balance);
+    return map;
+  }, [balQ.data]);
+  // Приход и расход дня для подсказки на кривой — по тем же операциям,
+  // что двигают остаток: проведённые, без переводов между своими счетами.
+  const factDayTotals = useMemo(() => {
+    const map = new Map<string, { inc: number; exp: number }>();
+    for (const t of (calData?.items ?? []) as any[]) {
+      if ((t.status && t.status !== 'completed') || t.affectsBalance === false) continue;
+      if (t.type !== 'income' && t.type !== 'expense') continue;
+      const k = String(t.date || '').slice(0, 10);
+      const cur = map.get(k) ?? { inc: 0, exp: 0 };
+      if (t.type === 'income') cur.inc += Number(t.amount) || 0; else cur.exp += Number(t.amount) || 0;
+      map.set(k, cur);
+    }
+    return map;
+  }, [calData]);
+  const balSince: string = balQ.data?.since || '2026-06-01';
+  const curveNote = calYm < balSince.slice(0, 7)
+    ? 'Остаток по дням считается с июня 2026 — раньше учёт вёлся в Notion, без остатков по счетам.'
+    : calYm > currentYm()
+      ? 'Месяц ещё не наступил — здесь только факт, кривая появится с первыми операциями.'
+      : 'Кривая появится со второго дня месяца.';
   const txns: any[] = txQ.data?.items ?? [];
   const total: number = txQ.data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -252,8 +289,15 @@ export default function FinanceTransactionsPage() {
       ) : view === 'calendar' && calQ.isError ? (
         <FinLoadError onRetry={() => calQ.refetch()} text="Не удалось загрузить операции календаря." />
       ) : view === 'calendar' ? (
-        <TxCalendar ym={calYm} txns={calTxns} onAdd={setAddDate} onEditItem={editFromDetails}
-          onMoveItem={moveTx} canMoveItem={(t: any) => t.status !== 'cancelled' && !isImportedArchive(t)} />
+        <div className="fin-cal-stack">
+          {balQ.data && (
+            <BalanceCurve ym={calYm} mode="fact" balances={factBalance} narrow={narrow}
+              dayTotals={factDayTotals} onHoverDay={setHoverIso} emptyNote={curveNote} />
+          )}
+          {balQ.isError && <p className="mini muted fin-table-note">Не удалось загрузить остаток по дням — календарь ниже работает как обычно.</p>}
+          <TxCalendar ym={calYm} txns={calTxns} onAdd={setAddDate} onEditItem={editFromDetails} highlightIso={hoverIso}
+            onMoveItem={moveTx} canMoveItem={(t: any) => t.status !== 'cancelled' && !isImportedArchive(t)} />
+        </div>
       ) : txQ.isLoading ? (
         <FinLoading />
       ) : txQ.isError ? (
@@ -305,7 +349,7 @@ export default function FinanceTransactionsPage() {
  *  Клик по строке — подробности, «+» в дне — новая операция этой датой,
  *  длинные дни сворачиваются до 5 строк («ещё N»). */
 const CAL_DAY_LIMIT = 5;
-export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, renderStatusControl, onMoveItem, canMoveItem, dayBalance }: {
+export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, renderStatusControl, onMoveItem, canMoveItem, dayBalance, highlightIso }: {
   ym: string; txns: any[]; onAdd: (iso: string) => void;
   /** Скрыть кнопку «＋ добавить операцию» в дне — для read-only календарей
    *  (например, план выплат на странице «Планирование»). */
@@ -327,6 +371,8 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
   /** Остаток денег на конец каждого дня ('YYYY-MM-DD' → сумма). Ради него в
    *  планирование и заходят: видно, в какой день денег не хватит. */
   dayBalance?: Map<string, number>;
+  /** День под курсором на кривой остатка — подсветить клетку. */
+  highlightIso?: string | null;
 }) {
   // Клик по операции в дне открывает модалку с краткой информацией.
   const [detail, setDetail] = useState<any>(null);
@@ -439,7 +485,7 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
             return (
               <div key={i}
                 style={bal != null && bal < 0 ? { boxShadow: 'inset 0 0 0 1px rgba(239,68,68,0.45)' } : undefined}
-                className={'tx-cal-cell' + (iso ? '' : ' off') + (iso === today ? ' today' : '') + (i % 7 >= 5 ? ' wknd' : '') + (iso && dragId && overIso === iso ? ' drop-over' : '')}
+                className={'tx-cal-cell' + (iso ? '' : ' off') + (iso === today ? ' today' : '') + (i % 7 >= 5 ? ' wknd' : '') + (iso && highlightIso === iso ? ' hl' : '') + (iso && dragId && overIso === iso ? ' drop-over' : '')}
                 onDragOver={iso ? (e) => { if (dragId) { e.preventDefault(); if (overIso !== iso) setOverIso(iso); } } : undefined}
                 onDrop={iso ? (e) => {
                   if (!dragId) return;

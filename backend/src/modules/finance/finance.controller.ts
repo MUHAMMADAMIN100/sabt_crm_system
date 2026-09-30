@@ -81,6 +81,10 @@ export class FinanceController {
   @Get('accounts/balances')
   accountsBalances() { return this.service.accountsBalances(); }
 
+  /** Остаток на конец каждого дня месяца — кривая в «Транзакциях». */
+  @Get('accounts/balance-days')
+  balanceByDay(@Query('ym') ym?: string) { return this.service.balanceByDay(ym); }
+
   @Get('forecast')
   forecast(@Request() req, @Query('start') start?: string, @Query('months') months?: string, @Query('scenario') scenario?: string) {
     return this.service.forecast(start || currentYm(), Number(months) || 12, scenario || 'base', req.user?.role);

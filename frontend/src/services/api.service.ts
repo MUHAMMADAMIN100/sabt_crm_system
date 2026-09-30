@@ -458,6 +458,8 @@ export const financeApi = {
   expenseSummary: (ym: string) => api.get('/finance/expense/summary', { params: { ym } }).then(r => r.data),
   expenseDetail: (kind: string, ym: string, start?: string) => api.get(`/finance/expense/detail/${kind}`, { params: { ym, start } }).then(r => r.data),
   accountsBalances: () => api.get('/finance/accounts/balances').then(r => r.data),
+  /** Остаток на счетах на конец каждого дня месяца (только факт) — кривая в «Транзакциях». */
+  balanceDays: (ym: string) => api.get('/finance/accounts/balance-days', { params: { ym } }).then(r => r.data),
   forecast: (params: { start: string; months: number; scenario: string }) => api.get('/finance/forecast', { params }).then(r => r.data),
   createForecastAdjustment: (data: any) => api.post('/finance/forecast/adjustments', data).then(r => r.data),
   updateForecastAdjustment: (id: string, data: any) => api.patch(`/finance/forecast/adjustments/${id}`, data).then(r => r.data),

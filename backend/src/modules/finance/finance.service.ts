@@ -2506,6 +2506,54 @@ export class FinanceService implements OnModuleInit {
     };
   }
 
+  /** Остаток на счетах на конец каждого дня месяца — кривая в «Транзакциях».
+   *
+   *  Правила ровно те же, что у accountsBalances: только проведённые
+   *  (completed) операции, affectsBalance !== false, доход и расход — по своему
+   *  счёту, перевод между своими счетами итог не меняет. Поэтому последняя
+   *  точка кривой совпадает с «Текущим балансом» на Планировании.
+   *
+   *  Здесь только ФАКТ: будущие дни — null. До перехода на CRM (июнь 2026)
+   *  учёт вёлся в Notion без остатков по счетам — эти дни тоже null, чтобы не
+   *  рисовать ровную линию из стартового остатка, которой на деле не было. */
+  async balanceByDay(ym?: string) {
+    const month = YM_RE.test(ym || '') ? (ym as string) : currentYm();
+    const [y, m] = month.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+    const today = todayISO();
+    const first = `${month}-01`;
+    const accounts = await this.accRepo.find();
+    const ids = new Set(accounts.map(a => a.id));
+    const own = (id?: string | null) => !!id && ids.has(id);
+    const delta = (t: FinanceTransaction): number => {
+      const amt = Number(t.amount) || 0;
+      if (t.type === FinanceTxType.INCOME) return own(t.accountId) ? amt : 0;
+      if (t.type === FinanceTxType.EXPENSE) return own(t.accountId) ? -amt : 0;
+      if (isLegacySaving(t)) return own(t.accountId) ? amt : 0;
+      if (t.type === FinanceTxType.TRANSFER || t.type === FinanceTxType.SAVING) {
+        return (own(t.toAccountId) ? amt : 0) - (own(t.fromAccountId) ? amt : 0);
+      }
+      return 0;
+    };
+    const txs = (await this.txRepo.find())
+      .filter(t => isPostedFinanceTransaction(t) && t.affectsBalance !== false);
+    let run = accounts.reduce((sum, a) => sum + (Number(a.startBalance) || 0), 0);
+    const byDate = new Map<string, number>();
+    for (const t of txs) {
+      const d = String(t.date || '').slice(0, 10);
+      if (d < first) run += delta(t);
+      else if (d.slice(0, 7) === month) byDate.set(d, (byDate.get(d) ?? 0) + delta(t));
+    }
+    const days: Array<{ date: string; balance: number | null }> = [];
+    for (let d = 1; d <= last; d++) {
+      const iso = `${month}-${String(d).padStart(2, '0')}`;
+      run += byDate.get(iso) ?? 0;
+      const known = iso >= NOTION_HISTORY_CUTOFF_DATE && iso <= today;
+      days.push({ date: iso, balance: known ? r2(run) : null });
+    }
+    return { ym: month, since: NOTION_HISTORY_CUTOFF_DATE, today, days };
+  }
+
   // ─── ФИНАНСОВОЕ ПЛАНИРОВАНИЕ ─────────────────────────────────────
   async forecast(start = currentYm(), months = 12, scenario = 'base', role?: string) {
     if (!YM_RE.test(start)) start = currentYm();
