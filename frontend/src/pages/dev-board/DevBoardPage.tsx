@@ -3903,7 +3903,7 @@ export default function DevBoardPage() {
                 )}
               </div>
 
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-2 pb-2">
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-y-contain px-2 pb-2">
                 {canManage && (
                   <QuickAdd
                     placeholder="Новая задача…"
