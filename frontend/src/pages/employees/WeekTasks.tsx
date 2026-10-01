@@ -4,24 +4,32 @@
 //
 // В сетке ВСЯ нагрузка человека, из двух источников:
 //   • контент-план — рилсы, посты, съёмка, монтаж, дизайн (синяя полоска),
-//   • задачи, выданные руководством (фиолетовая полоска).
+//   • задачи, выданные руководством (полоска цвета акцента).
 // Если показывать только выданное, сетка врёт: SMM-специалист с восемью
 // рилсами выглядит незагруженным.
 //
 // Перетаскивание (было в утверждённом дизайне — «перетащите на человека и
-// день», — но в первой версии не сделано):
+// день»):
 //   • задачу — любому сотруднику и на любой день;
 //   • карточку подготовки — на другой день или человеку той же роли:
 //     съёмку видеографу, монтаж монтажёру, дизайн дизайнеру;
 //   • публикацию — только на другой день: исполнитель у неё от проекта;
 //   • сделанное не двигается.
 // Куда нельзя, клетки гаснут сразу при захвате — не надо угадывать.
-import { useMemo, useState } from 'react'
+//
+// Вид (утверждён 01.10.2026): у задачи значок этапа и проект; сделанное
+// свёрнуто в «✓ N готово»; сегодня выделено колонкой; в шапке дня — сколько
+// задач и просрочено; справа «Нагрузка»; фильтр «Все · С просрочкой ·
+// Свободны» и поиск; клик по карточке контент-плана — окошко с действиями;
+// «Не распределено» закреплено сверху; выходные уже; отделы сворачиваются.
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
-import { ChevronLeft, ChevronRight, Plus, RotateCcw } from 'lucide-react'
+import {
+  Check, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, RotateCcw, Scissors, Search, Send, Video,
+} from 'lucide-react'
 import { employeesApi, tasksApi, contentPlanApi } from '@/services/api.service'
 import { Modal } from '@/components/ui'
 import useNarrow from '@/hooks/useNarrow'
@@ -29,6 +37,11 @@ import useNarrow from '@/hooks/useNarrow'
 const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const MON = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
   'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+
+/** В клетке видно до трёх задач, остальное — под «ещё N». */
+const DAY_LIMIT = 3
+/** Сетка: сотрудник · пять будней · выходные уже · нагрузка. */
+const COLS = '232px repeat(5, minmax(0, 1fr)) repeat(2, minmax(0, 0.62fr)) 118px'
 
 const iso = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 
@@ -45,8 +58,20 @@ const initials = (name?: string | null) => {
   return ((p[0]?.[0] || '') + (p[1]?.[0] || '')).toUpperCase() || '?'
 }
 
+const plural = (n: number, one: string, few: string, many: string) => {
+  const a = Math.abs(n) % 100, b = a % 10
+  if (a > 10 && a < 20) return many
+  if (b > 1 && b < 5) return few
+  if (b === 1) return one
+  return many
+}
+
+/** «1 октября» из 'YYYY-MM-DD'. */
+const dayText = (d?: string | null) => (d ? `${Number(d.slice(8, 10))} ${MON[Number(d.slice(5, 7)) - 1] || ''}` : '')
+
 /** Этап подготовки словом — в чипе иначе не понять, что за карточка. */
 const PREP: Record<string, string> = { shoot: 'Съёмка', edit: 'Монтаж', design: 'Дизайн' }
+const PREP_ICON: Record<string, any> = { shoot: Video, edit: Scissors, design: Pencil }
 /** Кому по роли можно отдать карточку этого этапа. */
 const STAGE_ROLE: Record<string, string> = { shoot: 'videographer', edit: 'video_editor', design: 'designer' }
 const STAGE_WHO: Record<string, string> = { shoot: 'видеографу', edit: 'монтажёру', design: 'дизайнеру' }
@@ -68,6 +93,10 @@ type Item = {
   stage?: string
   /** Все исполнители задачи по порядку: при переносе меняем одного. */
   team?: string[]
+  /** Проект — чей это клиент. */
+  project?: string | null
+  /** Дата выхода публикации, к которой готовится карточка. */
+  outDate?: string | null
 }
 
 /** Текст ошибки сервера — чтобы сказать, почему не получилось. */
@@ -90,6 +119,15 @@ export default function WeekTasks() {
   // Оптимистичный перенос: чип сразу стоит на новом месте, пока сервер
   // не ответит; при ошибке возвращается обратно.
   const [moved, setMoved] = useState<Record<string, { userId: string; date: string }>>({})
+  // Кого показать и поиск по имени.
+  const [filter, setFilter] = useState<'all' | 'late' | 'free'>('all')
+  const [query, setQuery] = useState('')
+  // Свёрнутые отделы и раскрытые клетки («ещё N», «✓ N готово»).
+  const [shut, setShut] = useState<Record<string, boolean>>({})
+  const [openCell, setOpenCell] = useState<Record<string, boolean>>({})
+  // Окошко карточки контент-плана: что открыто и где.
+  const [pop, setPop] = useState<{ it: Item; x: number; y: number } | null>(null)
+  const [acting, setActing] = useState(false)
 
   const start = useMemo(() => {
     const d = monday(new Date())
@@ -115,6 +153,21 @@ export default function WeekTasks() {
     queryKey: ['week-plan', from, to],
     queryFn: () => contentPlanApi.smmCalendar({ from, to }),
   })
+
+  // Окошко закрывается по Esc и при прокрутке — иначе висит не у своей карточки.
+  useEffect(() => {
+    if (!pop) return
+    const close = () => setPop(null)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [pop])
 
   // ── Раскладываем обе ленты по людям и дням ─────────────────────────
   const { byPerson, pool } = useMemo(() => {
@@ -142,6 +195,7 @@ export default function WeekTasks() {
         to: `/tasks/${t.id}`,
         ownerId: t.assigneeId || null,
         team: (Array.isArray(t.assignees) ? t.assignees : []).map((a: any) => a.userId).filter(Boolean),
+        project: t.project?.name || null,
       })
     }
 
@@ -156,14 +210,14 @@ export default function WeekTasks() {
       const done = e.status === 'done' || e.status === 'published'
       const stage = prep ? PREP[e.prepStage] || '' : ''
       const name = e.title || e.topic || (e.kind === 'shoot' ? 'Съёмка' : 'Публикация')
-      const title = stage ? `${stage} · ${name}` : name
       place({
         id: `p:${e.id}`, date, src: 'plan', kind: prep ? 'prep' : 'pub', refId: e.itemId,
-        // В «Не распределено» без проекта не понять, чья это съёмка.
-        title: !e.assigneeId && e.projectName ? `${title} · ${e.projectName}` : title,
+        title: stage ? `${stage} · ${name}` : name,
         state: done ? 'done' : date < today ? 'late' : 'open',
         ownerId: e.assigneeId || null,
         stage: prep ? e.prepStage : undefined,
+        project: e.projectName || null,
+        outDate: prep ? (e.reelDate || null) : date,
       })
     }
     return { byPerson: map, pool: unassigned }
@@ -205,6 +259,12 @@ export default function WeekTasks() {
     return false
   }
 
+  const refresh = () => Promise.all([
+    qc.invalidateQueries({ queryKey: ['week-tasks'] }),
+    qc.invalidateQueries({ queryKey: ['week-plan'] }),
+    qc.invalidateQueries({ queryKey: ['smm-calendar'] }),
+  ])
+
   async function dropOn(userId: string, date: string) {
     const it = drag
     setDrag(null); setOver(null)
@@ -226,10 +286,7 @@ export default function WeekTasks() {
         if (it.ownerId !== userId) await contentPlanApi.assignPrep(it.refId, userId)
         if (it.date !== date) await contentPlanApi.smartUpdate(it.refId, { publishDate: date })
       }
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ['week-tasks'] }),
-        qc.invalidateQueries({ queryKey: ['week-plan'] }),
-      ])
+      await refresh()
     } catch (e) {
       toast.error(errText(e, 'Не удалось перенести'))
     } finally {
@@ -237,20 +294,70 @@ export default function WeekTasks() {
     }
   }
 
+  /** Действия из окошка карточки контент-плана. */
+  async function planAction(it: Item, act: 'done' | 'tomorrow') {
+    if (acting) return
+    setActing(true)
+    try {
+      if (act === 'done') {
+        await contentPlanApi.smartUpdate(it.refId, { status: 'published' })
+      } else {
+        const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() + 1)
+        await contentPlanApi.smartUpdate(it.refId, { publishDate: iso(d) })
+      }
+      setPop(null)
+      await refresh()
+      toast.success(act === 'done' ? 'Отмечено: готово' : 'Перенесено на завтра')
+    } catch (e) {
+      toast.error(errText(e, 'Не получилось'))
+    } finally {
+      setActing(false)
+    }
+  }
+
   const statsOf = (userId: string) => {
     const byDay = byPerson.get(userId)
-    let all = 0, done = 0, plan = 0, task = 0
+    let all = 0, done = 0, late = 0, plan = 0, task = 0
     if (byDay) {
       for (const list of byDay.values()) {
         for (const it of list) {
           all += 1
           if (it.state === 'done') done += 1
+          if (it.state === 'late') late += 1
           if (it.src === 'task') task += 1; else plan += 1
         }
       }
     }
-    return { all, done, plan, task }
+    return { all, done, late, plan, task }
   }
+
+  // Счётчики фильтра — по людям: фильтр отбирает людей, а не задачи.
+  const allPeople = groups.flatMap(g => g.people)
+  const counts = {
+    all: allPeople.length,
+    late: allPeople.filter((e: any) => statsOf(e.userId).late > 0).length,
+    free: allPeople.filter((e: any) => statsOf(e.userId).all === 0).length,
+  }
+  const q = query.trim().toLowerCase()
+  const shown = groups
+    .map(g => ({
+      ...g,
+      people: g.people.filter((e: any) => {
+        if (q && !String(e.fullName || '').toLowerCase().includes(q)) return false
+        const s = statsOf(e.userId)
+        return filter === 'late' ? s.late > 0 : filter === 'free' ? s.all === 0 : true
+      }),
+    }))
+    .filter(g => g.people.length > 0)
+
+  // Шапка дня: сколько всего задач и сколько из них просрочено.
+  const dayStats = days.map(d => {
+    let all = 0, late = 0
+    for (const byDay of byPerson.values()) {
+      for (const it of byDay.get(d) ?? []) { all += 1; if (it.state === 'late') late += 1 }
+    }
+    return { all, late }
+  })
 
   async function repeatLastWeek() {
     if (repeating) return
@@ -269,8 +376,7 @@ export default function WeekTasks() {
     }
   }
 
-  // Неделя на стыке месяцев — оба месяца: «28 сентября — 4 октября»,
-  // а не «28 — 4 октября».
+  // Неделя на стыке месяцев — оба месяца: «28 сентября — 4 октября».
   const end = new Date(start.getTime() + 6 * 864e5)
   const label = start.getMonth() === end.getMonth()
     ? `${start.getDate()} — ${end.getDate()} ${MON[end.getMonth()]}`
@@ -302,17 +408,40 @@ export default function WeekTasks() {
     </div>
   )
 
+  const filters = (
+    <div className={clsx('flex flex-wrap items-center gap-2', !narrow && 'ml-auto')}>
+      <div role="group" aria-label="Кого показать"
+        className="inline-flex gap-0.5 p-1 rounded-xl border border-surface-200 dark:border-surface-700">
+        {([['all', 'Все', counts.all], ['late', 'С просрочкой', counts.late], ['free', 'Свободны', counts.free]] as const).map(([k, l, n]) => (
+          <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}
+            className={clsx('min-h-[36px] px-3 rounded-lg text-[12.5px] font-semibold whitespace-nowrap',
+              filter === k ? 'bg-surface-200 dark:bg-surface-700 text-surface-900 dark:text-white'
+                : k === 'late' ? 'text-red-600 dark:text-red-400'
+                  : k === 'free' ? 'text-green-600 dark:text-green-400' : 'text-surface-500')}>
+            {l} · {n}
+          </button>
+        ))}
+      </div>
+      <label className={clsx('relative', narrow && 'flex-1 min-w-[200px]')}>
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400 pointer-events-none" />
+        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Найти сотрудника"
+          aria-label="Найти сотрудника" className={clsx('input min-h-[44px] pl-9', narrow ? 'w-full' : 'w-[220px]')} />
+      </label>
+    </div>
+  )
+
   /** Подсказка при наведении: что будет, если потащить. */
   const dragHint = (it: Item) => it.state === 'done' ? ''
     : it.kind === 'task' ? ' · перетащите на другой день или человека'
       : it.kind === 'prep' ? ` · перетащите на другой день или ${STAGE_WHO[it.stage || ''] || 'сотруднику той же роли'}`
         : ' · перетащите на другой день'
 
-  /** Захват чипа мышью. div, а не button: нативный drag на <button> в
+  /** Захват чипа мышью. div, а не button: нативный drag на кнопке в
    *  Chrome не стартует. */
   const dragProps = (it: Item) => it.state === 'done' ? {} : {
     draggable: true,
     onDragStart: (ev: any) => {
+      setPop(null)
       setDrag(it)
       ev.dataTransfer.effectAllowed = 'move'
       try { ev.dataTransfer.setData('text/plain', it.id) } catch { /* noop */ }
@@ -320,34 +449,59 @@ export default function WeekTasks() {
     onDragEnd: () => { setDrag(null); setOver(null) },
   }
 
-  const chip = (it: Item) => (
-    <div key={it.id} role="button" tabIndex={0} {...dragProps(it)}
-      onClick={() => it.to && navigate(it.to)}
-      onKeyDown={ev => { if ((ev.key === 'Enter' || ev.key === ' ') && it.to) { ev.preventDefault(); navigate(it.to) } }}
-      title={it.title + dragHint(it)}
-      className={clsx(
-        'w-full flex items-center gap-1.5 px-1.5 py-1 rounded-lg border text-left select-none',
-        it.state !== 'done' && 'cursor-grab active:cursor-grabbing',
-        drag?.id === it.id && 'opacity-40',
-        it.state === 'done' ? 'border-green-500/30 bg-green-500/10'
-          : it.state === 'late' ? 'border-red-500/30 bg-red-500/10'
-            : 'border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60',
-      )}>
-      <i className={clsx('w-[3px] self-stretch rounded-sm shrink-0', it.src === 'task' ? 'bg-primary-500' : 'bg-sky-500')} />
-      <span className={clsx('min-w-0 truncate text-[11px] leading-tight',
-        it.state === 'done' ? 'line-through text-green-700 dark:text-green-400'
-          : it.state === 'late' ? 'text-red-700 dark:text-red-400'
-            : 'text-surface-700 dark:text-surface-200')}>{it.title}</span>
-    </div>
-  )
+  /** Клик: задача — на её страницу; карточка контент-плана — окошко. */
+  const openItem = (it: Item, el: HTMLElement) => {
+    if (it.to) { navigate(it.to); return }
+    const r = el.getBoundingClientRect()
+    setPop({ it, x: r.left, y: r.bottom + 6 })
+  }
+
+  const chip = (it: Item) => {
+    const done = it.state === 'done'
+    const late = it.state === 'late'
+    const Icon = it.kind === 'task' ? CheckSquare : it.kind === 'pub' ? Send : (PREP_ICON[it.stage || ''] || Video)
+    return (
+      <div key={it.id} role="button" tabIndex={0} {...dragProps(it)}
+        onClick={ev => openItem(it, ev.currentTarget)}
+        onKeyDown={ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openItem(it, ev.currentTarget) } }}
+        title={it.title + (it.project ? ` · ${it.project}` : '') + dragHint(it)}
+        className={clsx(
+          'w-full flex items-stretch gap-1.5 px-1.5 py-1 rounded-lg border text-left select-none',
+          !done && 'cursor-grab active:cursor-grabbing',
+          drag?.id === it.id && 'opacity-40',
+          done ? 'border-surface-200 dark:border-surface-700'
+            : late ? 'border-red-500/30 bg-red-500/10'
+              : 'border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60',
+        )}>
+        <i className={clsx('w-[3px] rounded-sm shrink-0', it.src === 'task' ? 'bg-primary-500' : 'bg-sky-500', done && 'opacity-50')} />
+        <span className="min-w-0 flex-1 flex flex-col">
+          <span className={clsx('flex items-center gap-1 min-w-0 text-[11px] font-semibold leading-tight',
+            done ? 'text-surface-400' : late ? 'text-red-700 dark:text-red-400' : 'text-surface-700 dark:text-surface-100')}>
+            {done ? <Check size={11} className="shrink-0 text-green-500" /> : <Icon size={11} className="shrink-0 opacity-80" />}
+            <span className="truncate">{it.title}</span>
+          </span>
+          {it.project && (
+            <span className={clsx('truncate text-[10px] leading-tight pl-4',
+              late ? 'text-red-600/80 dark:text-red-400/75' : 'text-surface-400')}>{it.project}</span>
+          )}
+        </span>
+      </div>
+    )
+  }
 
   const legend = (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] text-surface-500 dark:text-surface-400">
       <span className="inline-flex items-center gap-1.5"><i className="w-[3px] h-3 rounded-sm bg-sky-500" />из контент-плана</span>
       <span className="inline-flex items-center gap-1.5"><i className="w-[3px] h-3 rounded-sm bg-primary-500" />выдана вами</span>
-      <span className="inline-flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-sm bg-green-500/40" />сделано</span>
       <span className="inline-flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-sm bg-red-500/40" />просрочено</span>
-      {!narrow && <span className="md:ml-auto">Задачу можно перетащить на другой день или другому сотруднику</span>}
+      <span className="inline-flex items-center gap-1.5"><Check size={12} className="text-green-500" />сделанное свёрнуто в «готово»</span>
+      {!narrow && <span className="md:ml-auto">Задачу — на любой день и любому · съёмку, монтаж и дизайн — только человеку той же роли</span>}
+    </div>
+  )
+
+  const nobody = shown.length === 0 && (
+    <div className="card p-6 text-center text-[13px] text-surface-500">
+      {q ? `Никого не нашлось по «${query.trim()}».` : filter === 'late' ? 'Просрочек нет — все в графике.' : 'Свободных на этой неделе нет.'}
     </div>
   )
 
@@ -356,7 +510,9 @@ export default function WeekTasks() {
     return (
       <div className="space-y-4">
         {nav}
-        {groups.map(g => (
+        {filters}
+        {nobody}
+        {shown.map(g => (
           <div key={g.dep} className="space-y-2">
             <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400">{g.dep}</div>
             {g.people.map((e: any) => {
@@ -390,7 +546,10 @@ export default function WeekTasks() {
                       )
                     })}
                   </div>
-                  <div className="text-[11px] text-surface-500">{s.plan} план · {s.task} выдано</div>
+                  <div className={clsx('text-[11px] font-semibold',
+                    !s.all ? 'text-green-600 dark:text-green-400' : s.late ? 'text-red-600 dark:text-red-400' : 'text-surface-500')}>
+                    {!s.all ? 'свободен на этой неделе' : s.late ? `${s.late} просрочено · ${s.plan} план · ${s.task} выдано` : `в графике · ${s.plan} план · ${s.task} выдано`}
+                  </div>
                   <button type="button" onClick={() => setIssue({ userId: e.userId, date: today })}
                     className="w-full min-h-[44px] rounded-xl border border-dashed border-surface-300 dark:border-surface-600
                                text-[13px] font-semibold text-primary-600 dark:text-primary-400">
@@ -414,10 +573,11 @@ export default function WeekTasks() {
   // ── Компьютер: сетка «люди × дни» ──────────────────────────────────
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">{nav}</div>
+      <div className="flex flex-wrap items-center gap-3">{nav}{filters}</div>
 
       {pool.length > 0 && (
-        <div className="card p-3 space-y-2">
+        // Закреплено сверху: тащить в нижние строки можно без прокрутки назад.
+        <div className="card p-3 space-y-2 sticky top-2 z-20 shadow-lg">
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold uppercase tracking-wide text-surface-400">Не распределено</span>
             <span className="px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[11.5px] font-bold tabular-nums">{pool.length}</span>
@@ -426,38 +586,67 @@ export default function WeekTasks() {
           <div className="flex flex-wrap gap-2">
             {pool.map(it => (
               <div key={it.id} role="button" tabIndex={0} {...dragProps(it)}
-                onClick={() => it.to && navigate(it.to)}
-                onKeyDown={ev => { if ((ev.key === 'Enter' || ev.key === ' ') && it.to) { ev.preventDefault(); navigate(it.to) } }}
-                title={it.title + dragHint(it)}
-                className={clsx('px-2.5 py-1.5 rounded-xl border border-dashed border-surface-300 dark:border-surface-600 text-[12px] font-medium select-none',
+                onClick={ev => openItem(it, ev.currentTarget)}
+                onKeyDown={ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openItem(it, ev.currentTarget) } }}
+                title={it.title + (it.project ? ` · ${it.project}` : '') + dragHint(it)}
+                className={clsx('inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-dashed border-surface-300 dark:border-surface-600 text-[12px] font-medium select-none',
                   it.state !== 'done' && 'cursor-grab active:cursor-grabbing',
                   it.state === 'late' && 'border-red-500/45 text-red-700 dark:text-red-400',
                   drag?.id === it.id && 'opacity-40')}>
+                <span aria-hidden className="text-surface-400 tracking-[-2px]">⋮⋮</span>
                 {it.title}
+                {it.project && <span className="text-surface-400">· {it.project}</span>}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      <div className="card p-0 overflow-hidden">
-        <div className="grid" style={{ gridTemplateColumns: '232px repeat(7, minmax(0, 1fr)) 92px' }}>
-          <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-surface-400 border-b border-surface-100 dark:border-surface-700">Сотрудник</div>
-          {days.map((d, i) => (
-            <div key={d} className={clsx('px-2 py-2 border-b border-surface-100 dark:border-surface-700',
-              i >= 5 && 'bg-surface-50 dark:bg-surface-800/50')}>
-              <span className={clsx('text-[11px] font-bold uppercase tracking-wide', d === today ? 'text-primary-500' : 'text-surface-400')}>{WD[i]}</span>
-              <span className={clsx('ml-1.5 text-[11px] tabular-nums', d === today ? 'text-primary-500' : 'text-surface-400')}>{Number(d.slice(8))}</span>
-            </div>
-          ))}
-          <div className="px-2 py-2 text-right text-[11px] font-bold uppercase tracking-wide text-surface-400 border-b border-surface-100 dark:border-surface-700">Итог</div>
+      {nobody}
 
-          {groups.map(g => (
+      {shown.length > 0 && (
+      <div className="card p-0 overflow-hidden">
+        <div className="grid" style={{ gridTemplateColumns: COLS }}>
+          <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-surface-400 border-b border-surface-100 dark:border-surface-700">Сотрудник</div>
+          {days.map((d, i) => {
+            const isToday = d === today
+            const st = dayStats[i]
+            return (
+              <div key={d} className={clsx('px-2 py-1.5 border-b border-surface-100 dark:border-surface-700',
+                i >= 5 && 'bg-surface-50 dark:bg-surface-800/50', isToday && 'bg-primary-500/[0.07]')}>
+                <span className="flex items-center gap-1.5">
+                  <span className={clsx('text-[11px] font-bold uppercase tracking-wide', isToday ? 'text-primary-500' : 'text-surface-400')}>{WD[i]}</span>
+                  <span className={clsx('min-w-[20px] h-5 px-1 rounded-full inline-flex items-center justify-center text-[11px] font-bold tabular-nums',
+                    isToday ? 'bg-primary-500 text-white' : 'text-surface-400')}>{Number(d.slice(8))}</span>
+                </span>
+                <span className="block text-[10px] text-surface-400 tabular-nums whitespace-nowrap overflow-hidden text-ellipsis">
+                  {st.all ? `${st.all} ${plural(st.all, 'задача', 'задачи', 'задач')}` : '—'}
+                  {st.late > 0 && <span className="text-red-600 dark:text-red-400"> · {st.late} проср.</span>}
+                </span>
+              </div>
+            )
+          })}
+          <div className="px-3 py-2 text-right text-[11px] font-bold uppercase tracking-wide text-surface-400 border-b border-surface-100 dark:border-surface-700">Нагрузка</div>
+
+          {shown.map(g => {
+            const closed = !!shut[g.dep]
+            let gAll = 0, gLate = 0
+            for (const e of g.people) { const s = statsOf(e.userId); gAll += s.all; gLate += s.late }
+            return (
             <div key={g.dep} className="contents">
-              <div className="col-span-9 px-3 py-1.5 bg-surface-50 dark:bg-surface-800/60 border-b border-surface-100 dark:border-surface-700
-                              text-[10.5px] font-bold uppercase tracking-wide text-surface-400">{g.dep}</div>
-              {g.people.map((e: any) => {
+              <button type="button" aria-expanded={!closed}
+                onClick={() => setShut(v => ({ ...v, [g.dep]: !v[g.dep] }))}
+                className="col-span-9 flex items-center gap-2 px-3 py-1.5 bg-surface-50 dark:bg-surface-800/60 border-b border-surface-100 dark:border-surface-700 text-left">
+                <ChevronDown size={13} className={clsx('text-surface-400 transition-transform', closed && '-rotate-90')} />
+                <span className="text-[10.5px] font-bold uppercase tracking-wide text-surface-400">{g.dep}</span>
+                <span className="text-[10.5px] text-surface-400 tabular-nums">
+                  {gAll} {plural(gAll, 'задача', 'задачи', 'задач')}
+                  {gLate > 0 && <span className="text-red-600 dark:text-red-400"> · {gLate} просрочено</span>}
+                </span>
+              </button>
+              {!closed && g.people.map((e: any) => {
                 const s = statsOf(e.userId)
+                const pct = s.all ? Math.round((s.done / s.all) * 100) : 0
                 return (
                   <div key={e.id} className="contents">
                     <div className="flex items-center gap-2.5 px-3 py-2 border-b border-r border-surface-100 dark:border-surface-700 min-h-[72px]">
@@ -470,6 +659,11 @@ export default function WeekTasks() {
                     {days.map((d, i) => {
                       const key = `${e.userId}|${d}`
                       const ok = !!drag && canDrop(drag, e.userId)
+                      const list = byPerson.get(e.userId)?.get(d) ?? []
+                      const active = list.filter(x => x.state !== 'done')
+                      const doneList = list.filter(x => x.state === 'done')
+                      const expanded = !!openCell[key]
+                      const toggle = () => setOpenCell(v => ({ ...v, [key]: !v[key] }))
                       return (
                       <div key={d}
                         onDragOver={drag ? ev => {
@@ -479,9 +673,25 @@ export default function WeekTasks() {
                         onDrop={drag ? ev => { ev.preventDefault(); dropOn(e.userId, d) } : undefined}
                         className={clsx('group relative px-1.5 py-1.5 border-b border-r border-surface-100 dark:border-surface-700 flex flex-col gap-1 min-w-0 transition-opacity',
                           i >= 5 && 'bg-surface-50 dark:bg-surface-800/50',
+                          d === today && 'bg-primary-500/[0.05]',
                           drag && !ok && 'opacity-40',
                           over === key && ok && 'outline-dashed outline-2 outline-primary-500 [outline-offset:-3px] bg-primary-500/10')}>
-                        {(byPerson.get(e.userId)?.get(d) ?? []).map(chip)}
+                        {(expanded ? active : active.slice(0, DAY_LIMIT)).map(chip)}
+                        {!expanded && active.length > DAY_LIMIT && (
+                          <button type="button" onClick={toggle}
+                            className="self-start px-1.5 text-[10.5px] font-semibold text-primary-600 dark:text-primary-400">
+                            ещё {active.length - DAY_LIMIT}
+                          </button>
+                        )}
+                        {doneList.length > 0 && (expanded ? doneList.map(chip) : (
+                          <button type="button" onClick={toggle} title="Показать сделанное"
+                            className="self-start inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-green-500/10 text-[10.5px] font-semibold text-green-700 dark:text-green-400">
+                            <Check size={11} /> {doneList.length} готово
+                          </button>
+                        ))}
+                        {expanded && (
+                          <button type="button" onClick={toggle} className="self-start px-1.5 text-[10.5px] font-semibold text-surface-400">свернуть</button>
+                        )}
                         <button type="button" onClick={() => setIssue({ userId: e.userId, date: d })}
                           title="Выдать задачу на этот день"
                           className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity
@@ -493,26 +703,72 @@ export default function WeekTasks() {
                       </div>
                       )
                     })}
-                    <div className="flex flex-col items-end justify-center gap-1 px-2 py-2 border-b border-surface-100 dark:border-surface-700">
-                      <span className={clsx('text-[13px] font-semibold tabular-nums',
-                        s.all > 0 && s.done === s.all ? 'text-green-600 dark:text-green-400' : 'text-surface-700 dark:text-surface-200')}>
+                    <div className="flex flex-col items-end justify-center gap-1 px-3 py-2 border-b border-surface-100 dark:border-surface-700">
+                      <span className={clsx('text-[14px] font-bold tabular-nums',
+                        s.all > 0 && s.done === s.all ? 'text-green-600 dark:text-green-400' : 'text-surface-700 dark:text-surface-100')}>
                         {s.done}<span className="text-surface-400">/{s.all}</span>
                       </span>
-                      <span className="flex gap-0.5 w-full h-1">
-                        <i className="rounded-sm bg-sky-500" style={{ flex: s.plan || 0.001 }} />
-                        <i className="rounded-sm bg-primary-500" style={{ flex: s.task || 0.001 }} />
+                      <span className="w-full h-1 rounded-sm bg-surface-200 dark:bg-surface-700 overflow-hidden">
+                        <i className="block h-1 rounded-sm bg-green-500" style={{ width: `${pct}%` }} />
                       </span>
-                      <span className="text-[9.5px] text-surface-400">{s.plan} план · {s.task} выд.</span>
+                      <span className={clsx('text-[10.5px] font-semibold whitespace-nowrap',
+                        !s.all ? 'text-green-600 dark:text-green-400' : s.late ? 'text-red-600 dark:text-red-400' : 'text-surface-400')}>
+                        {!s.all ? 'свободен' : s.late ? `${s.late} просрочено` : 'в графике'}
+                      </span>
                     </div>
                   </div>
                 )
               })}
             </div>
-          ))}
+            )
+          })}
         </div>
       </div>
+      )}
 
       {legend}
+
+      {pop && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setPop(null)} />
+          <div role="dialog" aria-label={pop.it.title}
+            className="fixed z-50 w-[272px] p-3 rounded-2xl border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 shadow-2xl space-y-2.5"
+            style={{ left: Math.max(8, Math.min(pop.x, window.innerWidth - 284)), top: Math.max(8, Math.min(pop.y, window.innerHeight - 190)) }}>
+            <div className="space-y-0.5">
+              <b className="block text-[13.5px] leading-snug">{pop.it.title}</b>
+              <span className="block text-[12px] text-surface-500">
+                {[pop.it.project, pop.it.outDate ? `выход ${dayText(pop.it.outDate)}` : ''].filter(Boolean).join(' · ')}
+              </span>
+              <span className={clsx('block text-[12px] font-semibold',
+                pop.it.state === 'late' ? 'text-red-600 dark:text-red-400'
+                  : pop.it.state === 'done' ? 'text-green-600 dark:text-green-400' : 'text-surface-500')}>
+                {pop.it.state === 'done' ? 'сделано'
+                  : pop.it.state === 'late'
+                    ? `просрочено на ${Math.round((new Date(today).getTime() - new Date(pop.it.date).getTime()) / 864e5)} ${plural(Math.round((new Date(today).getTime() - new Date(pop.it.date).getTime()) / 864e5), 'день', 'дня', 'дней')}`
+                    : `на ${dayText(pop.it.date)}`}
+              </span>
+            </div>
+            <div className="flex gap-1.5">
+              {pop.it.state !== 'done' && (
+                <button type="button" disabled={acting} onClick={() => planAction(pop.it, 'done')}
+                  className="flex-1 min-h-[40px] rounded-xl bg-green-500/15 text-green-700 dark:text-green-400 text-[12.5px] font-semibold disabled:opacity-50">
+                  ✓ {pop.it.kind === 'pub' ? 'Опубликовано' : 'Готово'}
+                </button>
+              )}
+              {pop.it.state !== 'done' && pop.it.date <= today && (
+                <button type="button" disabled={acting} onClick={() => planAction(pop.it, 'tomorrow')}
+                  className="flex-1 min-h-[40px] rounded-xl border border-surface-200 dark:border-surface-600 text-[12.5px] font-semibold disabled:opacity-50">
+                  На завтра
+                </button>
+              )}
+              <button type="button" onClick={() => { setPop(null); navigate('/smm') }}
+                className="flex-1 min-h-[40px] rounded-xl border border-surface-200 dark:border-surface-600 text-[12.5px] font-semibold text-primary-600 dark:text-primary-400">
+                Календарь
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {issue && (
         <IssueTask who={issue} days={days} employees={employees}
