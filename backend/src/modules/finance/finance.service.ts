@@ -91,7 +91,11 @@ export function matchEmployeeToUser<T extends { id: string; userId?: string | nu
   // Тёзка в CRM — не угадываем, кто из них.
   if (allUsers.filter(u => nameKey(u.name) === key).length !== 1) return null;
 
-  const free = employees.filter(e => !e.userId);
+  // Строки уволенных не привязываем: у ушедшего тёзки строка остаётся в
+  // ведомости, и новый человек увидел бы чужую зарплату. Заодно уволенный
+  // дубль больше не мешает найти действующую строку того же человека.
+  const free = employees.filter(e => !e.userId
+    && !['fired', 'inactive'].includes(String((e as any).status || 'active')));
   const exact = free.filter(e => nameKey(e.name) === key);
   if (exact.length === 1) return exact[0];
   if (exact.length > 1) return null;
@@ -3968,8 +3972,11 @@ export class FinanceService implements OnModuleInit {
     if (linked) return linked;
     const me: Array<{ name: string }> = await this.ds.query(
       `SELECT name FROM users WHERE id = $1`, [userId]);
+    // Отключённые аккаунты (часто — старый аккаунт того же человека) не
+    // считаются тёзками: раньше такой «двойник» блокировал привязку, и
+    // человек не видел зарплату (Рохила, 02.10.2026).
     const users: Array<{ id: string; name: string }> = await this.ds.query(
-      `SELECT id, name FROM users`);
+      `SELECT id, name FROM users WHERE "isActive" IS DISTINCT FROM false OR id = $1`, [userId]);
     const emps = await this.empRepo.find();
     const found = matchEmployeeToUser({ id: userId, name: me[0]?.name || '' }, users, emps);
     if (!found) return null;
@@ -3988,7 +3995,8 @@ export class FinanceService implements OnModuleInit {
     if (!emps.some(e => !e.userId)) return;
     const users: Array<{ id: string; name: string }> = await this.ds.query(
       `SELECT u.id, u.name FROM users u
-        WHERE NOT EXISTS (SELECT 1 FROM finance_employees fe WHERE fe."userId" = u.id)`);
+        WHERE u."isActive" IS DISTINCT FROM false
+          AND NOT EXISTS (SELECT 1 FROM finance_employees fe WHERE fe."userId" = u.id)`);
     let linked = 0;
     for (const u of users) {
       const hit = matchEmployeeToUser(u, users, emps);

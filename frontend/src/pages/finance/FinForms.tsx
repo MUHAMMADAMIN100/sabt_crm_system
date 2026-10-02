@@ -112,16 +112,19 @@ export function ProjectFormModal({ project, direction, onClose }: {
 }
 
 /** Сотрудник; categories — существующие группы ЗП для подсказки. */
-export function EmployeeFormModal({ employee, categories = [], onClose }: {
-  employee?: FinEmployee; categories?: string[]; onClose: () => void;
+export function EmployeeFormModal({ employee, initial, categories = [], onClose }: {
+  employee?: FinEmployee;
+  /** Заготовка новой строки: имя и аккаунт уже известны (из «Не видят свою зарплату»). */
+  initial?: { name?: string; userId?: string; role?: string };
+  categories?: string[]; onClose: () => void;
 }) {
   const qc = useQueryClient();
   const isEdit = !!employee;
-  const [name, setName] = useState(employee?.name ?? '');
-  const [role, setRole] = useState(employee?.role ?? '');
+  const [name, setName] = useState(employee?.name ?? initial?.name ?? '');
+  const [role, setRole] = useState(employee?.role ?? initial?.role ?? '');
   // Учётная запись: по ней сотрудник видит свою зарплату в личном профиле.
   // Без привязки строка ведомости ничья — в профиле ЗП не появится.
-  const [userId, setUserId] = useState(employee?.userId ?? '');
+  const [userId, setUserId] = useState(employee?.userId ?? initial?.userId ?? '');
   const { data: crmUsers } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.list() });
   const [category, setCategory] = useState(employee?.category ?? '');
   const [hireDate, setHireDate] = useState(employee?.hireDate ?? '');
